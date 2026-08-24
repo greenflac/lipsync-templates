@@ -42,8 +42,9 @@ publication.
    This repository refers to and interoperates with third-party models, weights
    and packages that carry their own licences. Those licences are not granted or
    modified by this file and remain the responsibility of whoever runs the code.
-   Note in particular that some measuring components used during development are
-   licensed for non-commercial use only; see docs for details.
+   Note in particular that the identity instrument uses InsightFace buffalo_l
+   weights, which are licensed for non-commercial use only: the acceptance
+   layer as shipped is a development instrument, not a resellable component.
 
 
 5. HOW TO OBTAIN RIGHTS

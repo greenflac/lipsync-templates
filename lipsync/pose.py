@@ -97,7 +97,7 @@ LIMB_WOBBLE_MAX = 0.25
 #:   curl -sSLO --output-dir ~/.mediapipe \
 #:     https://storage.googleapis.com/mediapipe-models/pose_landmarker/\
 #: pose_landmarker_lite/float16/1/pose_landmarker_lite.task
-MODEL_ENV = "BALL_REEL_POSE_MODEL"
+MODEL_ENV = "LIPSYNC_POSE_MODEL"
 DEFAULT_MODEL = "~/.mediapipe/pose_landmarker_lite.task"
 
 #: Откуда качается, если её нет. Отдельной константой, потому что

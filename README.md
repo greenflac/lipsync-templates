@@ -118,9 +118,10 @@ The sources are open to read and to audit, but this is **not** open source:
 using, copying and embedding require an agreement. Details in
 [LICENSE](LICENSE).
 
-Separately: some of the measuring components used during development are
-licensed for non-commercial use only. This is accounted for and described in
-the documents.
+Separately: the identity instrument uses InsightFace `buffalo_l` weights,
+which are non-commercial. As shipped, the acceptance layer is a development
+instrument; a commercial deployment swaps the face model and recalibrates the
+thresholds against its scale.
 
 ---
 ---
@@ -240,6 +241,7 @@ python -m unittest discover -s lipsync/tests -t .
 использовать, копировать и встраивать нельзя без договорённости. Подробности —
 [LICENSE](LICENSE).
 
-Отдельно: часть измерительных компонентов, использованных при разработке,
-лицензирована только для некоммерческого применения. Это учтено и описано в
-документах.
+Отдельно: прибор личности использует веса InsightFace `buffalo_l`, а они
+некоммерческие. В поставляемом виде слой приёмки — инструмент разработки;
+коммерческое развёртывание меняет модель лица и перекалибрует пороги под её
+шкалу.
