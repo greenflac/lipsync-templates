@@ -1,8 +1,4 @@
-"""Гейты универсального плана. Каждый сторожит дефект, а не строчку кода.
-
-Числа-ожидания — ЛИТЕРАЛЫ. Импорт из проверяемого модуля поехал бы вместе
-с кодом и промолчал.
-"""
+"""Гейты универсального плана. Каждый сторожит дефект, а не строчку кода."""
 
 import unittest
 from unittest import mock
@@ -10,7 +6,6 @@ from unittest import mock
 from lipsync import fork_plan as P
 from lipsync.fork_identity import FAIL, PASS, UNMEASURED
 
-# Поза «в плане»: полный рост, по центру. Значения — доли кадра.
 GOOD = {"l_shoulder": (0.58, 0.32, 0.99), "r_shoulder": (0.42, 0.32, 0.99),
         "l_elbow": (0.63, 0.48, 0.98), "r_elbow": (0.37, 0.48, 0.98),
         "l_wrist": (0.66, 0.62, 0.97), "r_wrist": (0.34, 0.62, 0.97),
@@ -34,23 +29,15 @@ class ThePlanNumbersComeFromTheMeasuredDrivings(unittest.TestCase):
         self.assertEqual(P.WIDTH_MAX, 0.72)
 
     def test_the_face_bar_is_imported_not_copied(self):
-        # планка размера лица одна на проект. Копия разъехалась бы молча.
         from lipsync import fork_intake
 
         self.assertIs(P.MIN_FACE_PX, fork_intake.MIN_FACE_PX)
 
     def test_the_measured_styliser_size_is_recorded(self):
-        # ИЗМЕРЕНО дважды с негативным контролем: стилизатор отвечает этим на
-        # ЛЮБОЙ вход. Если однажды заговорит иначе — этот тест покраснеет.
         self.assertEqual(P.STYLED_SIZE_MEASURED, (896, 1200))
 
     def test_the_measured_driving_plans_land_where_the_bands_say(self):
-        """НЕГАТИВНЫЙ КОНТРОЛЬ полос: они обязаны РАЗЛИЧАТЬ драйвинги.
-
-        ИЗМЕРЕНО (медиана по кадрам): b2 плечи 0.375 щиколотки 0.940 — в плане;
-        b4 плечи 0.531 — ниже полосы; b5 щиколотки 0.625 — ноги не влезли.
-        Полоса, которая пропускает всё, не измеряет ничего.
-        """
+        """НЕГАТИВНЫЙ КОНТРОЛЬ полос: они обязаны РАЗЛИЧАТЬ драйвинги."""
         lo, hi = P.SHOULDERS_BAND
         self.assertTrue(lo <= 0.375 <= hi, "b2 обязан попадать")
         self.assertFalse(lo <= 0.531 <= hi, "b4 обязан НЕ попадать")
@@ -71,8 +58,6 @@ class ThePersonBoxIgnoresUnconfidentJoints(unittest.TestCase):
         self.assertEqual(box["joints"], 12)
 
     def test_a_joint_beyond_the_frame_does_not_stretch_the_box(self):
-        # ИЗМЕРЕНО на b4: неуверенная точка дала левый край -490 px.
-        # Здесь та же форма: точка на -0.6 с уверенностью 0.03.
         dirty = dict(GOOD, l_ankle=(-0.6, 1.7, 0.03))
         self.assertEqual(P.person_box(dirty)["x0"], 0.34)
 
@@ -101,13 +86,10 @@ class TheCanvasAlwaysPadsAndNeverCrops(unittest.TestCase):
 
     def test_the_measured_styled_size_becomes_nine_by_sixteen(self):
         got = P.canvas_for(896, 1200)
-        # 896 / 0.5625 = 1593.0 -> чётное 1594. Ширина НЕ ТРОНУТА.
         self.assertEqual((got["width"], got["height"]), (896, 1594))
         self.assertAlmostEqual(got["width"] / got["height"], 0.5625, places=2)
 
     def test_nothing_is_ever_lost(self):
-        # НЕГАТИВНЫЙ КОНТРОЛЬ: канвас обязан быть НЕ МЕНЬШЕ картинки по обеим
-        # сторонам. Обрезка прошла бы здесь и нигде больше.
         for w, h in ((896, 1200), (1024, 1024), (620, 1104), (1920, 1080)):
             with self.subTest(size=(w, h)):
                 got = P.canvas_for(w, h)
@@ -147,8 +129,6 @@ class TheCanvasAlwaysPadsAndNeverCrops(unittest.TestCase):
         try:
             P.PLAN_RATIO = 0.5
             self.assertEqual(P.canvas_for(896, 1200)["height"], 1792)
-            # 896/1200 = 0.7467 УЖЕ плана 0.75, значит растёт ШИРИНА,
-            # а высота остаётся: 1200 * 0.75 = 900.
             P.PLAN_RATIO = 0.75
             self.assertEqual(P.canvas_for(896, 1200)["width"], 900)
         finally:
@@ -164,14 +144,12 @@ class TheVerdictHasThreeOutcomesOnEveryAxis(unittest.TestCase):
         self.assertEqual(got["violations"], 0)
 
     def test_the_wrong_canvas_is_a_defect(self):
-        # Ровно наш случай: 896x1200 после стилизатора.
         got = P.plan_verdict(width=896, height=1200, points=GOOD, face_px=140)
         self.assertEqual(got["outcome"], FAIL)
         self.assertEqual([a["outcome"] for a in got["axes"] if a["name"] == "канвас"],
                          [FAIL])
 
     def test_a_portrait_crop_fails_on_the_ankles(self):
-        # Наши боевые фото: портрет по грудь, щиколоток нет вовсе.
         waist_up = {k: v for k, v in GOOD.items() if "ankle" not in k
                     and "knee" not in k}
         got = P.plan_verdict(width=1080, height=1920, points=waist_up,
@@ -191,15 +169,11 @@ class TheVerdictHasThreeOutcomesOnEveryAxis(unittest.TestCase):
         self.assertEqual(got["outcome"], FAIL)
 
     def test_a_small_face_only_warns_and_does_not_sink_the_verdict(self):
-        # Решение составителя шаблонов, та же ось, что в приёме драйвинга: полный
-        # рост делает лицо мельче по устройству, и ронять на этом вердикт
-        # значило бы запретить сам выбранный план.
         got = P.plan_verdict(width=1080, height=1920, points=GOOD, face_px=61)
         self.assertEqual(got["outcome"], PASS)
         self.assertIn("ПРЕДУПРЕЖДЕНИЕ", got["note"])
 
     def test_a_big_face_gets_NO_warning(self):
-        # НЕГАТИВНЫЙ КОНТРОЛЬ предупреждения: оно обязано молчать на годном.
         got = P.plan_verdict(width=1080, height=1920, points=GOOD, face_px=140)
         self.assertNotIn("ПРЕДУПРЕЖДЕНИЕ", got["note"])
 
@@ -218,12 +192,6 @@ class TheVerdictHasThreeOutcomesOnEveryAxis(unittest.TestCase):
         """ по каждой полосе: строже роняет годное, слабее пропускает брак."""
         ok = dict(width=1080, height=1920, points=GOOD, face_px=140)
         wide = dict(GOOD, l_wrist=(0.95, 0.62, 0.97), r_wrist=(0.05, 0.62, 0.97))
-        # У КАЖДОЙ полосы свой брак, нарушающий ТОЛЬКО её. Общий сдвинутый
-        # вход нарушал сразу несколько осей, и «слабее» никогда не проходило —
-        # тест мерил бы не ту полосу, которую мутирует.
-        # У CENTRE_TOL своё «годное»: GOOD стоит РОВНО по центру, отклонение
-        # 0.0, и никакая строгая планка на нём не покраснеет. Мутацию видно
-        # только на входе, который допуском пользуется.
         off_centre = dict(ok, points=shifted(GOOD, dx=0.05))
         cases = (
             ("SHOULDERS_BAND", (0.40, 0.42), (0.0, 1.0), ok,
@@ -264,22 +232,16 @@ class TheFullBodyPromptIsADecisionNotAString(unittest.TestCase):
         self.assertIn("same person", got)
 
     def test_removing_the_identity_clause_is_visible_in_the_prompt(self):
-        # Сторож дефекта: без этой строки НБ2 отдавал похожего человека, а не
-        # того же. Мутация видна в тексте, значит и в отчёте.
         with mock.patch.object(P, "KEEP_IDENTITY_CLAUSE", ""):
             self.assertNotIn("same person", P.full_body_prompt())
 
     def test_the_brand_ban_is_in_the_prompt_and_is_not_a_copy(self):
-        # СТОРОЖ НАБЛЮДЕННОГО ДЕФЕКТА: без запрета первый прогон дорисовал на
-        # майке читаемую надпись «NYCM MARATHON». Прибор её не увидел.
         from lipsync import fork_e2e
 
         self.assertIn(fork_e2e.NO_BRANDS_CLAUSE, P.full_body_prompt())
         self.assertIn("no logos", P.full_body_prompt())
 
     def test_the_ban_comes_from_the_stand_not_from_a_local_copy(self):
-        # одно решение — одно место. Если запрет здесь скопирован, эта
-        # подмена его не сдвинет, и тест покраснеет.
         from lipsync import fork_e2e
 
         with mock.patch.object(fork_e2e, "NO_BRANDS_CLAUSE", "ЗАПРЕТ-ПОДМЕНА"):
@@ -309,15 +271,7 @@ if __name__ == "__main__":
 
 
 class TheDrivingDictatesThePlanNotAConstant(unittest.TestCase):
-    """Архитектурное решение составителя шаблонов: композиция кадра драйвинга
-    пробрасывается в промт эстетики.
-
-    ЗАВИСИМОСТЬ ПЕРЕВЁРНУТА В СТОРОНУ, ГДЕ СВОБОДЫ НЕТ: драйвинг — купленный
-    материал, его композицию не подвинуть; эстетику мы пишем сами. Раньше план
-    был глобальной константой и спорил и с эстетиками, и с материалом —
-    ИЗМЕРЕНО: все шесть рефок мимо полосы щиколоток, четыре драйвинга
-    разъезжаются между собой (0.625..1.037).
-    """
+    """Архитектурное решение составителя шаблонов: композиция кадра драйвинга"""
 
     @staticmethod
     def poses(ankle=0.92, shoulder=0.32, centre=0.5, jitter=0.01, n=20):
@@ -329,21 +283,16 @@ class TheDrivingDictatesThePlanNotAConstant(unittest.TestCase):
     def test_the_card_is_measured_from_the_frames(self):
         got = P.composition_card(self.poses(ankle=0.90, shoulder=0.40))
         self.assertEqual(got["outcome"], PASS)
-        # 0.90 + 10 * 0.005: щиколотка усредняется по двум точкам, из которых
-        # едет одна, и медиана двадцати кадров берёт одиннадцатый.
         self.assertAlmostEqual(got["ankles"], 0.9500, places=3)
         self.assertEqual(got["frames"], 20)
 
     def test_the_tolerance_comes_from_the_material_not_from_taste(self):
-        # Спокойный драйвинг даёт узкий допуск, размашистый — широкий.
         calm = P.composition_card(self.poses(jitter=0.0))
         wild = P.composition_card(self.poses(jitter=0.02))
         self.assertEqual(calm["tol_ankles"], P.CARD_TOL_MIN)
         self.assertGreater(wild["tol_ankles"], calm["tol_ankles"])
 
     def test_the_tolerance_is_clamped_at_both_ends(self):
-        # Ниже пола проверка стала бы генератором ложных тревог, выше потолка
-        # перестала бы что-либо запрещать.
         huge = P.composition_card(self.poses(jitter=0.2))
         self.assertEqual(huge["tol_ankles"], P.CARD_TOL_MAX)
         self.assertEqual((P.CARD_TOL_MIN, P.CARD_TOL_MAX), (0.05, 0.20))
@@ -353,30 +302,19 @@ class TheDrivingDictatesThePlanNotAConstant(unittest.TestCase):
         self.assertEqual(P.composition_card([])["outcome"], UNMEASURED)
 
     def test_the_clause_speaks_photography_not_coordinates(self):
-        # Модель перечитывает «0.913» как текст, а не как координату. Числа
-        # остаются в отчёте, в промт идут слова.
         card = P.composition_card(self.poses(ankle=0.93, shoulder=0.30))
         text = P.framing_clause(card)
         self.assertIn("full-length shot", text)
         self.assertNotIn("0.9", text)
 
     def test_the_clause_does_NOT_dictate_where_the_feet_are_cut(self):
-        """По решению составителя шаблонов обрезка щиколоток в промт не
-        переносится — переносится только композиция.
-
-        ИЗМЕРЕНО, почему директива всё равно была бесполезна: щиколотки на
-        эстетике сдвинулись 0.7816 -> 0.8862 при цели 1.0282. Ось, которую
-        невозможно выполнить, — не гейт, а тормоз.
-        """
+        """По решению составителя шаблонов обрезка щиколоток в промт не"""
         text = P.framing_clause(P.composition_card(self.poses(ankle=0.95)))
         self.assertNotIn("bottom edge", text)
         self.assertNotIn("feet", text)
-        # А крупность остаётся: это композиция, а не линия обреза.
         self.assertIn("full-length", text)
 
     def test_the_clause_says_it_outranks_the_aesthetic_framing(self):
-        # Композиция уже описана в промте составителя шаблонов — у y2k это широкий угол
-        # вплотную. Без этой оговорки наша строка добавила бы противоречие.
         text = P.framing_clause(P.composition_card(self.poses()))
         self.assertIn("outranks", text)
         self.assertIn("no perspective distortion", text)
@@ -386,7 +324,6 @@ class TheDrivingDictatesThePlanNotAConstant(unittest.TestCase):
         self.assertIn("left of centre", left)
 
     def test_no_card_means_no_clause_and_NOT_a_guess(self):
-        # НЕГАТИВНЫЙ КОНТРОЛЬ: без измерения промт не дополняется вовсе.
         self.assertEqual(P.framing_clause(None), "")
         self.assertEqual(P.framing_clause({"outcome": UNMEASURED}), "")
 
@@ -396,27 +333,18 @@ class TheDrivingDictatesThePlanNotAConstant(unittest.TestCase):
         self.assertEqual(got["outcome"], PASS)
 
     def test_a_different_ankle_line_is_NOT_a_defect_any_more(self):
-        """ПЕРЕПИСАН: судятся только оси КОМПОЗИЦИИ — центр и ширина.
-
-        Линия плеч и линия щиколоток — это кадрирование, где именно проходит
-        обрез; у эстетики оно своё. Раньше здесь стоял сторож на боевом
-        промахе y2k (щиколотки 0.7358 против 0.913) — правило отменено
-        составителем шаблонов, и сторож переписан под новое.
-        """
+        """ПЕРЕПИСАН: судятся только оси КОМПОЗИЦИИ — центр и ширина."""
         card = P.composition_card(self.poses(ankle=0.913, shoulder=0.531))
         miss = self.poses(ankle=0.7358, shoulder=0.4846)[0]
         self.assertEqual(P.in_card(miss, card)["outcome"], PASS)
 
     def test_the_numbers_are_still_MEASURED_even_though_not_judged(self):
-        # Перестать судить не значит перестать мерить: числа нужны в отчёте.
         card = P.composition_card(self.poses(ankle=0.913, shoulder=0.531))
         self.assertAlmostEqual(card["shoulders"], 0.5810, places=3)
         got = P.in_card(self.poses(ankle=0.7358)[0], card)
         self.assertIn("НЕ СУДЯТСЯ", got["note"])
 
     def test_an_off_centre_reference_is_STILL_a_defect(self):
-        # НЕГАТИВНЫЙ КОНТРОЛЬ сужения: композиция по-прежнему сторожится.
-        # Боевой случай — tomatoes, центр 0.2601 при центре драйвинга 0.5114.
         card = P.composition_card(self.poses(centre=0.5114))
         got = P.in_card(self.poses(centre=0.2601)[0], card)
         self.assertEqual(got["outcome"], FAIL)

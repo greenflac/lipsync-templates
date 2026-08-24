@@ -1,25 +1,4 @@
-"""Батч целиком на подставном стенде: без сети, без единого цента.
-
-ЧТО ЗДЕСЬ ГЛАВНОЕ, по убыванию цены ошибки:
-
-  1. ДЕНЬГИ. Батч, у которого заказов больше, чем денег, обязан не начаться
-     ВОВСЕ и назвать недостачу числом. Проверяется наблюдаемо: подставной
-     прогон ячейки в этом случае не зовётся НИ РАЗУ — счётчик вызовов ноль.
-     Потратить половину и встать посередине невосстановимо.
-  2. ВЕСЬ путь идёт на подставных функциях. Сеть в файле перекрыта раннером
-     (`_no_network`), а не обещана комментарием.
-  3. Третий исход не сворачивается: обвал ячейки и «годно без ролика» — это
-     `не смогли проверить`, а не `не годно` и не `годно`.
-  4. Одна неудача не роняет батч, а серия из `MAX_STREAK` — роняет. Константа
-     мутируется в обе стороны (2 и 5), и в обе стороны наблюдаемо меняется
-     число запущенных ячеек.
-
-Ожидаемые числа — ЛИТЕРАЛЫ: 50, 5, 0.35, 17.5, 1.75, 3, 0/1/2.
-ПЕРЕСЧИТАНЫ: цена ячейки уехала с $0.21 на $0.35, потому что Kling
-берёт посекундно ($0.07/с), а продуктовая длина стала 5 с вместо 3 с.
-Замер: баланс fal 10.8490375 -> 10.1490375 за два пятисекундных вызова.
-Импортированное ожидание уехало бы вместе с кодом и промолчало.
-"""
+"""Батч целиком на подставном стенде: без сети, без единого цента."""
 
 from __future__ import annotations
 
@@ -44,9 +23,6 @@ def _no_network():
     return mock.patch.object(socket, "socket", deny)
 
 
-#: «ответа не подменяли» — отдельный от `None` знак: `None` сам по себе один
-#: из проверяемых ответов, и без сентинела фикстура молча проверяла бы не то
-#: (поймано прогоном).
 _NOREPLY = object()
 
 DRIVINGS = [f"work/dr_{i}.mp4" for i in range(1, 6)]
@@ -55,12 +31,7 @@ PERSONS = ["work/person_a.png", "work/person_b.png"]
 
 
 class _Runner:
-    """Подставной `fork_e2e.run`: считает вызовы и пишет «ролик» на диск.
-
-    `verdicts` — номер ячейки (с единицы) -> исход или исключение. Умолчание
-    `годно`. Файл пишется настоящий: иначе забор ролика не проверялся бы, а
-    ровно на нём стоит «годно без артефакта — это не годно».
-    """
+    """Подставной `fork_e2e.run`: считает вызовы и пишет «ролик» на диск."""
 
     def __init__(self, verdicts=None, *, write=True, reply=_NOREPLY):
         self.verdicts = dict(verdicts or {})
@@ -121,10 +92,6 @@ def _batch(tmp, **kw):
     return B.run_batch(**kw)
 
 
-# ---------------------------------------------------------------------------
-# Матрица и режимы покрытия
-# ---------------------------------------------------------------------------
-
 class TheCoverageModesGiveTheNumbersTheyPromise(unittest.TestCase):
 
     def test_full_on_the_owner_matrix_is_fifty_cells(self):
@@ -134,11 +101,7 @@ class TheCoverageModesGiveTheNumbersTheyPromise(unittest.TestCase):
         self.assertEqual(len(B.cells(DRIVINGS, STYLES, PERSONS, mode="cover")), 5)
 
     def test_cover_touches_every_value_of_every_axis_at_least_once(self):
-        """Иначе `cover` продаёт подмножество как покрытие.
-
-        Оси РАЗНОЙ длины: 5, 3 и 2 — на равных длинах
-        покрытие вышло бы случайно, а дефект «берём только первые» уцелел бы.
-        """
+        """Иначе `cover` продаёт подмножество как покрытие."""
         st3, pe2 = STYLES[:3], PERSONS
         got = B.cells(DRIVINGS, st3, pe2, mode="cover")
         self.assertEqual(len(got), 5)
@@ -167,22 +130,15 @@ class TheCoverageModesGiveTheNumbersTheyPromise(unittest.TestCase):
                          "dr_1__st_blue__person_a")
 
 
-# ---------------------------------------------------------------------------
-# Деньги. Самое дорогое место модуля
-# ---------------------------------------------------------------------------
-
 class TheMoneyGuardHasThreeOutcomes(unittest.TestCase):
 
     def test_fifty_cells_cost_seventeen_fifty(self):
-        # ПЕРЕПИСАН: было 10.5 по цене $0.21 за трёхсекундный ролик.
-        # Полный крест составителя шаблонов на продуктовых 5 с в $10 НЕ ВЛЕЗАЕТ.
         self.assertEqual(B.plan_cost(50), 17.5)
 
     def test_five_cells_cost_one_seventy_five(self):
         self.assertEqual(B.plan_cost(5), 1.75)
 
     def test_the_matrix_we_actually_ship_does_fit_ten_dollars(self):
-        # 20 ячеек: b1 выброшен приёмом (13 склеек), плюс правило пола.
         self.assertEqual(B.plan_cost(20), 7.0)
         self.assertEqual(B.afford(20, 10.1490375)["outcome"], PASS)
 
@@ -218,11 +174,7 @@ class TheMoneyGuardHasThreeOutcomes(unittest.TestCase):
                 self.assertEqual(B.afford(5, value)["outcome"], UNMEASURED)
 
     def test_the_price_is_imported_and_not_copied(self):
-        """ и цена живёт в стенде, мутируется в обе стороны.
-
-        Дороже — тот же заказ перестаёт быть по карману; дешевле — становится.
-        Копия числа здесь промолчала бы на обеих мутациях.
-        """
+        """и цена живёт в стенде, мутируется в обе стороны."""
         with mock.patch.object(E, "KLING_PRICE_USD", 0.42):
             self.assertEqual(B.plan_cost(5), 2.1)
             self.assertEqual(B.afford(5, 2.0)["outcome"], FAIL)
@@ -274,10 +226,6 @@ class TheBatchDoesNotStartWithoutMoney(unittest.TestCase):
         self.assertEqual(asked, [])
 
 
-# ---------------------------------------------------------------------------
-# Прогон ячеек
-# ---------------------------------------------------------------------------
-
 class TheBatchRunsCellsOneByOne(unittest.TestCase):
 
     def test_cover_with_enough_money_passes_and_leaves_five_named_clips(self):
@@ -326,12 +274,7 @@ class TheBatchRunsCellsOneByOne(unittest.TestCase):
         self.assertEqual(got["exit_code"], 1)
 
     def test_each_cell_is_printed_before_the_next_one_starts(self):
-        """Молчащий прогон уже уносил с собой всё измеренное.
-
-        Наблюдаемо: подставной прогон смотрит в журнал В МОМЕНТ своего вызова
-        и обязан увидеть там строку денег и все предыдущие ячейки. Батч,
-        печатающий всё в конце, здесь краснеет.
-        """
+        """Молчащий прогон уже уносил с собой всё измеренное."""
         log = _Log()
         seen = []
 
@@ -442,12 +385,7 @@ class AStreakOfFailuresStopsTheBatch(unittest.TestCase):
         self.assertTrue(got["stopped_early"])
 
     def test_the_streak_constant_is_guarded_in_both_directions(self):
-        """подмена строже и слабее, оба раза наблюдаемо.
-
-        Строже (2) — останов раньше, запущено 3; слабее (5) — останова нет,
-        запущено 5. Мутация проверяет САМУ константу модуля, а не аргумент:
-        `max_streak` умолчанием берётся из `MAX_STREAK`.
-        """
+        """подмена строже и слабее, оба раза наблюдаемо."""
         self.assertEqual(B.MAX_STREAK, 3)
         for value, expect_calls, expect_stop in ((2, 3, True), (5, 5, False)):
             with self.subTest(MAX_STREAK=value):
@@ -510,8 +448,7 @@ class TheReportCarriesNumbersNextToTheVerdict(unittest.TestCase):
                 self.assertEqual(got["exit_code"], code)
 
     def test_a_failure_outranks_an_unmeasured_in_the_verdict(self):
-        """Найденное нарушение не перестаёт быть нарушением от того, что
-        рядом что-то не измерилось."""
+        """Найденное нарушение не перестаёт быть нарушением от того, что"""
         with _no_network(), TemporaryDirectory() as td:
             got = _batch(td, mode="cover", balance=_balance(2.0),
                          cell_runner=_Runner({2: FAIL, 4: _Blocked("сеть")}))

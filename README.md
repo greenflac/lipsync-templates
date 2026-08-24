@@ -101,9 +101,10 @@ during the turn the face leaves the frame entirely.
 python -m unittest discover -s lipsync/tests -p "test_*.py"
 ```
 
-770 tests, no network, no GPU. Each one guards a specific defect that actually
-happened, and says which one in its docstring. Decision thresholds are covered
-by mutation: changing a threshold in either direction makes tests fail.
+770 tests, no network, no GPU. Each one guards a specific defect that
+actually happened — the test name says which one. Decision thresholds are
+covered by mutation: changing a threshold in either direction makes tests
+fail.
 
 ## Licence
 
@@ -218,7 +219,7 @@ python -m unittest discover -s lipsync/tests -p "test_*.py"
 ```
 
 770 тестов, без сети и без GPU. Каждый сторожит конкретный дефект, который
-действительно случился, и называет его в докстринге. Пороги принятия решений
+действительно случился, — имя теста называет какой. Пороги принятия решений
 покрыты мутациями: сдвиг порога в любую сторону роняет тесты.
 
 ## Лицензия

@@ -1,22 +1,4 @@
-"""Поток A: якорь — сырая фотография, медоид запрещён КОДОМ.
-
-Тесты делятся надвое, и деление намеренное.
-
-ОФЛАЙН — арифметика вердикта, три исхода и запрет медоида. Весов не требует,
-краснеет всегда, когда сломали.
-
-ЖИВЬЁ — воспроизведение снятых чисел на `demo/lora_dataset`. Требует
-`buffalo_l`; без весов ПРОПУСКАЕТСЯ, и пропуск здесь честнее зелени: он значит
-«не смогли проверить», а не «прошло». ПРОПУСК ВНУТРИ живого класса при
-этом запрещён: если веса есть, а фикстура потерялась — это находка, и тест
-падает, а не молчит.
-
-Приёмка §6 A требует ТРИ строки, воспроизводится ОДНА. Оба разрыва записаны
-числами в `fork_identity.ACCEPTANCE_ROWS` и сторожатся тестами с обеих сторон:
-живые тесты падают, если дерево изменилось (появилась сырая фотография,
-контроль дотянул до полосы), офлайновые — если запись объявит закрытым то, что
-не закрыто.
-"""
+"""Поток A: якорь — сырая фотография, медоид запрещён КОДОМ."""
 
 from __future__ import annotations
 
@@ -42,12 +24,7 @@ def _weights_ready() -> bool:
 
 
 class _FakeInstrument:
-    """Прибор-заглушка: расстояние задаётся таблицей, весов не нужно.
-
-    Нужен, чтобы арифметику вердикта можно было проверить БЕЗ 300 МБ весов.
-    Без него ветки «покрытия не хватило» и «контроль провалился» проверялись бы
-    только там, где есть живой прибор, то есть почти никогда.
-    """
+    """Прибор-заглушка: расстояние задаётся таблицей, весов не нужно."""
 
     def __init__(self, table: dict, sizes: dict | None = None):
         self.table = table
@@ -72,14 +49,7 @@ class _FakeInstrument:
 
 
 def _verdict_of(text: str) -> str:
-    """Голова вердиктной строки, до двоеточия.
-
-    ЗАЧЕМ ОТДЕЛЬНАЯ ФУНКЦИЯ, А НЕ `assertIn`. `assertIn(PASS, text)` здесь
-    НЕ УМЕЕТ КРАСНЕТЬ: `PASS` — «годно», а `FAIL` — «не годно», то есть
-    «годно» есть подстрока «не годно», и проверка на успех зеленеет ровно на
-    провале. Найдено подменой вердикта в `control_verdict` на FAIL: тесты
-    остались зелёными. Это украшение из §9, и оно тут было.
-    """
+    """Голова вердиктной строки, до двоеточия."""
     return text.split(":", 1)[0].strip()
 
 
@@ -149,7 +119,6 @@ class TheMedoidIsBannedByCodeNotByAgreement(unittest.TestCase):
 class TheVerdictRestsOnTheRawPhotoAndNothingElse(unittest.TestCase):
 
     def setUp(self):
-        # Кадры далеко от сырого фото (0.5) и близко к референсу (0.05).
         self.table = {"raw.png": 0.0, "ref.png": 0.45, "alien.png": 5.0,
                       "f1.png": 0.5, "f2.png": 0.52, "f3.png": 0.48}
         self.restore = _with_instrument(_FakeInstrument(self.table))
@@ -185,14 +154,7 @@ class TheVerdictRestsOnTheRawPhotoAndNothingElse(unittest.TestCase):
 
 
 class DRefAsksWhatTheUpscaleDidAndNotWhatAGeneratorDid(unittest.TestCase):
-    """ХЭНДОФ §2 и §6 A: референс = сырая фотография + АПСКЕЙЛ ЛИЦА.
-
-    Порождённого референса в продукте нет, значит и вопрос у d_ref другой:
-    не «что дал генератор референса», а «что дал апскейл». Проверяется и смысл
-    (арифметика вердикта), и имя (старый аргумент обязан падать), потому что
-    имя `reference` несло снятую формулировку и молчаливый алиас оставил бы
-    вызывающего в уверенности, что он подаёт порождённое.
-    """
+    """ХЭНДОФ §2 и §6 A: референс = сырая фотография + АПСКЕЙЛ ЛИЦА."""
 
     def tearDown(self):
         if hasattr(self, "restore"):
@@ -343,12 +305,7 @@ class TheNegativeControlIsPartOfTheMeasurement(unittest.TestCase):
 
 
 class TheFourthNumberSeparatesTwoDifferentIllnesses(unittest.TestCase):
-    """`d_drv`: «похоже на драйвинг» и «похоже на АКТЁРА драйвинга» — разное.
-
-    Без этой оси обе болезни одинаково ухудшают `d_raw`, а лечение у них
-    разное. Нужна она гипотезе LoRA темплейта: если такая LoRA потечёт, выход
-    поедет к актёру, а не к клиенту.
-    """
+    """`d_drv`: «похоже на драйвинг» и «похоже на АКТЁРА драйвинга» — разное."""
 
     def tearDown(self):
         if hasattr(self, "restore"):
@@ -396,17 +353,9 @@ class TheFourthNumberSeparatesTwoDifferentIllnesses(unittest.TestCase):
 
 
 class IdentityIsMeasuredAfterFaceRestoreAndReportedAsAPair(unittest.TestCase):
-    """ХЭНДОФ §6 A. Один бар на обе половины — иначе числа несравнимы.
-
-    Кадрировка во весь рост даёт лицо 63–80 px против видео-бара 100, то есть
-    «судить нечем». Доводка лица переводит кадры в судимые, и пара «до → после»
-    показывает, что дала именно она.
-    """
+    """ХЭНДОФ §6 A. Один бар на обе половины — иначе числа несравнимы."""
 
     def tearDown(self):
-        # Не все тесты класса ставят прибор: проверка СИГНАТУРЫ прибора не
-        # трогает вовсе. Безусловный `self.restore()` уронил её ошибкой в
-        # уборке — поймано прогоном, а не рассуждением.
         if hasattr(self, "restore"):
             self.restore()
 
@@ -423,19 +372,13 @@ class IdentityIsMeasuredAfterFaceRestoreAndReportedAsAPair(unittest.TestCase):
                           "a1.png": 0.2, "a2.png": 0.22})
         self.assertEqual(got["bar"], SAME_PERSON_MAX)
         self.assertNotIn("min_face_px", got)
-        # Обе половины отчитались одинаковыми условиями — сравнимость их чисел
-        # видна из результата, а не подразумевается по коду вызывающего.
         self.assertEqual(got["before"]["bar"], SAME_PERSON_MAX)
         self.assertEqual(got["after"]["bar"], SAME_PERSON_MAX)
         self.assertEqual(got["before"]["min_face_px"],
                          got["after"]["min_face_px"])
 
     def test_the_signature_offers_no_way_to_set_two_different_bars(self):
-        """Не «не рекомендуется», а НЕВОЗМОЖНО: параметра бара нет вовсе.
-
-        Тест краснеет от появления любого `bar`, `before_bar`, `after_bar` —
-        то есть сторожит саму возможность дефекта, а не один его экземпляр.
-        """
+        """Не «не рекомендуется», а НЕВОЗМОЖНО: параметра бара нет вовсе."""
         import inspect
 
         names = list(inspect.signature(fi.before_after_restore).parameters)
@@ -445,12 +388,7 @@ class IdentityIsMeasuredAfterFaceRestoreAndReportedAsAPair(unittest.TestCase):
                          ["before_frames", "after_frames"])
 
     def test_both_halves_are_measured_with_literally_the_same_arguments(self):
-        """Мутация условий: разъехавшиеся половины обязаны краснеть.
-
-        Половины меряются одной распаковкой `**common`. Здесь вызов `distances`
-        подменяется писцом: если однажды кто-то передаст одной половине свой
-        отсев, записи разойдутся и тест покраснеет.
-        """
+        """Мутация условий: разъехавшиеся половины обязаны краснеть."""
         seen = []
         original = fi.distances
 
@@ -472,12 +410,7 @@ class IdentityIsMeasuredAfterFaceRestoreAndReportedAsAPair(unittest.TestCase):
         self.assertEqual(seen[0], seen[1])
 
     def test_halves_measured_by_different_conditions_are_refused(self):
-        """Сверка на выходе: несравнимая пара роняет прогон, а не «улучшает».
-
-        Сегодня эта ветка недостижима — и именно поэтому проверяется прямой
-        подменой одной половины. Без теста защита от будущей правки была бы
-        строкой, которую никто не исполнял.
-        """
+        """Сверка на выходе: несравнимая пара роняет прогон, а не «улучшает»."""
         self.restore = _with_instrument(_FakeInstrument(
             {"raw.png": 0.0, "b1.png": 0.4, "a1.png": 0.2}))
         original = fi.distances
@@ -486,7 +419,7 @@ class IdentityIsMeasuredAfterFaceRestoreAndReportedAsAPair(unittest.TestCase):
         def skewed(frames, anchor, **kw):
             calls["n"] += 1
             out = original(frames, anchor, **kw)
-            if calls["n"] == 2:  # вторая половина «сужает» бар себе
+            if calls["n"] == 2:
                 out = {**out, "bar": 0.5}
             return out
 
@@ -542,16 +475,7 @@ class IdentityIsMeasuredAfterFaceRestoreAndReportedAsAPair(unittest.TestCase):
 
 
 class TheFaceRestorerItselfNeedsANegativeControl(unittest.TestCase):
-    """ применённое к ДОВОДЧИКУ: генератор стоит ПЕРЕД прибором.
-
-    §7 требует мерить личность после доводки лица, но не даёт входа, на
-    котором доводчик обязан провалиться. Без такого входа «хороший d_raw»
-    неотличим от «доводчик напечатал лицо с референса»: пара «до → после» на
-    кадрах клиента одинаково красива в обоих случаях.
-
-    Прогона доводчика не было — нужна карта, помечено НЕПРОВЕРЕНО. Здесь
-    проверяется арифметика вердикта, и она обязана краснеть.
-    """
+    """применённое к ДОВОДЧИКУ: генератор стоит ПЕРЕД прибором."""
 
     def tearDown(self):
         if hasattr(self, "restore"):
@@ -686,9 +610,6 @@ class TheAcceptanceSaysHowManyRowsItActuallyReproduced(unittest.TestCase):
             fi.ACCEPTANCE_ROWS["негативный контроль"]["outcome"] = fi.PASS
             self.assertEqual(fi.acceptance_report()["outcome"], fi.PASS)
             self.assertEqual(fi.acceptance_report()["reproduced"], 3)
-            # текст отчёта выводится из состояния, а не дописан навсегда.
-            # Первая редакция печатала «НЕ ЗАКРЫТА» и при трёх закрытых
-            # строках — поймано этой самой мутацией.
             self.assertNotIn("НЕ ЗАКРЫТА", fi.acceptance_report()["note"])
         finally:
             row["outcome"] = original
@@ -697,11 +618,7 @@ class TheAcceptanceSaysHowManyRowsItActuallyReproduced(unittest.TestCase):
 
 
 class TheLoraIsAcceptedByWhetherItSpoilsDRaw(unittest.TestCase):
-    """Приёмка гипотезы LoRA темплейта одним прямым вопросом.
-
-    НЕПРОВЕРЕНО: парного прогона не было, LoRA не обучалась. Проверяется здесь
-    только арифметика сравнения — и то, что она умеет краснеть.
-    """
+    """Приёмка гипотезы LoRA темплейта одним прямым вопросом."""
 
     def test_a_worse_median_with_lora_fails(self):
         got = fi.lora_regression({"median": 0.30}, {"median": 0.40})
@@ -784,13 +701,7 @@ class TheSizeFilterChangesTheNumberAndSaysSo(unittest.TestCase):
                      "нет весов buffalo_l или demo/lora_dataset — "
                      "числа воспроизвести нечем")
 class TheMeasuredRowsAreReproduced(unittest.TestCase):
-    """Приёмка потока. Воспроизводит то, что ВОСПРОИЗВОДИМО, и только это.
-
-    Строка «против сырой фотографии» здесь ОТСУТСТВУЕТ, и это не пропуск: сырой
-    фотографии нет в репозитории — составитель шаблонов исключил её намеренно. Тест ниже
-    сторожит именно это: если фотография появится, он покраснеет и потребует
-    дописать строку.
-    """
+    """Приёмка потока. Воспроизводит то, что ВОСПРОИЗВОДИМО, и только это."""
 
     @classmethod
     def setUpClass(cls):
@@ -808,10 +719,7 @@ class TheMeasuredRowsAreReproduced(unittest.TestCase):
         self.assertEqual((got["inside"], got["judged"]), (19, 21))
 
     def test_the_recorded_medoid_row_equals_what_the_run_gives(self):
-        """Запись в `ACCEPTANCE_ROWS` сверяется с прогоном, а не с памятью.
-
-        Иначе таблица приёмки — пересказ, который разъедется с деревом молча.
-        """
+        """Запись в `ACCEPTANCE_ROWS` сверяется с прогоном, а не с памятью."""
         got = fi.distances(self.generated, self.medoid)
         row = fi.ACCEPTANCE_ROWS["против медоида"]["reproduced"]
         self.assertEqual((row["median"], row["inside"], row["judged"]),
@@ -830,13 +738,7 @@ class TheMeasuredRowsAreReproduced(unittest.TestCase):
                       "— дописать строку d_raw в приёмку потока A")
 
     def test_no_sample_claims_to_be_the_uploaded_photo(self):
-        """Второй сторож той же дыры, с другой стороны — по составу набора.
-
-        Первый читает прозу манифеста и упадёт от переписанной формулировки;
-        этот смотрит на происхождение кадров и упадёт от ПОЯВЛЕНИЯ кадра с
-        новым происхождением. Один сторож на такую находку — мало: строку
-        приёмки, которая не закрыта, легко закрыть словами.
-        """
+        """Второй сторож той же дыры, с другой стороны — по составу набора."""
         data = json.loads(MANIFEST.read_text(encoding="utf-8"))
         self.assertEqual(sorted(data["by_origin"]),
                          ["augmented", "generated", "real"],
@@ -856,24 +758,10 @@ class TheMeasuredRowsAreReproduced(unittest.TestCase):
         self.assertIsNone(row["reproduced"])
         self.assertIn("против сырой фотографии", got["unmeasured"])
 
-    #: Контрольный кадр лежит в `lipsync/fixtures/`, а НЕ в `veoprobe/`, и это
-    #: не вкус. Полный аудит с мутациями поймал: `veoprobe` не входит в
-    #: `codeaudit.DATA_LINKS`, то есть в копию для мутаций не попадает, и оба
-    #: теста контроля там ПРОПУСКАЛИСЬ — «2 сторожа молчат во время КАЖДОЙ
-    #: мутации». Пропущенный тест мутанта не убивает, и аудит тихо слабел.
-    #: `fixtures` в копию линкуется, поэтому негативный контроль живёт там же,
-    #: где остальной измерительный инвентарь.
-    #: Берётся из модуля, а не собирается здесь второй строкой пути:
-    #: разъехавшийся строковый литерал на этом проекте уже стоил 1.7 ГБ.
-    #: ~~`ALIEN = ROOT / "lipsync" / "fixtures" / "foreign_face.png"`~~ —
-    #: снято, закрыто константой `fork_identity.FOREIGN_FACE_FIXTURE`.
     ALIEN = fi.FOREIGN_FACE_FIXTURE
 
     def test_the_control_fixture_is_present_and_absence_is_a_failure(self):
-        """пропуск — не «прошло». Кадр лежит в репозитории, и если его нет,
-        это находка, а не повод промолчать. Раньше здесь стоял `skipTest`, и
-        два сторожа контроля молчали бы в любом дереве, где кадр потерялся.
-        """
+        """пропуск — не «прошло». Кадр лежит в репозитории, и если его нет,"""
         self.assertTrue(self.ALIEN.exists(),
                         f"нет {self.ALIEN}: негативный контроль не поставлен, "
                         f"и это НЕ «контроль прошёл»")
@@ -886,13 +774,7 @@ class TheMeasuredRowsAreReproduced(unittest.TestCase):
         self.assertGreater(got["median"], fi.HARD_DRIFT_MAX)
 
     def test_the_control_does_not_reach_the_band_it_was_recorded_at(self):
-        """отрицательный результат записывается ЧИСЛОМ, а не сглаживается.
-
-        В задании контроль стоит на 0.96–1.05. Самое далёкое, что нашлось в
-        дереве, — 0.6809. Тест закрепляет РАЗРЫВ с ОБЕИХ сторон: снизу, чтобы
-        контроль не ослаб незаметно, и сверху, чтобы день, когда он дотянет до
-        полосы, не прошёл молча.
-        """
+        """отрицательный результат записывается ЧИСЛОМ, а не сглаживается."""
         got = fi.distances(self.generated, self.ALIEN)
         self.assertEqual(got["median"], 0.6809,
                          "число контроля изменилось — записанное в "
@@ -915,15 +797,7 @@ class TheMeasuredRowsAreReproduced(unittest.TestCase):
                          "можно закрывать, снять UNMEASURED")
 
     def test_two_different_statements_about_the_control_stay_separate(self):
-        """«Контроль сработал» и «строка приёмки закрыта» — РАЗНОЕ.
-
-        По собственному бару проекта 0.6809 выше HARD_DRIFT_MAX 0.6, поэтому
-        `control_verdict` даёт годно: прибор действительно говорит «другой
-        человек». Но записанная полоса 0.96–1.05 НЕ ВОСПРОИЗВЕДЕНА, и строка
-        приёмки остаётся «не смогли». Именно так на этом проекте уже был
-        отчёт, где две строки об одних пикселях говорили PASS и «судить
-        нечем» одновременно, — здесь они разведены и обе названы.
-        """
+        """«Контроль сработал» и «строка приёмки закрыта» — РАЗНОЕ."""
         d = fi.distances(self.generated, self.ALIEN)
         self.assertEqual(_verdict_of(fi.control_verdict(d)), fi.PASS)
         self.assertEqual(

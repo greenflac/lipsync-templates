@@ -1,21 +1,4 @@
-"""Сторожа приёма входов. Каждый тест ловит ДЕФЕКТ, а не строчку.
-
-ЧТО ЗДЕСЬ ЕСТЬ, КРОМЕ ПРОВЕРОК ПОВЕДЕНИЯ:
-
-    мутация констант-решений В ОБЕ СТОРОНЫ — строже и слабее, для
-        MIN_SCENE_SECONDS, ORPHAN_WRIST_WARN, MIN_FACE_PX, MIN_VISIBILITY,
-        FRAME_COUNT_EXACT, PHOTO_PEOPLE_EXPECTED;
-    негативный контроль у КАЖДОГО прибора — вход, на котором прибор
-        обязан сказать «нет», рядом с входом, на котором он обязан шевельнуться;
-    третий исход — отдельными тестами на то, что «не смогли» не свернулось
-        ни в «годно», ни в «не годно».
-
-ОЖИДАЕМОЕ ВЕЗДЕ ЛИТЕРАЛ: `3.0`, `100`, `0.5` написаны здесь руками. Если
-завтра планку тронут в модуле, эти тесты обязаны покраснеть — импортированное
-ожидание уехало бы вместе с кодом и промолчало.
-
-СЕТИ И ДИСКА ЗДЕСЬ НЕТ, и это обеспечено конструкцией, а не договорённостью: каждый прибор получает свою точку внедрения списком-заглушкой.
-"""
+"""Сторожа приёма входов. Каждый тест ловит ДЕФЕКТ, а не строчку."""
 
 from __future__ import annotations
 
@@ -25,15 +8,9 @@ from lipsync import fork_intake as fi
 from lipsync.fork_identity import FAIL, PASS, UNMEASURED
 
 
-# --------------------------------------------------------------------------
-# Заглушки точек внедрения
-# --------------------------------------------------------------------------
-
 PROBE_JSON = ('{"programs":[],"streams":[{"avg_frame_rate":"30/1",'
               '"duration":"10.166667","nb_read_frames":"305"}]}')
 
-#: Настоящий хвост stderr от ffmpeg -stats, с возвратами каретки и первым
-#: вхождением `frame= 0`. Записан с живого прогона, а не сочинён.
 FFMPEG_STATS = ("frame=    0 fps=0.0 q=-0.0 size=       0kB time=00:00:00.00 "
                 "bitrate=N/A speed=   0x    \rframe=  307 fps=0.0 q=-0.0 "
                 "Lsize=N/A time=00:00:10.20 bitrate=N/A speed=37.6x    ")
@@ -63,13 +40,8 @@ CLEAN_POSE = {
     "l_wrist": pose_point(0.3, 0.7, 0.9), "r_wrist": pose_point(0.7, 0.7, 0.9),
 }
 
-#: Кисть видна, локоть той же руки — нет. Ровно определение сироты.
 ORPHAN_POSE = {**CLEAN_POSE, "l_elbow": pose_point(0.35, 0.5, 0.2)}
 
-
-# --------------------------------------------------------------------------
-# Ось 1: дырки во временных метках
-# --------------------------------------------------------------------------
 
 class Timestamps(unittest.TestCase):
 
@@ -83,11 +55,7 @@ class Timestamps(unittest.TestCase):
         self.assertIn("-vsync 0", v["advice"])
 
     def test_the_arms_numbers_are_clean(self):
-        """НЕГАТИВНЫЙ КОНТРОЛЬ прибора: на здоровом файле он молчит.
-
-        Без этого теста «не годно» на всём подряд выглядело бы как работа.
-        ИЗМЕРЕНО на driving_arms: 373 / 373 / 373.
-        """
+        """НЕГАТИВНЫЙ КОНТРОЛЬ прибора: на здоровом файле он молчит."""
         v = fi.timestamp_verdict(373, 373, 373)
         self.assertEqual(v["outcome"], "годно")
         self.assertEqual(v["violations"], 0)
@@ -108,12 +76,7 @@ class Timestamps(unittest.TestCase):
         self.assertIn("НЕ ЛЕЧИТ", v["note"])
 
     def test_mutating_the_tolerance_both_ways_turns_a_verdict(self):
-        """FRAME_COUNT_EXACT сторожится в обе стороны.
-
-        Слабее (допуск 2) — дефект 305/307 обязан ПЕРЕСТАТЬ ловиться;
-        строже он быть уже не может (0 — минимум), поэтому вторая сторона
-        мутируется на здоровом файле через отрицательный допуск.
-        """
+        """FRAME_COUNT_EXACT сторожится в обе стороны."""
         was = fi.FRAME_COUNT_EXACT
         try:
             fi.FRAME_COUNT_EXACT = 2
@@ -159,10 +122,6 @@ class ParsingTheInstruments(unittest.TestCase):
         self.assertIsNone(r["frames"])
 
 
-# --------------------------------------------------------------------------
-# Оси 2 и 3: швы и длина сцены
-# --------------------------------------------------------------------------
-
 class Scenes(unittest.TestCase):
 
     def test_no_cuts_is_one_scene_over_the_whole_clip(self):
@@ -202,11 +161,7 @@ class Scenes(unittest.TestCase):
         self.assertEqual(v0["outcome"], "не смогли проверить")
 
     def test_mutating_the_scene_bar_both_ways_turns_the_verdict(self):
-        """MIN_SCENE_SECONDS сторожится строже и слабее.
-
-        Сцена 3.0 с. Планка 3.5 — обязана краснеть; планка 2.5 — обязана
-        зеленеть. Значит константа действительно решает, а не украшает.
-        """
+        """MIN_SCENE_SECONDS сторожится строже и слабее."""
         scene_list = fi.scenes(200, [89])
         self.assertEqual(fi.scene_length_verdict(scene_list, 30.0,
                                                  min_seconds=3.5)["outcome"],
@@ -230,10 +185,6 @@ class Scenes(unittest.TestCase):
     def test_the_bar_is_the_owners_three_seconds(self):
         self.assertEqual(fi.MIN_SCENE_SECONDS, 3.0)
 
-
-# --------------------------------------------------------------------------
-# Ось 4: сиротские кисти — МЯГКАЯ
-# --------------------------------------------------------------------------
 
 class OrphanWrists(unittest.TestCase):
 
@@ -264,13 +215,7 @@ class OrphanWrists(unittest.TestCase):
         self.assertIsNone(fi.is_orphan_wrist({}))
 
     def test_mutating_visibility_both_ways_changes_who_is_an_orphan(self):
-        """MIN_VISIBILITY сторожится в обе стороны.
-
-        Локоть подан с видимостью 0.2. Планка 0.1 — локоть считается видным,
-        сироты нет; планка 0.95 — не видно уже ничего, и сирота исчезает
-        по другой причине (кисть тоже перестала быть видной). Обе стороны
-        обязаны менять ответ, иначе константу никто не сторожит.
-        """
+        """MIN_VISIBILITY сторожится в обе стороны."""
         was = fi.MIN_VISIBILITY
         try:
             fi.MIN_VISIBILITY = 0.1
@@ -284,10 +229,7 @@ class OrphanWrists(unittest.TestCase):
         self.assertEqual(fi.MIN_VISIBILITY, 0.5)
 
     def test_the_soft_axis_never_says_not_good(self):
-        """ГЛАВНОЕ свойство этой оси: она НЕ критерий отказа.
-
-        Составитель шаблонов посмотрел выход с 21% сирот и назвал кисти правильными.
-        """
+        """ГЛАВНОЕ свойство этой оси: она НЕ критерий отказа."""
         for share in (0.0, 0.04, 0.21, 0.99, 1.0):
             with self.subTest(share=share):
                 v = fi.orphan_verdict(share, 100, 0)
@@ -319,10 +261,6 @@ class OrphanWrists(unittest.TestCase):
         self.assertFalse(v["warn"])
 
 
-# --------------------------------------------------------------------------
-# Ось 5: размер лица
-# --------------------------------------------------------------------------
-
 class FaceSize(unittest.TestCase):
 
     def test_the_selfie_range_passes_the_bar(self):
@@ -332,12 +270,7 @@ class FaceSize(unittest.TestCase):
         self.assertEqual((v["checked"], v["violations"]), (3, 0))
 
     def test_the_yogaball_range_is_counted_but_no_longer_sinks_the_run(self):
-        """ПЕРЕПИСАН под решение составителя шаблонов: ось — ПРЕДУПРЕЖДЕНИЕ.
-
-        ИЗМЕРЕНО: driving_yogaball 87..96 px — все три кадра мельче планки.
-        Числа обязаны остаться наблюдаемыми, вердикт больше не роняется:
-        личность на таком материале судит оператор глазами.
-        """
+        """ПЕРЕПИСАН под решение составителя шаблонов: ось — ПРЕДУПРЕЖДЕНИЕ."""
         v = fi.face_size_verdict([87, 90, 96], 0, 0)
         self.assertEqual(v["outcome"], "годно")
         self.assertEqual(v["small"], 3)
@@ -346,8 +279,6 @@ class FaceSize(unittest.TestCase):
         self.assertIn("ОПЕРАТОР", v["note"])
 
     def test_a_frame_without_a_face_is_counted_not_excused(self):
-        # Кадр без лица по-прежнему ИЗМЕРЕНИЕ, а не «не смогли»: он попадает
-        # в `hurt` и в предупреждение. Изменился только вес вердикта.
         v = fi.face_size_verdict([234], 5, 0)
         self.assertEqual(v["outcome"], "годно")
         self.assertEqual(v["hurt"], 5)
@@ -355,8 +286,6 @@ class FaceSize(unittest.TestCase):
         self.assertIn("ПРЕДУПРЕЖДЕНИЕ", v["note"])
 
     def test_a_clean_set_gets_NO_warning(self):
-        # НЕГАТИВНЫЙ КОНТРОЛЬ предупреждения: на годном материале оно обязано
-        # молчать, иначе предупреждает всегда и не значит ничего.
         v = fi.face_size_verdict([234, 369], 0, 0)
         self.assertEqual(v["outcome"], "годно")
         self.assertEqual(v["hurt"], 0)
@@ -369,16 +298,13 @@ class FaceSize(unittest.TestCase):
         self.assertEqual(v["violations"], 0)
 
     def test_mutating_the_face_bar_both_ways_moves_the_counted_numbers(self):
-        """MIN_FACE_PX строже и слабее. Вердикт больше не двигается —
-        двигаются ЧИСЛА, и мутация видна по ним и по предупреждению."""
+        """MIN_FACE_PX строже и слабее. Вердикт больше не двигается —"""
         loose = fi.face_size_verdict([87, 96], 0, 0, min_face_px=80)
         self.assertEqual(loose["small"], 0)
         self.assertNotIn("ПРЕДУПРЕЖДЕНИЕ", loose["note"])
         strict = fi.face_size_verdict([234, 369], 0, 0, min_face_px=400)
         self.assertEqual(strict["small"], 2)
         self.assertIn("ПРЕДУПРЕЖДЕНИЕ", strict["note"])
-        # Та же мутация, но через САМУ ОТГРУЖАЕМУЮ константу, а не через
-        # параметр: иначе тест сторожил бы аргумент, а не планку модуля.
         was = fi.MIN_FACE_PX
         try:
             fi.MIN_FACE_PX = 80
@@ -389,10 +315,6 @@ class FaceSize(unittest.TestCase):
             fi.MIN_FACE_PX = was
         self.assertEqual(fi.MIN_FACE_PX, 100)
 
-
-# --------------------------------------------------------------------------
-# Выбор окна
-# --------------------------------------------------------------------------
 
 class Window(unittest.TestCase):
 
@@ -448,10 +370,6 @@ class Window(unittest.TestCase):
                     fi.window_argv("in.mp4", "out.mp4", a, b)
 
 
-# --------------------------------------------------------------------------
-# Три числа рядом с вердиктом
-# --------------------------------------------------------------------------
-
 class ThreeOutcomesAndThreeNumbers(unittest.TestCase):
 
     def test_zero_violations_over_zero_checks_is_not_success(self):
@@ -472,16 +390,8 @@ class ThreeOutcomesAndThreeNumbers(unittest.TestCase):
                          ("годно", "не годно", "не смогли проверить"))
 
 
-# --------------------------------------------------------------------------
-# Приборы целиком, на заглушках: ни диска, ни сети
-# --------------------------------------------------------------------------
-
 class DrivingIntake(unittest.TestCase):
 
-    # 95 кадров при 30 к/с — 3.167 с, то есть единственная сцена ПРОХОДИТ
-    # планку 3.0 с. Число выбрано так намеренно: иначе на каждом стенде
-    # краснела бы ось длины сцены, и ось, ради которой тест написан, была бы
-    # не видна за ней.
     def _run(self, *, plain, fixed, poses, faces, n=95, cut_at=None,
              product=None):
         paths = [f"{i:05d}.png" for i in range(n)]
@@ -490,7 +400,6 @@ class DrivingIntake(unittest.TestCase):
         def gray(path):
             import numpy as np
             k = int(str(path).split(".")[0])
-            # Ступенька яркости ровно на шве: типичный шаг 1, шов — 100.
             base = sum(100 for c in cut_at if k > c) + k
             return np.full((4, 4), float(base))
 
@@ -532,8 +441,6 @@ class DrivingIntake(unittest.TestCase):
         self.assertIn("orphan_wrists", r["warnings"])
 
     def test_small_faces_warn_but_no_longer_sink_the_run(self):
-        # ПЕРЕПИСАН: жёсткий отказ выбрасывал ЧЕТЫРЕ годных драйвинга
-        # из четырёх (b2..b5: одна сцена, склеек ноль, 14.6..31.5 с).
         r = self._run(plain=305, fixed=305, poses={},
                       faces={f"{i:05d}.png": {"face_px": 90} for i in range(95)})
         self.assertEqual(r["axes"]["face_size"]["outcome"], "годно")
@@ -544,7 +451,6 @@ class DrivingIntake(unittest.TestCase):
         r = self._run(plain=305, fixed=305, poses={}, faces={}, n=6, cut_at=[2])
         self.assertEqual(r["axes"]["cuts"]["cuts"], [2])
         self.assertEqual([s["frames"] for s in r["scenes"]], [3, 3])
-        # 3 кадра при 30 к/с — 0.1 с, то есть заведомо короче трёх секунд.
         self.assertEqual(r["axes"]["scenes"]["outcome"], "не годно")
         self.assertEqual(r["axes"]["scenes"]["short"], [0, 1])
 
@@ -686,11 +592,7 @@ class BarsAreImportedNotCopied(unittest.TestCase):
         self.assertEqual(fi.MIN_FACE_PX, 100)
 
     def test_the_module_does_not_redefine_a_bar_it_borrowed(self):
-        """Сторож дефекта: копия планки числом в тексте модуля.
-
-        Ищется присваивание НАШЕГО имени чужой планке — то есть ровно та
-        форма, которой нарушается: `SAME_PERSON_MAX = 0.35` в этом файле.
-        """
+        """Сторож дефекта: копия планки числом в тексте модуля."""
         import ast
         from pathlib import Path
 

@@ -1,31 +1,4 @@
-"""Раскодировщик видео: сторожа.
-
-НИ ОДИН ТЕСТ ЗДЕСЬ НЕ ЗАПУСКАЕТ ffmpeg И НЕ ХОДИТ В СЕТЬ. Внешний мир
-подменяется в двух точках внедрения — `read_probe` и `run_decode`, — и это
-обеспечено не договорённостью, а проверкой `test_the_outside_world_is_touched_
-in_exactly_two_places`, которая разбирает дерево модуля и требует, чтобы
-`subprocess.run` не встречался больше нигде.
-
-ОТВЕТЫ ffprobe В ЭТОМ ФАЙЛЕ — НАСТОЯЩИЕ. Они сняты прогоном на видео, которые
-смена породила сама (`ffmpeg -f lavfi -i testsrc`), и вставлены сюда ЛИТЕРАЛАМИ: импортировать их из проверяемого модуля значило бы проверять, что модуль
-согласен сам с собой. Поля обрезаны до тех, которые модуль читает, — остальные
-семьдесят строк ответа ничего не сторожат.
-
-ФИКСТУРЫ С ОБОИХ КРАЁВ И ИЗ СЕРЕДИНЫ: один кадр, 60 кадров (короче окна
-77), 320 кадров (длиннее 305 — нашего потолка), частота 24 (не 30), частота
-29.97 (NTSC, похожая на 30 и не равная ей), файл со звуком, битый файл, файл не
-видео вовсе, пустой файл, каталог вместо файла.
-
-НЕГАТИВНЫЙ КОНТРОЛЬ В ОБЕ СТОРОНЫ: на каждый вход, где прибор обязан
-сказать «не годно», здесь стоит соседний, где он обязан пропустить, и оба
-проверяются РАВНОСИЛЬНО. Вход, где прибор обязан сказать «не смогли», разведён
-с обоими: подменённый ffmpeg, которого «нет на машине», не имеет права дать ни
-«годно», ни «не годно».
-
-СЛОВО «ГОДНО» — ПОДСТРОКА СЛОВА «НЕ ГОДНО». Поэтому исход здесь сверяется
-ТОЛЬКО `assertEqual`, и `assertIn("годно", ...)` в этом файле нет ни одного:
-именно так тринадцать сторожей проекта зеленели ровно на провале.
-"""
+"""Раскодировщик видео: сторожа."""
 
 from __future__ import annotations
 
@@ -37,10 +10,6 @@ from pathlib import Path
 from lipsync import fork_video as fv
 from lipsync.fork_identity import FAIL, PASS, UNMEASURED
 
-# Самый маленький настоящий PNG: 1x1, чёрный. Кадры фальшивого раскодировщика
-# обязаны быть НАСТОЯЩИМИ картинками — `fork_run` открывает поданные кадры
-# `Image.verify()`, и набор из ста файлов с мусором внутри прошёл бы этот тест
-# и упал бы на первом же живом шаге.
 ONE_PIXEL_PNG = base64.b64decode(
     b"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAAAAAA6fptVAAAACklEQVR4nGNgAAAAAgAB"
     b"c3UBGAAAAABJRU5ErkJggg==")
@@ -66,8 +35,6 @@ def _probe_json(*, fps="30/1", nb='"nb_frames": "60",', dur="2.000000",
 }""")
 
 
-#: Ровно то, что напечатал ffprobe на битом файле и на текстовом файле:
-#: КОД ВОЗВРАТА 1, а на stdout — пустой объект. Литерал снят прогоном.
 PROBE_STDOUT_BROKEN = "{\n\n}\n"
 PROBE_STDERR_BROKEN = ("[mov,mp4,m4a,3gp,3g2,mj2 @ 0x55e104b3c700] moov atom "
                        "not found\nv_broken.mp4: Invalid data found when "
@@ -75,8 +42,6 @@ PROBE_STDERR_BROKEN = ("[mov,mp4,m4a,3gp,3g2,mj2 @ 0x55e104b3c700] moov atom "
 PROBE_STDERR_NOT_VIDEO = ("not_a_video.txt: Invalid data found when processing "
                           "input\n")
 
-#: То, что печатает сам ffmpeg на битом входе, и его код возврата. Снято
-#: прогоном: код именно 183, а не 1.
 DECODE_RC_BROKEN = 183
 DECODE_STDERR_BROKEN = ("[in#0 @ 0x55a6d95f0e00] Error opening input: Invalid "
                         "data found when processing input\nError opening input "
@@ -97,13 +62,7 @@ class _Prober:
 
 
 class _Decoder:
-    """Подменённый ffmpeg: кладёт `n` настоящих PNG с теми же именами.
-
-    Имена берутся у `fork_video.frame_name`, и это НЕ ленивое переиспользование:
-    подделка обязана вести себя как настоящий ffmpeg с ключом `-start_number 0`
-    и шаблоном `%05d.png`, а второй способ записать то же имя разъехался бы с
-    первым молча.
-    """
+    """Подменённый ffmpeg: кладёт `n` настоящих PNG с теми же именами."""
 
     def __init__(self, n=0, *, ran=True, code=0, err="", why="", payload=None):
         self.n, self.answer = n, {"ran": ran, "code": code, "out": "",
@@ -144,7 +103,6 @@ class ParseProbe(unittest.TestCase):
         self.assertEqual(got["codec"], "h264")
 
     def test_an_audio_track_is_seen_and_a_missing_one_is_not_invented(self):
-        # Обе стороны равносильно: «звука нет» — это ответ, а не молчание.
         self.assertIs(fv.parse_probe(_probe_json(audio=True))["audio"], True)
         self.assertIs(fv.parse_probe(_probe_json(audio=False))["audio"], False)
 
@@ -158,8 +116,6 @@ class ParseProbe(unittest.TestCase):
     def test_without_nb_frames_the_count_is_named_an_estimate(self):
         got = fv.parse_probe(_probe_json(nb=""))
         self.assertEqual(got["frames"], 60)
-        # Число то же, происхождение другое — и оно обязано быть названо, иначе
-        # оценку не отличить от замера.
         self.assertEqual(got["frames_from"], "длительность x частота")
 
     def test_a_broken_file_answer_has_no_video_stream(self):
@@ -197,21 +153,13 @@ class FpsRule(unittest.TestCase):
         self.assertEqual(got["fps"], 24.0)
 
     def test_upsampling_is_refused(self):
-        # Негативный контроль, сторона «обязан сказать нет».
         got = fv.fps_plan(24.0, want=30)
         self.assertEqual(got["outcome"], FAIL)
         self.assertEqual(got["mode"], fv.REFUSE)
         self.assertIsNone(got["fps"])
 
     def test_2997_to_30_is_refused_and_30005_to_30_is_not(self):
-        """Допуск частоты зажат литералами С ДВУХ СТОРОН.
-
-        29.97003 отстоит от 30 на 0.02997, 30.005 — на 0.005. Допуск обязан
-        лежать между ними: расширь его до трёх сотых — и NTSC-ное 29.97 молча
-        сойдёт за наши 30, то есть приведение ВВЕРХ пройдёт незамеченным;
-        сузь до нуля — и годный источник, у которого частота пришла делением
-        целых, начнёт браковаться на шуме последнего разряда.
-        """
+        """Допуск частоты зажат литералами С ДВУХ СТОРОН."""
         self.assertEqual(fv.fps_plan(29.97002997002997, want=30)["outcome"], FAIL)
         near = fv.fps_plan(30.005, want=30)
         self.assertEqual(near["outcome"], PASS)
@@ -233,7 +181,6 @@ class CountVerdict(unittest.TestCase):
 
     def test_zero_frames_is_a_failure_not_an_empty_success(self):
         got = fv.count_outcome(60, 0)
-        # Сверка ТОЛЬКО на равенство: «годно» — подстрока «не годно».
         self.assertEqual(got["outcome"], FAIL)
         self.assertNotEqual(got["outcome"], PASS)
 
@@ -241,13 +188,7 @@ class CountVerdict(unittest.TestCase):
         self.assertEqual(fv.count_outcome(60, 60)["outcome"], PASS)
 
     def test_the_count_tolerance_is_clamped_from_both_sides(self):
-        """Допуск в кадрах зажат литералами с двух сторон.
-
-        Расхождение в 1 кадр — округление «длительность на частоту» и обязано
-        проходить; расхождение в 2 объяснить округлением уже нельзя и проходить
-        не обязано. Ужми допуск до нуля — покраснеет первый assert; расширь до
-        двух — покраснеет второй.
-        """
+        """Допуск в кадрах зажат литералами с двух сторон."""
         self.assertEqual(fv.count_outcome(60, 61)["outcome"], PASS)
         self.assertEqual(fv.count_outcome(60, 59)["outcome"], PASS)
         self.assertEqual(fv.count_outcome(60, 62)["outcome"], UNMEASURED)
@@ -273,8 +214,6 @@ class ExpectedFrames(unittest.TestCase):
         self.assertEqual(fv.expected_frames(60, source_fps=30.0), 60)
 
     def test_dropping_to_24_of_30_expects_forty_eight(self):
-        # Число проверено настоящим ffmpeg: `-vf fps=24` на 60 кадрах при 30
-        # к/с положил ровно 48 файлов.
         self.assertEqual(
             fv.expected_frames(60, source_fps=30.0, out_fps=24.0), 48)
 
@@ -294,13 +233,7 @@ class FrameNames(unittest.TestCase):
         self.assertEqual(fv.frame_name(99999), "99999.png")
 
     def test_string_order_equals_number_order_over_our_whole_range(self):
-        """Ширина поля зажата сверху нашим потолком, снизу — сортировкой.
-
-        305 кадров — потолок десятисекундного ролика. Ужми ширину до двух
-        знаков — и `frame_name(100)` даст «100.png», которое встанет в
-        сортировке ПЕРЕД «99.png», то есть порядок кадров перестанет быть
-        порядком времени. Именно этот тест обязан покраснеть.
-        """
+        """Ширина поля зажата сверху нашим потолком, снизу — сортировкой."""
         names = [fv.frame_name(i) for i in range(0, 306)]
         self.assertEqual(names, sorted(names))
         self.assertEqual(len(set(len(n) for n in names)), 1)
@@ -310,41 +243,24 @@ class FrameNames(unittest.TestCase):
             fv.frame_name(-1)
 
     def test_frame_name_has_no_start_of_its_own(self):
-        """Начало нумерации выбирает ВЫЗЫВАЮЩИЙ, а не эта функция.
-
-        Их двое и они разные: `decode_argv` просит у ffmpeg
-        `-start_number 0`, `fork_splice.write_sequence` зовёт
-        `frame_name(k + 1)`. Ожидаемое здесь — литералы: собери имя
-        любым вторым способом — и он разъедется молча.
-        """
+        """Начало нумерации выбирает ВЫЗЫВАЮЩИЙ, а не эта функция."""
         self.assertEqual(fv.frame_name(0), "00000.png")
         self.assertEqual(fv.frame_name(1), "00001.png")
         self.assertEqual(fv.frame_name(361), "00361.png")
         self.assertEqual(fv.frame_name(362), "00362.png")
 
     def test_both_starts_sort_into_the_same_order(self):
-        """ЗАМЕР, вынесенный в сторож: раскладка с нуля и с единицы дают
-        ОДИН порядок у потребителя, который собирает кадры
-        `sorted(glob('*.png'))`.
-
-        Точки взяты на переходах разрядности (9/10, 99/100, 999/1000) и на
-        длине боевого ролика (362). Если начало нумерации когда-нибудь
-        станет расхождением по существу — покраснеет здесь, а не на монтаже.
-        """
+        """ЗАМЕР, вынесенный в сторож: раскладка с нуля и с единицы дают"""
         for n in (9, 10, 99, 100, 362, 999, 1000):
             with self.subTest(n=n):
                 zero = sorted(fv.frame_name(k) for k in range(n))
                 one = sorted(fv.frame_name(k + 1) for k in range(n))
-                # позиция в отсортованном списке -> номер кадра источника
                 self.assertEqual([int(x[:-4]) for x in zero], list(range(n)))
                 self.assertEqual([int(x[:-4]) - 1 for x in one], list(range(n)))
                 self.assertEqual(len(set(len(x) for x in zero + one)), 1)
 
     def test_the_order_would_break_without_the_padding(self):
-        """НЕГАТИВНЫЙ КОНТРОЛЬ к предыдущему: без дополнения нулями
-        порядок ЛОМАЕТСЯ на обоих началах — значит предыдущий тест меряет
-        дополнение, а не молчит всегда.
-        """
+        """НЕГАТИВНЫЙ КОНТРОЛЬ к предыдущему: без дополнения нулями"""
         for n in (100, 1000):
             for start in (0, 1):
                 with self.subTest(n=n, start=start):
@@ -363,8 +279,6 @@ class DecodeCommand(unittest.TestCase):
         self.assertTrue(argv[-1].endswith("%05d.png"), argv[-1])
 
     def test_frame_rate_is_passed_through_not_conformed(self):
-        # Без `passthrough` ffmpeg вправе дублировать и выбрасывать кадры под
-        # свою решётку — то есть МЕНЯТЬ ЧИСЛО КАДРОВ молча.
         argv = fv.decode_argv("in.mp4", "/out")
         self.assertIn("-fps_mode", argv)
         self.assertEqual(argv[argv.index("-fps_mode") + 1], "passthrough")
@@ -412,12 +326,9 @@ class Probe(unittest.TestCase):
         prober = _Prober()
         got = fv.probe(p, prober=prober)
         self.assertEqual(got["outcome"], FAIL)
-        # дорогой шаг не оплачивается ради ответа, читаемого за микросекунду.
         self.assertEqual(prober.calls, 0)
 
     def test_a_missing_ffprobe_is_unmeasured_never_a_verdict(self):
-        # Негативный контроль, сторона «обязан сказать НЕ СМОГЛИ»: свести это
-        # к «не годно» значило бы забраковать годное видео на машине без ffmpeg.
         got = fv.probe(_video(self.tmp),
                        prober=_Prober(ran=False, why="ffprobe не найден"))
         self.assertEqual(got["outcome"], UNMEASURED)
@@ -449,8 +360,6 @@ class Probe(unittest.TestCase):
         self.assertGreaterEqual(got["elapsed"], 0.0)
 
     def test_a_half_read_answer_is_unmeasured_not_pass(self):
-        # Разобралось, но частоты нет — отдать PASS значило бы, что вызывающий
-        # примет отсутствие числа за проверенное отсутствие проблемы.
         got = fv.probe(_video(self.tmp),
                        prober=_Prober(out=_probe_json(fps="0/0", nb="")))
         self.assertEqual(got["outcome"], UNMEASURED)
@@ -528,12 +437,9 @@ class Frames(unittest.TestCase):
         self.assertEqual(names, sorted(names))
         self.assertEqual(names[0], "00000.png")
         self.assertEqual(names[-1], "00319.png")
-        # Порядок ФАЙЛОВ обязан совпадать с порядком ВРЕМЕНИ, а не с порядком
-        # файловой системы: дефект недетерминированного обхода в проекте уже был.
         self.assertEqual(names, [fv.frame_name(i) for i in range(320)])
 
     def test_zero_written_frames_is_a_failure_not_an_empty_success(self):
-        # Ровно дефект №6: пустой список кадров ехал дальше как «годно».
         rep, _, _ = self._run(n=0)
         self.assertEqual(rep["outcome"], FAIL)
         self.assertEqual(rep["written"], 0)
@@ -557,8 +463,6 @@ class Frames(unittest.TestCase):
         decoder = _Decoder(60)
         rep = fv.frames(self.src, self.out, prober=prober, decoder=decoder)
         self.assertEqual(rep["outcome"], FAIL)
-        # раскодирование не оплачивается ради ответа, известного из
-        # метаданных за миллисекунду.
         self.assertEqual(decoder.calls, 0)
         self.assertFalse(self.out.exists())
 
@@ -600,7 +504,7 @@ class Frames(unittest.TestCase):
                 self.assertEqual(decoder.calls, 0)
 
     def test_a_shortfall_against_the_metadata_is_unmeasured_not_pass(self):
-        rep, _, _ = self._run(n=5)          # метаданные обещали 60
+        rep, _, _ = self._run(n=5)
         self.assertEqual(rep["outcome"], UNMEASURED)
         self.assertEqual(rep["expected"], 60)
         self.assertEqual(rep["written"], 5)
@@ -622,22 +526,16 @@ class Frames(unittest.TestCase):
                                               "dur": "0.100000"})
         self.assertEqual(rep["outcome"], PASS)
         self.assertEqual(decoder.calls, 1)
-        # Прежние 60 кадров не должны пережить перезапись: 3 своих и 57 чужих
-        # выглядели бы как честный набор из 60.
         self.assertEqual(sorted(p.name for p in self.out.iterdir()),
                          ["00000.png", "00001.png", "00002.png"])
 
     def test_a_second_run_reports_the_frames_that_lie_there_not_a_zero(self):
-        """ДЕФЕКТ, ради которого писан этот сторож: итоговая строка печатала
-        «записано 0, байт 0» поверх каталога с 60 чужими кадрами, то есть
-        читалась как «каталог пуст». Исход был верный, врал ОТЧЁТ..
-        """
+        """ДЕФЕКТ, ради которого писан этот сторож: итоговая строка печатала"""
         first, _, _ = self._run(n=60)
         self.assertEqual(first["outcome"], PASS)
         rep, _, decoder = self._run(n=3)
         self.assertEqual(rep["outcome"], UNMEASURED)
         self.assertEqual(decoder.calls, 0)
-        # записали МЫ — ноль, и это правда; лежит там — 60, и это тоже факт.
         self.assertEqual(rep["written"], 0)
         self.assertEqual(rep["bytes"], 0)
         self.assertEqual(rep["present"], 60)
@@ -647,10 +545,7 @@ class Frames(unittest.TestCase):
         self.assertNotIn("каталог назначения был пуст", rep["note"])
 
     def test_a_second_run_still_names_the_expectation_it_already_knew(self):
-        """Метаданные разобрались до отказа — значит «ожидалось» ИЗВЕСТНО.
-        Печатать «неизвестно» рядом с разобранными метаданными значит
-        отчитываться беднее того, что исполнилось.
-        """
+        """Метаданные разобрались до отказа — значит «ожидалось» ИЗВЕСТНО."""
         self._run(n=60)
         rep, _, _ = self._run(n=3)
         self.assertEqual(rep["expected"], 60)
@@ -675,10 +570,7 @@ class Frames(unittest.TestCase):
         self.assertIn("до нас в каталоге лежало кадров 60", rep["note"])
 
     def test_a_refusal_before_the_look_never_claims_an_empty_directory(self):
-        """Третий исход не сворачивается в первые два: отказ случился
-        ДО осмотра каталога — значит про каталог сказать нечего, и это не
-        то же самое, что «пусто».
-        """
+        """Третий исход не сворачивается в первые два: отказ случился"""
         prober = _Prober(code=1, out=PROBE_STDOUT_BROKEN,
                          err=PROBE_STDERR_BROKEN)
         rep = fv.frames(self.src, self.out, prober=prober, decoder=_Decoder(60))
@@ -700,12 +592,7 @@ class Frames(unittest.TestCase):
 
 
 class DirectoryFact(unittest.TestCase):
-    """Три состояния каталога назначения — три РАЗНЫЕ фразы, литералами.
-
-    Отдельно от тестов выше нарочно: те гоняют `frames` и могли бы зеленеть
-    на любых словах, лишь бы они совпадали сами с собой. Здесь сторожится
-    ОТГРУЖАЕМОЕ значение — то, что прочтёт оператор.
-    """
+    """Три состояния каталога назначения — три РАЗНЫЕ фразы, литералами."""
 
     def test_the_three_phrases_are_the_ones_the_operator_will_read(self):
         self.assertEqual(fv.DIR_UNSEEN, "каталог назначения не осматривали")
@@ -720,8 +607,6 @@ class DirectoryFact(unittest.TestCase):
         self.assertEqual(fv._dir_fact(0, 0), "каталог назначения был пуст")
 
     def test_frames_lying_there_are_never_swallowed_into_a_zero(self):
-        # 60 кадров и «пусто» обязаны читаться по-разному — ровно этого
-        # различия не было в отчёте до починки.
         self.assertNotEqual(fv._dir_fact(60, 189567), fv._dir_fact(0, 0))
         self.assertIn("60", fv._dir_fact(60, 189567))
         self.assertIn("189567", fv._dir_fact(60, 189567))
@@ -732,8 +617,6 @@ class PlanForSeconds(unittest.TestCase):
 
     def test_it_forwards_to_fork_comfy_and_does_not_recompute(self):
         got = fv.plan_for_seconds(5)
-        # Числа-литералы: 5 с при 30 к/с — 150 кадров запрошенных, обёртка
-        # прижимает к шагу 4 от 1 и даёт 149.
         self.assertEqual(got["frames_requested"], 150)
         self.assertEqual(got["frames"], 149)
         self.assertEqual(got["snapped_away"], 1)
@@ -747,13 +630,7 @@ class Wiring(unittest.TestCase):
     """Сторожа устройства модуля, а не поведения."""
 
     def test_the_outside_world_is_touched_in_exactly_two_places(self):
-        """`subprocess.run` живёт только в двух точках внедрения.
-
-        Без этой проверки завтрашняя правка добавила бы третий вызов внешнего
-        инструмента, и тесты начали бы зеленеть и краснеть от того, на какой
-        машине их запустили, а не от кода. Обеспечивает раннер, а не
-        договорённость.
-        """
+        """`subprocess.run` живёт только в двух точках внедрения."""
         src = Path(fv.__file__).read_text(encoding="utf-8")
         tree = ast.parse(src)
         allowed, found = {"read_probe", "run_decode"}, []
@@ -772,14 +649,7 @@ class Wiring(unittest.TestCase):
                          f"а точек внедрения должно быть ровно две")
 
     def test_both_outside_calls_carry_their_own_timeout(self):
-        """Оба выхода наружу висят на таймауте, и на СВОЁМ, а не на общем.
-
-        Мутация «поменять число таймаута» этим тестом НЕ убивается и убита
-        быть не может: разницу между 20 с и 1 с видно только ожиданием, а
-        тест, который ждёт, — это тест, который потом отключат. Записано как
-        измеренная граница. Убивается здесь другая мутация, более
-        опасная: таймаут СНЯЛИ, и зависший ffmpeg держит смену молча.
-        """
+        """Оба выхода наружу висят на таймауте, и на СВОЁМ, а не на общем."""
         tree = ast.parse(Path(fv.__file__).read_text(encoding="utf-8"))
         want = {"read_probe": "PROBE_TIMEOUT_S", "run_decode": "DECODE_TIMEOUT_S"}
         seen = {}
@@ -793,13 +663,10 @@ class Wiring(unittest.TestCase):
         self.assertEqual(seen, want)
 
     def test_the_verdict_words_are_not_reinvented(self):
-        # Свои слова вердикта разъехались бы с чужими молча, и сравнение
-        # исходов между модулями перестало бы работать.
         self.assertEqual((fv.PASS, fv.FAIL, fv.UNMEASURED),
                          ("годно", "не годно", "не смогли проверить"))
 
     def test_the_output_rate_is_not_copied_from_fork_comfy(self):
-        # Число 30 в этом модуле не живёт: оно приходит из `fork_comfy`.
         src = Path(fv.__file__).read_text(encoding="utf-8")
         for line in src.splitlines():
             if line.strip().startswith("#") or '"""' in line:
@@ -809,16 +676,11 @@ class Wiring(unittest.TestCase):
                 self.assertNotIn("WRAP_FPS = 30", line)
 
     def test_the_mode_words_are_the_ones_the_operator_will_read(self):
-        # Литералами: сверять `fv.AS_IS` с `fv.AS_IS` значит проверять,
-        # что модуль согласен сам с собой. Эти слова уезжают в отчёт оператору,
-        # и «прорежаем» он обязан отличить от «как есть» глазами.
         self.assertEqual((fv.AS_IS, fv.DROP, fv.REFUSE),
                          ("как есть", "прорежаем", "отказ"))
         self.assertEqual(len({fv.AS_IS, fv.DROP, fv.REFUSE}), 3)
 
     def test_the_three_outcomes_map_to_three_different_exit_codes(self):
-        # Сведение двойки в ноль означало бы, что отсутствие ffmpeg читается
-        # как успех; сведение в единицу — что оно читается как плохое видео.
         self.assertEqual(fv.EXIT_BY_OUTCOME,
                          {"годно": 0, "не годно": 1, "не смогли проверить": 2})
         self.assertEqual(len(set(fv.EXIT_BY_OUTCOME.values())), 3)
@@ -827,8 +689,6 @@ class Wiring(unittest.TestCase):
 class EntryPoint(unittest.TestCase):
 
     def test_probing_a_missing_file_exits_one_not_zero(self):
-        # Ходит только к файловой системе: файла нет, и до ffprobe дело не
-        # доходит — поэтому тест не зависит от того, стоит ли он на машине.
         self.assertEqual(fv.main(["probe", "/нет/такого/файла.mp4"]), 1)
 
     def test_decoding_a_missing_file_exits_one_not_zero(self):
