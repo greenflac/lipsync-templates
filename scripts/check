@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+# Single source of truth for all checks: CI runs this same script.
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+echo "== ruff check"
+ruff check lipsync/
+
+echo "== ruff format"
+ruff format --check lipsync/
+
+echo "== mypy (regression guard)"
+# DEBT(2026-08-24): scripts/mypy_baseline.txt holds the known error count;
+# the guard fails if new code adds more. Drive it to 0, then run mypy plain.
+baseline=$(cat scripts/mypy_baseline.txt)
+errors=$(mypy lipsync/ --ignore-missing-imports --no-error-summary 2>&1 | grep -c "error:" || true)
+echo "mypy errors: $errors (baseline: $baseline)"
+if [ "$errors" -gt "$baseline" ]; then
+    echo "FAIL: new type errors introduced ($errors > $baseline)"
+    exit 1
+fi
+
+echo "== tests"
+python -m unittest discover -s lipsync/tests -t .
