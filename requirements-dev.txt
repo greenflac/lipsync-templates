@@ -1,0 +1,7 @@
+# Runtime
+numpy
+pillow
+# Tooling — pinned so local runs and CI run the same checks.
+# Keep in sync with .pre-commit-config.yaml rev.
+ruff==0.15.8
+mypy==1.19.1
