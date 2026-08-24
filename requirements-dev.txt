@@ -1,6 +1,6 @@
 # Runtime
-numpy
-pillow
+numpy==2.4.6
+pillow==12.3.0
 # Tooling — pinned so local runs and CI run the same checks.
 # Keep in sync with .pre-commit-config.yaml rev.
 ruff==0.15.8
