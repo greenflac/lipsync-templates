@@ -1,4 +1,4 @@
-"""Гейты шага составителя. Числа-ожидания — ЛИТЕРАЛЫ (Т2)."""
+"""Гейты шага составителя. Числа-ожидания — ЛИТЕРАЛЫ."""
 
 import json
 import unittest
@@ -22,7 +22,7 @@ BRANDED = {"id": "сбрендом", "kind": "scene",
 
 
 class TheOwnersBaseIsShippedWhole(unittest.TestCase):
-    """База — материал владельца. Модуль её читает, а не пересказывает."""
+    """База — материал составителя шаблонов. Модуль её читает, а не пересказывает."""
 
     def test_all_six_aesthetics_are_present_by_name(self):
         self.assertEqual(sorted(A.ids()),
@@ -30,7 +30,7 @@ class TheOwnersBaseIsShippedWhole(unittest.TestCase):
                           "tomatoes", "y2k"])
 
     def test_the_prompts_are_stored_verbatim_and_not_trimmed(self):
-        # Сторож дефекта: промт, ужатый «для порядка», меняет шаблон владельца
+        # Сторож дефекта: промт, ужатый «для порядка», меняет шаблон составителя шаблонов
         # молча. Длины ИЗМЕРЕНЫ по поданному тексту.
         self.assertEqual(len(A.load("y2k")["prompt"].split()), 211)
         self.assertEqual(len(A.load("fisheye")["prompt"].split()), 49)
@@ -61,7 +61,7 @@ class TheOwnersBaseIsShippedWhole(unittest.TestCase):
 
 
 class TheBrandListIsASpravkaNotAGate(unittest.TestCase):
-    """ПЕРЕПИСАН 22.08: владелец решил — «бренды пусть остаются». Конфликта
+    """По решению составителя шаблонов бренды в промтах остаются. Конфликта
     больше нет, и прибор разжалован из гейта в справку.
 
     Гейт, докладывающий о решённом как о нерешённом, — ложная тревога, и она
@@ -101,7 +101,7 @@ class TheIdentityClauseResolvesTheConflictExplicitly(unittest.TestCase):
     """Промты описывают ЧУЖУЮ внешность; личность обязана прийти с картинки."""
 
     def test_the_owner_prompt_comes_first(self):
-        """ПЕРЕПИСАН под решение «антропометрию вырезаем»: материал владельца
+        """ПЕРЕПИСАН под решение «антропометрию вырезаем»: материал составителя шаблонов
         по-прежнему идёт ПЕРВЫМ, но пол из него теперь уносится, поэтому
         дословного совпадения быть не может. Сторожим порядок, а не буквы."""
         got = A.compose(PLAIN)
@@ -135,14 +135,14 @@ class TheIdentityClauseResolvesTheConflictExplicitly(unittest.TestCase):
             self.assertNotIn("wins on identity", A.compose(PLAIN)["prompt"])
 
     def test_the_lettering_ban_comes_from_the_stand_not_a_local_copy(self):
-        # Е1: одно решение — одно место.
+        # одно решение — одно место.
         from lipsync import fork_e2e
 
         with mock.patch.object(fork_e2e, "NO_BRANDS_CLAUSE", "ЗАПРЕТ-ПОДМЕНА"):
             self.assertIn("ЗАПРЕТ-ПОДМЕНА", A.compose(PLAIN)["prompt"])
 
     def test_turning_the_ban_off_is_LOUD_in_the_note(self):
-        # Отключение гейта обязано быть видно, а не тихо (Ц7).
+        # Отключение гейта обязано быть видно, а не тихо.
         got = A.compose(PLAIN, with_ban=False)
         self.assertNotIn("no logos", got["prompt"])
         self.assertIn("ОТКЛЮЧЁН", got["note"])
@@ -197,7 +197,7 @@ class TheOnlyMeasurableAxisIsTheDemoIdentity(unittest.TestCase):
         self.assertIs(A.SAME_PERSON_MAX, fork_identity.SAME_PERSON_MAX)
 
     def test_mutating_the_bar_both_ways_turns_the_verdict(self):
-        """Т1: планка строже и слабее на ИЗМЕРЕННОМ значении 0.2753."""
+        """планка строже и слабее на ИЗМЕРЕННОМ значении 0.2753."""
         was = A.SAME_PERSON_MAX
         try:
             A.SAME_PERSON_MAX = 0.1
@@ -236,7 +236,7 @@ if __name__ == "__main__":
 
 
 class TheAnthropometryIsCutOutAndTheCutIsReadable(unittest.TestCase):
-    """Решение владельца 22.08: «антропометрию мы всю вырезаем».
+    """Решение составителя шаблонов: «антропометрию мы всю вырезаем».
 
     Резак — прибор, и он обязан проходить оба контроля: резать виновное и
     МОЛЧАТЬ на невиновном. Первая редакция резала по голому слову и унесла
@@ -275,7 +275,7 @@ class TheAnthropometryIsCutOutAndTheCutIsReadable(unittest.TestCase):
 
     def test_hair_COLOUR_goes_but_hair_STYLING_stays(self):
         # Цвет волос ArcFace судит, укладку не судит никто: укладка — стайлинг
-        # и принадлежит шаблону владельца.
+        # и принадлежит шаблону составителя шаблонов.
         got = A.strip_anthropometry(A.load("y2k")["prompt"])["prompt"]
         self.assertNotIn("brunette", got)
         self.assertIn("messy bun", got)
@@ -297,7 +297,7 @@ class TheAnthropometryIsCutOutAndTheCutIsReadable(unittest.TestCase):
     def test_a_clean_prompt_comes_back_BYTE_FOR_BYTE(self):
         # НЕГАТИВНЫЙ КОНТРОЛЬ резака, и он обязателен: резак, что-то меняющий
         # всегда, неотличим от резака, который режет наугад. ИЗМЕРЕНО: два
-        # промта владельца из шести антропометрии не содержат.
+        # промта составителя шаблонов из шести антропометрии не содержат.
         for aid in ("tomatoes", "icecream"):
             with self.subTest(aid=aid):
                 was = A.load(aid)["prompt"]
@@ -313,7 +313,7 @@ class TheAnthropometryIsCutOutAndTheCutIsReadable(unittest.TestCase):
         self.assertGreater(got["cut_share"], 0)
 
     def test_the_traces_of_the_operation_are_cleaned_up(self):
-        # Каждый след наблюдался на боевом промте владельца и читается моделью
+        # Каждый след наблюдался на боевом промте составителя шаблонов и читается моделью
         # как значащий.
         country = A.strip_anthropometry(A.load("country")["prompt"])["prompt"]
         self.assertIn("of a person seated", country)
@@ -324,7 +324,7 @@ class TheAnthropometryIsCutOutAndTheCutIsReadable(unittest.TestCase):
         self.assertNotIn(" ,", fisheye)
 
     def test_the_owners_base_on_disk_is_NEVER_touched_by_the_cut(self):
-        # Ц2 по смыслу: материал владельца режется НА ЛЕТУ, а не в файле.
+        # по смыслу: материал составителя шаблонов режется НА ЛЕТУ, а не в файле.
         before = A.load("y2k")["prompt"]
         A.strip_anthropometry(before)
         self.assertEqual(A.load("y2k")["prompt"], before)
@@ -338,7 +338,7 @@ class TheAnthropometryIsCutOutAndTheCutIsReadable(unittest.TestCase):
                 self.assertIsNone(got["prompt"])
 
     def test_mutating_the_clause_list_both_ways_moves_what_is_cut(self):
-        """Т1: список образцов строже и слабее."""
+        """список образцов строже и слабее."""
         was = A.ANTHROPOMETRY_CLAUSES
         try:
             A.ANTHROPOMETRY_CLAUSES = ()
@@ -400,7 +400,7 @@ class TheAssembledReferenceTakesTheLookButNeverTheFace(unittest.TestCase):
         self.assertIn("same face", A.assemble_prompt(legacy=True))
 
     def test_the_legacy_clause_is_the_stand_one_and_not_a_copy(self):
-        # Е1 плюс негативный контроль: старый вариант обязан БЫТЬ старым.
+        # плюс негативный контроль: старый вариант обязан БЫТЬ старым.
         from lipsync import fork_e2e
 
         legacy = A.assemble_prompt(legacy=True)
@@ -439,7 +439,7 @@ class TheLeakIsMeasuredFromBOTHSides(unittest.TestCase):
                               distances=self._pair(to_client, to_demo))
 
     def test_the_measured_good_case_is_good(self):
-        # ИЗМЕРЕНО 22.08 на старых ролях: 0.2506 против 0.9436.
+        # ИЗМЕРЕНО на старых ролях: 0.2506 против 0.9436.
         got = self._run(0.2506, 0.9436)
         self.assertEqual(got["outcome"], PASS)
         self.assertEqual(got["gap"], 0.693)
@@ -453,7 +453,7 @@ class TheLeakIsMeasuredFromBOTHSides(unittest.TestCase):
         self.assertEqual(got["gap"], -0.7)
 
     def test_the_measured_middle_case_is_UNMEASURED(self):
-        # ИЗМЕРЕНО 22.08 на новых ролях: 0.3727 против 0.9258 — клиент за
+        # ИЗМЕРЕНО на новых ролях: 0.3727 против 0.9258 — клиент за
         # планкой, хотя глазом это он. Прибор честно говорит «не различаю».
         got = self._run(0.3727, 0.9258)
         self.assertEqual(got["outcome"], UNMEASURED)
@@ -486,9 +486,9 @@ class TheLeakIsMeasuredFromBOTHSides(unittest.TestCase):
 
 
 class TheGenderPairIsAMachineGateNotANote(unittest.TestCase):
-    """Решение владельца 22.08: «верно, эстетики по полу».
+    """Решение составителя шаблонов: «верно, эстетики по полу».
 
-    Правило, записанное словами, живёт до первой спешки (Ц7). Здесь оно
+    Правило, записанное словами, живёт до первой спешки. Здесь оно
     роняет пару в «не годно» ДО всякой генерации.
     """
 
@@ -530,11 +530,11 @@ class TheGenderPairIsAMachineGateNotANote(unittest.TestCase):
 
 
 class TheGenderSplitDidNotFixTheWardrobeAndItIsRecorded(unittest.TestCase):
-    """ИЗМЕРЕННЫЙ ОТРИЦАТЕЛЬНЫЙ РЕЗУЛЬТАТ (И6), а не забытая догадка.
+    """ИЗМЕРЕННЫЙ ОТРИЦАТЕЛЬНЫЙ РЕЗУЛЬТАТ, а не забытая догадка.
 
     Разделение эстетик по полу СДЕЛАНО и работает как гейт, но заявленную
     задачу НЕ РЕШИЛО: y2k на мужской демо-личности всё равно надел на мужчину
-    мини-юбку. Причина: юбка стоит В САМОМ ПРОМТЕ владельца, а не в демо, и
+    мини-юбку. Причина: юбка стоит В САМОМ ПРОМТЕ составителя шаблонов, а не в демо, и
     пол демо на гардероб не влияет.
 
     Сторож стоит здесь, чтобы следующая сессия не переставила ту же ручку.
@@ -556,7 +556,7 @@ class TheGenderSplitDidNotFixTheWardrobeAndItIsRecorded(unittest.TestCase):
 
 
 class TheTemplateGenderIsTheAestheticGender(unittest.TestCase):
-    """Решение владельца 22.08: «не меняем пол в промтах, просто сами шаблоны
+    """Решение составителя шаблонов: «не меняем пол в промтах, просто сами шаблоны
     собираем в соответствии с полом; какая стилевая рефка по полу такой и пол
     шаблона».
 
@@ -573,7 +573,7 @@ class TheTemplateGenderIsTheAestheticGender(unittest.TestCase):
                 self.assertIn(A.gender_of(aid), A.GENDERS)
 
     def test_the_shipped_assignment_is_the_one_chosen(self):
-        # Литералы (Т2): происхождение каждого — гардероб в промте владельца.
+        # Литералы: происхождение каждого — гардероб в промте составителя шаблонов.
         self.assertEqual(A.gender_of("y2k"), "f")          # мини-юбка, блеск
         self.assertEqual(A.gender_of("midcentury"), "f")   # юбка, сапоги
         self.assertEqual(A.gender_of("fisheye"), "m")      # тренч, нейтрален
@@ -605,7 +605,7 @@ class TheBrandBanWasNarrowedByTheOwner(unittest.TestCase):
     """«Бренды пусть остаются, просто добавляем no logo во все промты стилей».
 
     Прежняя редакция запрещала НАЗВАНИЯ МАРОК и этим воевала с промтами самого
-    владельца. ИЗМЕРЕНО, чем кончалась война: на y2k_f знака не было, на y2k_m
+    составителя шаблонов. ИЗМЕРЕНО, чем кончалась война: на y2k_f знака не было, на y2k_m
     проступил читаемый «adidas» — исход решался случаем, а не запретом.
     """
 
@@ -618,7 +618,7 @@ class TheBrandBanWasNarrowedByTheOwner(unittest.TestCase):
         self.assertNotIn("no brand names", ban)
 
     def test_the_owners_own_brand_words_now_survive_into_the_prompt(self):
-        # Ровно то, ради чего правка: промт владельца больше не спорит сам с
+        # Ровно то, ради чего правка: промт составителя шаблонов больше не спорит сам с
         # собой в одной строке.
         built = A.compose("y2k")["prompt"]
         self.assertIn("Adidas", built)

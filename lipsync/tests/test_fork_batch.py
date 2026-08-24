@@ -7,15 +7,15 @@
      прогон ячейки в этом случае не зовётся НИ РАЗУ — счётчик вызовов ноль.
      Потратить половину и встать посередине невосстановимо.
   2. ВЕСЬ путь идёт на подставных функциях. Сеть в файле перекрыта раннером
-     (`_no_network`), а не обещана комментарием (Т4).
+     (`_no_network`), а не обещана комментарием.
   3. Третий исход не сворачивается: обвал ячейки и «годно без ролика» — это
      `не смогли проверить`, а не `не годно` и не `годно`.
   4. Одна неудача не роняет батч, а серия из `MAX_STREAK` — роняет. Константа
      мутируется в обе стороны (2 и 5), и в обе стороны наблюдаемо меняется
      число запущенных ячеек.
 
-Ожидаемые числа — ЛИТЕРАЛЫ (Т2): 50, 5, 0.35, 17.5, 1.75, 3, 0/1/2.
-ПЕРЕСЧИТАНЫ 22.08: цена ячейки уехала с $0.21 на $0.35, потому что Kling
+Ожидаемые числа — ЛИТЕРАЛЫ: 50, 5, 0.35, 17.5, 1.75, 3, 0/1/2.
+ПЕРЕСЧИТАНЫ: цена ячейки уехала с $0.21 на $0.35, потому что Kling
 берёт посекундно ($0.07/с), а продуктовая длина стала 5 с вместо 3 с.
 Замер: баланс fal 10.8490375 -> 10.1490375 за два пятисекундных вызова.
 Импортированное ожидание уехало бы вместе с кодом и промолчало.
@@ -136,7 +136,7 @@ class TheCoverageModesGiveTheNumbersTheyPromise(unittest.TestCase):
     def test_cover_touches_every_value_of_every_axis_at_least_once(self):
         """Иначе `cover` продаёт подмножество как покрытие.
 
-        Оси РАЗНОЙ длины (Т3: края и середина): 5, 3 и 2 — на равных длинах
+        Оси РАЗНОЙ длины: 5, 3 и 2 — на равных длинах
         покрытие вышло бы случайно, а дефект «берём только первые» уцелел бы.
         """
         st3, pe2 = STYLES[:3], PERSONS
@@ -174,8 +174,8 @@ class TheCoverageModesGiveTheNumbersTheyPromise(unittest.TestCase):
 class TheMoneyGuardHasThreeOutcomes(unittest.TestCase):
 
     def test_fifty_cells_cost_seventeen_fifty(self):
-        # ПЕРЕПИСАН 22.08: было 10.5 по цене $0.21 за трёхсекундный ролик.
-        # Полный крест владельца на продуктовых 5 с в $10 НЕ ВЛЕЗАЕТ.
+        # ПЕРЕПИСАН: было 10.5 по цене $0.21 за трёхсекундный ролик.
+        # Полный крест составителя шаблонов на продуктовых 5 с в $10 НЕ ВЛЕЗАЕТ.
         self.assertEqual(B.plan_cost(50), 17.5)
 
     def test_five_cells_cost_one_seventy_five(self):
@@ -198,7 +198,7 @@ class TheMoneyGuardHasThreeOutcomes(unittest.TestCase):
         self.assertEqual(got["short"], 16.651)
 
     def test_enough_money_is_a_pass_the_guard_can_move(self):
-        """Негативный контроль прибора (И5): он умеет и сказать «да»."""
+        """Негативный контроль прибора: он умеет и сказать «да»."""
         got = B.afford(5, 2.0)
         self.assertEqual(got["outcome"], PASS)
         self.assertEqual(got["need"], 1.75)
@@ -218,7 +218,7 @@ class TheMoneyGuardHasThreeOutcomes(unittest.TestCase):
                 self.assertEqual(B.afford(5, value)["outcome"], UNMEASURED)
 
     def test_the_price_is_imported_and_not_copied(self):
-        """Е1 и Т1: цена живёт в стенде, мутируется в обе стороны.
+        """ и цена живёт в стенде, мутируется в обе стороны.
 
         Дороже — тот же заказ перестаёт быть по карману; дешевле — становится.
         Копия числа здесь промолчала бы на обеих мутациях.
@@ -375,7 +375,7 @@ class ThereAreThreeOutcomesPerCellAndNotTwo(unittest.TestCase):
                 self.assertEqual(got["passed"], 0)
 
     def test_a_pass_without_a_clip_on_disk_is_downgraded_to_unmeasured(self):
-        """Е2: верим свидетельству, а не флагу. Нет ролика — нечего смотреть."""
+        """верим свидетельству, а не флагу. Нет ролика — нечего смотреть."""
         run = _Runner(write=False)
         with _no_network(), TemporaryDirectory() as td:
             got = _batch(td, mode="cover", balance=_balance(2.0), cell_runner=run)
@@ -442,7 +442,7 @@ class AStreakOfFailuresStopsTheBatch(unittest.TestCase):
         self.assertTrue(got["stopped_early"])
 
     def test_the_streak_constant_is_guarded_in_both_directions(self):
-        """Т1: подмена строже и слабее, оба раза наблюдаемо.
+        """подмена строже и слабее, оба раза наблюдаемо.
 
         Строже (2) — останов раньше, запущено 3; слабее (5) — останова нет,
         запущено 5. Мутация проверяет САМУ константу модуля, а не аргумент:

@@ -1,13 +1,13 @@
 """Финальная сборка: сторожа кропа, возврата звука и трёх исходов.
 
-НИ ОДИН ТЕСТ ЗДЕСЬ НЕ ЗАПУСКАЕТ ffmpeg И НЕ ХОДИТ В СЕТЬ (Т4). Внешний мир
+НИ ОДИН ТЕСТ ЗДЕСЬ НЕ ЗАПУСКАЕТ ffmpeg И НЕ ХОДИТ В СЕТЬ. Внешний мир
 подменяется двумя параметрами — `prober` и `runner`; на диске появляются только
 пустышки во временном каталоге, потому что `fork_video.probe` по устройству
 сначала проверяет существование файла.
 
 ОТВЕТЫ ffprobe В ЭТОМ ФАЙЛЕ — НАСТОЯЩИЕ, сняты прогоном на настоящих файлах
 проекта (`assets/driving_arms.mp4`, `work/arm_out_control_plain.mp4`,
-`work/finish_demo.mp4`) и вставлены ЛИТЕРАЛАМИ (Т2), обрезанные до полей,
+`work/finish_demo.mp4`) и вставлены ЛИТЕРАЛАМИ, обрезанные до полей,
 которые читает разбор. Ожидаемые числа тоже литералы: `540`, `960`, `210`,
 `43.75`, `1`, `100` — импортировать их из проверяемого модуля значило бы
 проверять, что модуль согласен сам с собой.
@@ -17,12 +17,12 @@
 до 48 колонок. Она нужна именно как вход, на котором прибор смещения обязан
 сказать «не смогли выбрать»: на живом материале человек стоит по центру.
 
-ФИКСТУРЫ С ОБОИХ КРАЁВ И ИЗ СЕРЕДИНЫ (Т3): квадрат 960x960, уже готовые 9:16
+ФИКСТУРЫ С ОБОИХ КРАЁВ И ИЗ СЕРЕДИНЫ: квадрат 960x960, уже готовые 9:16
 (720x1280), кадр УЖЕ заказанного (540x1200), нечётный 961x961, вырожденный
 2x2, частоты 24/30/60, расхождения -2/-1/0/+1/+3 кадра, карта движения ровная /
 слева / справа / нулевая.
 
-НЕГАТИВНЫЙ КОНТРОЛЬ У КАЖДОГО ПРИБОРА (И5): на каждый вход, где прибор обязан
+НЕГАТИВНЫЙ КОНТРОЛЬ У КАЖДОГО ПРИБОРА: на каждый вход, где прибор обязан
 сказать «не годно», рядом стоит соседний, где он обязан пропустить, и оба
 проверяются равносильно; вход «не смогли» разведён с обоими.
 
@@ -239,12 +239,12 @@ class CropIsCountedAndNotGuessed(unittest.TestCase):
         self.assertEqual(ff.crop_geometry(960, 960, ratio_h=-16)["outcome"], FAIL)
 
     def test_the_target_ratio_is_nine_by_sixteen(self):
-        # Литералами: решение владельца от 2026-08-22. Разъедется — покраснеет.
+        # Литералами: решение составителя шаблонов от 2026-08-22. Разъедется — покраснеет.
         self.assertEqual((ff.TARGET_RATIO_W, ff.TARGET_RATIO_H), (9, 16))
 
 
 class CropConstantsAreMutatedInBothDirections(unittest.TestCase):
-    """Т1: константу подменяем строже и слабее, тест обязан покраснеть."""
+    """константу подменяем строже и слабее, тест обязан покраснеть."""
 
     def test_the_even_multiple_guards_the_window(self):
         was = ff.DIM_MULTIPLE
@@ -273,7 +273,7 @@ class CropConstantsAreMutatedInBothDirections(unittest.TestCase):
 
 class BiasIsChosenOnlyWhenThereIsSomethingToChooseFrom(unittest.TestCase):
     def test_a_flat_map_gives_no_bias_and_says_so(self):
-        # НЕГАТИВНЫЙ КОНТРОЛЬ (И5): равномерная карта — прибор обязан сказать
+        # НЕГАТИВНЫЙ КОНТРОЛЬ: равномерная карта — прибор обязан сказать
         # «не смогли выбрать», а не выдать бодрое число.
         r = ff.bias_from_columns([7.0] * 48)
         self.assertEqual(r["outcome"], UNMEASURED)
@@ -294,7 +294,7 @@ class BiasIsChosenOnlyWhenThereIsSomethingToChooseFrom(unittest.TestCase):
         self.assertGreater(r["gain"], 1.0)
 
     def test_a_person_standing_aside_moves_the_window_there(self):
-        # Вход, где прибор ОБЯЗАН шевельнуться (И5, вторая половина).
+        # Вход, где прибор ОБЯЗАН шевельнуться (, вторая половина).
         left = [100.0] * 20 + [0.0] * 28
         right = [0.0] * 28 + [100.0] * 20
         rl, rr = ff.bias_from_columns(left), ff.bias_from_columns(right)
@@ -305,7 +305,7 @@ class BiasIsChosenOnlyWhenThereIsSomethingToChooseFrom(unittest.TestCase):
         self.assertEqual(rr["bias"], 1.0)
 
     def test_a_person_a_little_off_centre_still_moves_the_window(self):
-        # Фикстура ИЗ СЕРЕДИНЫ диапазона (Т3): не «весь свет слева», а просто
+        # Фикстура ИЗ СЕРЕДИНЫ диапазона: не «весь свет слева», а просто
         # заметно больше движения в левой половине. Выигрыш 1.3125x — выше
         # порога 1.05 и ниже удвоения, то есть ровно та полоса, где прибор
         # обязан ответить, а не отмолчаться.
@@ -322,7 +322,7 @@ class BiasIsChosenOnlyWhenThereIsSomethingToChooseFrom(unittest.TestCase):
         self.assertEqual(ff.bias_from_columns([1.0])["outcome"], UNMEASURED)
 
     def test_the_gain_threshold_is_mutated_in_both_directions(self):
-        # Т1. Слабее порог — шумовой выигрыш 1.0008 начинает двигать кадр;
+        #. Слабее порог — шумовой выигрыш 1.0008 начинает двигать кадр;
         # строже — даже человек сбоку перестаёт считаться доказанным.
         was = ff.BIAS_GAIN_MIN
         try:
@@ -374,7 +374,7 @@ class TheToleranceIsTimeAndNotFrames(unittest.TestCase):
         self.assertEqual(ff.drift_tolerance_frames(30), 1)
 
     def test_the_perception_threshold_is_mutated_in_both_directions(self):
-        # Т1. 30 мс — строже, допуска на 30 к/с не остаётся вовсе; 70 мс —
+        #. 30 мс — строже, допуска на 30 к/с не остаётся вовсе; 70 мс —
         # слабее, и внутрь допуска попадают два кадра, то есть 66.7 мс.
         was = ff.LIPSYNC_AUDIO_AHEAD_MS
         try:
@@ -449,7 +449,7 @@ class TheAudioVerdictHasThreeOutcomes(unittest.TestCase):
         self.assertEqual(ff.audio_drift(100, -1, fps=30)["outcome"], FAIL)
 
     def test_glue_never_travels_with_a_bad_verdict(self):
-        # Инвариант Е2: «клеить» выводится из исхода, а не назначается рядом.
+        # Инвариант «клеить» выводится из исхода, а не назначается рядом.
         for expected in range(90, 111):
             r = ff.audio_drift(expected, 100, fps=30)
             with self.subTest(expected=expected, outcome=r["outcome"]):
@@ -647,7 +647,7 @@ class TheAssemblyReportsWhatActuallyHappened(unittest.TestCase):
         self.assertFalse(rep["written"])
 
     def test_the_verdict_comes_from_the_file_and_not_from_the_intention(self):
-        # Е2. ffmpeg «отработал», а на диске лежит квадрат — вердикт «не годно»,
+        #. ffmpeg «отработал», а на диске лежит квадрат — вердикт «не годно»,
         # хотя все планы были годные.
         run = Runner()
         rep = self._finish(run, answers={"finish.mp4": KLING_JSON})
@@ -655,14 +655,14 @@ class TheAssemblyReportsWhatActuallyHappened(unittest.TestCase):
         self.assertTrue(rep["written"])
 
     def test_a_promised_sound_that_did_not_arrive_is_caught(self):
-        # Вторая половина Е2: план обещал звук, в файле звука нет.
+        # Вторая половина план обещал звук, в файле звука нет.
         run = Runner()
         rep = self._finish(run, answers={"finish.mp4": RESULT_SILENT_JSON})
         self.assertEqual(rep["outcome"], FAIL)
         self.assertFalse(rep["audio"])
 
     def test_a_broken_kling_output_stops_before_any_ffmpeg_runs(self):
-        # П2: дешёвая проверка раньше дорогой.
+        # дешёвая проверка раньше дорогой.
         run = Runner()
         rep = self._finish(run, answers={"kling.mp4": 1})
         self.assertEqual(rep["outcome"], FAIL)
@@ -695,7 +695,7 @@ class TheModuleDoesNotReinventWhatAlreadyExists(unittest.TestCase):
 
     def test_the_outside_world_is_touched_only_through_the_neighbour(self):
         # Свой subprocess здесь означал бы второй способ звать ffmpeg и второй
-        # разбор его отказа (Е1). Проверяется деревом, а не подстрокой.
+        # разбор его отказа. Проверяется деревом, а не подстрокой.
         tree = ast.parse(self.SRC)
         imported = set()
         for node in ast.walk(tree):
@@ -727,7 +727,7 @@ class TheModuleDoesNotReinventWhatAlreadyExists(unittest.TestCase):
         self.assertIn("runner = fork_video.run_decode if runner is None", self.SRC)
 
     def test_every_decision_constant_declares_where_it_came_from(self):
-        # И4: у каждой константы модуля назван источник. Проверяется наличие
+        # у каждой константы модуля назван источник. Проверяется наличие
         # пометки в комментарии НАД строкой, а не вера в аккуратность.
         lines = self.SRC.splitlines()
         names = ("TARGET_RATIO_W", "DIM_MULTIPLE", "LIPSYNC_AUDIO_AHEAD_MS",

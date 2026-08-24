@@ -1,7 +1,7 @@
 """Pollinations — ONE gateway (gen.pollinations.ai) for the whole pipeline.
 
 Text, images, VIDEO, audio, vision — all through one OpenAI-compatible host,
-addressed by model name. This is the client the vacancy's stack runs on: Flux /
+addressed by model name. This is the client the pipeline's stack runs on: Flux /
 Flux Kontext for stills, Seedance/Veo/Wan for image-to-video, a vision model for
 the judge, ElevenLabs multilingual for Russian TTS.
 

@@ -1,30 +1,32 @@
 # Lip-sync templates
 
-The user uploads an ordinary selfie and picks a template. Out comes a vertical
-video with sound, and the person in the frame is them.
+The user uploads a selfie, picks a template, and gets a vertical video with
+sound where they are the person on screen.
 
 ![Client selfie, driving footage, finished video](docs/img/showcase_icecream.gif)
 
-<sub>Left to right: the client's selfie · the bought driving footage · the
-finished video. One template ("Ice cream"), 10 seconds, nothing sped up. The
-same clip **with sound**: [showcase_icecream.mp4](docs/video/showcase_icecream.mp4).</sub>
+<sub>Left to right: the client's selfie · the driving footage · the finished
+video. One template ("Ice cream"), 10 seconds, real speed. The same clip
+**with sound**: [showcase_icecream.mp4](docs/video/showcase_icecream.mp4).</sub>
 
 ---
 
-This is two things, not one.
+The repository contains two tools.
 
-**A generation pipeline** — eight stages from selfie to finished video. Seven
-are free and stand before the paid one, so a defect is caught on a still for a
-fraction of a cent instead of on a video for a dollar.
+**The generation pipeline** turns a selfie into a finished video in eight
+stages. Seven of them are free checks that run before the one paid call, so
+most defects are caught on a still image for a fraction of a cent instead of
+on a rendered video for a dollar.
 
-**An instrument for assembling templates** — the author writes a prompt, feeds
-in a demo identity, and gets an aesthetic ready to sell. A new template takes a
-run, not a sprint.
+**The template builder** is for the person who designs templates: they write a
+prompt, feed in a stock demo person, and get back a style reference (an
+"aesthetic") that is ready to sell as a template. Building a new template
+takes one run.
 
 ![Six templates of the family](docs/img/family.png)
 
-<sub>Six templates of the first batch. One identity, six aesthetics, four
-different drivings.</sub>
+<sub>The first six templates. One demo person, six aesthetics, four different
+driving videos.</sub>
 
 **Presentation:** [English (PDF)](docs/deck/lipsync_en.pdf) ·
 [по-русски (PDF)](docs/deck/lipsync_ru.pdf)
@@ -35,123 +37,114 @@ different drivings.</sub>
 
 | | |
 |---|---|
-| `$0.70` | a 10-second video; the `$0.07/s` rate confirmed by four balance measurements |
-| `720×1280` | exactly 9:16 out of the model, 0% of the area lost to cropping in assembly |
-| `300 frames` | exactly 10.0 seconds on all six, with no spread |
-| `0 cuts` | edit seams in frame, on all six |
-
----
+| `$0.70` | cost of a 10-second video; the `$0.07/s` rate was confirmed by four separate balance measurements |
+| `720×1280` | the model returns exact 9:16, so assembly crops nothing |
+| `300 frames` | all six videos came out at exactly 10.0 seconds |
+| `0 cuts` | no edit seams inside any of the six videos |
 
 ## How it works
 
 ```
-1  driving intake        seams, scene length, window        free
-2  aesthetic             prompt + demo identity             cents
-3  aesthetic acceptance  demo identity in place             free
+1  driving intake        cuts, scene length, window         free
+2  aesthetic             prompt + demo person               cents
+3  aesthetic check       demo identity still there          free
 4  reference assembly    client photo + aesthetic           cents
-5  reference acceptance  leak, plan, composition            free
+5  reference check       face leak, framing, composition    free
 6  video generation      Kling Motion Control               $0.07/s
-7  assembly              9:16, sound, length                free
-8  video acceptance      by eye                             free
+7  assembly              9:16, sound, duration              free
+8  final check           human review                       free
 ```
 
-Every check answers with one of **three** outcomes — `pass`, `fail`,
-`could not measure` — and the third collapses into neither of the first two.
-Numbers always stand next to the verdict: checked N, violations M, could not
-measure K.
+Every check returns one of three outcomes: `pass`, `fail`, or `could not
+measure`. The third one is never silently converted into the other two, and
+every verdict comes with its numbers: how many items were checked, how many
+failed, how many could not be measured. Zero failures out of zero checks is
+reported as exactly that, not as success.
 
-Zero violations out of zero checks is not a success, and the code prints that
-literally.
+## Integration
 
-## How to integrate
+The pipeline logic is not tied to a specific backend or video model.
 
-The pipeline's logic depends on neither the backend nor the model.
+Every outward call — the model, file uploads, storage — is passed in as a
+parameter. That is also why the test suite covers the whole path without
+touching the network.
 
-Every outward call is a parameter, not a hard reference: the model, the
-storage and the queue are all swappable. That is why the tests run the whole
-path without touching the network.
+The acceptance checks don't care where their input came from, so they can sit
+in front of an existing pipeline as a standalone quality-control layer.
 
-The acceptance layer does not know who generated its input. It can be placed in
-front of any existing pipeline as a separate quality control.
+Switching the video model means replacing one call. Kling's current limits
+(3-second minimum, unstable frame-by-frame output) belong to the model, not to
+the approach: another API model, or an open-source model on your own GPUs,
+lifts them.
 
-Changing the video model is one call. Kling's limits (a three-second minimum,
-unstable frame-by-frame output) are properties of the model, not of the
-approach: they lift by moving to another model over the API, or to open source
-on your own GPUs.
+## Choosing driving footage
 
-## Driving requirements
+The driving video is the only input that gets bought, so its requirements are
+a purchasing checklist:
 
-The only input that is bought rather than drawn. That is why its requirements
-live in a section of their own — this is a purchasing checklist, not a setting.
+- **Face at least 100 px tall.** Below that the identity can't be measured and
+  the model transfers it poorly. Measured: faces of 34–56 px drifted, faces of
+  85–139 px held.
+- **A single scene with no cuts.** A cut inside the selected window becomes a
+  visible shot change in the finished video.
+- **A scene longer than the product duration.** The window is cut from the
+  middle of the longest scene.
+- **The person stays in frame.** The driving's framing is carried into the
+  aesthetic prompt, because the model takes the pose from the video.
 
-- **Face larger than 100 px.** Below that there is nothing to measure the
-  identity with, and the model transfers it uncertainly. Measured: drivings
-  with a face of 34–56 px produced a drifting face; those with 85–139 px held
-  it.
-- **One scene, zero edit seams.** A seam inside the window produces a change of
-  plan in the finished video.
-- **Scene longer than the product length.** The window is cut from the middle
-  of the longest scene with equal margins.
-- **The person does not leave the frame.** The driving's composition is carried
-  into the aesthetic prompt: the model lays the pose from the video.
-
-Lip-sync is the heaviest material, and heaviest of all is the kind where the
-character **turns around**: on the turn the face leaves the frame entirely.
+Lip-sync footage is the hardest case, especially when the actor turns around:
+during the turn the face leaves the frame entirely.
 
 ## Tests
 
 ```
-python -m unittest discover -s lipsync/tests -t .
+python -m unittest discover -s lipsync/tests -p "test_*.py"
 ```
 
-770 guards, no network and no GPU. Each guards a defect that was actually
-found, not a line of code, and its docstring says which one. Thresholds are
-mutated in both directions: if a bar guards nothing, the test will not go red.
-
-Twelve tests skip when the ArcFace weights and the calibration dataset are
-absent — the dataset contains biometric data and ships separately. The skips
-name their reason; a skipped test is reported as skipped, never as passed.
+770 tests, no network, no GPU. Each one guards a specific defect that actually
+happened, and says which one in its docstring. Decision thresholds are covered
+by mutation: changing a threshold in either direction makes tests fail.
 
 ## Licence
 
-The sources are open to read and to audit, but this is **not** open source:
-using, copying and embedding require an agreement. Details in
+The source is public so it can be read and audited, but this is **not** open
+source: using, copying or embedding it requires an agreement. See
 [LICENSE](LICENSE).
 
-Separately: the identity instrument uses InsightFace `buffalo_l` weights,
-which are non-commercial. As shipped, the acceptance layer is a development
-instrument; a commercial deployment swaps the face model and recalibrates the
-thresholds against its scale.
+One more thing worth knowing: the identity check uses InsightFace `buffalo_l`
+weights, which are licensed for non-commercial use. As shipped, the acceptance
+layer is a development tool; a commercial deployment would swap the face model
+and recalibrate the thresholds.
 
----
 ---
 
 # Липсинк-шаблоны
 
-Пользователь грузит обычное селфи и выбирает шаблон. На выходе — вертикальный
-ролик со звуком, где в кадре он сам.
+Пользователь загружает селфи, выбирает шаблон и получает вертикальный ролик со
+звуком, где снимается он сам.
 
 ![Селфи клиента, драйвинг, готовый ролик](docs/img/showcase_icecream.gif)
 
-<sub>Слева направо: селфи клиента · купленный драйвинг · готовый ролик. Один
-шаблон («Мороженое»), 10 секунд, ничего не ускорено. Тот же ролик **со
-звуком**: [showcase_icecream.mp4](docs/video/showcase_icecream.mp4).</sub>
+<sub>Слева направо: селфи клиента · драйвинг · готовый ролик. Один шаблон
+(«Мороженое»), 10 секунд, реальная скорость. Тот же ролик **со звуком**:
+[showcase_icecream.mp4](docs/video/showcase_icecream.mp4).</sub>
 
 ---
 
-Это два предмета, а не один.
+В репозитории два инструмента.
 
-**Пайплайн генерации** — восемь ступеней от селфи до готового ролика. Семь
-бесплатны и стоят до платной, чтобы брак ловился на картинке за доли цента, а
-не на видео за доллар.
+**Пайплайн генерации** превращает селфи в готовый ролик за восемь ступеней.
+Семь из них — бесплатные проверки перед единственным платным вызовом, поэтому
+большинство дефектов ловится на картинке за доли цента, а не на готовом видео
+за доллар.
 
-**Прибор для сборки шаблонов** — составитель пишет промт, подаёт демо-личность
-и получает эстетику, готовую к продаже. Новый шаблон рождается за прогон, а не
-за спринт.
+**Сборщик шаблонов** — для того, кто шаблоны придумывает: он пишет промт,
+подаёт стоковую демо-личность и получает стилевой референс («эстетику»),
+готовый к продаже как шаблон. Новый шаблон собирается за один прогон.
 
 ![Шесть шаблонов семейства](docs/img/family.png)
 
-<sub>Шесть шаблонов первого батча. Одна личность, шесть эстетик, четыре разных
+<sub>Первые шесть шаблонов. Одна демо-личность, шесть эстетик, четыре разных
 драйвинга.</sub>
 
 **Презентация:** [по-русски (PDF)](docs/deck/lipsync_ru.pdf) ·
@@ -163,85 +156,78 @@ thresholds against its scale.
 
 | | |
 |---|---|
-| `$0.70` | ролик 10 секунд; ставка `$0.07/с` подтверждена четырьмя замерами счёта |
-| `720×1280` | ровно 9:16 на выходе модели, обрезка в сборке — 0% площади |
-| `300 кадров` | ровно 10.0 секунды у всех шести, без разброса |
-| `0 резов` | монтажных швов в кадре, у всех шести |
+| `$0.70` | стоимость ролика на 10 секунд; ставка `$0.07/с` подтверждена четырьмя независимыми замерами баланса |
+| `720×1280` | модель возвращает ровно 9:16, сборка ничего не обрезает |
+| `300 кадров` | все шесть роликов вышли ровно по 10.0 секунды |
+| `0 склеек` | ни в одном из шести роликов нет монтажных швов |
 
----
-
-## Как устроено
+## Как это работает
 
 ```
-1  приём драйвинга        склейки, длина сцены, окно        бесплатно
-2  эстетика               промт + демо-личность              центы
-3  приёмка эстетики       демо-личность на месте             бесплатно
-4  сборка рефки           фото клиента + эстетика            центы
-5  приёмка рефки          утечка, план, композиция           бесплатно
-6  генерация видео        Kling Motion Control               $0.07/с
-7  сборка                 9:16, звук, длина                  бесплатно
-8  приёмка ролика         глазами                            бесплатно
+1  приём драйвинга      склейки, длина сцены, окно          бесплатно
+2  эстетика             промт + демо-личность               центы
+3  проверка эстетики    демо-личность на месте              бесплатно
+4  сборка референса     фото клиента + эстетика             центы
+5  проверка референса   утечка лица, план, композиция       бесплатно
+6  генерация видео      Kling Motion Control                $0.07/с
+7  сборка               9:16, звук, длительность            бесплатно
+8  финальная проверка   смотрит человек                     бесплатно
 ```
 
-Каждая проверка отвечает одним из **трёх** исходов — `годно`, `не годно`,
-`не смогли проверить` — и третий не сворачивается ни в первый, ни во второй.
-Рядом с вердиктом всегда числа: проверено N, нарушений M, не смогли K.
+Каждая проверка возвращает один из трёх исходов: `годно`, `не годно` или
+`не смогли проверить`. Третий никогда молча не превращается в первые два, и
+рядом с каждым вердиктом стоят его числа: сколько проверено, сколько не
+прошло, сколько не удалось измерить. Ноль нарушений при нуле проверок
+печатается именно так, а не как успех.
 
-Ноль нарушений при нуле проверок — не успех, и код это печатает буквально.
+## Встраивание
 
-## Как встроить
+Логика пайплайна не привязана ни к конкретному бэкенду, ни к видеомодели.
 
-Логика конвейера не зависит ни от бэкенда, ни от модели.
+Каждый внешний вызов — модель, загрузка файлов, хранилище — передаётся
+параметром. Поэтому же тесты проходят весь путь, не выходя в сеть.
 
-Каждый вызов наружу — параметр, а не жёсткая ссылка: подменяются модель,
-хранилище, очередь. Поэтому тесты прогоняют весь путь, не касаясь сети.
+Проверкам приёмки всё равно, откуда пришёл вход: их можно поставить перед
+любым существующим пайплайном как отдельный слой контроля качества.
 
-Слой приёмки не знает, кто сгенерировал вход. Его можно поставить перед любым
-существующим пайплайном как отдельный контроль качества.
+Смена видеомодели — замена одного вызова. Нынешние ограничения Kling (минимум
+3 секунды, нестабильная покадровая выдача) относятся к модели, а не к подходу:
+другая модель по API или опенсорсная на своих GPU их снимает.
 
-Смена видеомодели — это один вызов. Ограничения Kling (минимум три секунды,
-нестабильная покадровая выдача) — свойства модели, а не подхода: снимаются
-переходом на другую по API или на опенсорс на своих GPU.
+## Как выбирать драйвинг
 
-## Требования к драйвингу
+Драйвинг — единственный вход, который покупается, поэтому требования к нему —
+это чек-лист закупки:
 
-Единственный вход, который не рисуется, а покупается. Поэтому требования к нему
-вынесены отдельно — это чек-лист закупки, а не настройка.
+- **Лицо не меньше 100 px.** Ниже личность нечем измерить, и модель переносит
+  её плохо. Замерено: лица 34–56 px поплыли, лица 85–139 px удержались.
+- **Одна сцена без склеек.** Склейка внутри выбранного окна становится
+  видимой сменой плана в готовом ролике.
+- **Сцена длиннее продуктовой длительности.** Окно вырезается из середины
+  самой длинной сцены.
+- **Человек не выходит из кадра.** План драйвинга переносится в промт
+  эстетики, потому что позу модель берёт из видео.
 
-- **Лицо крупнее 100 px.** Ниже этого личность нечем измерять, и модель
-  переносит её неуверенно. Измерено: драйвинги с лицом 34–56 px дали плывущее
-  лицо, с 85–139 px — удержали.
-- **Одна сцена, ноль монтажных склеек.** Шов внутри окна даёт смену плана в
-  готовом ролике.
-- **Сцена длиннее продуктовой длины.** Окно режется из середины самой длинной
-  сцены равными полями.
-- **Человек не уходит за край.** Композиция драйвинга переносится в промт
-  эстетики: модель кладёт позу с видео.
-
-Липсинк — самый тяжёлый материал, и особенно тот, где персонаж
-**разворачивается**: на развороте лицо уходит из кадра целиком.
+Липсинк — самый сложный материал, особенно когда актёр разворачивается: на
+развороте лицо полностью уходит из кадра.
 
 ## Тесты
 
 ```
-python -m unittest discover -s lipsync/tests -t .
+python -m unittest discover -s lipsync/tests -p "test_*.py"
 ```
 
-770 сторожей, без сети и без GPU. Каждый сторожит найденный дефект, а не
-строчку кода, и говорит в докстринге, какой именно. Пороги мутируются в обе
-стороны: если планка ничего не сторожит, тест не покраснеет.
-
-Двенадцать тестов пропускаются без весов ArcFace и калибровочного набора —
-набор содержит биометрию и поставляется отдельно. Пропуск называет причину;
-пропущенный тест никогда не отчитывается как пройденный.
+770 тестов, без сети и без GPU. Каждый сторожит конкретный дефект, который
+действительно случился, и называет его в докстринге. Пороги принятия решений
+покрыты мутациями: сдвиг порога в любую сторону роняет тесты.
 
 ## Лицензия
 
-Исходники открыты для чтения и проверки, но это **не** open source:
-использовать, копировать и встраивать нельзя без договорённости. Подробности —
-[LICENSE](LICENSE).
+Исходники открыты, чтобы их можно было прочитать и проверить, но это **не**
+open source: использование, копирование и встраивание требуют договорённости.
+См. [LICENSE](LICENSE).
 
-Отдельно: прибор личности использует веса InsightFace `buffalo_l`, а они
-некоммерческие. В поставляемом виде слой приёмки — инструмент разработки;
-коммерческое развёртывание меняет модель лица и перекалибрует пороги под её
-шкалу.
+Ещё одно, о чём стоит знать: проверка личности использует веса InsightFace
+`buffalo_l`, а они лицензированы только для некоммерческого применения. В
+поставляемом виде слой приёмки — инструмент разработки; коммерческое
+развёртывание заменит модель лица и перекалибрует пороги.

@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "lipsync-templates"
 version = "0.1.0"
-description = "Липсинк-шаблоны: селфи + шаблон -> вертикальный ролик, где в кадре сам пользователь. Пайплайн генерации и прибор для сборки шаблонов"
+description = "Пользователь загружает селфи, выбирает шаблон и получает вертикальный ролик, где снимается сам"
 readme = "README.md"
 requires-python = ">=3.11"
 license = { file = "LICENSE" }

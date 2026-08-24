@@ -4,16 +4,16 @@
 прогона, каждое из которых уже стоило нам прогона или денег:
 
   1. ВЕСЬ путь идёт на подставных функциях. Сеть в этом файле физически
-     перекрыта (`_no_network`), а не обещана комментарием (Т4): иначе первый же
+     перекрыта (`_no_network`), а не обещана комментарием: иначе первый же
      недосмотр в умолчании увёл бы тест в платный вызов.
   2. Упавший внешний вызов даёт `не смогли проверить`, а НЕ `не годно`. Это
-     ровно то место, где третий исход схлопывали в обе стороны (Р1), и оба раза
+     ровно то место, где третий исход схлопывали в обе стороны, и оба раза
      это стоило прогонов.
   3. Ступени печатаются ПО ХОДУ. Проверяется наблюдаемо: подставной стилизатор
      смотрит на журнал в момент своего вызова и обязан увидеть там первую
      ступень. Прогон, печатающий всё в конце, здесь краснеет.
 
-Ожидаемые числа — ЛИТЕРАЛЫ (Т2): 0.35, 3.0, 0.05, 0/1/2. Импортированное
+Ожидаемые числа — ЛИТЕРАЛЫ: 0.35, 3.0, 0.05, 0/1/2. Импортированное
 ожидание уехало бы вместе с кодом и промолчало.
 """
 
@@ -111,13 +111,13 @@ def _stylize_ok(*, person, style, prompt, out_path):
 
 
 def _pose_ok(path):
-    """Подставная поза В ПЛАНЕ: тест ступени не про mediapipe (Т4)."""
+    """Подставная поза В ПЛАНЕ: тест ступени не про mediapipe."""
     return {"l_shoulder": (0.58, 0.32, 0.99), "r_shoulder": (0.42, 0.32, 0.99),
             "l_ankle": (0.55, 0.92, 0.96), "r_ankle": (0.45, 0.92, 0.96)}
 
 
 class _PlanOk:
-    """Подставной сосед-план: НЕ ХОДИТ НА ДИСК и не тащит PIL (Т4).
+    """Подставной сосед-план: НЕ ХОДИТ НА ДИСК и не тащит PIL.
 
     Сигнатура повторяет настоящую `fork_plan.to_plan`: подставка с удобной
     сигнатурой зеленела бы на контракте, которого нет.
@@ -138,7 +138,7 @@ class _PlanOk:
                 "note": "подставная дорисовка полей"}
 
     # Полосы и коробка берутся у НАСТОЯЩЕГО соседа: подставлять сюда свои
-    # числа значило бы сторожить выдуманную полосу вместо отгружаемой (Т2).
+    # числа значило бы сторожить выдуманную полосу вместо отгружаемой.
     from lipsync.fork_plan import (ANKLES_BAND, CENTRE_TOL,  # noqa: E402
                                      SHOULDERS_BAND, WIDTH_MAX, person_box)
     person_box = staticmethod(person_box)
@@ -246,7 +246,7 @@ class ThirdOutcomeIsNotCollapsed(unittest.TestCase):
                           E.EXIT_BY_OUTCOME["не смогли проверить"]], [0, 1, 2])
 
     def test_zero_checks_is_not_a_success(self):
-        # Р2: ноль нарушений при нуле отработавших проверок — не «годно».
+        # ноль нарушений при нуле отработавших проверок — не «годно».
         self.assertEqual(E.verdict(0, 0, 0), "не смогли проверить")
         self.assertEqual(E.verdict(1, 0, 0), "годно")
         self.assertEqual(E.verdict(1, 1, 0), "не годно")
@@ -267,7 +267,7 @@ class IdentityBarIsGuarded(unittest.TestCase):
                                         similarity=_similarity_ok, distances=d)
 
     def test_just_inside_the_bar_passes_and_just_outside_is_UNMEASURED(self):
-        # ПЕРЕПИСАН 22.08 под решение владельца: за планкой теперь НЕ «не
+        # ПЕРЕПИСАН под решение составителя шаблонов: за планкой теперь НЕ «не
         # годно», а «не смогли» — там начинается средняя полоса лестницы, где
         # лицо закрыто аксессуаром и ArcFace не судья. «Не годно» переехало за
         # ступень «другой человек» 0.7137 и проверяется отдельным классом.
@@ -481,7 +481,7 @@ class OutputAcceptance(unittest.TestCase):
         return E.stage_output_acceptance(**kw)
 
     def test_any_vertical_geometry_passes_and_landscape_is_a_defect(self):
-        # ПЕРЕПИСАН 22.08. Прежняя редакция требовала совпадения с
+        # ПЕРЕПИСАН. Прежняя редакция требовала совпадения с
         # `KLING_OUT_SIZE` и забраковала боевой выход 816x1104 — вертикаль,
         # которой мы добивались весь день. Теперь сторожится СВОЙСТВО: 720x1280
         # обязано ПРОХОДИТЬ (это вертикаль), а горизонталь — падать.
@@ -731,7 +731,7 @@ class IntakeSeam(unittest.TestCase):
 class BrandBanIsInThePrompt(unittest.TestCase):
     def test_the_prompt_carries_the_ban_and_the_roles(self):
         built = E.style_prompt("style.png", card_reader=lambda p: {})
-        # ПЕРЕПИСАН 22.08: владелец разрешил называть марки словами и оставил
+        # ПЕРЕПИСАН: составитель шаблонов разрешил называть марки словами и оставил
         # запрет только на НАРИСОВАННЫЙ знак. Прежний литерал сторожил решение,
         # которого больше нет.
         self.assertIn("no logo", built["prompt"])
@@ -747,7 +747,7 @@ class BrandBanIsInThePrompt(unittest.TestCase):
                 "texture": "clean flat surfaces"}
         built = E.style_prompt("style.png", card_reader=lambda p: card)
         self.assertIn("sky blue", built["prompt"])
-        # ПЕРЕПИСАН 22.08: владелец разрешил называть марки словами и оставил
+        # ПЕРЕПИСАН: составитель шаблонов разрешил называть марки словами и оставил
         # запрет только на НАРИСОВАННЫЙ знак. Прежний литерал сторожил решение,
         # которого больше нет.
         self.assertIn("no logo", built["prompt"])
@@ -762,7 +762,7 @@ class BrandBanIsInThePrompt(unittest.TestCase):
                                   prompt="just make it look nice")
             self.assertEqual(got["outcome"], "не годно")
             self.assertEqual(got["checks"][0]["outcome"], "не годно")
-            # И вход, на котором сторож обязан молчать (И5).
+            # И вход, на котором сторож обязан молчать.
             ok = E.stage_stylize(client_photo="c.png", style_ref="s.png",
                                  out_path=Path(td) / "styled.png",
                                  stylize=_stylize_ok, plan=_PlanOk, pose=_pose_ok,
@@ -819,7 +819,7 @@ if __name__ == "__main__":
 
 
 class TheStyliserWasChosenByEyeNotByNumber(unittest.TestCase):
-    """Решение владельца 22.08: `nanobanana-2`, ВОПРЕКИ числу.
+    """Решение составителя шаблонов: `nanobanana-2`, ВОПРЕКИ числу.
 
     Гейт стоит на самом решении, а не на его следствиях: замер награждал
     перерисовку, и модель с бОльшим числом утащила из референса одежду и позу.
@@ -828,7 +828,7 @@ class TheStyliserWasChosenByEyeNotByNumber(unittest.TestCase):
     """
 
     def test_the_chosen_styliser_is_the_one_the_owner_picked(self):
-        # Литерал, а не импорт из проверяемого модуля (Т2).
+        # Литерал, а не импорт из проверяемого модуля.
         self.assertEqual(E.STYLE_MODEL, "nanobanana-2")
 
     def test_the_rejected_styliser_scored_HIGHER_and_is_still_rejected(self):
@@ -851,7 +851,7 @@ class TheStyliserWasChosenByEyeNotByNumber(unittest.TestCase):
 
 
 class TheStyleReferenceLeaksAppearanceAndItIsGuarded(unittest.TestCase):
-    """Боевой прогон 22.08: стилизация надела на клиента ОЧКИ с референса.
+    """Боевой прогон: стилизация надела на клиента ОЧКИ с референса.
 
     ArcFace дал 0.3928 при планке 0.35 и стенд встал, не потратив денег.
     Диагноз в отчёте был неверный: не «личность потеряна», а ЛИЦО ЗАКРЫТО —
@@ -860,7 +860,7 @@ class TheStyleReferenceLeaksAppearanceAndItIsGuarded(unittest.TestCase):
 
     def test_the_prompt_forbids_copying_eyewear_from_the_reference(self):
         built = E.style_prompt("любой.png", card_reader=lambda p: None)
-        # Литералы, а не импорт из проверяемого модуля (Т2).
+        # Литералы, а не импорт из проверяемого модуля.
         for word in ("eyewear", "accessory", "garment", "pose"):
             with self.subTest(word=word):
                 self.assertIn(word, built["prompt"])
@@ -884,7 +884,7 @@ class TheStyleReferenceLeaksAppearanceAndItIsGuarded(unittest.TestCase):
 
 
 class TheIdentityAxisHasAMiddleBandAndAnOperatorOverride(unittest.TestCase):
-    """Решение владельца 22.08: очки со стиля — не баг, а фича.
+    """Решение составителя шаблонов: очки со стиля — не баг, а фича.
 
     Планку НЕ подняли: поднятая перестала бы ловить настоящую подмену.
     Вместо этого средняя полоса лестницы стала третьим исходом, а проход по
@@ -919,14 +919,14 @@ class TheIdentityAxisHasAMiddleBandAndAnOperatorOverride(unittest.TestCase):
         self.assertEqual(got["outcome"], E.FAIL)
 
     def test_the_ladder_numbers_are_the_measured_ones(self):
-        # Литералы (Т2).
+        # Литералы.
         self.assertEqual(E.LADDER_SAME, 0.0652)
         self.assertEqual(E.LADDER_REJECTED, 0.7137)
         self.assertEqual(E.LADDER_STRANGER, 1.0217)
 
 
 class TheGeometryCheckGuardsVerticalityNotExactNumbers(unittest.TestCase):
-    """Боевой прогон 22.08 вернул 816x1104 — ВЕРТИКАЛЬ, и прибор её забраковал.
+    """Боевой прогон вернул 816x1104 — ВЕРТИКАЛЬ, и прибор её забраковал.
 
     Он сверял выход с измеренными 960x960 и завернул самый желанный исход.
     Теперь сторожится СВОЙСТВО (вертикаль или квадрат), а не число.
@@ -1015,7 +1015,7 @@ class TheDeliverableIsBuiltEvenWhenIdentityCannotBeMeasured(unittest.TestCase):
 
     @property
     def _band(self):
-        """Средняя полоса лестницы: 0.5109 — БОЕВОЕ измерение 22.08."""
+        """Средняя полоса лестницы: 0.5109 — БОЕВОЕ измерение."""
         return self._on_output(0.5109)
 
     @property
@@ -1034,7 +1034,7 @@ class TheDeliverableIsBuiltEvenWhenIdentityCannotBeMeasured(unittest.TestCase):
         self.assertIn(E.STAGES[6], names)
 
     def test_but_the_verdict_is_NOT_whitewashed_into_good(self):
-        # Вторая сторона: доделали работу — не значит переписали оценку (Р1).
+        # Вторая сторона: доделали работу — не значит переписали оценку.
         log = io.StringIO()
         with TemporaryDirectory() as td, _no_network():
             got = _run(Path(td), log, distances=self._band)
@@ -1076,7 +1076,7 @@ class TheDeliverableIsBuiltEvenWhenIdentityCannotBeMeasured(unittest.TestCase):
 class TheFramesChannelReachesRunFromTheCommandLine(unittest.TestCase):
     """Канал, который разбирается и теряется, выглядит рабочим до прогона.
 
-    ИЗМЕРЕНО 22.08: без него оба боевых прогона (b2 и b4) встали на ступени 1
+    ИЗМЕРЕНО: без него оба боевых прогона (b2 и b4) встали на ступени 1
     с «приём драйвинга — не смогли, не смогли 3», хотя тот же приёмщик с теми
     же кадрами отдельно давал «годно, проверено 887, нарушений 0».
     """
@@ -1128,14 +1128,14 @@ class TheFramesChannelReachesRunFromTheCommandLine(unittest.TestCase):
 class ThePriceIsPerSecondNotPerCall(unittest.TestCase):
     """Вторая ИЗМЕРЕННАЯ цена исправляет первую, и число сторожится литералом.
 
-    ИЗМЕРЕНО по балансу fal 22.08: 10.8490375 -> 10.1490375 за два
+    ИЗМЕРЕНО по балансу fal: 10.8490375 -> 10.1490375 за два
     пятисекундных вызова, то есть $0.35 за вызов, а не $0.21. Прежние $0.21
     были измерены на ТРЁХСЕКУНДНЫХ заказах. Оба делятся на длину в одно
     число, и «цена вызова» без длины оказалась величиной без смысла.
     """
 
     def test_the_measured_numbers_are_the_ones_shipped(self):
-        # Литералы, а не арифметика из проверяемого модуля (Т2).
+        # Литералы, а не арифметика из проверяемого модуля.
         self.assertEqual(E.KLING_PRICE_PER_SECOND_USD, 0.07)
         self.assertEqual(E.PRODUCT_SECONDS, 5.0)
         self.assertEqual(E.KLING_PRICE_USD, 0.35)
@@ -1374,7 +1374,7 @@ class TheOutpaintFixesTheLetterboxWithoutLosingTheRun(unittest.TestCase):
 
 
 class ThePrintedPriceFollowsTheWindowLength(unittest.TestCase):
-    """ИЗМЕРЕНО 22.08: на десятисекундном прогоне стенд напечатал «$0.35», а
+    """ИЗМЕРЕНО: на десятисекундном прогоне стенд напечатал «$0.35», а
     счёт списал $0.70 (баланс 10.1490375 -> 9.4490375). Константа была зашита
     под пять секунд и на другой длине соврала.
 
@@ -1428,7 +1428,7 @@ class ThePrintedPriceFollowsTheWindowLength(unittest.TestCase):
 class ThePersonMustBeInPlanNotJustTheCanvas(unittest.TestCase):
     """Канвас проверялся, а ПОЗА на рефке — ни разу, и это стоило денег.
 
-    ИЗМЕРЕНО 22.08 после первого десятисекундного ролика: все ШЕСТЬ боевых
+    ИЗМЕРЕНО после первого десятисекундного ролика: все ШЕСТЬ боевых
     рефок промахнулись мимо полосы щиколоток (0.6064..0.7855 при полосе
     0.86..0.99) — человек нарисован мельче и выше плана, под ним пустой пол.
     Драйвинги ставят щиколотки на 0.913..1.037. Kling масштабирует персонажа
@@ -1468,7 +1468,7 @@ class ThePersonMustBeInPlanNotJustTheCanvas(unittest.TestCase):
         self.assertEqual(self._check(bad)[1], FAIL)
 
     def test_a_pose_that_will_not_read_is_UNMEASURED_not_failed(self):
-        # Отсутствие прибора не есть брак картинки (Р1).
+        # Отсутствие прибора не есть брак картинки.
         self.assertEqual(self._check({})[1], UNMEASURED)
 
     def test_a_falling_pose_reader_is_UNMEASURED(self):

@@ -1,11 +1,11 @@
 """Отбор петель: арифметика стыка, подавление пересечений, три исхода.
 
-ПОЧЕМУ ЗДЕСЬ НЕТ MEDIAPIPE (Т4). Снятие поз стоит секунды на кадр и требует
+ПОЧЕМУ ЗДЕСЬ НЕТ MEDIAPIPE. Снятие поз стоит секунды на кадр и требует
 пакета с весами; тест, зависящий от него, краснел бы от чужого окружения и
 зеленел бы от кэша. Позы приходят через точку внедрения `read_pose`, а все
 последовательности порождаются здесь же формулой — маятник (петля есть),
 монотонный дрейф (петли нет вовсе), два упражнения подряд (петель обязано быть
-две). У каждого прибора негативный контроль С ОБЕИХ СТОРОН (И5): вход, где он
+две). У каждого прибора негативный контроль С ОБЕИХ СТОРОН: вход, где он
 обязан найти, и вход, где он обязан сказать «не нашлось».
 """
 
@@ -136,7 +136,7 @@ def norm(points):
 # ---------------------------------------------------------------------------
 
 class Material:
-    """Кадры на диске плюс подменные детектор поз и читалка пикселей (Т4).
+    """Кадры на диске плюс подменные детектор поз и читалка пикселей.
 
     `blank=True` кладёт ПУСТЫЕ файлы: когда обе точки внедрения подменены,
     картинки никто не открывает, а тысяча настоящих PNG стоит секунд.
@@ -209,11 +209,11 @@ class Material:
         return np.full((8, 8), base, dtype="float64")
 
     def head(self, path):
-        """Голова, ТРЕТЬЯ ТОЧКА ВНЕДРЕНИЯ (Т4). Настоящий детектор 133 точек
+        """Голова, ТРЕТЬЯ ТОЧКА ВНЕДРЕНИЯ. Настоящий детектор 133 точек
         стоит 0.436 с/кадр, и один его вызов из сьюта превратил четыре секунды
         прогона в пять минут — поймано прогоном, а не рассуждением.
 
-        Три поведения головы, и все три нужны (И5):
+        Три поведения головы, и все три нужны:
             `возвращается` — голова выводится из позы, петля закрывается точно;
             `уезжает`      — голова монотонно сползает, петля не закрывается;
             `рывок`        — голова стоит, но один раз прыгает на середине.
@@ -252,7 +252,7 @@ FIXTURE_FPS = 30
 
 
 def analyse(material, **kw):
-    """Прогон прибора на фикстуре: ВСЕ ТРИ точки внедрения подменены (Т4).
+    """Прогон прибора на фикстуре: ВСЕ ТРИ точки внедрения подменены.
 
     Третью (голову) забыли подать в первой редакции, и настоящий детектор 133
     точек по 0.436 с на кадр растянул сьют с четырёх секунд до пяти с лишним
@@ -272,12 +272,12 @@ def analyse(material, **kw):
 
 class PoseAxis(unittest.TestCase):
     def test_pose_gap_of_a_frame_against_itself_is_zero(self):
-        """Негативный контроль «прибор обязан промолчать» (И5)."""
+        """Негативный контроль «прибор обязан промолчать»."""
         a = norm(skeleton(0.3))
         self.assertEqual(fl.pose_gap(a, a), 0.0)
 
     def test_pose_gap_is_a_hand_computable_literal(self):
-        """Ожидаемое — литерал, посчитанный на бумаге, а не импорт (Т2).
+        """Ожидаемое — литерал, посчитанный на бумаге, а не импорт.
 
         Торс фикстуры равен 0.2 кадра. Сдвинув ОДНО запястье на 0.02, получаем
         0.1 длины торса у одного сустава из двенадцати: 0.1/12 = 0.008333.
@@ -288,7 +288,7 @@ class PoseAxis(unittest.TestCase):
         self.assertAlmostEqual(fl.pose_gap(norm(a), norm(b)), 0.008333, places=6)
 
     def test_pose_gap_is_the_same_number_as_pose_delta(self):
-        """Е1: своя реализация обязана давать то же, что приёмка поз проекта."""
+        """своя реализация обязана давать то же, что приёмка поз проекта."""
         a, b = skeleton(0.0), skeleton(0.3)
         mine = fl.pose_gap(norm(a), norm(b))
         theirs = pose.pose_delta(a, b)["mean"]
@@ -359,7 +359,7 @@ class FlowAxis(unittest.TestCase):
 
 class Lengths(unittest.TestCase):
     def test_every_length_survives_the_wrapper_snap(self):
-        """Прижатие обёртки на кадр разъезжает петлю (Е1: считает fork_comfy)."""
+        """Прижатие обёртки на кадр разъезжает петлю."""
         for L in fl.admissible_lengths(NFRAMES):
             self.assertEqual(fork_comfy.snap_frames(L), L, f"длина {L} прижмётся")
 
@@ -510,7 +510,7 @@ class Gif(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
-# 8. Разбор последовательностей: обе стороны негативного контроля (И5)
+# 8. Разбор последовательностей: обе стороны негативного контроля
 # ---------------------------------------------------------------------------
 
 class Sequences(unittest.TestCase):
@@ -532,11 +532,11 @@ class Sequences(unittest.TestCase):
         self.assertAlmostEqual(got["advantage"], 1.4, places=1)
         self.assertIn("ПЕТЕЛЬ НЕ НАШЛОСЬ", got["note"])
         self.assertGreater(got["measured_pairs"], 300,
-                           "Р2: «не нашлось» обязано стоять рядом с числом "
+                           "«не нашлось» обязано стоять рядом с числом "
                            "разобранных пар, иначе оно неотличимо от «не искали»")
 
     def test_a_drift_stays_loopless_at_three_different_speeds(self):
-        """Т3: фикстура берётся с обоих краёв диапазона и из середины."""
+        """фикстура берётся с обоих краёв диапазона и из середины."""
         for tire in (0.0005, 0.002, 0.01):
             with self.subTest(tire=tire):
                 m = Material(drift_sequence(tire=tire))
@@ -545,7 +545,7 @@ class Sequences(unittest.TestCase):
                 self.assertAlmostEqual(got["advantage"], 1.4, places=1)
 
     def test_a_tiring_pendulum_is_still_a_loop_but_a_worse_one(self):
-        """Середина диапазона (Т3): повтор есть, но человек по ходу уезжает."""
+        """Середина диапазона: повтор есть, но человек по ходу уезжает."""
         m = Material(loop_sequence(tire=0.0005))
         got = analyse(m)
         self.assertEqual(got["outcome"], PASS, got["note"])
@@ -559,7 +559,7 @@ class Sequences(unittest.TestCase):
             сползание 0.006 на кадр -> преимущество 1.66 -> петель не нашлось
 
         Планка 2.0 лежит между ними. Это и есть негативный контроль обеих
-        сторон (И5) на одном и том же приборе.
+        сторон на одном и том же приборе.
         """
         for tire, outcome, lo, hi in ((0.004, PASS, 3.2, 3.6),
                                       (0.006, FAIL, 1.5, 1.8)):
@@ -584,7 +584,7 @@ class Sequences(unittest.TestCase):
                          "потеряно")
 
     def test_a_still_clip_is_not_measurable_rather_than_loopless(self):
-        """Р1: «не смогли» не сворачивается ни в «годно», ни в «не годно»."""
+        """«не смогли» не сворачивается ни в «годно», ни в «не годно»."""
         m = Material(still_sequence())
         got = analyse(m)
         self.assertEqual(got["outcome"], UNMEASURED, got["note"])
@@ -627,7 +627,7 @@ class Sequences(unittest.TestCase):
 
 class ReportAndCache(unittest.TestCase):
     def test_the_report_carries_its_numbers(self):
-        """Р2: ноль нарушений при нуле проверок — не успех."""
+        """ноль нарушений при нуле проверок — не успех."""
         m = Material(loop_sequence())
         got = analyse(m)
         for key in ("frames", "taken", "pairs", "measured_pairs",
@@ -669,7 +669,7 @@ class ReportAndCache(unittest.TestCase):
         self.assertEqual(first["poses"], second["poses"])
 
     def test_a_changed_frame_invalidates_its_cache_entry(self):
-        """Кэш, переживающий подмену кадра, — второй источник истины (Е1)."""
+        """Кэш, переживающий подмену кадра, — второй источник истины."""
         from PIL import Image
 
         m = Material(loop_sequence(50))
@@ -681,7 +681,7 @@ class ReportAndCache(unittest.TestCase):
         self.assertEqual(len(m.calls), 51)
 
     def test_a_cache_of_the_current_version_is_honoured(self):
-        """Версия закреплена ЛИТЕРАЛОМ (Т2): импортировав её из модуля, тест
+        """Версия закреплена ЛИТЕРАЛОМ: импортировав её из модуля, тест
         поехал бы вместе с ней и перестал бы что-либо сторожить."""
         m = Material(loop_sequence(10))
         cache = Path(tempfile.mkdtemp(prefix="looper_cache_")) / "poses.json"
@@ -718,7 +718,7 @@ class Cuts(unittest.TestCase):
         self.assertAlmostEqual(got["worst"], 21.9, places=1)
 
     def test_a_cut_is_not_invented_on_smooth_material(self):
-        """Негативный контроль второй стороны (И5): ровный ход — не рез."""
+        """Негативный контроль второй стороны: ровный ход — не рез."""
         m = Material(loop_sequence(), blank=True)
         got = fl.cuts(m.paths(), gray=m.gray)
         self.assertEqual(got["cuts"], [])
@@ -749,7 +749,7 @@ class Cuts(unittest.TestCase):
         self.assertEqual(arr.shape, (96, 96))
 
     def test_a_frozen_clip_cannot_be_asked_about_cuts(self):
-        """Р1: «резов нет» и «резы не искали» — разные ответы."""
+        """«резов нет» и «резы не искали» — разные ответы."""
         import numpy as np
 
         m = Material(loop_sequence(), blank=True)
@@ -781,7 +781,7 @@ class Cuts(unittest.TestCase):
 
 class Presence(unittest.TestCase):
     def test_several_people_are_not_this_module_to_decide(self):
-        """Е1: выбор протагониста уже решён в `fork_props`, второго не заводим."""
+        """выбор протагониста уже решён в `fork_props`, второго не заводим."""
         m = Material(loop_sequence(), people={k: 2 for k in range(NFRAMES)})
         got = analyse(m)
         self.assertEqual(got["outcome"], UNMEASURED, got["note"])
@@ -862,7 +862,7 @@ class LongMaterial(unittest.TestCase):
         self.assertEqual(thin["loops"][0]["coarse"]["i"] % 5, 0)
 
     def test_thinning_breaks_at_nyquist_and_here_is_where(self):
-        """ИЗМЕРЕНО, отрицательный результат с числами (И6).
+        """ИЗМЕРЕНО, отрицательный результат с числами.
 
         Петля периода 44 кадра при шаге прореживания:
             5, 10, 20  — находится;
@@ -1039,7 +1039,7 @@ class PixelAxis(unittest.TestCase):
 
 class SourceFps(unittest.TestCase):
     def test_the_same_frames_at_24_and_30_are_not_the_same_seconds(self):
-        """И5, обе стороны: один и тот же материал при разной частоте обязан
+        """, обе стороны: один и тот же материал при разной частоте обязан
         дать РАЗНЫЕ секунды. Литералы: 45 кадров — 1.5 с при 30 и 1.88 при 24."""
         m = Material(loop_sequence(), blank=True)
         at30 = analyse(m, fps=30)
@@ -1053,7 +1053,7 @@ class SourceFps(unittest.TestCase):
         self.assertEqual(at24["loops"][0]["seconds"], 1.88)
 
     def test_the_repeat_plan_follows_the_source_rate(self):
-        """Числа владельца: петля 53 кадра при 24 к/с. Пятикратный повтор даёт
+        """Числа составителя шаблонов: петля 53 кадра при 24 к/с. Пятикратный повтор даёт
         10.88 с и ВЫЛЕТАЕТ за потолок, а по нашим 30 к/с он выглядел годным."""
         self.assertEqual(
             [(r["repeats"], r["frames"], r["seconds"])
@@ -1065,7 +1065,7 @@ class SourceFps(unittest.TestCase):
             [(3, 157, 5.23), (4, 209, 6.97), (5, 261, 8.7)])
 
     def test_a_directory_alone_has_no_frame_rate_and_says_so(self):
-        """Третий исход (Р1): не «30 по умолчанию», а «неизвестна»."""
+        """Третий исход: не «30 по умолчанию», а «неизвестна»."""
         m = Material(loop_sequence(), blank=True)
         got = fl.find_loops(m.dir, reader=m.reader, gray=m.gray,
                             head=m.head, gif=False)
@@ -1195,7 +1195,7 @@ class TwoSieves(unittest.TestCase):
         self.assertEqual(len(asked), 18)
 
     def test_the_signature_refuses_when_a_pose_is_missing(self):
-        """Р1: сверять движения по половине подписи нельзя."""
+        """сверять движения по половине подписи нельзя."""
         self.assertIsNone(fl.loop_signature(lambda f: None, 0, 44))
         self.assertIsNone(
             fl.loop_signature(lambda f: None if f == 15 else norm(skeleton(0.0)),
@@ -1219,7 +1219,7 @@ class TwoSieves(unittest.TestCase):
         self.assertGreater(fl.signature_gap(a, other), 0.3)
 
     def test_the_vectorised_gap_equals_pose_gap(self):
-        """Е1: быстрая арифметика обязана давать то же, чем судит вся приёмка."""
+        """быстрая арифметика обязана давать то же, чем судит вся приёмка."""
         at = lambda f: norm(skeleton(f / PERIOD))
         a = [at(0), at(7)]
         b = [at(3), at(19)]
@@ -1308,7 +1308,7 @@ class TwoSieves(unittest.TestCase):
                            "сито содержания")
 
     def test_comparing_movements_asks_the_detector_nothing(self):
-        """Т4 и П2: сверка идёт по УЖЕ СНЯТЫМ позам, новых опросов нет."""
+        """ и сверка идёт по УЖЕ СНЯТЫМ позам, новых опросов нет."""
         m = Material(two_places_one_movement(), blank=True)
         analyse(m)
         self.assertEqual(len(m.calls), 360,
@@ -1330,7 +1330,7 @@ class HeadAxis(unittest.TestCase):
         self.assertLess(got["loops"][0]["seam_head"], 1.0)
 
     def test_a_head_that_never_returns_drops_the_loop(self):
-        """И5, другая сторона: голова уезжает — петля не выпускается.
+        """, другая сторона: голова уезжает — петля не выпускается.
 
         И бюджет попыток не превращается в лазейку: исчерпав его на работающей
         оси, прибор ОСТАНАВЛИВАЕТСЯ, а не выпускает двадцать первого с пометкой
@@ -1357,7 +1357,7 @@ class HeadAxis(unittest.TestCase):
                                  "петля перешагнула рывок головы")
 
     def test_no_head_detector_marks_the_loop_instead_of_failing_it(self):
-        """Р1: «не смогли посмотреть» не значит «плохо» — но и не молчит."""
+        """«не смогли посмотреть» не значит «плохо» — но и не молчит."""
         m = Material(loop_sequence(), blank=True, head_broken=True)
         got = analyse(m)
         self.assertEqual(got["outcome"], PASS, got["note"])
@@ -1399,7 +1399,7 @@ class HeadAxis(unittest.TestCase):
         self.assertLess(got["loops"][0]["seam_head"], 1.5)
 
     def test_the_head_is_asked_only_about_finalists(self):
-        """П2: 0.436 с/кадр — голова спрашивается о единицах, а не о тысячах."""
+        """0.436 с/кадр — голова спрашивается о единицах, а не о тысячах."""
         m = Material(two_places_one_movement(), blank=True)
         got = analyse(m)
         self.assertLessEqual(got["head_tried"], fl.HEAD_MAX_TRIES)
@@ -1413,7 +1413,7 @@ class HeadAxis(unittest.TestCase):
         got = fl.head_scale(m.paths(), reader=m.head)
         self.assertEqual(got["outcome"], PASS)
         # Литералы, а не `fl.HEAD_SCALE_PAIRS`: ожидаемое, импортированное из
-        # проверяемого модуля, поедет вместе с ним и промолчит (Т2). Поймано
+        # проверяемого модуля, поедет вместе с ним и промолчит. Поймано
         # мутацией: подмена 40 на 5 пережила этот тест.
         self.assertEqual(got["measured"], 40)
         self.assertEqual(got["frames"], 80)
@@ -1428,7 +1428,7 @@ class HeadAxis(unittest.TestCase):
 
 class NoHeavyImports(unittest.TestCase):
     def test_importing_the_module_does_not_pull_mediapipe(self):
-        """Т4 обеспечивается устройством модуля, а не договорённостью."""
+        """ обеспечивается устройством модуля, а не договорённостью."""
         import subprocess
         import sys
 
@@ -1473,7 +1473,7 @@ class BridgePrice(unittest.TestCase):
         self.assertEqual(fl.bridge_frames(0.01), 1)
 
     def test_a_seam_that_is_a_whole_number_does_not_get_a_spare_frame(self):
-        """Негативный контроль округления с другой стороны (И5): вверх — это
+        """Негативный контроль округления с другой стороны: вверх — это
         не «плюс один всегда»."""
         self.assertEqual(fl.bridge_frames(3.0), 3)
         self.assertEqual(fl.bridge_frames(0.0), 0)
@@ -1496,7 +1496,7 @@ class BridgePrice(unittest.TestCase):
         self.assertEqual(got["unmeasured"], [])
 
     def test_a_missing_axis_is_a_third_outcome_and_gives_a_bound(self):
-        """Р1: «не смогли» не сворачивается ни в «годно», ни в «не годно».
+        """«не смогли» не сворачивается ни в «годно», ни в «не годно».
 
         Числа — с боевого ролика: петля 309..357, у которой лица не видно на
         первом кадре. По трём осям её мост был бы 3 кадра, и ровно этим она
@@ -1510,7 +1510,7 @@ class BridgePrice(unittest.TestCase):
         self.assertEqual(got["unmeasured"], ["голова"])
 
     def test_the_same_loop_with_the_head_measured_gets_a_real_price(self):
-        """Негативный контроль с другой стороны (И5): та же петля, у которой
+        """Негативный контроль с другой стороны: та же петля, у которой
         ось головы ответила, получает цену, а не границу. Настоящий стык
         головы 309..357, померенный по соседним измеримым краям, — 11.74 шага,
         и это мост в 12 кадров против кажущихся трёх."""
@@ -1551,12 +1551,12 @@ class BridgePrice(unittest.TestCase):
 
         Взято по плато развёртки на боевом ролике: ответ не меняется на
         отрезке 5..12, ниже 5 порог стоит на склоне, на 13 в выдачу
-        возвращаются соседи той петли, которую владелец забраковал глазами.
+        возвращаются соседи той петли, которую составитель шаблонов забраковал глазами.
         """
         self.assertEqual(fl.BRIDGE_MAX_FRAMES, 8)
 
     def test_the_ceiling_decides_at_exactly_eight_frames(self):
-        """Т1 с обеих сторон: мост ровно в потолок — годно, на кадр длиннее —
+        """ с обеих сторон: мост ровно в потолок — годно, на кадр длиннее —
         нет. Сдвинь потолок в любую сторону, и один из этих двух покраснеет."""
         self.assertEqual(fl.bridge_cost({"тело": 8.0})["outcome"], "годно")
         self.assertEqual(fl.bridge_cost({"тело": 8.01})["outcome"], "не годно")
@@ -1578,7 +1578,7 @@ class TwoQueues(unittest.TestCase):
                          [(100, 144), (200, 244)])
 
     def test_inside_the_measured_queue_the_cheaper_bridge_wins(self):
-        """Негативный контроль с другой стороны (И5): когда измерены все,
+        """Негативный контроль с другой стороны: когда измерены все,
         порядок обязан быть ровно по цене моста, а не по номеру кадра."""
         got = fl.rank_loops([priced(10, 54, 9, 9, 8.1, PASS),
                              priced(20, 64, 2, 2, 1.4, PASS),
@@ -1592,7 +1592,7 @@ class TwoQueues(unittest.TestCase):
         self.assertEqual([l["i"] for l in got], [20, 10])
 
     def test_a_blind_face_no_longer_takes_the_first_place(self):
-        """То же самое, но целиком через прибор (Т5: развилка вызывается).
+        """То же самое, но целиком через прибор.
 
         Упражнение B замыкается ТОЧНО (мост 0 кадров), упражнение A слегка
         уезжает (мост 1 кадр). Пока лицо видно, первым обязано идти B — это
@@ -1652,7 +1652,7 @@ class TwoQueues(unittest.TestCase):
         self.assertIn("мост", txt.splitlines()[0])
 
     def test_the_counters_say_how_many_bridges_were_priced_and_how_many_not(self):
-        """Р2: ноль отвергнутых при нуле посчитанных мостов — не успех."""
+        """ноль отвергнутых при нуле посчитанных мостов — не успех."""
         blind = analyse(Material(two_exercises_second_is_perfect(), blank=True,
                                  head_blind=range(48, NFRAMES)))
         self.assertEqual(blind["bridge_measured"], 1)
@@ -1732,7 +1732,7 @@ class TwoQueues(unittest.TestCase):
         self.assertEqual(got["frames"], 16)
 
     def test_a_bridge_priced_without_the_pixel_axis_says_so(self):
-        """И7: та же форма дефекта, найденная грепом по модулю, — но здесь она
+        """та же форма дефекта, найденная грепом по модулю, — но здесь она
         закрывается пометкой, а не очередью, и это разные случаи.
 
         Пиксельная ось выключается У ВСЕГО КЛИПА сразу, а не у одной петли:
@@ -1745,7 +1745,7 @@ class TwoQueues(unittest.TestCase):
         self.assertIn("пиксельная ось клипа НЕ ИЗМЕРЕНА", fl.table(got))
 
     def test_the_pixel_note_is_silent_on_a_clip_where_that_axis_worked(self):
-        """Негативный контроль ЧЕРЕЗ ПРИБОР (И5): пометка обязана молчать.
+        """Негативный контроль ЧЕРЕЗ ПРИБОР: пометка обязана молчать.
 
         Фикстурам этого модуля пиксельная ось не светит: их серый кадр выведен
         из симметричного скелета, суммы гасятся, и типичный переход выходит
@@ -1769,7 +1769,7 @@ class TwoQueues(unittest.TestCase):
         self.assertNotIn("пиксельная ось клипа НЕ ИЗМЕРЕНА", fl.table(got))
 
     def test_the_pixel_note_is_silent_when_that_axis_worked(self):
-        """Негативный контроль (И5): сторож обязан молчать на входе, где всё
+        """Негативный контроль: сторож обязан молчать на входе, где всё
         измерено. Отчёт собран здесь литералами — `table` чистая функция, и
         проверять её проще подставленным отчётом, чем прогоном."""
         quiet = {"fps": 30, "dropped_bridge": 0, "loops": [

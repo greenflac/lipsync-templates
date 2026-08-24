@@ -1,6 +1,6 @@
 """Гейты универсального плана. Каждый сторожит дефект, а не строчку кода.
 
-Числа-ожидания — ЛИТЕРАЛЫ (Т2). Импорт из проверяемого модуля поехал бы вместе
+Числа-ожидания — ЛИТЕРАЛЫ. Импорт из проверяемого модуля поехал бы вместе
 с кодом и промолчал.
 """
 
@@ -34,7 +34,7 @@ class ThePlanNumbersComeFromTheMeasuredDrivings(unittest.TestCase):
         self.assertEqual(P.WIDTH_MAX, 0.72)
 
     def test_the_face_bar_is_imported_not_copied(self):
-        # Е1: планка размера лица одна на проект. Копия разъехалась бы молча.
+        # планка размера лица одна на проект. Копия разъехалась бы молча.
         from lipsync import fork_intake
 
         self.assertIs(P.MIN_FACE_PX, fork_intake.MIN_FACE_PX)
@@ -88,7 +88,7 @@ class ThePersonBoxIgnoresUnconfidentJoints(unittest.TestCase):
                 self.assertEqual(P.person_box(empty)["outcome"], UNMEASURED)
 
     def test_mutating_the_visibility_bar_both_ways_moves_the_box(self):
-        """Т1: планка видимости строже и слабее."""
+        """планка видимости строже и слабее."""
         dirty = dict(GOOD, l_ankle=(-0.6, 1.7, 0.4))
         loose = P.person_box(dirty, min_visibility=0.3)
         self.assertEqual(loose["x0"], -0.6)
@@ -142,7 +142,7 @@ class TheCanvasAlwaysPadsAndNeverCrops(unittest.TestCase):
                 P.canvas_for(*bad)
 
     def test_mutating_the_plan_ratio_both_ways_moves_the_canvas(self):
-        """Т1: PLAN_RATIO строже (уже) и слабее (шире)."""
+        """PLAN_RATIO строже (уже) и слабее (шире)."""
         was = P.PLAN_RATIO
         try:
             P.PLAN_RATIO = 0.5
@@ -191,7 +191,7 @@ class TheVerdictHasThreeOutcomesOnEveryAxis(unittest.TestCase):
         self.assertEqual(got["outcome"], FAIL)
 
     def test_a_small_face_only_warns_and_does_not_sink_the_verdict(self):
-        # Решение владельца 22.08, та же ось, что в приёме драйвинга: полный
+        # Решение составителя шаблонов, та же ось, что в приёме драйвинга: полный
         # рост делает лицо мельче по устройству, и ронять на этом вердикт
         # значило бы запретить сам выбранный план.
         got = P.plan_verdict(width=1080, height=1920, points=GOOD, face_px=61)
@@ -215,7 +215,7 @@ class TheVerdictHasThreeOutcomesOnEveryAxis(unittest.TestCase):
         self.assertEqual(got["outcome"], UNMEASURED)
 
     def test_mutating_each_band_both_ways_turns_the_verdict(self):
-        """Т1 по каждой полосе: строже роняет годное, слабее пропускает брак."""
+        """ по каждой полосе: строже роняет годное, слабее пропускает брак."""
         ok = dict(width=1080, height=1920, points=GOOD, face_px=140)
         wide = dict(GOOD, l_wrist=(0.95, 0.62, 0.97), r_wrist=(0.05, 0.62, 0.97))
         # У КАЖДОЙ полосы свой брак, нарушающий ТОЛЬКО её. Общий сдвинутый
@@ -278,7 +278,7 @@ class TheFullBodyPromptIsADecisionNotAString(unittest.TestCase):
         self.assertIn("no logos", P.full_body_prompt())
 
     def test_the_ban_comes_from_the_stand_not_from_a_local_copy(self):
-        # Е1: одно решение — одно место. Если запрет здесь скопирован, эта
+        # одно решение — одно место. Если запрет здесь скопирован, эта
         # подмена его не сдвинет, и тест покраснеет.
         from lipsync import fork_e2e
 
@@ -292,7 +292,7 @@ class TheFullBodyPromptIsADecisionNotAString(unittest.TestCase):
 
 
 class TheDiskIsAnInjectionPoint(unittest.TestCase):
-    """Без PIL и без диска модуль обязан проверяться (Т4)."""
+    """Без PIL и без диска модуль обязан проверяться."""
 
     def test_an_unopenable_image_is_UNMEASURED_not_failed(self):
         def broken(_):
@@ -309,8 +309,8 @@ if __name__ == "__main__":
 
 
 class TheDrivingDictatesThePlanNotAConstant(unittest.TestCase):
-    """Архитектурное решение владельца 22.08: «композицию кадра драйвинга
-    пробросить в промт эстетики».
+    """Архитектурное решение составителя шаблонов: композиция кадра драйвинга
+    пробрасывается в промт эстетики.
 
     ЗАВИСИМОСТЬ ПЕРЕВЁРНУТА В СТОРОНУ, ГДЕ СВОБОДЫ НЕТ: драйвинг — купленный
     материал, его композицию не подвинуть; эстетику мы пишем сами. Раньше план
@@ -361,8 +361,8 @@ class TheDrivingDictatesThePlanNotAConstant(unittest.TestCase):
         self.assertNotIn("0.9", text)
 
     def test_the_clause_does_NOT_dictate_where_the_feet_are_cut(self):
-        """ПЕРЕПИСАН 22.08 под решение владельца: «обрезку щиколоток
-        переносить не надо, держим только композицию».
+        """По решению составителя шаблонов обрезка щиколоток в промт не
+        переносится — переносится только композиция.
 
         ИЗМЕРЕНО, почему директива всё равно была бесполезна: щиколотки на
         эстетике сдвинулись 0.7816 -> 0.8862 при цели 1.0282. Ось, которую
@@ -375,7 +375,7 @@ class TheDrivingDictatesThePlanNotAConstant(unittest.TestCase):
         self.assertIn("full-length", text)
 
     def test_the_clause_says_it_outranks_the_aesthetic_framing(self):
-        # Композиция уже описана в промте владельца — у y2k это широкий угол
+        # Композиция уже описана в промте составителя шаблонов — у y2k это широкий угол
         # вплотную. Без этой оговорки наша строка добавила бы противоречие.
         text = P.framing_clause(P.composition_card(self.poses()))
         self.assertIn("outranks", text)
@@ -396,12 +396,12 @@ class TheDrivingDictatesThePlanNotAConstant(unittest.TestCase):
         self.assertEqual(got["outcome"], PASS)
 
     def test_a_different_ankle_line_is_NOT_a_defect_any_more(self):
-        """ПЕРЕПИСАН 22.08: судятся только оси КОМПОЗИЦИИ — центр и ширина.
+        """ПЕРЕПИСАН: судятся только оси КОМПОЗИЦИИ — центр и ширина.
 
         Линия плеч и линия щиколоток — это кадрирование, где именно проходит
         обрез; у эстетики оно своё. Раньше здесь стоял сторож на боевом
         промахе y2k (щиколотки 0.7358 против 0.913) — правило отменено
-        владельцем, и сторож переписан под новое.
+        составителем шаблонов, и сторож переписан под новое.
         """
         card = P.composition_card(self.poses(ankle=0.913, shoulder=0.531))
         miss = self.poses(ankle=0.7358, shoulder=0.4846)[0]

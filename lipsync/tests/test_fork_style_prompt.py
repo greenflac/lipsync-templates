@@ -82,7 +82,7 @@ class TheShapeComesFromTheCorpusNotFromTaste(unittest.TestCase):
     """Числа формы ИЗМЕРЕНЫ по 522 карточкам. Тест сторожит их значением."""
 
     def test_the_measured_corpus_numbers_are_the_ones_shipped(self):
-        # Литералы, а не импорт из проверяемого модуля (Т2): иначе тест поедет
+        # Литералы, а не импорт из проверяемого модуля: иначе тест поедет
         # вместе с кодом и промолчит.
         self.assertEqual(sp.WORDS_TARGET, 24)
         self.assertEqual((sp.WORDS_MIN, sp.WORDS_MAX), (9, 67))
@@ -121,7 +121,7 @@ class TheShapeComesFromTheCorpusNotFromTaste(unittest.TestCase):
 
 
 class TheReaderIsAnInjectionPoint(unittest.TestCase):
-    """Без внешнего пакета и без диска прибор обязан проверяться (Т4)."""
+    """Без внешнего пакета и без диска прибор обязан проверяться."""
 
     def test_from_image_uses_the_injected_reader(self):
         out = sp.from_image("нет-такого-файла.png", reader=lambda p: LIGHT)
