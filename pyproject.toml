@@ -10,9 +10,9 @@ readme = "README.md"
 requires-python = ">=3.11"
 license = { file = "LICENSE" }
 
-# Здесь только то, без чего не работает измерительный слой — его тесты
-# прогоняются без видеокарты и без сети. Тяжёлое — в extras: insightface
-# нужен только живому замеру личности, numpy+pillow хватает всему остальному.
+# Only what the measuring layer cannot run without; its tests need neither
+# a GPU nor the network. Heavy packages live in extras: insightface is only
+# needed for live identity measurement, numpy+pillow covers everything else.
 dependencies = [
     "numpy",
     "pillow",
