@@ -156,7 +156,7 @@ def run_batch(
     cell_runner=None,
     collect=None,
     max_streak: int = MAX_STREAK,
-    endpoint: str = None,
+    endpoint: str | None = None,
     log=None,
     **cell_kwargs,
 ) -> dict:

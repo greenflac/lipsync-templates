@@ -178,7 +178,11 @@ def read_style_card(path) -> dict:
 
 def tally(checked: int, violations: int, unmeasured: int) -> dict:
     """Put three numbers beside the verdict, with the verdict derived from them."""
-    out = {"checked": int(checked), "violations": int(violations), "unmeasured": int(unmeasured)}
+    out: dict = {
+        "checked": int(checked),
+        "violations": int(violations),
+        "unmeasured": int(unmeasured),
+    }
     if checked == 0:
         out["outcome"] = UNMEASURED
     elif violations > 0:
@@ -283,6 +287,7 @@ def timestamp_verdict(probed: int | None, plain: int | None, fixed: int | None) 
                 f"'the frames are in place' nor 'the file is broken'"
             ),
         }
+    assert probed is not None and plain is not None  # narrowed by the guard above
     gap = plain - probed
     if abs(gap) <= FRAME_COUNT_EXACT:
         return {
@@ -642,7 +647,7 @@ def driving_intake(
                 "no frames given: nothing to look for seams in. This is not 'there are no seams'"
             ),
         }
-        marks = []
+        marks: list = []
     else:
         c = fork_looper.cuts(paths, gray=gray)
         marks = c.get("cuts") or []

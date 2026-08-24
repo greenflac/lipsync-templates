@@ -27,7 +27,7 @@ UPSCALE_DRIFT_MAX = 0.05
 
 RESTORE_PULL_MAX = 0.05
 
-ACCEPTANCE_ROWS = {
+ACCEPTANCE_ROWS: dict[str, dict] = {
     "against the raw photo": {
         "target": {"median": 0.5067, "inside": 0, "judged": 21},
         "reproduced": None,
@@ -129,7 +129,7 @@ def distances(
     """Return the distance from every frame to the anchor. Three outcomes per frame, not two."""
     mod = _instrument(instrument)
     a = mod.face_detail(anchor)
-    empty = {
+    empty: dict = {
         "per_frame": {},
         "face_px": {},
         "no_face": [],
@@ -226,7 +226,7 @@ def axis(
     if upscaled_reference is not None:
         refuse_derived_anchor(upscaled_reference, frames, manifest=manifest)
 
-    out = {
+    out: dict = {
         "instrument": instrument,
         "licence": INSTRUMENT_LICENCE.get(instrument, "licence not checked"),
         "bar": SAME_PERSON_MAX,
@@ -333,7 +333,7 @@ def before_after_restore(
     min_face_px: int | None = None,
 ) -> dict:
     """Measure identity BEFORE and AFTER the face restore, under ONE bar, as a pair."""
-    common = {"instrument": instrument, "min_face_px": min_face_px}
+    common: dict = {"instrument": instrument, "min_face_px": min_face_px}
     before = distances(before_frames, raw_photo, **common)
     after = distances(after_frames, raw_photo, **common)
 
@@ -400,8 +400,8 @@ def restore_negative_control(
     pull_max: float = RESTORE_PULL_MAX,
 ) -> dict:
     """Run the negative control for the face restore. The gap that §7 did not cover."""
-    common = {"instrument": instrument, "min_face_px": min_face_px}
-    out = {
+    common: dict = {"instrument": instrument, "min_face_px": min_face_px}
+    out: dict = {
         "bar": SAME_PERSON_MAX,
         "pull_max": pull_max,
         "before": None,

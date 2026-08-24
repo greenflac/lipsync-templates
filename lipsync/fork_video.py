@@ -162,7 +162,7 @@ def parse_probe(text: str) -> dict:
         }
     fps = _ratio(video.get("avg_frame_rate")) or _ratio(video.get("r_frame_rate"))
     try:
-        seconds = float(video.get("duration") or (data.get("format") or {}).get("duration"))
+        seconds = float(video.get("duration") or (data.get("format") or {}).get("duration") or "")
     except (TypeError, ValueError):
         seconds = None
     nb = video.get("nb_frames")
@@ -435,7 +435,7 @@ def frames(
     prober = read_probe if prober is None else prober
     decoder = run_decode if decoder is None else decoder
     t = time.perf_counter()
-    steps = []
+    steps: list = []
 
     if limit is not None:
         if not isinstance(limit, int) or isinstance(limit, bool) or limit < 1:

@@ -361,7 +361,7 @@ def mux_argv(
 def audio_plan(driving_path, window, kling_path, *, prober=None) -> dict:
     """Decide whether the audio can return and with what shift. No step stays silent."""
     t = time.perf_counter()
-    steps = []
+    steps: list = []
     drv = fork_video.probe(driving_path, prober=prober)
     steps.append(("probing the driving", drv["outcome"], drv["note"]))
     kln = fork_video.probe(kling_path, prober=prober)
@@ -405,6 +405,9 @@ def audio_plan(driving_path, window, kling_path, *, prober=None) -> dict:
         }
     fps = drv.get("fps")
     kfps = kln.get("fps")
+    # The metadata step above already returned UNMEASURED when the rate was
+    # not measured, so fps cannot be None here; the assert states the invariant.
+    assert fps is not None
     if kfps is not None and abs(float(kfps) - float(fps)) > fork_video.FPS_TOLERANCE:
         return {
             **out,
@@ -465,7 +468,7 @@ def finish(
     """Assemble the final clip: crop plus audio plus a report. No step stays silent."""
     runner = fork_video.run_decode if runner is None else runner
     t = time.perf_counter()
-    steps = []
+    steps: list = []
 
     def report(outcome, note, **extra):
         return {

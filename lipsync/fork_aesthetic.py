@@ -112,13 +112,13 @@ def strip_anthropometry(prompt: str) -> dict:
             kept.append(clause)
     text = ",".join(kept)
 
-    words = []
+    words: list[dict] = []
     for pattern in ANTHROPOMETRY_WORDS:
         text, n = re.subn(pattern + r"\s*", "", text, flags=re.IGNORECASE)
         if n:
             words.append({"pattern": pattern, "times": n})
 
-    genders = []
+    genders: list[dict] = []
     for src, dst in GENDER_SWAPS:
         text, n = re.subn(rf"\b{re.escape(src)}\b", dst, text, flags=re.IGNORECASE)
         if n:
@@ -255,7 +255,7 @@ def leak_verdict(*, made, client, demo, distances=None) -> dict:
         from . import fork_identity  # noqa: PLC0415
 
         distances = fork_identity.distances
-    out = {"seconds": None, "to_client": None, "to_demo": None, "gap": None}
+    out: dict = {"seconds": None, "to_client": None, "to_demo": None, "gap": None}
     try:
         c = distances([str(made)], str(client))
         d = distances([str(made)], str(demo))

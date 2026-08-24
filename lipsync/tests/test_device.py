@@ -25,7 +25,7 @@ def _install_module(case: unittest.TestCase, name: str, module) -> None:
 def _fake_torch(version: str, device: str, name=None, boom=None):
     """Build a torch stub: the backend either has a card name or raises."""
     torch = types.ModuleType("torch")
-    torch.__version__ = version
+    setattr(torch, "__version__", version)
     backend = types.SimpleNamespace()
     if boom is not None:
 
@@ -363,7 +363,7 @@ class TheCpuBuildIsRecognisedByWhatItWasBuiltWith(unittest.TestCase):
 
     def _torch(self, cuda_value, version="2.13.0"):
         torch = types.ModuleType("torch")
-        torch.__version__ = version
+        setattr(torch, "__version__", version)
         torch.version = types.SimpleNamespace(cuda=cuda_value)
         torch.cuda = types.SimpleNamespace(get_device_name=lambda _i: "RTX 3050")
         return torch

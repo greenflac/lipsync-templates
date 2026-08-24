@@ -56,7 +56,12 @@ def image(
     import requests
 
     url = f"{_base()}/image/" + quote(prompt, safe="")
-    params = {"model": model, "seed": seed, "width": width, "height": height}
+    params: dict[str, str | int] = {
+        "model": model,
+        "seed": seed,
+        "width": width,
+        "height": height,
+    }
     if image_url:
         params["image"] = image_url
     r = requests.get(url, params=params, headers=_auth(), timeout=300)
@@ -120,13 +125,13 @@ def compose(
     url = f"{_base()}/image/" + quote(prompt, safe="")
     r = requests.get(
         url,
-        params={
-            "model": model,
-            "image": "|".join(image_urls),
-            "width": width,
-            "height": height,
-            "seed": seed,
-        },
+        params=dict[str, str | int](
+            model=model,
+            image="|".join(image_urls),
+            width=width,
+            height=height,
+            seed=seed,
+        ),
         headers=_auth(),
         timeout=600,
     )
@@ -158,7 +163,7 @@ def video(
     import requests
 
     url = f"{_base()}/video/" + quote(prompt, safe="")
-    params = {
+    params: dict[str, str | int] = {
         "model": model,
         "duration": duration,
         "aspectRatio": aspect_ratio,

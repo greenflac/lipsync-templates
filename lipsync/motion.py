@@ -17,7 +17,7 @@ def _gray(path: str | Path, side: int = 96):
     import numpy as np
 
     with Image.open(path) as im:
-        small = im.convert("L").resize((side, side), Image.BILINEAR)
+        small = im.convert("L").resize((side, side), Image.Resampling.BILINEAR)
     return np.asarray(small, dtype="float64")
 
 

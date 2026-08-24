@@ -9,28 +9,9 @@ ruff check lipsync/
 echo "== ruff format"
 ruff format --check lipsync/
 
-echo "== mypy (regression guard)"
-# DEBT(2026-08-24): scripts/mypy_baseline.txt holds the known error count,
-# measured where the guard is binding: CI ubuntu-latest, Python 3.11 (run 4
-# printed 60; local environments measure 58-59 and pass under it).
-# the guard fails if new code adds more. Drive it to 0, then run mypy plain.
-# The error list depends on the environment, so the guard is pinned to one
-# leg: Python 3.11 with exactly requirements-dev.txt installed. On other
-# versions it announces the skip instead of passing silently.
-if python -c 'import sys; raise SystemExit(sys.version_info[:2] != (3, 11))'; then
-    command -v mypy >/dev/null || { echo "FAIL: mypy is not installed"; exit 1; }
-    baseline=$(cat scripts/mypy_baseline.txt)
-    out=$(mypy lipsync/ --ignore-missing-imports --no-error-summary 2>&1 || true)
-    errors=$(printf '%s\n' "$out" | grep -c "error:" || true)
-    echo "mypy errors: $errors (baseline: $baseline)"
-    if [ "$errors" -gt "$baseline" ]; then
-        printf '%s\n' "$out" | grep "error:" | tail -20
-        echo "FAIL: new type errors introduced ($errors > $baseline)"
-        exit 1
-    fi
-else
-    echo "skipped: the guard is pinned to Python 3.11 (see comment above)"
-fi
+echo "== mypy"
+python -c "import mypy" 2>/dev/null || { echo "FAIL: mypy is not installed"; exit 1; }
+python -m mypy lipsync/ --ignore-missing-imports
 
 echo "== tests"
 python -m unittest discover -s lipsync/tests -t .

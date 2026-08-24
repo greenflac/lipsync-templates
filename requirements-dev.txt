@@ -5,3 +5,4 @@ pillow==12.3.0
 # Keep in sync with .pre-commit-config.yaml rev.
 ruff==0.15.8
 mypy==1.19.1
+types-requests==2.33.0.20260712

@@ -161,8 +161,8 @@ def world_proportions(path: str | Path) -> dict | None:
     if out.get("shoulder_width") and out.get("hip_width"):
         out["shoulder_to_hip"] = round(out["shoulder_width"] / out["hip_width"], 4)
     legs = [out.get("l_hip->l_knee"), out.get("l_knee->l_ankle")]
-    if all(legs):
-        out["leg_length"] = round(sum(legs), 4)
+    if None not in legs:
+        out["leg_length"] = round(sum(x for x in legs if x is not None), 4)
     return out
 
 
@@ -240,7 +240,7 @@ def pose_drift(
     import numpy as np
 
     ref = landmarks(reference_path)
-    empty = {
+    empty: dict = {
         "per_frame": {},
         "median": None,
         "worst": (None, None),

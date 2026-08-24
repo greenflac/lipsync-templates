@@ -10,6 +10,7 @@ from tempfile import TemporaryDirectory
 from unittest import mock
 
 from lipsync import fork_e2e as E
+from lipsync import fork_plan
 from lipsync.fork_identity import FAIL, PASS, UNMEASURED
 
 
@@ -133,15 +134,11 @@ class _PlanOk:
             "note": "stub margin outpaint",
         }
 
-    from lipsync.fork_plan import (
-        ANKLES_BAND,
-        CENTRE_TOL,  # noqa: E402
-        SHOULDERS_BAND,
-        WIDTH_MAX,
-        person_box,
-    )
-
-    person_box = staticmethod(person_box)
+    ANKLES_BAND = fork_plan.ANKLES_BAND
+    CENTRE_TOL = fork_plan.CENTRE_TOL
+    SHOULDERS_BAND = fork_plan.SHOULDERS_BAND
+    WIDTH_MAX = fork_plan.WIDTH_MAX
+    person_box = staticmethod(fork_plan.person_box)
 
 
 def _run(root: Path, log, **over):
@@ -1306,7 +1303,7 @@ class TheGenderGateStopsTheRunBeforeAnyGeneration(unittest.TestCase):
     class _A:
         """Stub aesthetic neighbour with the real signature."""
 
-        calls = []
+        calls: list = []
 
         @staticmethod
         def gender_of(aid):
@@ -1447,15 +1444,11 @@ class TheOutpaintFixesTheLetterboxWithoutLosingTheRun(unittest.TestCase):
     """The plan margins show as bands. The instrument says "pass": it checks the canvas."""
 
     class _PlanNoExtend:
-        from lipsync.fork_plan import (
-            ANKLES_BAND,
-            CENTRE_TOL,  # noqa: E402
-            SHOULDERS_BAND,
-            WIDTH_MAX,
-            person_box,
-        )
-
-        person_box = staticmethod(person_box)
+        ANKLES_BAND = fork_plan.ANKLES_BAND
+        CENTRE_TOL = fork_plan.CENTRE_TOL
+        SHOULDERS_BAND = fork_plan.SHOULDERS_BAND
+        WIDTH_MAX = fork_plan.WIDTH_MAX
+        person_box = staticmethod(fork_plan.person_box)
 
         @staticmethod
         def to_plan(src, dst, **kw):

@@ -265,7 +265,7 @@ def live_upload(path) -> str:
     """Upload a file and return its public fal link. UNVERIFIED in this shift (no money was spent)."""
     import fal_client  # noqa: PLC0415
 
-    return fal_client.upload_file(str(path))
+    return fal_client.upload_file(Path(path))
 
 
 def live_kling(
@@ -371,7 +371,9 @@ def stage_intake(
         trio = [getattr(mod, n, None) for n in INTAKE_TRIO]
         if all(callable(f) for f in trio):
             photo, style, drive = trio
-            calls = (
+            # `callable` above rules None out; mypy cannot see through all().
+            assert photo is not None and style is not None and drive is not None
+            calls: tuple = (
                 ("client photo intake", photo, (str(client_photo),), {}),
                 (
                     "style reference intake",
@@ -591,7 +593,7 @@ def stage_style_acceptance(
 ) -> dict:
     """Check the style hit (against the floor) and that identity survived (against the bar)."""
     similarity = shipped_similarity if similarity is None else similarity
-    checks, numbers = [], {}
+    checks, numbers = [], {}  # type: list, dict
 
     floor = similarity(style_ref, client_photo)
     hit = similarity(style_ref, styled)
@@ -729,7 +731,8 @@ def _decoded_frames(path, exe: str):
 
 def stage_window(*, driving, first: int, last: int, out_path, probe=None, cutter=None) -> dict:
     """Pick the window by frame numbers, check its length and cut with a frame recount."""
-    checks, numbers = [], {"first": first, "last": last}
+    checks: list = []
+    numbers: dict = {"first": first, "last": last}
     probe = _default_probe() if probe is None else probe
     info = probe(str(driving))
     fps = info.get("fps")
@@ -937,7 +940,7 @@ def stage_output_acceptance(
     operator_ok_identity=False,
 ) -> dict:
     """Check geometry, identity and editorial cuts on the Kling output."""
-    checks, numbers = [], {}
+    checks, numbers = [], {}  # type: list, dict
     probe = _default_probe() if probe is None else probe
     info = probe(str(produced))
     numbers["width"] = info.get("width")

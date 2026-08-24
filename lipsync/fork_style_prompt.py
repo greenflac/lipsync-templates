@@ -71,7 +71,7 @@ def subject_leak(text: str) -> list:
 
 def compose(card: dict) -> dict:
     """Turn a style card into a prompt. Three outcomes, not two."""
-    empty = {
+    empty: dict = {
         "outcome": UNMEASURED,
         "prompt": None,
         "words": 0,

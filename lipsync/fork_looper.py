@@ -88,9 +88,13 @@ def read_gray(path):
 def read_head(path) -> dict:
     """Locate the head in the frame. Third injection point."""
     try:
+        import importlib
+
         from PIL import Image
 
-        from . import fork_channels
+        # Optional instrument from the research repository; this distribution
+        # ships without it, and read_head then reports "no head" honestly.
+        fork_channels = importlib.import_module("lipsync.fork_channels")
 
         pts = fork_channels.wholebody_points(str(path))
         if pts is None:
@@ -339,7 +343,7 @@ def read_all(paths, *, reader=None, cache=None) -> dict:
     paths = [Path(p) for p in paths]
     t = time.perf_counter()
 
-    store = {}
+    store: dict = {}
     if cache is not None and Path(cache).exists():
         try:
             raw = json.loads(Path(cache).read_text(encoding="utf-8"))
@@ -348,7 +352,7 @@ def read_all(paths, *, reader=None, cache=None) -> dict:
         except (OSError, ValueError):
             store = {}
 
-    poses, whys, crowd = [], [], []
+    poses, whys, crowd = [], [], []  # type: list, list, list
     hits = 0
     for p in paths:
         key = None
@@ -591,7 +595,7 @@ def bridge_cost(seams, *, max_frames=None) -> dict:
     max_frames = BRIDGE_MAX_FRAMES if max_frames is None else max_frames
     measured = {k: float(v) for k, v in seams.items() if v is not None}
     missing = sorted(k for k, v in seams.items() if v is None)
-    worst_axis = max(measured, key=measured.get) if measured else None
+    worst_axis = max(measured, key=lambda k: measured[k]) if measured else None
     seam = measured[worst_axis] if worst_axis is not None else None
     frames = bridge_frames(seam)
     if not measured:
@@ -690,7 +694,8 @@ def select(cands, *, overlap_max=None, top=None) -> dict:
     """Accept several DIFFERENT loops, not a dozen shifted by one frame."""
     overlap_max = OVERLAP_MAX if overlap_max is None else overlap_max
     top = TOP_LOOPS if top is None else top
-    kept, dropped = [], 0
+    kept: list = []
+    dropped = 0
     for c in cands:
         if len(kept) >= top:
             break
@@ -885,10 +890,10 @@ def refine_all(
     step = float(np.median(fine))
     pstep = float(np.median(fine_pix)) if fine_pix else None
     out = []
-    for lp, (wi, wj) in zip(loops, windows):
+    for lp, (win_i, win_j) in zip(loops, windows):
         best = None
-        for i in wi:
-            for j in wj:
+        for i in win_i:
+            for j in win_j:
                 if not length_is_admissible(j - i + 1, fps=fps, min_frames=min_frames):
                     continue
                 if blocked is not None and blocked(i, j):
@@ -1016,7 +1021,7 @@ def pick_finalists(
     head_off = scale is None or scale.get("step") in (None, 0)
     head_off_note = (scale or {}).get("reason") or "the head-axis scale is not measured"
 
-    kept, deferred = [], []
+    kept, deferred = [], []  # type: list, list
     dropped_overlap, dropped_duplicate, dup_unmeasured = 0, 0, 0
     dropped_bridge, dropped_head, tried, budget_hit = 0, 0, 0, False
 
