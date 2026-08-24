@@ -11,49 +11,83 @@ from lipsync import fork_video as fv
 from lipsync.fork_identity import FAIL, PASS, UNMEASURED
 
 ONE_PIXEL_PNG = base64.b64decode(
-    b"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAAAAAA6fptVAAAACklEQVR4nGNgAAAAAgAB"
-    b"c3UBGAAAAABJRU5ErkJggg==")
+    b"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAAAAAA6fptVAAAACklEQVR4nGNgAAAAAgABc3UBGAAAAABJRU5ErkJggg=="
+)
 
 
-def _probe_json(*, fps="30/1", nb='"nb_frames": "60",', dur="2.000000",
-                width=64, height=64, audio=False, codec="h264") -> str:
+def _probe_json(
+    *,
+    fps="30/1",
+    nb='"nb_frames": "60",',
+    dur="2.000000",
+    width=64,
+    height=64,
+    audio=False,
+    codec="h264",
+) -> str:
     """Ответ ffprobe той же формы, что снят прогоном. Обрезан до нужных полей."""
-    audio_stream = ("""        {"index": 1, "codec_name": "aac", "codec_type": "audio",
+    audio_stream = (
+        """        {"index": 1, "codec_name": "aac", "codec_type": "audio",
          "r_frame_rate": "0/0", "avg_frame_rate": "0/0",
-         "duration": "2.000000", "nb_frames": "88"},\n""" if audio else "")
-    return ("""{
+         "duration": "2.000000", "nb_frames": "88"},\n"""
+        if audio
+        else ""
+    )
+    return (
+        """{
     "streams": [
-""" + audio_stream + """        {"index": 0, "codec_name": \"""" + codec + """",
-         "codec_type": "video", "width": """ + str(width) + """,
-         "height": """ + str(height) + """, "pix_fmt": "yuv420p",
-         "r_frame_rate": \"""" + fps + """", "avg_frame_rate": \"""" + fps + """",
-         "start_time": "0.000000", "duration": \"""" + dur + """",
-         """ + nb + """ "bits_per_raw_sample": "8"}
+"""
+        + audio_stream
+        + """        {"index": 0, "codec_name": \""""
+        + codec
+        + """",
+         "codec_type": "video", "width": """
+        + str(width)
+        + """,
+         "height": """
+        + str(height)
+        + """, "pix_fmt": "yuv420p",
+         "r_frame_rate": \""""
+        + fps
+        + """", "avg_frame_rate": \""""
+        + fps
+        + """",
+         "start_time": "0.000000", "duration": \""""
+        + dur
+        + """",
+         """
+        + nb
+        + """ "bits_per_raw_sample": "8"}
     ],
     "format": {"filename": "x.mp4", "nb_streams": 1, "format_name": "mov,mp4,m4a,3gp,3g2,mj2",
-               "duration": \"""" + dur + """", "size": "4679", "bit_rate": "18716"}
-}""")
+               "duration": \""""
+        + dur
+        + """", "size": "4679", "bit_rate": "18716"}
+}"""
+    )
 
 
 PROBE_STDOUT_BROKEN = "{\n\n}\n"
-PROBE_STDERR_BROKEN = ("[mov,mp4,m4a,3gp,3g2,mj2 @ 0x55e104b3c700] moov atom "
-                       "not found\nv_broken.mp4: Invalid data found when "
-                       "processing input\n")
-PROBE_STDERR_NOT_VIDEO = ("not_a_video.txt: Invalid data found when processing "
-                          "input\n")
+PROBE_STDERR_BROKEN = (
+    "[mov,mp4,m4a,3gp,3g2,mj2 @ 0x55e104b3c700] moov atom "
+    "not found\nv_broken.mp4: Invalid data found when "
+    "processing input\n"
+)
+PROBE_STDERR_NOT_VIDEO = "not_a_video.txt: Invalid data found when processing input\n"
 
 DECODE_RC_BROKEN = 183
-DECODE_STDERR_BROKEN = ("[in#0 @ 0x55a6d95f0e00] Error opening input: Invalid "
-                        "data found when processing input\nError opening input "
-                        "file v_broken.mp4.\n")
+DECODE_STDERR_BROKEN = (
+    "[in#0 @ 0x55a6d95f0e00] Error opening input: Invalid "
+    "data found when processing input\nError opening input "
+    "file v_broken.mp4.\n"
+)
 
 
 class _Prober:
     """Подменённый ffprobe. Считает вызовы: «не звали» — тоже утверждение."""
 
     def __init__(self, *, ran=True, code=0, out="", err="", why=""):
-        self.answer = {"ran": ran, "code": code, "out": out, "err": err,
-                       "why": why}
+        self.answer = {"ran": ran, "code": code, "out": out, "err": err, "why": why}
         self.calls = 0
 
     def __call__(self, path):
@@ -65,8 +99,7 @@ class _Decoder:
     """Подменённый ffmpeg: кладёт `n` настоящих PNG с теми же именами."""
 
     def __init__(self, n=0, *, ran=True, code=0, err="", why="", payload=None):
-        self.n, self.answer = n, {"ran": ran, "code": code, "out": "",
-                                  "err": err, "why": why}
+        self.n, self.answer = n, {"ran": ran, "code": code, "out": "", "err": err, "why": why}
         self.payload = ONE_PIXEL_PNG if payload is None else payload
         self.argv = None
         self.calls = 0
@@ -107,8 +140,7 @@ class ParseProbe(unittest.TestCase):
         self.assertIs(fv.parse_probe(_probe_json(audio=False))["audio"], False)
 
     def test_ntsc_2997_is_not_thirty(self):
-        got = fv.parse_probe(_probe_json(fps="30000/1001", dur="3.003000",
-                                         nb='"nb_frames": "90",'))
+        got = fv.parse_probe(_probe_json(fps="30000/1001", dur="3.003000", nb='"nb_frames": "90",'))
         self.assertAlmostEqual(got["fps"], 29.97002997002997, places=9)
         self.assertNotEqual(got["fps"], 30.0)
         self.assertEqual(got["frames"], 90)
@@ -129,9 +161,11 @@ class ParseProbe(unittest.TestCase):
         self.assertIn("JSON", got["why"])
 
     def test_an_audio_only_file_is_not_a_video(self):
-        only_audio = ('{"streams": [{"index": 0, "codec_name": "aac", '
-                      '"codec_type": "audio", "duration": "2.000000"}], '
-                      '"format": {"duration": "2.000000"}}')
+        only_audio = (
+            '{"streams": [{"index": 0, "codec_name": "aac", '
+            '"codec_type": "audio", "duration": "2.000000"}], '
+            '"format": {"duration": "2.000000"}}'
+        )
         got = fv.parse_probe(only_audio)
         self.assertFalse(got["ok"])
         self.assertIs(got["audio"], True)
@@ -209,13 +243,11 @@ class CountVerdict(unittest.TestCase):
 
 
 class ExpectedFrames(unittest.TestCase):
-
     def test_as_is_expects_every_frame(self):
         self.assertEqual(fv.expected_frames(60, source_fps=30.0), 60)
 
     def test_dropping_to_24_of_30_expects_forty_eight(self):
-        self.assertEqual(
-            fv.expected_frames(60, source_fps=30.0, out_fps=24.0), 48)
+        self.assertEqual(fv.expected_frames(60, source_fps=30.0, out_fps=24.0), 48)
 
     def test_a_limit_cuts_the_expectation_and_never_raises_it(self):
         self.assertEqual(fv.expected_frames(320, source_fps=30.0, limit=77), 77)
@@ -226,7 +258,6 @@ class ExpectedFrames(unittest.TestCase):
 
 
 class FrameNames(unittest.TestCase):
-
     def test_the_first_frame_is_zero_padded_to_five(self):
         self.assertEqual(fv.frame_name(0), "00000.png")
         self.assertEqual(fv.frame_name(12), "00012.png")
@@ -265,8 +296,7 @@ class FrameNames(unittest.TestCase):
             for start in (0, 1):
                 with self.subTest(n=n, start=start):
                     bad = sorted(f"{k + start}.png" for k in range(n))
-                    self.assertNotEqual([int(x[:-4]) - start for x in bad],
-                                        list(range(n)))
+                    self.assertNotEqual([int(x[:-4]) - start for x in bad], list(range(n)))
 
 
 class DecodeCommand(unittest.TestCase):
@@ -303,10 +333,12 @@ class Probe(unittest.TestCase):
 
     def setUp(self):
         import tempfile
+
         self.tmp = Path(tempfile.mkdtemp(prefix="fork_video_probe_"))
 
     def tearDown(self):
         import shutil
+
         shutil.rmtree(self.tmp, ignore_errors=True)
 
     def test_a_missing_file_is_a_failure(self):
@@ -329,23 +361,24 @@ class Probe(unittest.TestCase):
         self.assertEqual(prober.calls, 0)
 
     def test_a_missing_ffprobe_is_unmeasured_never_a_verdict(self):
-        got = fv.probe(_video(self.tmp),
-                       prober=_Prober(ran=False, why="ffprobe не найден"))
+        got = fv.probe(_video(self.tmp), prober=_Prober(ran=False, why="ffprobe не найден"))
         self.assertEqual(got["outcome"], UNMEASURED)
         self.assertNotEqual(got["outcome"], FAIL)
         self.assertNotEqual(got["outcome"], PASS)
 
     def test_a_broken_file_is_a_failure_and_carries_the_reason(self):
-        got = fv.probe(_video(self.tmp),
-                       prober=_Prober(code=1, out=PROBE_STDOUT_BROKEN,
-                                      err=PROBE_STDERR_BROKEN))
+        got = fv.probe(
+            _video(self.tmp),
+            prober=_Prober(code=1, out=PROBE_STDOUT_BROKEN, err=PROBE_STDERR_BROKEN),
+        )
         self.assertEqual(got["outcome"], FAIL)
         self.assertIn("moov atom not found", got["note"])
 
     def test_a_text_file_is_a_failure(self):
-        got = fv.probe(_video(self.tmp, name="не_видео.txt"),
-                       prober=_Prober(code=1, out=PROBE_STDOUT_BROKEN,
-                                      err=PROBE_STDERR_NOT_VIDEO))
+        got = fv.probe(
+            _video(self.tmp, name="не_видео.txt"),
+            prober=_Prober(code=1, out=PROBE_STDOUT_BROKEN, err=PROBE_STDERR_NOT_VIDEO),
+        )
         self.assertEqual(got["outcome"], FAIL)
 
     def test_a_good_file_passes_with_numbers_beside_the_verdict(self):
@@ -360,8 +393,7 @@ class Probe(unittest.TestCase):
         self.assertGreaterEqual(got["elapsed"], 0.0)
 
     def test_a_half_read_answer_is_unmeasured_not_pass(self):
-        got = fv.probe(_video(self.tmp),
-                       prober=_Prober(out=_probe_json(fps="0/0", nb="")))
+        got = fv.probe(_video(self.tmp), prober=_Prober(out=_probe_json(fps="0/0", nb="")))
         self.assertEqual(got["outcome"], UNMEASURED)
 
 
@@ -370,10 +402,12 @@ class FpsProberDropIn(unittest.TestCase):
 
     def setUp(self):
         import tempfile
+
         self.tmp = Path(tempfile.mkdtemp(prefix="fork_video_drop_"))
 
     def tearDown(self):
         import shutil
+
         shutil.rmtree(self.tmp, ignore_errors=True)
 
     def test_it_returns_a_number_on_a_good_file(self):
@@ -398,12 +432,14 @@ class Frames(unittest.TestCase):
 
     def setUp(self):
         import tempfile
+
         self.tmp = Path(tempfile.mkdtemp(prefix="fork_video_frames_"))
         self.src = _video(self.tmp)
         self.out = self.tmp / "кадры"
 
     def tearDown(self):
         import shutil
+
         shutil.rmtree(self.tmp, ignore_errors=True)
 
     def _run(self, *, n=60, probe_kw=None, **kw):
@@ -422,15 +458,13 @@ class Frames(unittest.TestCase):
         self.assertEqual(len(rep["paths"]), 60)
 
     def test_a_single_frame_clip_is_not_an_edge_case_that_fails(self):
-        rep, _, _ = self._run(n=1, probe_kw={"nb": '"nb_frames": "1",',
-                                             "dur": "0.033333"})
+        rep, _, _ = self._run(n=1, probe_kw={"nb": '"nb_frames": "1",', "dur": "0.033333"})
         self.assertEqual(rep["outcome"], PASS)
         self.assertEqual(rep["written"], 1)
         self.assertEqual(rep["paths"][0].name, "00000.png")
 
     def test_a_clip_longer_than_our_ceiling_still_decodes_in_order(self):
-        rep, _, _ = self._run(n=320, probe_kw={"nb": '"nb_frames": "320",',
-                                               "dur": "10.666667"})
+        rep, _, _ = self._run(n=320, probe_kw={"nb": '"nb_frames": "320",', "dur": "10.666667"})
         self.assertEqual(rep["outcome"], PASS)
         self.assertEqual(rep["written"], 320)
         names = [p.name for p in rep["paths"]]
@@ -445,21 +479,18 @@ class Frames(unittest.TestCase):
         self.assertEqual(rep["written"], 0)
 
     def test_a_missing_ffmpeg_is_unmeasured_never_a_verdict(self):
-        rep, _, _ = self._run(decoder=_Decoder(0, ran=False,
-                                               why="ffmpeg не найден"))
+        rep, _, _ = self._run(decoder=_Decoder(0, ran=False, why="ffmpeg не найден"))
         self.assertEqual(rep["outcome"], UNMEASURED)
         self.assertNotEqual(rep["outcome"], FAIL)
         self.assertNotEqual(rep["outcome"], PASS)
 
     def test_a_nonzero_return_code_is_a_failure_and_carries_the_reason(self):
-        rep, _, _ = self._run(decoder=_Decoder(0, code=DECODE_RC_BROKEN,
-                                               err=DECODE_STDERR_BROKEN))
+        rep, _, _ = self._run(decoder=_Decoder(0, code=DECODE_RC_BROKEN, err=DECODE_STDERR_BROKEN))
         self.assertEqual(rep["outcome"], FAIL)
         self.assertIn("183", rep["note"])
 
     def test_a_broken_source_never_reaches_the_decoder(self):
-        prober = _Prober(code=1, out=PROBE_STDOUT_BROKEN,
-                         err=PROBE_STDERR_BROKEN)
+        prober = _Prober(code=1, out=PROBE_STDOUT_BROKEN, err=PROBE_STDERR_BROKEN)
         decoder = _Decoder(60)
         rep = fv.frames(self.src, self.out, prober=prober, decoder=decoder)
         self.assertEqual(rep["outcome"], FAIL)
@@ -467,9 +498,9 @@ class Frames(unittest.TestCase):
         self.assertFalse(self.out.exists())
 
     def test_upsampling_is_refused_before_a_single_frame_is_written(self):
-        rep, _, decoder = self._run(fps=30, probe_kw={"fps": "24/1",
-                                                      "nb": '"nb_frames": "72",',
-                                                      "dur": "3.000000"})
+        rep, _, decoder = self._run(
+            fps=30, probe_kw={"fps": "24/1", "nb": '"nb_frames": "72",', "dur": "3.000000"}
+        )
         self.assertEqual(rep["outcome"], FAIL)
         self.assertEqual(decoder.calls, 0)
         self.assertEqual(rep["written"], 0)
@@ -489,9 +520,9 @@ class Frames(unittest.TestCase):
         self.assertNotIn("-vf", decoder.argv)
 
     def test_a_limit_caps_both_the_expectation_and_the_command(self):
-        rep, _, decoder = self._run(n=77, limit=77,
-                                    probe_kw={"nb": '"nb_frames": "320",',
-                                              "dur": "10.666667"})
+        rep, _, decoder = self._run(
+            n=77, limit=77, probe_kw={"nb": '"nb_frames": "320",', "dur": "10.666667"}
+        )
         self.assertEqual(rep["outcome"], PASS)
         self.assertEqual(rep["expected"], 77)
         self.assertEqual(decoder.argv[decoder.argv.index("-frames:v") + 1], "77")
@@ -521,13 +552,14 @@ class Frames(unittest.TestCase):
 
     def test_overwrite_is_possible_but_only_when_asked_out_loud(self):
         self._run(n=60)
-        rep, _, decoder = self._run(n=3, overwrite=True,
-                                    probe_kw={"nb": '"nb_frames": "3",',
-                                              "dur": "0.100000"})
+        rep, _, decoder = self._run(
+            n=3, overwrite=True, probe_kw={"nb": '"nb_frames": "3",', "dur": "0.100000"}
+        )
         self.assertEqual(rep["outcome"], PASS)
         self.assertEqual(decoder.calls, 1)
-        self.assertEqual(sorted(p.name for p in self.out.iterdir()),
-                         ["00000.png", "00001.png", "00002.png"])
+        self.assertEqual(
+            sorted(p.name for p in self.out.iterdir()), ["00000.png", "00001.png", "00002.png"]
+        )
 
     def test_a_second_run_reports_the_frames_that_lie_there_not_a_zero(self):
         """ДЕФЕКТ, ради которого писан этот сторож: итоговая строка печатала"""
@@ -561,9 +593,9 @@ class Frames(unittest.TestCase):
 
     def test_an_overwrite_says_what_it_wiped(self):
         self._run(n=60)
-        rep, _, _ = self._run(n=3, overwrite=True,
-                              probe_kw={"nb": '"nb_frames": "3",',
-                                        "dur": "0.100000"})
+        rep, _, _ = self._run(
+            n=3, overwrite=True, probe_kw={"nb": '"nb_frames": "3",', "dur": "0.100000"}
+        )
         self.assertEqual(rep["outcome"], PASS)
         self.assertEqual(rep["written"], 3)
         self.assertEqual(rep["present"], 60)
@@ -571,8 +603,7 @@ class Frames(unittest.TestCase):
 
     def test_a_refusal_before_the_look_never_claims_an_empty_directory(self):
         """Третий исход не сворачивается в первые два: отказ случился"""
-        prober = _Prober(code=1, out=PROBE_STDOUT_BROKEN,
-                         err=PROBE_STDERR_BROKEN)
+        prober = _Prober(code=1, out=PROBE_STDOUT_BROKEN, err=PROBE_STDERR_BROKEN)
         rep = fv.frames(self.src, self.out, prober=prober, decoder=_Decoder(60))
         self.assertEqual(rep["outcome"], FAIL)
         self.assertIsNone(rep["present"])
@@ -583,8 +614,7 @@ class Frames(unittest.TestCase):
     def test_every_step_reports_its_own_outcome_and_duration(self):
         rep, _, _ = self._run(n=60)
         steps = [s["step"] for s in rep["steps"]]
-        self.assertEqual(steps, ["метаданные", "частота", "раскодирование",
-                                 "кадры"])
+        self.assertEqual(steps, ["метаданные", "частота", "раскодирование", "кадры"])
         for s in rep["steps"]:
             with self.subTest(step=s["step"]):
                 self.assertIn(s["outcome"], (PASS, FAIL, UNMEASURED))
@@ -597,13 +627,11 @@ class DirectoryFact(unittest.TestCase):
     def test_the_three_phrases_are_the_ones_the_operator_will_read(self):
         self.assertEqual(fv.DIR_UNSEEN, "каталог назначения не осматривали")
         self.assertEqual(fv.DIR_EMPTY, "каталог назначения был пуст")
-        self.assertEqual(fv._dir_fact(3, 99),
-                         "до нас в каталоге лежало кадров 3, байт 99")
+        self.assertEqual(fv._dir_fact(3, 99), "до нас в каталоге лежало кадров 3, байт 99")
 
     def test_not_looked_at_and_empty_are_not_the_same_phrase(self):
         self.assertNotEqual(fv._dir_fact(None, None), fv._dir_fact(0, 0))
-        self.assertEqual(fv._dir_fact(None, None),
-                         "каталог назначения не осматривали")
+        self.assertEqual(fv._dir_fact(None, None), "каталог назначения не осматривали")
         self.assertEqual(fv._dir_fact(0, 0), "каталог назначения был пуст")
 
     def test_frames_lying_there_are_never_swallowed_into_a_zero(self):
@@ -638,15 +666,20 @@ class Wiring(unittest.TestCase):
             if not isinstance(node, ast.FunctionDef):
                 continue
             for inner in ast.walk(node):
-                if (isinstance(inner, ast.Call)
-                        and isinstance(inner.func, ast.Attribute)
-                        and inner.func.attr == "run"
-                        and isinstance(inner.func.value, ast.Name)
-                        and inner.func.value.id == "subprocess"):
+                if (
+                    isinstance(inner, ast.Call)
+                    and isinstance(inner.func, ast.Attribute)
+                    and inner.func.attr == "run"
+                    and isinstance(inner.func.value, ast.Name)
+                    and inner.func.value.id == "subprocess"
+                ):
                     found.append(node.name)
-        self.assertEqual(sorted(set(found)), sorted(allowed),
-                         f"внешний инструмент зовётся из {sorted(set(found))}, "
-                         f"а точек внедрения должно быть ровно две")
+        self.assertEqual(
+            sorted(set(found)),
+            sorted(allowed),
+            f"внешний инструмент зовётся из {sorted(set(found))}, "
+            f"а точек внедрения должно быть ровно две",
+        )
 
     def test_both_outside_calls_carry_their_own_timeout(self):
         """Оба выхода наружу висят на таймауте, и на СВОЁМ, а не на общем."""
@@ -663,8 +696,9 @@ class Wiring(unittest.TestCase):
         self.assertEqual(seen, want)
 
     def test_the_verdict_words_are_not_reinvented(self):
-        self.assertEqual((fv.PASS, fv.FAIL, fv.UNMEASURED),
-                         ("годно", "не годно", "не смогли проверить"))
+        self.assertEqual(
+            (fv.PASS, fv.FAIL, fv.UNMEASURED), ("годно", "не годно", "не смогли проверить")
+        )
 
     def test_the_output_rate_is_not_copied_from_fork_comfy(self):
         src = Path(fv.__file__).read_text(encoding="utf-8")
@@ -676,26 +710,23 @@ class Wiring(unittest.TestCase):
                 self.assertNotIn("WRAP_FPS = 30", line)
 
     def test_the_mode_words_are_the_ones_the_operator_will_read(self):
-        self.assertEqual((fv.AS_IS, fv.DROP, fv.REFUSE),
-                         ("как есть", "прорежаем", "отказ"))
+        self.assertEqual((fv.AS_IS, fv.DROP, fv.REFUSE), ("как есть", "прорежаем", "отказ"))
         self.assertEqual(len({fv.AS_IS, fv.DROP, fv.REFUSE}), 3)
 
     def test_the_three_outcomes_map_to_three_different_exit_codes(self):
-        self.assertEqual(fv.EXIT_BY_OUTCOME,
-                         {"годно": 0, "не годно": 1, "не смогли проверить": 2})
+        self.assertEqual(fv.EXIT_BY_OUTCOME, {"годно": 0, "не годно": 1, "не смогли проверить": 2})
         self.assertEqual(len(set(fv.EXIT_BY_OUTCOME.values())), 3)
 
 
 class EntryPoint(unittest.TestCase):
-
     def test_probing_a_missing_file_exits_one_not_zero(self):
         self.assertEqual(fv.main(["probe", "/нет/такого/файла.mp4"]), 1)
 
     def test_decoding_a_missing_file_exits_one_not_zero(self):
         import tempfile
+
         with tempfile.TemporaryDirectory() as d:
-            self.assertEqual(
-                fv.main(["frames", "/нет/такого/файла.mp4", f"{d}/кадры"]), 1)
+            self.assertEqual(fv.main(["frames", "/нет/такого/файла.mp4", f"{d}/кадры"]), 1)
 
 
 if __name__ == "__main__":  # pragma: no cover

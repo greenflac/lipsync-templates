@@ -28,9 +28,11 @@ def _fake_torch(version: str, device: str, name=None, boom=None):
     torch.__version__ = version
     backend = types.SimpleNamespace()
     if boom is not None:
+
         def get_device_name(_idx):
             raise boom
     else:
+
         def get_device_name(_idx):
             return name
 
@@ -52,14 +54,14 @@ class TheSilentCpuFallbackIsNamedOutLoud(unittest.TestCase):
         self.d = device
 
     def test_a_missing_accelerator_provider_is_reported(self):
-        want, missing = self.d.onnx_providers(
-            "cuda", available=["CPUExecutionProvider"])
+        want, missing = self.d.onnx_providers("cuda", available=["CPUExecutionProvider"])
         self.assertIn("CUDAExecutionProvider", want)
         self.assertEqual(missing, ("CUDAExecutionProvider",))
 
     def test_everything_present_reports_nothing_missing(self):
         _, missing = self.d.onnx_providers(
-            "cuda", available=["CUDAExecutionProvider", "CPUExecutionProvider"])
+            "cuda", available=["CUDAExecutionProvider", "CPUExecutionProvider"]
+        )
         self.assertEqual(missing, ())
 
     def test_cpu_is_never_reported_as_missing(self):
@@ -115,49 +117,54 @@ class AlternativesAreNotRequirements(unittest.TestCase):
 
     def test_intel_with_only_openvino_is_not_an_alarm(self):
         _, missing = self.d.onnx_providers(
-            "xpu", available=["OpenVINOExecutionProvider",
-                              "CPUExecutionProvider"])
+            "xpu", available=["OpenVINOExecutionProvider", "CPUExecutionProvider"]
+        )
         self.assertEqual(missing, ())
 
     def test_intel_with_only_directml_is_not_an_alarm_either(self):
         _, missing = self.d.onnx_providers(
-            "xpu", available=["DmlExecutionProvider", "CPUExecutionProvider"])
+            "xpu", available=["DmlExecutionProvider", "CPUExecutionProvider"]
+        )
         self.assertEqual(missing, ())
 
     def test_intel_without_any_accelerator_is_still_caught(self):
-        _, missing = self.d.onnx_providers(
-            "xpu", available=["CPUExecutionProvider"])
+        _, missing = self.d.onnx_providers("xpu", available=["CPUExecutionProvider"])
         self.assertIn("OpenVINOExecutionProvider", missing)
         self.assertIn("DmlExecutionProvider", missing)
         self.assertNotIn("CPUExecutionProvider", missing)
 
     def test_a_foreign_provider_does_not_count_as_acceleration(self):
         _, missing = self.d.onnx_providers(
-            "xpu", available=["AzureExecutionProvider", "CPUExecutionProvider"])
+            "xpu", available=["AzureExecutionProvider", "CPUExecutionProvider"]
+        )
         self.assertTrue(missing)
 
     def test_the_request_still_carries_every_alternative(self):
         want, _ = self.d.onnx_providers(
-            "xpu", available=["DmlExecutionProvider", "CPUExecutionProvider"])
+            "xpu", available=["DmlExecutionProvider", "CPUExecutionProvider"]
+        )
         self.assertIn("OpenVINOExecutionProvider", want)
         self.assertIn("DmlExecutionProvider", want)
         self.assertEqual(want[-1], "CPUExecutionProvider")
 
     def test_cuda_alone_in_its_set_still_reports_its_absence(self):
-        _, missing = self.d.onnx_providers(
-            "cuda", available=["CPUExecutionProvider"])
+        _, missing = self.d.onnx_providers("cuda", available=["CPUExecutionProvider"])
         self.assertEqual(missing, ("CUDAExecutionProvider",))
 
     def test_cpu_has_no_alternatives_to_miss(self):
         self.assertEqual(self.d.ONNX_ACCELERATORS["cpu"], ())
-        self.assertEqual(set(self.d.ONNX_ACCELERATORS["xpu"]),
-                         {"OpenVINOExecutionProvider", "DmlExecutionProvider"})
+        self.assertEqual(
+            set(self.d.ONNX_ACCELERATORS["xpu"]),
+            {"OpenVINOExecutionProvider", "DmlExecutionProvider"},
+        )
 
     def test_the_warning_in_the_report_line_follows_the_same_rule(self):
         _install_module(self, "torch", None)
-        _install_module(self, "onnxruntime",
-                        _fake_onnxruntime(["OpenVINOExecutionProvider",
-                                           "CPUExecutionProvider"]))
+        _install_module(
+            self,
+            "onnxruntime",
+            _fake_onnxruntime(["OpenVINOExecutionProvider", "CPUExecutionProvider"]),
+        )
         self.assertNotIn("CPU", self.d.describe("xpu"))
 
         sys.modules["onnxruntime"] = _fake_onnxruntime(["CPUExecutionProvider"])
@@ -171,9 +178,11 @@ class TorchHasThreeStatesNotTwo(unittest.TestCase):
         from lipsync import device
 
         self.d = device
-        _install_module(self, "onnxruntime",
-                        _fake_onnxruntime(["OpenVINOExecutionProvider",
-                                           "CPUExecutionProvider"]))
+        _install_module(
+            self,
+            "onnxruntime",
+            _fake_onnxruntime(["OpenVINOExecutionProvider", "CPUExecutionProvider"]),
+        )
 
     def test_absent_torch_is_named_absent(self):
         _install_module(self, "torch", None)
@@ -182,9 +191,11 @@ class TorchHasThreeStatesNotTwo(unittest.TestCase):
         self.assertIn("не установлен", self.d.describe("xpu"))
 
     def test_a_broken_device_query_is_not_called_a_missing_package(self):
-        _install_module(self, "torch",
-                        _fake_torch("2.5.1+xpu", "xpu",
-                                    boom=RuntimeError("XPU driver not found")))
+        _install_module(
+            self,
+            "torch",
+            _fake_torch("2.5.1+xpu", "xpu", boom=RuntimeError("XPU driver not found")),
+        )
         state, version, _, reason = self.d.torch_state("xpu")
         self.assertEqual(state, self.d.TORCH_SILENT)
         self.assertEqual(version, "2.5.1+xpu")
@@ -195,8 +206,7 @@ class TorchHasThreeStatesNotTwo(unittest.TestCase):
         self.assertIn("XPU driver not found", line)
 
     def test_a_working_card_is_named(self):
-        _install_module(self, "torch",
-                        _fake_torch("2.5.1+xpu", "xpu", name="Intel Arc A580"))
+        _install_module(self, "torch", _fake_torch("2.5.1+xpu", "xpu", name="Intel Arc A580"))
         state, _, name, reason = self.d.torch_state("xpu")
         self.assertEqual(state, self.d.TORCH_OK)
         self.assertEqual(name, "Intel Arc A580")
@@ -209,11 +219,9 @@ class TorchHasThreeStatesNotTwo(unittest.TestCase):
         lines = []
         _install_module(self, "torch", None)
         lines.append(self.d.describe("xpu"))
-        sys.modules["torch"] = _fake_torch("2.5.1+xpu", "xpu",
-                                           boom=OSError("Level Zero missing"))
+        sys.modules["torch"] = _fake_torch("2.5.1+xpu", "xpu", boom=OSError("Level Zero missing"))
         lines.append(self.d.describe("xpu"))
-        sys.modules["torch"] = _fake_torch("2.5.1+xpu", "xpu",
-                                           name="Intel Arc A580")
+        sys.modules["torch"] = _fake_torch("2.5.1+xpu", "xpu", name="Intel Arc A580")
         lines.append(self.d.describe("xpu"))
         self.assertEqual(len(set(lines)), 3, lines)
 
@@ -285,8 +293,9 @@ class TheDriverIsAskedBeforeTorchIs(unittest.TestCase):
 
     def test_two_cards_are_both_read(self):
         got = self.d.smi_cards(SMI_CSV + "NVIDIA A16, 16380, 550.54.14\n")
-        self.assertEqual([c["name"] for c in got],
-                         ["NVIDIA GeForce RTX 3050 Laptop GPU", "NVIDIA A16"])
+        self.assertEqual(
+            [c["name"] for c in got], ["NVIDIA GeForce RTX 3050 Laptop GPU", "NVIDIA A16"]
+        )
 
     def test_the_probe_puts_the_two_calls_together(self):
         got = self.d.smi_probe(run=_fake_smi())
@@ -324,8 +333,7 @@ class TheDriverMustCoverTheBuild(unittest.TestCase):
             self.assertIsNone(self.d.version_pair(junk), junk)
 
     def test_an_older_major_does_not_cover_the_build(self):
-        self.assertEqual(self.d.driver_covers("12.4", "13.0"),
-                         self.d.DRIVER_OLD_MAJOR)
+        self.assertEqual(self.d.driver_covers("12.4", "13.0"), self.d.DRIVER_OLD_MAJOR)
 
     def test_a_newer_driver_covers_an_older_build(self):
         self.assertEqual(self.d.driver_covers("13.0", "12.6"), self.d.DRIVER_OK)
@@ -333,13 +341,11 @@ class TheDriverMustCoverTheBuild(unittest.TestCase):
         self.assertEqual(self.d.driver_covers("12.8", "12.6"), self.d.DRIVER_OK)
 
     def test_an_older_minor_is_its_own_outcome(self):
-        self.assertEqual(self.d.driver_covers("12.4", "12.6"),
-                         self.d.DRIVER_OLD_MINOR)
+        self.assertEqual(self.d.driver_covers("12.4", "12.6"), self.d.DRIVER_OLD_MINOR)
 
     def test_a_missing_side_is_unknown_not_ok(self):
         for a, b in ((None, "12.6"), ("12.4", None), (None, None), ("", "")):
-            self.assertEqual(self.d.driver_covers(a, b), self.d.DRIVER_UNKNOWN,
-                             (a, b))
+            self.assertEqual(self.d.driver_covers(a, b), self.d.DRIVER_UNKNOWN, (a, b))
 
 
 class TheCpuBuildIsRecognisedByWhatItWasBuiltWith(unittest.TestCase):
@@ -349,16 +355,17 @@ class TheCpuBuildIsRecognisedByWhatItWasBuiltWith(unittest.TestCase):
         from lipsync import device
 
         self.d = device
-        _install_module(self, "onnxruntime",
-                        _fake_onnxruntime(["CUDAExecutionProvider",
-                                           "CPUExecutionProvider"]))
+        _install_module(
+            self,
+            "onnxruntime",
+            _fake_onnxruntime(["CUDAExecutionProvider", "CPUExecutionProvider"]),
+        )
 
     def _torch(self, cuda_value, version="2.13.0"):
         torch = types.ModuleType("torch")
         torch.__version__ = version
         torch.version = types.SimpleNamespace(cuda=cuda_value)
-        torch.cuda = types.SimpleNamespace(
-            get_device_name=lambda _i: "RTX 3050")
+        torch.cuda = types.SimpleNamespace(get_device_name=lambda _i: "RTX 3050")
         return torch
 
     def test_a_build_with_cuda_reports_its_version(self):

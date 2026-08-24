@@ -28,18 +28,20 @@ def skeleton(phase, *, mode="arms", tired=0.0, amp=0.10, seen=()):
     elif mode == "legs_line":
         lx, ly, ax, ay = 0.0, ay, 0.0, 0.0
     pts = {
-        "l_hip": (0.45, 0.60), "r_hip": (0.55, 0.60),
-        "l_shoulder": (0.44, 0.40), "r_shoulder": (0.56, 0.40),
+        "l_hip": (0.45, 0.60),
+        "r_hip": (0.55, 0.60),
+        "l_shoulder": (0.44, 0.40),
+        "r_shoulder": (0.56, 0.40),
         "l_elbow": (0.40 + ax, 0.50 + ay + tired),
         "r_elbow": (0.60 - ax, 0.50 + ay + tired),
         "l_wrist": (0.38 + 2 * ax, 0.58 + 2 * ay + 2 * tired),
         "r_wrist": (0.62 - 2 * ax, 0.58 + 2 * ay + 2 * tired),
-        "l_knee": (0.44 + lx, 0.75 + ly), "r_knee": (0.56 - lx, 0.75 + ly),
+        "l_knee": (0.44 + lx, 0.75 + ly),
+        "r_knee": (0.56 - lx, 0.75 + ly),
         "l_ankle": (0.44 + 2 * lx, 0.90 + 2 * ly),
         "r_ankle": (0.56 - 2 * lx, 0.90 + 2 * ly),
     }
-    return {k: (x, y, 1.0 if (not seen or k in seen) else 0.0)
-            for k, (x, y) in pts.items()}
+    return {k: (x, y, 1.0 if (not seen or k in seen) else 0.0) for k, (x, y) in pts.items()}
 
 
 def loop_sequence(n=NFRAMES, *, tire=0.0, mode="arms"):
@@ -57,30 +59,37 @@ ANCHOR = ("l_hip", "r_hip", "l_shoulder", "r_shoulder")
 
 def seated(points, tilt):
     """Та же механика движения, но ДРУГАЯ ПОСАДКА: конечности смещены целиком."""
-    return {k: (x, y if k in ANCHOR else y + tilt, v)
-            for k, (x, y, v) in points.items()}
+    return {k: (x, y if k in ANCHOR else y + tilt, v) for k, (x, y, v) in points.items()}
 
 
 def two_exercises(n=NFRAMES):
     """Первую половину работают руки, вторую — ноги в другой посадке."""
-    return [skeleton(t / PERIOD, mode="arms") if t < n // 2
-            else seated(skeleton(t / PERIOD, mode="legs", amp=0.2), 0.6)
-            for t in range(n)]
+    return [
+        skeleton(t / PERIOD, mode="arms")
+        if t < n // 2
+        else seated(skeleton(t / PERIOD, mode="legs", amp=0.2), 0.6)
+        for t in range(n)
+    ]
 
 
 def two_exercises_second_is_perfect(n=NFRAMES, tire=0.0001):
     """Два упражнения, и второе замыкается ТОЧНЕЕ первого."""
-    return [skeleton(t / PERIOD, mode="arms", tired=tire * t) if t < n // 2
-            else seated(skeleton(t / PERIOD, mode="legs", amp=0.2), 0.6)
-            for t in range(n)]
+    return [
+        skeleton(t / PERIOD, mode="arms", tired=tire * t)
+        if t < n // 2
+        else seated(skeleton(t / PERIOD, mode="legs", amp=0.2), 0.6)
+        for t in range(n)
+    ]
 
 
 def two_speeds(n=NFRAMES, tire=0.0001):
     """Два упражнения РАЗНОЙ СКОРОСТИ: медленное со сносом, потом быстрое."""
-    return [skeleton(t / PERIOD, mode="arms", amp=0.03, tired=tire * t)
-            if t < n // 2
-            else seated(skeleton(t / PERIOD, mode="legs", amp=0.25), 0.6)
-            for t in range(n)]
+    return [
+        skeleton(t / PERIOD, mode="arms", amp=0.03, tired=tire * t)
+        if t < n // 2
+        else seated(skeleton(t / PERIOD, mode="legs", amp=0.25), 0.6)
+        for t in range(n)
+    ]
 
 
 def still_sequence(n=NFRAMES):
@@ -95,9 +104,20 @@ def norm(points):
 class Material:
     """Кадры на диске плюс подменные детектор поз и читалка пикселей."""
 
-    def __init__(self, poses, *, size=(32, 32), missing=(), broken=False,
-                 people=None, cuts=(), blank=False, head_mode="возвращается",
-                 head_blind=(), head_broken=False):
+    def __init__(
+        self,
+        poses,
+        *,
+        size=(32, 32),
+        missing=(),
+        broken=False,
+        people=None,
+        cuts=(),
+        blank=False,
+        head_mode="возвращается",
+        head_blind=(),
+        head_broken=False,
+    ):
         from PIL import Image
 
         self.dir = Path(tempfile.mkdtemp(prefix="looper_frames_"))
@@ -126,8 +146,7 @@ class Material:
             return {"points": None, "why": "mediapipe не установлен (фикстура)"}
         if idx in self.missing:
             return {"points": None, "why": "", "people": 0}
-        return {"points": self.poses[idx], "why": "",
-                "people": self.people.get(idx)}
+        return {"points": self.poses[idx], "why": "", "people": self.people.get(idx)}
 
     def gray(self, path):
         """Пиксели, ВЫВЕДЕННЫЕ ИЗ СКЕЛЕТА этого кадра, плюс скачок на резах."""
@@ -174,8 +193,7 @@ def analyse(material, **kw):
     kw.setdefault("fps", FIXTURE_FPS)
     kw.setdefault("gif", False)
     kw.setdefault("head", material.head)
-    return fl.find_loops(material.dir, reader=material.reader,
-                         gray=material.gray, **kw)
+    return fl.find_loops(material.dir, reader=material.reader, gray=material.gray, **kw)
 
 
 class PoseAxis(unittest.TestCase):
@@ -196,10 +214,14 @@ class PoseAxis(unittest.TestCase):
         a, b = skeleton(0.0), skeleton(0.3)
         mine = fl.pose_gap(norm(a), norm(b))
         theirs = pose.pose_delta(a, b)["mean"]
-        self.assertAlmostEqual(mine, theirs, places=4,
-                               msg="расхождение с pose.pose_delta означает, что "
-                                   "прибор судит не той величиной, которой "
-                                   "судит вся остальная приёмка поз")
+        self.assertAlmostEqual(
+            mine,
+            theirs,
+            places=4,
+            msg="расхождение с pose.pose_delta означает, что "
+            "прибор судит не той величиной, которой "
+            "судит вся остальная приёмка поз",
+        )
 
     def test_a_frame_without_hips_is_not_a_pose_at_all(self):
         """Приведение требует оба бедра и оба плеча — иначе позы нет."""
@@ -216,16 +238,19 @@ class FlowAxis(unittest.TestCase):
     def _bounce(self):
         """Четыре кадра: поза в 0 и в 2 ОДНА И ТА ЖЕ, движение противоположно."""
         a = skeleton(0.0)
-        down = dict(a); up = dict(a)
+        down = dict(a)
+        up = dict(a)
         down["l_wrist"] = (a["l_wrist"][0], a["l_wrist"][1] + 0.02, 1.0)
         up["l_wrist"] = (a["l_wrist"][0], a["l_wrist"][1] - 0.02, 1.0)
         return fl.states([a, down, a, up])
 
     def test_the_pose_axis_alone_calls_a_bounce_a_perfect_seam(self):
         st = self._bounce()
-        self.assertEqual(fl.pose_gap(st[0], st[2]), 0.0,
-                         "если это перестанет быть нулём, фикстура больше не "
-                         "показывает разбираемый дефект")
+        self.assertEqual(
+            fl.pose_gap(st[0], st[2]),
+            0.0,
+            "если это перестанет быть нулём, фикстура больше не показывает разбираемый дефект",
+        )
 
     def test_the_flow_axis_catches_it_with_a_hand_computable_literal(self):
         """0.02 кадра при торсе 0.2 — 0.1; направления противоположны, значит"""
@@ -238,9 +263,10 @@ class FlowAxis(unittest.TestCase):
 
     def test_the_flow_axis_needs_the_frame_after_the_seam(self):
         st = fl.states(loop_sequence(50))
-        self.assertIsNone(fl.flow_gap(st, 0, 49),
-                          "производную в последнем кадре взять не из чего, и "
-                          "это «не смогли», а не ноль")
+        self.assertIsNone(
+            fl.flow_gap(st, 0, 49),
+            "производную в последнем кадре взять не из чего, и это «не смогли», а не ноль",
+        )
 
 
 class Lengths(unittest.TestCase):
@@ -259,9 +285,12 @@ class Lengths(unittest.TestCase):
         got = fl.admissible_lengths(100000, fps=30)
         self.assertLessEqual(got[-1], fork_comfy.SECONDS_MAX * 30)
         self.assertEqual(got[-1], 297)
-        self.assertEqual(fl.admissible_lengths(100000, fps=24)[-1], 237,
-                         "потолок обязан ехать за частотой источника: 10 с при "
-                         "24 к/с — это 240 кадров, ближайшее 4k+1 снизу 237")
+        self.assertEqual(
+            fl.admissible_lengths(100000, fps=24)[-1],
+            237,
+            "потолок обязан ехать за частотой источника: 10 с при "
+            "24 к/с — это 240 кадров, ближайшее 4k+1 снизу 237",
+        )
 
     def test_without_a_frame_rate_there_is_no_ceiling_at_all(self):
         """Потолок продуктовый и выражен в секундах; без частоты его нет."""
@@ -275,9 +304,14 @@ class Lengths(unittest.TestCase):
 
 class SeamScore(unittest.TestCase):
     def _sim(self):
-        return {"pose": {(0, 44): 0.02, (10, 54): 0.0},
-                "flow": {(0, 44): 0.0, (10, 54): 0.05},
-                "lengths": [45], "pairs": 2, "measured": 2, "unmeasurable": 0}
+        return {
+            "pose": {(0, 44): 0.02, (10, 54): 0.0},
+            "flow": {(0, 44): 0.0, (10, 54): 0.05},
+            "lengths": [45],
+            "pairs": 2,
+            "measured": 2,
+            "unmeasurable": 0,
+        }
 
     def test_the_bounce_ranks_worse_than_the_honest_seam(self):
         """При шаге клипа 0.05: A даёт max(0.4, 0) = 0.4, B — max(0, 1.0) = 1.0."""
@@ -301,8 +335,7 @@ def cand(i, j, score):
 
 class Suppression(unittest.TestCase):
     def test_overlap_is_a_share_of_the_shorter_loop(self):
-        self.assertAlmostEqual(fl.overlap(cand(0, 44, 1), cand(30, 74, 1)),
-                               15 / 45, places=6)
+        self.assertAlmostEqual(fl.overlap(cand(0, 44, 1), cand(30, 74, 1)), 15 / 45, places=6)
         self.assertEqual(fl.overlap(cand(0, 44, 1), cand(45, 89, 1)), 0.0)
 
     def test_a_copy_shifted_by_four_frames_is_not_a_second_loop(self):
@@ -312,8 +345,7 @@ class Suppression(unittest.TestCase):
 
     def test_a_third_of_a_loop_in_common_still_counts_as_a_different_loop(self):
         got = fl.select([cand(0, 44, 0.5), cand(30, 74, 0.6)])
-        self.assertEqual([(c["i"], c["j"]) for c in got["kept"]],
-                         [(0, 44), (30, 74)])
+        self.assertEqual([(c["i"], c["j"]) for c in got["kept"]], [(0, 44), (30, 74)])
 
     def test_the_table_is_capped(self):
         many = [cand(k * 50, k * 50 + 44, 0.1 * k) for k in range(8)]
@@ -325,20 +357,20 @@ class Repeats(unittest.TestCase):
     def test_the_numbers_match_the_ones_measured_on_the_material(self):
         """Литералы из хэндофа: 45 кадров, склейка N*44+1."""
         got = fl.repeat_plan(45, fps=30)
-        self.assertEqual([(r["repeats"], r["frames"], r["seconds"]) for r in got],
-                         [(4, 177, 5.9), (5, 221, 7.37), (6, 265, 8.83)])
+        self.assertEqual(
+            [(r["repeats"], r["frames"], r["seconds"]) for r in got],
+            [(4, 177, 5.9), (5, 221, 7.37), (6, 265, 8.83)],
+        )
 
     def test_every_glued_length_survives_the_wrapper_snap(self):
         for L in fl.admissible_lengths(NFRAMES):
             for r in fl.repeat_plan(L):
-                self.assertEqual(r["snapped"], r["frames"],
-                                 f"склейка {r['repeats']}x{L} прижмётся")
+                self.assertEqual(r["snapped"], r["frames"], f"склейка {r['repeats']}x{L} прижмётся")
 
     def test_every_admissible_loop_can_be_grown_to_product_length(self):
         """Свойство, а не совпадение: полоса 5-10 с шире вдвое, поэтому"""
         for L in fl.admissible_lengths(NFRAMES, fps=FIXTURE_FPS):
-            self.assertTrue(fl.repeat_plan(L, fps=FIXTURE_FPS),
-                            f"длину {L} не растянуть в 5-10 с")
+            self.assertTrue(fl.repeat_plan(L, fps=FIXTURE_FPS), f"длину {L} не растянуть в 5-10 с")
 
     def test_a_loop_longer_than_the_product_fits_nothing(self):
         self.assertEqual(fl.repeat_plan(1000, fps=30), [])
@@ -348,9 +380,12 @@ class Gif(unittest.TestCase):
     def test_the_seam_frame_is_not_in_the_gif(self):
         idx = fl.gif_indices(0, 44)
         self.assertIn(0, idx)
-        self.assertNotIn(44, idx,
-                         "кадр j — повтор кадра i; оставив его, мы показали бы "
-                         "оператору два одинаковых кадра вместо стыка")
+        self.assertNotIn(
+            44,
+            idx,
+            "кадр j — повтор кадра i; оставив его, мы показали бы "
+            "оператору два одинаковых кадра вместо стыка",
+        )
 
     def test_the_gif_is_thinned(self):
         self.assertEqual(len(fl.gif_indices(0, 44)), 22)
@@ -368,6 +403,7 @@ class Gif(unittest.TestCase):
         self.assertEqual(got["size"], (320, 240))
         self.assertGreater(got["bytes"], 0)
         from PIL import Image
+
         with Image.open(out) as im:
             self.assertEqual(im.n_frames, 22)
             self.assertEqual(im.info["duration"], 60)
@@ -391,9 +427,12 @@ class Sequences(unittest.TestCase):
         self.assertEqual(got["loops"], [])
         self.assertAlmostEqual(got["advantage"], 1.4, places=1)
         self.assertIn("ПЕТЕЛЬ НЕ НАШЛОСЬ", got["note"])
-        self.assertGreater(got["measured_pairs"], 300,
-                           "«не нашлось» обязано стоять рядом с числом "
-                           "разобранных пар, иначе оно неотличимо от «не искали»")
+        self.assertGreater(
+            got["measured_pairs"],
+            300,
+            "«не нашлось» обязано стоять рядом с числом "
+            "разобранных пар, иначе оно неотличимо от «не искали»",
+        )
 
     def test_a_drift_stays_loopless_at_three_different_speeds(self):
         """фикстура берётся с обоих краёв диапазона и из середины."""
@@ -409,16 +448,15 @@ class Sequences(unittest.TestCase):
         m = Material(loop_sequence(tire=0.0005))
         got = analyse(m)
         self.assertEqual(got["outcome"], PASS, got["note"])
-        self.assertGreater(got["loops"][0]["score"], 0.0,
-                           "стык уже не идеален, и это обязано быть видно")
+        self.assertGreater(
+            got["loops"][0]["score"], 0.0, "стык уже не идеален, и это обязано быть видно"
+        )
 
     def test_where_the_bar_bites_is_measured_from_both_sides(self):
         """ИЗМЕРЕНО на одной фикстуре с двумя скоростями сползания:"""
-        for tire, outcome, lo, hi in ((0.004, PASS, 3.2, 3.6),
-                                      (0.006, FAIL, 1.5, 1.8)):
+        for tire, outcome, lo, hi in ((0.004, PASS, 3.2, 3.6), (0.006, FAIL, 1.5, 1.8)):
             with self.subTest(tire=tire):
-                m = Material([skeleton(t / PERIOD, tired=tire * t)
-                              for t in range(NFRAMES)])
+                m = Material([skeleton(t / PERIOD, tired=tire * t) for t in range(NFRAMES)])
                 got = analyse(m)
                 self.assertEqual(got["outcome"], outcome, got["note"])
                 self.assertGreater(got["advantage"], lo)
@@ -428,13 +466,16 @@ class Sequences(unittest.TestCase):
         m = Material(two_exercises())
         got = analyse(m)
         self.assertEqual(got["outcome"], PASS, got["note"])
-        self.assertEqual(len(got["loops"]), 2,
-                         f"упражнения два, петель {len(got['loops'])}: "
-                         f"{[(l['i'], l['j']) for l in got['loops']]}")
+        self.assertEqual(
+            len(got["loops"]),
+            2,
+            f"упражнения два, петель {len(got['loops'])}: "
+            f"{[(lp['i'], lp['j']) for lp in got['loops']]}",
+        )
         halves = sorted((lp["i"] < NFRAMES // 2) for lp in got["loops"])
-        self.assertEqual(halves, [False, True],
-                         "обе петли уехали в одну половину — второе упражнение "
-                         "потеряно")
+        self.assertEqual(
+            halves, [False, True], "обе петли уехали в одну половину — второе упражнение потеряно"
+        )
 
     def test_a_still_clip_is_not_measurable_rather_than_loopless(self):
         """«не смогли» не сворачивается ни в «годно», ни в «не годно»."""
@@ -460,8 +501,9 @@ class Sequences(unittest.TestCase):
         got = analyse(m)
         self.assertEqual(got["outcome"], PASS, got["note"])
         self.assertEqual(got["taken"], 86)
-        self.assertGreater(got["unmeasurable_pairs"], 0,
-                           "пары с пропавшей позой обязаны считаться отдельно")
+        self.assertGreater(
+            got["unmeasurable_pairs"], 0, "пары с пропавшей позой обязаны считаться отдельно"
+        )
 
     def test_material_shorter_than_a_loop_fails_with_the_number(self):
         m = Material(loop_sequence(20))
@@ -479,13 +521,21 @@ class ReportAndCache(unittest.TestCase):
         """ноль нарушений при нуле проверок — не успех."""
         m = Material(loop_sequence())
         got = analyse(m)
-        for key in ("frames", "taken", "pairs", "measured_pairs",
-                    "unmeasurable_pairs", "candidates", "worthy",
-                    "dropped_overlap", "advantage", "typical_step"):
+        for key in (
+            "frames",
+            "taken",
+            "pairs",
+            "measured_pairs",
+            "unmeasurable_pairs",
+            "candidates",
+            "worthy",
+            "dropped_overlap",
+            "advantage",
+            "typical_step",
+        ):
             self.assertIn(key, got, f"в отчёте нет числа {key}")
         self.assertEqual(got["frames"], NFRAMES)
-        self.assertEqual(got["pairs"],
-                         got["measured_pairs"] + got["unmeasurable_pairs"])
+        self.assertEqual(got["pairs"], got["measured_pairs"] + got["unmeasurable_pairs"])
 
     def test_the_verdict_never_claims_seamlessness(self):
         """Планки бесшовности у модуля нет, и заявлять её он не смеет."""
@@ -496,9 +546,11 @@ class ReportAndCache(unittest.TestCase):
 
     def test_three_outcomes_get_three_exit_codes(self):
         self.assertEqual(sorted(fl.EXIT_BY_OUTCOME.values()), [0, 1, 2])
-        self.assertEqual(fl.EXIT_BY_OUTCOME[UNMEASURED], 2,
-                         "сведение «не смогли» в 0 читало бы отсутствие "
-                         "детектора как успех")
+        self.assertEqual(
+            fl.EXIT_BY_OUTCOME[UNMEASURED],
+            2,
+            "сведение «не смогли» в 0 читало бы отсутствие детектора как успех",
+        )
 
     def test_the_table_prints_the_repeat_plan(self):
         m = Material(loop_sequence())
@@ -544,9 +596,7 @@ class ReportAndCache(unittest.TestCase):
     def test_a_cache_of_another_version_is_ignored(self):
         m = Material(loop_sequence(10))
         cache = Path(tempfile.mkdtemp(prefix="looper_cache_")) / "poses.json"
-        cache.write_text(json.dumps({"version": 999,
-                                     "frames": {"мусор": None}}),
-                         encoding="utf-8")
+        cache.write_text(json.dumps({"version": 999, "frames": {"мусор": None}}), encoding="utf-8")
         got = fl.read_all(m.paths(), reader=m.reader, cache=cache)
         self.assertEqual(got["cached"], 0)
         self.assertEqual(len(m.calls), 10)
@@ -566,9 +616,12 @@ class Cuts(unittest.TestCase):
         m = Material(loop_sequence(), blank=True)
         got = fl.cuts(m.paths(), gray=m.gray)
         self.assertEqual(got["cuts"], [])
-        self.assertAlmostEqual(got["worst"], 1.41, places=2,
-                               msg="самый резкий переход ровного маятника — "
-                                   "полтора типичных, до планки 4.0 далеко")
+        self.assertAlmostEqual(
+            got["worst"],
+            1.41,
+            places=2,
+            msg="самый резкий переход ровного маятника — полтора типичных, до планки 4.0 далеко",
+        )
 
     def test_a_shake_is_not_a_cut_either(self):
         """Скачок втрое против типичного — это ещё движение, а не монтаж."""
@@ -576,13 +629,16 @@ class Cuts(unittest.TestCase):
 
         m = Material(loop_sequence(), blank=True)
         m.gray = lambda path: np.full(
-            (8, 8), float(sum(3 if k % 10 == 0 else 1
-                              for k in range(int(Path(path).stem)))) % 200)
+            (8, 8), float(sum(3 if k % 10 == 0 else 1 for k in range(int(Path(path).stem)))) % 200
+        )
         got = fl.cuts(m.paths(), gray=m.gray)
         self.assertEqual(got["worst"], 3.0)
-        self.assertEqual(got["cuts"], [],
-                         "планка стоит выше тряски и ниже монтажа; сдвинув её "
-                         "вниз, мы объявим резом каждый резкий мах")
+        self.assertEqual(
+            got["cuts"],
+            [],
+            "планка стоит выше тряски и ниже монтажа; сдвинув её "
+            "вниз, мы объявим резом каждый резкий мах",
+        )
 
     def test_the_default_pixel_reader_downscales_to_the_declared_side(self):
         """Точка внедрения по умолчанию читается настоящим кадром, а не макетом:"""
@@ -609,8 +665,7 @@ class Cuts(unittest.TestCase):
         self.assertGreater(got["rejected"].get("рез внутри петли", 0), 0)
         for lp in got["loops"]:
             with self.subTest(loop=(lp["i"], lp["j"])):
-                self.assertTrue(lp["j"] <= 47 or lp["i"] > 47,
-                                "петля перешагнула монтажный рез")
+                self.assertTrue(lp["j"] <= 47 or lp["i"] > 47, "петля перешагнула монтажный рез")
 
 
 class Presence(unittest.TestCase):
@@ -634,12 +689,12 @@ class Presence(unittest.TestCase):
         m = Material(loop_sequence(200), missing=range(60, 80))
         got = analyse(m)
         self.assertEqual(got["outcome"], PASS, got["note"])
-        self.assertGreater(
-            got["rejected"].get("человека нет в кадре внутри петли", 0), 0)
+        self.assertGreater(got["rejected"].get("человека нет в кадре внутри петли", 0), 0)
         for lp in got["loops"]:
             with self.subTest(loop=(lp["i"], lp["j"])):
-                self.assertTrue(lp["j"] < 60 or lp["i"] > 79,
-                                "петля идёт через участок, где человека нет")
+                self.assertTrue(
+                    lp["j"] < 60 or lp["i"] > 79, "петля идёт через участок, где человека нет"
+                )
 
     def test_a_single_blink_of_the_detector_does_not_kill_the_loop(self):
         """Другая сторона того же порога: одиночный промах — не уход из кадра."""
@@ -669,14 +724,17 @@ class LongMaterial(unittest.TestCase):
         for name, rep in (("полный", full), ("прорежённый", thin)):
             best = rep["loops"][0]
             with self.subTest(scan=name):
-                self.assertEqual((best["j"] - best["i"]) % PERIOD, 0,
-                                 f"{name} проход взял не период движения")
+                self.assertEqual(
+                    (best["j"] - best["i"]) % PERIOD, 0, f"{name} проход взял не период движения"
+                )
         self.assertLess(thin["pose_frames"], full["pose_frames"])
         self.assertLess(
             abs(thin["loops"][0]["score"] - full["loops"][0]["score"])
-            / max(full["loops"][0]["score"], 1e-9), 0.2,
+            / max(full["loops"][0]["score"], 1e-9),
+            0.2,
             "тонкая оценка уехала от полной больше чем на пятую часть — "
-            "значит единицы измерения разъехались всерьёз")
+            "значит единицы измерения разъехались всерьёз",
+        )
         self.assertEqual(thin["loops"][0]["coarse"]["i"] % 5, 0)
 
     def test_thinning_breaks_at_nyquist_and_here_is_where(self):
@@ -708,13 +766,11 @@ class LongMaterial(unittest.TestCase):
 
     def test_material_past_the_ceiling_is_refused_rather_than_awaited(self):
         m = Material(loop_sequence(), blank=True)
-        got = analyse(m,
-                            max_frames=50)
+        got = analyse(m, max_frames=50)
         self.assertEqual(got["outcome"], UNMEASURED, got["note"])
         self.assertEqual(got["scan"], fl.SCAN_TOO_LONG)
         self.assertIn("нарежьте", got["note"].lower())
-        ok = analyse(m,
-                           max_frames=200)
+        ok = analyse(m, max_frames=200)
         self.assertEqual(ok["outcome"], PASS)
 
     def test_the_default_ceiling_is_twenty_minutes(self):
@@ -725,16 +781,21 @@ class LongMaterial(unittest.TestCase):
 
 def many_exercises(count, *, each=50):
     """РАЗНЫЕ упражнения: разная конфигурация тела, а не разная амплитуда."""
-    plans = [("arms", 0.16, 0.0), ("legs", 0.20, 0.42), ("line", 0.20, -0.40),
-             ("arms", 0.05, 0.85), ("legs", 0.06, -0.80), ("line", 0.09, 1.25)]
+    plans = [
+        ("arms", 0.16, 0.0),
+        ("legs", 0.20, 0.42),
+        ("line", 0.20, -0.40),
+        ("arms", 0.05, 0.85),
+        ("legs", 0.06, -0.80),
+        ("line", 0.09, 1.25),
+    ]
     anchor = ("l_hip", "r_hip", "l_shoulder", "r_shoulder")
     out = []
     for e in range(count):
         mode, amp, tilt = plans[e]
         for t in range(each):
             sk = skeleton((e * 7 + t) / PERIOD, mode=mode, amp=amp)
-            out.append({k: (x, y if k in anchor else y + tilt, v)
-                        for k, (x, y, v) in sk.items()})
+            out.append({k: (x, y if k in anchor else y + tilt, v) for k, (x, y, v) in sk.items()})
     return out
 
 
@@ -745,9 +806,11 @@ class FiveOnTheOutput(unittest.TestCase):
         self.assertEqual(got["outcome"], PASS, got["note"])
         self.assertEqual(len(got["loops"]), 5)
         starts = sorted(lp["i"] // 50 for lp in got["loops"])
-        self.assertEqual(starts, [0, 1, 2, 3, 4],
-                         "пять петель обязаны прийти из пяти разных упражнений, "
-                         "а не пять раз из одного")
+        self.assertEqual(
+            starts,
+            [0, 1, 2, 3, 4],
+            "пять петель обязаны прийти из пяти разных упражнений, а не пять раз из одного",
+        )
 
     def test_a_sixth_exercise_does_not_make_a_sixth_line(self):
         m = Material(many_exercises(6), blank=True)
@@ -762,15 +825,23 @@ class FiveOnTheOutput(unittest.TestCase):
         self.assertEqual(len(got["loops"]), 1, got["note"])
         self.assertGreater(got["dropped_duplicate"], 0)
         self.assertIn("РАЗНЫХ ДВИЖЕНИЙ МЕНЬШЕ ЗАКАЗАННЫХ 5", got["note"])
-        self.assertIn(f"схлопнуто как повтор того же движения "
-                      f"{got['dropped_duplicate']}", got["note"])
+        self.assertIn(
+            f"схлопнуто как повтор того же движения {got['dropped_duplicate']}", got["note"]
+        )
 
 
 class PixelAxis(unittest.TestCase):
     def _sim(self, pixel):
-        return {"pose": {(0, 44): 0.0}, "flow": {(0, 44): 0.0},
-                "pixel": {(0, 44): pixel}, "joints": {(0, 44): 12},
-                "lengths": [45], "pairs": 1, "measured": 1, "unmeasurable": 0}
+        return {
+            "pose": {(0, 44): 0.0},
+            "flow": {(0, 44): 0.0},
+            "pixel": {(0, 44): pixel},
+            "joints": {(0, 44): 12},
+            "lengths": [45],
+            "pairs": 1,
+            "measured": 1,
+            "unmeasurable": 0,
+        }
 
     def test_a_perfect_pose_with_a_jumped_picture_ranks_badly(self):
         """Поза и направление сошлись идеально, а картинка прыгнула вчетверо"""
@@ -784,8 +855,11 @@ class PixelAxis(unittest.TestCase):
 
     def test_a_pair_without_pixels_is_not_judged_by_two_axes_out_of_three(self):
         got = fl.score_pairs(self._sim(None), 0.05, pix_step=0.1)
-        self.assertEqual(got, [], "стык, у которого не измерена одна из трёх "
-                                  "осей, — это «не смогли», а не «идеально»")
+        self.assertEqual(
+            got,
+            [],
+            "стык, у которого не измерена одна из трёх осей, — это «не смогли», а не «идеально»",
+        )
 
     def test_without_a_pixel_store_the_instrument_works_on_two_axes(self):
         got = fl.score_pairs(self._sim(None), 0.05)
@@ -823,19 +897,18 @@ class SourceFps(unittest.TestCase):
     def test_the_repeat_plan_follows_the_source_rate(self):
         """Числа составителя шаблонов: петля 53 кадра при 24 к/с. Пятикратный повтор даёт"""
         self.assertEqual(
-            [(r["repeats"], r["frames"], r["seconds"])
-             for r in fl.repeat_plan(53, fps=24)],
-            [(3, 157, 6.54), (4, 209, 8.71)])
+            [(r["repeats"], r["frames"], r["seconds"]) for r in fl.repeat_plan(53, fps=24)],
+            [(3, 157, 6.54), (4, 209, 8.71)],
+        )
         self.assertEqual(
-            [(r["repeats"], r["frames"], r["seconds"])
-             for r in fl.repeat_plan(53, fps=30)],
-            [(3, 157, 5.23), (4, 209, 6.97), (5, 261, 8.7)])
+            [(r["repeats"], r["frames"], r["seconds"]) for r in fl.repeat_plan(53, fps=30)],
+            [(3, 157, 5.23), (4, 209, 6.97), (5, 261, 8.7)],
+        )
 
     def test_a_directory_alone_has_no_frame_rate_and_says_so(self):
         """Третий исход: не «30 по умолчанию», а «неизвестна»."""
         m = Material(loop_sequence(), blank=True)
-        got = fl.find_loops(m.dir, reader=m.reader, gray=m.gray,
-                            head=m.head, gif=False)
+        got = fl.find_loops(m.dir, reader=m.reader, gray=m.gray, head=m.head, gif=False)
         self.assertEqual(got["outcome"], PASS, got["note"])
         self.assertIsNone(got["fps"])
         self.assertEqual(got["fps_source"], fl.FPS_UNKNOWN)
@@ -845,23 +918,27 @@ class SourceFps(unittest.TestCase):
         txt = fl.table(got)
         self.assertIn("частота неизвестна", txt)
         self.assertIn("45", txt, "кадры печатаются всегда: они измерены")
-        self.assertIn("неизвестна", [s["note"] for s in got["steps"]
-                                     if s["step"] == "частота"][0])
+        self.assertIn("неизвестна", [s["note"] for s in got["steps"] if s["step"] == "частота"][0])
 
     def test_a_video_file_tells_its_own_frame_rate(self):
         m = Material(loop_sequence(), blank=True)
         movie = m.dir.parent / "driving.mp4"
-        movie.write_text("не настоящее видео: раскодировщик подменён",
-                         encoding="utf-8")
+        movie.write_text("не настоящее видео: раскодировщик подменён", encoding="utf-8")
         seen = {}
 
         def decode(path, out_dir, **kw):
             seen["path"] = path
-            return {"outcome": PASS, "paths": [str(p) for p in m.paths()],
-                    "fps_in": 24, "fps_out": 24, "note": "фикстура"}
+            return {
+                "outcome": PASS,
+                "paths": [str(p) for p in m.paths()],
+                "fps_in": 24,
+                "fps_out": 24,
+                "note": "фикстура",
+            }
 
-        got = fl.find_loops(movie, reader=m.reader, gray=m.gray,
-                            head=m.head, gif=False, decode=decode)
+        got = fl.find_loops(
+            movie, reader=m.reader, gray=m.gray, head=m.head, gif=False, decode=decode
+        )
         self.assertEqual(got["fps"], 24)
         self.assertEqual(got["fps_source"], fl.FPS_PROBED)
         self.assertEqual(got["loops"][0]["seconds"], 1.88)
@@ -874,11 +951,17 @@ class SourceFps(unittest.TestCase):
         movie.write_text("фикстура", encoding="utf-8")
 
         def decode(path, out_dir, **kw):
-            return {"outcome": PASS, "paths": [str(p) for p in m.paths()],
-                    "fps_in": 24, "fps_out": 24, "note": "фикстура"}
+            return {
+                "outcome": PASS,
+                "paths": [str(p) for p in m.paths()],
+                "fps_in": 24,
+                "fps_out": 24,
+                "note": "фикстура",
+            }
 
-        got = fl.find_loops(movie, reader=m.reader, gray=m.gray,
-                            head=m.head, gif=False, decode=decode, fps=30)
+        got = fl.find_loops(
+            movie, reader=m.reader, gray=m.gray, head=m.head, gif=False, decode=decode, fps=30
+        )
         self.assertEqual(got["fps"], 30)
         self.assertEqual(got["fps_source"], fl.FPS_GIVEN)
 
@@ -886,10 +969,19 @@ class SourceFps(unittest.TestCase):
 class JointCoverage(unittest.TestCase):
     def test_the_loop_reports_how_many_joints_were_compared(self):
         """На драйвинге правое запястье видно на 46 кадрах из 96, и стык лучшей"""
-        blind = ("l_hip", "r_hip", "l_shoulder", "r_shoulder", "l_knee",
-                 "r_knee", "l_ankle", "r_ankle", "l_elbow", "r_elbow")
-        m = Material([skeleton(t / PERIOD, seen=blind) for t in range(NFRAMES)],
-                     blank=True)
+        blind = (
+            "l_hip",
+            "r_hip",
+            "l_shoulder",
+            "r_shoulder",
+            "l_knee",
+            "r_knee",
+            "l_ankle",
+            "r_ankle",
+            "l_elbow",
+            "r_elbow",
+        )
+        m = Material([skeleton(t / PERIOD, seen=blind) for t in range(NFRAMES)], blank=True)
         got = analyse(m)
         self.assertEqual(got["outcome"], PASS, got["note"])
         self.assertEqual(got["loops"][0]["joints"], 10)
@@ -901,15 +993,17 @@ class JointCoverage(unittest.TestCase):
         m = Material(loop_sequence(), blank=True)
         got = analyse(m)
         self.assertEqual(got["loops"][0]["joints"], 12)
-        self.assertNotIn("сколько суставов из 12", fl.table(got),
-                         "пояснение печатается только когда есть что пояснять")
+        self.assertNotIn(
+            "сколько суставов из 12",
+            fl.table(got),
+            "пояснение печатается только когда есть что пояснять",
+        )
 
 
 def two_places_one_movement(each=120):
     """Упражнение A, потом B, потом СНОВА A — как в боевом ролике."""
     out = []
-    for mode, amp, tilt in (("arms", 0.10, 0.0), ("legs", 0.20, 0.6),
-                            ("arms", 0.10, 0.0)):
+    for mode, amp, tilt in (("arms", 0.10, 0.0), ("legs", 0.20, 0.6), ("arms", 0.10, 0.0)):
         for t in range(each):
             out.append(seated(skeleton(t / PERIOD, mode=mode, amp=amp), tilt))
     return out
@@ -917,8 +1011,9 @@ def two_places_one_movement(each=120):
 
 def same_start_different_moves(each=120):
     """Два упражнения, начинающиеся из ОДНОЙ позы и расходящиеся дальше."""
-    return ([skeleton(t / PERIOD, mode="line", amp=0.05) for t in range(each)]
-            + [skeleton(t / PERIOD, mode="line", amp=0.30) for t in range(each)])
+    return [skeleton(t / PERIOD, mode="line", amp=0.05) for t in range(each)] + [
+        skeleton(t / PERIOD, mode="line", amp=0.30) for t in range(each)
+    ]
 
 
 class TwoSieves(unittest.TestCase):
@@ -941,8 +1036,8 @@ class TwoSieves(unittest.TestCase):
         """сверять движения по половине подписи нельзя."""
         self.assertIsNone(fl.loop_signature(lambda f: None, 0, 44))
         self.assertIsNone(
-            fl.loop_signature(lambda f: None if f == 15 else norm(skeleton(0.0)),
-                              0, 44))
+            fl.loop_signature(lambda f: None if f == 15 else norm(skeleton(0.0)), 0, 44)
+        )
 
     def test_the_signature_gap_ignores_where_the_cycle_starts(self):
         """То же упражнение с другой точки цикла — то же упражнение."""
@@ -950,8 +1045,9 @@ class TwoSieves(unittest.TestCase):
         a = fl.loop_signature(at, 0, 44)
         b = fl.loop_signature(at, 11, 55)
         self.assertLess(fl.signature_gap(a, b), 0.1)
-        other = fl.loop_signature(lambda f: norm(skeleton(f / PERIOD, mode="legs",
-                                                          amp=0.14)), 0, 44)
+        other = fl.loop_signature(
+            lambda f: norm(skeleton(f / PERIOD, mode="legs", amp=0.14)), 0, 44
+        )
         self.assertGreater(fl.signature_gap(a, other), 0.3)
 
     def test_the_vectorised_gap_equals_pose_gap(self):
@@ -961,7 +1057,8 @@ class TwoSieves(unittest.TestCase):
         b = [at(3), at(19)]
         by_hand = max(
             max(min(fl.pose_gap(x, y) for y in b) for x in a),
-            max(min(fl.pose_gap(x, y) for x in a) for y in b))
+            max(min(fl.pose_gap(x, y) for x in a) for y in b),
+        )
         self.assertAlmostEqual(fl.signature_gap(a, b), by_hand, places=5)
 
     def test_the_gap_is_the_worst_phase_not_the_average(self):
@@ -978,42 +1075,52 @@ class TwoSieves(unittest.TestCase):
         m = Material(two_places_one_movement(), blank=True)
         got = analyse(m)
         self.assertEqual(got["outcome"], PASS, got["note"])
-        self.assertEqual(len(got["loops"]), 2,
-                         f"движений два, петель {len(got['loops'])}: "
-                         f"{[(l['i'], l['j']) for l in got['loops']]}")
+        self.assertEqual(
+            len(got["loops"]),
+            2,
+            f"движений два, петель {len(got['loops'])}: "
+            f"{[(lp['i'], lp['j']) for lp in got['loops']]}",
+        )
         self.assertGreater(got["dropped_duplicate"], 0)
 
     def test_two_movements_that_start_alike_are_told_apart(self):
         """Сверка ТОЛЬКО ПО НАЧАЛУ схлопнула бы их: стартовые позы совпадают"""
         seq = same_start_different_moves()
-        self.assertEqual(seq[0], seq[120],
-                         "фикстура сломана: стартовые позы обязаны совпадать")
+        self.assertEqual(seq[0], seq[120], "фикстура сломана: стартовые позы обязаны совпадать")
         st = fl.states(seq)
         at = lambda f: st[f] if 0 <= f < len(st) else None
         typical = fl.typical_step(st)["step"]
-        self.assertEqual(fl.pose_gap(st[0], st[120]), 0.0,
-                         "по началу движения неразличимы — в этом и дело")
-        gap = fl.signature_gap(fl.loop_signature(at, 0, 44),
-                               fl.loop_signature(at, 120, 164))
-        self.assertGreater(gap / typical, fl.DUPLICATE_MAX_STEPS,
-                           f"по всей петле обязаны различаться: {gap/typical:.1f} "
-                           f"типичных шага против порога {fl.DUPLICATE_MAX_STEPS}")
+        self.assertEqual(
+            fl.pose_gap(st[0], st[120]), 0.0, "по началу движения неразличимы — в этом и дело"
+        )
+        gap = fl.signature_gap(fl.loop_signature(at, 0, 44), fl.loop_signature(at, 120, 164))
+        self.assertGreater(
+            gap / typical,
+            fl.DUPLICATE_MAX_STEPS,
+            f"по всей петле обязаны различаться: {gap / typical:.1f} "
+            f"типичных шага против порога {fl.DUPLICATE_MAX_STEPS}",
+        )
 
     def test_the_same_movement_with_a_smaller_swing_is_still_one_movement(self):
         """Один и тот же мах с размахом 0.05 и 0.12 — одно упражнение."""
-        seq = ([skeleton(t / PERIOD, mode="line", amp=0.05) for t in range(120)]
-               + [skeleton(t / PERIOD, mode="line", amp=0.12) for t in range(120)])
+        seq = [skeleton(t / PERIOD, mode="line", amp=0.05) for t in range(120)] + [
+            skeleton(t / PERIOD, mode="line", amp=0.12) for t in range(120)
+        ]
         st = fl.states(seq)
         at = lambda f: st[f] if 0 <= f < len(st) else None
-        gap = (fl.signature_gap(fl.loop_signature(at, 0, 44),
-                                fl.loop_signature(at, 120, 164))
-               / fl.typical_step(st)["step"])
+        gap = (
+            fl.signature_gap(fl.loop_signature(at, 0, 44), fl.loop_signature(at, 120, 164))
+            / fl.typical_step(st)["step"]
+        )
         self.assertGreater(gap, 6.0, "фикстура должна быть ВЫШЕ нижней мутации")
         self.assertLess(gap, fl.DUPLICATE_MAX_STEPS)
         got = analyse(Material(seq, blank=True))
-        self.assertEqual(len(got["loops"]), 1,
-                         f"это одно движение, петель {len(got['loops'])}: "
-                         f"{[(l['i'], l['j']) for l in got['loops']]}")
+        self.assertEqual(
+            len(got["loops"]),
+            1,
+            f"это одно движение, петель {len(got['loops'])}: "
+            f"{[(lp['i'], lp['j']) for lp in got['loops']]}",
+        )
 
     def test_the_two_sieves_catch_different_things(self):
         """Каждое сито обязано ловить своё, и это видно по счётчикам."""
@@ -1021,20 +1128,25 @@ class TwoSieves(unittest.TestCase):
         one_move = Material(two_places_one_movement(), blank=True)
         a = analyse(shifted)
         b = analyse(one_move)
-        self.assertGreater(a["dropped_overlap"], 0,
-                           "сдвиги на кадр внутри одного места ловит сито "
-                           "диапазонов")
-        self.assertGreater(b["dropped_duplicate"], 0,
-                           "повтор упражнения в другом месте клипа ловит только "
-                           "сито содержания")
+        self.assertGreater(
+            a["dropped_overlap"], 0, "сдвиги на кадр внутри одного места ловит сито диапазонов"
+        )
+        self.assertGreater(
+            b["dropped_duplicate"],
+            0,
+            "повтор упражнения в другом месте клипа ловит только сито содержания",
+        )
 
     def test_comparing_movements_asks_the_detector_nothing(self):
-        """ и сверка идёт по УЖЕ СНЯТЫМ позам, новых опросов нет."""
+        """и сверка идёт по УЖЕ СНЯТЫМ позам, новых опросов нет."""
         m = Material(two_places_one_movement(), blank=True)
         analyse(m)
-        self.assertEqual(len(m.calls), 360,
-                         "детектор позы обязан быть вызван ровно по разу на "
-                         "кадр: сверка движений своих опросов не делает")
+        self.assertEqual(
+            len(m.calls),
+            360,
+            "детектор позы обязан быть вызван ровно по разу на "
+            "кадр: сверка движений своих опросов не делает",
+        )
 
 
 class HeadAxis(unittest.TestCase):
@@ -1053,9 +1165,10 @@ class HeadAxis(unittest.TestCase):
         self.assertGreater(got["dropped_head"], 0, got["note"])
         self.assertEqual(got["loops"], [], got["note"])
         self.assertEqual(got["head_tried"], fl.HEAD_MAX_TRIES)
-        self.assertIn("БЮДЖЕТ ГОЛОВЫ ИСЧЕРПАН",
-                      [s["note"] for s in got["steps"]
-                       if s["step"] == "финалисты"][0])
+        self.assertIn(
+            "БЮДЖЕТ ГОЛОВЫ ИСЧЕРПАН",
+            [s["note"] for s in got["steps"] if s["step"] == "финалисты"][0],
+        )
 
     def test_a_head_jump_is_caught_where_the_pose_is_perfect(self):
         """Поза и картинка идеальны, голова прыгает — этого не видит ничто,"""
@@ -1063,9 +1176,10 @@ class HeadAxis(unittest.TestCase):
         got = analyse(m)
         for lp in got["loops"]:
             with self.subTest(loop=(lp["i"], lp["j"])):
-                self.assertFalse(lp["i"] < NFRAMES // 2 <= lp["j"]
-                                 and lp["head_state"] == PASS,
-                                 "петля перешагнула рывок головы")
+                self.assertFalse(
+                    lp["i"] < NFRAMES // 2 <= lp["j"] and lp["head_state"] == PASS,
+                    "петля перешагнула рывок головы",
+                )
 
     def test_no_head_detector_marks_the_loop_instead_of_failing_it(self):
         """«не смогли посмотреть» не значит «плохо» — но и не молчит."""
@@ -1091,12 +1205,14 @@ class HeadAxis(unittest.TestCase):
 
         m = Material(loop_sequence(), blank=True)
         m.head = lambda path: {
-            "head": (360.0,
-                     500.0 + 6.0 * float(np.sin(2 * np.pi *
-                                                (int(Path(path).stem) % PERIOD)
-                                                / PERIOD))
-                     + 0.01 * int(Path(path).stem)),
-            "why": ""}
+            "head": (
+                360.0,
+                500.0
+                + 6.0 * float(np.sin(2 * np.pi * (int(Path(path).stem) % PERIOD) / PERIOD))
+                + 0.01 * int(Path(path).stem),
+            ),
+            "why": "",
+        }
         got = analyse(m)
         self.assertEqual(got["outcome"], PASS, got["note"])
         self.assertEqual(got["dropped_head"], 0, got["note"])
@@ -1128,26 +1244,40 @@ class HeadAxis(unittest.TestCase):
 
 class NoHeavyImports(unittest.TestCase):
     def test_importing_the_module_does_not_pull_mediapipe(self):
-        """ обеспечивается устройством модуля, а не договорённостью."""
+        """обеспечивается устройством модуля, а не договорённостью."""
         import subprocess
         import sys
 
         out = subprocess.run(
-            [sys.executable, "-c",
-             "import sys; import lipsync.fork_looper as m; "
-             "print('mediapipe' in sys.modules)"],
-            capture_output=True, text=True,
-            cwd=str(Path(__file__).resolve().parents[2]))
+            [
+                sys.executable,
+                "-c",
+                "import sys; import lipsync.fork_looper as m; print('mediapipe' in sys.modules)",
+            ],
+            capture_output=True,
+            text=True,
+            cwd=str(Path(__file__).resolve().parents[2]),
+        )
         self.assertEqual(out.stdout.strip(), "False", out.stderr[-400:])
 
 
 def priced(i, j, frames, floor, seam, outcome):
     """Петля с уже посчитанной ценой моста — ВХОД для `rank_loops`."""
-    return {"i": i, "j": j, "frames": j - i + 1,
-            "bridge": {"outcome": outcome, "frames": frames, "floor": floor,
-                       "seam": seam, "worst_axis": "голова",
-                       "unmeasured": [] if outcome == PASS else ["голова"],
-                       "measured": ["тело"], "reason": ""}}
+    return {
+        "i": i,
+        "j": j,
+        "frames": j - i + 1,
+        "bridge": {
+            "outcome": outcome,
+            "frames": frames,
+            "floor": floor,
+            "seam": seam,
+            "worst_axis": "голова",
+            "unmeasured": [] if outcome == PASS else ["голова"],
+            "measured": ["тело"],
+            "reason": "",
+        },
+    }
 
 
 class BridgePrice(unittest.TestCase):
@@ -1169,8 +1299,7 @@ class BridgePrice(unittest.TestCase):
         self.assertIsNone(fl.bridge_frames(None))
 
     def test_four_measured_axes_give_a_price_and_name_the_worst(self):
-        got = fl.bridge_cost({"поза": 0.99, "поток": 0.91, "пиксели": 1.45,
-                              "голова": 3.28})
+        got = fl.bridge_cost({"поза": 0.99, "поток": 0.91, "пиксели": 1.45, "голова": 3.28})
         self.assertEqual(got["outcome"], "годно")
         self.assertEqual(got["frames"], 4)
         self.assertEqual(got["worst_axis"], "голова")
@@ -1178,8 +1307,7 @@ class BridgePrice(unittest.TestCase):
 
     def test_a_missing_axis_is_a_third_outcome_and_gives_a_bound(self):
         """«не смогли» не сворачивается ни в «годно», ни в «не годно»."""
-        got = fl.bridge_cost({"поза": 1.479, "поток": 2.141, "пиксели": 1.935,
-                              "голова": None})
+        got = fl.bridge_cost({"поза": 1.479, "поток": 2.141, "пиксели": 1.935, "голова": None})
         self.assertEqual(got["outcome"], "не смогли проверить")
         self.assertIsNone(got["frames"], "цены у неизмеренного стыка нет")
         self.assertEqual(got["floor"], 3, "но нижняя граница есть, и она в кадрах")
@@ -1187,8 +1315,9 @@ class BridgePrice(unittest.TestCase):
 
     def test_the_same_loop_with_the_head_measured_gets_a_real_price(self):
         """Негативный контроль с другой стороны: та же петля, у которой"""
-        got = fl.bridge_cost({"поза": 1.479, "поток": 2.141, "пиксели": 1.935,
-                              "голова": 11.74}, max_frames=99)
+        got = fl.bridge_cost(
+            {"поза": 1.479, "поток": 2.141, "пиксели": 1.935, "голова": 11.74}, max_frames=99
+        )
         self.assertEqual(got["outcome"], "годно")
         self.assertEqual(got["frames"], 12)
 
@@ -1227,41 +1356,48 @@ class TwoQueues(unittest.TestCase):
 
     def test_an_unmeasured_candidate_never_ranks_above_a_measured_one(self):
         """ГЛАВНАЯ ПРАВКА, в чистом виде."""
-        got = fl.rank_loops([priced(200, 244, None, 0, 0.0, UNMEASURED),
-                             priced(100, 144, 4, 4, 3.28, PASS)])
-        self.assertEqual([(l["i"], l["j"]) for l in got],
-                         [(100, 144), (200, 244)])
+        got = fl.rank_loops(
+            [priced(200, 244, None, 0, 0.0, UNMEASURED), priced(100, 144, 4, 4, 3.28, PASS)]
+        )
+        self.assertEqual([(lp["i"], lp["j"]) for lp in got], [(100, 144), (200, 244)])
 
     def test_inside_the_measured_queue_the_cheaper_bridge_wins(self):
         """Негативный контроль с другой стороны: когда измерены все,"""
-        got = fl.rank_loops([priced(10, 54, 9, 9, 8.1, PASS),
-                             priced(20, 64, 2, 2, 1.4, PASS),
-                             priced(30, 74, 5, 5, 4.6, PASS)])
-        self.assertEqual([l["bridge"]["frames"] for l in got], [2, 5, 9])
+        got = fl.rank_loops(
+            [
+                priced(10, 54, 9, 9, 8.1, PASS),
+                priced(20, 64, 2, 2, 1.4, PASS),
+                priced(30, 74, 5, 5, 4.6, PASS),
+            ]
+        )
+        self.assertEqual([lp["bridge"]["frames"] for lp in got], [2, 5, 9])
 
     def test_unmeasured_candidates_are_ordered_among_themselves_by_the_bound(self):
         """Вторая очередь — тоже очередь, а не свалка."""
-        got = fl.rank_loops([priced(10, 54, None, 6, 5.2, UNMEASURED),
-                             priced(20, 64, None, 2, 1.1, UNMEASURED)])
-        self.assertEqual([l["i"] for l in got], [20, 10])
+        got = fl.rank_loops(
+            [priced(10, 54, None, 6, 5.2, UNMEASURED), priced(20, 64, None, 2, 1.1, UNMEASURED)]
+        )
+        self.assertEqual([lp["i"] for lp in got], [20, 10])
 
     def test_a_blind_face_no_longer_takes_the_first_place(self):
         """То же самое, но целиком через прибор."""
         seq = two_exercises_second_is_perfect()
         seen = analyse(Material(seq, blank=True))
-        self.assertEqual([(l["i"], l["j"]) for l in seen["loops"]],
-                         [(48, 92), (0, 44)], seen["note"])
-        self.assertEqual([l["bridge"]["frames"] for l in seen["loops"]], [0, 1])
+        self.assertEqual(
+            [(lp["i"], lp["j"]) for lp in seen["loops"]], [(48, 92), (0, 44)], seen["note"]
+        )
+        self.assertEqual([lp["bridge"]["frames"] for lp in seen["loops"]], [0, 1])
 
-        blind = analyse(Material(seq, blank=True,
-                                 head_blind=range(48, NFRAMES)))
-        self.assertEqual([(l["i"], l["j"]) for l in blind["loops"]],
-                         [(0, 44), (48, 92)], blind["note"])
+        blind = analyse(Material(seq, blank=True, head_blind=range(48, NFRAMES)))
+        self.assertEqual(
+            [(lp["i"], lp["j"]) for lp in blind["loops"]], [(0, 44), (48, 92)], blind["note"]
+        )
         last = blind["loops"][1]
         self.assertEqual(last["head_state"], UNMEASURED)
         self.assertIsNone(last["bridge"]["frames"])
-        self.assertEqual(last["bridge"]["floor"], 0,
-                         "нижняя граница у него ДЕШЕВЛЕ, и всё равно он второй")
+        self.assertEqual(
+            last["bridge"]["floor"], 0, "нижняя граница у него ДЕШЕВЛЕ, и всё равно он второй"
+        )
         self.assertEqual(blind["loops"][0]["bridge"]["frames"], 1)
 
     def test_the_deferred_candidate_suppresses_nobody(self):
@@ -1269,15 +1405,20 @@ class TwoQueues(unittest.TestCase):
         seq = two_exercises_second_is_perfect()
         blind = analyse(Material(seq, blank=True, head_blind={48}))
         first = blind["loops"][0]
-        self.assertEqual(first["head_state"], PASS,
-                         "первым обязан идти измеренный, а не отложенный")
-        self.assertEqual((first["i"], first["j"]), (49, 93),
-                         "сосед отложенного на кадр вправо — лицо на нём видно")
+        self.assertEqual(
+            first["head_state"], PASS, "первым обязан идти измеренный, а не отложенный"
+        )
+        self.assertEqual(
+            (first["i"], first["j"]),
+            (49, 93),
+            "сосед отложенного на кадр вправо — лицо на нём видно",
+        )
 
     def test_the_table_marks_a_bound_so_it_cannot_be_read_as_a_price(self):
         """(в) — пометка без изменения порядка — это то, что подвело."""
-        blind = analyse(Material(two_exercises_second_is_perfect(), blank=True,
-                                 head_blind=range(0, 48)))
+        blind = analyse(
+            Material(two_exercises_second_is_perfect(), blank=True, head_blind=range(0, 48))
+        )
         txt = fl.table(blind)
         bound = [r for r in txt.splitlines() if r.strip().startswith("2 ")][0]
         self.assertIn("≥1к", bound, txt)
@@ -1286,8 +1427,9 @@ class TwoQueues(unittest.TestCase):
 
     def test_the_counters_say_how_many_bridges_were_priced_and_how_many_not(self):
         """ноль отвергнутых при нуле посчитанных мостов — не успех."""
-        blind = analyse(Material(two_exercises_second_is_perfect(), blank=True,
-                                 head_blind=range(48, NFRAMES)))
+        blind = analyse(
+            Material(two_exercises_second_is_perfect(), blank=True, head_blind=range(48, NFRAMES))
+        )
         self.assertEqual(blind["bridge_measured"], 1)
         self.assertEqual(blind["head_unchecked"], 1)
         self.assertEqual(blind["dropped_bridge"], 0)
@@ -1301,29 +1443,34 @@ class TwoQueues(unittest.TestCase):
         loop = got["loops"][0]
         self.assertEqual(loop["bridge"]["frames"], 2)
         self.assertEqual(loop["bridge_seams"]["поза"], 1.028)
-        self.assertEqual(loop["seam_pose"], 0.123,
-                         "тот же стык по клиповой медиане")
-        self.assertEqual(math.ceil(max(loop["seam_pose"], loop["seam_flow"])), 1,
-                         "по клиповой медиане мост вышел бы вдвое короче")
+        self.assertEqual(loop["seam_pose"], 0.123, "тот же стык по клиповой медиане")
+        self.assertEqual(
+            math.ceil(max(loop["seam_pose"], loop["seam_flow"])),
+            1,
+            "по клиповой медиане мост вышел бы вдвое короче",
+        )
 
     def test_the_head_axis_too_is_divided_by_its_own_local_step(self):
         """У КАЖДОЙ ОСИ ЗНАМЕНАТЕЛЬ СВОЙ, и у головы он идёт в другую сторону."""
         m = Material(two_exercises_second_is_perfect(), blank=True)
         m.head = lambda path: {
-            "head": (360.0,
-                     500.0
-                     + (1.0 if int(Path(path).stem) < NFRAMES // 2 else 24.0)
-                     * math.sin(2 * math.pi * (int(Path(path).stem) % PERIOD)
-                                / PERIOD)
-                     + 0.05 * int(Path(path).stem)),
-            "why": ""}
+            "head": (
+                360.0,
+                500.0
+                + (1.0 if int(Path(path).stem) < NFRAMES // 2 else 24.0)
+                * math.sin(2 * math.pi * (int(Path(path).stem) % PERIOD) / PERIOD)
+                + 0.05 * int(Path(path).stem),
+            ),
+            "why": "",
+        }
         got = analyse(m)
         loop = got["loops"][0]
         self.assertEqual((loop["i"], loop["j"]), (48, 92), got["note"])
         self.assertEqual(loop["seam_head"], 0.852, "локальный шаг головы")
         self.assertEqual(loop["seam_head_clip"], 11.381, "клиповый шаг головы")
-        self.assertEqual(loop["bridge"]["frames"], 1,
-                         "по клиповому мосту вышло бы 12 кадров и отказ")
+        self.assertEqual(
+            loop["bridge"]["frames"], 1, "по клиповому мосту вышло бы 12 кадров и отказ"
+        )
 
     def test_the_local_head_scale_is_asked_of_eight_pairs(self):
         """Б2: у отгружаемого значения свой тест, литералом и отдельно."""
@@ -1345,25 +1492,48 @@ class TwoQueues(unittest.TestCase):
 
         m = Material(loop_sequence(), blank=True)
         m.gray = lambda path: np.full(
-            (8, 8), 120.0 + 30.0 * math.sin(2 * math.pi
-                                            * (int(Path(path).stem) % PERIOD)
-                                            / PERIOD), dtype="float64")
+            (8, 8),
+            120.0 + 30.0 * math.sin(2 * math.pi * (int(Path(path).stem) % PERIOD) / PERIOD),
+            dtype="float64",
+        )
         got = analyse(m)
-        self.assertGreater(got["pixel_step"], 0.0,
-                           "фикстура обязана включить пиксельную ось")
+        self.assertGreater(got["pixel_step"], 0.0, "фикстура обязана включить пиксельную ось")
         self.assertFalse(got["loops"][0]["pixel_axis_off"])
         self.assertNotIn("пиксельная ось клипа НЕ ИЗМЕРЕНА", fl.table(got))
 
     def test_the_pixel_note_is_silent_when_that_axis_worked(self):
         """Негативный контроль: сторож обязан молчать на входе, где всё"""
-        quiet = {"fps": 30, "dropped_bridge": 0, "loops": [
-            {"rank": 1, "i": 0, "j": 44, "frames": 45, "seconds": 1.5,
-             "joints": 12, "score": 0.5, "seam_pose": 0.5, "seam_flow": 0.2,
-             "seam_pixel": 0.4, "seam_head": 0.3, "advantage": 3.0,
-             "repeats": [], "gif": None, "head_state": PASS,
-             "pixel_axis_off": False,
-             "bridge": {"outcome": PASS, "frames": 1, "floor": 1,
-                        "seam": 0.5, "unmeasured": []}}]}
+        quiet = {
+            "fps": 30,
+            "dropped_bridge": 0,
+            "loops": [
+                {
+                    "rank": 1,
+                    "i": 0,
+                    "j": 44,
+                    "frames": 45,
+                    "seconds": 1.5,
+                    "joints": 12,
+                    "score": 0.5,
+                    "seam_pose": 0.5,
+                    "seam_flow": 0.2,
+                    "seam_pixel": 0.4,
+                    "seam_head": 0.3,
+                    "advantage": 3.0,
+                    "repeats": [],
+                    "gif": None,
+                    "head_state": PASS,
+                    "pixel_axis_off": False,
+                    "bridge": {
+                        "outcome": PASS,
+                        "frames": 1,
+                        "floor": 1,
+                        "seam": 0.5,
+                        "unmeasured": [],
+                    },
+                }
+            ],
+        }
         txt = fl.table(quiet)
         self.assertNotIn("пиксельная ось", txt)
         self.assertNotIn("ЦЕНА МОСТА НЕ ПОСЧИТАНА", txt)
@@ -1374,8 +1544,9 @@ class TwoQueues(unittest.TestCase):
         got = analyse(Material(loop_sequence(), blank=True, head_mode="уезжает"))
         self.assertEqual(got["loops"], [], got["note"])
         self.assertGreater(got["dropped_bridge"], 0)
-        self.assertEqual(got["dropped_bridge"], got["dropped_head"],
-                         "длинными эти мосты сделала именно голова")
+        self.assertEqual(
+            got["dropped_bridge"], got["dropped_head"], "длинными эти мосты сделала именно голова"
+        )
 
 
 if __name__ == "__main__":

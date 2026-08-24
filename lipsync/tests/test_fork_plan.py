@@ -6,12 +6,20 @@ from unittest import mock
 from lipsync import fork_plan as P
 from lipsync.fork_identity import FAIL, PASS, UNMEASURED
 
-GOOD = {"l_shoulder": (0.58, 0.32, 0.99), "r_shoulder": (0.42, 0.32, 0.99),
-        "l_elbow": (0.63, 0.48, 0.98), "r_elbow": (0.37, 0.48, 0.98),
-        "l_wrist": (0.66, 0.62, 0.97), "r_wrist": (0.34, 0.62, 0.97),
-        "l_hip": (0.55, 0.60, 0.99), "r_hip": (0.45, 0.60, 0.99),
-        "l_knee": (0.55, 0.75, 0.98), "r_knee": (0.45, 0.75, 0.98),
-        "l_ankle": (0.55, 0.92, 0.96), "r_ankle": (0.45, 0.92, 0.96)}
+GOOD = {
+    "l_shoulder": (0.58, 0.32, 0.99),
+    "r_shoulder": (0.42, 0.32, 0.99),
+    "l_elbow": (0.63, 0.48, 0.98),
+    "r_elbow": (0.37, 0.48, 0.98),
+    "l_wrist": (0.66, 0.62, 0.97),
+    "r_wrist": (0.34, 0.62, 0.97),
+    "l_hip": (0.55, 0.60, 0.99),
+    "r_hip": (0.45, 0.60, 0.99),
+    "l_knee": (0.55, 0.75, 0.98),
+    "r_knee": (0.45, 0.75, 0.98),
+    "l_ankle": (0.55, 0.92, 0.96),
+    "r_ankle": (0.45, 0.92, 0.96),
+}
 
 
 def shifted(pose, dx=0.0, dy=0.0):
@@ -137,7 +145,6 @@ class TheCanvasAlwaysPadsAndNeverCrops(unittest.TestCase):
 
 
 class TheVerdictHasThreeOutcomesOnEveryAxis(unittest.TestCase):
-
     def test_a_photo_in_plan_is_plainly_good(self):
         got = P.plan_verdict(width=1080, height=1920, points=GOOD, face_px=140)
         self.assertEqual(got["outcome"], PASS, got["note"])
@@ -146,21 +153,17 @@ class TheVerdictHasThreeOutcomesOnEveryAxis(unittest.TestCase):
     def test_the_wrong_canvas_is_a_defect(self):
         got = P.plan_verdict(width=896, height=1200, points=GOOD, face_px=140)
         self.assertEqual(got["outcome"], FAIL)
-        self.assertEqual([a["outcome"] for a in got["axes"] if a["name"] == "канвас"],
-                         [FAIL])
+        self.assertEqual([a["outcome"] for a in got["axes"] if a["name"] == "канвас"], [FAIL])
 
     def test_a_portrait_crop_fails_on_the_ankles(self):
-        waist_up = {k: v for k, v in GOOD.items() if "ankle" not in k
-                    and "knee" not in k}
-        got = P.plan_verdict(width=1080, height=1920, points=waist_up,
-                             face_px=300)
+        waist_up = {k: v for k, v in GOOD.items() if "ankle" not in k and "knee" not in k}
+        got = P.plan_verdict(width=1080, height=1920, points=waist_up, face_px=300)
         names = {a["name"]: a["outcome"] for a in got["axes"]}
         self.assertEqual(names["щиколотки"], UNMEASURED)
         self.assertEqual(got["outcome"], UNMEASURED)
 
     def test_an_off_centre_person_is_a_defect(self):
-        got = P.plan_verdict(width=1080, height=1920,
-                             points=shifted(GOOD, dx=0.2), face_px=140)
+        got = P.plan_verdict(width=1080, height=1920, points=shifted(GOOD, dx=0.2), face_px=140)
         self.assertEqual(got["outcome"], FAIL)
 
     def test_a_person_filling_the_width_is_a_defect(self):
@@ -189,42 +192,59 @@ class TheVerdictHasThreeOutcomesOnEveryAxis(unittest.TestCase):
         self.assertEqual(got["outcome"], UNMEASURED)
 
     def test_mutating_each_band_both_ways_turns_the_verdict(self):
-        """ по каждой полосе: строже роняет годное, слабее пропускает брак."""
+        """по каждой полосе: строже роняет годное, слабее пропускает брак."""
         ok = dict(width=1080, height=1920, points=GOOD, face_px=140)
         wide = dict(GOOD, l_wrist=(0.95, 0.62, 0.97), r_wrist=(0.05, 0.62, 0.97))
         off_centre = dict(ok, points=shifted(GOOD, dx=0.05))
         cases = (
-            ("SHOULDERS_BAND", (0.40, 0.42), (0.0, 1.0), ok,
-             dict(ok, points=dict(GOOD, l_shoulder=(0.58, 0.55, 0.99),
-                                  r_shoulder=(0.42, 0.55, 0.99)))),
-            ("ANKLES_BAND", (0.95, 0.99), (0.0, 1.0), ok,
-             dict(ok, points=dict(GOOD, l_ankle=(0.55, 0.62, 0.96),
-                                  r_ankle=(0.45, 0.62, 0.96)))),
-            ("CENTRE_TOL", 0.0001, 0.5, off_centre,
-             dict(ok, points=shifted(GOOD, dx=0.2))),
+            (
+                "SHOULDERS_BAND",
+                (0.40, 0.42),
+                (0.0, 1.0),
+                ok,
+                dict(
+                    ok,
+                    points=dict(GOOD, l_shoulder=(0.58, 0.55, 0.99), r_shoulder=(0.42, 0.55, 0.99)),
+                ),
+            ),
+            (
+                "ANKLES_BAND",
+                (0.95, 0.99),
+                (0.0, 1.0),
+                ok,
+                dict(ok, points=dict(GOOD, l_ankle=(0.55, 0.62, 0.96), r_ankle=(0.45, 0.62, 0.96))),
+            ),
+            ("CENTRE_TOL", 0.0001, 0.5, off_centre, dict(ok, points=shifted(GOOD, dx=0.2))),
             ("WIDTH_MAX", 0.05, 1.0, ok, dict(ok, points=wide)),
         )
         for name, strict, loose, good, bad in cases:
             was = getattr(P, name)
             try:
                 setattr(P, name, was)
-                self.assertEqual(P.plan_verdict(**good)["outcome"], PASS,
-                                 f"{name}: годное обязано проходить НА БОЕВОЙ полосе")
+                self.assertEqual(
+                    P.plan_verdict(**good)["outcome"],
+                    PASS,
+                    f"{name}: годное обязано проходить НА БОЕВОЙ полосе",
+                )
                 setattr(P, name, strict)
-                self.assertEqual(P.plan_verdict(**good)["outcome"], FAIL,
-                                 f"{name} строже не покраснел")
+                self.assertEqual(
+                    P.plan_verdict(**good)["outcome"], FAIL, f"{name} строже не покраснел"
+                )
                 setattr(P, name, was)
-                self.assertEqual(P.plan_verdict(**bad)["outcome"], FAIL,
-                                 f"{name}: брак обязан краснеть НА БОЕВОЙ полосе")
+                self.assertEqual(
+                    P.plan_verdict(**bad)["outcome"],
+                    FAIL,
+                    f"{name}: брак обязан краснеть НА БОЕВОЙ полосе",
+                )
                 setattr(P, name, loose)
-                self.assertEqual(P.plan_verdict(**bad)["outcome"], PASS,
-                                 f"{name} слабее не пропустил")
+                self.assertEqual(
+                    P.plan_verdict(**bad)["outcome"], PASS, f"{name} слабее не пропустил"
+                )
             finally:
                 setattr(P, name, was)
 
 
 class TheFullBodyPromptIsADecisionNotAString(unittest.TestCase):
-
     def test_the_prompt_asks_for_head_to_feet_and_keeps_the_person(self):
         got = P.full_body_prompt()
         self.assertIn("FULL HEIGHT", got)
@@ -275,10 +295,15 @@ class TheDrivingDictatesThePlanNotAConstant(unittest.TestCase):
 
     @staticmethod
     def poses(ankle=0.92, shoulder=0.32, centre=0.5, jitter=0.01, n=20):
-        return [{"l_shoulder": (centre + 0.08, shoulder + i * jitter, 0.99),
-                 "r_shoulder": (centre - 0.08, shoulder, 0.99),
-                 "l_ankle": (centre + 0.05, ankle + i * jitter, 0.96),
-                 "r_ankle": (centre - 0.05, ankle, 0.96)} for i in range(n)]
+        return [
+            {
+                "l_shoulder": (centre + 0.08, shoulder + i * jitter, 0.99),
+                "r_shoulder": (centre - 0.08, shoulder, 0.99),
+                "l_ankle": (centre + 0.05, ankle + i * jitter, 0.96),
+                "r_ankle": (centre - 0.05, ankle, 0.96),
+            }
+            for i in range(n)
+        ]
 
     def test_the_card_is_measured_from_the_frames(self):
         got = P.composition_card(self.poses(ankle=0.90, shoulder=0.40))

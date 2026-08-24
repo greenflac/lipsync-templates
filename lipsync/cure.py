@@ -28,13 +28,14 @@ def download(url: str, dst) -> str:
 def home(sub: str = "") -> str:
     """Домашний каталог в том виде, в каком его поймёт ОБОЛОЧКА, а не Python."""
     base = "%USERPROFILE%" if WINDOWS else "~"
-    return f"{base}\\{sub}" if (WINDOWS and sub) else (
-        f"{base}/{sub}" if sub else base)
+    return f"{base}\\{sub}" if (WINDOWS and sub) else (f"{base}/{sub}" if sub else base)
 
 
 def set_env(name: str, value: str = "...") -> str:
     """Задать переменную окружения — командой ТОЙ оболочки, где это печатают."""
     if not WINDOWS:
         return f"export {name}={value}"
-    return (f'$env:{name} = "{value}"   (в этом окне)\n'
-            f'  setx {name} "{value}"   (навсегда, подхватится в НОВОМ окне)')
+    return (
+        f'$env:{name} = "{value}"   (в этом окне)\n'
+        f'  setx {name} "{value}"   (навсегда, подхватится в НОВОМ окне)'
+    )

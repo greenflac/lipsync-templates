@@ -8,8 +8,7 @@ DEVICE_ORDER = ("cuda", "xpu", "mps", "cpu")
 
 ONNX_PROVIDERS = {
     "cuda": ["CUDAExecutionProvider", "CPUExecutionProvider"],
-    "xpu": ["OpenVINOExecutionProvider", "DmlExecutionProvider",
-            "CPUExecutionProvider"],
+    "xpu": ["OpenVINOExecutionProvider", "DmlExecutionProvider", "CPUExecutionProvider"],
     "mps": ["CoreMLExecutionProvider", "CPUExecutionProvider"],
     "cpu": ["CPUExecutionProvider"],
 }
@@ -17,8 +16,7 @@ ONNX_PROVIDERS = {
 CPU_PROVIDER = "CPUExecutionProvider"
 
 ONNX_ACCELERATORS = {
-    dev: tuple(p for p in chain if p != CPU_PROVIDER)
-    for dev, chain in ONNX_PROVIDERS.items()
+    dev: tuple(p for p in chain if p != CPU_PROVIDER) for dev, chain in ONNX_PROVIDERS.items()
 }
 
 TORCH_ABSENT = "absent"
@@ -147,10 +145,13 @@ def smi_cards(text: str) -> list:
         if len(parts) < 3 or not parts[0] or parts[0].lower().startswith("name"):
             continue
         mib = version_pair(parts[1])
-        cards.append({"name": parts[0],
-                      "vram_gb": round(mib[0] * 1024 ** 2 / 1024 ** 3, 2)
-                      if mib else None,
-                      "driver": parts[2]})
+        cards.append(
+            {
+                "name": parts[0],
+                "vram_gb": round(mib[0] * 1024**2 / 1024**3, 2) if mib else None,
+                "driver": parts[2],
+            }
+        )
     return cards
 
 
@@ -163,24 +164,27 @@ def smi_run(args: list, timeout: float = SMI_TIMEOUT_S) -> tuple:
     if not exe:
         return "", "nvidia-smi не найден в PATH"
     try:
-        r = subprocess.run([exe] + list(args), capture_output=True, text=True,
-                           timeout=timeout)
+        r = subprocess.run([exe] + list(args), capture_output=True, text=True, timeout=timeout)
     except subprocess.TimeoutExpired:
-        return "", (f"nvidia-smi не ответил за {timeout:.0f} c — обычно это "
-                    f"повисший драйвер, а не медленная машина")
+        return "", (
+            f"nvidia-smi не ответил за {timeout:.0f} c — обычно это "
+            f"повисший драйвер, а не медленная машина"
+        )
     except OSError as e:  # noqa: BLE001
         return "", f"nvidia-smi не запускается: {type(e).__name__}: {e}"
     if r.returncode != 0:
-        return "", (f"nvidia-smi вернул {r.returncode}: "
-                    f"{(r.stderr or r.stdout).strip().splitlines()[:1]}")
+        return "", (
+            f"nvidia-smi вернул {r.returncode}: {(r.stderr or r.stdout).strip().splitlines()[:1]}"
+        )
     return r.stdout, ""
 
 
 def smi_probe(run=None) -> dict:
     """Что драйвер знает о карте: имя, память, версия драйвера и его CUDA."""
     run = run or smi_run
-    csv_out, csv_why = run(["--query-gpu=name,memory.total,driver_version",
-                            "--format=csv,noheader,nounits"])
+    csv_out, csv_why = run(
+        ["--query-gpu=name,memory.total,driver_version", "--format=csv,noheader,nounits"]
+    )
     head_out, head_why = run([])
     cards = smi_cards(csv_out)
     cuda = smi_cuda(head_out)
@@ -224,8 +228,10 @@ def describe(device: str | None = None) -> str:
     if state == TORCH_ABSENT:
         line += ", torch не установлен"
     elif state == TORCH_SILENT:
-        line += (f", torch {version or 'неизвестной версии'} установлен, но "
-                 f"устройство не опрашивается: {reason}")
+        line += (
+            f", torch {version or 'неизвестной версии'} установлен, но "
+            f"устройство не опрашивается: {reason}"
+        )
     else:
         line += f", torch {version}"
     if device == "cuda" and state != TORCH_ABSENT:
@@ -233,11 +239,15 @@ def describe(device: str | None = None) -> str:
         if built:
             line += f", собран с CUDA {built}"
         elif built is None:
-            line += (", СОБРАН БЕЗ CUDA (torch.version.cuda пуст) — эта сборка "
-                     "карту не увидит никогда, её надо переставить")
+            line += (
+                ", СОБРАН БЕЗ CUDA (torch.version.cuda пуст) — эта сборка "
+                "карту не увидит никогда, её надо переставить"
+            )
     line += f", dtype {dtype_for(device)}"
     _, missing = onnx_providers(device)
     if missing:
-        line += (f" | ускорения нет ни через один из: {', '.join(missing)} — "
-                 f"insightface и DWPose пойдут на CPU")
+        line += (
+            f" | ускорения нет ни через один из: {', '.join(missing)} — "
+            f"insightface и DWPose пойдут на CPU"
+        )
     return line

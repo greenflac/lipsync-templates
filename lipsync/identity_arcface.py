@@ -23,8 +23,9 @@ def _analyzer():
     if _ANALYZER is None:
         from insightface.app import FaceAnalysis  # type: ignore
 
-        app = FaceAnalysis(name="buffalo_l",
-                           allowed_modules=["detection", "recognition", "genderage"])
+        app = FaceAnalysis(
+            name="buffalo_l", allowed_modules=["detection", "recognition", "genderage"]
+        )
         from .device import detect, insightface_ctx
 
         app.prepare(ctx_id=insightface_ctx(detect()), det_size=(640, 640))
@@ -55,10 +56,12 @@ def face_detail(path: str | Path) -> dict | None:
     faces.sort(key=lambda f: (f.bbox[2] - f.bbox[0]) * (f.bbox[3] - f.bbox[1]))
     f = faces[-1]
     x0, y0, x1, y1 = (float(v) for v in f.bbox)
-    out = {"embedding": f.normed_embedding,
-           "face_px": round(min(x1 - x0, y1 - y0)),
-           "det_score": round(float(f.det_score), 3),
-           "bbox": (x0, y0, x1, y1)}
+    out = {
+        "embedding": f.normed_embedding,
+        "face_px": round(min(x1 - x0, y1 - y0)),
+        "det_score": round(float(f.det_score), 3),
+        "bbox": (x0, y0, x1, y1),
+    }
     sex, age = getattr(f, "sex", None), getattr(f, "age", None)
     if sex is not None:
         out["sex"] = sex
@@ -103,21 +106,33 @@ def _read_bgr(path: str | Path):
     return rgb[:, :, ::-1].copy()
 
 
-def arcface_drift(frame_paths, reference_path, *,
-                  min_face_px: int = MIN_FACE_PX) -> dict:
+def arcface_drift(frame_paths, reference_path, *, min_face_px: int = MIN_FACE_PX) -> dict:
     """Per-frame identity drift away from a reference face, by embedding distance."""
     ref_detail = face_detail(reference_path)
-    empty = {"per_frame": {}, "face_px": {}, "worst": (None, None),
-             "drifted": [], "readable": 0, "judgeable": 0, "too_small": [],
-             "no_face": [], "median": None, "p90": None, "coverage": 0.0}
+    empty = {
+        "per_frame": {},
+        "face_px": {},
+        "worst": (None, None),
+        "drifted": [],
+        "readable": 0,
+        "judgeable": 0,
+        "too_small": [],
+        "no_face": [],
+        "median": None,
+        "p90": None,
+        "coverage": 0.0,
+    }
     if ref_detail is None:
-        return {**empty,
-                "note": "no face in the reference photo: cannot measure identity."}
+        return {**empty, "note": "no face in the reference photo: cannot measure identity."}
     if ref_detail["face_px"] < min_face_px:
-        return {**empty,
-                "note": (f"reference face is only {ref_detail['face_px']}px "
-                         f"(< {min_face_px}px): too small to identify from. "
-                         f"Supply a closer photo.")}
+        return {
+            **empty,
+            "note": (
+                f"reference face is only {ref_detail['face_px']}px "
+                f"(< {min_face_px}px): too small to identify from. "
+                f"Supply a closer photo."
+            ),
+        }
     ref = ref_detail["embedding"]
 
     per_frame: dict[str, float] = {}
@@ -143,25 +158,47 @@ def arcface_drift(frame_paths, reference_path, *,
             drifted.append(name)
 
     if not per_frame:
-        why = (f"{len(too_small)} frame(s) had a face under {min_face_px}px and "
-               f"{len(no_face)} had none" if total else "no frames")
-        return {**empty, "face_px": face_px, "readable": total,
-                "too_small": too_small, "no_face": no_face,
-                "note": (f"identity NOT VERIFIABLE: {why}. The face is too small "
-                         f"in this clip to identify — frame it closer.")}
+        why = (
+            f"{len(too_small)} frame(s) had a face under {min_face_px}px and "
+            f"{len(no_face)} had none"
+            if total
+            else "no frames"
+        )
+        return {
+            **empty,
+            "face_px": face_px,
+            "readable": total,
+            "too_small": too_small,
+            "no_face": no_face,
+            "note": (
+                f"identity NOT VERIFIABLE: {why}. The face is too small "
+                f"in this clip to identify — frame it closer."
+            ),
+        }
 
     vals = sorted(per_frame.values())
     worst = max(per_frame, key=lambda n: per_frame[n])
     median = round(_quantile(vals, 0.5), 4)
     p90 = round(_quantile(vals, 0.9), 4)
     coverage = round(len(per_frame) / total, 3) if total else 0.0
-    note = (f"identity via ArcFace cosine distance: median {median}, p90 {p90}, "
-            f"worst {per_frame[worst]} on {len(per_frame)}/{total} judgeable "
-            f"frame(s) (coverage {coverage:.0%}; {len(too_small)} face(s) under "
-            f"{min_face_px}px, {len(no_face)} with no face). "
-            f"{len(drifted)} judgeable frame(s) past {SAME_PERSON_MAX}.")
-    return {"per_frame": per_frame, "face_px": face_px,
-            "worst": (worst, per_frame[worst]), "drifted": drifted,
-            "readable": total, "judgeable": len(per_frame),
-            "too_small": too_small, "no_face": no_face,
-            "median": median, "p90": p90, "coverage": coverage, "note": note}
+    note = (
+        f"identity via ArcFace cosine distance: median {median}, p90 {p90}, "
+        f"worst {per_frame[worst]} on {len(per_frame)}/{total} judgeable "
+        f"frame(s) (coverage {coverage:.0%}; {len(too_small)} face(s) under "
+        f"{min_face_px}px, {len(no_face)} with no face). "
+        f"{len(drifted)} judgeable frame(s) past {SAME_PERSON_MAX}."
+    )
+    return {
+        "per_frame": per_frame,
+        "face_px": face_px,
+        "worst": (worst, per_frame[worst]),
+        "drifted": drifted,
+        "readable": total,
+        "judgeable": len(per_frame),
+        "too_small": too_small,
+        "no_face": no_face,
+        "median": median,
+        "p90": p90,
+        "coverage": coverage,
+        "note": note,
+    }

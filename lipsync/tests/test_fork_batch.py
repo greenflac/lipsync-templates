@@ -20,6 +20,7 @@ class _Blocked(RuntimeError):
 def _no_network():
     def deny(*a, **k):
         raise _Blocked("сеть в тестах запрещена: подставь функцию, а не ходи наружу")
+
     return mock.patch.object(socket, "socket", deny)
 
 
@@ -39,11 +40,16 @@ class _Runner:
         self.write = write
         self.reply = reply
 
-    def __call__(self, *, client_photo, style_ref, driving, first, last,
-                 out_dir, log=None, **kw):
-        self.calls.append({"person": client_photo, "style": style_ref,
-                           "driving": driving, "window": (first, last),
-                           "out_dir": out_dir})
+    def __call__(self, *, client_photo, style_ref, driving, first, last, out_dir, log=None, **kw):
+        self.calls.append(
+            {
+                "person": client_photo,
+                "style": style_ref,
+                "driving": driving,
+                "window": (first, last),
+                "out_dir": out_dir,
+            }
+        )
         v = self.verdicts.get(len(self.calls), PASS)
         if isinstance(v, Exception):
             raise v
@@ -53,10 +59,16 @@ class _Runner:
             p = Path(out_dir) / "final_9x16.mp4"
             p.parent.mkdir(parents=True, exist_ok=True)
             p.write_bytes(b"\x00" * 128)
-        return {"outcome": v, "stopped_at": "все ступени" if v == PASS else "6 приёмка выхода",
-                "totals": {"checked": 21, "violations": 0 if v == PASS else 1,
-                           "unmeasured": 0 if v != UNMEASURED else 1},
-                "exit_code": 0}
+        return {
+            "outcome": v,
+            "stopped_at": "все ступени" if v == PASS else "6 приёмка выхода",
+            "totals": {
+                "checked": 21,
+                "violations": 0 if v == PASS else 1,
+                "unmeasured": 0 if v != UNMEASURED else 1,
+            },
+            "exit_code": 0,
+        }
 
 
 def _balance(*values):
@@ -65,6 +77,7 @@ def _balance(*values):
 
     def get():
         return box.pop(0) if len(box) > 1 else box[0]
+
     return get
 
 
@@ -93,7 +106,6 @@ def _batch(tmp, **kw):
 
 
 class TheCoverageModesGiveTheNumbersTheyPromise(unittest.TestCase):
-
     def test_full_on_the_owner_matrix_is_fifty_cells(self):
         self.assertEqual(len(B.cells(DRIVINGS, STYLES, PERSONS, mode="full")), 50)
 
@@ -125,13 +137,13 @@ class TheCoverageModesGiveTheNumbersTheyPromise(unittest.TestCase):
         self.assertIn("стилей", str(e.exception))
 
     def test_the_clip_name_says_what_is_on_the_video(self):
-        self.assertEqual(B.cell_name("work/dr_1.mp4", "a/st_blue.png",
-                                     "b/person_a.jpg"),
-                         "dr_1__st_blue__person_a")
+        self.assertEqual(
+            B.cell_name("work/dr_1.mp4", "a/st_blue.png", "b/person_a.jpg"),
+            "dr_1__st_blue__person_a",
+        )
 
 
 class TheMoneyGuardHasThreeOutcomes(unittest.TestCase):
-
     def test_fifty_cells_cost_seventeen_fifty(self):
         self.assertEqual(B.plan_cost(50), 17.5)
 
@@ -184,7 +196,6 @@ class TheMoneyGuardHasThreeOutcomes(unittest.TestCase):
 
 
 class TheBatchDoesNotStartWithoutMoney(unittest.TestCase):
-
     def test_the_full_cross_on_an_empty_wallet_orders_nothing_at_all(self):
         run = _Runner()
         with _no_network(), TemporaryDirectory() as td:
@@ -219,57 +230,68 @@ class TheBatchDoesNotStartWithoutMoney(unittest.TestCase):
         asked = []
         with _no_network(), TemporaryDirectory() as td:
             with self.assertRaises(ValueError):
-                _batch(td, mode="cover", cell_runner=run,
-                       balance=lambda: asked.append(1) or 100.0,
-                       endpoint="fal-ai/kling-video/v2.6/pro/motion-control")
+                _batch(
+                    td,
+                    mode="cover",
+                    cell_runner=run,
+                    balance=lambda: asked.append(1) or 100.0,
+                    endpoint="fal-ai/kling-video/v2.6/pro/motion-control",
+                )
         self.assertEqual(run.calls, [])
         self.assertEqual(asked, [])
 
 
 class TheBatchRunsCellsOneByOne(unittest.TestCase):
-
     def test_cover_with_enough_money_passes_and_leaves_five_named_clips(self):
         run = _Runner()
         with _no_network(), TemporaryDirectory() as td:
-            got = _batch(td, mode="cover", balance=_balance(2.0, 0.95),
-                         cell_runner=run)
+            got = _batch(td, mode="cover", balance=_balance(2.0, 0.95), cell_runner=run)
             names = sorted(p.name for p in (Path(td) / "clips").glob("*.mp4"))
         self.assertEqual(got["exit_code"], 0)
-        self.assertEqual((got["passed"], got["failed"], got["unmeasured"]),
-                         (5, 0, 0))
+        self.assertEqual((got["passed"], got["failed"], got["unmeasured"]), (5, 0, 0))
         self.assertEqual(len(run.calls), 5)
-        self.assertEqual(names, ["dr_1__st_1__person_a.mp4",
-                                 "dr_2__st_2__person_b.mp4",
-                                 "dr_3__st_3__person_a.mp4",
-                                 "dr_4__st_4__person_b.mp4",
-                                 "dr_5__st_5__person_a.mp4"])
+        self.assertEqual(
+            names,
+            [
+                "dr_1__st_1__person_a.mp4",
+                "dr_2__st_2__person_b.mp4",
+                "dr_3__st_3__person_a.mp4",
+                "dr_4__st_4__person_b.mp4",
+                "dr_5__st_5__person_a.mp4",
+            ],
+        )
 
     def test_the_cell_gets_its_three_inputs_and_its_own_directory(self):
         run = _Runner()
         with _no_network(), TemporaryDirectory() as td:
             _batch(td, mode="cover", balance=_balance(2.0), cell_runner=run)
         first = run.calls[0]
-        self.assertEqual((first["driving"], first["style"], first["person"]),
-                         ("work/dr_1.mp4", "work/st_1.png", "work/person_a.png"))
+        self.assertEqual(
+            (first["driving"], first["style"], first["person"]),
+            ("work/dr_1.mp4", "work/st_1.png", "work/person_a.png"),
+        )
         self.assertEqual(first["window"], (0, 89))
         self.assertNotEqual(first["out_dir"], run.calls[1]["out_dir"])
 
     def test_a_per_driving_window_overrides_the_default(self):
         run = _Runner()
         with _no_network(), TemporaryDirectory() as td:
-            _batch(td, mode="cover", balance=_balance(2.0), cell_runner=run,
-                   windows={"work/dr_2.mp4": (100, 199)})
+            _batch(
+                td,
+                mode="cover",
+                balance=_balance(2.0),
+                cell_runner=run,
+                windows={"work/dr_2.mp4": (100, 199)},
+            )
         self.assertEqual(run.calls[0]["window"], (0, 89))
         self.assertEqual(run.calls[1]["window"], (100, 199))
 
     def test_a_failing_third_cell_does_not_stop_the_batch(self):
         run = _Runner({3: FAIL})
         with _no_network(), TemporaryDirectory() as td:
-            got = _batch(td, mode="cover", balance=_balance(2.0, 0.95),
-                         cell_runner=run)
+            got = _batch(td, mode="cover", balance=_balance(2.0, 0.95), cell_runner=run)
         self.assertEqual(len(run.calls), 5, "батч встал на одной плохой паре")
-        self.assertEqual((got["passed"], got["failed"], got["unmeasured"]),
-                         (4, 1, 0))
+        self.assertEqual((got["passed"], got["failed"], got["unmeasured"]), (4, 1, 0))
         self.assertFalse(got["stopped_early"])
         self.assertEqual(got["exit_code"], 1)
 
@@ -283,28 +305,27 @@ class TheBatchRunsCellsOneByOne(unittest.TestCase):
             p = Path(out_dir) / "final_9x16.mp4"
             p.parent.mkdir(parents=True, exist_ok=True)
             p.write_bytes(b"\x00" * 16)
-            return {"outcome": PASS, "stopped_at": "все ступени",
-                    "totals": {"checked": 21, "violations": 0, "unmeasured": 0}}
+            return {
+                "outcome": PASS,
+                "stopped_at": "все ступени",
+                "totals": {"checked": 21, "violations": 0, "unmeasured": 0},
+            }
 
         with _no_network(), TemporaryDirectory() as td:
-            _batch(td, mode="cover", balance=_balance(2.0), cell_runner=runner,
-                   log=log)
+            _batch(td, mode="cover", balance=_balance(2.0), cell_runner=runner, log=log)
         self.assertEqual(seen, [0, 1, 2, 3, 4])
         self.assertIn("деньги до старта", log.text.split("] ячейка")[0])
 
 
 class ThereAreThreeOutcomesPerCellAndNotTwo(unittest.TestCase):
-
     def test_a_crashed_cell_is_unmeasured_and_not_a_product_defect(self):
         run = _Runner({2: _Blocked("очередь fal легла")})
         with _no_network(), TemporaryDirectory() as td:
-            got = _batch(td, mode="cover", balance=_balance(2.0, 0.95),
-                         cell_runner=run)
+            got = _batch(td, mode="cover", balance=_balance(2.0, 0.95), cell_runner=run)
         bad = got["cells"][1]
         self.assertEqual(bad["outcome"], UNMEASURED)
         self.assertIn("очередь fal легла", bad["note"])
-        self.assertEqual((got["passed"], got["failed"], got["unmeasured"]),
-                         (4, 0, 1))
+        self.assertEqual((got["passed"], got["failed"], got["unmeasured"]), (4, 0, 1))
         self.assertEqual(got["exit_code"], 2)
 
     def test_a_reply_without_a_verdict_is_unmeasured_and_not_a_pass(self):
@@ -312,8 +333,7 @@ class ThereAreThreeOutcomesPerCellAndNotTwo(unittest.TestCase):
             with self.subTest(reply=reply):
                 run = _Runner(reply=reply)
                 with _no_network(), TemporaryDirectory() as td:
-                    got = _batch(td, mode="cover", balance=_balance(2.0),
-                                 cell_runner=run)
+                    got = _batch(td, mode="cover", balance=_balance(2.0), cell_runner=run)
                 self.assertEqual(got["unmeasured"], 5)
                 self.assertEqual(got["passed"], 0)
 
@@ -346,16 +366,13 @@ class ThereAreThreeOutcomesPerCellAndNotTwo(unittest.TestCase):
 
 
 class AStreakOfFailuresStopsTheBatch(unittest.TestCase):
-
     def test_three_failures_in_a_row_stop_it_and_the_rest_are_unmeasured(self):
         run = _Runner({2: FAIL, 3: FAIL, 4: FAIL})
         with _no_network(), TemporaryDirectory() as td:
-            got = _batch(td, mode="cover", balance=_balance(2.0, 1.16),
-                         cell_runner=run)
+            got = _batch(td, mode="cover", balance=_balance(2.0, 1.16), cell_runner=run)
         self.assertEqual(len(run.calls), 4, "батч жёг деньги дальше серии")
         self.assertTrue(got["stopped_early"])
-        self.assertEqual((got["passed"], got["failed"], got["unmeasured"]),
-                         (1, 3, 1))
+        self.assertEqual((got["passed"], got["failed"], got["unmeasured"]), (1, 3, 1))
         self.assertEqual(got["cells"][4]["outcome"], UNMEASURED)
         self.assertIn("не запускалась", got["cells"][4]["note"])
 
@@ -377,8 +394,7 @@ class AStreakOfFailuresStopsTheBatch(unittest.TestCase):
 
     def test_unmeasured_cells_count_into_the_streak_too(self):
         """Деньги горят одинаково, чем бы ни кончилась ячейка."""
-        run = _Runner({1: _Blocked("сеть"), 2: _Blocked("сеть"),
-                       3: _Blocked("сеть")})
+        run = _Runner({1: _Blocked("сеть"), 2: _Blocked("сеть"), 3: _Blocked("сеть")})
         with _no_network(), TemporaryDirectory() as td:
             got = _batch(td, mode="cover", balance=_balance(2.0), cell_runner=run)
         self.assertEqual(len(run.calls), 3)
@@ -390,24 +406,33 @@ class AStreakOfFailuresStopsTheBatch(unittest.TestCase):
         for value, expect_calls, expect_stop in ((2, 3, True), (5, 5, False)):
             with self.subTest(MAX_STREAK=value):
                 run = _Runner({2: FAIL, 3: FAIL, 4: FAIL})
-                with mock.patch.object(B, "MAX_STREAK", value), _no_network(), \
-                        TemporaryDirectory() as td:
+                with (
+                    mock.patch.object(B, "MAX_STREAK", value),
+                    _no_network(),
+                    TemporaryDirectory() as td,
+                ):
                     got = B.run_batch(
-                        drivings=DRIVINGS, styles=STYLES, persons=PERSONS,
-                        mode="cover", first=0, last=89, out_dir=td,
-                        balance=_balance(2.0), cell_runner=run,
-                        max_streak=B.MAX_STREAK, log=_Log())
+                        drivings=DRIVINGS,
+                        styles=STYLES,
+                        persons=PERSONS,
+                        mode="cover",
+                        first=0,
+                        last=89,
+                        out_dir=td,
+                        balance=_balance(2.0),
+                        cell_runner=run,
+                        max_streak=B.MAX_STREAK,
+                        log=_Log(),
+                    )
                 self.assertEqual(len(run.calls), expect_calls)
                 self.assertIs(got["stopped_early"], expect_stop)
 
 
 class TheReportCarriesNumbersNextToTheVerdict(unittest.TestCase):
-
     def test_the_money_actually_spent_comes_from_the_balance_before_and_after(self):
         run = _Runner()
         with _no_network(), TemporaryDirectory() as td:
-            got = _batch(td, mode="cover", balance=_balance(2.0, 0.95),
-                         cell_runner=run)
+            got = _batch(td, mode="cover", balance=_balance(2.0, 0.95), cell_runner=run)
         self.assertEqual(got["balance_before"], 2.0)
         self.assertEqual(got["balance_after"], 0.95)
         self.assertEqual(got["spent_actual"], 1.05)
@@ -416,16 +441,14 @@ class TheReportCarriesNumbersNextToTheVerdict(unittest.TestCase):
     def test_an_unknown_balance_after_leaves_the_spend_unmeasured_not_zero(self):
         run = _Runner()
         with _no_network(), TemporaryDirectory() as td:
-            got = _batch(td, mode="cover", balance=_balance(2.0, None),
-                         cell_runner=run)
+            got = _batch(td, mode="cover", balance=_balance(2.0, None), cell_runner=run)
         self.assertIsNone(got["spent_actual"])
         self.assertEqual(got["spent_expected"], 1.75)
 
     def test_a_stopped_batch_expects_only_what_it_actually_launched(self):
         run = _Runner({2: FAIL, 3: FAIL, 4: FAIL})
         with _no_network(), TemporaryDirectory() as td:
-            got = _batch(td, mode="cover", balance=_balance(2.0, 1.16),
-                         cell_runner=run)
+            got = _batch(td, mode="cover", balance=_balance(2.0, 1.16), cell_runner=run)
         self.assertEqual(got["attempted"], 4)
         self.assertEqual(got["spent_expected"], 1.4)
 
@@ -433,8 +456,7 @@ class TheReportCarriesNumbersNextToTheVerdict(unittest.TestCase):
         log = _Log()
         run = _Runner({3: FAIL})
         with _no_network(), TemporaryDirectory() as td:
-            _batch(td, mode="cover", balance=_balance(2.0, 0.95),
-                   cell_runner=run, log=log)
+            _batch(td, mode="cover", balance=_balance(2.0, 0.95), cell_runner=run, log=log)
         self.assertIn("годно 4, не годно 1, не смогли 0", log.text)
         self.assertIn("потрачено фактически $1.05", log.text)
 
@@ -443,21 +465,25 @@ class TheReportCarriesNumbersNextToTheVerdict(unittest.TestCase):
         for verdicts, code in cases:
             with self.subTest(verdicts=verdicts):
                 with _no_network(), TemporaryDirectory() as td:
-                    got = _batch(td, mode="cover", balance=_balance(2.0),
-                                 cell_runner=_Runner(verdicts))
+                    got = _batch(
+                        td, mode="cover", balance=_balance(2.0), cell_runner=_Runner(verdicts)
+                    )
                 self.assertEqual(got["exit_code"], code)
 
     def test_a_failure_outranks_an_unmeasured_in_the_verdict(self):
         """Найденное нарушение не перестаёт быть нарушением от того, что"""
         with _no_network(), TemporaryDirectory() as td:
-            got = _batch(td, mode="cover", balance=_balance(2.0),
-                         cell_runner=_Runner({2: FAIL, 4: _Blocked("сеть")}))
+            got = _batch(
+                td,
+                mode="cover",
+                balance=_balance(2.0),
+                cell_runner=_Runner({2: FAIL, 4: _Blocked("сеть")}),
+            )
         self.assertEqual(got["outcome"], FAIL)
         self.assertEqual(got["exit_code"], 1)
 
 
 class TheEntryPointIsThin(unittest.TestCase):
-
     def test_main_parses_the_matrix_and_returns_the_exit_code(self):
         seen = {}
 
@@ -466,10 +492,24 @@ class TheEntryPointIsThin(unittest.TestCase):
             return {"exit_code": 0}
 
         with mock.patch.object(B, "run_batch", fake_batch):
-            code = B.main(["--driving", "a.mp4", "--driving", "b.mp4",
-                           "--style", "s.png", "--person", "p.png",
-                           "--mode", "cover", "--window", "100:199",
-                           "--out", "work/x"])
+            code = B.main(
+                [
+                    "--driving",
+                    "a.mp4",
+                    "--driving",
+                    "b.mp4",
+                    "--style",
+                    "s.png",
+                    "--person",
+                    "p.png",
+                    "--mode",
+                    "cover",
+                    "--window",
+                    "100:199",
+                    "--out",
+                    "work/x",
+                ]
+            )
         self.assertEqual(code, 0)
         self.assertEqual(seen["drivings"], ["a.mp4", "b.mp4"])
         self.assertEqual(seen["mode"], "cover")

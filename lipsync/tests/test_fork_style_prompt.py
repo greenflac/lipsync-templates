@@ -5,12 +5,18 @@ import unittest
 from lipsync import fork_style_prompt as sp
 from lipsync.fork_identity import FAIL, PASS, UNMEASURED
 
-LIGHT = {"colours": ["black", "beige", "camel"], "value_key": "mid",
-         "saturation": "moderate",
-         "texture": "clean flat surfaces with smooth, untextured colour"}
-DARK = {"colours": ["maroon", "charcoal", "rust"], "value_key": "dark",
-        "saturation": "saturated",
-        "texture": "visible grain and tactile surface texture"}
+LIGHT = {
+    "colours": ["black", "beige", "camel"],
+    "value_key": "mid",
+    "saturation": "moderate",
+    "texture": "clean flat surfaces with smooth, untextured colour",
+}
+DARK = {
+    "colours": ["maroon", "charcoal", "rust"],
+    "value_key": "dark",
+    "saturation": "saturated",
+    "texture": "visible grain and tactile surface texture",
+}
 
 
 class TheAdapterIsReproducible(unittest.TestCase):
@@ -32,19 +38,22 @@ class ThreeOutcomesNotTwo(unittest.TestCase):
     def test_a_missing_field_is_unmeasured_not_failed(self):
         for field in ("colours", "value_key", "saturation", "texture"):
             with self.subTest(field=field):
-                card = dict(LIGHT); card.pop(field)
+                card = dict(LIGHT)
+                card.pop(field)
                 out = sp.compose(card)
                 self.assertEqual(out["outcome"], UNMEASURED)
                 self.assertIn(field, out["note"])
 
     def test_an_unknown_value_key_is_unmeasured_not_silently_defaulted(self):
-        card = dict(LIGHT); card["value_key"] = "twilight"
+        card = dict(LIGHT)
+        card["value_key"] = "twilight"
         out = sp.compose(card)
         self.assertEqual(out["outcome"], UNMEASURED)
         self.assertIsNone(out["prompt"])
 
     def test_an_unknown_saturation_is_unmeasured(self):
-        card = dict(LIGHT); card["saturation"] = "neon"
+        card = dict(LIGHT)
+        card["saturation"] = "neon"
         self.assertEqual(sp.compose(card)["outcome"], UNMEASURED)
 
     def test_a_non_dict_is_unmeasured(self):
@@ -58,7 +67,8 @@ class TheProductBoundaryIsGuarded(unittest.TestCase):
     """Промт стиля описывает вид, а не персонажа: персонаж идёт из фото."""
 
     def test_a_subject_word_makes_the_prompt_not_good(self):
-        card = dict(LIGHT); card["texture"] = "a woman with long hair"
+        card = dict(LIGHT)
+        card["texture"] = "a woman with long hair"
         out = sp.compose(card)
         self.assertEqual(out["outcome"], FAIL)
         self.assertIn("woman", out["leak"])
@@ -89,18 +99,21 @@ class TheShapeComesFromTheCorpusNotFromTaste(unittest.TestCase):
         self.assertEqual(out["clauses"], sp.CLAUSES_MOST_COMMON)
 
     def test_a_prompt_outside_the_band_is_not_good(self):
-        card = dict(LIGHT); card["texture"] = "grain " * 80
+        card = dict(LIGHT)
+        card["texture"] = "grain " * 80
         self.assertEqual(sp.compose(card)["outcome"], FAIL)
 
     def test_too_many_clauses_is_not_good(self):
-        card = dict(LIGHT); card["texture"] = ", ".join(["grain"] * 20)
+        card = dict(LIGHT)
+        card["texture"] = ", ".join(["grain"] * 20)
         self.assertEqual(sp.compose(card)["outcome"], FAIL)
 
     def test_the_palette_width_is_guarded(self):
         many = dict(LIGHT)
         many["colours"] = ["black", "beige", "camel", "rust", "slate grey"]
         self.assertNotIn("rust", sp.compose(many)["prompt"])
-        one = dict(LIGHT); one["colours"] = ["black"]
+        one = dict(LIGHT)
+        one["colours"] = ["black"]
         self.assertIn("a palette of black", sp.compose(one)["prompt"])
 
 
@@ -115,6 +128,7 @@ class TheReaderIsAnInjectionPoint(unittest.TestCase):
     def test_a_reader_that_raises_is_unmeasured_not_failed(self):
         def broken(_):
             raise OSError("файла нет")
+
         out = sp.from_image("x.png", reader=broken)
         self.assertEqual(out["outcome"], UNMEASURED)
         self.assertIn("OSError", out["note"])

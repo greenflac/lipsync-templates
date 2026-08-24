@@ -17,17 +17,20 @@ def base_with(*aesthetics):
 
 
 PLAIN = {"id": "чисто", "kind": "scene", "prompt": "a woman in a red coat"}
-BRANDED = {"id": "сбрендом", "kind": "scene",
-           "prompt": "a woman in a Balenciaga trench and Adidas sneakers"}
+BRANDED = {
+    "id": "сбрендом",
+    "kind": "scene",
+    "prompt": "a woman in a Balenciaga trench and Adidas sneakers",
+}
 
 
 class TheOwnersBaseIsShippedWhole(unittest.TestCase):
     """База — материал составителя шаблонов. Модуль её читает, а не пересказывает."""
 
     def test_all_six_aesthetics_are_present_by_name(self):
-        self.assertEqual(sorted(A.ids()),
-                         ["country", "fisheye", "icecream", "midcentury",
-                          "tomatoes", "y2k"])
+        self.assertEqual(
+            sorted(A.ids()), ["country", "fisheye", "icecream", "midcentury", "tomatoes", "y2k"]
+        )
 
     def test_the_prompts_are_stored_verbatim_and_not_trimmed(self):
         self.assertEqual(len(A.load("y2k")["prompt"].split()), 211)
@@ -75,8 +78,7 @@ class TheBrandListIsASpravkaNotAGate(unittest.TestCase):
 
     def test_the_shipped_base_really_carries_the_conflict(self):
         self.assertEqual(A.brand_conflict(A.load("y2k"))["brands"], ["Adidas"])
-        self.assertEqual(A.brand_conflict(A.load("fisheye"))["brands"],
-                         ["Balenciaga"])
+        self.assertEqual(A.brand_conflict(A.load("fisheye"))["brands"], ["Balenciaga"])
         self.assertEqual(A.brand_conflict(A.load("country"))["brands"], [])
 
     def test_the_prompt_itself_is_never_edited_by_the_check(self):
@@ -92,15 +94,12 @@ class TheIdentityClauseResolvesTheConflictExplicitly(unittest.TestCase):
         """ПЕРЕПИСАН под решение «антропометрию вырезаем»: материал составителя шаблонов"""
         got = A.compose(PLAIN)
         self.assertEqual(got["outcome"], PASS)
-        self.assertTrue(got["prompt"].startswith("A person in a red coat"),
-                        got["prompt"][:80])
-        self.assertLess(got["prompt"].index("red coat"),
-                        got["prompt"].index("wins on identity"))
+        self.assertTrue(got["prompt"].startswith("A person in a red coat"), got["prompt"][:80])
+        self.assertLess(got["prompt"].index("red coat"), got["prompt"].index("wins on identity"))
 
     def test_the_owner_prompt_survives_whole_when_the_cut_is_off(self):
         got = A.compose(PLAIN, cut_body=False)
-        self.assertTrue(got["prompt"].startswith("a woman in a red coat"),
-                        got["prompt"][:80])
+        self.assertTrue(got["prompt"].startswith("a woman in a red coat"), got["prompt"][:80])
 
     def test_the_identity_clause_is_in_and_names_what_wins(self):
         got = A.compose(PLAIN)["prompt"]
@@ -149,8 +148,14 @@ class TheOnlyMeasurableAxisIsTheDemoIdentity(unittest.TestCase):
     @staticmethod
     def _at(median, outcome=PASS):
         def distances(frames, anchor, **kw):
-            return {"outcome": outcome, "median": median, "inside": 1,
-                    "judged": 1, "note": "подставной прибор"}
+            return {
+                "outcome": outcome,
+                "median": median,
+                "inside": 1,
+                "judged": 1,
+                "note": "подставной прибор",
+            }
+
         return distances
 
     def test_the_demo_survived_is_plainly_good(self):
@@ -180,12 +185,12 @@ class TheOnlyMeasurableAxisIsTheDemoIdentity(unittest.TestCase):
         try:
             A.SAME_PERSON_MAX = 0.1
             self.assertEqual(
-                A.accept(made="э.png", demo=DEMO,
-                         distances=self._at(0.2753))["outcome"], UNMEASURED)
+                A.accept(made="э.png", demo=DEMO, distances=self._at(0.2753))["outcome"], UNMEASURED
+            )
             A.SAME_PERSON_MAX = 0.5
             self.assertEqual(
-                A.accept(made="э.png", demo=DEMO,
-                         distances=self._at(0.2753))["outcome"], PASS)
+                A.accept(made="э.png", demo=DEMO, distances=self._at(0.2753))["outcome"], PASS
+            )
         finally:
             A.SAME_PERSON_MAX = was
         self.assertEqual(A.SAME_PERSON_MAX, 0.35)
@@ -300,15 +305,13 @@ class TheAnthropometryIsCutOutAndTheCutIsReadable(unittest.TestCase):
         was = A.ANTHROPOMETRY_CLAUSES
         try:
             A.ANTHROPOMETRY_CLAUSES = ()
-            self.assertEqual(
-                A.strip_anthropometry(A.load("y2k")["prompt"])["dropped"], [])
+            self.assertEqual(A.strip_anthropometry(A.load("y2k")["prompt"])["dropped"], [])
             A.ANTHROPOMETRY_CLAUSES = (r"\bcamera\b",)
             got = A.strip_anthropometry(A.load("y2k")["prompt"])
             self.assertGreater(len(got["dropped"]), 0)
         finally:
             A.ANTHROPOMETRY_CLAUSES = was
-        self.assertEqual(
-            len(A.strip_anthropometry(A.load("y2k")["prompt"])["dropped"]), 2)
+        self.assertEqual(len(A.strip_anthropometry(A.load("y2k")["prompt"])["dropped"]), 2)
 
 
 class TheCutIsWiredIntoTheComposedPrompt(unittest.TestCase):
@@ -373,14 +376,23 @@ class TheLeakIsMeasuredFromBOTHSides(unittest.TestCase):
     def _pair(cls, to_client, to_demo):
         def distances(frames, anchor, **kw):
             median = {cls.CLIENT: to_client, cls.DEMO_W: to_demo}[str(anchor)]
-            return {"outcome": PASS, "median": median, "inside": 1,
-                    "judged": 1, "note": "подставной прибор"}
+            return {
+                "outcome": PASS,
+                "median": median,
+                "inside": 1,
+                "judged": 1,
+                "note": "подставной прибор",
+            }
+
         return distances
 
     def _run(self, to_client, to_demo):
-        return A.leak_verdict(made="р.png", client=self.CLIENT,
-                              demo=self.DEMO_W,
-                              distances=self._pair(to_client, to_demo))
+        return A.leak_verdict(
+            made="р.png",
+            client=self.CLIENT,
+            demo=self.DEMO_W,
+            distances=self._pair(to_client, to_demo),
+        )
 
     def test_the_measured_good_case_is_good(self):
         got = self._run(0.2506, 0.9436)
@@ -404,20 +416,22 @@ class TheLeakIsMeasuredFromBOTHSides(unittest.TestCase):
 
     def test_a_missing_distance_is_UNMEASURED_not_a_pass(self):
         def half(frames, anchor, **kw):
-            return {"outcome": PASS,
-                    "median": None if str(anchor) == self.DEMO_W else 0.2,
-                    "inside": 1, "judged": 1, "note": "полприбора"}
+            return {
+                "outcome": PASS,
+                "median": None if str(anchor) == self.DEMO_W else 0.2,
+                "inside": 1,
+                "judged": 1,
+                "note": "полприбора",
+            }
 
-        got = A.leak_verdict(made="р.png", client=self.CLIENT,
-                             demo=self.DEMO_W, distances=half)
+        got = A.leak_verdict(made="р.png", client=self.CLIENT, demo=self.DEMO_W, distances=half)
         self.assertEqual(got["outcome"], UNMEASURED)
 
     def test_an_instrument_that_fell_is_UNMEASURED(self):
         def broken(*a, **k):
             raise RuntimeError("модель не загрузилась")
 
-        got = A.leak_verdict(made="р.png", client="м.png", demo="ж.png",
-                             distances=broken)
+        got = A.leak_verdict(made="р.png", client="м.png", demo="ж.png", distances=broken)
         self.assertEqual(got["outcome"], UNMEASURED)
         self.assertIn("RuntimeError", got["note"])
 
@@ -454,9 +468,7 @@ class TheGenderPairIsAMachineGateNotANote(unittest.TestCase):
         self.assertIn("НЕ разрешение", got["note"])
 
     def test_the_gate_is_case_and_space_insensitive(self):
-        self.assertEqual(
-            A.pair_check(client_gender=" M ", aesthetic_gender="m")["outcome"],
-            PASS)
+        self.assertEqual(A.pair_check(client_gender=" M ", aesthetic_gender="m")["outcome"], PASS)
 
 
 class TheGenderSplitDidNotFixTheWardrobeAndItIsRecorded(unittest.TestCase):
@@ -497,13 +509,11 @@ class TheTemplateGenderIsTheAestheticGender(unittest.TestCase):
         self.assertTrue(str(A.aesthetic_file("fisheye")).endswith("fisheye_m.png"))
 
     def test_a_client_of_the_other_gender_is_stopped_before_generation(self):
-        got = A.pair_check(client_gender="m",
-                           aesthetic_gender=A.gender_of("y2k"))
+        got = A.pair_check(client_gender="m", aesthetic_gender=A.gender_of("y2k"))
         self.assertEqual(got["outcome"], FAIL)
 
     def test_a_client_of_the_same_gender_passes(self):
-        got = A.pair_check(client_gender="m",
-                           aesthetic_gender=A.gender_of("fisheye"))
+        got = A.pair_check(client_gender="m", aesthetic_gender=A.gender_of("fisheye"))
         self.assertEqual(got["outcome"], PASS)
 
 

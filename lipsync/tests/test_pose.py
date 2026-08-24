@@ -6,6 +6,7 @@ import unittest
 
 try:
     import numpy as np  # noqa: F401
+
     HAVE_NUMPY = True
 except ImportError:
     HAVE_NUMPY = False
@@ -14,12 +15,18 @@ except ImportError:
 def _skeleton(dx=0.0, dy=0.0, scale=1.0, **moved):
     """A plain standing skeleton, optionally shifted, resized, or bent."""
     base = {
-        "l_shoulder": (0.45, 0.30), "r_shoulder": (0.55, 0.30),
-        "l_elbow": (0.42, 0.40), "r_elbow": (0.58, 0.40),
-        "l_wrist": (0.40, 0.50), "r_wrist": (0.60, 0.50),
-        "l_hip": (0.46, 0.55), "r_hip": (0.54, 0.55),
-        "l_knee": (0.45, 0.70), "r_knee": (0.55, 0.70),
-        "l_ankle": (0.44, 0.85), "r_ankle": (0.56, 0.85),
+        "l_shoulder": (0.45, 0.30),
+        "r_shoulder": (0.55, 0.30),
+        "l_elbow": (0.42, 0.40),
+        "r_elbow": (0.58, 0.40),
+        "l_wrist": (0.40, 0.50),
+        "r_wrist": (0.60, 0.50),
+        "l_hip": (0.46, 0.55),
+        "r_hip": (0.54, 0.55),
+        "l_knee": (0.45, 0.70),
+        "r_knee": (0.55, 0.70),
+        "l_ankle": (0.44, 0.85),
+        "r_ankle": (0.56, 0.85),
     }
     out = {}
     for name, (x, y) in base.items():
@@ -94,8 +101,7 @@ class LimbConsistencyDetectsRubberBodies(unittest.TestCase):
         self.assertLess(r["worst"][1], self.p.LIMB_WOBBLE_MAX)
 
     def test_a_stretching_forearm_is_caught(self):
-        self.frames = [_skeleton(l_wrist=(0.40 - i * 0.06, 0.50 + i * 0.06))
-                       for i in range(6)]
+        self.frames = [_skeleton(l_wrist=(0.40 - i * 0.06, 0.50 + i * 0.06)) for i in range(6)]
         r = self._run()
         self.assertFalse(r["anatomical"])
         self.assertIn("l_elbow->l_wrist", r["unstable"])
@@ -145,8 +151,7 @@ class BuildIsMeasuredIn3DNotProjection(unittest.TestCase):
         near = self.p.world_proportions("x")
         self._stub(self._body(shoulder_half=0.10, hip_half=0.065, torso=0.25))
         far = self.p.world_proportions("x")
-        self.assertAlmostEqual(near["shoulder_to_hip"], far["shoulder_to_hip"],
-                               places=3)
+        self.assertAlmostEqual(near["shoulder_to_hip"], far["shoulder_to_hip"], places=3)
 
     def test_a_broader_build_reads_as_broader(self):
         self._stub(self._body(shoulder_half=0.20))

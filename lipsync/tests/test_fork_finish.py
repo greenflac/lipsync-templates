@@ -48,33 +48,93 @@ RESULT_SILENT_JSON = RESULT_JSON.replace(
     """,
   {"index": 1, "codec_name": "aac", "codec_type": "audio",
    "r_frame_rate": "0/0", "avg_frame_rate": "0/0", "duration": "3.300000",
-   "nb_frames": "144"}""", "")
+   "nb_frames": "144"}""",
+    "",
+)
 
 DRIVING_SILENT_JSON = DRIVING_JSON.replace(
     """,
   {"index": 1, "codec_name": "aac", "codec_type": "audio",
    "r_frame_rate": "0/0", "avg_frame_rate": "0/0", "duration": "12.492245",
-   "nb_frames": "269"}""", "")
+   "nb_frames": "269"}""",
+    "",
+)
 
-REAL_COLUMNS = [5.33, 5.1, 4.87, 5.08, 6.53, 9.06, 10.25, 18.58, 26.34, 27.9,
-                32.57, 33.45, 33.33, 32.42, 38.37, 39.81, 35.84, 29.22, 34.86,
-                38.12, 38.49, 36.32, 31.91, 30.63, 30.67, 29.46, 30.35, 30.77,
-                34.37, 36.36, 35.47, 33.59, 32.75, 31.82, 27.61, 25.91, 27.57,
-                28.73, 27.18, 22.66, 16.04, 12.96, 13.44, 13.14, 7.93, 4.6,
-                2.88, 1.45]
+REAL_COLUMNS = [
+    5.33,
+    5.1,
+    4.87,
+    5.08,
+    6.53,
+    9.06,
+    10.25,
+    18.58,
+    26.34,
+    27.9,
+    32.57,
+    33.45,
+    33.33,
+    32.42,
+    38.37,
+    39.81,
+    35.84,
+    29.22,
+    34.86,
+    38.12,
+    38.49,
+    36.32,
+    31.91,
+    30.63,
+    30.67,
+    29.46,
+    30.35,
+    30.77,
+    34.37,
+    36.36,
+    35.47,
+    33.59,
+    32.75,
+    31.82,
+    27.61,
+    25.91,
+    27.57,
+    28.73,
+    27.18,
+    22.66,
+    16.04,
+    12.96,
+    13.44,
+    13.14,
+    7.93,
+    4.6,
+    2.88,
+    1.45,
+]
 
 
 def prober_of(mapping):
     """Подменный ffprobe: путь -> текст ответа. Ни одного процесса."""
+
     def _prober(path):
         answer = mapping.get(Path(path).name)
         if answer is None:
-            return {"ran": False, "code": None, "out": "", "err": "",
-                    "why": "ffprobe не найден: спросить нечем"}
+            return {
+                "ran": False,
+                "code": None,
+                "out": "",
+                "err": "",
+                "why": "ffprobe не найден: спросить нечем",
+            }
         if isinstance(answer, int):
-            return {"ran": True, "code": answer, "out": "{\n\n}\n",
-                    "err": "moov atom not found", "why": ""}
+            return {
+                "ran": True,
+                "code": answer,
+                "out": "{\n\n}\n",
+                "err": "moov atom not found",
+                "why": "",
+            }
         return {"ran": True, "code": 0, "out": answer, "err": "", "why": ""}
+
     return _prober
 
 
@@ -87,10 +147,14 @@ class Runner:
     def __call__(self, argv):
         self.calls.append(list(argv))
         if not self.ran:
-            return {"ran": False, "code": None, "out": "", "err": "",
-                    "why": "ffmpeg не найден: собрать нечем"}
-        return {"ran": True, "code": self.code, "out": "", "err": self.err,
-                "why": ""}
+            return {
+                "ran": False,
+                "code": None,
+                "out": "",
+                "err": "",
+                "why": "ffmpeg не найден: собрать нечем",
+            }
+        return {"ran": True, "code": self.code, "out": "", "err": self.err, "why": ""}
 
 
 def _files(*names):
@@ -141,9 +205,14 @@ class CropIsCountedAndNotGuessed(unittest.TestCase):
         self.assertEqual((g["w"], g["h"]), (540, 960))
 
     def test_the_window_never_leaves_the_frame_at_either_bias(self):
-        for width, height, bias in ((960, 960, -1.0), (960, 960, 0.0),
-                                    (960, 960, 1.0), (961, 961, 1.0),
-                                    (540, 1200, 1.0), (540, 1200, -1.0)):
+        for width, height, bias in (
+            (960, 960, -1.0),
+            (960, 960, 0.0),
+            (960, 960, 1.0),
+            (961, 961, 1.0),
+            (540, 1200, 1.0),
+            (540, 1200, -1.0),
+        ):
             with self.subTest(size=(width, height), bias=bias):
                 g = ff.crop_geometry(width, height, bias=bias)
                 self.assertEqual(g["outcome"], PASS)
@@ -198,10 +267,8 @@ class CropConstantsAreMutatedInBothDirections(unittest.TestCase):
         self.assertEqual(ff.crop_geometry(961, 961)["h"], 960)
 
     def test_the_ratio_constants_change_the_window_both_ways(self):
-        self.assertEqual(ff.crop_geometry(960, 960, ratio_w=16, ratio_h=9)["h"],
-                         540)
-        self.assertEqual(ff.crop_geometry(960, 960, ratio_w=1, ratio_h=1)["w"],
-                         960)
+        self.assertEqual(ff.crop_geometry(960, 960, ratio_w=16, ratio_h=9)["h"], 540)
+        self.assertEqual(ff.crop_geometry(960, 960, ratio_w=1, ratio_h=1)["w"], 960)
 
 
 class BiasIsChosenOnlyWhenThereIsSomethingToChooseFrom(unittest.TestCase):
@@ -252,9 +319,7 @@ class BiasIsChosenOnlyWhenThereIsSomethingToChooseFrom(unittest.TestCase):
             ff.BIAS_GAIN_MIN = 1.0001
             self.assertEqual(ff.bias_from_columns(REAL_COLUMNS)["outcome"], PASS)
             ff.BIAS_GAIN_MIN = 100.0
-            self.assertEqual(
-                ff.bias_from_columns([100.0] * 20 + [0.0] * 28)["outcome"],
-                UNMEASURED)
+            self.assertEqual(ff.bias_from_columns([100.0] * 20 + [0.0] * 28)["outcome"], UNMEASURED)
         finally:
             ff.BIAS_GAIN_MIN = was
         self.assertEqual(ff.bias_from_columns(REAL_COLUMNS)["outcome"], UNMEASURED)
@@ -348,8 +413,12 @@ class TheAudioVerdictHasThreeOutcomes(unittest.TestCase):
         self.assertEqual(ff.audio_drift(200, 202, fps=30)["outcome"], FAIL)
 
     def test_an_unreadable_duration_is_neither_pass_nor_fail(self):
-        for expected, actual, fps in ((100, None, 30), (None, 99, 30),
-                                      (100, 99, None), (100, 99, "нет")):
+        for expected, actual, fps in (
+            (100, None, 30),
+            (None, 99, 30),
+            (100, 99, None),
+            (100, 99, "нет"),
+        ):
             with self.subTest(expected=expected, actual=actual, fps=fps):
                 r = ff.audio_drift(expected, actual, fps=fps)
                 self.assertEqual(r["outcome"], UNMEASURED)
@@ -374,9 +443,12 @@ class TheAudioPlanReadsTheRealFilesShape(unittest.TestCase):
         self.drv, self.kln = _files("driving_arms.mp4", "kling.mp4")
 
     def test_the_real_run_is_pass_with_a_named_warning(self):
-        p = ff.audio_plan(self.drv, (100, 199), self.kln,
-                          prober=prober_of({"driving_arms.mp4": DRIVING_JSON,
-                                            "kling.mp4": KLING_JSON}))
+        p = ff.audio_plan(
+            self.drv,
+            (100, 199),
+            self.kln,
+            prober=prober_of({"driving_arms.mp4": DRIVING_JSON, "kling.mp4": KLING_JSON}),
+        )
         self.assertEqual(p["outcome"], PASS)
         self.assertTrue(p["glue"])
         self.assertEqual((p["expected"], p["actual"]), (100, 99))
@@ -385,46 +457,71 @@ class TheAudioPlanReadsTheRealFilesShape(unittest.TestCase):
         self.assertEqual(p["seconds"], 3.3)
 
     def test_a_driving_without_sound_is_refused_with_the_reason(self):
-        p = ff.audio_plan(self.drv, (100, 199), self.kln,
-                          prober=prober_of({"driving_arms.mp4": DRIVING_SILENT_JSON,
-                                            "kling.mp4": KLING_JSON}))
+        p = ff.audio_plan(
+            self.drv,
+            (100, 199),
+            self.kln,
+            prober=prober_of({"driving_arms.mp4": DRIVING_SILENT_JSON, "kling.mp4": KLING_JSON}),
+        )
         self.assertEqual(p["outcome"], FAIL)
         self.assertFalse(p["glue"])
 
     def test_a_window_outside_the_driving_is_refused(self):
-        p = ff.audio_plan(self.drv, (300, 399), self.kln,
-                          prober=prober_of({"driving_arms.mp4": DRIVING_JSON,
-                                            "kling.mp4": KLING_JSON}))
+        p = ff.audio_plan(
+            self.drv,
+            (300, 399),
+            self.kln,
+            prober=prober_of({"driving_arms.mp4": DRIVING_JSON, "kling.mp4": KLING_JSON}),
+        )
         self.assertEqual(p["outcome"], FAIL)
-        ok = ff.audio_plan(self.drv, (273, 372), self.kln,
-                           prober=prober_of({"driving_arms.mp4": DRIVING_JSON,
-                                             "kling.mp4": KLING_JSON}))
+        ok = ff.audio_plan(
+            self.drv,
+            (273, 372),
+            self.kln,
+            prober=prober_of({"driving_arms.mp4": DRIVING_JSON, "kling.mp4": KLING_JSON}),
+        )
         self.assertEqual(ok["outcome"], PASS)
 
     def test_different_rates_cannot_be_compared_in_frames(self):
-        p = ff.audio_plan(self.drv, (100, 199), self.kln,
-                          prober=prober_of({
-                              "driving_arms.mp4": DRIVING_JSON,
-                              "kling.mp4": KLING_JSON.replace('"30/1"', '"24/1"')}))
+        p = ff.audio_plan(
+            self.drv,
+            (100, 199),
+            self.kln,
+            prober=prober_of(
+                {
+                    "driving_arms.mp4": DRIVING_JSON,
+                    "kling.mp4": KLING_JSON.replace('"30/1"', '"24/1"'),
+                }
+            ),
+        )
         self.assertEqual(p["outcome"], FAIL)
 
     def test_no_ffprobe_is_not_a_bad_file(self):
-        p = ff.audio_plan(self.drv, (100, 199), self.kln,
-                          prober=prober_of({"driving_arms.mp4": None,
-                                            "kling.mp4": None}))
+        p = ff.audio_plan(
+            self.drv,
+            (100, 199),
+            self.kln,
+            prober=prober_of({"driving_arms.mp4": None, "kling.mp4": None}),
+        )
         self.assertEqual(p["outcome"], UNMEASURED)
         self.assertFalse(p["glue"])
 
     def test_a_broken_file_is_not_an_absent_tool(self):
-        p = ff.audio_plan(self.drv, (100, 199), self.kln,
-                          prober=prober_of({"driving_arms.mp4": DRIVING_JSON,
-                                            "kling.mp4": 1}))
+        p = ff.audio_plan(
+            self.drv,
+            (100, 199),
+            self.kln,
+            prober=prober_of({"driving_arms.mp4": DRIVING_JSON, "kling.mp4": 1}),
+        )
         self.assertEqual(p["outcome"], FAIL)
 
     def test_every_step_is_named_and_none_is_silent(self):
-        p = ff.audio_plan(self.drv, (100, 199), self.kln,
-                          prober=prober_of({"driving_arms.mp4": DRIVING_JSON,
-                                            "kling.mp4": KLING_JSON}))
+        p = ff.audio_plan(
+            self.drv,
+            (100, 199),
+            self.kln,
+            prober=prober_of({"driving_arms.mp4": DRIVING_JSON, "kling.mp4": KLING_JSON}),
+        )
         self.assertGreaterEqual(len(p["steps"]), 4)
         for name, outcome, note in p["steps"]:
             with self.subTest(step=name):
@@ -440,8 +537,9 @@ class TheCommandIsADecisionAndIsCheckedApartFromItsRun(unittest.TestCase):
         self.assertIn("[0:v]crop=540:960:210:0[v]", argv)
 
     def test_the_sound_is_cut_from_the_input_and_not_from_the_output(self):
-        argv = ff.mux_argv("k.mp4", "out.mp4", self.GEOM, driving_path="d.mp4",
-                           start_seconds=3.333333, seconds=3.3)
+        argv = ff.mux_argv(
+            "k.mp4", "out.mp4", self.GEOM, driving_path="d.mp4", start_seconds=3.333333, seconds=3.3
+        )
         self.assertIn("-ss", argv)
         self.assertLess(argv.index("-ss"), argv.index("d.mp4"))
         self.assertLess(argv.index("-t"), argv.index("d.mp4"))
@@ -458,24 +556,27 @@ class TheCommandIsADecisionAndIsCheckedApartFromItsRun(unittest.TestCase):
         self.assertNotIn("-ss", argv)
 
     def test_the_streams_are_mapped_explicitly(self):
-        argv = ff.mux_argv("k.mp4", "out.mp4", self.GEOM, driving_path="d.mp4",
-                           start_seconds=0.0, seconds=1.0)
+        argv = ff.mux_argv(
+            "k.mp4", "out.mp4", self.GEOM, driving_path="d.mp4", start_seconds=0.0, seconds=1.0
+        )
         self.assertIn("-map", argv)
         self.assertIn("[v]", argv)
         self.assertEqual(argv[-1], "out.mp4")
         self.assertIn("yuv420p", argv)
 
     def test_the_quality_keys_are_the_ones_we_chose(self):
-        argv = ff.mux_argv("k.mp4", "out.mp4", self.GEOM, driving_path="d.mp4",
-                           start_seconds=0.0, seconds=1.0)
+        argv = ff.mux_argv(
+            "k.mp4", "out.mp4", self.GEOM, driving_path="d.mp4", start_seconds=0.0, seconds=1.0
+        )
         self.assertEqual(argv[argv.index("-crf") + 1], "18")
         self.assertEqual(argv[argv.index("-b:a") + 1], "128k")
         self.assertIn("libx264", argv)
         self.assertIn("aac", argv)
 
     def test_no_filter_ever_stretches_the_sound(self):
-        argv = ff.mux_argv("k.mp4", "out.mp4", self.GEOM, driving_path="d.mp4",
-                           start_seconds=0.0, seconds=1.0)
+        argv = ff.mux_argv(
+            "k.mp4", "out.mp4", self.GEOM, driving_path="d.mp4", start_seconds=0.0, seconds=1.0
+        )
         joined = " ".join(argv)
         for forbidden in ("atempo", "asetrate", "rubberband", "setpts"):
             with self.subTest(filter=forbidden):
@@ -484,16 +585,24 @@ class TheCommandIsADecisionAndIsCheckedApartFromItsRun(unittest.TestCase):
 
 class TheAssemblyReportsWhatActuallyHappened(unittest.TestCase):
     def setUp(self):
-        self.drv, self.kln, self.out = _files("driving_arms.mp4", "kling.mp4",
-                                              "finish.mp4")
-        self.answers = {"driving_arms.mp4": DRIVING_JSON,
-                        "kling.mp4": KLING_JSON,
-                        "finish.mp4": RESULT_JSON}
+        self.drv, self.kln, self.out = _files("driving_arms.mp4", "kling.mp4", "finish.mp4")
+        self.answers = {
+            "driving_arms.mp4": DRIVING_JSON,
+            "kling.mp4": KLING_JSON,
+            "finish.mp4": RESULT_JSON,
+        }
 
     def _finish(self, runner, **over):
         answers = dict(self.answers, **over.pop("answers", {}))
-        return ff.finish(self.drv, self.kln, self.out, window=(100, 199),
-                         prober=prober_of(answers), runner=runner, **over)
+        return ff.finish(
+            self.drv,
+            self.kln,
+            self.out,
+            window=(100, 199),
+            prober=prober_of(answers),
+            runner=runner,
+            **over,
+        )
 
     def test_the_real_case_assembles_with_sound_and_says_the_numbers(self):
         run = Runner()
@@ -509,10 +618,14 @@ class TheAssemblyReportsWhatActuallyHappened(unittest.TestCase):
 
     def test_a_drift_beyond_tolerance_writes_a_mute_file_and_says_not_good(self):
         run = Runner()
-        rep = ff.finish(self.drv, self.kln, self.out, window=(100, 187),
-                        prober=prober_of(dict(self.answers,
-                                              **{"finish.mp4": RESULT_SILENT_JSON})),
-                        runner=run)
+        rep = ff.finish(
+            self.drv,
+            self.kln,
+            self.out,
+            window=(100, 187),
+            prober=prober_of(dict(self.answers, **{"finish.mp4": RESULT_SILENT_JSON})),
+            runner=run,
+        )
         self.assertEqual(rep["outcome"], FAIL)
         self.assertTrue(rep["written"])
         self.assertFalse(rep["audio"])
@@ -594,8 +707,7 @@ class TheModuleDoesNotReinventWhatAlreadyExists(unittest.TestCase):
         self.assertNotIn("avg_frame_rate", self.SRC)
 
     def test_the_verdict_words_are_not_reinvented(self):
-        self.assertEqual((PASS, FAIL, UNMEASURED),
-                         ("годно", "не годно", "не смогли проверить"))
+        self.assertEqual((PASS, FAIL, UNMEASURED), ("годно", "не годно", "не смогли проверить"))
 
     def test_the_three_outcomes_map_to_three_different_exit_codes(self):
         self.assertEqual(ff.EXIT_BY_OUTCOME[PASS], 0)
@@ -608,17 +720,22 @@ class TheModuleDoesNotReinventWhatAlreadyExists(unittest.TestCase):
 
     def test_every_decision_constant_declares_where_it_came_from(self):
         lines = self.SRC.splitlines()
-        names = ("TARGET_RATIO_W", "DIM_MULTIPLE", "LIPSYNC_AUDIO_AHEAD_MS",
-                 "BIAS_GAIN_MIN", "BIAS_LIMIT", "VIDEO_CRF")
+        names = (
+            "TARGET_RATIO_W",
+            "DIM_MULTIPLE",
+            "LIPSYNC_AUDIO_AHEAD_MS",
+            "BIAS_GAIN_MIN",
+            "BIAS_LIMIT",
+            "VIDEO_CRF",
+        )
         for name in names:
             with self.subTest(constant=name):
-                i = next(k for k, ln in enumerate(lines)
-                         if ln.startswith(name))
-                above = "\n".join(lines[max(0, i - 20):i])
+                i = next(k for k, ln in enumerate(lines) if ln.startswith(name))
+                above = "\n".join(lines[max(0, i - 20) : i])
                 self.assertTrue(
-                    any(mark in above for mark in
-                        ("ИЗМЕРЕНО", "РАСЧЁТ", "ВЫБРАНО")),
-                    f"{name}: происхождение не помечено")
+                    any(mark in above for mark in ("ИЗМЕРЕНО", "РАСЧЁТ", "ВЫБРАНО")),
+                    f"{name}: происхождение не помечено",
+                )
 
 
 if __name__ == "__main__":
