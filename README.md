@@ -1,5 +1,7 @@
 # Lip-sync templates
 
+[![CI](https://github.com/greenflac/lipsync-templates/actions/workflows/ci.yml/badge.svg)](https://github.com/greenflac/lipsync-templates/actions/workflows/ci.yml)
+
 The user uploads a selfie, picks a template, and gets a vertical video with
 sound where they are the person on screen.
 
