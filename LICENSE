@@ -1,0 +1,73 @@
+SOURCE-AVAILABLE LICENCE — VIEW AND AUDIT ONLY
+
+Copyright (c) 2026 greenflac. All rights reserved.
+
+This repository is published so that it can be READ, REVIEWED AND AUDITED.
+It is not open source, and no rights to use the software are granted by
+publication.
+
+
+1. WHAT YOU MAY DO
+
+   You may view, read, clone and study this repository for the purpose of
+   evaluating the work, reviewing its engineering, or considering a commercial
+   arrangement with the copyright holder. You may quote short excerpts in a
+   review, an article or an internal assessment, with attribution.
+
+
+2. WHAT YOU MAY NOT DO
+
+   Without prior written permission from the copyright holder, you may not:
+
+   a. use this software, in whole or in part, in any product, service,
+      prototype, pipeline or internal tool, whether commercial or not;
+   b. copy, adapt, translate or incorporate any part of it into other work,
+      including as training data for a machine learning model;
+   c. redistribute, sublicense, publish or sell it, in original or modified
+      form;
+   d. reuse the prompts, prompt fragments, directive strings, calibrated
+      thresholds and measured constants contained here, which are the
+      substance of the work rather than incidental to it.
+
+
+3. NO WARRANTY
+
+   The software is provided "as is", without warranty of any kind, express or
+   implied. The copyright holder is not liable for any claim, damage or other
+   liability arising from this software or its use.
+
+
+4. THIRD-PARTY COMPONENTS
+
+   This repository refers to and interoperates with third-party models, weights
+   and packages that carry their own licences. Those licences are not granted or
+   modified by this file and remain the responsibility of whoever runs the code.
+   Note in particular that some measuring components used during development are
+   licensed for non-commercial use only; see docs for details.
+
+
+5. HOW TO OBTAIN RIGHTS
+
+   Permission to use any part of this work is available by agreement. Ask.
+
+
+---
+
+ПО-РУССКИ, КОРОТКО
+
+Репозиторий опубликован, чтобы его можно было ЧИТАТЬ, ПРОВЕРЯТЬ И ОЦЕНИВАТЬ.
+Это не открытый исходный код: публикация не даёт права использовать.
+
+МОЖНО: смотреть, клонировать, изучать, оценивать работу, цитировать короткие
+фрагменты в обзоре или внутренней оценке — со ссылкой.
+
+НЕЛЬЗЯ без письменного разрешения: использовать в продукте, сервисе,
+прототипе или внутреннем инструменте; копировать и встраивать в свои работы,
+в том числе как обучающие данные; распространять, сублицензировать, продавать;
+переиспользовать промты, их фрагменты, строки-директивы, откалиброванные
+пороги и измеренные константы — они и есть суть работы, а не её оболочка.
+
+ГАРАНТИЙ НЕТ. Сторонние модели и пакеты идут под своими лицензиями, и эта
+лицензия их не выдаёт и не меняет.
+
+ПРАВА НА ИСПОЛЬЗОВАНИЕ ДАЮТСЯ ПО ДОГОВОРЁННОСТИ. Спросите.

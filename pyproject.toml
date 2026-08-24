@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "lipsync-templates"
+version = "0.1.0"
+description = "Липсинк-шаблоны: селфи + шаблон -> вертикальный ролик, где в кадре сам пользователь. Пайплайн генерации и прибор для сборки шаблонов"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { file = "LICENSE" }
+
+# Здесь только то, без чего не работает измерительный слой — его тесты
+# прогоняются без видеокарты и без сети. Тяжёлое — в extras: insightface
+# нужен только живому замеру личности, numpy+pillow хватает всему остальному.
+dependencies = [
+    "numpy",
+    "pillow",
+]
+
+[project.optional-dependencies]
+identity = ["insightface", "onnxruntime"]
+pose = ["mediapipe"]
+
+[tool.setuptools]
+packages = ["lipsync", "lipsync.tests"]
+
+[tool.setuptools.package-data]
+"lipsync" = ["fixtures/*"]
