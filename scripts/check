@@ -10,7 +10,9 @@ echo "== ruff format"
 ruff format --check lipsync/
 
 echo "== mypy (regression guard)"
-# DEBT(2026-08-24): scripts/mypy_baseline.txt holds the known error count;
+# DEBT(2026-08-24): scripts/mypy_baseline.txt holds the known error count,
+# measured where the guard is binding: CI ubuntu-latest, Python 3.11 (run 4
+# printed 60; local environments measure 58-59 and pass under it).
 # the guard fails if new code adds more. Drive it to 0, then run mypy plain.
 # The error list depends on the environment, so the guard is pinned to one
 # leg: Python 3.11 with exactly requirements-dev.txt installed. On other
