@@ -1,4 +1,4 @@
-"""УНИВЕРСАЛЬНЫЙ ПЛАН: один кадр личности на входе Kling, всегда один и тот же."""
+"""Universal plan: one identity framing at the Kling input, always the same one."""
 
 from __future__ import annotations
 
@@ -29,7 +29,7 @@ ANKLE_POINTS = ("l_ankle", "r_ankle")
 
 
 def tally(checked: int, violations: int, unmeasured: int) -> dict:
-    """Числа рядом с вердиктом. Ноль нарушений при нуле проверок — НЕ успех."""
+    """Return the numbers next to the verdict. Zero violations with zero checks is not a success."""
     if checked == 0:
         outcome = UNMEASURED
     elif violations:
@@ -47,16 +47,16 @@ def tally(checked: int, violations: int, unmeasured: int) -> dict:
 
 
 def _axis(name: str, ok: bool | None, note: str) -> dict:
-    """Ось плана. `None` — «не смогли», и это НЕ «не годно»."""
+    """Build one plan axis. `None` means "could not measure", and that is not "fail"."""
     if ok is None:
         return {"name": name, **tally(0, 0, 1), "note": note}
     return {"name": name, **tally(1, 0 if ok else 1, 0), "note": note}
 
 
 def person_box(points, *, min_visibility: float = MIN_VISIBILITY) -> dict:
-    """Коробка человека в долях кадра плюс высоты плеч и щиколоток."""
+    """Return the person's box in frame fractions plus the shoulder and ankle heights."""
     if not isinstance(points, dict) or not points:
-        return {**tally(0, 0, 1), "note": "позы нет: план читать не по чему"}
+        return {**tally(0, 0, 1), "note": "no pose: nothing to read the plan from"}
     good = {
         k: v
         for k, v in points.items()
@@ -69,8 +69,8 @@ def person_box(points, *, min_visibility: float = MIN_VISIBILITY) -> dict:
         return {
             **tally(0, 0, 1),
             "note": (
-                f"ни одной точки с уверенностью {min_visibility}: "
-                f"суставов {len(points)}, все ниже планки"
+                f"not one point with confidence {min_visibility}: "
+                f"{len(points)} joints, all below the bar"
             ),
         }
 
@@ -93,74 +93,74 @@ def person_box(points, *, min_visibility: float = MIN_VISIBILITY) -> dict:
         "ankles": mid(ANKLE_POINTS),
         "joints": len(good),
         "note": (
-            f"суставов уверенных {len(good)} из {len(points)}; "
-            f"по ширине {x0:.3f}..{x1:.3f}, по высоте "
+            f"confident joints {len(good)} of {len(points)}; "
+            f"width span {x0:.3f}..{x1:.3f}, height span "
             f"{min(ys):.3f}..{max(ys):.3f}"
         ),
     }
 
 
 def ratio_axis(width, height) -> dict:
-    """Соотношение сторон. Полосы нет: 9:16 — это число, а не настроение."""
+    """Check the aspect ratio. There is no band: 9:16 is a number, not a mood."""
     if not width or not height:
-        return _axis("канвас", None, f"размеры не сняты: {width}x{height}")
+        return _axis("canvas", None, f"sizes not taken: {width}x{height}")
     got = width / height
     ok = abs(got - PLAN_RATIO) <= 0.015
     return _axis(
-        "канвас",
+        "canvas",
         ok,
-        f"{width}x{height} = {got:.4f} при плане {PLAN_RATIO} "
-        f"(допуск 0.015 — округление на целых пикселях)",
+        f"{width}x{height} = {got:.4f} against the plan {PLAN_RATIO} "
+        f"(tolerance 0.015 covers rounding to whole pixels)",
     )
 
 
 def _band_axis(name, value, band, what) -> dict:
     lo, hi = band
     if value is None:
-        return _axis(name, None, f"{what} не видны: судить нечем")
-    return _axis(name, lo <= value <= hi, f"{what} на {value} при полосе {lo}..{hi}")
+        return _axis(name, None, f"{what} not visible: nothing to judge by")
+    return _axis(name, lo <= value <= hi, f"{what} at {value} against the band {lo}..{hi}")
 
 
 def plan_verdict(*, width=None, height=None, points=None, face_px=None) -> dict:
-    """Попадает ли картинка в универсальный план. Пять осей, три исхода."""
+    """Check whether the image fits the universal plan. Five axes, three outcomes."""
     t0 = time.perf_counter()
     axes = [ratio_axis(width, height)]
 
     box = person_box(points or {})
     if box["outcome"] != PASS:
-        axes += [_axis(n, None, box["note"]) for n in ("плечи", "щиколотки", "центр", "ширина")]
+        axes += [_axis(n, None, box["note"]) for n in ("shoulders", "ankles", "centre", "width")]
     else:
-        axes.append(_band_axis("плечи", box["shoulders"], SHOULDERS_BAND, "плечи"))
-        axes.append(_band_axis("щиколотки", box["ankles"], ANKLES_BAND, "щиколотки"))
+        axes.append(_band_axis("shoulders", box["shoulders"], SHOULDERS_BAND, "shoulders"))
+        axes.append(_band_axis("ankles", box["ankles"], ANKLES_BAND, "ankles"))
         off = abs(box["centre"] - 0.5)
         axes.append(
             _axis(
-                "центр",
+                "centre",
                 off <= CENTRE_TOL,
-                f"центр человека {box['centre']}, отклонение {off:.4f} при допуске {CENTRE_TOL}",
+                f"person centre {box['centre']}, offset {off:.4f} against the tolerance {CENTRE_TOL}",
             )
         )
         axes.append(
             _axis(
-                "ширина",
+                "width",
                 box["width"] <= WIDTH_MAX,
-                f"человек занимает {box['width']} ширины при потолке {WIDTH_MAX}",
+                f"the person takes {box['width']} of the width against the ceiling {WIDTH_MAX}",
             )
         )
 
     if face_px is None:
-        axes.append(_axis("лицо", None, "лицо не спрашивали: размер НЕ ИЗМЕРЕН"))
+        axes.append(_axis("face", None, "the face was never asked about: size NOT MEASURED"))
     else:
         axes.append(
             _axis(
-                "лицо",
+                "face",
                 True,
-                f"{face_px} px при планке {MIN_FACE_PX}"
+                f"{face_px} px against the bar {MIN_FACE_PX}"
                 + (
                     ""
                     if face_px >= MIN_FACE_PX
-                    else "; ПРЕДУПРЕЖДЕНИЕ: мельче планки — личность "
-                    "на выходе СУДИТ ОПЕРАТОР ГЛАЗАМИ"
+                    else "; WARNING: smaller than the bar, so the output "
+                    "identity is JUDGED BY THE OPERATOR'S EYE"
                 ),
             )
         )
@@ -178,11 +178,11 @@ def plan_verdict(*, width=None, height=None, points=None, face_px=None) -> dict:
 
 
 def canvas_for(width: int, height: int) -> dict:
-    """Канвас 9:16, в который картинка ложится ЦЕЛИКОМ. Дополнение, не обрезка."""
+    """Return the 9:16 canvas the image fits into whole. Padding, not cropping."""
     if not isinstance(width, int) or not isinstance(height, int):
-        raise TypeError(f"размеры {width!r}x{height!r}: ждали целые")
+        raise TypeError(f"sizes {width!r}x{height!r}: expected integers")
     if width <= 0 or height <= 0:
-        raise ValueError(f"размеры {width}x{height}: ждали больше нуля")
+        raise ValueError(f"sizes {width}x{height}: expected above zero")
     if width / height > PLAN_RATIO:
         out_w, out_h = width, round(width / PLAN_RATIO)
     else:
@@ -196,15 +196,15 @@ def canvas_for(width: int, height: int) -> dict:
         "top": (out_h - height) // 2,
         "added_share": round(1 - (width * height) / (out_w * out_h), 4),
         "note": (
-            f"{width}x{height} -> {out_w}x{out_h}: дополнено, "
-            f"не обрезано; поля {(out_w - width) // 2} по бокам и "
-            f"{(out_h - height) // 2} сверху и снизу"
+            f"{width}x{height} -> {out_w}x{out_h}: padded, "
+            f"not cropped; margins {(out_w - width) // 2} at the sides and "
+            f"{(out_h - height) // 2} at the top and bottom"
         ),
     }
 
 
 def to_plan(src, dst, *, opener=None, filler=None) -> dict:
-    """Положить картинку в канвас плана. Точки внедрения — чтобы тест не ходил"""
+    """Lay the image into the plan canvas. The injection points keep the test off the disk."""
     if opener is None:
         from PIL import Image  # noqa: PLC0415
 
@@ -217,7 +217,7 @@ def to_plan(src, dst, *, opener=None, filler=None) -> dict:
         return {
             **tally(0, 0, 1),
             "path": None,
-            "note": f"картинка не открылась: {type(exc).__name__}: {exc}",
+            "note": f"the image did not open: {type(exc).__name__}: {exc}",
         }
 
     w, h = im.size
@@ -242,7 +242,7 @@ CARD_TOL_MAX = 0.20
 
 
 def _spread(values):
-    """Половина размаха между 10-м и 90-м процентилями. Края отброшены"""
+    """Return half the spread between the 10th and 90th percentiles, with the edges dropped."""
     got = sorted(v for v in values if v is not None)
     if len(got) < 3:
         return None
@@ -252,11 +252,11 @@ def _spread(values):
 
 
 def composition_card(poses, *, min_visibility: float = MIN_VISIBILITY) -> dict:
-    """Где стоит человек НА ДРАЙВИНГЕ: медианы плюс измеренный разброс."""
+    """Report where the person stands on the driving: medians plus the measured spread."""
     boxes = [person_box(p, min_visibility=min_visibility) for p in (poses or [])]
     good = [b for b in boxes if b["outcome"] == PASS]
     if not good:
-        return {**tally(0, 0, 1), "note": (f"позу не прочитали ни на одном кадре из {len(boxes)}")}
+        return {**tally(0, 0, 1), "note": (f"the pose was read on none of the {len(boxes)} frames")}
 
     def med(key):
         got = sorted(b[key] for b in good if b.get(key) is not None)
@@ -284,17 +284,17 @@ def composition_card(poses, *, min_visibility: float = MIN_VISIBILITY) -> dict:
         **tally(len(good), 0, len(boxes) - len(good)),
         **card,
         "note": (
-            f"по {len(good)} кадрам из {len(boxes)}: плечи "
-            f"{card['shoulders']}+-{card['tol_shoulders']}, щиколотки "
-            f"{card['ankles']}+-{card['tol_ankles']}, центр "
-            f"{card['centre']}+-{card['tol_centre']}, ширина "
+            f"over {len(good)} frames of {len(boxes)}: shoulders "
+            f"{card['shoulders']}+-{card['tol_shoulders']}, ankles "
+            f"{card['ankles']}+-{card['tol_ankles']}, centre "
+            f"{card['centre']}+-{card['tol_centre']}, width "
             f"{card['width']}+-{card['tol_width']}"
         ),
     }
 
 
 def _height_words(top, bottom) -> str:
-    """Числа -> фотографический язык. Модель понимает «в полный рост» и НЕ"""
+    """Turn numbers into photographic language, which the model understands better than coordinates."""
     span = None if (top is None or bottom is None) else bottom - top
     if span is None:
         return "full-length framing, the whole person inside the frame"
@@ -315,7 +315,7 @@ def _height_words(top, bottom) -> str:
 
 
 def framing_clause(card) -> str:
-    """Карточка композиции -> строка промта. Собирается ОТДЕЛЬНО от вызова:"""
+    """Turn the composition card into a prompt line, assembled separately from the call."""
     if not isinstance(card, dict) or card.get("outcome") != PASS:
         return ""
     parts = [_height_words(card.get("shoulders"), card.get("ankles"))]
@@ -338,32 +338,33 @@ def framing_clause(card) -> str:
 
 
 def in_card(points, card, *, min_visibility: float = MIN_VISIBILITY) -> dict:
-    """Попадает ли поза на картинке в КАРТОЧКУ ДРАЙВИНГА, а не в глобальные"""
+    """Check the pose on the image against the driving card, not against the global bands."""
     if not isinstance(card, dict) or card.get("outcome") != PASS:
-        return {**tally(0, 0, 1), "note": "карточки композиции нет: сверять не с чем"}
+        return {**tally(0, 0, 1), "note": "no composition card: nothing to compare against"}
     box = person_box(points, min_visibility=min_visibility)
     if box["outcome"] != PASS:
         return {**tally(0, 0, 1), "note": str(box.get("note"))[:200]}
     bad, seen = [], 0
-    for key, label in (("centre", "центр"), ("width", "ширина")):
+    for key, label in (("centre", "centre"), ("width", "width")):
         want, tol, got = card.get(key), card.get(f"tol_{key}"), box.get(key)
         if want is None or got is None:
             continue
         seen += 1
         if abs(got - want) > tol:
-            bad.append(f"{label} {got} против {want}+-{tol}")
+            bad.append(f"{label} {got} against {want}+-{tol}")
     if not seen:
-        return {**tally(0, 0, 1), "note": "ни одну ось сравнить не удалось"}
+        return {**tally(0, 0, 1), "note": "not one axis could be compared"}
     return {
         **tally(seen, len(bad), 0),
         "box": box,
         "note": (
-            "; ".join(bad) + "; Kling масштабирует персонажа под "
-            "скелет драйвинга, и рефка мимо композиции уедет за край"
+            "; ".join(bad) + "; Kling scales the character to the "
+            "driving skeleton, and a reference off the composition "
+            "slides off the frame edge"
             if bad
-            else f"композиция совпала по {seen} осям: центр {box['centre']}, "
-            f"ширина {box['width']} (плечи {box['shoulders']} и "
-            f"щиколотки {box['ankles']} измерены, но НЕ СУДЯТСЯ)"
+            else f"composition matches on {seen} axes: centre {box['centre']}, "
+            f"width {box['width']} (shoulders {box['shoulders']} and "
+            f"ankles {box['ankles']} are measured but NOT JUDGED)"
         ),
     }
 
@@ -382,7 +383,7 @@ KEEP_SUBJECT_CLAUSE = (
 
 
 def extend_prompt(*, extra: str = "") -> str:
-    """Промт дорисовки полей плюс запрет надписей."""
+    """Build the margin-outpainting prompt plus the lettering ban."""
     parts = [EXTEND_CLAUSE, KEEP_SUBJECT_CLAUSE, no_brands_clause()]
     if extra:
         parts.append(extra.strip())
@@ -390,7 +391,7 @@ def extend_prompt(*, extra: str = "") -> str:
 
 
 def extend_to_plan(src, dst, *, extender=None, sizer=None) -> dict:
-    """Превратить поля плана в продолжение сцены."""
+    """Turn the plan margins into a continuation of the scene."""
     if extender is None:
 
         def extender(prompt, source, out_path):
@@ -407,9 +408,9 @@ def extend_to_plan(src, dst, *, extender=None, sizer=None) -> dict:
             "path": str(src),
             "extended": False,
             "note": (
-                f"дорисовщик не ответил: {type(exc).__name__}: {exc}. "
-                f"Идём дальше НА КАРТИНКЕ С ПОЛЯМИ — она хуже, но она "
-                f"есть"
+                f"the outpainter did not answer: {type(exc).__name__}: {exc}. "
+                f"Going on with the padded image: it is worse, but it "
+                f"exists"
             ),
         }
     if sizer is None:
@@ -426,7 +427,7 @@ def extend_to_plan(src, dst, *, extender=None, sizer=None) -> dict:
             **tally(0, 0, 1),
             "path": str(dst),
             "extended": True,
-            "note": f"размер дорисованного не снят: {type(exc).__name__}: {exc}",
+            "note": f"the outpainted size was not taken: {type(exc).__name__}: {exc}",
         }
     got = ratio_axis(w, h)
     return {
@@ -435,7 +436,7 @@ def extend_to_plan(src, dst, *, extender=None, sizer=None) -> dict:
         "extended": True,
         "width": w,
         "height": h,
-        "note": f"дорисовано до {w}x{h}; {got['note']}",
+        "note": f"outpainted to {w}x{h}; {got['note']}",
     }
 
 
@@ -452,14 +453,14 @@ KEEP_IDENTITY_CLAUSE = (
 
 
 def no_brands_clause() -> str:
-    """Запрет брендов ОДНИМ источником на проект: он живёт в стенде, где"""
+    """Return the brand ban from its single source per project: it lives in the stand."""
     from .fork_e2e import NO_BRANDS_CLAUSE  # noqa: PLC0415
 
     return NO_BRANDS_CLAUSE
 
 
 def full_body_prompt(*, extra: str = "") -> str:
-    """Промт приведения к полному росту. Собирается ОТДЕЛЬНО от вызова: состав"""
+    """Build the full-height prompt, assembled separately from the call."""
     parts = [FULL_BODY_CLAUSE, KEEP_IDENTITY_CLAUSE, no_brands_clause()]
     if extra:
         parts.append(extra.strip())
@@ -467,10 +468,10 @@ def full_body_prompt(*, extra: str = "") -> str:
 
 
 def render(report: dict) -> str:
-    """Печать для человека: вердикт, числа, потом каждая ось отдельной строкой."""
+    """Render for a human: the verdict, the numbers, then each axis on its own line."""
     head = (
-        f"ПЛАН: {report['outcome']}  (проверено {report['checked']}, "
-        f"нарушений {report['violations']}, не смогли "
+        f"PLAN: {report['outcome']}  (checked {report['checked']}, "
+        f"violations {report['violations']}, unmeasured "
         f"{report['unmeasured']})"
     )
     rows = [f"  {a['name']}: {a['outcome']} — {a['note']}" for a in report.get("axes", [])]

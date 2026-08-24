@@ -1,4 +1,4 @@
-"""Поток A: якорь — сырая фотография, медоид запрещён КОДОМ."""
+"""Flow A: the anchor is the raw photo, and the medoid is banned BY CODE."""
 
 from __future__ import annotations
 
@@ -24,7 +24,7 @@ def _weights_ready() -> bool:
 
 
 class _FakeInstrument:
-    """Прибор-заглушка: расстояние задаётся таблицей, весов не нужно."""
+    """Provide a stub instrument: distances come from a table, no weights needed."""
 
     def __init__(self, table: dict, sizes: dict | None = None):
         self.table = table
@@ -48,19 +48,19 @@ class _FakeInstrument:
 
 
 def _verdict_of(text: str) -> str:
-    """Голова вердиктной строки, до двоеточия."""
+    """Return the head of a verdict line, up to the colon."""
     return text.split(":", 1)[0].strip()
 
 
 def _with_instrument(inst):
-    """Подменить прибор на время вызова. Возвращает восстановитель."""
+    """Swap the instrument for the duration of a call. Return a restorer."""
     original = fi._instrument
     fi._instrument = lambda name: inst
     return lambda: setattr(fi, "_instrument", original)
 
 
 class TheMedoidIsBannedByCodeNotByAgreement(unittest.TestCase):
-    """Соглашение уже было и продержалось до первого удобного случая."""
+    """An agreement already existed and lasted until the first convenient moment."""
 
     def test_an_anchor_from_the_judged_list_is_refused(self):
         frames = ["/x/a.png", "/x/b.png"]
@@ -69,7 +69,7 @@ class TheMedoidIsBannedByCodeNotByAgreement(unittest.TestCase):
         self.assertIn("a.png", str(caught.exception))
 
     def test_an_anchor_listed_in_the_manifest_is_refused_even_if_not_judged(self):
-        """Ровно живой случай: медоид в наборе, судятся 21 порождённый."""
+        """Exactly the live case: the medoid is in the set, 21 generated frames are judged."""
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             (root / "img").mkdir()
@@ -94,7 +94,7 @@ class TheMedoidIsBannedByCodeNotByAgreement(unittest.TestCase):
                 json.dumps(
                     {
                         "samples": [{"path": "img/gen_0000.png"}],
-                        "identity_reference": "outside.png — МЕДОИД порождённых",
+                        "identity_reference": "outside.png — MEDOID of the generated",
                     },
                     ensure_ascii=False,
                 ),
@@ -108,7 +108,7 @@ class TheMedoidIsBannedByCodeNotByAgreement(unittest.TestCase):
                 )
 
     def test_an_honest_uploaded_photo_passes(self):
-        """Негативный контроль к запрету: сторож обязан кого-то пропускать."""
+        """Run the negative control for the ban: the guard must let someone through."""
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             (root / "manifest.json").write_text(
@@ -121,7 +121,7 @@ class TheMedoidIsBannedByCodeNotByAgreement(unittest.TestCase):
             )
 
     def test_the_ban_reaches_axis_and_is_not_only_a_helper(self):
-        """развилка, до которой не доходит вызов, деградирует молча."""
+        """A branch no call reaches degrades silently."""
         with self.assertRaises(fi.DerivedAnchor):
             fi.axis(["/x/a.png"], raw_photo="/x/a.png")
 
@@ -149,18 +149,22 @@ class TheVerdictRestsOnTheRawPhotoAndNothingElse(unittest.TestCase):
     def test_a_good_reference_does_not_rescue_a_failing_raw(self):
         got = fi.axis(self.frames, raw_photo="/x/raw.png", upscaled_reference="/x/ref.png")
         self.assertEqual(
-            got["d_ref"]["outcome"], fi.PASS, "фикстура задумана так, что до референса близко"
+            got["d_ref"]["outcome"],
+            fi.PASS,
+            "the fixture is designed so the reference is close",
         )
         self.assertEqual(
-            got["verdict"], fi.FAIL, "вердикт поехал за референсом — вернулся дефект медоида"
+            got["verdict"],
+            fi.FAIL,
+            "the verdict followed the reference — the medoid defect is back",
         )
 
     def test_the_note_marks_the_reference_as_not_the_verdict(self):
         got = fi.axis(self.frames, raw_photo="/x/raw.png", upscaled_reference="/x/ref.png")
-        self.assertIn("НЕ ВЕРДИКТ", got["note"])
+        self.assertIn("NOT THE VERDICT", got["note"])
 
     def test_a_close_raw_photo_passes(self):
-        """Негативный контроль: ось умеет не только заваливать."""
+        """Run the negative control: the axis can do more than fail things."""
         self.table.update({"f1.png": 0.05, "f2.png": 0.1, "f3.png": 0.2})
         got = fi.axis(self.frames, raw_photo="/x/raw.png")
         self.assertEqual(got["verdict"], fi.PASS)
@@ -172,7 +176,7 @@ class TheVerdictRestsOnTheRawPhotoAndNothingElse(unittest.TestCase):
 
 
 class DRefAsksWhatTheUpscaleDidAndNotWhatAGeneratorDid(unittest.TestCase):
-    """ХЭНДОФ §2 и §6 A: референс = сырая фотография + АПСКЕЙЛ ЛИЦА."""
+    """HANDOFF §2 and §6 A: the reference is the raw photo plus the FACE UPSCALE."""
 
     def tearDown(self):
         if hasattr(self, "restore"):
@@ -199,16 +203,16 @@ class DRefAsksWhatTheUpscaleDidAndNotWhatAGeneratorDid(unittest.TestCase):
             upscaled_reference="/x/ref.png",
         )
         self.assertEqual(_verdict_of(got["upscale"]), fi.PASS)
-        self.assertIn("апскейл личность не сдвинул", got["upscale"])
+        self.assertIn("the upscale did not move identity", got["upscale"])
 
     def test_a_reference_the_upscaler_repainted_is_a_finding_not_a_success(self):
-        """Кадры БЛИЖЕ к референсу — это тревога, а не улучшение."""
+        """Frames closer to the reference are an alarm, not an improvement."""
         got = self._axis(
             {"raw.png": 0.0, "ref.png": 0.30, "f1.png": 0.30, "f2.png": 0.32},
             upscaled_reference="/x/ref.png",
         )
         self.assertEqual(_verdict_of(got["upscale"]), fi.FAIL)
-        self.assertIn("ДОРИСОВАЛ", got["upscale"])
+        self.assertIn("repainted", got["upscale"])
 
     def test_an_upscaler_that_spoiled_the_face_is_caught_too(self):
         got = self._axis(
@@ -216,26 +220,26 @@ class DRefAsksWhatTheUpscaleDidAndNotWhatAGeneratorDid(unittest.TestCase):
             upscaled_reference="/x/ref.png",
         )
         self.assertEqual(_verdict_of(got["upscale"]), fi.FAIL)
-        self.assertIn("испортил", got["upscale"])
+        self.assertIn("spoiled", got["upscale"])
 
     def test_the_drift_bar_is_guarded_in_both_directions(self):
-        """подмена константы-решения строже и слабее."""
+        """Mutate the decision constant both stricter and weaker."""
         pair = ({"median": 0.30}, {"median": 0.22})
         self.assertEqual(_verdict_of(fi.upscale_drift_verdict(*pair, drift_max=0.01)), fi.FAIL)
         self.assertEqual(
             _verdict_of(fi.upscale_drift_verdict(*pair, drift_max=0.5)),
             fi.PASS,
-            "порог поднят выше расхождения, а вердикт не изменился",
+            "the threshold was raised above the divergence, yet the verdict did not change",
         )
 
     def test_a_missing_median_is_unmeasured_not_harmless(self):
         got = fi.upscale_drift_verdict({"median": 0.3}, {"median": None})
         self.assertEqual(_verdict_of(got), fi.UNMEASURED)
-        self.assertIn("НЕ «апскейл безвреден»", got)
+        self.assertIn('NOT "the upscale is harmless"', got)
 
     def test_a_run_without_a_reference_says_the_check_did_not_happen(self):
         got = self._axis({"raw.png": 0.0, "f1.png": 0.3, "f2.png": 0.32})
-        self.assertEqual(got["upscale"], "НЕ ПРОВЕРЯЛСЯ")
+        self.assertEqual(got["upscale"], "NOT CHECKED")
         self.assertIsNone(got["d_ref"])
 
     def test_the_note_says_the_reference_is_the_upscaled_photo(self):
@@ -243,11 +247,11 @@ class DRefAsksWhatTheUpscaleDidAndNotWhatAGeneratorDid(unittest.TestCase):
             {"raw.png": 0.0, "ref.png": 0.02, "f1.png": 0.30, "f2.png": 0.32},
             upscaled_reference="/x/ref.png",
         )
-        self.assertIn("АПСКЕЙЛА ЛИЦА", got["note"])
-        self.assertIn("ЧТО ДАЛ АПСКЕЙЛ", got["note"])
+        self.assertIn("THE FACE UPSCALE", got["note"])
+        self.assertIn("WHAT THE UPSCALE DID", got["note"])
 
     def test_the_upscale_verdict_never_becomes_the_identity_verdict(self):
-        """Апскейл идеален, личность провалена — вердикт обязан быть FAIL."""
+        """The upscale is perfect, identity has failed — the verdict must be FAIL."""
         got = self._axis(
             {"raw.png": 0.0, "ref.png": 0.0, "f1.png": 0.50, "f2.png": 0.52},
             upscaled_reference="/x/ref.png",
@@ -257,7 +261,7 @@ class DRefAsksWhatTheUpscaleDidAndNotWhatAGeneratorDid(unittest.TestCase):
 
 
 class ThereAreThreeOutcomesNotTwo(unittest.TestCase):
-    """«Не смогли проверить» не сворачивается ни в одну сторону."""
+    """The "could not measure" outcome collapses in neither direction."""
 
     def tearDown(self):
         if hasattr(self, "restore"):
@@ -268,7 +272,7 @@ class ThereAreThreeOutcomesNotTwo(unittest.TestCase):
         got = fi.axis(["/x/f1.png", "/x/f2.png"], raw_photo="/x/raw.png")
         self.assertEqual(got["verdict"], fi.UNMEASURED)
         self.assertNotEqual(got["verdict"], fi.FAIL)
-        self.assertIn("НЕ «другой человек»", got["d_raw"]["note"])
+        self.assertIn('NOT "a different person"', got["d_raw"]["note"])
 
     def test_a_missing_face_on_the_anchor_is_unmeasured(self):
         self.restore = _with_instrument(_FakeInstrument({"f1.png": 0.1}))
@@ -276,23 +280,25 @@ class ThereAreThreeOutcomesNotTwo(unittest.TestCase):
         self.assertEqual(got["verdict"], fi.UNMEASURED)
 
     def test_thin_coverage_is_unmeasured_even_when_the_judged_ones_pass(self):
-        """Ноль нарушений при одной отработавшей проверке — не успех."""
+        """Zero violations with only one check having run is not a success."""
         self.restore = _with_instrument(_FakeInstrument({"raw.png": 0.0, "f1.png": 0.05}))
         got = fi.axis(["/x/f1.png", "/x/f2.png", "/x/f3.png", "/x/f4.png"], raw_photo="/x/raw.png")
         self.assertEqual(got["d_raw"]["inside"], 1)
-        self.assertEqual(got["verdict"], fi.UNMEASURED, "покрытие 25% выдано за успех")
+        self.assertEqual(
+            got["verdict"], fi.UNMEASURED, "coverage of 25% was passed off as a success"
+        )
 
     def test_the_note_prints_checked_inside_and_unmeasured_as_numbers(self):
         self.restore = _with_instrument(
             _FakeInstrument({"raw.png": 0.0, "f1.png": 0.05, "f2.png": 0.9})
         )
         got = fi.axis(["/x/f1.png", "/x/f2.png"], raw_photo="/x/raw.png")
-        for piece in ("медиана", "в баре", "не смогли"):
+        for piece in ("median", "inside the bar", "unmeasured"):
             self.assertIn(piece, got["note"])
 
 
 class TheNegativeControlIsPartOfTheMeasurement(unittest.TestCase):
-    """без входа, где прибор обязан сказать «нет», число ничего не значит."""
+    """Without an input where the instrument must say "no", the number means nothing."""
 
     def tearDown(self):
         self.restore()
@@ -303,8 +309,8 @@ class TheNegativeControlIsPartOfTheMeasurement(unittest.TestCase):
 
     def test_a_run_without_a_control_says_so_and_does_not_claim_success(self):
         got = self._axis({"raw.png": 0.0, "f1.png": 0.05, "f2.png": 0.06})
-        self.assertEqual(got["control"], "НЕ СТАВИЛСЯ")
-        self.assertIn("НЕ СТАВИЛСЯ", got["note"])
+        self.assertEqual(got["control"], "NOT RUN")
+        self.assertIn("NOT RUN", got["note"])
 
     def test_a_control_the_instrument_mistakes_for_the_subject_voids_the_run(self):
         got = self._axis(
@@ -312,10 +318,10 @@ class TheNegativeControlIsPartOfTheMeasurement(unittest.TestCase):
             foreign="/x/alien.png",
         )
         self.assertEqual(_verdict_of(got["control"]), fi.FAIL)
-        self.assertIn("недействительны", got["control"])
+        self.assertIn("invalid", got["control"])
 
     def test_a_weak_control_is_unmeasured_not_a_pass(self):
-        """0.70 — «другой человек», но не полоса «заведомо чужой»."""
+        """A 0.70 is "a different person" but not the "definitely a stranger" band."""
         got = self._axis(
             {"raw.png": 0.0, "f1.png": 0.05, "f2.png": 0.06, "alien.png": 0.5},
             foreign="/x/alien.png",
@@ -331,7 +337,7 @@ class TheNegativeControlIsPartOfTheMeasurement(unittest.TestCase):
 
 
 class TheFourthNumberSeparatesTwoDifferentIllnesses(unittest.TestCase):
-    """`d_drv`: «похоже на драйвинг» и «похоже на АКТЁРА драйвинга» — разное."""
+    """`d_drv`: "looks like the driving" and "looks like the driving ACTOR" differ."""
 
     def tearDown(self):
         if hasattr(self, "restore"):
@@ -343,7 +349,7 @@ class TheFourthNumberSeparatesTwoDifferentIllnesses(unittest.TestCase):
 
     def test_a_run_without_the_actor_says_the_check_did_not_happen(self):
         got = self._axis({"raw.png": 0.0, "f1.png": 0.05, "f2.png": 0.06})
-        self.assertEqual(got["leak_to_actor"], "НЕ ПРОВЕРЯЛАСЬ")
+        self.assertEqual(got["leak_to_actor"], "NOT CHECKED")
         self.assertIsNone(got["d_drv"])
 
     def test_frames_closer_to_the_actor_than_to_the_client_is_a_leak(self):
@@ -352,10 +358,10 @@ class TheFourthNumberSeparatesTwoDifferentIllnesses(unittest.TestCase):
             driving_actor="/x/actor.png",
         )
         self.assertEqual(_verdict_of(got["leak_to_actor"]), fi.FAIL)
-        self.assertIn("утекло", got["leak_to_actor"])
+        self.assertIn("leaked", got["leak_to_actor"])
 
     def test_frames_closer_to_the_client_are_clean(self):
-        """Негативный контроль: ось умеет и не находить утечку."""
+        """Run the negative control: the axis can also find no leak."""
         got = self._axis(
             {"raw.png": 0.0, "actor.png": 0.9, "f1.png": 0.1, "f2.png": 0.12},
             driving_actor="/x/actor.png",
@@ -363,7 +369,7 @@ class TheFourthNumberSeparatesTwoDifferentIllnesses(unittest.TestCase):
         self.assertEqual(_verdict_of(got["leak_to_actor"]), fi.PASS)
 
     def test_it_compares_two_distances_rather_than_using_a_bar(self):
-        """Обе далеко от бара, но актёр ближе — обязано ловиться."""
+        """Both are far from the bar, but the actor is closer — this must be caught."""
         got = self._axis(
             {"raw.png": 0.0, "actor.png": 0.7, "f1.png": 0.65, "f2.png": 0.66},
             driving_actor="/x/actor.png",
@@ -379,11 +385,11 @@ class TheFourthNumberSeparatesTwoDifferentIllnesses(unittest.TestCase):
             {"raw.png": 0.0, "actor.png": 0.6, "f1.png": 0.55, "f2.png": 0.56},
             driving_actor="/x/actor.png",
         )
-        self.assertIn("УТЕЧКА К АКТЁРУ ДРАЙВИНГА", got["note"])
+        self.assertIn("LEAK TO THE DRIVING ACTOR", got["note"])
 
 
 class IdentityIsMeasuredAfterFaceRestoreAndReportedAsAPair(unittest.TestCase):
-    """ХЭНДОФ §6 A. Один бар на обе половины — иначе числа несравнимы."""
+    """HANDOFF §6 A. One bar for both halves — otherwise the numbers are incomparable."""
 
     def tearDown(self):
         if hasattr(self, "restore"):
@@ -411,7 +417,7 @@ class IdentityIsMeasuredAfterFaceRestoreAndReportedAsAPair(unittest.TestCase):
         self.assertEqual(got["before"]["min_face_px"], got["after"]["min_face_px"])
 
     def test_the_signature_offers_no_way_to_set_two_different_bars(self):
-        """Не «не рекомендуется», а НЕВОЗМОЖНО: параметра бара нет вовсе."""
+        """Not "not recommended" but impossible: there is no bar parameter at all."""
         import inspect
 
         names = list(inspect.signature(fi.before_after_restore).parameters)
@@ -422,7 +428,7 @@ class IdentityIsMeasuredAfterFaceRestoreAndReportedAsAPair(unittest.TestCase):
         )
 
     def test_both_halves_are_measured_with_literally_the_same_arguments(self):
-        """Мутация условий: разъехавшиеся половины обязаны краснеть."""
+        """Mutate the conditions: halves that drift apart must go red."""
         seen = []
         original = fi.distances
 
@@ -449,7 +455,7 @@ class IdentityIsMeasuredAfterFaceRestoreAndReportedAsAPair(unittest.TestCase):
         self.assertEqual(seen[0], seen[1])
 
     def test_halves_measured_by_different_conditions_are_refused(self):
-        """Сверка на выходе: несравнимая пара роняет прогон, а не «улучшает»."""
+        """Check at the exit: an incomparable pair fails the run instead of "improving" it."""
         self.restore = _with_instrument(
             _FakeInstrument({"raw.png": 0.0, "b1.png": 0.4, "a1.png": 0.2})
         )
@@ -469,7 +475,7 @@ class IdentityIsMeasuredAfterFaceRestoreAndReportedAsAPair(unittest.TestCase):
                 fi.before_after_restore(["/x/b1.png"], ["/x/a1.png"], raw_photo="/x/raw.png")
         finally:
             fi.distances = original
-        self.assertIn("несравнимы", str(caught.exception))
+        self.assertIn("incomparable", str(caught.exception))
 
     def test_the_pair_is_reported_not_just_the_better_number(self):
         got = self._pair(
@@ -477,12 +483,12 @@ class IdentityIsMeasuredAfterFaceRestoreAndReportedAsAPair(unittest.TestCase):
         )
         self.assertIsNotNone(got["before"]["median"])
         self.assertIsNotNone(got["after"]["median"])
-        self.assertIn("ДО доводки", got["note"])
-        self.assertIn("ПОСЛЕ", got["note"])
-        self.assertLess(got["delta"], 0, "фикстура задумана как улучшение")
+        self.assertIn("BEFORE the restore", got["note"])
+        self.assertIn("AFTER", got["note"])
+        self.assertLess(got["delta"], 0, "the fixture is designed as an improvement")
 
     def test_frames_that_were_unjudgeable_and_became_judgeable_are_not_a_loss(self):
-        """Главное различие модуля: первое измерение — не ухудшение."""
+        """The module's key distinction: a first measurement is not a regression."""
         got = self._pair(
             {"raw.png": 0.0, "b1.png": 0.4, "b2.png": 0.42, "a1.png": 0.5, "a2.png": 0.52},
             sizes={"raw.png": 200, "b1.png": 60, "b2.png": 60, "a1.png": 200, "a2.png": 200},
@@ -491,21 +497,21 @@ class IdentityIsMeasuredAfterFaceRestoreAndReportedAsAPair(unittest.TestCase):
         self.assertEqual(got["after"]["judged"], 2)
         self.assertEqual(got["judged_gain"], 2)
         self.assertIsNone(got["delta"])
-        self.assertIn("НЕ ухудшение, а первое измерение", got["note"])
+        self.assertIn("NOT a regression but a first measurement", got["note"])
 
     def test_the_judged_gain_is_printed_even_when_it_is_zero(self):
         got = self._pair(
             {"raw.png": 0.0, "b1.png": 0.4, "b2.png": 0.42, "a1.png": 0.2, "a2.png": 0.22}
         )
         self.assertEqual(got["judged_gain"], 0)
-        self.assertIn("не прибавилось", got["note"])
+        self.assertIn("did not increase", got["note"])
 
     def test_nothing_judgeable_after_restore_is_unmeasured(self):
         got = self._pair({"raw.png": 0.0, "b1.png": 0.4, "b2.png": 0.42}, sizes={"raw.png": 200})
         self.assertEqual(got["outcome"], fi.UNMEASURED)
 
     def test_a_worse_median_after_restore_shows_as_positive_delta(self):
-        """Негативный контроль: пара умеет показать и ухудшение."""
+        """Run the negative control: the pair can also show a regression."""
         got = self._pair(
             {"raw.png": 0.0, "b1.png": 0.2, "b2.png": 0.22, "a1.png": 0.5, "a2.png": 0.52}
         )
@@ -514,7 +520,7 @@ class IdentityIsMeasuredAfterFaceRestoreAndReportedAsAPair(unittest.TestCase):
 
 
 class TheFaceRestorerItselfNeedsANegativeControl(unittest.TestCase):
-    """применённое к ДОВОДЧИКУ: генератор стоит ПЕРЕД прибором."""
+    """Apply it to the RESTORER: the generator stands before the instrument."""
 
     def tearDown(self):
         if hasattr(self, "restore"):
@@ -529,21 +535,21 @@ class TheFaceRestorerItselfNeedsANegativeControl(unittest.TestCase):
     def test_a_run_that_never_happened_is_unmeasured_and_says_so(self):
         got = fi.restore_negative_control(raw_photo="/x/raw.png")
         self.assertEqual(got["outcome"], fi.UNMEASURED)
-        self.assertIn("НЕПРОВЕРЕНО", got["note"])
-        self.assertIn("НЕ «доводчик честен»", got["note"])
+        self.assertIn("UNVERIFIED", got["note"])
+        self.assertIn('NOT "the restorer is honest"', got["note"])
 
     def test_a_stranger_pulled_inside_the_bar_kills_the_measurement(self):
-        """Главный исход: доводчик печатает референс — ось после него мертва."""
+        """The main outcome: the restorer prints the reference — the axis after it is dead."""
         got = self._control({"raw.png": 0.0, "fx1.png": 0.20, "fx2.png": 0.22})
         self.assertEqual(got["outcome"], fi.FAIL)
-        self.assertIn("ПЕЧАТАЕТ РЕФЕРЕНС", got["note"])
-        self.assertIn("НЕДЕЙСТВИТЕЛЬНЫ", got["note"])
+        self.assertIn("PRINTS THE REFERENCE", got["note"])
+        self.assertIn("INVALID", got["note"])
 
     def test_a_stranger_that_stayed_a_stranger_passes(self):
-        """Негативный контроль к контролю: он обязан уметь и пропускать."""
+        """Run the negative control for the control: it must also be able to pass."""
         got = self._control({"raw.png": 0.0, "fx1.png": 0.68, "fx2.png": 0.70})
         self.assertEqual(got["outcome"], fi.PASS)
-        self.assertIn("ПОДТЯЖКА НЕ МЕРЕНА", got["note"])
+        self.assertIn("THE PULL WAS NOT MEASURED", got["note"])
 
     def test_an_early_stage_pull_is_caught_before_it_reaches_the_bar(self):
         got = self._control(
@@ -552,7 +558,7 @@ class TheFaceRestorerItselfNeedsANegativeControl(unittest.TestCase):
         )
         self.assertEqual(got["outcome"], fi.FAIL)
         self.assertEqual(got["pull"], 0.18)
-        self.assertIn("ПОДТЯНУЛ", got["note"])
+        self.assertIn("PULLED", got["note"])
 
     def test_a_pull_within_instrument_noise_passes(self):
         got = self._control(
@@ -563,7 +569,7 @@ class TheFaceRestorerItselfNeedsANegativeControl(unittest.TestCase):
         self.assertEqual(got["pull"], 0.01)
 
     def test_the_pull_bar_is_guarded_in_both_directions(self):
-        """подмена константы-решения строже и слабее."""
+        """Mutate the decision constant both stricter and weaker."""
         table = {"raw.png": 0.0, "fb1.png": 0.68, "fb2.png": 0.70, "fx1.png": 0.60, "fx2.png": 0.62}
         before = ["/x/fb1.png", "/x/fb2.png"]
         self.assertEqual(
@@ -573,13 +579,13 @@ class TheFaceRestorerItselfNeedsANegativeControl(unittest.TestCase):
         self.assertEqual(
             self._control(table, foreign_frames_before=before, pull_max=0.5)["outcome"],
             fi.PASS,
-            "порог поднят выше подтяжки, а вердикт не изменился",
+            "the threshold was raised above the pull, yet the verdict did not change",
         )
 
     def test_no_judgeable_stranger_frames_is_unmeasured_not_a_pass(self):
         got = self._control({"raw.png": 0.0})
         self.assertEqual(got["outcome"], fi.UNMEASURED)
-        self.assertIn("НЕ «доводчик честен»", got["note"])
+        self.assertIn('NOT "the restorer is honest"', got["note"])
 
     def test_an_unjudgeable_before_half_is_unmeasured_not_a_pass(self):
         got = self._control(
@@ -590,16 +596,16 @@ class TheFaceRestorerItselfNeedsANegativeControl(unittest.TestCase):
         self.assertIsNone(got["pull"])
 
     def test_the_stranger_fixture_is_one_place_for_the_whole_project(self):
-        """и ось, и контроль доводки берут чужое лицо из одного места."""
+        """Both the axis and the restore control take the foreign face from one place."""
         self.assertTrue(
             fi.FOREIGN_FACE_FIXTURE.exists(),
-            f"нет {fi.FOREIGN_FACE_FIXTURE}: негативный контроль нечем ставить",
+            f"{fi.FOREIGN_FACE_FIXTURE} is missing: nothing to run the negative control with",
         )
         self.assertEqual(fi.FOREIGN_FACE_FIXTURE.name, "foreign_face.png")
 
 
 class TheAcceptanceSaysHowManyRowsItActuallyReproduced(unittest.TestCase):
-    """«1 из 3» числом, а не агрегатным флагом и не прозой."""
+    """Report "1 of 3" as a number, not an aggregate flag and not prose."""
 
     def test_exactly_one_row_of_three_is_reproduced(self):
         got = fi.acceptance_report()
@@ -609,63 +615,63 @@ class TheAcceptanceSaysHowManyRowsItActuallyReproduced(unittest.TestCase):
         got = fi.acceptance_report()
         self.assertEqual(got["outcome"], fi.UNMEASURED)
         self.assertNotEqual(got["outcome"], fi.PASS)
-        self.assertIn("НЕ ЗАКРЫТА", got["note"])
+        self.assertIn("NOT CLOSED", got["note"])
 
     def test_the_two_gaps_are_named_and_not_merged_into_one_excuse(self):
         got = fi.acceptance_report()
-        self.assertEqual(
-            sorted(got["unmeasured"]), ["негативный контроль", "против сырой фотографии"]
-        )
+        self.assertEqual(sorted(got["unmeasured"]), ["against the raw photo", "negative control"])
         self.assertEqual(got["failed"], [])
 
     def test_each_gap_carries_its_number_and_its_reason(self):
         rows = fi.ACCEPTANCE_ROWS
         self.assertIsNone(
-            rows["против сырой фотографии"]["reproduced"],
-            "строка объявлена воспроизведённой — сырой фотографии в дереве нет, мерить не от чего",
+            rows["against the raw photo"]["reproduced"],
+            "the row is declared reproduced — the raw photo is not in the tree, "
+            "nothing to measure against",
         )
-        self.assertEqual(rows["против сырой фотографии"]["target"]["median"], 0.5067)
-        self.assertEqual(rows["негативный контроль"]["reproduced"]["median"], 0.6809)
-        self.assertEqual(rows["негативный контроль"]["target"]["band"], (0.96, 1.05))
+        self.assertEqual(rows["against the raw photo"]["target"]["median"], 0.5067)
+        self.assertEqual(rows["negative control"]["reproduced"]["median"], 0.6809)
+        self.assertEqual(rows["negative control"]["target"]["band"], (0.96, 1.05))
         for name, row in rows.items():
             self.assertIn(row["outcome"], (fi.PASS, fi.FAIL, fi.UNMEASURED), name)
             self.assertGreater(len(row["why"]), 40, name)
 
     def test_the_reproduced_row_is_the_instrument_not_the_product(self):
-        """Строка медоида воспроизводится, но про продукт не говорит ничего."""
-        row = fi.ACCEPTANCE_ROWS["против медоида"]
+        """The medoid row reproduces, but it says nothing about the product."""
+        row = fi.ACCEPTANCE_ROWS["against the medoid"]
         self.assertEqual(row["outcome"], fi.PASS)
-        self.assertIn("порождённое против порождённого", row["why"])
+        self.assertIn("generated against generated", row["why"])
 
     def test_the_report_would_redden_if_someone_declared_it_done(self):
-        """подмена в другую сторону — «всё воспроизведено» обязано ловиться."""
-        row = fi.ACCEPTANCE_ROWS["против сырой фотографии"]
+        """Mutate the other way: "everything reproduced" must be caught."""
+        row = fi.ACCEPTANCE_ROWS["against the raw photo"]
         original = row["outcome"]
         row["outcome"] = fi.PASS
         try:
             self.assertEqual(
                 fi.acceptance_report()["outcome"],
                 fi.UNMEASURED,
-                "две строки объявлены закрытыми, а отчёт всё ещё не PASS — сторож не сторожит",
+                "two rows are declared closed, and the report is still not PASS "
+                "— the guard is not guarding",
             )
             row["reproduced"] = row["target"]
-            fi.ACCEPTANCE_ROWS["негативный контроль"]["outcome"] = fi.PASS
+            fi.ACCEPTANCE_ROWS["negative control"]["outcome"] = fi.PASS
             self.assertEqual(fi.acceptance_report()["outcome"], fi.PASS)
             self.assertEqual(fi.acceptance_report()["reproduced"], 3)
-            self.assertNotIn("НЕ ЗАКРЫТА", fi.acceptance_report()["note"])
+            self.assertNotIn("NOT CLOSED", fi.acceptance_report()["note"])
         finally:
             row["outcome"] = original
             row["reproduced"] = None
-            fi.ACCEPTANCE_ROWS["негативный контроль"]["outcome"] = fi.UNMEASURED
+            fi.ACCEPTANCE_ROWS["negative control"]["outcome"] = fi.UNMEASURED
 
 
 class TheLoraIsAcceptedByWhetherItSpoilsDRaw(unittest.TestCase):
-    """Приёмка гипотезы LoRA темплейта одним прямым вопросом."""
+    """Accept the template-LoRA hypothesis with one direct question."""
 
     def test_a_worse_median_with_lora_fails(self):
         got = fi.lora_regression({"median": 0.30}, {"median": 0.40})
         self.assertEqual(got["outcome"], fi.FAIL)
-        self.assertIn("тянет лицо к среднему по категории", got["note"])
+        self.assertIn("pulls the face toward the category average", got["note"])
 
     def test_a_noise_sized_difference_passes(self):
         got = fi.lora_regression({"median": 0.30}, {"median": 0.31})
@@ -677,26 +683,26 @@ class TheLoraIsAcceptedByWhetherItSpoilsDRaw(unittest.TestCase):
         self.assertEqual(got["delta"], -0.1)
 
     def test_the_discriminability_bar_is_guarded_in_both_directions(self):
-        """подмена в обе стороны."""
+        """Mutate in both directions."""
         pair = ({"median": 0.30}, {"median": 0.35})
         self.assertEqual(fi.lora_regression(*pair, worse_by=0.01)["outcome"], fi.FAIL)
         self.assertEqual(
             fi.lora_regression(*pair, worse_by=0.5)["outcome"],
             fi.PASS,
-            "порог поднят выше разницы, а вердикт не изменился",
+            "the threshold was raised above the difference, yet the verdict did not change",
         )
 
     def test_a_missing_run_is_unmeasured_not_harmless(self):
         got = fi.lora_regression({"median": 0.3}, {"median": None})
         self.assertEqual(got["outcome"], fi.UNMEASURED)
-        self.assertIn("НЕ «LoRA безвредна»", got["note"])
+        self.assertIn('NOT "the LoRA is harmless"', got["note"])
 
 
 class TheInstrumentIsAParameterAndItsLicenceIsSpoken(unittest.TestCase):
     def test_an_unknown_instrument_is_refused_rather_than_stubbed(self):
         with self.assertRaises(ValueError) as caught:
             fi._instrument("auraface")
-        self.assertIn("обнуляет", str(caught.exception))
+        self.assertIn("voids", str(caught.exception))
 
     def test_the_non_commercial_licence_reaches_the_report_without_blocking(self):
         restore = _with_instrument(_FakeInstrument({"raw.png": 0.0, "f1.png": 0.05}))
@@ -705,17 +711,17 @@ class TheInstrumentIsAParameterAndItsLicenceIsSpoken(unittest.TestCase):
         finally:
             restore()
         self.assertIn("non-commercial", got["note"].lower())
-        self.assertIn("пересчёт всех порогов", got["note"].lower())
+        self.assertIn("recalibration of all thresholds", got["note"].lower())
         self.assertIn(
-            "работу не блокирует",
+            "does not block work",
             got["note"],
-            "лицензия подана как блокер — ХЭНДОФ §10 говорит, что на "
-            "этапе разработки она не блокирует, это вопрос отгрузки",
+            "the licence is presented as a blocker — HANDOFF §10 says it does "
+            "not block during development; it is a shipping question",
         )
 
 
 class TheSizeFilterChangesTheNumberAndSaysSo(unittest.TestCase):
-    """Оба числа верны, и это РАЗНЫЕ числа. Режим обязан стоять рядом."""
+    """Both numbers are correct, and they are different numbers. The mode must stand next to them."""
 
     def tearDown(self):
         self.restore()
@@ -726,7 +732,7 @@ class TheSizeFilterChangesTheNumberAndSaysSo(unittest.TestCase):
         off = fi.distances(["/x/f1.png", "/x/f2.png"], "/x/raw.png")
         on = fi.distances(["/x/f1.png", "/x/f2.png"], "/x/raw.png", min_face_px=100)
         self.assertEqual((off["judged"], on["judged"]), (2, 1))
-        self.assertIn("выключен", off["note"])
+        self.assertIn("off", off["note"])
         self.assertIn("100px", on["note"])
 
     def test_a_dropped_frame_is_counted_as_unmeasured_not_as_drift(self):
@@ -739,10 +745,10 @@ class TheSizeFilterChangesTheNumberAndSaysSo(unittest.TestCase):
 
 @unittest.skipUnless(
     MANIFEST.exists() and _weights_ready(),
-    "нет весов buffalo_l или demo/lora_dataset — числа воспроизвести нечем",
+    "no buffalo_l weights or demo/lora_dataset — nothing to reproduce the numbers with",
 )
 class TheMeasuredRowsAreReproduced(unittest.TestCase):
-    """Приёмка потока. Воспроизводит то, что ВОСПРОИЗВОДИМО, и только это."""
+    """Accept the flow: reproduce what is reproducible and only that."""
 
     @classmethod
     def setUpClass(cls):
@@ -759,106 +765,110 @@ class TheMeasuredRowsAreReproduced(unittest.TestCase):
         self.assertEqual((got["inside"], got["judged"]), (19, 21))
 
     def test_the_recorded_medoid_row_equals_what_the_run_gives(self):
-        """Запись в `ACCEPTANCE_ROWS` сверяется с прогоном, а не с памятью."""
+        """Check the record in `ACCEPTANCE_ROWS` against the run, not against memory."""
         got = fi.distances(self.generated, self.medoid)
-        row = fi.ACCEPTANCE_ROWS["против медоида"]["reproduced"]
+        row = fi.ACCEPTANCE_ROWS["against the medoid"]["reproduced"]
         self.assertEqual(
             (row["median"], row["inside"], row["judged"]),
             (got["median"], got["inside"], got["judged"]),
         )
 
     def test_the_medoid_anchor_is_refused_by_the_ban_when_asked_for_a_verdict(self):
-        """То же измерение через `axis` обязано УПАСТЬ, а не выдать успех."""
+        """The same measurement through `axis` must FAIL rather than report success."""
         with self.assertRaises(fi.DerivedAnchor):
             fi.axis(self.generated, raw_photo=self.medoid, manifest=MANIFEST)
 
     def test_the_raw_photo_is_genuinely_absent_and_this_test_will_notice(self):
         text = MANIFEST.read_text(encoding="utf-8")
         self.assertIn(
-            "МЕДОИД порождённых",
+            "MEDOID of the generated",
             text,
-            "манифест перестал называть якорь медоидом — проверить, "
-            "не появилась ли настоящая сырая фотография, и если да "
-            "— дописать строку d_raw в приёмку потока A",
+            "the manifest stopped calling the anchor a medoid — check whether "
+            "a real raw photo appeared, and if so add a d_raw row to the "
+            "flow A acceptance",
         )
 
     def test_no_sample_claims_to_be_the_uploaded_photo(self):
-        """Второй сторож той же дыры, с другой стороны — по составу набора."""
+        """A second guard for the same hole, from the other side — by set composition."""
         data = json.loads(MANIFEST.read_text(encoding="utf-8"))
         self.assertEqual(
             sorted(data["by_origin"]),
             ["augmented", "generated", "real"],
-            "в наборе появилось новое происхождение — если это "
-            "загруженная фотография, приёмка d_raw наконец "
-            "мерима: снять UNMEASURED с ACCEPTANCE_ROWS",
+            "a new origin appeared in the set — if it is the uploaded "
+            "photo, the d_raw acceptance is finally measurable: "
+            "lift UNMEASURED from ACCEPTANCE_ROWS",
         )
         self.assertEqual(data["by_origin"]["real"], 1)
         self.assertEqual(
             [s["path"] for s in data["samples"] if s["origin"] == "real"],
             ["img/real_0000.png"],
-            "единственный «real» кадр — тот самый медоид, и якорем он запрещён",
+            'the only "real" frame is that very medoid, and it is banned as the anchor',
         )
 
     def test_the_unmeasurable_row_is_recorded_as_unmeasured_not_as_success(self):
         got = fi.acceptance_report()
-        row = got["rows"]["против сырой фотографии"]
+        row = got["rows"]["against the raw photo"]
         self.assertEqual(row["outcome"], fi.UNMEASURED)
         self.assertIsNone(row["reproduced"])
-        self.assertIn("против сырой фотографии", got["unmeasured"])
+        self.assertIn("against the raw photo", got["unmeasured"])
 
     ALIEN = fi.FOREIGN_FACE_FIXTURE
 
     def test_the_control_fixture_is_present_and_absence_is_a_failure(self):
-        """пропуск — не «прошло». Кадр лежит в репозитории, и если его нет,"""
+        """A skip is not a pass. The frame lives in the repository, and if it is missing,"""
         self.assertTrue(
             self.ALIEN.exists(),
-            f"нет {self.ALIEN}: негативный контроль не поставлен, и это НЕ «контроль прошёл»",
+            f"{self.ALIEN} is missing: the negative control was not run, and that "
+            f'is NOT "the control passed"',
         )
 
     def test_the_negative_control_says_different_person(self):
         got = fi.distances(self.generated, self.ALIEN)
         self.assertEqual(
-            got["inside"], 0, "чужого человека приняли за своего — числа прогона недействительны"
+            got["inside"],
+            0,
+            "a stranger was taken for the subject — the run's numbers are invalid",
         )
         self.assertGreater(got["median"], fi.HARD_DRIFT_MAX)
 
     def test_the_control_does_not_reach_the_band_it_was_recorded_at(self):
-        """отрицательный результат записывается ЧИСЛОМ, а не сглаживается."""
+        """Record a negative result as a NUMBER rather than smoothing it over."""
         got = fi.distances(self.generated, self.ALIEN)
         self.assertEqual(
             got["median"],
             0.6809,
-            "число контроля изменилось — записанное в "
-            "ACCEPTANCE_ROWS больше не то, что даёт прогон",
+            "the control number changed — what is recorded in "
+            "ACCEPTANCE_ROWS is no longer what the run gives",
         )
         self.assertLess(
             got["median"],
             0.96,
-            "контроль дотянул до записанной полосы — обновить "
-            "журнал замеров research-репозитория и снять эту оговорку",
+            "the control reached the recorded band — update the research "
+            "repository's measurement log and drop this caveat",
         )
 
     def test_the_recorded_control_row_equals_what_the_run_gives(self):
         got = fi.distances(self.generated, self.ALIEN)
-        row = fi.ACCEPTANCE_ROWS["негативный контроль"]["reproduced"]
+        row = fi.ACCEPTANCE_ROWS["negative control"]["reproduced"]
         self.assertEqual(
             (row["median"], row["min"], row["max"], row["inside"], row["judged"]),
             (got["median"], got["min"], got["max"], got["inside"], got["judged"]),
         )
-        lo, hi = fi.ACCEPTANCE_ROWS["негативный контроль"]["target"]["band"]
+        lo, hi = fi.ACCEPTANCE_ROWS["negative control"]["target"]["band"]
         self.assertFalse(
             lo <= got["median"] <= hi,
-            "контроль внутри целевой полосы — строку приёмки можно закрывать, снять UNMEASURED",
+            "the control is inside the target band — the acceptance row can be "
+            "closed; lift UNMEASURED",
         )
 
     def test_two_different_statements_about_the_control_stay_separate(self):
-        """«Контроль сработал» и «строка приёмки закрыта» — РАЗНОЕ."""
+        """ "The control fired" and "the acceptance row is closed" are DIFFERENT."""
         d = fi.distances(self.generated, self.ALIEN)
         self.assertEqual(_verdict_of(fi.control_verdict(d)), fi.PASS)
         self.assertEqual(
-            fi.ACCEPTANCE_ROWS["негативный контроль"]["outcome"],
+            fi.ACCEPTANCE_ROWS["negative control"]["outcome"],
             fi.UNMEASURED,
-            "годный контроль выдан за воспроизведённую полосу 0.96–1.05",
+            "a passing control was passed off as the reproduced 0.96–1.05 band",
         )
 
 

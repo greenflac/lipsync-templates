@@ -1,4 +1,4 @@
-"""Ось личности, у которой якорь — сырая фотография клиента, и только она."""
+"""Measure the identity axis whose anchor is the client's raw photo and nothing else."""
 
 from __future__ import annotations
 
@@ -12,12 +12,12 @@ DEFAULT_INSTRUMENT = "identity_arcface"
 INSTRUMENT_LICENCE = {
     "identity_arcface": (
         "buffalo_l / InsightFace — non-commercial. "
-        "В учёт к отгрузке, работу не блокирует. "
-        "Цена замены: пересчёт всех порогов."
+        "Noted for shipping; does not block work. "
+        "Replacement cost: recalibration of all thresholds."
     ),
 }
 
-PASS, FAIL, UNMEASURED = "годно", "не годно", "не смогли проверить"
+PASS, FAIL, UNMEASURED = "pass", "fail", "could not measure"
 
 from .identity_arcface import MIN_COVERAGE  # noqa: E402
 
@@ -28,52 +28,53 @@ UPSCALE_DRIFT_MAX = 0.05
 RESTORE_PULL_MAX = 0.05
 
 ACCEPTANCE_ROWS = {
-    "против сырой фотографии": {
+    "against the raw photo": {
         "target": {"median": 0.5067, "inside": 0, "judged": 21},
         "reproduced": None,
         "outcome": UNMEASURED,
         "why": (
-            "сырой фотографии НЕТ в дереве. Манифест "
-            "манифест калибровочного набора прямо говорит, что якорь "
-            "`img/real_0000.png` — МЕДОИД порождённых, а загруженная "
-            "фотография исключена составителем шаблонов намеренно. Мерить не от "
-            "чего; 0.5067 снято тогда, когда фотография была. ЭТО "
-            "ГЛАВНАЯ строка приёмки, и она НЕ ЗАКРЫТА."
+            "the raw photo is NOT in the tree. The manifest of the "
+            "calibration set says outright that the anchor "
+            "`img/real_0000.png` is the MEDOID of the generated frames, and "
+            "the uploaded photo was excluded by the template author "
+            "deliberately. There is nothing to measure against; 0.5067 was "
+            "recorded back when the photo existed. This is the MAIN "
+            "acceptance row, and it is NOT CLOSED."
         ),
     },
-    "против медоида": {
+    "against the medoid": {
         "target": {"median": 0.2579, "inside": 19, "judged": 21},
         "reproduced": {"median": 0.2579, "inside": 19, "judged": 21},
         "outcome": PASS,
         "why": (
-            "воспроизведено точно, до четвёртого знака, командой "
+            "reproduced exactly, to the fourth decimal, by the command "
             "`python3 -m unittest lipsync.tests.test_fork_identity`. "
-            "Доказывает, что ПРИБОР тот же. Про продукт не говорит "
-            "ничего: это порождённое против порождённого."
+            "It proves the INSTRUMENT is the same. It says nothing about "
+            "the product: this is generated against generated."
         ),
     },
-    "негативный контроль": {
+    "negative control": {
         "target": {"band": (0.96, 1.05), "inside": 0},
         "reproduced": {"median": 0.6809, "min": 0.5478, "max": 0.7454, "inside": 0, "judged": 21},
         "outcome": UNMEASURED,
         "why": (
-            "направление верное — 0 из 21 в баре, медиана 0.6809 выше "
-            "HARD_DRIFT_MAX 0.6, прибор говорит «другой человек». Но "
-            "полоса 0.96–1.05 снималась на фотографии, которой в дереве "
-            "нет, и 0.6809 — самое далёкое, что ПРИБОР нашёл среди "
-            "имеющегося (66 кадров просмотрено). Выдавать 0.68 за "
-            "0.96–1.05 нельзя."
+            "the direction is right — 0 of 21 inside the bar, the median "
+            "0.6809 is above HARD_DRIFT_MAX 0.6, the instrument says "
+            '"a different person". But the 0.96–1.05 band was recorded '
+            "against a photo that is not in the tree, and 0.6809 is the "
+            "farthest the INSTRUMENT found among what exists (66 frames "
+            "examined). Passing 0.68 off as 0.96–1.05 is not allowed."
         ),
     },
 }
 
 
 class DerivedAnchor(ValueError):
-    """Якорем подан кадр из судимого набора. Это и есть дефект медоида."""
+    """Signal that the anchor is a frame from the judged set — the medoid defect itself."""
 
 
 def _samples(manifest_path: str | Path) -> list:
-    """Пути всех кадров набора, относительно каталога манифеста."""
+    """Return the paths of every frame in the set, relative to the manifest directory."""
     p = Path(manifest_path)
     data = json.loads(p.read_text(encoding="utf-8"))
     root = p.parent
@@ -83,35 +84,35 @@ def _samples(manifest_path: str | Path) -> list:
 def refuse_derived_anchor(
     anchor: str | Path, frames, *, manifest: str | Path | None = None
 ) -> None:
-    """Уронить прогон, если якорь взят из того, что судят. Медоид — этот случай."""
+    """Fail the run if the anchor comes from what is being judged. The medoid is that case."""
     a = Path(anchor).resolve()
     if a in {Path(f).resolve() for f in frames}:
         raise DerivedAnchor(
-            f"якорем подан кадр из судимого набора: {a.name}. Это сравнение "
-            f"порождённого с порождённым — ровно тот дефект, из-за которого "
-            f"0.2579 однажды прочли как успех при 0.5067 на настоящем якоре."
+            f"the anchor is a frame from the judged set: {a.name}. This compares "
+            f"generated with generated — exactly the defect that once made "
+            f"0.2579 read as a success while the true anchor gave 0.5067."
         )
     if manifest is None:
         return
     if a in _samples(manifest):
         raise DerivedAnchor(
-            f"якорь {a.name} перечислен в наборе {Path(manifest).name} среди "
-            f"samples: по происхождению он производный, даже если в судимый "
-            f"список не попал. Якорем может быть только ЗАГРУЖЕННАЯ "
-            f"фотография."
+            f"the anchor {a.name} is listed in the set {Path(manifest).name} among "
+            f"samples: by provenance it is derived, even if it did not make "
+            f"the judged list. Only the UPLOADED photo can be the "
+            f"anchor."
         )
     text = Path(manifest).read_text(encoding="utf-8")
-    if "МЕДОИД" in text and a.name in text:
-        raise DerivedAnchor(f"манифест {Path(manifest).name} сам называет {a.name} медоидом.")
+    if "MEDOID" in text and a.name in text:
+        raise DerivedAnchor(f"the manifest {Path(manifest).name} itself calls {a.name} a medoid.")
 
 
 def _instrument(name: str):
-    """Прибор по имени. Только известные — опечатка не должна давать заглушку."""
+    """Return the instrument by name. Known ones only — a typo must not yield a stub."""
     if name != DEFAULT_INSTRUMENT:
         raise ValueError(
-            f"неизвестный прибор личности: {name!r}. Известен "
-            f"{DEFAULT_INSTRUMENT!r}. Смена прибора обнуляет все снятые числа "
-            f"и делается решением, а не опечаткой."
+            f"unknown identity instrument: {name!r}. Known: "
+            f"{DEFAULT_INSTRUMENT!r}. Changing the instrument voids every recorded "
+            f"number and is done as a decision, not as a typo."
         )
     from . import identity_arcface
 
@@ -125,7 +126,7 @@ def distances(
     instrument: str = DEFAULT_INSTRUMENT,
     min_face_px: int | None = None,
 ) -> dict:
-    """Расстояния от каждого кадра до якоря. Три исхода на кадр, не два."""
+    """Return the distance from every frame to the anchor. Three outcomes per frame, not two."""
     mod = _instrument(instrument)
     a = mod.face_detail(anchor)
     empty = {
@@ -145,7 +146,10 @@ def distances(
         "min_face_px": min_face_px,
     }
     if a is None:
-        return {**empty, "note": f"на якоре {Path(anchor).name} лица нет: мерить не от чего"}
+        return {
+            **empty,
+            "note": f"no face on the anchor {Path(anchor).name}: nothing to measure from",
+        }
 
     per_frame, face_px, no_face, too_small = {}, {}, [], []
     total = 0
@@ -170,9 +174,9 @@ def distances(
             "no_face": no_face,
             "too_small": too_small,
             "note": (
-                f"судить нечего: из {total} кадров {len(no_face)} без "
-                f"лица, {len(too_small)} с лицом мельче "
-                f"{min_face_px}px. Это НЕ «другой человек»."
+                f"nothing to judge: of {total} frames, {len(no_face)} have no "
+                f"face and {len(too_small)} have a face smaller than "
+                f'{min_face_px}px. This is NOT "a different person".'
             ),
         }
 
@@ -197,11 +201,11 @@ def distances(
         if coverage < MIN_COVERAGE
         else (PASS if inside * 2 > len(vals) else FAIL),
         "note": (
-            f"{instrument}: медиана "
+            f"{instrument}: median "
             f"{round(mod._quantile(vals, 0.5), 4)}, "
-            f"в баре {SAME_PERSON_MAX}: {inside} из {len(vals)} судимых "
-            f"(всего {total}; отсев по размеру лица: "
-            f"{'выключен' if min_face_px is None else str(min_face_px) + 'px'})"
+            f"inside the bar {SAME_PERSON_MAX}: {inside} of {len(vals)} judged "
+            f"(total {total}; face-size filter: "
+            f"{'off' if min_face_px is None else str(min_face_px) + 'px'})"
         ),
     }
 
@@ -217,23 +221,23 @@ def axis(
     instrument: str = DEFAULT_INSTRUMENT,
     min_face_px: int | None = None,
 ) -> dict:
-    """Четыре числа разом, с вердиктом ПО СЫРОЙ ФОТОГРАФИИ и ни по чему другому."""
+    """Return four numbers at once, with the verdict against the RAW PHOTO and nothing else."""
     refuse_derived_anchor(raw_photo, frames, manifest=manifest)
     if upscaled_reference is not None:
         refuse_derived_anchor(upscaled_reference, frames, manifest=manifest)
 
     out = {
         "instrument": instrument,
-        "licence": INSTRUMENT_LICENCE.get(instrument, "лицензия не проверена"),
+        "licence": INSTRUMENT_LICENCE.get(instrument, "licence not checked"),
         "bar": SAME_PERSON_MAX,
         "hard_bar": HARD_DRIFT_MAX,
         "d_raw": distances(frames, raw_photo, instrument=instrument, min_face_px=min_face_px),
         "d_ref": None,
         "d_neg": None,
         "d_drv": None,
-        "control": "НЕ СТАВИЛСЯ",
-        "leak_to_actor": "НЕ ПРОВЕРЯЛАСЬ",
-        "upscale": "НЕ ПРОВЕРЯЛСЯ",
+        "control": "NOT RUN",
+        "leak_to_actor": "NOT CHECKED",
+        "upscale": "NOT CHECKED",
     }
     if upscaled_reference is not None:
         out["d_ref"] = distances(
@@ -255,68 +259,68 @@ def axis(
 
 
 def control_verdict(d_neg: dict) -> str:
-    """Сработал ли негативный контроль. Тоже три исхода."""
+    """Say whether the negative control fired. Three outcomes here too."""
     if d_neg.get("median") is None:
-        return f"{UNMEASURED}: контроль не дал ни одного судимого кадра"
+        return f"{UNMEASURED}: the control yielded no judgeable frame"
     if d_neg["inside"] > 0:
         return (
-            f"{FAIL}: прибор принял чужого человека за своего на "
-            f"{d_neg['inside']} кадре(ах) — числа прогона недействительны"
+            f"{FAIL}: the instrument took a stranger for the subject on "
+            f"{d_neg['inside']} frame(s) — the run's numbers are invalid"
         )
     if d_neg["median"] < HARD_DRIFT_MAX:
         return (
-            f"{UNMEASURED}: чужой стоит на {d_neg['median']}, ниже "
-            f"{HARD_DRIFT_MAX} — контроль слабый, полосу «заведомо чужой» "
-            f"он не показывает"
+            f"{UNMEASURED}: the stranger sits at {d_neg['median']}, below "
+            f"{HARD_DRIFT_MAX} — the control is weak and does not show the "
+            f'"definitely a stranger" band'
         )
-    return f"{PASS}: чужой на {d_neg['median']}, ни одного кадра в баре"
+    return f"{PASS}: the stranger is at {d_neg['median']}, not a single frame inside the bar"
 
 
 def upscale_drift_verdict(d_raw: dict, d_ref: dict, *, drift_max: float = UPSCALE_DRIFT_MAX) -> str:
-    """ЧТО ДАЛ АПСКЕЙЛ ЛИЦА. Не вердикт личности и никогда им не станет."""
+    """Say what the face upscale did. Not an identity verdict and never will be."""
     a, b = d_raw.get("median"), d_ref.get("median")
     if a is None or b is None:
         return (
-            f"{UNMEASURED}: нет одной из двух медиан (до сырой {a}, до "
-            f"референса {b}). Это НЕ «апскейл безвреден»."
+            f"{UNMEASURED}: one of the two medians is missing (to the raw photo {a}, "
+            f'to the reference {b}). This is NOT "the upscale is harmless".'
         )
     drift = round(b - a, 4)
     if drift < -drift_max:
         return (
-            f"{FAIL}: до референса {b} против {a} до сырой фотографии — "
-            f"кадры ближе к референсу на {abs(drift)} при пороге "
-            f"{drift_max}. Апскейлер ДОРИСОВАЛ лицо: референс перестал "
-            f"быть клиентом, а d_ref — сравнением с ним."
+            f"{FAIL}: to the reference {b} against {a} to the raw photo — "
+            f"the frames are closer to the reference by {abs(drift)} against the "
+            f"threshold {drift_max}. The upscaler repainted the face: the reference "
+            f"is no longer the client, and d_ref is no longer a comparison with them."
         )
     if drift > drift_max:
         return (
-            f"{FAIL}: до референса {b} против {a} до сырой фотографии — "
-            f"референс дальше на {drift} при пороге {drift_max}. "
-            f"Апскейлер лицо испортил."
+            f"{FAIL}: to the reference {b} against {a} to the raw photo — "
+            f"the reference is farther by {drift} against the threshold {drift_max}. "
+            f"The upscaler spoiled the face."
         )
     return (
-        f"{PASS}: до сырой {a}, до референса после апскейла {b}, "
-        f"расхождение {drift} в пределах {drift_max} — апскейл личность "
-        f"не сдвинул"
+        f"{PASS}: to the raw photo {a}, to the reference after the upscale {b}, "
+        f"the divergence {drift} is within {drift_max} — the upscale did not "
+        f"move identity"
     )
 
 
 def actor_leak_verdict(d_raw: dict, d_drv: dict) -> str:
-    """Не уехал ли выход к АКТЁРУ ДРАЙВИНГА вместо клиента. Четвёртое число."""
+    """Say whether the output drifted toward the DRIVING ACTOR instead of the client."""
     if d_raw.get("median") is None or d_drv.get("median") is None:
         return (
-            f"{UNMEASURED}: нет одного из двух расстояний "
-            f"(до клиента {d_raw.get('median')}, "
-            f"до актёра {d_drv.get('median')})"
+            f"{UNMEASURED}: one of the two distances is missing "
+            f"(to the client {d_raw.get('median')}, "
+            f"to the actor {d_drv.get('median')})"
         )
     if d_drv["median"] < d_raw["median"]:
         return (
-            f"{FAIL}: до актёра драйвинга {d_drv['median']} БЛИЖЕ, чем до "
-            f"клиента {d_raw['median']} — лицо утекло из драйвинга"
+            f"{FAIL}: the distance to the driving actor {d_drv['median']} is CLOSER "
+            f"than to the client {d_raw['median']} — the face leaked from the driving"
         )
     return (
-        f"{PASS}: до клиента {d_raw['median']}, до актёра "
-        f"{d_drv['median']} — актёр дальше, утечки не видно"
+        f"{PASS}: to the client {d_raw['median']}, to the actor "
+        f"{d_drv['median']} — the actor is farther, no leak visible"
     )
 
 
@@ -328,17 +332,17 @@ def before_after_restore(
     instrument: str = DEFAULT_INSTRUMENT,
     min_face_px: int | None = None,
 ) -> dict:
-    """Личность ДО и ПОСЛЕ доводки лица, ОДНИМ баром, парой."""
+    """Measure identity BEFORE and AFTER the face restore, under ONE bar, as a pair."""
     common = {"instrument": instrument, "min_face_px": min_face_px}
     before = distances(before_frames, raw_photo, **common)
     after = distances(after_frames, raw_photo, **common)
 
     if (before["bar"], before["min_face_px"]) != (after["bar"], after["min_face_px"]):
         raise RuntimeError(
-            f"половины пары измерены РАЗНЫМИ условиями: до — бар "
-            f"{before['bar']}, отсев {before['min_face_px']}; после — бар "
-            f"{after['bar']}, отсев {after['min_face_px']}. Такие два числа "
-            f"несравнимы, и «стало лучше» по ним не значит ничего."
+            f"the two halves of the pair were measured under DIFFERENT conditions: "
+            f"before — bar {before['bar']}, filter {before['min_face_px']}; after — bar "
+            f"{after['bar']}, filter {after['min_face_px']}. Two such numbers are "
+            f'incomparable, and "it got better" based on them means nothing.'
         )
 
     judged_gain = after["judged"] - before["judged"]
@@ -363,21 +367,22 @@ def before_after_restore(
         "delta": delta,
         "judged_gain": judged_gain,
         "note": (
-            f"личность ОДНИМ баром {SAME_PERSON_MAX}. "
-            f"ДО доводки: медиана {before['median']}, судимо "
-            f"{before['judged']} из {before['total']}. "
-            f"ПОСЛЕ: медиана {after['median']}, судимо {after['judged']} из "
+            f"identity under ONE bar {SAME_PERSON_MAX}. "
+            f"BEFORE the restore: median {before['median']}, judged "
+            f"{before['judged']} of {before['total']}. "
+            f"AFTER: median {after['median']}, judged {after['judged']} of "
             f"{after['total']}. "
             + (
-                f"Медиана сдвинулась на {delta}. "
+                f"The median moved by {delta}. "
                 if delta is not None
-                else "Медианы не с чем сравнить — до доводки судить было нечем, и "
-                "это НЕ ухудшение, а первое измерение. "
+                else "There is nothing to compare the medians with — before the "
+                "restore there was nothing to judge, and this is NOT a regression "
+                "but a first measurement. "
             )
             + (
-                f"Судимых кадров стало больше на {judged_gain}."
+                f"Judged frames increased by {judged_gain}."
                 if judged_gain > 0
-                else f"Судимых кадров не прибавилось ({judged_gain})."
+                else f"Judged frames did not increase ({judged_gain})."
                 if judged_gain <= 0
                 else ""
             )
@@ -394,7 +399,7 @@ def restore_negative_control(
     min_face_px: int | None = None,
     pull_max: float = RESTORE_PULL_MAX,
 ) -> dict:
-    """НЕГАТИВНЫЙ КОНТРОЛЬ ДЛЯ ДОВОДКИ ЛИЦА. Пробел, которого не было в §7."""
+    """Run the negative control for the face restore. The gap that §7 did not cover."""
     common = {"instrument": instrument, "min_face_px": min_face_px}
     out = {
         "bar": SAME_PERSON_MAX,
@@ -408,10 +413,10 @@ def restore_negative_control(
             **out,
             "outcome": UNMEASURED,
             "note": (
-                "НЕПРОВЕРЕНО: доводчик на чужом лице не прогонялся "
-                "(нужна карта). Пока этого прогона нет, d_raw ПОСЛЕ "
-                "доводки не отделён от качества доводчика — это "
-                "«не смогли проверить», а НЕ «доводчик честен»."
+                "UNVERIFIED: the restorer has not been run on a foreign face "
+                "(a GPU is needed). Until that run exists, d_raw AFTER the "
+                "restore is not separated from the restorer's quality — this is "
+                '"could not measure", NOT "the restorer is honest".'
             ),
         }
 
@@ -422,8 +427,8 @@ def restore_negative_control(
             **out,
             "outcome": UNMEASURED,
             "note": (
-                f"контроль доводки не дал ни одного судимого кадра: "
-                f"{after['note']}. Это НЕ «доводчик честен»."
+                f"the restore control yielded no judgeable frame: "
+                f'{after["note"]}. This is NOT "the restorer is honest".'
             ),
         }
 
@@ -432,12 +437,12 @@ def restore_negative_control(
             **out,
             "outcome": FAIL,
             "note": (
-                f"ДОВОДЧИК ПЕЧАТАЕТ РЕФЕРЕНС: чужое лицо после "
-                f"доводки попало в бар {SAME_PERSON_MAX} к клиенту на "
-                f"{after['inside']} кадре(ах) из {after['judged']}, "
-                f"медиана {after['median']}. Значит d_raw после "
-                f"доводки измеряет доводчик, а не Wan-Animate, и все "
-                f"числа оси после доводки НЕДЕЙСТВИТЕЛЬНЫ."
+                f"THE RESTORER PRINTS THE REFERENCE: the foreign face after the "
+                f"restore landed inside the bar {SAME_PERSON_MAX} to the client on "
+                f"{after['inside']} frame(s) of {after['judged']}, "
+                f"median {after['median']}. So d_raw after the "
+                f"restore measures the restorer, not Wan-Animate, and all "
+                f"axis numbers after the restore are INVALID."
             ),
         }
 
@@ -446,11 +451,11 @@ def restore_negative_control(
             **out,
             "outcome": PASS,
             "note": (
-                f"чужое лицо после доводки стоит на "
-                f"{after['median']}, ни одного кадра в баре "
-                f"{SAME_PERSON_MAX} — доводчик референс не печатает. "
-                f"ПОДТЯЖКА НЕ МЕРЕНА: кадров ДО доводки не подано, "
-                f"ранняя стадия той же болезни осталась бы невидимой."
+                f"the foreign face after the restore sits at "
+                f"{after['median']}, not a single frame inside the bar "
+                f"{SAME_PERSON_MAX} — the restorer does not print the reference. "
+                f"THE PULL WAS NOT MEASURED: no before-restore frames were supplied, "
+                f"so an early stage of the same illness would stay invisible."
             ),
         }
 
@@ -461,9 +466,9 @@ def restore_negative_control(
             **out,
             "outcome": UNMEASURED,
             "note": (
-                f"чужое лицо ДО доводки судить нечем "
-                f"({before['note']}), а без этого числа подтяжку не "
-                f"вычесть: {after['median']} не с чем сравнить."
+                f"the foreign face BEFORE the restore cannot be judged "
+                f"({before['note']}), and without that number the pull cannot "
+                f"be computed: {after['median']} has nothing to compare with."
             ),
         }
 
@@ -474,28 +479,28 @@ def restore_negative_control(
             **out,
             "outcome": FAIL,
             "note": (
-                f"доводчик ПОДТЯНУЛ чужое лицо к клиенту на {pull} "
-                f"({before['median']} → {after['median']}) при пороге "
-                f"{pull_max}. В бар {SAME_PERSON_MAX} чужой не попал, "
-                f"но направление то самое: доводчик подмешивает "
-                f"референс, и d_raw после него завышен."
+                f"the restorer PULLED the foreign face toward the client by {pull} "
+                f"({before['median']} → {after['median']}) against the threshold "
+                f"{pull_max}. The stranger did not land inside the bar {SAME_PERSON_MAX}, "
+                f"but the direction is the same: the restorer mixes in the "
+                f"reference, and d_raw after it is inflated."
             ),
         }
     return {
         **out,
         "outcome": PASS,
         "note": (
-            f"чужое лицо {before['median']} → {after['median']}, "
-            f"подтяжка {pull} не превышает {pull_max}, в баре "
-            f"{SAME_PERSON_MAX} ноль кадров из {after['judged']} — "
-            f"доводчик референс не печатает, d_raw после доводки "
-            f"измеряет Wan-Animate"
+            f"the foreign face {before['median']} → {after['median']}, "
+            f"the pull {pull} does not exceed {pull_max}, zero frames of "
+            f"{after['judged']} inside the bar {SAME_PERSON_MAX} — "
+            f"the restorer does not print the reference, and d_raw after the "
+            f"restore measures Wan-Animate"
         ),
     }
 
 
 def acceptance_report() -> dict:
-    """Что из приёмки §6 A ДЕЙСТВИТЕЛЬНО воспроизведено. Числами, а не флагом."""
+    """Report what of the §6 A acceptance is ACTUALLY reproduced. In numbers, not a flag."""
     rows = ACCEPTANCE_ROWS
     done = [n for n, r in rows.items() if r["outcome"] == PASS]
     unmeasured = [n for n, r in rows.items() if r["outcome"] == UNMEASURED]
@@ -509,31 +514,31 @@ def acceptance_report() -> dict:
         "failed": failed,
         "rows": rows,
         "note": (
-            f"приёмка §6 A: воспроизведено {len(done)} строк(и) из "
-            f"{len(rows)}, не смогли {len(unmeasured)}, провалено "
-            f"{len(failed)}. Воспроизведено: {', '.join(done) or '—'}. "
-            f"НЕ СМОГЛИ: {', '.join(unmeasured) or '—'}. "
+            f"acceptance §6 A: reproduced {len(done)} row(s) of "
+            f"{len(rows)}, unmeasured {len(unmeasured)}, failed "
+            f"{len(failed)}. Reproduced: {', '.join(done) or '—'}. "
+            f"UNMEASURED: {', '.join(unmeasured) or '—'}. "
             + (
-                "ХЭНДОФ требует ВСЕ ТРИ, и все три воспроизведены: приёмка потока ЗАКРЫТА."
+                "The HANDOFF requires ALL THREE, and all three are reproduced: the flow acceptance is CLOSED."
                 if outcome == PASS
-                else f"ХЭНДОФ требует ВСЕ ТРИ, поэтому приёмка потока НЕ "
-                f"ЗАКРЫТА — и «{len(done)} из {len(rows)}» тут не «почти», "
-                f"а «главная строка не мерена»."
+                else f"The HANDOFF requires ALL THREE, so the flow acceptance is NOT "
+                f'CLOSED — and "{len(done)} of {len(rows)}" here is not "almost" '
+                f'but "the main row was never measured".'
             )
         ),
     }
 
 
 def lora_regression(without: dict, with_lora: dict, *, worse_by: float = 0.02) -> dict:
-    """Портится ли `d_raw` при ВКЛЮЧЁННОЙ LoRA. Приёмка гипотезы LoRA темплейта."""
+    """Say whether `d_raw` degrades with the LoRA ENABLED. Acceptance of the template-LoRA hypothesis."""
     a, b = without.get("median"), with_lora.get("median")
     if a is None or b is None:
         return {
             "outcome": UNMEASURED,
             "delta": None,
             "note": (
-                f"нет одной из двух медиан (без LoRA {a}, с LoRA "
-                f"{b}): сравнивать нечего. Это НЕ «LoRA безвредна»."
+                f"one of the two medians is missing (without LoRA {a}, with LoRA "
+                f'{b}): nothing to compare. This is NOT "the LoRA is harmless".'
             ),
         }
     delta = round(b - a, 4)
@@ -542,40 +547,40 @@ def lora_regression(without: dict, with_lora: dict, *, worse_by: float = 0.02) -
             "outcome": FAIL,
             "delta": delta,
             "note": (
-                f"с LoRA {b} против {a} без неё — хуже на {delta} "
-                f"при пороге различимости {worse_by}. LoRA тянет "
-                f"лицо к среднему по категории."
+                f"with LoRA {b} against {a} without it — worse by {delta} "
+                f"against the discriminability threshold {worse_by}. The LoRA "
+                f"pulls the face toward the category average."
             ),
         }
     return {
         "outcome": PASS,
         "delta": delta,
         "note": (
-            f"с LoRA {b} против {a} без неё — разница {delta} не "
-            f"превышает порог различимости {worse_by}"
+            f"with LoRA {b} against {a} without it — the difference {delta} does "
+            f"not exceed the discriminability threshold {worse_by}"
         ),
     }
 
 
 def _note(out: dict) -> str:
-    """Отчёт числами: проверено N, в баре M, не смогли K."""
+    """Build the report in numbers: checked N, inside the bar M, unmeasured K."""
     raw = out["d_raw"]
     head = (
-        f"ВЕРДИКТ ПО СЫРОЙ ФОТОГРАФИИ: {raw['outcome']}. "
-        f"медиана {raw['median']}, в баре {raw['inside']} из "
-        f"{raw['judged']} судимых, не смогли "
-        f"{len(raw['no_face']) + len(raw['too_small'])} из {raw['total']}."
+        f"VERDICT AGAINST THE RAW PHOTO: {raw['outcome']}. "
+        f"median {raw['median']}, inside the bar {raw['inside']} of "
+        f"{raw['judged']} judged, unmeasured "
+        f"{len(raw['no_face']) + len(raw['too_small'])} of {raw['total']}."
     )
     if out["d_ref"] is not None:
         ref = out["d_ref"]
         head += (
-            f" СПРАВОЧНО, НЕ ВЕРДИКТ — до референса (сырая фотография "
-            f"ПОСЛЕ АПСКЕЙЛА ЛИЦА, порождённого звена нет): медиана "
-            f"{ref['median']}, в баре {ref['inside']} из {ref['judged']}."
-            f" ЧТО ДАЛ АПСКЕЙЛ: {out['upscale']}."
+            f" FOR REFERENCE, NOT THE VERDICT — to the reference (the raw photo "
+            f"AFTER THE FACE UPSCALE, no generated link in between): median "
+            f"{ref['median']}, inside the bar {ref['inside']} of {ref['judged']}."
+            f" WHAT THE UPSCALE DID: {out['upscale']}."
         )
     if out.get("d_drv") is not None:
-        head += f" УТЕЧКА К АКТЁРУ ДРАЙВИНГА: {out['leak_to_actor']}."
-    head += f" КОНТРОЛЬ: {out['control']}."
-    head += f" ЛИЦЕНЗИЯ ПРИБОРА: {out['licence']}"
+        head += f" LEAK TO THE DRIVING ACTOR: {out['leak_to_actor']}."
+    head += f" CONTROL: {out['control']}."
+    head += f" INSTRUMENT LICENCE: {out['licence']}"
     return head

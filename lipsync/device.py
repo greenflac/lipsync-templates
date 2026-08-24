@@ -1,4 +1,4 @@
-"""Какая карта под нами — и на что это влияет, кроме имени строки."""
+"""Identify which card we are running on — and what that affects beyond the name string."""
 
 from __future__ import annotations
 
@@ -27,7 +27,7 @@ INSIGHTFACE_GPU_DEVICES = ("cuda",)
 
 
 def detect() -> str:
-    """Какое устройство доступно torch прямо сейчас."""
+    """Return the device torch can use right now."""
     try:
         import torch  # type: ignore
     except ImportError:
@@ -39,18 +39,18 @@ def detect() -> str:
         try:
             if backend is not None and backend.is_available():
                 return name
-        except Exception:  # noqa: BLE001 — бэкенд есть, но сломан: не наш
+        except Exception:  # noqa: BLE001 — the backend exists but is broken; not ours to fix
             continue
     return "cpu"
 
 
 def dtype_for(device: str) -> str:
-    """Тип данных под устройство, именем — чтобы попадало в JSON-отчёт."""
+    """Return the dtype for the device, by name so it fits into the JSON report."""
     return "float32" if device == "cpu" else "float16"
 
 
 def onnx_providers(device: str, available: list | None = None) -> tuple:
-    """(что просим, чего не хватает). Пустой второй — жаловаться не на что."""
+    """Return (what we request, what is missing). An empty second half means nothing to complain about."""
     want = ONNX_PROVIDERS.get(device, ONNX_PROVIDERS["cpu"])
     if available is None:
         try:
@@ -66,12 +66,12 @@ def onnx_providers(device: str, available: list | None = None) -> tuple:
 
 
 def insightface_ctx(device: str) -> int:
-    """ctx_id для insightface. -1 значит CPU, и это не всегда поражение."""
+    """Return the ctx_id for insightface. -1 means CPU, which is not always a defeat."""
     return 0 if device in INSIGHTFACE_GPU_DEVICES else -1
 
 
 def empty_cache(device: str | None = None) -> None:
-    """Освободить кэш ускорителя, если у него такой есть."""
+    """Release the accelerator cache, if the accelerator has one."""
     try:
         import torch  # type: ignore
     except ImportError:
@@ -83,18 +83,18 @@ def empty_cache(device: str | None = None) -> None:
 
 
 def torch_state(device: str | None = None) -> tuple:
-    """(состояние, версия, имя устройства, причина отказа опроса)."""
+    """Return (state, version, device name, reason the query failed)."""
     device = device or detect()
     try:
         import torch  # type: ignore
     except ImportError:
         return TORCH_ABSENT, "", "", ""
-    except Exception as e:  # noqa: BLE001 — пакет на месте, но не грузится
+    except Exception as e:  # noqa: BLE001 — the package is present but fails to load
         return TORCH_SILENT, "", "", f"{type(e).__name__}: {e}"
     try:
         version = str(getattr(torch, "__version__", ""))
         backend = getattr(torch, device, None)
-    except Exception as e:  # noqa: BLE001 — битая сборка отвечает на атрибуты
+    except Exception as e:  # noqa: BLE001 — a broken build can throw on attribute access
         return TORCH_SILENT, "", "", f"{type(e).__name__}: {e}"
     reason = ""
     for attr in ("get_device_name", "get_device_properties"):
@@ -103,7 +103,7 @@ def torch_state(device: str | None = None) -> tuple:
             continue
         try:
             got = fn(0)
-        except Exception as e:  # noqa: BLE001 — второй способ ещё может выжить
+        except Exception as e:  # noqa: BLE001 — the second method may still survive
             reason = reason or f"{type(e).__name__}: {e}"
             continue
         name = got if isinstance(got, str) else getattr(got, "name", "")
@@ -122,7 +122,7 @@ DRIVER_UNKNOWN = "unknown"
 
 
 def version_pair(text) -> tuple | None:
-    """'13.0' -> (13, 0). Не число — None, а не ноль."""
+    """Turn '13.0' into (13, 0). A non-number gives None, not zero."""
     if not isinstance(text, str):
         return None
     m = re.match(r"\s*(\d+)(?:\.(\d+))?", text)
@@ -132,13 +132,13 @@ def version_pair(text) -> tuple | None:
 
 
 def smi_cuda(text: str) -> str | None:
-    """Версия CUDA из шапки nvidia-smi. Именно её поддерживает драйвер."""
+    """Return the CUDA version from the nvidia-smi header. That is the one the driver supports."""
     m = re.search(r"CUDA Version:\s*([0-9]+(?:\.[0-9]+)?)", text or "")
     return m.group(1) if m else None
 
 
 def smi_cards(text: str) -> list:
-    """Строки `--query-gpu=name,memory.total,driver_version --format=csv,noheader,nounits`."""
+    """Parse lines of `--query-gpu=name,memory.total,driver_version --format=csv,noheader,nounits`."""
     cards = []
     for line in (text or "").splitlines():
         parts = [p.strip() for p in line.split(",")]
@@ -156,31 +156,31 @@ def smi_cards(text: str) -> list:
 
 
 def smi_run(args: list, timeout: float = SMI_TIMEOUT_S) -> tuple:
-    """(вывод, причина). Ровно одна из двух половин непустая."""
+    """Return (output, reason). Exactly one of the two halves is non-empty."""
     import shutil
     import subprocess
 
     exe = shutil.which("nvidia-smi")
     if not exe:
-        return "", "nvidia-smi не найден в PATH"
+        return "", "nvidia-smi not found in PATH"
     try:
         r = subprocess.run([exe] + list(args), capture_output=True, text=True, timeout=timeout)
     except subprocess.TimeoutExpired:
         return "", (
-            f"nvidia-smi не ответил за {timeout:.0f} c — обычно это "
-            f"повисший драйвер, а не медленная машина"
+            f"nvidia-smi did not answer within {timeout:.0f} s — usually a "
+            f"hung driver, not a slow machine"
         )
     except OSError as e:  # noqa: BLE001
-        return "", f"nvidia-smi не запускается: {type(e).__name__}: {e}"
+        return "", f"nvidia-smi fails to start: {type(e).__name__}: {e}"
     if r.returncode != 0:
         return "", (
-            f"nvidia-smi вернул {r.returncode}: {(r.stderr or r.stdout).strip().splitlines()[:1]}"
+            f"nvidia-smi returned {r.returncode}: {(r.stderr or r.stdout).strip().splitlines()[:1]}"
         )
     return r.stdout, ""
 
 
 def smi_probe(run=None) -> dict:
-    """Что драйвер знает о карте: имя, память, версия драйвера и его CUDA."""
+    """Return what the driver knows about the card: name, memory, driver version and its CUDA."""
     run = run or smi_run
     csv_out, csv_why = run(
         ["--query-gpu=name,memory.total,driver_version", "--format=csv,noheader,nounits"]
@@ -190,14 +190,14 @@ def smi_probe(run=None) -> dict:
     cuda = smi_cuda(head_out)
     reason = ""
     if not cards and not cuda:
-        reason = csv_why or head_why or "nvidia-smi ничего не сказал о картах"
+        reason = csv_why or head_why or "nvidia-smi said nothing about the cards"
     elif not cuda:
-        reason = head_why or "в шапке nvidia-smi нет строки 'CUDA Version:'"
+        reason = head_why or "the nvidia-smi header has no 'CUDA Version:' line"
     return {"cards": cards, "cuda": cuda, "reason": reason}
 
 
 def driver_covers(driver_cuda, build_cuda) -> str:
-    """Потянет ли ДРАЙВЕР сборку torch. Четыре исхода, см. DRIVER_*."""
+    """Tell whether the driver covers the torch build. Four outcomes, see DRIVER_*."""
     d, b = version_pair(driver_cuda), version_pair(build_cuda)
     if d is None or b is None:
         return DRIVER_UNKNOWN
@@ -209,10 +209,10 @@ def driver_covers(driver_cuda, build_cuda) -> str:
 
 
 def torch_build_cuda():
-    """С какой CUDA собран torch, по `torch.version.cuda`. None — ни с какой."""
+    """Return the CUDA version torch was built with, per `torch.version.cuda`. None means built with none."""
     try:
         import torch  # type: ignore
-    except Exception:  # noqa: BLE001 — нет пакета или битая сборка
+    except Exception:  # noqa: BLE001 — no package, or a broken build
         return ""
     try:
         return getattr(getattr(torch, "version", None), "cuda", None)
@@ -221,33 +221,33 @@ def torch_build_cuda():
 
 
 def describe(device: str | None = None) -> str:
-    """Одна строка про то, на чём считаем — для шапки отчёта."""
+    """Return a one-line summary of what we compute on — for the report header."""
     device = device or detect()
     state, version, name, reason = torch_state(device)
-    line = f"устройство {device}" + (f" ({name})" if name else "")
+    line = f"device {device}" + (f" ({name})" if name else "")
     if state == TORCH_ABSENT:
-        line += ", torch не установлен"
+        line += ", torch is not installed"
     elif state == TORCH_SILENT:
         line += (
-            f", torch {version or 'неизвестной версии'} установлен, но "
-            f"устройство не опрашивается: {reason}"
+            f", torch {version or 'of unknown version'} is installed, but "
+            f"the device cannot be queried: {reason}"
         )
     else:
         line += f", torch {version}"
     if device == "cuda" and state != TORCH_ABSENT:
         built = torch_build_cuda()
         if built:
-            line += f", собран с CUDA {built}"
+            line += f", built with CUDA {built}"
         elif built is None:
             line += (
-                ", СОБРАН БЕЗ CUDA (torch.version.cuda пуст) — эта сборка "
-                "карту не увидит никогда, её надо переставить"
+                ", built WITHOUT CUDA (torch.version.cuda is empty) — this build "
+                "will never see the card and must be reinstalled"
             )
     line += f", dtype {dtype_for(device)}"
     _, missing = onnx_providers(device)
     if missing:
         line += (
-            f" | ускорения нет ни через один из: {', '.join(missing)} — "
-            f"insightface и DWPose пойдут на CPU"
+            f" | no acceleration through any of: {', '.join(missing)} — "
+            f"insightface and DWPose will run on CPU"
         )
     return line

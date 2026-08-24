@@ -1,4 +1,4 @@
-"""Эстетика: шаг составителя шаблона. Промт плюс демо-личность -> эстетика."""
+"""Aesthetic: the template author's step. A prompt plus the demo identity -> an aesthetic."""
 
 from __future__ import annotations
 
@@ -83,7 +83,7 @@ GENDER_SWAPS = (
 
 
 def _clause_is_anthropometric(clause: str) -> str | None:
-    """Образец, по которому оборот признан описанием человека, или None."""
+    """Return the pattern that marked the clause as describing a person, or None."""
     for pattern in ANTHROPOMETRY_CLAUSES:
         if re.search(pattern, clause, re.IGNORECASE):
             return pattern
@@ -91,7 +91,7 @@ def _clause_is_anthropometric(clause: str) -> str | None:
 
 
 def strip_anthropometry(prompt: str) -> dict:
-    """Убрать из промта всё, что описывает ЧЕЛОВЕКА, оставив всё про КАДР."""
+    """Strip everything that describes the person from the prompt, keeping everything about the frame."""
     if not isinstance(prompt, str) or not prompt.strip():
         return {
             **tally(0, 0, 1),
@@ -100,7 +100,7 @@ def strip_anthropometry(prompt: str) -> dict:
             "words": [],
             "genders": [],
             "cut_share": None,
-            "note": "промта нет: резать нечего",
+            "note": "no prompt: nothing to cut",
         }
 
     kept, dropped = [], []
@@ -139,10 +139,10 @@ def strip_anthropometry(prompt: str) -> dict:
         "genders": genders,
         "cut_share": round(1 - len(text.split()) / len(prompt.split()), 4),
         "note": (
-            f"оборотов унесено {len(dropped)}, слов тела "
-            f"{sum(w['times'] for w in words)}, замен пола "
-            f"{sum(g['times'] for g in genders)}; слов было "
-            f"{len(prompt.split())}, стало {len(text.split())}"
+            f"clauses removed {len(dropped)}, body words "
+            f"{sum(w['times'] for w in words)}, gender swaps "
+            f"{sum(g['times'] for g in genders)}; words before "
+            f"{len(prompt.split())}, after {len(text.split())}"
         ),
     }
 
@@ -158,28 +158,28 @@ AESTHETIC_DIR = Path("assets") / "aesthetics"
 
 
 def demo_for(gender: str):
-    """Демо-личность по полу. Неизвестный пол — исключение, а не умолчание:"""
+    """Return the demo identity for a gender. An unknown gender is an exception, not a default."""
     key = str(gender).strip().lower()
     if key not in DEMOS:
-        raise KeyError(f"пол {gender!r} не из {GENDERS}")
+        raise KeyError(f"gender {gender!r} is not in {GENDERS}")
     return DEMOS[key]
 
 
 def gender_of(aesthetic) -> str:
-    """Пол шаблона. Он же пол эстетики: по решению составителя шаблонов пол"""
+    """Return the template's gender, which by the template author's decision is also the aesthetic's gender."""
     if isinstance(aesthetic, str):
         aesthetic = load(aesthetic)
     got = (aesthetic or {}).get("demo")
     if str(got).strip().lower() not in DEMOS:
         raise KeyError(
-            f"у эстетики {(aesthetic or {}).get('id')!r} не назван "
-            f"пол (поле «demo» из {GENDERS}), получено {got!r}"
+            f"the aesthetic {(aesthetic or {}).get('id')!r} does not name "
+            f"a gender (field 'demo' from {GENDERS}), got {got!r}"
         )
     return str(got).strip().lower()
 
 
 def aesthetic_file(aesthetic_id: str, gender: str | None = None, *, root=None) -> Path:
-    """Путь эстетики. Пол В ИМЕНИ ФАЙЛА, а не только в базе: имя едет вместе с"""
+    """Return the aesthetic's path. The gender lives in the file name, not only in the base, so the name travels with the file."""
     g = gender_of(aesthetic_id) if gender is None else str(gender).strip().lower()
     demo_for(g)
     base = AESTHETIC_DIR if root is None else Path(root)
@@ -187,7 +187,7 @@ def aesthetic_file(aesthetic_id: str, gender: str | None = None, *, root=None) -
 
 
 def pair_check(*, client_gender: str, aesthetic_gender: str) -> dict:
-    """Совпадают ли пол клиента и пол эстетики. ГЕЙТ, а не совет."""
+    """Check that the client's gender and the aesthetic's gender match. A gate, not advice."""
 
     def known(value):
         return str(value).strip().lower() if str(value).strip().lower() in DEMOS else None
@@ -199,9 +199,9 @@ def pair_check(*, client_gender: str, aesthetic_gender: str) -> dict:
             "client": c,
             "aesthetic": a,
             "note": (
-                f"пол не назван или не из {GENDERS}: клиент "
-                f"{client_gender!r}, эстетика {aesthetic_gender!r}. "
-                f"Это НЕ разрешение продолжать"
+                f"gender not named or not in {GENDERS}: client "
+                f"{client_gender!r}, aesthetic {aesthetic_gender!r}. "
+                f"This is NOT permission to continue"
             ),
         }
     if c != a:
@@ -210,13 +210,13 @@ def pair_check(*, client_gender: str, aesthetic_gender: str) -> dict:
             "client": c,
             "aesthetic": a,
             "note": (
-                f"ПОЛ РАЗЪЕХАЛСЯ: клиент {c}, эстетика {a}. ИЗМЕРЕНО, "
-                f"чем это кончается: клиент-мужчина с женской "
-                f"эстетикой получил женскую мини-юбку, и ни один "
-                f"прибор этого не увидел"
+                f"GENDER MISMATCH: client {c}, aesthetic {a}. MEASURED "
+                f"how this ends: a male client with a female "
+                f"aesthetic got a women's mini skirt, and no "
+                f"instrument saw it"
             ),
         }
-    return {**tally(1, 0, 0), "client": c, "aesthetic": a, "note": f"пол совпал: {c}"}
+    return {**tally(1, 0, 0), "client": c, "aesthetic": a, "note": f"genders match: {c}"}
 
 
 AESTHETIC_ROLE_CLAUSE = (
@@ -235,7 +235,7 @@ NEVER_THE_FACE_CLAUSE = (
 
 
 def assemble_prompt(*, legacy: bool = False, card=None) -> str:
-    """Промт сборки рефки. `legacy=True` даёт СТАРЫЕ строки стенда."""
+    """Build the reference-assembly prompt. `legacy=True` gives the old stand lines."""
     if legacy:
         from .fork_e2e import (
             NO_LOOK_TRANSFER_CLAUSE,  # noqa: PLC0415
@@ -249,7 +249,7 @@ def assemble_prompt(*, legacy: bool = False, card=None) -> str:
 
 
 def leak_verdict(*, made, client, demo, distances=None) -> dict:
-    """ДВУСТОРОННИЙ замер: кто на собранной рефке — клиент или демо."""
+    """Measure from both sides: who is on the assembled reference — the client or the demo."""
     t0 = time.perf_counter()
     if distances is None:
         from . import fork_identity  # noqa: PLC0415
@@ -260,7 +260,7 @@ def leak_verdict(*, made, client, demo, distances=None) -> dict:
         c = distances([str(made)], str(client))
         d = distances([str(made)], str(demo))
     except Exception as exc:  # noqa: BLE001
-        return {**tally(0, 0, 1), **out, "note": f"прибор упал: {type(exc).__name__}: {exc}"}
+        return {**tally(0, 0, 1), **out, "note": f"instrument crashed: {type(exc).__name__}: {exc}"}
     to_client, to_demo = c.get("median"), d.get("median")
     out.update(
         {"to_client": to_client, "to_demo": to_demo, "seconds": round(time.perf_counter() - t0, 3)}
@@ -269,36 +269,47 @@ def leak_verdict(*, made, client, demo, distances=None) -> dict:
         return {
             **tally(0, 0, 1),
             **out,
-            "note": (f"одно из расстояний не снято: до клиента {to_client}, до демо {to_demo}"),
+            "note": (
+                f"one of the distances was not taken: to client {to_client}, to demo {to_demo}"
+            ),
         }
     gap = round(to_demo - to_client, 4)
     out["gap"] = gap
     tail = (
-        f"до клиента {to_client}, до демо {to_demo}, разность {gap} "
-        f"(планка «тот же человек» {SAME_PERSON_MAX})"
+        f"to client {to_client}, to demo {to_demo}, gap {gap} "
+        f"(the 'same person' bar {SAME_PERSON_MAX})"
     )
     if to_demo < to_client:
-        return {**tally(1, 1, 0), **out, "note": f"ЛИЧНОСТЬ ПРОТЕКЛА: демо БЛИЖЕ клиента; {tail}"}
+        return {
+            **tally(1, 1, 0),
+            **out,
+            "note": f"IDENTITY LEAKED: the demo is CLOSER than the client; {tail}",
+        }
     if to_client <= SAME_PERSON_MAX < to_demo:
-        return {**tally(1, 0, 0), **out, "note": f"клиент на месте, демо не протекла; {tail}"}
+        return {
+            **tally(1, 0, 0),
+            **out,
+            "note": f"the client is in place, the demo did not leak; {tail}",
+        }
     return {
         **tally(0, 0, 1),
         **out,
         "note": (
-            f"прибор не различает: ни одно расстояние не по разные "
-            f"стороны планки; {tail}. СУДИТ ОПЕРАТОР ГЛАЗАМИ"
+            f"the instrument cannot tell: neither distance sits on "
+            f"opposite sides of the bar; {tail}. THE OPERATOR JUDGES BY EYE"
         ),
     }
 
 
 PLAN_NOTE = (
-    "план 9:16 на эстетике НЕ ТРЕБУЕТСЯ: план навязывается на "
-    "собранной рефке клиента, а эстетика несёт вид, а не кадр"
+    "the 9:16 plan is NOT REQUIRED on the aesthetic: the plan is imposed "
+    "on the assembled client reference, and the aesthetic carries the "
+    "look, not the frame"
 )
 
 
 def tally(checked: int, violations: int, unmeasured: int) -> dict:
-    """Числа рядом с вердиктом."""
+    """Return the numbers next to the verdict."""
     if checked == 0:
         outcome = UNMEASURED
     elif violations:
@@ -316,14 +327,14 @@ def tally(checked: int, violations: int, unmeasured: int) -> dict:
 
 
 def load_base(path=None) -> dict:
-    """База эстетик с диска. Отсутствие файла — исключение, а не пустая база:"""
+    """Load the aesthetics base from disk. A missing file is an exception, not an empty base."""
     p = Path(BASE_PATH if path is None else path)
     if not p.is_file():
-        raise FileNotFoundError(f"базы эстетик нет: {p}")
+        raise FileNotFoundError(f"aesthetics base missing: {p}")
     doc = json.loads(p.read_text(encoding="utf-8"))
     got = doc.get("aesthetics")
     if not isinstance(got, list) or not got:
-        raise ValueError(f"в базе {p} нет ни одной эстетики")
+        raise ValueError(f"the base {p} holds no aesthetics")
     return doc
 
 
@@ -332,15 +343,15 @@ def ids(path=None) -> list:
 
 
 def load(aesthetic_id: str, path=None) -> dict:
-    """Одна эстетика по имени. Неизвестное имя — исключение со списком того,"""
+    """Return one aesthetic by name. An unknown name is an exception listing what exists."""
     for a in load_base(path)["aesthetics"]:
         if a["id"] == aesthetic_id:
             return a
-    raise KeyError(f"эстетики {aesthetic_id!r} нет; есть: {', '.join(ids(path))}")
+    raise KeyError(f"no aesthetic {aesthetic_id!r}; have: {', '.join(ids(path))}")
 
 
 def brand_conflict(aesthetic: dict) -> dict:
-    """Какие марки названы в промте. СПРАВКА, а не гейт."""
+    """List the brands named in the prompt. A reference note, not a gate."""
     text = str(aesthetic.get("prompt", ""))
     hits = [
         w
@@ -348,38 +359,42 @@ def brand_conflict(aesthetic: dict) -> dict:
         if w.lower() in text.lower()
     ]
     if not hits:
-        return {**tally(1, 0, 0), "brands": [], "note": "марок в промте не названо"}
+        return {**tally(1, 0, 0), "brands": [], "note": "no brands named in the prompt"}
     return {
         **tally(1, 0, 0),
         "brands": hits,
         "note": (
-            f"промт называет марки {hits} — РАЗРЕШЕНО решением "
-            f"составителя шаблонов; запрещён только нарисованный знак, и "
-            f"его отсутствие СУДИТ ГЛАЗ: прибора для надписей нет"
+            f"the prompt names brands {hits} — ALLOWED by the template "
+            f"author's decision; only a drawn mark is forbidden, and its "
+            f"absence is JUDGED BY EYE: there is no instrument for lettering"
         ),
     }
 
 
 def no_brands_clause() -> str:
-    """Запрет надписей ОДНИМ источником на проект. Импорт ленивый."""
+    """Return the lettering ban from its single source per project. The import is lazy."""
     from .fork_e2e import NO_BRANDS_CLAUSE  # noqa: PLC0415
 
     return NO_BRANDS_CLAUSE
 
 
 def framing_clause(card) -> str:
-    """Строка кадрирования из КАРТОЧКИ ДРАЙВИНГА."""
+    """Return the framing line built from the driving card."""
     from . import fork_plan  # noqa: PLC0415
 
     return fork_plan.framing_clause(card)
 
 
 def compose(aesthetic, *, with_ban: bool = True, cut_body: bool = True, card=None) -> dict:
-    """Промт эстетики: материал составителя шаблонов + разрешение конфликта личности."""
+    """Build the aesthetic prompt: the template author's material plus the identity-conflict resolution."""
     if isinstance(aesthetic, str):
         aesthetic = load(aesthetic)
     if not isinstance(aesthetic, dict) or not aesthetic.get("prompt"):
-        return {**tally(0, 0, 1), "prompt": None, "note": "эстетика без промта: собирать нечего"}
+        return {
+            **tally(0, 0, 1),
+            "prompt": None,
+            "note": "aesthetic without a prompt: nothing to assemble",
+        }
     own = aesthetic["prompt"].strip()
     cut = strip_anthropometry(own) if cut_body else None
     body = cut["prompt"] if cut and cut["outcome"] == PASS else own
@@ -392,9 +407,9 @@ def compose(aesthetic, *, with_ban: bool = True, cut_body: bool = True, card=Non
         parts.append(no_brands_clause())
     text = ". ".join(parts)
     how = (
-        "промт составителя шаблонов без антропометрии"
+        "the template author's prompt without anthropometry"
         if cut_body
-        else "промт составителя шаблонов ДОСЛОВНО (РЕЗ ОТКЛЮЧЁН ЯВНО)"
+        else "the template author's prompt VERBATIM (CUT DISABLED EXPLICITLY)"
     )
     return {
         **tally(1, 0, 0),
@@ -406,16 +421,16 @@ def compose(aesthetic, *, with_ban: bool = True, cut_body: bool = True, card=Non
         "framed": bool(framing),
         "brand_conflict": brand_conflict(aesthetic),
         "note": (
-            f"эстетика {aesthetic.get('id')}: слов {len(text.split())}, "
-            f"{how} + личность"
-            + ("" if with_ban else " (ЗАПРЕТ НАДПИСЕЙ ОТКЛЮЧЁН ЯВНО)")
+            f"aesthetic {aesthetic.get('id')}: words {len(text.split())}, "
+            f"{how} + identity"
+            + ("" if with_ban else " (LETTERING BAN DISABLED EXPLICITLY)")
             + (f"; {cut['note']}" if cut else "")
         ),
     }
 
 
 def accept(*, made, demo, distances=None) -> dict:
-    """Осталась ли на эстетике ДЕМО-личность. Единственная измеримая ось."""
+    """Check whether the demo identity survived on the aesthetic. The only measurable axis."""
     t0 = time.perf_counter()
     if distances is None:
         from . import fork_identity  # noqa: PLC0415
@@ -428,17 +443,17 @@ def accept(*, made, demo, distances=None) -> dict:
             **tally(0, 0, 1),
             "median": None,
             "seconds": round(time.perf_counter() - t0, 3),
-            "note": f"прибор личности упал: {type(exc).__name__}: {exc}",
+            "note": f"identity instrument crashed: {type(exc).__name__}: {exc}",
         }
 
     med = d.get("median")
-    tail = f"лестница: 0.0652 тот же, {SAME_PERSON_MAX} планка, 0.7137 другой, 1.0217 чужой"
+    tail = f"ladder: 0.0652 same, {SAME_PERSON_MAX} bar, 0.7137 different, 1.0217 stranger"
     if d.get("outcome") == UNMEASURED or med is None:
         return {
             **tally(0, 0, 1),
             "median": med,
             "seconds": round(time.perf_counter() - t0, 3),
-            "note": f"личность НЕ ИЗМЕРЕНА: {str(d.get('note'))[:200]}",
+            "note": f"identity NOT MEASURED: {str(d.get('note'))[:200]}",
         }
     if med <= SAME_PERSON_MAX:
         return {
@@ -446,10 +461,10 @@ def accept(*, made, demo, distances=None) -> dict:
             "median": med,
             "seconds": round(time.perf_counter() - t0, 3),
             "note": (
-                f"демо-личность на месте: медиана {med} при планке "
-                f"{SAME_PERSON_MAX} ({tail}). {PLAN_NOTE}. "
-                f"ПОПАДАНИЕ В ЭСТЕТИКУ СУДИТ СОСТАВИТЕЛЬ ГЛАЗАМИ — "
-                f"прибора для этого нет"
+                f"the demo identity is in place: median {med} against the "
+                f"bar {SAME_PERSON_MAX} ({tail}). {PLAN_NOTE}. "
+                f"THE AESTHETIC FIT IS JUDGED BY THE TEMPLATE AUTHOR'S EYE — "
+                f"there is no instrument for it"
             ),
         }
     if med < 0.7137:
@@ -458,10 +473,10 @@ def accept(*, made, demo, distances=None) -> dict:
             "median": med,
             "seconds": round(time.perf_counter() - t0, 3),
             "note": (
-                f"медиана {med} между планкой {SAME_PERSON_MAX} и "
-                f"ступенью «другой человек» 0.7137: лицо изменено или "
-                f"закрыто, ArcFace здесь НЕ СУДЬЯ, судит составитель "
-                f"({tail})"
+                f"median {med} between the bar {SAME_PERSON_MAX} and "
+                f"the 'different person' step 0.7137: the face is altered "
+                f"or covered, ArcFace is NOT THE JUDGE here, the template "
+                f"author judges ({tail})"
             ),
         }
     return {
@@ -469,17 +484,17 @@ def accept(*, made, demo, distances=None) -> dict:
         "median": med,
         "seconds": round(time.perf_counter() - t0, 3),
         "note": (
-            f"медиана {med} выше ступени «другой человек» 0.7137: "
-            f"промт ПЕРЕРИСОВАЛ человека, это не наша демо-личность "
-            f"({tail})"
+            f"median {med} above the 'different person' step 0.7137: "
+            f"the prompt REPAINTED the person, this is not our demo "
+            f"identity ({tail})"
         ),
     }
 
 
 def render(report: dict) -> str:
-    """Печать для человека."""
+    """Render the report for a human."""
     return (
-        f"ЭСТЕТИКА: {report['outcome']}  (проверено {report['checked']}, "
-        f"нарушений {report['violations']}, не смогли "
+        f"AESTHETIC: {report['outcome']}  (checked {report['checked']}, "
+        f"violations {report['violations']}, unmeasured "
         f"{report['unmeasured']})\n  {report.get('note', '')}"
     )

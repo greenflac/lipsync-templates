@@ -1,4 +1,4 @@
-"""Сквозной стенд продукта: фото клиента + драйвинг + эстетика -> ролик."""
+"""End-to-end product stand: client photo + driving + aesthetic -> clip."""
 
 from __future__ import annotations
 
@@ -32,11 +32,11 @@ KLING_PRICE_3S_USD = 0.21
 
 
 def kling_price(seconds: float) -> float:
-    """Цена заказа по длине. Мусор — исключение, а не догадка."""
+    """Return the order price for a duration. Garbage raises, it is not guessed away."""
     if not isinstance(seconds, (int, float)) or isinstance(seconds, bool):
-        raise TypeError(f"длина {seconds!r}: ждали число секунд")
+        raise TypeError(f"duration {seconds!r}: expected a number of seconds")
     if seconds <= 0:
-        raise ValueError(f"длина {seconds}: ждали больше нуля")
+        raise ValueError(f"duration {seconds}: expected greater than zero")
     return round(KLING_PRICE_PER_SECOND_USD * float(seconds), 4)
 
 
@@ -92,19 +92,19 @@ NO_LOOK_TRANSFER_CLAUSE = (
 )
 
 STAGES = (
-    "1 приём трёх входов",
-    "2 стилизация фото клиента",
-    "3 приёмка стилизованного фото",
-    "4 окно драйвинга и нарезка",
-    "5 загрузка входов и вызов Kling",
-    "6 приёмка выхода",
-    "7 финальная сборка",
-    "8 отчёт",
+    "1 intake of three inputs",
+    "2 client photo stylization",
+    "3 styled photo acceptance",
+    "4 driving window and cutting",
+    "5 upload inputs and call Kling",
+    "6 output acceptance",
+    "7 final assembly",
+    "8 report",
 )
 
 
 def say(text: str, *, log=None) -> None:
-    """Строка в stderr НЕМЕДЛЕННО. Молчание длинного прогона уже стоило прогона."""
+    """Write the line to stderr immediately. A silent long run has already cost us a run."""
     stream = sys.stderr if log is None else log
     stream.write(text + "\n")
     flush = getattr(stream, "flush", None)
@@ -113,7 +113,7 @@ def say(text: str, *, log=None) -> None:
 
 
 def verdict(checked: int, violations: int, unmeasured: int) -> str:
-    """Три исхода из трёх чисел. Ноль проверок — НЕ успех."""
+    """Return one of three outcomes from three numbers. Zero checks is not a success."""
     if checked <= 0:
         return UNMEASURED
     if violations > 0:
@@ -124,7 +124,7 @@ def verdict(checked: int, violations: int, unmeasured: int) -> str:
 
 
 def _result(stage: str, checks: list, *, note: str = "", **extra) -> dict:
-    """Ступень из списка проверок. Каждая проверка — `(имя, исход, строка)`."""
+    """Build a stage from a list of checks. Each check is `(name, outcome, note)`."""
     checked = sum(1 for c in checks if c[1] in (PASS, FAIL))
     violations = sum(1 for c in checks if c[1] == FAIL)
     unmeasured = sum(1 for c in checks if c[1] == UNMEASURED)
@@ -141,29 +141,29 @@ def _result(stage: str, checks: list, *, note: str = "", **extra) -> dict:
 
 
 def line(res: dict) -> str:
-    """Одна строка ступени: вердикт и числа РЯДОМ с ним."""
+    """Return the one-line stage summary: the verdict with its numbers right next to it."""
     return (
         f"[{res['outcome']:<18}] {res['stage']:<34} "
-        f"проверено {res['checked']}, нарушений {res['violations']}, "
-        f"не смогли {res['unmeasured']}" + (f" | {res['note']}" if res.get("note") else "")
+        f"checked {res['checked']}, violations {res['violations']}, "
+        f"unmeasured {res['unmeasured']}" + (f" | {res['note']}" if res.get("note") else "")
     )
 
 
 def soft_import(name: str):
-    """Соседний модуль или ПОНЯТНЫЙ отказ. Никогда не исключение наружу."""
+    """Return a neighbour module or an intelligible refusal. Never let the exception escape."""
     try:
         mod = __import__(f"lipsync.{name}", fromlist=["*"])
     except ImportError as exc:
         return None, (
-            f"модуля lipsync.{name} нет ({exc}). Это НЕ брак "
-            f"продукта: ступень не измерена. Подменить можно "
-            f"параметром прогона"
+            f"module lipsync.{name} is missing ({exc}). This is not a "
+            f"product defect: the stage was not measured. A run "
+            f"parameter can substitute it"
         )
     return mod, None
 
 
 def entry_point(mod, candidates):
-    """Первая существующая функция из списка имён, либо отказ с перечнем."""
+    """Return the first existing function from the name list, or a refusal naming them all."""
     for name in candidates:
         fn = getattr(mod, name, None)
         if callable(fn):
@@ -171,12 +171,12 @@ def entry_point(mod, candidates):
     return (
         None,
         None,
-        (f"в {mod.__name__} нет ни одной из точек входа {list(candidates)}: звать нечего"),
+        (f"{mod.__name__} has none of the entry points {list(candidates)}: nothing to call"),
     )
 
 
 def _call(fn, kwargs: dict, positional: tuple):
-    """Вызов соседа: сначала по именам, при несовпадении — позиционно."""
+    """Call a neighbour: by keyword first, positionally on a signature mismatch."""
     try:
         return fn(**kwargs)
     except TypeError as exc:
@@ -186,26 +186,27 @@ def _call(fn, kwargs: dict, positional: tuple):
 
 
 def outcome_of(reply, *, what: str) -> tuple:
-    """Вердикт из ответа соседа. Ответ без вердикта — «не смогли», не «годно»."""
+    """Extract the verdict from a neighbour reply. No verdict means "could not measure", not "pass"."""
     if isinstance(reply, dict) and reply.get("outcome") in (PASS, FAIL, UNMEASURED):
         return reply["outcome"], str(reply.get("note") or "")[:400]
     return UNMEASURED, (
-        f"{what} ответил {type(reply).__name__} без поля outcome: вердикта нет, судить нечем"
+        f"{what} replied {type(reply).__name__} without an outcome field: "
+        f"no verdict, nothing to judge by"
     )
 
 
 def refuse_pro(endpoint: str) -> None:
-    """Сторож денег. `pro` исключён составителем шаблонов НАВСЕГДА, и запрет машинный."""
+    """Guard the money. The template author excluded `pro` permanently, and the ban is machine-enforced."""
     parts = str(endpoint).split("/")
     hit = [p for p in parts if p in FORBIDDEN_TIERS]
     if hit:
         pro_per_s = round(KLING_PRO_PRICE_3S_USD / 3.0, 4)
         raise ValueError(
-            f"эндпоинт {endpoint} содержит {hit}: {FORBIDDEN_TIERS} исключены "
-            f"составителем шаблонов НАВСЕГДА (${pro_per_s} против "
-            f"${KLING_PRICE_PER_SECOND_USD} за секунду, в "
-            f"{round(pro_per_s / KLING_PRICE_PER_SECOND_USD, 1)} раза; лейбл "
-            f"всё равно не выжил, фон получил дорисованную анимацию)"
+            f"endpoint {endpoint} contains {hit}: {FORBIDDEN_TIERS} are excluded "
+            f"by the template author permanently (${pro_per_s} versus "
+            f"${KLING_PRICE_PER_SECOND_USD} per second, "
+            f"{round(pro_per_s / KLING_PRICE_PER_SECOND_USD, 1)}x; the label "
+            f"still did not survive, and the background got a painted-in animation)"
         )
 
 
@@ -214,7 +215,7 @@ PALETTE_SIDE = 256
 
 
 def shipped_similarity(left, right) -> float | None:
-    """Прибор попадания в стиль, ОДИН на весь конвейер. `None` — не смогли."""
+    """Measure the style hit with the one instrument for the whole pipeline. `None` means could not measure."""
     try:
         from creative_eval.style import similarity as _external  # noqa: PLC0415
     except Exception:  # noqa: BLE001
@@ -226,17 +227,17 @@ def shipped_similarity(left, right) -> float | None:
 
 
 def similarity_source() -> str:
-    """Каким прибором меряем СЕЙЧАС. Печатается в отчёт."""
+    """Return which instrument measures right now. Printed into the report."""
     try:
         from creative_eval.style import similarity  # noqa: F401,PLC0415
 
-        return "creative_eval.style.similarity (внешний, отгружаемый)"
+        return "creative_eval.style.similarity (external, shipped)"
     except Exception:  # noqa: BLE001
-        return "palette_similarity (запасной: внешнего пакета нет)"
+        return "palette_similarity (fallback: the external package is missing)"
 
 
 def palette_similarity(left, right) -> float | None:
-    """ЗАПАСНОЙ прибор: косинус между палитрами. `None` — не смогли."""
+    """Measure with the fallback instrument: cosine between palettes. `None` means could not measure."""
     try:
         import numpy as np
         from PIL import Image
@@ -261,7 +262,7 @@ def palette_similarity(left, right) -> float | None:
 
 
 def live_upload(path) -> str:
-    """Файл -> публичная ссылка на fal. НЕПРОВЕРЕНО в этой смене (денег не тратили)."""
+    """Upload a file and return its public fal link. UNVERIFIED in this shift (no money was spent)."""
     import fal_client  # noqa: PLC0415
 
     return fal_client.upload_file(str(path))
@@ -277,14 +278,14 @@ def live_kling(
     poll_s: int = 15,
     wait_s: int = KLING_WAIT_S,
 ) -> str:
-    """Заказ у fal и скачивание выхода. ПЛАТНЫЙ путь: ровно $0.21 за вызов."""
+    """Place the fal order and download the output. This is the paid path: exactly $0.21 per call."""
     import os  # noqa: PLC0415
     import urllib.request  # noqa: PLC0415
 
     refuse_pro(endpoint)
     key = os.environ.get("FAL_KEY")
     if not key:
-        raise RuntimeError("FAL_KEY не задан: заказывать нечем")
+        raise RuntimeError("FAL_KEY is not set: nothing to order with")
     head = {"Authorization": f"Key {key}", "Content-Type": "application/json"}
     payload = {
         "video_url": video_url,
@@ -309,7 +310,7 @@ def live_kling(
     res = _req(f"https://queue.fal.run/{app}/requests/{rid}")
     url = (res.get("video") or {}).get("url")
     if not url:
-        raise RuntimeError(f"в ответе нет ссылки на видео: {str(res)[:300]}")
+        raise RuntimeError(f"the reply has no video link: {str(res)[:300]}")
     Path(out_path).parent.mkdir(parents=True, exist_ok=True)
     with urllib.request.urlopen(url, timeout=600) as fh:
         Path(out_path).write_bytes(fh.read())
@@ -317,68 +318,68 @@ def live_kling(
 
 
 def live_stylize(*, person, style, prompt: str, out_path, model: str = STYLE_MODEL) -> str:
-    """Стилизация ДВУМЯ картинками через победителя замера. Ходит в сеть."""
+    """Stylize with two images through the measured winner. Goes to the network."""
     from . import pollinations  # noqa: PLC0415
 
     urls = [pollinations.upload(person), pollinations.upload(style)]
     if len(urls) != STYLE_IMAGES:
-        raise RuntimeError(f"нужно ровно {STYLE_IMAGES} ссылки, вышло {len(urls)}")
+        raise RuntimeError(f"expected exactly {STYLE_IMAGES} links, got {len(urls)}")
     return pollinations.compose(prompt, urls, out_path, model=model)
 
 
 def file_fact(path, what: str) -> tuple:
-    """Дешёвая проверка раньше дорогой: файл есть и он не пуст."""
+    """Run the cheap check before the expensive one: the file exists and is not empty."""
     p = Path(path)
     if not p.exists():
-        return (what, FAIL, f"{p} нет на диске")
+        return (what, FAIL, f"{p} is missing on disk")
     size = p.stat().st_size
     if size == 0:
-        return (what, FAIL, f"{p} пуст (0 Б)")
-    return (what, PASS, f"{p} — {size} Б")
+        return (what, FAIL, f"{p} is empty (0 B)")
+    return (what, PASS, f"{p} — {size} B")
 
 
 INTAKE_TRIO = ("photo_intake", "style_intake", "driving_intake")
 
 
 def _numbers_of(reply) -> str:
-    """Числа соседа рядом с его вердиктом. Нет чисел — так и сказано."""
+    """Return the neighbour's numbers next to its verdict. No numbers — say so."""
     if not isinstance(reply, dict):
         return ""
     if any(k not in reply for k in ("checked", "violations", "unmeasured")):
         return ""
     return (
-        f"проверено {reply['checked']}, нарушений {reply['violations']}, "
-        f"не смогли {reply['unmeasured']}; "
+        f"checked {reply['checked']}, violations {reply['violations']}, "
+        f"unmeasured {reply['unmeasured']}; "
     )
 
 
 def stage_intake(
     *, client_photo, style_ref, driving, intake=None, driving_frames=None, card_reader=None
 ) -> dict:
-    """Три входа на месте, и сосед `fork_intake` их принял."""
+    """Check the three inputs are in place and the `fork_intake` neighbour accepted them."""
     checks = [
-        file_fact(client_photo, "фото клиента"),
-        file_fact(style_ref, "стилевой референс"),
-        file_fact(driving, "драйвинг"),
+        file_fact(client_photo, "client photo"),
+        file_fact(style_ref, "style reference"),
+        file_fact(driving, "driving"),
     ]
     note = ""
     if intake is None:
         mod, why = soft_import("fork_intake")
         if mod is None:
-            checks.append(("приём соседним модулем", UNMEASURED, why))
+            checks.append(("intake by the neighbour module", UNMEASURED, why))
             return _result(STAGES[0], checks, note=why)
         trio = [getattr(mod, n, None) for n in INTAKE_TRIO]
         if all(callable(f) for f in trio):
             photo, style, drive = trio
             calls = (
-                ("приём фото клиента", photo, (str(client_photo),), {}),
+                ("client photo intake", photo, (str(client_photo),), {}),
                 (
-                    "приём стилевого референса",
+                    "style reference intake",
                     style,
                     (str(style_ref),),
                     {} if card_reader is None else {"card_reader": card_reader},
                 ),
-                ("приём драйвинга", drive, (str(driving), driving_frames), {}),
+                ("driving intake", drive, (str(driving), driving_frames), {}),
             )
             for name, fn, args, extra in calls:
                 try:
@@ -391,7 +392,7 @@ def stage_intake(
             return _result(STAGES[0], checks, note="fork_intake: " + ", ".join(INTAKE_TRIO))
         intake, name, why = entry_point(mod, ("accept", "intake", "take", "check", "run"))
         if intake is None:
-            checks.append(("приём соседним модулем", UNMEASURED, why))
+            checks.append(("intake by the neighbour module", UNMEASURED, why))
             return _result(STAGES[0], checks, note=why)
         note = f"fork_intake.{name}"
     try:
@@ -405,15 +406,17 @@ def stage_intake(
             (str(client_photo), str(style_ref), str(driving)),
         )
     except Exception as exc:  # noqa: BLE001
-        checks.append(("приём соседним модулем", UNMEASURED, f"{type(exc).__name__}: {exc}"))
-        return _result(STAGES[0], checks, note="сосед упал: это НЕ «не годно»")
+        checks.append(
+            ("intake by the neighbour module", UNMEASURED, f"{type(exc).__name__}: {exc}")
+        )
+        return _result(STAGES[0], checks, note='the neighbour crashed: this is not "fail"')
     out, why = outcome_of(reply, what="fork_intake")
-    checks.append(("приём соседним модулем", out, why))
+    checks.append(("intake by the neighbour module", out, why))
     return _result(STAGES[0], checks, note=note or why)
 
 
 def style_prompt(style_ref, *, card_reader=None) -> dict:
-    """Промт стилизации: роли, стиль словами (если читается) и запрет брендов."""
+    """Build the stylization prompt: roles, style in words (when readable) and the brand ban."""
     from . import fork_style_prompt  # noqa: PLC0415
 
     card = fork_style_prompt.from_image(style_ref, reader=card_reader)
@@ -428,21 +431,21 @@ def style_prompt(style_ref, *, card_reader=None) -> dict:
 
 
 def _default_aesthetic():
-    """Сосед-эстетика. Импорт настоящий, а не по строке: модуль, позванный"""
+    """Return the aesthetic neighbour. The import is real, not by string: the module is called."""
     from . import fork_aesthetic  # noqa: PLC0415
 
     return fork_aesthetic
 
 
 def _default_plan():
-    """Сосед-план. Тот же довод, что и выше."""
+    """Return the plan neighbour. Same reasoning as above."""
     from . import fork_plan  # noqa: PLC0415
 
     return fork_plan
 
 
 def _person_in_plan(image, *, plan, pose=None, card=None) -> tuple:
-    """Попадает ли ЧЕЛОВЕК на картинке в полосы плана. Три исхода."""
+    """Check whether the person in the image fits the plan bands. Three outcomes."""
     if pose is None:
 
         def pose(path):
@@ -453,36 +456,41 @@ def _person_in_plan(image, *, plan, pose=None, card=None) -> tuple:
     try:
         points = pose(str(image))
     except Exception as exc:  # noqa: BLE001
-        return ("человек в плане", UNMEASURED, f"позу не сняли: {type(exc).__name__}: {exc}")
+        return (
+            "person in plan",
+            UNMEASURED,
+            f"the pose was not captured: {type(exc).__name__}: {exc}",
+        )
     if card is not None:
         got = plan.in_card(points, card)
-        return ("человек в карточке драйвинга", got["outcome"], str(got.get("note"))[:250])
+        return ("person in the driving card", got["outcome"], str(got.get("note"))[:250])
     box = plan.person_box(points)
     if box["outcome"] != PASS:
-        return ("человек в плане", UNMEASURED, str(box.get("note"))[:200])
+        return ("person in plan", UNMEASURED, str(box.get("note"))[:200])
     bad = []
     lo, hi = plan.SHOULDERS_BAND
     if not lo <= (box["shoulders"] or -1) <= hi:
-        bad.append(f"плечи {box['shoulders']} вне {lo}..{hi}")
+        bad.append(f"shoulders {box['shoulders']} outside {lo}..{hi}")
     lo, hi = plan.ANKLES_BAND
     if not lo <= (box["ankles"] or -1) <= hi:
-        bad.append(f"щиколотки {box['ankles']} вне {lo}..{hi}")
+        bad.append(f"ankles {box['ankles']} outside {lo}..{hi}")
     if abs(box["centre"] - 0.5) > plan.CENTRE_TOL:
-        bad.append(f"центр {box['centre']} дальше {plan.CENTRE_TOL} от середины")
+        bad.append(f"centre {box['centre']} farther than {plan.CENTRE_TOL} from the middle")
     if box["width"] > plan.WIDTH_MAX:
-        bad.append(f"ширина {box['width']} выше {plan.WIDTH_MAX}")
+        bad.append(f"width {box['width']} above {plan.WIDTH_MAX}")
     tail = (
-        f"плечи {box['shoulders']}, щиколотки {box['ankles']}, центр "
-        f"{box['centre']}, ширина {box['width']}"
+        f"shoulders {box['shoulders']}, ankles {box['ankles']}, centre "
+        f"{box['centre']}, width {box['width']}"
     )
     if bad:
         return (
-            "человек в плане",
+            "person in plan",
             FAIL,
-            "; ".join(bad) + f" ({tail}). Kling масштабирует персонажа под "
-            f"скелет драйвинга: рефка не в плане уедет за край кадра",
+            "; ".join(bad) + f" ({tail}). Kling scales the character to the "
+            f"driving skeleton: a reference outside the plan will drift "
+            f"past the frame edge",
         )
-    return ("человек в плане", PASS, tail)
+    return ("person in plan", PASS, tail)
 
 
 def stage_stylize(
@@ -501,31 +509,33 @@ def stage_stylize(
     pose=None,
     card=None,
 ) -> dict:
-    """Фото клиента + стилевой референс -> стилизованное фото."""
+    """Turn the client photo and the style reference into a styled photo."""
     A = _default_aesthetic() if aesthetic_mod is None else aesthetic_mod
     checks_pre = []
     if aesthetic is not None:
         gender = A.gender_of(aesthetic)
         pair = A.pair_check(client_gender=client_gender, aesthetic_gender=gender)
-        checks_pre.append(("пол клиента и шаблона", pair["outcome"], pair["note"]))
+        checks_pre.append(("client and template gender", pair["outcome"], pair["note"]))
         if pair["outcome"] != PASS:
-            return _result(STAGES[1], checks_pre, note="пол не сошёлся: генерация не запускалась")
+            return _result(
+                STAGES[1], checks_pre, note="gender mismatch: generation was not started"
+            )
         style_ref = str(A.aesthetic_file(aesthetic))
         prompt = f"{A.compose(aesthetic, card=card)['prompt']}. {A.assemble_prompt(card=card)}"
 
     built = (
-        {"prompt": prompt, "card_note": "промт подан снаружи"}
+        {"prompt": prompt, "card_note": "prompt supplied externally"}
         if prompt is not None
         else style_prompt(style_ref, card_reader=card_reader)
     )
     prompt = built["prompt"]
     checks = list(checks_pre) + [
         (
-            "запрет брендов в промте",
+            "brand ban in the prompt",
             PASS if NO_BRANDS_CLAUSE in prompt else FAIL,
             NO_BRANDS_CLAUSE
             if NO_BRANDS_CLAUSE in prompt
-            else "запрет вынули из промта: бренды поедут в кадр",
+            else "the ban was removed from the prompt: brands will ride into the frame",
         )
     ]
     stylize = live_stylize if stylize is None else stylize
@@ -535,19 +545,19 @@ def stage_stylize(
             person=str(client_photo), style=str(style_ref), prompt=prompt, out_path=str(out_path)
         )
     except Exception as exc:  # noqa: BLE001
-        checks.append(("стилизация", UNMEASURED, f"{type(exc).__name__}: {exc}"))
+        checks.append(("stylization", UNMEASURED, f"{type(exc).__name__}: {exc}"))
         return _result(
-            STAGES[1], checks, prompt=prompt, note="стилизатор не ответил: измерять нечего"
+            STAGES[1], checks, prompt=prompt, note="the styliser did not answer: nothing to measure"
         )
     checks.append(
         (
-            "стилизация",
+            "stylization",
             PASS,
-            f"{STYLE_ROUTE}/{STYLE_MODEL}, {STYLE_IMAGES} картинки, "
-            f"{round(time.perf_counter() - t0, 1)} с",
+            f"{STYLE_ROUTE}/{STYLE_MODEL}, {STYLE_IMAGES} images, "
+            f"{round(time.perf_counter() - t0, 1)} s",
         )
     )
-    checks.append(file_fact(got or out_path, "стилизованное фото"))
+    checks.append(file_fact(got or out_path, "styled photo"))
     made = str(got or out_path)
 
     P = _default_plan() if plan is None else plan
@@ -555,17 +565,17 @@ def stage_stylize(
     try:
         laid = P.to_plan(made, planned)
     except Exception as exc:  # noqa: BLE001
-        checks.append(("план 9:16", UNMEASURED, f"{type(exc).__name__}: {exc}"))
+        checks.append(("9:16 plan", UNMEASURED, f"{type(exc).__name__}: {exc}"))
         return _result(
             STAGES[1], checks, styled=made, prompt=prompt, note=str(built["card_note"] or "")[:160]
         )
-    checks.append(("план 9:16", laid["outcome"], str(laid.get("note"))[:200]))
+    checks.append(("9:16 plan", laid["outcome"], str(laid.get("note"))[:200]))
     if laid["outcome"] == PASS:
         made = laid["path"]
 
         grown = Path(made).with_name(Path(made).stem + "_full.png")
         ext = P.extend_to_plan(made, grown, extender=extend)
-        checks.append(("дорисовка полей", ext["outcome"], str(ext.get("note"))[:200]))
+        checks.append(("margin outpaint", ext["outcome"], str(ext.get("note"))[:200]))
         if ext["outcome"] == PASS:
             made = ext["path"]
 
@@ -579,7 +589,7 @@ def stage_stylize(
 def stage_style_acceptance(
     *, styled, style_ref, client_photo, operator_ok_identity=False, similarity=None, distances=None
 ) -> dict:
-    """Попал ли в стиль (против ПОЛА) и уцелела ли личность (против планки)."""
+    """Check the style hit (against the floor) and that identity survived (against the bar)."""
     similarity = shipped_similarity if similarity is None else similarity
     checks, numbers = [], {}
 
@@ -590,9 +600,9 @@ def stage_style_acceptance(
     if floor is None or hit is None:
         checks.append(
             (
-                "попадание в стиль",
+                "style hit",
                 UNMEASURED,
-                f"прибор стиля не дал числа: пол={floor}, попадание={hit}",
+                f"the style instrument gave no number: floor={floor}, hit={hit}",
             )
         )
     else:
@@ -601,10 +611,10 @@ def stage_style_acceptance(
         ok = margin >= STYLE_MARGIN_MIN
         checks.append(
             (
-                "попадание в стиль",
+                "style hit",
                 PASS if ok else FAIL,
-                f"попадание {hit} при поле {floor} (пол = стиль против "
-                f"НЕстилизованного фото), запас {margin} при планке "
+                f"hit {hit} with floor {floor} (floor = style against the "
+                f"unstyled photo), margin {margin} with bar "
                 f"{STYLE_MARGIN_MIN}",
             )
         )
@@ -613,49 +623,59 @@ def stage_style_acceptance(
     try:
         d = distances([str(styled)], str(client_photo))
     except Exception as exc:  # noqa: BLE001
-        checks.append(("личность на стилизованном", UNMEASURED, f"{type(exc).__name__}: {exc}"))
+        checks.append(("identity on the styled photo", UNMEASURED, f"{type(exc).__name__}: {exc}"))
         return _result(STAGES[2], checks, numbers=numbers)
     numbers["identity_median"] = d.get("median")
     numbers["identity_bar"] = SAME_PERSON_MAX
     if d.get("outcome") == UNMEASURED:
-        checks.append(("личность на стилизованном", UNMEASURED, str(d.get("note"))[:300]))
+        checks.append(("identity on the styled photo", UNMEASURED, str(d.get("note"))[:300]))
     else:
         med = d.get("median")
         if med is None:
-            checks.append(("личность на стилизованном", UNMEASURED, "медианы нет: судить нечем"))
+            checks.append(
+                ("identity on the styled photo", UNMEASURED, "no median: nothing to judge by")
+            )
         elif med <= SAME_PERSON_MAX:
             checks.append(
                 (
-                    "личность на стилизованном",
+                    "identity on the styled photo",
                     PASS,
-                    f"медиана {med} при планке {SAME_PERSON_MAX} "
-                    f"(лестница: {LADDER_SAME} тот же, "
-                    f"{LADDER_REJECTED} другой, {LADDER_STRANGER} чужой)",
+                    f"median {med} with bar {SAME_PERSON_MAX} "
+                    f"(ladder: {LADDER_SAME} same, "
+                    f"{LADDER_REJECTED} other, {LADDER_STRANGER} stranger)",
                 )
             )
         elif med < LADDER_REJECTED:
             band = (
-                f"медиана {med} между планкой {SAME_PERSON_MAX} и ступенью "
-                f"«другой человек» {LADDER_REJECTED}: лицо ЧАСТИЧНО "
-                f"ЗАКРЫТО или изменено аксессуаром — ArcFace здесь НЕ СУДЬЯ"
+                f"median {med} between the bar {SAME_PERSON_MAX} and the "
+                f'"other person" rung {LADDER_REJECTED}: the face is partially '
+                f"occluded or altered by an accessory — ArcFace is not the judge here"
             )
             if operator_ok_identity:
                 checks.append(
-                    ("личность на стилизованном", PASS, band + "; ДОПУЩЕНО ОПЕРАТОРОМ явным флагом")
+                    (
+                        "identity on the styled photo",
+                        PASS,
+                        band + "; admitted by the operator via an explicit flag",
+                    )
                 )
             else:
                 checks.append(
-                    ("личность на стилизованном", UNMEASURED, band + ", судит оператор глазами")
+                    (
+                        "identity on the styled photo",
+                        UNMEASURED,
+                        band + ", the operator judges by eye",
+                    )
                 )
         else:
             checks.append(
                 (
-                    "личность на стилизованном",
+                    "identity on the styled photo",
                     FAIL,
-                    f"медиана {med} выше ступени «другой человек» "
-                    f"{LADDER_REJECTED}: это подмена личности, а не "
-                    f"аксессуар (лестница: {LADDER_SAME} тот же, "
-                    f"{LADDER_STRANGER} чужой)",
+                    f'median {med} above the "other person" rung '
+                    f"{LADDER_REJECTED}: this is an identity swap, not an "
+                    f"accessory (ladder: {LADDER_SAME} same, "
+                    f"{LADDER_STRANGER} stranger)",
                 )
             )
     return _result(STAGES[2], checks, numbers=numbers)
@@ -668,7 +688,7 @@ def _default_distances():
 
 
 def cut_argv(src, dst, *, first: int, last: int, fps: float, exe: str) -> list:
-    """Рез: старт по времени, длина ПО КАДРАМ."""
+    """Build the cut command: start by time, length in frames."""
     return [
         exe,
         "-hide_banner",
@@ -708,7 +728,7 @@ def _decoded_frames(path, exe: str):
 
 
 def stage_window(*, driving, first: int, last: int, out_path, probe=None, cutter=None) -> dict:
-    """Окно по номерам кадров, проверка длины и рез с ПЕРЕСЧЁТОМ кадров."""
+    """Pick the window by frame numbers, check its length and cut with a frame recount."""
     checks, numbers = [], {"first": first, "last": last}
     probe = _default_probe() if probe is None else probe
     info = probe(str(driving))
@@ -717,18 +737,18 @@ def stage_window(*, driving, first: int, last: int, out_path, probe=None, cutter
     numbers["fps"] = fps
     numbers["source_frames"] = total
     if not fps or not total:
-        checks.append(("опрос драйвинга", UNMEASURED, str(info.get("note"))[:200]))
+        checks.append(("driving probe", UNMEASURED, str(info.get("note"))[:200]))
         return _result(STAGES[3], checks, numbers=numbers)
-    checks.append(("опрос драйвинга", PASS, str(info.get("note"))[:200]))
+    checks.append(("driving probe", PASS, str(info.get("note"))[:200]))
 
     want = last - first + 1
     numbers["want_frames"] = want
     inside = 0 <= first <= last < total
     checks.append(
         (
-            "окно внутри драйвинга",
+            "window inside the driving",
             PASS if inside else FAIL,
-            f"кадры {first}..{last} при {total} кадрах в ролике",
+            f"frames {first}..{last} with {total} frames in the clip",
         )
     )
     seconds = round(want / fps, 3)
@@ -736,10 +756,10 @@ def stage_window(*, driving, first: int, last: int, out_path, probe=None, cutter
     long_enough = seconds >= MIN_SCENE_S
     checks.append(
         (
-            "сцена не короче порога",
+            "scene not shorter than the threshold",
             PASS if long_enough else FAIL,
-            f"{seconds} с при пороге {MIN_SCENE_S} с (гейт Kling: "
-            f"«Video duration can not less than 3s»)",
+            f"{seconds} s with threshold {MIN_SCENE_S} s (Kling gate: "
+            f'"Video duration can not less than 3s")',
         )
     )
     if not (inside and long_enough):
@@ -750,7 +770,7 @@ def stage_window(*, driving, first: int, last: int, out_path, probe=None, cutter
 
         exe = shutil.which("ffmpeg")
         if not exe:
-            checks.append(("рез", UNMEASURED, "ffmpeg не найден: резать нечем"))
+            checks.append(("cut", UNMEASURED, "ffmpeg not found: nothing to cut with"))
             return _result(STAGES[3], checks, numbers=numbers)
 
         def cutter(src, dst, first=first, last=last, fps=fps, exe=exe):
@@ -760,29 +780,33 @@ def stage_window(*, driving, first: int, last: int, out_path, probe=None, cutter
                 text=True,
             )
             if run.returncode != 0:
-                raise RuntimeError(f"ffmpeg вернул {run.returncode}: {run.stderr[-300:]}")
+                raise RuntimeError(f"ffmpeg returned {run.returncode}: {run.stderr[-300:]}")
             return {"path": str(dst), "frames": _decoded_frames(dst, exe)}
 
     try:
         got = cutter(str(driving), str(out_path))
     except Exception as exc:  # noqa: BLE001
-        checks.append(("рез", UNMEASURED, f"{type(exc).__name__}: {exc}"))
+        checks.append(("cut", UNMEASURED, f"{type(exc).__name__}: {exc}"))
         return _result(STAGES[3], checks, numbers=numbers)
     got = got if isinstance(got, dict) else {"path": str(out_path), "frames": None}
     numbers["cut_frames"] = got.get("frames")
     if got.get("frames") is None:
         checks.append(
-            ("кадров в куске", UNMEASURED, "пересчитать кадры не вышло: рез не подтверждён")
+            (
+                "frames in the piece",
+                UNMEASURED,
+                "could not recount the frames: the cut is not confirmed",
+            )
         )
     else:
         checks.append(
             (
-                "кадров в куске",
+                "frames in the piece",
                 PASS if got["frames"] == want else FAIL,
-                f"{got['frames']} при заказанных {want}",
+                f"{got['frames']} with {want} ordered",
             )
         )
-    checks.append(file_fact(got.get("path") or out_path, "кусок драйвинга"))
+    checks.append(file_fact(got.get("path") or out_path, "driving piece"))
     return _result(STAGES[3], checks, numbers=numbers, window=str(got.get("path") or out_path))
 
 
@@ -795,12 +819,12 @@ def _default_probe():
 def kling_payload(
     *, video_url: str, image_url: str, character_orientation: str = CHARACTER_ORIENTATION
 ) -> dict:
-    """Ровно три поля и ни одним больше. Значение ориентации — из измеренных."""
+    """Build exactly three fields and not one more. The orientation value comes from the measured ones."""
     if character_orientation not in KLING_ORIENTATIONS:
         raise ValueError(
-            f"character_orientation={character_orientation!r}: у "
-            f"эндпоинта ровно {list(KLING_ORIENTATIONS)} "
-            f"(ИЗМЕРЕНО щупом)"
+            f"character_orientation={character_orientation!r}: the "
+            f"endpoint has exactly {list(KLING_ORIENTATIONS)} "
+            f"(MEASURED with a probe)"
         )
     return {
         "video_url": video_url,
@@ -810,7 +834,7 @@ def kling_payload(
 
 
 def _window_seconds(window, *, prober=None) -> float | None:
-    """Длина куска драйвинга в секундах, или None. Догадку не подставляем:"""
+    """Return the driving piece length in seconds, or None. No guess is substituted."""
     prober = _default_probe() if prober is None else prober
     try:
         info = prober(str(window))
@@ -833,15 +857,15 @@ def stage_kling(
     endpoint: str = KLING_ENDPOINT,
     orientation: str = CHARACTER_ORIENTATION,
 ) -> dict:
-    """Две загрузки и один платный вызов. Любой отказ — «не смогли», не «не годно»."""
+    """Run two uploads and one paid call. Any refusal is "could not measure", not "fail"."""
     seconds = _window_seconds(window, prober=probe)
     price = KLING_PRICE_USD if seconds is None else kling_price(seconds)
     checks, numbers = [], {"endpoint": endpoint, "price_usd": price, "seconds": seconds}
     try:
         refuse_pro(endpoint)
-        checks.append(("сторож pro", PASS, f"{endpoint}: тарифов {list(FORBIDDEN_TIERS)} нет"))
+        checks.append(("pro guard", PASS, f"{endpoint}: no {list(FORBIDDEN_TIERS)} tiers"))
     except ValueError as exc:
-        checks.append(("сторож pro", FAIL, str(exc)))
+        checks.append(("pro guard", FAIL, str(exc)))
         return _result(STAGES[4], checks, numbers=numbers)
 
     upload = live_upload if upload is None else upload
@@ -850,31 +874,31 @@ def stage_kling(
         video_url = upload(str(window))
         image_url = upload(str(styled))
     except Exception as exc:  # noqa: BLE001
-        checks.append(("загрузка входов", UNMEASURED, f"{type(exc).__name__}: {exc}"))
+        checks.append(("input upload", UNMEASURED, f"{type(exc).__name__}: {exc}"))
         return _result(
             STAGES[4],
             checks,
             numbers=numbers,
-            note="входы не уехали: заказ не делался, денег не потрачено",
+            note="the inputs did not go out: no order was made, no money spent",
         )
-    checks.append(("загрузка входов", PASS, "video_url и image_url получены"))
+    checks.append(("input upload", PASS, "video_url and image_url received"))
 
     try:
         payload = kling_payload(
             video_url=video_url, image_url=image_url, character_orientation=orientation
         )
     except ValueError as exc:
-        checks.append(("состав запроса", FAIL, str(exc)))
+        checks.append(("request composition", FAIL, str(exc)))
         return _result(STAGES[4], checks, numbers=numbers)
     extra = sorted(set(payload) - set(KLING_FIELDS))
     missing = sorted(set(KLING_FIELDS) - set(payload))
     checks.append(
         (
-            "состав запроса",
+            "request composition",
             PASS if not (extra or missing) else FAIL,
-            f"поля {sorted(payload)} при измеренных {sorted(KLING_FIELDS)}"
-            + (f", лишние {extra}" if extra else "")
-            + (f", нет {missing}" if missing else ""),
+            f"fields {sorted(payload)} against the measured {sorted(KLING_FIELDS)}"
+            + (f", extra {extra}" if extra else "")
+            + (f", missing {missing}" if missing else ""),
         )
     )
     if extra or missing:
@@ -889,15 +913,15 @@ def stage_kling(
             out_path=str(out_path),
         )
     except Exception as exc:  # noqa: BLE001
-        checks.append(("вызов Kling", UNMEASURED, f"{type(exc).__name__}: {exc}"))
+        checks.append(("Kling call", UNMEASURED, f"{type(exc).__name__}: {exc}"))
         return _result(
-            STAGES[4], checks, numbers=numbers, note="заказ не состоялся: измерять нечего"
+            STAGES[4], checks, numbers=numbers, note="the order did not happen: nothing to measure"
         )
     spent = round(time.perf_counter() - t0, 1)
     numbers["latency_s"] = spent
     lo, hi = KLING_LATENCY_S
-    checks.append(("вызов Kling", PASS, f"{spent} с (измеренная полоса {lo}..{hi} с), ${price}"))
-    checks.append(file_fact(got or out_path, "выход Kling"))
+    checks.append(("Kling call", PASS, f"{spent} s (measured band {lo}..{hi} s), ${price}"))
+    checks.append(file_fact(got or out_path, "Kling output"))
     return _result(STAGES[4], checks, numbers=numbers, produced=str(got or out_path))
 
 
@@ -912,7 +936,7 @@ def stage_output_acceptance(
     cuts=None,
     operator_ok_identity=False,
 ) -> dict:
-    """Геометрия, личность и монтажные резы на выходе Kling."""
+    """Check geometry, identity and editorial cuts on the Kling output."""
     checks, numbers = [], {}
     probe = _default_probe() if probe is None else probe
     info = probe(str(produced))
@@ -921,7 +945,7 @@ def stage_output_acceptance(
     numbers["fps"] = info.get("fps")
     numbers["frames"] = info.get("frames")
     if not info.get("width"):
-        checks.append(("геометрия выхода", UNMEASURED, str(info.get("note"))[:200]))
+        checks.append(("output geometry", UNMEASURED, str(info.get("note"))[:200]))
     else:
         w, h = info.get("width"), info.get("height")
         ratio = w / h
@@ -931,38 +955,37 @@ def stage_output_acceptance(
         if ratio > OUT_RATIO_MAX:
             checks.append(
                 (
-                    "геометрия выхода",
+                    "output geometry",
                     FAIL,
-                    f"{w}x{h}, соотношение {ratio:.4f} > "
-                    f"{OUT_RATIO_MAX}: ГОРИЗОНТАЛЬ, для вертикального "
-                    f"продукта это брак",
+                    f"{w}x{h}, ratio {ratio:.4f} > "
+                    f"{OUT_RATIO_MAX}: landscape, a defect for a vertical "
+                    f"product",
                 )
             )
         elif not fps_ok:
             checks.append(
                 (
-                    "геометрия выхода",
+                    "output geometry",
                     UNMEASURED,
-                    f"{w}x{h} при {info.get('fps')} к/с вместо "
-                    f"{KLING_OUT_FPS}: частота не та, сборка звука "
-                    f"считает кадры по 30 — судить нечем",
+                    f"{w}x{h} at {info.get('fps')} fps instead of "
+                    f"{KLING_OUT_FPS}: wrong frame rate, the audio assembly "
+                    f"counts frames at 30 — nothing to judge by",
                 )
             )
         else:
             was = (
-                "как на прежних заказах"
+                "as on previous orders"
                 if known
                 else (
-                    f"НОВАЯ геометрия, прежние восемь давали "
-                    f"{KLING_OUT_SIZE[0]}x{KLING_OUT_SIZE[1]}"
+                    f"new geometry, the previous eight gave {KLING_OUT_SIZE[0]}x{KLING_OUT_SIZE[1]}"
                 )
             )
             checks.append(
                 (
-                    "геометрия выхода",
+                    "output geometry",
                     PASS,
-                    f"{w}x{h}, соотношение {ratio:.4f} при потолке "
-                    f"{OUT_RATIO_MAX} — вертикаль или квадрат; {was}",
+                    f"{w}x{h}, ratio {ratio:.4f} under the ceiling "
+                    f"{OUT_RATIO_MAX} — vertical or square; {was}",
                 )
             )
 
@@ -970,16 +993,16 @@ def stage_output_acceptance(
     try:
         got = decode(str(produced), str(frames_dir))
     except Exception as exc:  # noqa: BLE001
-        checks.append(("раскладка на кадры", UNMEASURED, f"{type(exc).__name__}: {exc}"))
+        checks.append(("frame layout", UNMEASURED, f"{type(exc).__name__}: {exc}"))
         return _result(STAGES[5], checks, numbers=numbers)
     paths = list(got.get("paths") or [])
     numbers["decoded"] = len(paths)
     if not paths:
         checks.append(
-            ("раскладка на кадры", UNMEASURED, f"кадров не вышло: {str(got.get('note'))[:200]}")
+            ("frame layout", UNMEASURED, f"no frames came out: {str(got.get('note'))[:200]}")
         )
         return _result(STAGES[5], checks, numbers=numbers)
-    checks.append(("раскладка на кадры", PASS, f"кадров {len(paths)}"))
+    checks.append(("frame layout", PASS, f"frames {len(paths)}"))
 
     distances = _default_distances() if distances is None else distances
     try:
@@ -990,39 +1013,49 @@ def stage_output_acceptance(
     numbers["identity_inside"] = d.get("inside")
     numbers["identity_judged"] = d.get("judged")
     if d.get("outcome") == UNMEASURED:
-        checks.append(("личность на выходе", UNMEASURED, str(d.get("note"))[:300]))
+        checks.append(("identity on the output", UNMEASURED, str(d.get("note"))[:300]))
     else:
         med = d.get("median")
         tail = (
-            f"в баре {d.get('inside')} из {d.get('judged')} судимых "
-            f"(лестница: {LADDER_SAME} тот же, {LADDER_REJECTED} другой, "
-            f"{LADDER_STRANGER} чужой)"
+            f"inside the bar {d.get('inside')} of {d.get('judged')} judged "
+            f"(ladder: {LADDER_SAME} same, {LADDER_REJECTED} other, "
+            f"{LADDER_STRANGER} stranger)"
         )
         if med is None:
-            checks.append(("личность на выходе", UNMEASURED, "медианы нет: судить нечем"))
+            checks.append(("identity on the output", UNMEASURED, "no median: nothing to judge by"))
         elif med <= SAME_PERSON_MAX:
             checks.append(
-                ("личность на выходе", PASS, f"медиана {med} при планке {SAME_PERSON_MAX}, {tail}")
+                (
+                    "identity on the output",
+                    PASS,
+                    f"median {med} with bar {SAME_PERSON_MAX}, {tail}",
+                )
             )
         elif med < LADDER_REJECTED:
             band = (
-                f"медиана {med} между планкой {SAME_PERSON_MAX} и ступенью "
-                f"«другой человек» {LADDER_REJECTED}: лицо ЧАСТИЧНО "
-                f"ЗАКРЫТО, ArcFace здесь НЕ СУДЬЯ; {tail}"
+                f"median {med} between the bar {SAME_PERSON_MAX} and the "
+                f'"other person" rung {LADDER_REJECTED}: the face is partially '
+                f"occluded, ArcFace is not the judge here; {tail}"
             )
             if operator_ok_identity:
                 checks.append(
-                    ("личность на выходе", PASS, band + "; ДОПУЩЕНО ОПЕРАТОРОМ явным флагом")
+                    (
+                        "identity on the output",
+                        PASS,
+                        band + "; admitted by the operator via an explicit flag",
+                    )
                 )
             else:
-                checks.append(("личность на выходе", UNMEASURED, band + ", судит оператор глазами"))
+                checks.append(
+                    ("identity on the output", UNMEASURED, band + ", the operator judges by eye")
+                )
         else:
             checks.append(
                 (
-                    "личность на выходе",
+                    "identity on the output",
                     FAIL,
-                    f"медиана {med} выше ступени «другой человек» "
-                    f"{LADDER_REJECTED}: подмена личности; {tail}",
+                    f'median {med} above the "other person" rung '
+                    f"{LADDER_REJECTED}: an identity swap; {tail}",
                 )
             )
 
@@ -1033,14 +1066,14 @@ def stage_output_acceptance(
         c = {"outcome": UNMEASURED, "note": f"{type(exc).__name__}: {exc}"}
     numbers["cuts"] = None if c.get("outcome") == UNMEASURED else len(c.get("cuts") or [])
     if c.get("outcome") == UNMEASURED:
-        checks.append(("монтажные резы", UNMEASURED, str(c.get("note"))[:300]))
+        checks.append(("editorial cuts", UNMEASURED, str(c.get("note"))[:300]))
     else:
         found = len(c.get("cuts") or [])
         checks.append(
             (
-                "монтажные резы",
+                "editorial cuts",
                 PASS if found <= MAX_CUTS_OUT else FAIL,
-                f"резов {found} при допуске {MAX_CUTS_OUT}; {str(c.get('note'))[:160]}",
+                f"cuts {found} with allowance {MAX_CUTS_OUT}; {str(c.get('note'))[:160]}",
             )
         )
     return _result(STAGES[5], checks, numbers=numbers)
@@ -1062,17 +1095,17 @@ def _default_cuts():
 
 
 def stage_finish(*, produced, driving, out_path, window=None, finish=None) -> dict:
-    """Кроп 9:16 и возврат звука. Живёт в `fork_finish`, зовётся мягко."""
+    """Crop to 9:16 and return the audio. Lives in `fork_finish`, called softly."""
     checks = []
     note = ""
     if finish is None:
         mod, why = soft_import("fork_finish")
         if mod is None:
-            checks.append(("финальная сборка", UNMEASURED, why))
+            checks.append(("final assembly", UNMEASURED, why))
             return _result(STAGES[6], checks, note=why)
         finish, name, why = entry_point(mod, ("finish", "assemble", "build", "compose", "run"))
         if finish is None:
-            checks.append(("финальная сборка", UNMEASURED, why))
+            checks.append(("final assembly", UNMEASURED, why))
             return _result(STAGES[6], checks, note=why)
         note = f"fork_finish.{name}"
     try:
@@ -1087,29 +1120,29 @@ def stage_finish(*, produced, driving, out_path, window=None, finish=None) -> di
             (str(driving), str(produced), str(out_path)),
         )
     except Exception as exc:  # noqa: BLE001
-        checks.append(("финальная сборка", UNMEASURED, f"{type(exc).__name__}: {exc}"))
-        return _result(STAGES[6], checks, note="сосед упал: это НЕ «не годно»")
+        checks.append(("final assembly", UNMEASURED, f"{type(exc).__name__}: {exc}"))
+        return _result(STAGES[6], checks, note='the neighbour crashed: this is not "fail"')
     out, why = outcome_of(reply, what="fork_finish")
-    checks.append(("финальная сборка", out, why))
+    checks.append(("final assembly", out, why))
     if out == PASS:
         target = (reply.get("path") if isinstance(reply, dict) else None) or out_path
-        checks.append(file_fact(target, "финальный ролик"))
+        checks.append(file_fact(target, "final clip"))
     return _result(STAGES[6], checks, note=note or why)
 
 
 def stage_report(stages: list, *, out_path=None) -> dict:
-    """Свод по ступеням. Частичный результат — ЧИСЛАМИ, а не флагом."""
+    """Summarize the stages. A partial result is numbers, not a flag."""
     checked = sum(s["checked"] for s in stages)
     violations = sum(s["violations"] for s in stages)
     unmeasured = sum(s["unmeasured"] for s in stages)
     done = sum(1 for s in stages if s["outcome"] == PASS)
     checks = [
         (
-            "свод по ступеням",
+            "stage summary",
             PASS,
-            f"ступеней пройдено {done} из {len(STAGES) - 1} до отчёта; "
-            f"проверок {checked}, нарушений {violations}, "
-            f"не смогли {unmeasured}",
+            f"stages passed {done} of {len(STAGES) - 1} before the report; "
+            f"checks {checked}, violations {violations}, "
+            f"unmeasured {unmeasured}",
         )
     ]
     if out_path is not None:
@@ -1128,9 +1161,9 @@ def stage_report(stages: list, *, out_path=None) -> dict:
                 ),
                 encoding="utf-8",
             )
-            checks.append(("отчёт на диск", PASS, str(out_path)))
+            checks.append(("report to disk", PASS, str(out_path)))
         except OSError as exc:
-            checks.append(("отчёт на диск", UNMEASURED, f"{type(exc).__name__}: {exc}"))
+            checks.append(("report to disk", UNMEASURED, f"{type(exc).__name__}: {exc}"))
     return _result(
         STAGES[7],
         checks,
@@ -1176,13 +1209,13 @@ def run(
     endpoint: str = KLING_ENDPOINT,
     log=None,
 ) -> dict:
-    """Весь путь по ступеням. Печатает КАЖДУЮ сразу и стоит на первой «не годно»."""
+    """Walk the whole path stage by stage. Print each one immediately and stop at the first "fail"."""
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
     say(
-        f"стенд: {len(STAGES)} ступеней, останов на первой «{FAIL}»; "
-        f"платный вызов ровно один (${KLING_PRICE_USD} за "
-        f"{PRODUCT_SECONDS:g} с, {KLING_PRICE_PER_SECOND_USD}/с)",
+        f"stand: {len(STAGES)} stages, stop at the first '{FAIL}'; "
+        f"exactly one paid call (${KLING_PRICE_USD} for "
+        f"{PRODUCT_SECONDS:g} s, {KLING_PRICE_PER_SECOND_USD}/s)",
         log=log,
     )
 
@@ -1199,7 +1232,7 @@ def run(
         res = fn()
         res["elapsed"] = round(time.perf_counter() - t0, 2)
         stages.append(res)
-        say(line(res) + f" | {res['elapsed']} с", log=log)
+        say(line(res) + f" | {res['elapsed']} s", log=log)
         for c in res["checks"]:
             say(f"      · {c['name']}: {c['outcome']} — {c['note']}", log=log)
         if res["outcome"] != PASS and stopped is None:
@@ -1298,12 +1331,12 @@ def run(
     say(line(report), log=log)
 
     outcome = stopped["outcome"] if stopped is not None else report["outcome"]
-    where = f"{stopped['stage']}" if stopped is not None else "все ступени"
+    where = f"{stopped['stage']}" if stopped is not None else "all stages"
     totals = report["totals"]
     say(
-        f"ИТОГ: {outcome} на ступени «{where}» | ступеней пройдено "
-        f"{totals['stages_passed']} из {len(STAGES) - 1} | проверок "
-        f"{totals['checked']}, нарушений {totals['violations']}, не смогли "
+        f"TOTAL: {outcome} at stage '{where}' | stages passed "
+        f"{totals['stages_passed']} of {len(STAGES) - 1} | checks "
+        f"{totals['checked']}, violations {totals['violations']}, unmeasured "
         f"{totals['unmeasured']}",
         log=log,
     )
@@ -1319,59 +1352,62 @@ def run(
 
 
 def parse_window(text: str) -> tuple:
-    """`первый:последний` -> пара чисел. Мусор — исключение, а не догадка."""
+    """Parse `first:last` into a pair of numbers. Garbage raises, it is not guessed away."""
     parts = str(text).split(":")
     if len(parts) != 2 or not all(p.strip().lstrip("-").isdigit() for p in parts):
-        raise ValueError(f"окно {text!r} не вида «первый:последний», например 100:199")
+        raise ValueError(f"window {text!r} is not of the form 'first:last', for example 100:199")
     first, last = int(parts[0]), int(parts[1])
     if first > last:
-        raise ValueError(f"окно {text!r}: первый кадр за последним")
+        raise ValueError(f"window {text!r}: the first frame is after the last")
     return first, last
 
 
 def frame_paths(directory) -> list | None:
-    """Кадры каталога по порядку. Пустой каталог — исключение, а не тишина."""
+    """Return the directory frames in order. An empty directory raises rather than staying silent."""
     if directory is None:
         return None
     root = Path(directory)
     if not root.is_dir():
-        raise ValueError(f"каталог кадров {directory!r} не существует")
+        raise ValueError(f"frames directory {directory!r} does not exist")
     got = sorted(str(p) for p in root.iterdir() if p.suffix.lower() in FRAME_SUFFIXES)
     if not got:
         raise ValueError(
-            f"каталог кадров {directory!r} пуст: ждали файлы {', '.join(sorted(FRAME_SUFFIXES))}"
+            f"frames directory {directory!r} is empty: expected files "
+            f"{', '.join(sorted(FRAME_SUFFIXES))}"
         )
     return got
 
 
 def main(argv=None) -> int:
-    """Тонкая точка входа: разбор аргументов и вызов `run`."""
+    """Parse the arguments and call `run` from a thin entry point."""
     import argparse  # noqa: PLC0415
 
-    ap = argparse.ArgumentParser(description="сквозной стенд продукта")
+    ap = argparse.ArgumentParser(description="end-to-end product stand")
     ap.add_argument("--client", required=True)
-    ap.add_argument("--style", default=None, help="стилевой референс; не нужен при --aesthetic")
+    ap.add_argument("--style", default=None, help="style reference; not needed with --aesthetic")
     ap.add_argument("--driving", required=True)
-    ap.add_argument("--window", required=True, help="первый:последний, напр. 100:199")
+    ap.add_argument("--window", required=True, help="first:last, e.g. 100:199")
     ap.add_argument("--out", default="work/e2e")
-    ap.add_argument("--aesthetic", default=None, help="имя эстетики из assets/fork_aesthetics.json")
+    ap.add_argument(
+        "--aesthetic", default=None, help="aesthetic name from assets/fork_aesthetics.json"
+    )
     ap.add_argument(
         "--client-gender",
         default=None,
         choices=("m", "f"),
-        help="пол клиента; обязателен вместе с --aesthetic",
+        help="client gender; required together with --aesthetic",
     )
-    ap.add_argument("--frames", default=None, help="каталог с уже распакованными кадрами драйвинга")
+    ap.add_argument("--frames", default=None, help="directory with already unpacked driving frames")
     ap.add_argument(
         "--operator-ok-identity",
         action="store_true",
-        help="оператор посмотрел глазами и допустил личность",
+        help="the operator looked by eye and admitted the identity",
     )
     a = ap.parse_args(argv)
     if a.aesthetic is None and a.style is None:
-        ap.error("нужен либо --style, либо --aesthetic")
+        ap.error("either --style or --aesthetic is required")
     if a.aesthetic is not None and a.client_gender is None:
-        ap.error("--aesthetic требует --client-gender")
+        ap.error("--aesthetic requires --client-gender")
     first, last = parse_window(a.window)
     got = run(
         client_photo=a.client,

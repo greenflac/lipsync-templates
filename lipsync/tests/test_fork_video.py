@@ -1,4 +1,4 @@
-"""Раскодировщик видео: сторожа."""
+"""Guard the video decoder."""
 
 from __future__ import annotations
 
@@ -25,7 +25,7 @@ def _probe_json(
     audio=False,
     codec="h264",
 ) -> str:
-    """Ответ ffprobe той же формы, что снят прогоном. Обрезан до нужных полей."""
+    """Return an ffprobe answer of the same shape as a recorded run. Trimmed to the fields we use."""
     audio_stream = (
         """        {"index": 1, "codec_name": "aac", "codec_type": "audio",
          "r_frame_rate": "0/0", "avg_frame_rate": "0/0",
@@ -84,7 +84,7 @@ DECODE_STDERR_BROKEN = (
 
 
 class _Prober:
-    """Подменённый ffprobe. Считает вызовы: «не звали» — тоже утверждение."""
+    """Substitute ffprobe. Counts its calls: "not called" is also a claim."""
 
     def __init__(self, *, ran=True, code=0, out="", err="", why=""):
         self.answer = {"ran": ran, "code": code, "out": out, "err": err, "why": why}
@@ -96,7 +96,7 @@ class _Prober:
 
 
 class _Decoder:
-    """Подменённый ffmpeg: кладёт `n` настоящих PNG с теми же именами."""
+    """Substitute ffmpeg: writes `n` real PNGs with the same names."""
 
     def __init__(self, n=0, *, ran=True, code=0, err="", why="", payload=None):
         self.n, self.answer = n, {"ran": ran, "code": code, "out": "", "err": err, "why": why}
@@ -115,14 +115,14 @@ class _Decoder:
 
 
 def _video(tmp: Path, name="driving.mp4", size=4679) -> Path:
-    """Файл-заглушка: `probe` до вызова ffprobe смотрит только на размер."""
+    """Return a stub file: `probe` looks only at the size before calling ffprobe."""
     p = tmp / name
     p.write_bytes(b"\x00" * size)
     return p
 
 
 class ParseProbe(unittest.TestCase):
-    """Разбор ответа ffprobe. На литералах, снятых с настоящего ffprobe."""
+    """Parse the ffprobe answer. On literals recorded from a real ffprobe."""
 
     def test_the_fields_we_use_are_read_from_a_real_answer(self):
         got = fv.parse_probe(_probe_json())
@@ -148,15 +148,15 @@ class ParseProbe(unittest.TestCase):
     def test_without_nb_frames_the_count_is_named_an_estimate(self):
         got = fv.parse_probe(_probe_json(nb=""))
         self.assertEqual(got["frames"], 60)
-        self.assertEqual(got["frames_from"], "длительность x частота")
+        self.assertEqual(got["frames_from"], "duration x rate")
 
     def test_a_broken_file_answer_has_no_video_stream(self):
         got = fv.parse_probe(PROBE_STDOUT_BROKEN)
         self.assertFalse(got["ok"])
-        self.assertIn("видеопотока", got["why"])
+        self.assertIn("video stream", got["why"])
 
     def test_garbage_instead_of_json_does_not_raise(self):
-        got = fv.parse_probe("не json вовсе")
+        got = fv.parse_probe("not json at all")
         self.assertFalse(got["ok"])
         self.assertIn("JSON", got["why"])
 
@@ -172,7 +172,7 @@ class ParseProbe(unittest.TestCase):
 
 
 class FpsRule(unittest.TestCase):
-    """Продуктовое решение про частоту. Развилка вынесена из `frames`."""
+    """Guard the product decision about the rate. The branch is lifted out of `frames`."""
 
     def test_no_request_means_every_frame_and_says_so(self):
         got = fv.fps_plan(30.0)
@@ -193,7 +193,7 @@ class FpsRule(unittest.TestCase):
         self.assertIsNone(got["fps"])
 
     def test_2997_to_30_is_refused_and_30005_to_30_is_not(self):
-        """Допуск частоты зажат литералами С ДВУХ СТОРОН."""
+        """The rate tolerance is clamped by literals from both sides."""
         self.assertEqual(fv.fps_plan(29.97002997002997, want=30)["outcome"], FAIL)
         near = fv.fps_plan(30.005, want=30)
         self.assertEqual(near["outcome"], PASS)
@@ -211,7 +211,7 @@ class FpsRule(unittest.TestCase):
 
 
 class CountVerdict(unittest.TestCase):
-    """Вердикт по числам кадров: ноль — не успех, расхождение — не «годно»."""
+    """Judge the frame counts: zero is not success, a gap is not a "pass"."""
 
     def test_zero_frames_is_a_failure_not_an_empty_success(self):
         got = fv.count_outcome(60, 0)
@@ -222,7 +222,7 @@ class CountVerdict(unittest.TestCase):
         self.assertEqual(fv.count_outcome(60, 60)["outcome"], PASS)
 
     def test_the_count_tolerance_is_clamped_from_both_sides(self):
-        """Допуск в кадрах зажат литералами с двух сторон."""
+        """The frame tolerance is clamped by literals from both sides."""
         self.assertEqual(fv.count_outcome(60, 61)["outcome"], PASS)
         self.assertEqual(fv.count_outcome(60, 59)["outcome"], PASS)
         self.assertEqual(fv.count_outcome(60, 62)["outcome"], UNMEASURED)
@@ -264,7 +264,7 @@ class FrameNames(unittest.TestCase):
         self.assertEqual(fv.frame_name(99999), "99999.png")
 
     def test_string_order_equals_number_order_over_our_whole_range(self):
-        """Ширина поля зажата сверху нашим потолком, снизу — сортировкой."""
+        """The field width is clamped by our ceiling from above and by sorting from below."""
         names = [fv.frame_name(i) for i in range(0, 306)]
         self.assertEqual(names, sorted(names))
         self.assertEqual(len(set(len(n) for n in names)), 1)
@@ -274,14 +274,14 @@ class FrameNames(unittest.TestCase):
             fv.frame_name(-1)
 
     def test_frame_name_has_no_start_of_its_own(self):
-        """Начало нумерации выбирает ВЫЗЫВАЮЩИЙ, а не эта функция."""
+        """The caller chooses where numbering starts, not this function."""
         self.assertEqual(fv.frame_name(0), "00000.png")
         self.assertEqual(fv.frame_name(1), "00001.png")
         self.assertEqual(fv.frame_name(361), "00361.png")
         self.assertEqual(fv.frame_name(362), "00362.png")
 
     def test_both_starts_sort_into_the_same_order(self):
-        """ЗАМЕР, вынесенный в сторож: раскладка с нуля и с единицы дают"""
+        """A measurement lifted into a guard: layouts from zero and from one sort the same."""
         for n in (9, 10, 99, 100, 362, 999, 1000):
             with self.subTest(n=n):
                 zero = sorted(fv.frame_name(k) for k in range(n))
@@ -291,7 +291,7 @@ class FrameNames(unittest.TestCase):
                 self.assertEqual(len(set(len(x) for x in zero + one)), 1)
 
     def test_the_order_would_break_without_the_padding(self):
-        """НЕГАТИВНЫЙ КОНТРОЛЬ к предыдущему: без дополнения нулями"""
+        """Run the negative control for the previous test: without zero padding."""
         for n in (100, 1000):
             for start in (0, 1):
                 with self.subTest(n=n, start=start):
@@ -300,7 +300,7 @@ class FrameNames(unittest.TestCase):
 
 
 class DecodeCommand(unittest.TestCase):
-    """Состав команды — тоже решение, и он краснеет в тесте, а не в прогоне."""
+    """The command makeup is also a decision, and it turns red in a test, not in a run."""
 
     def test_the_numbering_starts_at_zero_and_names_are_padded(self):
         argv = fv.decode_argv("in.mp4", "/out")
@@ -329,7 +329,7 @@ class DecodeCommand(unittest.TestCase):
 
 
 class Probe(unittest.TestCase):
-    """Три исхода метаданных, и «нет инструмента» не равно «плохой файл»."""
+    """Three metadata outcomes, and "no instrument" is not "a bad file"."""
 
     def setUp(self):
         import tempfile
@@ -342,18 +342,18 @@ class Probe(unittest.TestCase):
         shutil.rmtree(self.tmp, ignore_errors=True)
 
     def test_a_missing_file_is_a_failure(self):
-        got = fv.probe(self.tmp / "нет.mp4", prober=_Prober())
+        got = fv.probe(self.tmp / "missing.mp4", prober=_Prober())
         self.assertEqual(got["outcome"], FAIL)
 
     def test_a_directory_is_a_failure_and_says_what_to_do(self):
-        d = self.tmp / "кадры"
+        d = self.tmp / "frames"
         d.mkdir()
         got = fv.probe(d, prober=_Prober())
         self.assertEqual(got["outcome"], FAIL)
-        self.assertIn("КАТАЛОГ", got["note"])
+        self.assertIn("directory", got["note"])
 
     def test_an_empty_file_is_a_failure_without_paying_for_a_process(self):
-        p = self.tmp / "пусто.mp4"
+        p = self.tmp / "empty.mp4"
         p.write_bytes(b"")
         prober = _Prober()
         got = fv.probe(p, prober=prober)
@@ -361,7 +361,7 @@ class Probe(unittest.TestCase):
         self.assertEqual(prober.calls, 0)
 
     def test_a_missing_ffprobe_is_unmeasured_never_a_verdict(self):
-        got = fv.probe(_video(self.tmp), prober=_Prober(ran=False, why="ffprobe не найден"))
+        got = fv.probe(_video(self.tmp), prober=_Prober(ran=False, why="ffprobe not found"))
         self.assertEqual(got["outcome"], UNMEASURED)
         self.assertNotEqual(got["outcome"], FAIL)
         self.assertNotEqual(got["outcome"], PASS)
@@ -376,7 +376,7 @@ class Probe(unittest.TestCase):
 
     def test_a_text_file_is_a_failure(self):
         got = fv.probe(
-            _video(self.tmp, name="не_видео.txt"),
+            _video(self.tmp, name="not_a_video.txt"),
             prober=_Prober(code=1, out=PROBE_STDOUT_BROKEN, err=PROBE_STDERR_NOT_VIDEO),
         )
         self.assertEqual(got["outcome"], FAIL)
@@ -398,7 +398,7 @@ class Probe(unittest.TestCase):
 
 
 class FpsProberDropIn(unittest.TestCase):
-    """Совместимая замена `fork_template._ffprobe_fps`: `path -> float|None`."""
+    """A drop-in replacement for `fork_template._ffprobe_fps`: `path -> float|None`."""
 
     def setUp(self):
         import tempfile
@@ -420,7 +420,7 @@ class FpsProberDropIn(unittest.TestCase):
 
     def test_it_returns_none_when_there_is_nothing_to_ask(self):
         real = fv.read_probe
-        fv.read_probe = _Prober(ran=False, why="нет ffprobe")
+        fv.read_probe = _Prober(ran=False, why="no ffprobe")
         try:
             self.assertIsNone(fv.fps_prober(_video(self.tmp)))
         finally:
@@ -428,14 +428,14 @@ class FpsProberDropIn(unittest.TestCase):
 
 
 class Frames(unittest.TestCase):
-    """Раскодирование целиком: числа, три исхода, порядок, идемпотентность."""
+    """Decoding end to end: numbers, three outcomes, order, idempotence."""
 
     def setUp(self):
         import tempfile
 
         self.tmp = Path(tempfile.mkdtemp(prefix="fork_video_frames_"))
         self.src = _video(self.tmp)
-        self.out = self.tmp / "кадры"
+        self.out = self.tmp / "frames"
 
     def tearDown(self):
         import shutil
@@ -479,7 +479,7 @@ class Frames(unittest.TestCase):
         self.assertEqual(rep["written"], 0)
 
     def test_a_missing_ffmpeg_is_unmeasured_never_a_verdict(self):
-        rep, _, _ = self._run(decoder=_Decoder(0, ran=False, why="ffmpeg не найден"))
+        rep, _, _ = self._run(decoder=_Decoder(0, ran=False, why="ffmpeg not found"))
         self.assertEqual(rep["outcome"], UNMEASURED)
         self.assertNotEqual(rep["outcome"], FAIL)
         self.assertNotEqual(rep["outcome"], PASS)
@@ -562,7 +562,7 @@ class Frames(unittest.TestCase):
         )
 
     def test_a_second_run_reports_the_frames_that_lie_there_not_a_zero(self):
-        """ДЕФЕКТ, ради которого писан этот сторож: итоговая строка печатала"""
+        """The defect this guard was written for: the summary line printed a zero."""
         first, _, _ = self._run(n=60)
         self.assertEqual(first["outcome"], PASS)
         rep, _, decoder = self._run(n=3)
@@ -572,24 +572,24 @@ class Frames(unittest.TestCase):
         self.assertEqual(rep["bytes"], 0)
         self.assertEqual(rep["present"], 60)
         self.assertEqual(rep["present_bytes"], 60 * len(ONE_PIXEL_PNG))
-        self.assertIn("до нас в каталоге лежало кадров 60", rep["note"])
-        self.assertIn("записано нами 0", rep["note"])
-        self.assertNotIn("каталог назначения был пуст", rep["note"])
+        self.assertIn("the directory already held 60 frames", rep["note"])
+        self.assertIn("written by us 0", rep["note"])
+        self.assertNotIn("the destination directory was empty", rep["note"])
 
     def test_a_second_run_still_names_the_expectation_it_already_knew(self):
-        """Метаданные разобрались до отказа — значит «ожидалось» ИЗВЕСТНО."""
+        """The metadata parsed before the refusal — so "expected" is known."""
         self._run(n=60)
         rep, _, _ = self._run(n=3)
         self.assertEqual(rep["expected"], 60)
-        self.assertIn("Ожидалось кадров 60", rep["note"])
+        self.assertIn("Expected frames 60", rep["note"])
 
     def test_a_clean_directory_is_reported_as_looked_at_and_empty(self):
-        """Негативный контроль с другой стороны: пусто — это ОТВЕТ."""
+        """Run the negative control from the other side: empty is an answer."""
         rep, _, _ = self._run(n=60)
         self.assertEqual(rep["outcome"], PASS)
         self.assertEqual(rep["present"], 0)
         self.assertEqual(rep["present_bytes"], 0)
-        self.assertIn("каталог назначения был пуст", rep["note"])
+        self.assertIn("the destination directory was empty", rep["note"])
 
     def test_an_overwrite_says_what_it_wiped(self):
         self._run(n=60)
@@ -599,22 +599,22 @@ class Frames(unittest.TestCase):
         self.assertEqual(rep["outcome"], PASS)
         self.assertEqual(rep["written"], 3)
         self.assertEqual(rep["present"], 60)
-        self.assertIn("до нас в каталоге лежало кадров 60", rep["note"])
+        self.assertIn("the directory already held 60 frames", rep["note"])
 
     def test_a_refusal_before_the_look_never_claims_an_empty_directory(self):
-        """Третий исход не сворачивается в первые два: отказ случился"""
+        """The third outcome does not fold into the first two: the refusal happened."""
         prober = _Prober(code=1, out=PROBE_STDOUT_BROKEN, err=PROBE_STDERR_BROKEN)
         rep = fv.frames(self.src, self.out, prober=prober, decoder=_Decoder(60))
         self.assertEqual(rep["outcome"], FAIL)
         self.assertIsNone(rep["present"])
         self.assertIsNone(rep["present_bytes"])
-        self.assertIn("каталог назначения не осматривали", rep["note"])
-        self.assertNotIn("каталог назначения был пуст", rep["note"])
+        self.assertIn("the destination directory was not examined", rep["note"])
+        self.assertNotIn("the destination directory was empty", rep["note"])
 
     def test_every_step_reports_its_own_outcome_and_duration(self):
         rep, _, _ = self._run(n=60)
         steps = [s["step"] for s in rep["steps"]]
-        self.assertEqual(steps, ["метаданные", "частота", "раскодирование", "кадры"])
+        self.assertEqual(steps, ["metadata", "rate", "decode", "frames"])
         for s in rep["steps"]:
             with self.subTest(step=s["step"]):
                 self.assertIn(s["outcome"], (PASS, FAIL, UNMEASURED))
@@ -622,17 +622,17 @@ class Frames(unittest.TestCase):
 
 
 class DirectoryFact(unittest.TestCase):
-    """Три состояния каталога назначения — три РАЗНЫЕ фразы, литералами."""
+    """Three destination directory states — three different phrases, as literals."""
 
     def test_the_three_phrases_are_the_ones_the_operator_will_read(self):
-        self.assertEqual(fv.DIR_UNSEEN, "каталог назначения не осматривали")
-        self.assertEqual(fv.DIR_EMPTY, "каталог назначения был пуст")
-        self.assertEqual(fv._dir_fact(3, 99), "до нас в каталоге лежало кадров 3, байт 99")
+        self.assertEqual(fv.DIR_UNSEEN, "the destination directory was not examined")
+        self.assertEqual(fv.DIR_EMPTY, "the destination directory was empty")
+        self.assertEqual(fv._dir_fact(3, 99), "the directory already held 3 frames, 99 bytes")
 
     def test_not_looked_at_and_empty_are_not_the_same_phrase(self):
         self.assertNotEqual(fv._dir_fact(None, None), fv._dir_fact(0, 0))
-        self.assertEqual(fv._dir_fact(None, None), "каталог назначения не осматривали")
-        self.assertEqual(fv._dir_fact(0, 0), "каталог назначения был пуст")
+        self.assertEqual(fv._dir_fact(None, None), "the destination directory was not examined")
+        self.assertEqual(fv._dir_fact(0, 0), "the destination directory was empty")
 
     def test_frames_lying_there_are_never_swallowed_into_a_zero(self):
         self.assertNotEqual(fv._dir_fact(60, 189567), fv._dir_fact(0, 0))
@@ -641,7 +641,7 @@ class DirectoryFact(unittest.TestCase):
 
 
 class PlanForSeconds(unittest.TestCase):
-    """Длина считается обёрткой, а не здесь."""
+    """The length is computed by the wrapper, not here."""
 
     def test_it_forwards_to_fork_comfy_and_does_not_recompute(self):
         got = fv.plan_for_seconds(5)
@@ -655,10 +655,10 @@ class PlanForSeconds(unittest.TestCase):
 
 
 class Wiring(unittest.TestCase):
-    """Сторожа устройства модуля, а не поведения."""
+    """Guard the module's construction, not its behavior."""
 
     def test_the_outside_world_is_touched_in_exactly_two_places(self):
-        """`subprocess.run` живёт только в двух точках внедрения."""
+        """`subprocess.run` lives only in the two injection points."""
         src = Path(fv.__file__).read_text(encoding="utf-8")
         tree = ast.parse(src)
         allowed, found = {"read_probe", "run_decode"}, []
@@ -677,12 +677,12 @@ class Wiring(unittest.TestCase):
         self.assertEqual(
             sorted(set(found)),
             sorted(allowed),
-            f"внешний инструмент зовётся из {sorted(set(found))}, "
-            f"а точек внедрения должно быть ровно две",
+            f"the outside tool is called from {sorted(set(found))}, "
+            f"but there must be exactly two injection points",
         )
 
     def test_both_outside_calls_carry_their_own_timeout(self):
-        """Оба выхода наружу висят на таймауте, и на СВОЁМ, а не на общем."""
+        """Both exits to the outside hang on a timeout, and on their own, not a shared one."""
         tree = ast.parse(Path(fv.__file__).read_text(encoding="utf-8"))
         want = {"read_probe": "PROBE_TIMEOUT_S", "run_decode": "DECODE_TIMEOUT_S"}
         seen = {}
@@ -696,9 +696,7 @@ class Wiring(unittest.TestCase):
         self.assertEqual(seen, want)
 
     def test_the_verdict_words_are_not_reinvented(self):
-        self.assertEqual(
-            (fv.PASS, fv.FAIL, fv.UNMEASURED), ("годно", "не годно", "не смогли проверить")
-        )
+        self.assertEqual((fv.PASS, fv.FAIL, fv.UNMEASURED), ("pass", "fail", "could not measure"))
 
     def test_the_output_rate_is_not_copied_from_fork_comfy(self):
         src = Path(fv.__file__).read_text(encoding="utf-8")
@@ -710,23 +708,23 @@ class Wiring(unittest.TestCase):
                 self.assertNotIn("WRAP_FPS = 30", line)
 
     def test_the_mode_words_are_the_ones_the_operator_will_read(self):
-        self.assertEqual((fv.AS_IS, fv.DROP, fv.REFUSE), ("как есть", "прорежаем", "отказ"))
+        self.assertEqual((fv.AS_IS, fv.DROP, fv.REFUSE), ("as is", "drop", "refuse"))
         self.assertEqual(len({fv.AS_IS, fv.DROP, fv.REFUSE}), 3)
 
     def test_the_three_outcomes_map_to_three_different_exit_codes(self):
-        self.assertEqual(fv.EXIT_BY_OUTCOME, {"годно": 0, "не годно": 1, "не смогли проверить": 2})
+        self.assertEqual(fv.EXIT_BY_OUTCOME, {"pass": 0, "fail": 1, "could not measure": 2})
         self.assertEqual(len(set(fv.EXIT_BY_OUTCOME.values())), 3)
 
 
 class EntryPoint(unittest.TestCase):
     def test_probing_a_missing_file_exits_one_not_zero(self):
-        self.assertEqual(fv.main(["probe", "/нет/такого/файла.mp4"]), 1)
+        self.assertEqual(fv.main(["probe", "/no/such/file.mp4"]), 1)
 
     def test_decoding_a_missing_file_exits_one_not_zero(self):
         import tempfile
 
         with tempfile.TemporaryDirectory() as d:
-            self.assertEqual(fv.main(["frames", "/нет/такого/файла.mp4", f"{d}/кадры"]), 1)
+            self.assertEqual(fv.main(["frames", "/no/such/file.mp4", f"{d}/frames"]), 1)
 
 
 if __name__ == "__main__":  # pragma: no cover

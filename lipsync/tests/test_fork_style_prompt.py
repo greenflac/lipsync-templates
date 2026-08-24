@@ -1,4 +1,4 @@
-"""Гейты адаптера стиля. Каждый сторожит дефект, а не строчку кода."""
+"""Gates for the style adapter. Each guards a defect, not a line of code."""
 
 import unittest
 
@@ -20,7 +20,7 @@ DARK = {
 
 
 class TheAdapterIsReproducible(unittest.TestCase):
-    """Один референс — один промт. Иначе два прогона стиля несравнимы."""
+    """One reference gives one prompt. Otherwise two style runs cannot be compared."""
 
     def test_the_same_card_gives_the_same_prompt(self):
         self.assertEqual(sp.compose(LIGHT)["prompt"], sp.compose(LIGHT)["prompt"])
@@ -33,7 +33,7 @@ class TheAdapterIsReproducible(unittest.TestCase):
 
 
 class ThreeOutcomesNotTwo(unittest.TestCase):
-    """«Карточку не прочитали» никогда не превращается в «стиля нет»."""
+    """Never turn 'the card was not read' into 'there is no style'."""
 
     def test_a_missing_field_is_unmeasured_not_failed(self):
         for field in ("colours", "value_key", "saturation", "texture"):
@@ -64,7 +64,7 @@ class ThreeOutcomesNotTwo(unittest.TestCase):
 
 
 class TheProductBoundaryIsGuarded(unittest.TestCase):
-    """Промт стиля описывает вид, а не персонажа: персонаж идёт из фото."""
+    """The style prompt describes the look, not the subject: the subject comes from the photo."""
 
     def test_a_subject_word_makes_the_prompt_not_good(self):
         card = dict(LIGHT)
@@ -82,7 +82,7 @@ class TheProductBoundaryIsGuarded(unittest.TestCase):
 
 
 class TheShapeComesFromTheCorpusNotFromTaste(unittest.TestCase):
-    """Числа формы ИЗМЕРЕНЫ по 522 карточкам. Тест сторожит их значением."""
+    """The shape numbers are MEASURED over 522 cards. The test guards them by value."""
 
     def test_the_measured_corpus_numbers_are_the_ones_shipped(self):
         self.assertEqual(sp.WORDS_TARGET, 24)
@@ -118,16 +118,16 @@ class TheShapeComesFromTheCorpusNotFromTaste(unittest.TestCase):
 
 
 class TheReaderIsAnInjectionPoint(unittest.TestCase):
-    """Без внешнего пакета и без диска прибор обязан проверяться."""
+    """The instrument must be checkable without the external package and without the disk."""
 
     def test_from_image_uses_the_injected_reader(self):
-        out = sp.from_image("нет-такого-файла.png", reader=lambda p: LIGHT)
+        out = sp.from_image("no-such-file.png", reader=lambda p: LIGHT)
         self.assertEqual(out["outcome"], PASS)
-        self.assertEqual(out["source"], "нет-такого-файла.png")
+        self.assertEqual(out["source"], "no-such-file.png")
 
     def test_a_reader_that_raises_is_unmeasured_not_failed(self):
         def broken(_):
-            raise OSError("файла нет")
+            raise OSError("no such file")
 
         out = sp.from_image("x.png", reader=broken)
         self.assertEqual(out["outcome"], UNMEASURED)

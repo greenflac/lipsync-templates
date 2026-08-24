@@ -1,4 +1,4 @@
-"""Раскодировщик видео: mp4 -> кадры PNG."""
+"""Decode video: mp4 -> PNG frames."""
 
 from __future__ import annotations
 
@@ -27,13 +27,13 @@ FRAME_COUNT_TOLERANCE = 1
 
 FPS_TOLERANCE = 0.01
 
-AS_IS, DROP, REFUSE = "как есть", "прорежаем", "отказ"
+AS_IS, DROP, REFUSE = "as is", "drop", "refuse"
 
 EXIT_BY_OUTCOME = {PASS: 0, FAIL: 1, UNMEASURED: 2}
 
 
 def read_probe(path) -> dict:
-    """Спросить у ffprobe метаданные. ТОЧКА ВНЕДРЕНИЯ: тест подменяет целиком."""
+    """Ask ffprobe for metadata. Injection point: the test replaces it wholesale."""
     if shutil.which(FFPROBE_BIN) is None:
         return {
             "ran": False,
@@ -41,8 +41,8 @@ def read_probe(path) -> dict:
             "out": "",
             "err": "",
             "why": (
-                f"{FFPROBE_BIN} не найден: спросить нечем. Это НЕ "
-                f"«файл плохой» — утилита ставится пакетом ffmpeg"
+                f"{FFPROBE_BIN} not found: nothing to ask with. This is not "
+                f"'a bad file' — the tool ships in the ffmpeg package"
             ),
         }
     try:
@@ -67,7 +67,7 @@ def read_probe(path) -> dict:
             "code": None,
             "out": "",
             "err": "",
-            "why": f"{FFPROBE_BIN} не отработал: {str(exc)[:120]}",
+            "why": f"{FFPROBE_BIN} did not run to completion: {str(exc)[:120]}",
         }
     return {
         "ran": True,
@@ -79,14 +79,14 @@ def read_probe(path) -> dict:
 
 
 def run_decode(argv) -> dict:
-    """Раскодировать. ТОЧКА ВНЕДРЕНИЯ: тест подменяет целиком."""
+    """Decode. Injection point: the test replaces it wholesale."""
     if shutil.which(FFMPEG_BIN) is None:
         return {
             "ran": False,
             "code": None,
             "out": "",
             "err": "",
-            "why": (f"{FFMPEG_BIN} не найден: раскодировать нечем. Это НЕ «видео плохое»"),
+            "why": (f"{FFMPEG_BIN} not found: nothing to decode with. This is not 'a bad video'"),
         }
     try:
         raw = subprocess.run(argv, capture_output=True, text=True, timeout=DECODE_TIMEOUT_S)
@@ -97,8 +97,8 @@ def run_decode(argv) -> dict:
             "out": "",
             "err": "",
             "why": (
-                f"{FFMPEG_BIN} не уложился в {DECODE_TIMEOUT_S} с и "
-                f"убит: раскодировано неизвестно сколько"
+                f"{FFMPEG_BIN} did not finish within {DECODE_TIMEOUT_S} s and "
+                f"was killed: how much was decoded is unknown"
             ),
         }
     except (OSError, subprocess.SubprocessError) as exc:
@@ -107,7 +107,7 @@ def run_decode(argv) -> dict:
             "code": None,
             "out": "",
             "err": "",
-            "why": f"{FFMPEG_BIN} не отработал: {str(exc)[:120]}",
+            "why": f"{FFMPEG_BIN} did not run to completion: {str(exc)[:120]}",
         }
     return {
         "ran": True,
@@ -119,14 +119,14 @@ def run_decode(argv) -> dict:
 
 
 def frame_name(index: int) -> str:
-    """Имя кадра. Ширина поля — константа, а не литерал в двух местах."""
+    """Name a frame. The field width is a constant, not a literal in two places."""
     if not isinstance(index, int) or isinstance(index, bool) or index < 0:
-        raise ValueError(f"номер кадра {index!r}: ожидалось целое от нуля")
+        raise ValueError(f"frame number {index!r}: expected an integer from zero")
     return f"{index:0{NAME_DIGITS}d}{FRAME_SUFFIX}"
 
 
 def _ratio(raw) -> float | None:
-    """`30000/1001` -> 29.97003. Кривое или нулевое — `None`, а не догадка."""
+    """Turn `30000/1001` into 29.97003. Broken or zero gives `None`, not a guess."""
     if raw is None:
         return None
     try:
@@ -138,13 +138,16 @@ def _ratio(raw) -> float | None:
 
 
 def parse_probe(text: str) -> dict:
-    """Разбор JSON от ffprobe в наши поля. Чистая функция, тест — на литерале."""
+    """Parse ffprobe JSON into our fields. Pure function, the test feeds a literal."""
     try:
         data = json.loads(text or "")
     except (ValueError, TypeError):
-        return {"ok": False, "why": f"ответ ffprobe не разобрался как JSON: {(text or '')[:120]!r}"}
+        return {
+            "ok": False,
+            "why": f"the ffprobe answer did not parse as JSON: {(text or '')[:120]!r}",
+        }
     if not isinstance(data, dict):
-        return {"ok": False, "why": f"ждали объект, пришло {type(data).__name__}"}
+        return {"ok": False, "why": f"expected an object, got {type(data).__name__}"}
     streams = data.get("streams") or []
     video = next((s for s in streams if s.get("codec_type") == "video"), None)
     audio = any(s.get("codec_type") == "audio" for s in streams)
@@ -153,8 +156,8 @@ def parse_probe(text: str) -> dict:
             "ok": False,
             "audio": audio,
             "why": (
-                f"видеопотока в файле нет (потоков всего "
-                f"{len(streams)}, звуковых {'есть' if audio else 'нет'})"
+                f"no video stream in the file ({len(streams)} streams "
+                f"total, audio {'present' if audio else 'absent'})"
             ),
         }
     fps = _ratio(video.get("avg_frame_rate")) or _ratio(video.get("r_frame_rate"))
@@ -170,7 +173,7 @@ def parse_probe(text: str) -> dict:
     except (TypeError, ValueError):
         frames = None
     if frames is None and fps and seconds:
-        frames, frames_from = int(round(seconds * fps)), "длительность x частота"
+        frames, frames_from = int(round(seconds * fps)), "duration x rate"
     return {
         "ok": True,
         "why": "",
@@ -186,16 +189,16 @@ def parse_probe(text: str) -> dict:
 
 
 def fps_plan(source_fps, *, want=None) -> dict:
-    """Что делаем с частотой. Три ветки, и молчаливого приведения среди них нет."""
+    """Decide what to do with the rate. Three branches, and silent conforming is not among them."""
     if source_fps is None:
         return {
             "outcome": UNMEASURED,
             "mode": REFUSE,
             "fps": None,
             "note": (
-                "частота исходника не снята — решать про приведение "
-                "не из чего. Это НЕ «берём как есть»: как есть — это "
-                "тоже решение, и оно требует знать, что есть"
+                "the source rate was not taken — there is nothing to decide "
+                "the conversion from. This is not 'take it as is': as is "
+                "is also a decision, and it requires knowing what is"
             ),
         }
     if want is None:
@@ -204,9 +207,9 @@ def fps_plan(source_fps, *, want=None) -> dict:
             "mode": AS_IS,
             "fps": source_fps,
             "note": (
-                f"частота исходника {source_fps:g} к/с, кадры берутся "
-                f"ВСЕ, приведения нет. Число кадров равно числу "
-                f"кадров в файле"
+                f"source rate {source_fps:g} fps, every frame is taken, "
+                f"no conforming. The frame count equals the frame count "
+                f"in the file"
             ),
         }
     if (
@@ -219,7 +222,7 @@ def fps_plan(source_fps, *, want=None) -> dict:
             "outcome": FAIL,
             "mode": REFUSE,
             "fps": None,
-            "note": f"частота {want!r}: ожидалось положительное конечное число",
+            "note": f"rate {want!r}: expected a positive finite number",
         }
     if abs(want - source_fps) <= FPS_TOLERANCE:
         return {
@@ -227,9 +230,9 @@ def fps_plan(source_fps, *, want=None) -> dict:
             "mode": AS_IS,
             "fps": source_fps,
             "note": (
-                f"запрошено {want:g} к/с при исходных {source_fps:g} — "
-                f"это одно и то же в пределах допуска "
-                f"{FPS_TOLERANCE}, ничего не трогаем"
+                f"requested {want:g} fps against source {source_fps:g} — "
+                f"the same thing within the tolerance "
+                f"{FPS_TOLERANCE}, touching nothing"
             ),
         }
     if want > source_fps:
@@ -238,13 +241,13 @@ def fps_plan(source_fps, *, want=None) -> dict:
             "mode": REFUSE,
             "fps": None,
             "note": (
-                f"запрошено {want:g} к/с при исходных {source_fps:g}: "
-                f"ВВЕРХ НЕ ПРИВОДИМ. Интерполяции нет по решению "
-                f"составителя шаблонов ({want:g} - {source_fps:g} = "
-                f"{want - source_fps:g} к/с пришлось бы выдумать), а "
-                f"выдуманный кадр в драйвинге — это выдуманное "
-                f"движение. Снимать драйвинг не ниже "
-                f"{framemath.WRAP_FPS} к/с — требование к съёмке"
+                f"requested {want:g} fps against source {source_fps:g}: "
+                f"we do not conform upward. There is no interpolation by "
+                f"the template author's decision ({want:g} - {source_fps:g} = "
+                f"{want - source_fps:g} fps would have to be invented), and "
+                f"an invented frame in a driving is an invented "
+                f"movement. Shooting the driving at no less than "
+                f"{framemath.WRAP_FPS} fps is a filming requirement"
             ),
         }
     return {
@@ -252,16 +255,16 @@ def fps_plan(source_fps, *, want=None) -> dict:
         "mode": DROP,
         "fps": float(want),
         "note": (
-            f"прорежаем {source_fps:g} -> {want:g} к/с. ДЛИНА В "
-            f"КАДРАХ МЕНЯЕТСЯ: на секунду выйдет {want:g} кадров "
-            f"вместо {source_fps:g}, и число окон сэмплера считается "
-            f"уже по новому числу"
+            f"dropping {source_fps:g} -> {want:g} fps. The length in "
+            f"frames changes: a second yields {want:g} frames "
+            f"instead of {source_fps:g}, and the sampler window count is "
+            f"computed from the new number"
         ),
     }
 
 
 def expected_frames(source_frames, *, source_fps=None, out_fps=None, limit=None) -> int | None:
-    """Сколько кадров ОБЯЗАНО лечь на диск. `None` — если считать не из чего."""
+    """Compute how many frames must land on disk. `None` when there is nothing to compute from."""
     if source_frames is None:
         return None
     n = int(source_frames)
@@ -273,23 +276,23 @@ def expected_frames(source_frames, *, source_fps=None, out_fps=None, limit=None)
 
 
 def count_outcome(expected, written: int) -> dict:
-    """Вердикт по числам кадров. Чистая функция — тест кормит её литералами."""
+    """Judge the frame counts. Pure function — the test feeds it literals."""
     if written < 0:
-        raise ValueError(f"записано {written}: отрицательных кадров не бывает")
+        raise ValueError(f"written {written}: negative frame counts do not exist")
     if written == 0:
         return {
             "outcome": FAIL,
             "note": (
-                "кадров записано 0 — это НЕ успех, а отсутствие "
-                "результата: судить и анимировать нечем"
+                "0 frames written — this is not success but an absence of "
+                "result: nothing to judge and nothing to animate"
             ),
         }
     if expected is None:
         return {
             "outcome": UNMEASURED,
             "note": (
-                f"записано {written} кадров, но метаданные не сказали, "
-                f"сколько их в файле — подтвердить полноту нечем"
+                f"{written} frames written, but the metadata did not say how "
+                f"many are in the file — nothing to confirm completeness with"
             ),
         }
     diff = abs(written - int(expected))
@@ -297,24 +300,24 @@ def count_outcome(expected, written: int) -> dict:
         return {
             "outcome": PASS,
             "note": (
-                f"ожидалось {expected}, записано {written} "
-                f"(расхождение {diff}, допуск {FRAME_COUNT_TOLERANCE} "
-                f"— это округление, а не потеря)"
+                f"expected {expected}, written {written} "
+                f"(gap {diff}, tolerance {FRAME_COUNT_TOLERANCE} "
+                f"— that is rounding, not loss)"
             ),
         }
     return {
         "outcome": UNMEASURED,
         "note": (
-            f"ожидалось {expected}, записано {written}: расхождение "
-            f"{diff} больше допуска {FRAME_COUNT_TOLERANCE}. "
-            f"Раскодировано что-то, но что именно — метаданные не "
-            f"подтверждают. Это НЕ «годно»"
+            f"expected {expected}, written {written}: the gap "
+            f"{diff} exceeds the tolerance {FRAME_COUNT_TOLERANCE}. "
+            f"Something was decoded, but the metadata does not confirm "
+            f"what exactly. This is not 'pass'"
         ),
     }
 
 
 def decode_argv(video_path, out_dir, *, out_fps=None, limit=None) -> list:
-    """Команда раскодирования. Собирается отдельно — состав команды это решение."""
+    """Build the decode command apart from running it — its makeup is a decision."""
     argv = [FFMPEG_BIN, "-nostdin", "-v", "error", "-i", str(video_path)]
     if out_fps is not None:
         argv += ["-vf", f"fps={out_fps:g}"]
@@ -326,53 +329,53 @@ def decode_argv(video_path, out_dir, *, out_fps=None, limit=None) -> list:
 
 
 def probe(video_path, *, prober=None) -> dict:
-    """Метаданные видео. Три исхода, числа рядом с вердиктом."""
+    """Take the video metadata. Three outcomes, numbers beside the verdict."""
     prober = read_probe if prober is None else prober
     t = time.perf_counter()
     p = Path(video_path)
     if not p.exists():
-        return _probe_report(FAIL, f"файла нет: {p}", t)
+        return _probe_report(FAIL, f"file does not exist: {p}", t)
     if p.is_dir():
         return _probe_report(
             FAIL,
-            f"{p} — это КАТАЛОГ, а не видеофайл. Кадры в каталоге "
-            f"раскодировать не надо: их надо подавать как есть",
+            f"{p} is a directory, not a video file. Frames in a directory "
+            f"need no decoding: feed them as they are",
             t,
         )
     size = p.stat().st_size
     if size == 0:
-        return _probe_report(FAIL, f"{p}: файл пустой, 0 байт", t)
+        return _probe_report(FAIL, f"{p}: the file is empty, 0 bytes", t)
 
     raw = prober(p)
     if not raw.get("ran"):
-        return _probe_report(UNMEASURED, raw.get("why") or "спросить нечем", t)
+        return _probe_report(UNMEASURED, raw.get("why") or "nothing to ask with", t)
     if raw.get("code"):
         return _probe_report(
             FAIL,
-            f"{FFPROBE_BIN} вернул {raw['code']}: "
-            f"{(raw.get('err') or '').strip()[:200] or 'без объяснения'}",
+            f"{FFPROBE_BIN} returned {raw['code']}: "
+            f"{(raw.get('err') or '').strip()[:200] or 'no explanation'}",
             t,
         )
     parsed = parse_probe(raw.get("out") or "")
     if not parsed.get("ok"):
         return _probe_report(
             FAIL,
-            parsed.get("why", "ответ не разобран"),
+            parsed.get("why", "the answer was not parsed"),
             t,
             **({"audio": parsed["audio"]} if "audio" in parsed else {}),
         )
     rep = _probe_report(
         PASS,
         (
-            f"{parsed['width']}x{parsed['height']}, {parsed['fps']:g} к/с, "
-            f"кадров {parsed['frames']} (по «{parsed['frames_from']}»), "
-            f"{parsed['seconds']:g} с, звук "
-            f"{'есть' if parsed['audio'] else 'нет'}, кодек {parsed['codec']}"
+            f"{parsed['width']}x{parsed['height']}, {parsed['fps']:g} fps, "
+            f"frames {parsed['frames']} (from '{parsed['frames_from']}'), "
+            f"{parsed['seconds']:g} s, audio "
+            f"{'present' if parsed['audio'] else 'absent'}, codec {parsed['codec']}"
         )
         if parsed.get("fps") and parsed.get("seconds") is not None
         else (
-            f"метаданные разобрались не полностью: частота {parsed.get('fps')}, "
-            f"кадров {parsed.get('frames')}, длительность {parsed.get('seconds')}"
+            f"the metadata parsed only partially: rate {parsed.get('fps')}, "
+            f"frames {parsed.get('frames')}, duration {parsed.get('seconds')}"
         ),
         t,
         **{
@@ -415,20 +418,20 @@ def _probe_report(outcome: str, note: str, t0: float, **extra) -> dict:
 
 
 def fps_prober(path):
-    """Частота исходника как одно число. Совместимая замена `_ffprobe_fps`."""
+    """Return the source rate as one number. Drop-in replacement for `_ffprobe_fps`."""
     rep = probe(path)
     return rep["fps"] if rep["outcome"] == PASS else None
 
 
 def plan_for_seconds(seconds, *, fps=None) -> dict:
-    """Сколько кадров драйвинга нужно под ролик такой длины."""
+    """Compute how many driving frames a clip of this length needs."""
     return framemath.frames_for_seconds(seconds, fps=fps)
 
 
 def frames(
     video_path, out_dir, *, fps=None, limit=None, overwrite=False, prober=None, decoder=None
 ) -> dict:
-    """Раскодировать видео в PNG. Три исхода, числа рядом с вердиктом."""
+    """Decode the video into PNG. Three outcomes, numbers beside the verdict."""
     prober = read_probe if prober is None else prober
     decoder = run_decode if decoder is None else decoder
     t = time.perf_counter()
@@ -436,15 +439,15 @@ def frames(
 
     if limit is not None:
         if not isinstance(limit, int) or isinstance(limit, bool) or limit < 1:
-            return _frames_report(FAIL, f"limit={limit!r}: ожидалось целое от 1", t, steps)
+            return _frames_report(FAIL, f"limit={limit!r}: expected an integer from 1", t, steps)
 
     meta = probe(video_path, prober=prober)
-    steps.append(("метаданные", meta["outcome"], meta["note"], meta["elapsed"]))
+    steps.append(("metadata", meta["outcome"], meta["note"], meta["elapsed"]))
     if meta["outcome"] != PASS:
         return _frames_report(meta["outcome"], meta["note"], t, steps, meta=meta)
 
     plan = fps_plan(meta["fps"], want=fps)
-    steps.append(("частота", plan["outcome"], plan["note"], 0.0))
+    steps.append(("rate", plan["outcome"], plan["note"], 0.0))
     if plan["outcome"] != PASS:
         return _frames_report(plan["outcome"], plan["note"], t, steps, meta=meta, plan=plan)
 
@@ -454,22 +457,22 @@ def frames(
     out = Path(out_dir)
     if out.exists() and not out.is_dir():
         return _frames_report(
-            FAIL, f"{out} — не каталог", t, steps, meta=meta, plan=plan, expected=expected
+            FAIL, f"{out} is not a directory", t, steps, meta=meta, plan=plan, expected=expected
         )
     already = sorted(out.glob(f"*{FRAME_SUFFIX}")) if out.is_dir() else []
     present = len(already)
     present_bytes = sum(f.stat().st_size for f in already)
     if already and not overwrite:
         note = (
-            f"в {out} уже лежит кадров: {present} (первый "
-            f"{already[0].name}, последний {already[-1].name}, байт "
-            f"{present_bytes}). Молча поверх не пишем: раскодировав 60 "
-            f"кадров поверх 320, мы получили бы каталог из 260 чужих и 60 "
-            f"своих — отсортованный и правдоподобный. Мы НЕ ПИСАЛИ ни "
-            f"одного кадра: эти {present} — чужие. Задайте overwrite=True "
-            f"или другой каталог"
+            f"{out} already holds frames: {present} (first "
+            f"{already[0].name}, last {already[-1].name}, bytes "
+            f"{present_bytes}). We do not write over them silently: decoding "
+            f"60 frames over 320 would have produced a directory of 260 "
+            f"foreign frames and 60 of ours — sorted and plausible. We wrote "
+            f"not a single frame: these {present} are foreign. Pass "
+            f"overwrite=True or another directory"
         )
-        steps.append(("каталог", UNMEASURED, note, 0.0))
+        steps.append(("directory", UNMEASURED, note, 0.0))
         return _frames_report(
             UNMEASURED,
             note,
@@ -496,10 +499,10 @@ def frames(
 
     if not got.get("ran"):
         note = (
-            f"{got.get('why') or 'раскодировать нечем'}. Успело лечь "
-            f"кадров: {written}, ожидалось {expected}"
+            f"{got.get('why') or 'nothing to decode with'}. Frames that made "
+            f"it to disk: {written}, expected {expected}"
         )
-        steps.append(("раскодирование", UNMEASURED, note, dec_elapsed))
+        steps.append(("decode", UNMEASURED, note, dec_elapsed))
         return _frames_report(
             UNMEASURED,
             note,
@@ -516,11 +519,11 @@ def frames(
         )
     if got.get("code"):
         note = (
-            f"{FFMPEG_BIN} вернул {got['code']}: "
-            f"{(got.get('err') or '').strip()[:200] or 'без объяснения'}. "
-            f"Кадров записано {written}, ожидалось {expected}"
+            f"{FFMPEG_BIN} returned {got['code']}: "
+            f"{(got.get('err') or '').strip()[:200] or 'no explanation'}. "
+            f"Frames written {written}, expected {expected}"
         )
-        steps.append(("раскодирование", FAIL, note, dec_elapsed))
+        steps.append(("decode", FAIL, note, dec_elapsed))
         return _frames_report(
             FAIL,
             note,
@@ -535,10 +538,10 @@ def frames(
             present=present,
             present_bytes=present_bytes,
         )
-    steps.append(("раскодирование", PASS, f"{FFMPEG_BIN} отработал, код 0", dec_elapsed))
+    steps.append(("decode", PASS, f"{FFMPEG_BIN} ran to completion, code 0", dec_elapsed))
 
     verdict = count_outcome(expected, written)
-    steps.append(("кадры", verdict["outcome"], verdict["note"], 0.0))
+    steps.append(("frames", verdict["outcome"], verdict["note"], 0.0))
     return _frames_report(
         verdict["outcome"],
         verdict["note"],
@@ -555,19 +558,19 @@ def frames(
     )
 
 
-DIR_UNSEEN = "каталог назначения не осматривали"
-DIR_EMPTY = "каталог назначения был пуст"
+DIR_UNSEEN = "the destination directory was not examined"
+DIR_EMPTY = "the destination directory was empty"
 
 
 def _dir_fact(present, present_bytes) -> str:
-    """Фраза про каталог назначения. Выведена из того, что ИСПОЛНИЛОСЬ."""
+    """Phrase the destination directory fact. Derived from what actually happened."""
     if present is None:
         return DIR_UNSEEN
     if present == 0:
         return DIR_EMPTY
     return (
-        f"до нас в каталоге лежало кадров {present}, "
-        f"байт {0 if present_bytes is None else present_bytes}"
+        f"the directory already held {present} frames, "
+        f"{0 if present_bytes is None else present_bytes} bytes"
     )
 
 
@@ -586,7 +589,7 @@ def _frames_report(
     present=None,
     present_bytes=None,
 ) -> dict:
-    """Один отчёт на все исходы."""
+    """Build one report for every outcome."""
     elapsed = round(time.perf_counter() - t0, 4)
     paths = list(paths or [])
     return {
@@ -605,10 +608,10 @@ def _frames_report(
             {"step": s, "outcome": o, "note": n, "seconds": round(e, 4)} for s, o, n, e in steps
         ],
         "note": (
-            f"{outcome}: {note}. Ожидалось кадров "
-            f"{'неизвестно' if expected is None else expected}, записано "
-            f"нами {written}, байт {nbytes}, "
-            f"{_dir_fact(present, present_bytes)}, за {elapsed} с"
+            f"{outcome}: {note}. Expected frames "
+            f"{'unknown' if expected is None else expected}, written by us "
+            f"{written}, bytes {nbytes}, "
+            f"{_dir_fact(present, present_bytes)}, in {elapsed} s"
         ),
     }
 
@@ -617,15 +620,18 @@ def main(argv=None) -> int:
     """`python3 -m lipsync.fork_video probe|frames ...`."""
     import argparse
 
-    ap = argparse.ArgumentParser(prog="fork_video", description="раскодировщик видео")
+    ap = argparse.ArgumentParser(prog="fork_video", description="video decoder")
     sub = ap.add_subparsers(dest="cmd", required=True)
-    p1 = sub.add_parser("probe", help="метаданные видео")
+    p1 = sub.add_parser("probe", help="video metadata")
     p1.add_argument("video")
-    p2 = sub.add_parser("frames", help="раскодировать в PNG")
+    p2 = sub.add_parser("frames", help="decode into PNG")
     p2.add_argument("video")
     p2.add_argument("out_dir")
     p2.add_argument(
-        "--fps", type=float, default=None, help="привести частоту ВНИЗ; без него берётся как есть"
+        "--fps",
+        type=float,
+        default=None,
+        help="conform the rate downward; without it the source rate is taken as is",
     )
     p2.add_argument("--limit", type=int, default=None)
     p2.add_argument("--overwrite", action="store_true")
@@ -639,7 +645,7 @@ def main(argv=None) -> int:
             args.video, args.out_dir, fps=args.fps, limit=args.limit, overwrite=args.overwrite
         )
         for s in rep["steps"]:
-            print(f"{s['outcome']:20s} {s['step']:15s} {s['seconds']:7.3f} с  {s['note']}")
+            print(f"{s['outcome']:20s} {s['step']:15s} {s['seconds']:7.3f} s  {s['note']}")
         print(rep["note"])
     return EXIT_BY_OUTCOME[rep["outcome"]]
 

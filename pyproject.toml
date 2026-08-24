@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "lipsync-templates"
 version = "0.1.0"
-description = "Пользователь загружает селфи, выбирает шаблон и получает вертикальный ролик, где снимается сам"
+description = "A client selfie plus a template turns into a vertical video starring the client"
 readme = "README.md"
 requires-python = ">=3.11"
 license = { file = "LICENSE" }

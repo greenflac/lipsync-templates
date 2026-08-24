@@ -1,4 +1,4 @@
-"""Батч поверх сквозного стенда: матрица драйвинг x стиль x личность."""
+"""Batch over the end-to-end stand: a driving x style x identity matrix."""
 
 from __future__ import annotations
 
@@ -24,7 +24,7 @@ BALANCE_ENV = "FAL_BALANCE_USD"
 
 
 def live_balance() -> float | None:
-    """Остаток на счету fal в долларах, либо `None` — «не смогли узнать»."""
+    """Return the fal account balance in dollars, or `None` meaning "could not find out"."""
     import os  # noqa: PLC0415
 
     raw = os.environ.get(BALANCE_ENV)
@@ -37,12 +37,12 @@ def live_balance() -> float | None:
 
 
 def copy_clip(src, dst) -> tuple:
-    """Готовый ролик -> отдельный файл с говорящим именем. `(путь, причина)`."""
+    """Copy the finished clip to its own tellingly named file. Return `(path, reason)`."""
     s = Path(src)
     if not s.is_file():
-        return None, f"ролика {s} нет на диске: забирать нечего"
+        return None, f"clip {s} is not on disk: nothing to collect"
     if s.stat().st_size <= 0:
-        return None, f"ролик {s} пустой (0 Б)"
+        return None, f"clip {s} is empty (0 B)"
     try:
         Path(dst).parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(str(s), str(dst))
@@ -52,19 +52,19 @@ def copy_clip(src, dst) -> tuple:
 
 
 def cell_name(driving, style, person) -> str:
-    """`драйвинг__стиль__личность` — имя ролика, читаемое без отчёта."""
+    """Return `driving__style__identity`: a clip name readable without the report."""
     return NAME_SEP.join(Path(str(p)).stem for p in (driving, style, person))
 
 
 def cells(drivings, styles, persons, *, mode: str = "full") -> list:
-    """Список ячеек матрицы по режиму покрытия. Неизвестный режим — отказ."""
+    """List the matrix cells for a coverage mode. An unknown mode is a refusal."""
     if mode not in MODES:
-        raise ValueError(f"режим {mode!r} неизвестен, есть {list(MODES)}")
-    axes = {"драйвингов": list(drivings), "стилей": list(styles), "личностей": list(persons)}
+        raise ValueError(f"mode {mode!r} is unknown, have {list(MODES)}")
+    axes = {"drivings": list(drivings), "styles": list(styles), "persons": list(persons)}
     empty = [k for k, v in axes.items() if not v]
     if empty:
-        raise ValueError(f"пустые оси матрицы: {empty}; заказывать нечего")
-    dr, st, pe = axes["драйвингов"], axes["стилей"], axes["личностей"]
+        raise ValueError(f"empty matrix axes: {empty}; nothing to order")
+    dr, st, pe = axes["drivings"], axes["styles"], axes["persons"]
     out = []
     if mode == "full":
         for d in dr:
@@ -81,12 +81,12 @@ def cells(drivings, styles, persons, *, mode: str = "full") -> list:
 
 
 def plan_cost(n: int) -> float:
-    """Цена n ячеек. Цена одного вызова ИМПОРТИРУЕТСЯ из стенда."""
+    """Return the price of n cells. The price of one call is imported from the stand."""
     return round(int(n) * E.KLING_PRICE_USD, 4)
 
 
 def afford(n: int, balance) -> dict:
-    """Хватит ли денег на n ячеек. ТРИ исхода, и два из них НЕ пускают батч."""
+    """Check the money for n cells. Three outcomes, and two of them keep the batch out."""
     need = plan_cost(n)
     try:
         have = None if balance is None else float(balance)
@@ -99,9 +99,9 @@ def afford(n: int, balance) -> dict:
             "have": None,
             "short": None,
             "note": (
-                f"остаток счёта неизвестен: заказ на ${need} "
-                f"({n} ячеек по ${E.KLING_PRICE_USD}) не начат. "
-                f"Задай {BALANCE_ENV} или подставь свой прибор баланса"
+                f"the account balance is unknown: the ${need} order "
+                f"({n} cells at ${E.KLING_PRICE_USD}) was not started. "
+                f"Set {BALANCE_ENV} or inject your own balance probe"
             ),
         }
     if have + 1e-9 < need:
@@ -112,10 +112,10 @@ def afford(n: int, balance) -> dict:
             "have": round(have, 4),
             "short": short,
             "note": (
-                f"НЕ ХВАТАЕТ ${short}: заказ {n} ячеек по "
-                f"${E.KLING_PRICE_USD} стоит ${need}, на счету "
-                f"${round(have, 4)}. Батч НЕ начат: потратить половину "
-                f"и встать посередине хуже, чем не начинать"
+                f"${short} SHORT: an order of {n} cells at "
+                f"${E.KLING_PRICE_USD} costs ${need}, the account holds "
+                f"${round(have, 4)}. The batch was NOT started: spending "
+                f"half and stalling midway is worse than not starting"
             ),
         }
     return {
@@ -124,20 +124,20 @@ def afford(n: int, balance) -> dict:
         "have": round(have, 4),
         "short": 0.0,
         "note": (
-            f"хватает: заказ ${need} ({n} ячеек по "
-            f"${E.KLING_PRICE_USD}), на счету ${round(have, 4)}, "
-            f"останется ${round(have - need, 4)}"
+            f"enough: the order is ${need} ({n} cells at "
+            f"${E.KLING_PRICE_USD}), the account holds ${round(have, 4)}, "
+            f"${round(have - need, 4)} will remain"
         ),
     }
 
 
 def _cell_line(cell: dict) -> str:
-    """Строка ячейки: вердикт и числа РЯДОМ с ним."""
+    """Render the cell line: the verdict with the numbers right next to it."""
     t = cell.get("totals") or {}
     return (
-        f"[{cell['outcome']:<18}] ячейка {cell['index']:>2} "
-        f"{cell['name']:<46} проверено {t.get('checked', 0)}, "
-        f"нарушений {t.get('violations', 0)}, не смогли "
+        f"[{cell['outcome']:<18}] cell {cell['index']:>2} "
+        f"{cell['name']:<46} checked {t.get('checked', 0)}, "
+        f"violations {t.get('violations', 0)}, unmeasured "
         f"{t.get('unmeasured', 0)} | {cell.get('note', '')}"
     )
 
@@ -160,7 +160,7 @@ def run_batch(
     log=None,
     **cell_kwargs,
 ) -> dict:
-    """Весь батч: деньги -> ячейки по одной -> сводка. Возвращает свод."""
+    """Run the whole batch: money -> cells one by one -> summary. Return the digest."""
     runner = E.run if cell_runner is None else cell_runner
     take = copy_clip if collect is None else collect
     get_balance = live_balance if balance is None else balance
@@ -172,9 +172,9 @@ def run_batch(
     n = len(grid)
     full_n = len(drivings) * len(styles) * len(persons)
     E.say(
-        f"батч: матрица {len(drivings)}x{len(styles)}x{len(persons)}, режим "
-        f"«{mode}» -> {n} ячеек (полный крест дал бы {full_n}); цена "
-        f"${E.KLING_PRICE_USD} за ячейку, заказ ${plan_cost(n)}",
+        f"batch: matrix {len(drivings)}x{len(styles)}x{len(persons)}, mode "
+        f"'{mode}' -> {n} cells (the full cross would give {full_n}); price "
+        f"${E.KLING_PRICE_USD} per cell, order ${plan_cost(n)}",
         log=log,
     )
 
@@ -184,14 +184,14 @@ def run_batch(
     before = get_balance()
     money = afford(n, before)
     E.say(
-        f"[{money['outcome']:<18}] деньги до старта{'':<28} "
-        f"нужно ${money['need']}, есть "
+        f"[{money['outcome']:<18}] money before start{'':<28} "
+        f"need ${money['need']}, have "
         f"{'?' if money['have'] is None else '$' + str(money['have'])} | "
         f"{money['note']}",
         log=log,
     )
     if money["outcome"] != PASS:
-        E.say(f"ИТОГ: {money['outcome']} — батч НЕ НАЧАТ, заказов 0, потрачено $0.0", log=log)
+        E.say(f"TOTAL: {money['outcome']} — batch NOT STARTED, orders 0, spent $0.0", log=log)
         return {
             "outcome": money["outcome"],
             "mode": mode,
@@ -220,7 +220,7 @@ def run_batch(
                 totals={},
                 clip=None,
                 launched=False,
-                note=(f"не запускалась: батч остановлен после {max_streak} неудач подряд"),
+                note=(f"not launched: the batch stopped after {max_streak} failures in a row"),
             )
             done.append(cell)
             E.say(_cell_line(cell), log=log)
@@ -244,7 +244,7 @@ def run_batch(
                 outcome=UNMEASURED,
                 totals={},
                 clip=None,
-                note=f"прогон обвалился: {type(exc).__name__}: {exc}",
+                note=f"the run crashed: {type(exc).__name__}: {exc}",
             )
         else:
             reply = got if isinstance(got, dict) else {}
@@ -254,18 +254,20 @@ def run_batch(
                     outcome=UNMEASURED,
                     totals={},
                     clip=None,
-                    note=(f"прогон ответил {type(got).__name__} без вердикта: судить нечем"),
+                    note=(
+                        f"the run replied {type(got).__name__} with no verdict: nothing to judge by"
+                    ),
                 )
             else:
-                note = f"встал на «{reply.get('stopped_at', '?')}»"
+                note = f"stopped at '{reply.get('stopped_at', '?')}'"
                 clip, why = None, None
                 if outcome == PASS:
                     clip, why = take(cell_dir / "final_9x16.mp4", clips_dir / f"{cell['name']}.mp4")
                     if clip is None:
                         outcome = UNMEASURED
-                        note = f"вердикт «{PASS}», но ролика нет: {why}"
+                        note = f"verdict '{PASS}', but the clip is missing: {why}"
                     else:
-                        note = f"ролик {clip}"
+                        note = f"clip {clip}"
                 cell.update(outcome=outcome, totals=reply.get("totals") or {}, clip=clip, note=note)
         done.append(cell)
         E.say(_cell_line(cell), log=log)
@@ -273,9 +275,9 @@ def run_batch(
         if streak >= max_streak:
             stopped = True
             E.say(
-                f"ОСТАНОВ: {streak} неудач подряд при пороге {max_streak} — "
-                f"это уже не плохая пара, а поломка; дальше жгли бы по "
-                f"${E.KLING_PRICE_USD} за ячейку",
+                f"STOP: {streak} failures in a row against the threshold {max_streak} — "
+                f"this is a breakage, not just a bad pair; going on would "
+                f"burn ${E.KLING_PRICE_USD} per cell",
                 log=log,
             )
 
@@ -293,12 +295,12 @@ def run_batch(
     for c in done:
         E.say(f"      · {c['name']}: {c['outcome']} — {c.get('note', '')}", log=log)
     E.say(
-        f"ИТОГ: {outcome} | годно {passed}, не годно {failed}, не смогли "
-        f"{unmeasured} из {len(grid)} ячеек (запущено {attempted}) | "
-        f"потрачено фактически "
-        f"{'не смогли посчитать' if spent_actual is None else '$' + str(spent_actual)}"
-        f" при ожидаемых ${spent_expected} | баланс "
-        f"{before} -> {after} | роликов "
+        f"TOTAL: {outcome} | pass {passed}, fail {failed}, unmeasured "
+        f"{unmeasured} of {len(grid)} cells (launched {attempted}) | "
+        f"actually spent "
+        f"{'could not measure' if spent_actual is None else '$' + str(spent_actual)}"
+        f" against expected ${spent_expected} | balance "
+        f"{before} -> {after} | clips "
         f"{sum(1 for c in done if c.get('clip'))}",
         log=log,
     )
@@ -323,15 +325,15 @@ def run_batch(
 
 
 def main(argv=None) -> int:
-    """Тонкая точка входа: разбор аргументов и вызов `run_batch`."""
+    """Keep the entry point thin: parse the arguments and call `run_batch`."""
     import argparse  # noqa: PLC0415
 
-    ap = argparse.ArgumentParser(description="батч сквозного стенда")
+    ap = argparse.ArgumentParser(description="batch over the end-to-end stand")
     ap.add_argument("--driving", action="append", required=True)
     ap.add_argument("--style", action="append", required=True)
     ap.add_argument("--person", action="append", required=True)
     ap.add_argument("--mode", default="full", choices=list(MODES))
-    ap.add_argument("--window", required=True, help="первый:последний, напр. 100:199")
+    ap.add_argument("--window", required=True, help="first:last, e.g. 100:199")
     ap.add_argument("--out", default="work/batch")
     a = ap.parse_args(argv)
     first, last = E.parse_window(a.window)

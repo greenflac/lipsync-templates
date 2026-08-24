@@ -115,14 +115,16 @@ def motion_quality(frames: list[str]) -> dict:
 
 
 def best_loop_window_pose(points: list, *, size: int, stride: int = 1) -> dict:
-    """Замкнутость окна ПО СКЕЛЕТУ, без порога. Лучше пиксельной по двум причинам."""
+    """Score window closure by the skeleton, with no threshold. Better than the pixel measure for two reasons."""
     span = (size - 1) * stride + 1
     if size < 3 or stride < 1 or len(points) < span:
         return {
             "start": 0,
             "hidden": None,
             "seam": None,
-            "note": (f"поз {len(points)}, а окно требует {span} — выбирать не из чего"),
+            "note": (
+                f"{len(points)} pose(s), but the window needs {span} — nothing to choose from"
+            ),
         }
     from .pose import pose_delta
 
@@ -159,25 +161,25 @@ def best_loop_window_pose(points: list, *, size: int, stride: int = 1) -> dict:
             "start": 0,
             "hidden": None,
             "seam": None,
-            "note": "скелет не найден на нужных кадрах — судить нечем",
+            "note": "no skeleton found on the required frames — nothing to judge with",
         }
     best = max(rows, key=lambda r: (r["hidden"], -r["seam"]))
     return {
         **best,
         "candidates": len(rows),
         "note": (
-            f"лучшее окно {best['start']}..{best['start'] + span - 1} "
-            f"из {len(rows)}: стык {best['seam']} при локальной "
-            f"медиане {best['local_median']}, то есть мельче "
-            f"{round(best['hidden'] * best['steps'])} рядовых шагов "
-            f"из {best['steps']}. Порога здесь НЕТ намеренно: облака "
-            f"перекрылись, и сравнение идёт с самим материалом"
+            f"best window {best['start']}..{best['start'] + span - 1} "
+            f"of {len(rows)}: seam {best['seam']} against a local "
+            f"median of {best['local_median']}, i.e. smaller than "
+            f"{round(best['hidden'] * best['steps'])} of the {best['steps']} "
+            f"ordinary steps. There is deliberately no threshold here: the clouds "
+            f"overlapped, so the comparison is against the material itself"
         ),
     }
 
 
 def best_loop_window(frames: list[str], *, size: int, stride: int = 1) -> dict:
-    """Какое ОКНО исходника замыкается лучше всех. Выбор до генерации, не после."""
+    """Find which window of the source closes best. A choice made before generation, not after."""
     import numpy as np
 
     span = (size - 1) * stride + 1
@@ -186,7 +188,9 @@ def best_loop_window(frames: list[str], *, size: int, stride: int = 1) -> dict:
             "start": 0,
             "ratio": None,
             "seamless": False,
-            "note": (f"кадров {len(frames)}, а окно требует {span} — выбирать не из чего"),
+            "note": (
+                f"{len(frames)} frame(s), but the window needs {span} — nothing to choose from"
+            ),
         }
     arrs = [_gray(f) for f in frames]
     steps = [float(np.abs(arrs[i + 1] - arrs[i]).mean()) for i in range(len(arrs) - 1)]
@@ -204,14 +208,14 @@ def best_loop_window(frames: list[str], *, size: int, stride: int = 1) -> dict:
         "worst_ratio": round(worst, 3),
         "candidates": len(scored),
         "note": (
-            f"лучшее окно {start}..{start + span - 1} из "
-            f"{len(scored)} возможных: стык {ratio:.3f} при баре "
-            f"{SEAMLESS_MAX} (худшее окно дало бы {worst:.3f})"
+            f"best window {start}..{start + span - 1} of "
+            f"{len(scored)} possible: seam {ratio:.3f} against the bar "
+            f"{SEAMLESS_MAX} (the worst window would give {worst:.3f})"
             + (
                 ""
                 if ratio <= SEAMLESS_MAX
-                else " — бар не взят: движение исходника нециклично, и "
-                "выбор окна это улучшает, а не чинит"
+                else " — the bar is not met: the source motion is not cyclic, and "
+                "window choice improves that rather than fixing it"
             )
         ),
     }

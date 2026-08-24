@@ -1,4 +1,4 @@
-"""Гейты шага составителя. Числа-ожидания — ЛИТЕРАЛЫ."""
+"""Gates for the template author's step. Expected numbers are literals."""
 
 import json
 import unittest
@@ -16,16 +16,16 @@ def base_with(*aesthetics):
     return {"aesthetics": list(aesthetics)}
 
 
-PLAIN = {"id": "чисто", "kind": "scene", "prompt": "a woman in a red coat"}
+PLAIN = {"id": "plain", "kind": "scene", "prompt": "a woman in a red coat"}
 BRANDED = {
-    "id": "сбрендом",
+    "id": "branded",
     "kind": "scene",
     "prompt": "a woman in a Balenciaga trench and Adidas sneakers",
 }
 
 
 class TheOwnersBaseIsShippedWhole(unittest.TestCase):
-    """База — материал составителя шаблонов. Модуль её читает, а не пересказывает."""
+    """The base is the template author's material. The module reads it, it does not retell it."""
 
     def test_all_six_aesthetics_are_present_by_name(self):
         self.assertEqual(
@@ -43,33 +43,33 @@ class TheOwnersBaseIsShippedWhole(unittest.TestCase):
 
     def test_an_unknown_name_is_refused_with_the_list_of_what_exists(self):
         with self.assertRaises(KeyError) as e:
-            A.load("нетакой")
+            A.load("nosuch")
         self.assertIn("y2k", str(e.exception))
 
     def test_a_missing_base_is_refused_not_silently_empty(self):
         with TemporaryDirectory() as td:
             with self.assertRaises(FileNotFoundError):
-                A.load_base(Path(td) / "нет.json")
+                A.load_base(Path(td) / "missing.json")
 
     def test_an_empty_base_is_refused_not_treated_as_no_aesthetics(self):
         with TemporaryDirectory() as td:
-            p = Path(td) / "пусто.json"
+            p = Path(td) / "empty.json"
             p.write_text(json.dumps({"aesthetics": []}), encoding="utf-8")
             with self.assertRaises(ValueError):
                 A.load_base(p)
 
 
 class TheBrandListIsASpravkaNotAGate(unittest.TestCase):
-    """По решению составителя шаблонов бренды в промтах остаются. Конфликта"""
+    """By the template author's decision brands stay in the prompts, so there is no conflict."""
 
     def test_a_branded_prompt_is_no_longer_a_third_outcome(self):
         got = A.brand_conflict(BRANDED)
         self.assertEqual(got["outcome"], PASS)
         self.assertEqual(sorted(got["brands"]), ["Adidas", "Balenciaga"])
-        self.assertIn("РАЗРЕШЕНО", got["note"])
+        self.assertIn("ALLOWED", got["note"])
 
     def test_the_note_says_out_loud_that_the_mark_is_judged_by_eye(self):
-        self.assertIn("СУДИТ ГЛАЗ", A.brand_conflict(BRANDED)["note"])
+        self.assertIn("JUDGED BY EYE", A.brand_conflict(BRANDED)["note"])
 
     def test_a_clean_prompt_is_NOT_accused(self):
         got = A.brand_conflict(PLAIN)
@@ -88,10 +88,10 @@ class TheBrandListIsASpravkaNotAGate(unittest.TestCase):
 
 
 class TheIdentityClauseResolvesTheConflictExplicitly(unittest.TestCase):
-    """Промты описывают ЧУЖУЮ внешность; личность обязана прийти с картинки."""
+    """The prompts describe someone else's looks; identity must come from the image."""
 
     def test_the_owner_prompt_comes_first(self):
-        """ПЕРЕПИСАН под решение «антропометрию вырезаем»: материал составителя шаблонов"""
+        """Rewrite for the decision to cut the anthropometry: the template author's material comes first."""
         got = A.compose(PLAIN)
         self.assertEqual(got["outcome"], PASS)
         self.assertTrue(got["prompt"].startswith("A person in a red coat"), got["prompt"][:80])
@@ -119,16 +119,16 @@ class TheIdentityClauseResolvesTheConflictExplicitly(unittest.TestCase):
     def test_the_lettering_ban_comes_from_the_stand_not_a_local_copy(self):
         from lipsync import fork_e2e
 
-        with mock.patch.object(fork_e2e, "NO_BRANDS_CLAUSE", "ЗАПРЕТ-ПОДМЕНА"):
-            self.assertIn("ЗАПРЕТ-ПОДМЕНА", A.compose(PLAIN)["prompt"])
+        with mock.patch.object(fork_e2e, "NO_BRANDS_CLAUSE", "SWAPPED-BAN"):
+            self.assertIn("SWAPPED-BAN", A.compose(PLAIN)["prompt"])
 
     def test_turning_the_ban_off_is_LOUD_in_the_note(self):
         got = A.compose(PLAIN, with_ban=False)
         self.assertNotIn("no logos", got["prompt"])
-        self.assertIn("ОТКЛЮЧЁН", got["note"])
+        self.assertIn("DISABLED", got["note"])
 
     def test_an_aesthetic_without_a_prompt_is_UNMEASURED_not_failed(self):
-        for bad in ({"id": "пусто"}, None, "нетакой-как-строка-не-в-базе"):
+        for bad in ({"id": "empty"}, None, "nosuch-as-a-string-not-in-base"):
             with self.subTest(bad=bad):
                 if isinstance(bad, str):
                     with self.assertRaises(KeyError):
@@ -143,7 +143,7 @@ class TheIdentityClauseResolvesTheConflictExplicitly(unittest.TestCase):
 
 
 class TheOnlyMeasurableAxisIsTheDemoIdentity(unittest.TestCase):
-    """Осталась ли на эстетике НАША демо-личность. Лестница одна на проект."""
+    """Check whether OUR demo identity survived on the aesthetic. One ladder per project."""
 
     @staticmethod
     def _at(median, outcome=PASS):
@@ -153,25 +153,25 @@ class TheOnlyMeasurableAxisIsTheDemoIdentity(unittest.TestCase):
                 "median": median,
                 "inside": 1,
                 "judged": 1,
-                "note": "подставной прибор",
+                "note": "stub instrument",
             }
 
         return distances
 
     def test_the_demo_survived_is_plainly_good(self):
-        got = A.accept(made="э.png", demo=DEMO, distances=self._at(0.0652))
+        got = A.accept(made="aes.png", demo=DEMO, distances=self._at(0.0652))
         self.assertEqual(got["outcome"], PASS)
         self.assertEqual(got["median"], 0.0652)
 
     def test_the_middle_band_is_UNMEASURED_not_failed(self):
-        got = A.accept(made="э.png", demo=DEMO, distances=self._at(0.5))
+        got = A.accept(made="aes.png", demo=DEMO, distances=self._at(0.5))
         self.assertEqual(got["outcome"], UNMEASURED)
-        self.assertIn("НЕ СУДЬЯ", got["note"])
+        self.assertIn("NOT THE JUDGE", got["note"])
 
     def test_a_repainted_person_is_a_real_defect(self):
-        got = A.accept(made="э.png", demo=DEMO, distances=self._at(0.9))
+        got = A.accept(made="aes.png", demo=DEMO, distances=self._at(0.9))
         self.assertEqual(got["outcome"], FAIL)
-        self.assertIn("ПЕРЕРИСОВАЛ", got["note"])
+        self.assertIn("REPAINTED", got["note"])
 
     def test_the_bar_is_the_project_one_and_not_a_copy(self):
         from lipsync import fork_identity
@@ -180,16 +180,17 @@ class TheOnlyMeasurableAxisIsTheDemoIdentity(unittest.TestCase):
         self.assertIs(A.SAME_PERSON_MAX, fork_identity.SAME_PERSON_MAX)
 
     def test_mutating_the_bar_both_ways_turns_the_verdict(self):
-        """планка строже и слабее на ИЗМЕРЕННОМ значении 0.2753."""
+        """Mutate the bar stricter and looser on the MEASURED value 0.2753."""
         was = A.SAME_PERSON_MAX
         try:
             A.SAME_PERSON_MAX = 0.1
             self.assertEqual(
-                A.accept(made="э.png", demo=DEMO, distances=self._at(0.2753))["outcome"], UNMEASURED
+                A.accept(made="aes.png", demo=DEMO, distances=self._at(0.2753))["outcome"],
+                UNMEASURED,
             )
             A.SAME_PERSON_MAX = 0.5
             self.assertEqual(
-                A.accept(made="э.png", demo=DEMO, distances=self._at(0.2753))["outcome"], PASS
+                A.accept(made="aes.png", demo=DEMO, distances=self._at(0.2753))["outcome"], PASS
             )
         finally:
             A.SAME_PERSON_MAX = was
@@ -197,19 +198,19 @@ class TheOnlyMeasurableAxisIsTheDemoIdentity(unittest.TestCase):
 
     def test_an_instrument_that_fell_is_UNMEASURED_not_failed(self):
         def broken(*a, **k):
-            raise RuntimeError("модель не загрузилась")
+            raise RuntimeError("the model failed to load")
 
-        got = A.accept(made="э.png", demo=DEMO, distances=broken)
+        got = A.accept(made="aes.png", demo=DEMO, distances=broken)
         self.assertEqual(got["outcome"], UNMEASURED)
         self.assertIn("RuntimeError", got["note"])
 
     def test_the_verdict_says_out_loud_that_taste_is_not_measured(self):
-        got = A.accept(made="э.png", demo=DEMO, distances=self._at(0.0652))
-        self.assertIn("СУДИТ СОСТАВИТЕЛЬ", got["note"])
+        got = A.accept(made="aes.png", demo=DEMO, distances=self._at(0.0652))
+        self.assertIn("JUDGED BY THE TEMPLATE AUTHOR", got["note"])
 
     def test_the_plan_is_explicitly_NOT_required_here(self):
-        got = A.accept(made="э.png", demo=DEMO, distances=self._at(0.0652))
-        self.assertIn("НЕ ТРЕБУЕТСЯ", got["note"])
+        got = A.accept(made="aes.png", demo=DEMO, distances=self._at(0.0652))
+        self.assertIn("NOT REQUIRED", got["note"])
 
 
 if __name__ == "__main__":
@@ -217,7 +218,7 @@ if __name__ == "__main__":
 
 
 class TheAnthropometryIsCutOutAndTheCutIsReadable(unittest.TestCase):
-    """Решение составителя шаблонов: «антропометрию мы всю вырезаем»."""
+    """The template author's decision: cut all the anthropometry."""
 
     def test_a_body_clause_is_carried_away_whole(self):
         got = A.strip_anthropometry(A.load("y2k")["prompt"])
@@ -275,7 +276,7 @@ class TheAnthropometryIsCutOutAndTheCutIsReadable(unittest.TestCase):
     def test_the_cut_is_reported_in_numbers_not_only_done(self):
         got = A.strip_anthropometry(A.load("y2k")["prompt"])
         self.assertEqual(len(got["dropped"]), 2)
-        self.assertIn("оборотов унесено 2", got["note"])
+        self.assertIn("clauses removed 2", got["note"])
         self.assertGreater(got["cut_share"], 0)
 
     def test_the_traces_of_the_operation_are_cleaned_up(self):
@@ -301,7 +302,7 @@ class TheAnthropometryIsCutOutAndTheCutIsReadable(unittest.TestCase):
                 self.assertIsNone(got["prompt"])
 
     def test_mutating_the_clause_list_both_ways_moves_what_is_cut(self):
-        """список образцов строже и слабее."""
+        """Mutate the pattern list stricter and looser."""
         was = A.ANTHROPOMETRY_CLAUSES
         try:
             A.ANTHROPOMETRY_CLAUSES = ()
@@ -315,7 +316,7 @@ class TheAnthropometryIsCutOutAndTheCutIsReadable(unittest.TestCase):
 
 
 class TheCutIsWiredIntoTheComposedPrompt(unittest.TestCase):
-    """Резак, который написан, но не позван, выглядит рабочим до прогона."""
+    """A cutter that is written but never called looks working until a run."""
 
     def test_the_composed_prompt_carries_no_anthropometry_by_default(self):
         got = A.compose("y2k")["prompt"]
@@ -334,16 +335,16 @@ class TheCutIsWiredIntoTheComposedPrompt(unittest.TestCase):
     def test_turning_the_cut_off_is_LOUD_and_restores_the_owner_text(self):
         got = A.compose("y2k", cut_body=False)
         self.assertIn("brunette", got["prompt"])
-        self.assertIn("РЕЗ ОТКЛЮЧЁН", got["note"])
+        self.assertIn("CUT DISABLED", got["note"])
 
     def test_the_cut_report_travels_with_the_prompt(self):
         got = A.compose("y2k")
         self.assertEqual(len(got["cut"]["dropped"]), 2)
-        self.assertIn("оборотов унесено 2", got["note"])
+        self.assertIn("clauses removed 2", got["note"])
 
 
 class TheAssembledReferenceTakesTheLookButNeverTheFace(unittest.TestCase):
-    """Ролевая строка под эстетику ОБРАТНА строке стенда, и это намеренно."""
+    """The role line for the aesthetic is the inverse of the stand line, and deliberately so."""
 
     def test_the_new_clause_asks_for_the_wardrobe_the_old_one_forbade(self):
         new = A.assemble_prompt()
@@ -367,7 +368,7 @@ class TheAssembledReferenceTakesTheLookButNeverTheFace(unittest.TestCase):
 
 
 class TheLeakIsMeasuredFromBOTHSides(unittest.TestCase):
-    """Мера похожести умеет сказать «похоже», но не «похоже на ЭТОГО»."""
+    """The similarity measure can say 'similar', but not 'similar to this one'."""
 
     CLIENT = "assets/fork_plan_man_fullbody.png"
     DEMO_W = "assets/fork_plan_woman_fullbody.png"
@@ -381,14 +382,14 @@ class TheLeakIsMeasuredFromBOTHSides(unittest.TestCase):
                 "median": median,
                 "inside": 1,
                 "judged": 1,
-                "note": "подставной прибор",
+                "note": "stub instrument",
             }
 
         return distances
 
     def _run(self, to_client, to_demo):
         return A.leak_verdict(
-            made="р.png",
+            made="ref.png",
             client=self.CLIENT,
             demo=self.DEMO_W,
             distances=self._pair(to_client, to_demo),
@@ -402,13 +403,13 @@ class TheLeakIsMeasuredFromBOTHSides(unittest.TestCase):
     def test_a_leaked_demo_is_a_REAL_defect_not_a_third_outcome(self):
         got = self._run(0.8, 0.1)
         self.assertEqual(got["outcome"], FAIL)
-        self.assertIn("ПРОТЕКЛА", got["note"])
+        self.assertIn("LEAKED", got["note"])
         self.assertEqual(got["gap"], -0.7)
 
     def test_the_measured_middle_case_is_UNMEASURED(self):
         got = self._run(0.3727, 0.9258)
         self.assertEqual(got["outcome"], UNMEASURED)
-        self.assertIn("СУДИТ ОПЕРАТОР", got["note"])
+        self.assertIn("OPERATOR JUDGES", got["note"])
 
     def test_both_close_is_UNMEASURED_because_the_gap_means_nothing_then(self):
         got = self._run(0.20, 0.30)
@@ -421,23 +422,23 @@ class TheLeakIsMeasuredFromBOTHSides(unittest.TestCase):
                 "median": None if str(anchor) == self.DEMO_W else 0.2,
                 "inside": 1,
                 "judged": 1,
-                "note": "полприбора",
+                "note": "half an instrument",
             }
 
-        got = A.leak_verdict(made="р.png", client=self.CLIENT, demo=self.DEMO_W, distances=half)
+        got = A.leak_verdict(made="ref.png", client=self.CLIENT, demo=self.DEMO_W, distances=half)
         self.assertEqual(got["outcome"], UNMEASURED)
 
     def test_an_instrument_that_fell_is_UNMEASURED(self):
         def broken(*a, **k):
-            raise RuntimeError("модель не загрузилась")
+            raise RuntimeError("the model failed to load")
 
-        got = A.leak_verdict(made="р.png", client="м.png", demo="ж.png", distances=broken)
+        got = A.leak_verdict(made="ref.png", client="man.png", demo="woman.png", distances=broken)
         self.assertEqual(got["outcome"], UNMEASURED)
         self.assertIn("RuntimeError", got["note"])
 
 
 class TheGenderPairIsAMachineGateNotANote(unittest.TestCase):
-    """Решение составителя шаблонов: «верно, эстетики по полу»."""
+    """The template author's decision: right, aesthetics go by gender."""
 
     def test_both_demos_are_the_universal_plan_assets(self):
         self.assertEqual(sorted(A.GENDERS), ["f", "m"])
@@ -445,7 +446,7 @@ class TheGenderPairIsAMachineGateNotANote(unittest.TestCase):
         self.assertEqual(A.demo_for("f"), "assets/fork_plan_woman_fullbody.png")
 
     def test_an_unknown_gender_is_refused_not_defaulted(self):
-        for bad in ("", "ж", None, "x"):
+        for bad in ("", "w", None, "x"):
             with self.subTest(bad=bad), self.assertRaises(KeyError):
                 A.demo_for(bad)
 
@@ -460,19 +461,19 @@ class TheGenderPairIsAMachineGateNotANote(unittest.TestCase):
     def test_a_mismatched_pair_is_a_REAL_defect(self):
         got = A.pair_check(client_gender="m", aesthetic_gender="f")
         self.assertEqual(got["outcome"], FAIL)
-        self.assertIn("РАЗЪЕХАЛСЯ", got["note"])
+        self.assertIn("MISMATCH", got["note"])
 
     def test_an_unnamed_gender_is_NOT_permission_to_continue(self):
         got = A.pair_check(client_gender="", aesthetic_gender="m")
         self.assertEqual(got["outcome"], UNMEASURED)
-        self.assertIn("НЕ разрешение", got["note"])
+        self.assertIn("NOT permission", got["note"])
 
     def test_the_gate_is_case_and_space_insensitive(self):
         self.assertEqual(A.pair_check(client_gender=" M ", aesthetic_gender="m")["outcome"], PASS)
 
 
 class TheGenderSplitDidNotFixTheWardrobeAndItIsRecorded(unittest.TestCase):
-    """ИЗМЕРЕННЫЙ ОТРИЦАТЕЛЬНЫЙ РЕЗУЛЬТАТ, а не забытая догадка."""
+    """A MEASURED negative result, not a forgotten guess."""
 
     def test_the_owner_prompt_itself_names_the_gendered_garment(self):
         prompt = A.load("y2k")["prompt"]
@@ -486,7 +487,7 @@ class TheGenderSplitDidNotFixTheWardrobeAndItIsRecorded(unittest.TestCase):
 
 
 class TheTemplateGenderIsTheAestheticGender(unittest.TestCase):
-    """Решение составителя шаблонов: «не меняем пол в промтах, просто сами шаблоны"""
+    """The template author's decision: keep the prompts' gender, the templates themselves are gendered."""
 
     def test_every_shipped_aesthetic_names_its_gender(self):
         for aid in A.ids():
@@ -501,8 +502,8 @@ class TheTemplateGenderIsTheAestheticGender(unittest.TestCase):
 
     def test_an_aesthetic_without_a_gender_is_refused_not_defaulted(self):
         with self.assertRaises(KeyError) as e:
-            A.gender_of({"id": "безпола", "prompt": "x"})
-        self.assertIn("безпола", str(e.exception))
+            A.gender_of({"id": "nogender", "prompt": "x"})
+        self.assertIn("nogender", str(e.exception))
 
     def test_the_file_name_follows_the_base_without_being_told(self):
         self.assertTrue(str(A.aesthetic_file("y2k")).endswith("y2k_f.png"))
@@ -518,7 +519,7 @@ class TheTemplateGenderIsTheAestheticGender(unittest.TestCase):
 
 
 class TheBrandBanWasNarrowedByTheOwner(unittest.TestCase):
-    """«Бренды пусть остаются, просто добавляем no logo во все промты стилей»."""
+    """Let the brands stay, just add no logo to every style prompt."""
 
     def test_the_ban_forbids_the_drawn_mark_not_the_word(self):
         from lipsync import fork_e2e

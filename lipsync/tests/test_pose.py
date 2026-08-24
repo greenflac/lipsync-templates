@@ -179,7 +179,7 @@ if __name__ == "__main__":
 
 @unittest.skipUnless(HAVE_NUMPY, "numpy not installed (live extra)")
 class PoseDriftAggregatesLikeTheIdentityCheck(unittest.TestCase):
-    """Агрегация pose_drift: медиана, худший сустав, покрытие."""
+    """Test pose_drift aggregation: median, worst joint, coverage."""
 
     def setUp(self):
         from lipsync import pose

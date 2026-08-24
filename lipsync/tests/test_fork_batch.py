@@ -1,4 +1,4 @@
-"""Батч целиком на подставном стенде: без сети, без единого цента."""
+"""Run the batch entirely on a stub stand: no network, not a single cent."""
 
 from __future__ import annotations
 
@@ -14,12 +14,12 @@ from lipsync.fork_identity import FAIL, PASS, UNMEASURED
 
 
 class _Blocked(RuntimeError):
-    """Сеть в тестах этого файла запрещена раннером, а не договорённостью."""
+    """The network in this file's tests is forbidden by the runner, not by agreement."""
 
 
 def _no_network():
     def deny(*a, **k):
-        raise _Blocked("сеть в тестах запрещена: подставь функцию, а не ходи наружу")
+        raise _Blocked("network is forbidden in tests: inject a function instead of going outside")
 
     return mock.patch.object(socket, "socket", deny)
 
@@ -32,7 +32,7 @@ PERSONS = ["work/person_a.png", "work/person_b.png"]
 
 
 class _Runner:
-    """Подставной `fork_e2e.run`: считает вызовы и пишет «ролик» на диск."""
+    """Stub `fork_e2e.run`: count the calls and write a 'clip' to disk."""
 
     def __init__(self, verdicts=None, *, write=True, reply=_NOREPLY):
         self.verdicts = dict(verdicts or {})
@@ -61,7 +61,7 @@ class _Runner:
             p.write_bytes(b"\x00" * 128)
         return {
             "outcome": v,
-            "stopped_at": "все ступени" if v == PASS else "6 приёмка выхода",
+            "stopped_at": "all stages" if v == PASS else "6 output acceptance",
             "totals": {
                 "checked": 21,
                 "violations": 0 if v == PASS else 1,
@@ -72,7 +72,7 @@ class _Runner:
 
 
 def _balance(*values):
-    """Подставной прибор баланса: отдаёт значения по порядку, потом последнее."""
+    """Stub balance probe: hand out the values in order, then the last one."""
     box = list(values)
 
     def get():
@@ -82,7 +82,7 @@ def _balance(*values):
 
 
 class _Log:
-    """Журнал, который можно прочитать ПРЯМО ВО ВРЕМЯ прогона."""
+    """A log that can be read right in the middle of a run."""
 
     def __init__(self):
         self.text = ""
@@ -113,7 +113,7 @@ class TheCoverageModesGiveTheNumbersTheyPromise(unittest.TestCase):
         self.assertEqual(len(B.cells(DRIVINGS, STYLES, PERSONS, mode="cover")), 5)
 
     def test_cover_touches_every_value_of_every_axis_at_least_once(self):
-        """Иначе `cover` продаёт подмножество как покрытие."""
+        """Otherwise `cover` sells a subset as coverage."""
         st3, pe2 = STYLES[:3], PERSONS
         got = B.cells(DRIVINGS, st3, pe2, mode="cover")
         self.assertEqual(len(got), 5)
@@ -127,14 +127,14 @@ class TheCoverageModesGiveTheNumbersTheyPromise(unittest.TestCase):
 
     def test_an_unknown_mode_is_a_refusal_and_not_a_guess(self):
         with self.assertRaises(ValueError) as e:
-            B.cells(DRIVINGS, STYLES, PERSONS, mode="почти_полный")
-        self.assertIn("почти_полный", str(e.exception))
+            B.cells(DRIVINGS, STYLES, PERSONS, mode="almost_full")
+        self.assertIn("almost_full", str(e.exception))
 
     def test_an_empty_axis_is_a_refusal(self):
-        """Негативный контроль матрицы: на пустой оси заказывать нечего."""
+        """Run the matrix negative control: an empty axis leaves nothing to order."""
         with self.assertRaises(ValueError) as e:
             B.cells(DRIVINGS, [], PERSONS, mode="cover")
-        self.assertIn("стилей", str(e.exception))
+        self.assertIn("styles", str(e.exception))
 
     def test_the_clip_name_says_what_is_on_the_video(self):
         self.assertEqual(
@@ -160,13 +160,13 @@ class TheMoneyGuardHasThreeOutcomes(unittest.TestCase):
         self.assertEqual(got["short"], 17.5)
 
     def test_the_real_balance_of_the_shift_against_the_full_cross(self):
-        """$0.8490 — остаток счёта на момент написания модуля."""
+        """$0.8490 is the account balance at the time the module was written."""
         got = B.afford(50, 0.8490)
         self.assertEqual(got["outcome"], FAIL)
         self.assertEqual(got["short"], 16.651)
 
     def test_enough_money_is_a_pass_the_guard_can_move(self):
-        """Негативный контроль прибора: он умеет и сказать «да»."""
+        """Run the instrument's negative control: it can also say yes."""
         got = B.afford(5, 2.0)
         self.assertEqual(got["outcome"], PASS)
         self.assertEqual(got["need"], 1.75)
@@ -181,12 +181,12 @@ class TheMoneyGuardHasThreeOutcomes(unittest.TestCase):
         self.assertEqual(got["short"], 0.01)
 
     def test_an_unknown_balance_is_unmeasured_and_not_a_refusal(self):
-        for value in (None, "не число"):
+        for value in (None, "not a number"):
             with self.subTest(value=value):
                 self.assertEqual(B.afford(5, value)["outcome"], UNMEASURED)
 
     def test_the_price_is_imported_and_not_copied(self):
-        """и цена живёт в стенде, мутируется в обе стороны."""
+        """Check the price lives in the stand and mutate it both ways."""
         with mock.patch.object(E, "KLING_PRICE_USD", 0.42):
             self.assertEqual(B.plan_cost(5), 2.1)
             self.assertEqual(B.afford(5, 2.0)["outcome"], FAIL)
@@ -200,7 +200,7 @@ class TheBatchDoesNotStartWithoutMoney(unittest.TestCase):
         run = _Runner()
         with _no_network(), TemporaryDirectory() as td:
             got = _batch(td, mode="full", balance=_balance(0.0), cell_runner=run)
-        self.assertEqual(run.calls, [], "заказ ушёл при пустом счёте")
+        self.assertEqual(run.calls, [], "an order went out on an empty account")
         self.assertEqual(got["attempted"], 0)
         self.assertEqual(got["planned"], 50)
         self.assertEqual(got["exit_code"], 1)
@@ -208,7 +208,7 @@ class TheBatchDoesNotStartWithoutMoney(unittest.TestCase):
         self.assertEqual(got["spent_expected"], 0.0)
 
     def test_an_unknown_balance_stops_the_batch_with_code_two(self):
-        """Не «наверное хватит» и не «считаем, что пусто» — третий исход."""
+        """Neither 'probably enough' nor 'assume empty': the third outcome."""
         run = _Runner()
         with _no_network(), TemporaryDirectory() as td:
             got = _batch(td, mode="cover", balance=_balance(None), cell_runner=run)
@@ -219,13 +219,13 @@ class TheBatchDoesNotStartWithoutMoney(unittest.TestCase):
     def test_the_default_balance_probe_reads_the_operator_number(self):
         with mock.patch.dict("os.environ", {B.BALANCE_ENV: "0.8490"}):
             self.assertEqual(B.live_balance(), 0.849)
-        with mock.patch.dict("os.environ", {B.BALANCE_ENV: "мусор"}):
+        with mock.patch.dict("os.environ", {B.BALANCE_ENV: "garbage"}):
             self.assertIsNone(B.live_balance())
         with mock.patch.dict("os.environ", {}, clear=True):
             self.assertIsNone(B.live_balance())
 
     def test_a_pro_endpoint_is_refused_before_the_balance_is_even_asked(self):
-        """Сторож `pro` стоит ДО денег: $0.8960 против $0.0700 за секунду."""
+        """The `pro` guard stands before the money: $0.8960 versus $0.0700 per second."""
         run = _Runner()
         asked = []
         with _no_network(), TemporaryDirectory() as td:
@@ -290,46 +290,46 @@ class TheBatchRunsCellsOneByOne(unittest.TestCase):
         run = _Runner({3: FAIL})
         with _no_network(), TemporaryDirectory() as td:
             got = _batch(td, mode="cover", balance=_balance(2.0, 0.95), cell_runner=run)
-        self.assertEqual(len(run.calls), 5, "батч встал на одной плохой паре")
+        self.assertEqual(len(run.calls), 5, "the batch stalled on one bad pair")
         self.assertEqual((got["passed"], got["failed"], got["unmeasured"]), (4, 1, 0))
         self.assertFalse(got["stopped_early"])
         self.assertEqual(got["exit_code"], 1)
 
     def test_each_cell_is_printed_before_the_next_one_starts(self):
-        """Молчащий прогон уже уносил с собой всё измеренное."""
+        """A silent run has already carried away everything measured."""
         log = _Log()
         seen = []
 
         def runner(*, out_dir, **kw):
-            seen.append(log.text.count("] ячейка"))
+            seen.append(log.text.count("] cell"))
             p = Path(out_dir) / "final_9x16.mp4"
             p.parent.mkdir(parents=True, exist_ok=True)
             p.write_bytes(b"\x00" * 16)
             return {
                 "outcome": PASS,
-                "stopped_at": "все ступени",
+                "stopped_at": "all stages",
                 "totals": {"checked": 21, "violations": 0, "unmeasured": 0},
             }
 
         with _no_network(), TemporaryDirectory() as td:
             _batch(td, mode="cover", balance=_balance(2.0), cell_runner=runner, log=log)
         self.assertEqual(seen, [0, 1, 2, 3, 4])
-        self.assertIn("деньги до старта", log.text.split("] ячейка")[0])
+        self.assertIn("money before start", log.text.split("] cell")[0])
 
 
 class ThereAreThreeOutcomesPerCellAndNotTwo(unittest.TestCase):
     def test_a_crashed_cell_is_unmeasured_and_not_a_product_defect(self):
-        run = _Runner({2: _Blocked("очередь fal легла")})
+        run = _Runner({2: _Blocked("the fal queue went down")})
         with _no_network(), TemporaryDirectory() as td:
             got = _batch(td, mode="cover", balance=_balance(2.0, 0.95), cell_runner=run)
         bad = got["cells"][1]
         self.assertEqual(bad["outcome"], UNMEASURED)
-        self.assertIn("очередь fal легла", bad["note"])
+        self.assertIn("the fal queue went down", bad["note"])
         self.assertEqual((got["passed"], got["failed"], got["unmeasured"]), (4, 0, 1))
         self.assertEqual(got["exit_code"], 2)
 
     def test_a_reply_without_a_verdict_is_unmeasured_and_not_a_pass(self):
-        for reply in (None, "готово", {"outcome": "ну норм"}):
+        for reply in (None, "done", {"outcome": "kinda fine"}):
             with self.subTest(reply=reply):
                 run = _Runner(reply=reply)
                 with _no_network(), TemporaryDirectory() as td:
@@ -338,23 +338,23 @@ class ThereAreThreeOutcomesPerCellAndNotTwo(unittest.TestCase):
                 self.assertEqual(got["passed"], 0)
 
     def test_a_pass_without_a_clip_on_disk_is_downgraded_to_unmeasured(self):
-        """верим свидетельству, а не флагу. Нет ролика — нечего смотреть."""
+        """Trust the evidence, not the flag. No clip means nothing to watch."""
         run = _Runner(write=False)
         with _no_network(), TemporaryDirectory() as td:
             got = _batch(td, mode="cover", balance=_balance(2.0), cell_runner=run)
         self.assertEqual(got["passed"], 0)
         self.assertEqual(got["unmeasured"], 5)
         self.assertEqual(got["clips"], [])
-        self.assertIn("ролика нет", got["cells"][0]["note"])
+        self.assertIn("clip is missing", got["cells"][0]["note"])
 
     def test_an_empty_clip_file_is_not_a_clip(self):
-        """Негативный контроль забора: нулевой файл обязан быть отказом."""
+        """Run the collector's negative control: a zero-byte file must be a refusal."""
         with TemporaryDirectory() as td:
             src = Path(td) / "final_9x16.mp4"
             src.write_bytes(b"")
             path, why = B.copy_clip(src, Path(td) / "out.mp4")
             self.assertIsNone(path)
-            self.assertIn("пустой", why)
+            self.assertIn("empty", why)
 
     def test_the_collector_can_also_say_yes(self):
         with TemporaryDirectory() as td:
@@ -370,14 +370,14 @@ class AStreakOfFailuresStopsTheBatch(unittest.TestCase):
         run = _Runner({2: FAIL, 3: FAIL, 4: FAIL})
         with _no_network(), TemporaryDirectory() as td:
             got = _batch(td, mode="cover", balance=_balance(2.0, 1.16), cell_runner=run)
-        self.assertEqual(len(run.calls), 4, "батч жёг деньги дальше серии")
+        self.assertEqual(len(run.calls), 4, "the batch kept burning money past the streak")
         self.assertTrue(got["stopped_early"])
         self.assertEqual((got["passed"], got["failed"], got["unmeasured"]), (1, 3, 1))
         self.assertEqual(got["cells"][4]["outcome"], UNMEASURED)
-        self.assertIn("не запускалась", got["cells"][4]["note"])
+        self.assertIn("not launched", got["cells"][4]["note"])
 
     def test_two_failures_in_a_row_do_not_stop_it(self):
-        """Негативный контроль сторожа: он умеет и промолчать."""
+        """Run the guard's negative control: it can also stay silent."""
         run = _Runner({2: FAIL, 3: FAIL})
         with _no_network(), TemporaryDirectory() as td:
             got = _batch(td, mode="cover", balance=_balance(2.0), cell_runner=run)
@@ -385,7 +385,7 @@ class AStreakOfFailuresStopsTheBatch(unittest.TestCase):
         self.assertFalse(got["stopped_early"])
 
     def test_failures_split_by_a_pass_do_not_add_up(self):
-        """Серия — это ПОДРЯД. Успех между неудачами обнуляет счётчик."""
+        """A streak means in a row. A pass between failures resets the counter."""
         run = _Runner({1: FAIL, 2: FAIL, 3: PASS, 4: FAIL, 5: FAIL})
         with _no_network(), TemporaryDirectory() as td:
             got = _batch(td, mode="cover", balance=_balance(2.0), cell_runner=run)
@@ -393,15 +393,15 @@ class AStreakOfFailuresStopsTheBatch(unittest.TestCase):
         self.assertFalse(got["stopped_early"])
 
     def test_unmeasured_cells_count_into_the_streak_too(self):
-        """Деньги горят одинаково, чем бы ни кончилась ячейка."""
-        run = _Runner({1: _Blocked("сеть"), 2: _Blocked("сеть"), 3: _Blocked("сеть")})
+        """Money burns the same however the cell ends."""
+        run = _Runner({1: _Blocked("network"), 2: _Blocked("network"), 3: _Blocked("network")})
         with _no_network(), TemporaryDirectory() as td:
             got = _batch(td, mode="cover", balance=_balance(2.0), cell_runner=run)
         self.assertEqual(len(run.calls), 3)
         self.assertTrue(got["stopped_early"])
 
     def test_the_streak_constant_is_guarded_in_both_directions(self):
-        """подмена строже и слабее, оба раза наблюдаемо."""
+        """Swap the constant stricter and looser, observably both times."""
         self.assertEqual(B.MAX_STREAK, 3)
         for value, expect_calls, expect_stop in ((2, 3, True), (5, 5, False)):
             with self.subTest(MAX_STREAK=value):
@@ -457,11 +457,11 @@ class TheReportCarriesNumbersNextToTheVerdict(unittest.TestCase):
         run = _Runner({3: FAIL})
         with _no_network(), TemporaryDirectory() as td:
             _batch(td, mode="cover", balance=_balance(2.0, 0.95), cell_runner=run, log=log)
-        self.assertIn("годно 4, не годно 1, не смогли 0", log.text)
-        self.assertIn("потрачено фактически $1.05", log.text)
+        self.assertIn("pass 4, fail 1, unmeasured 0", log.text)
+        self.assertIn("actually spent $1.05", log.text)
 
     def test_the_exit_code_is_zero_one_two_by_the_worst_cell(self):
-        cases = ((None, 0), ({3: FAIL}, 1), ({3: _Blocked("сеть")}, 2))
+        cases = ((None, 0), ({3: FAIL}, 1), ({3: _Blocked("network")}, 2))
         for verdicts, code in cases:
             with self.subTest(verdicts=verdicts):
                 with _no_network(), TemporaryDirectory() as td:
@@ -471,13 +471,13 @@ class TheReportCarriesNumbersNextToTheVerdict(unittest.TestCase):
                 self.assertEqual(got["exit_code"], code)
 
     def test_a_failure_outranks_an_unmeasured_in_the_verdict(self):
-        """Найденное нарушение не перестаёт быть нарушением от того, что"""
+        """A found violation does not stop being one because something else went unmeasured."""
         with _no_network(), TemporaryDirectory() as td:
             got = _batch(
                 td,
                 mode="cover",
                 balance=_balance(2.0),
-                cell_runner=_Runner({2: FAIL, 4: _Blocked("сеть")}),
+                cell_runner=_Runner({2: FAIL, 4: _Blocked("network")}),
             )
         self.assertEqual(got["outcome"], FAIL)
         self.assertEqual(got["exit_code"], 1)

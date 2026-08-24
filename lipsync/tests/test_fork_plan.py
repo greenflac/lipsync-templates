@@ -1,4 +1,4 @@
-"""Гейты универсального плана. Каждый сторожит дефект, а не строчку кода."""
+"""Gates for the universal plan. Each guards a defect, not a line of code."""
 
 import unittest
 from unittest import mock
@@ -27,7 +27,7 @@ def shifted(pose, dx=0.0, dy=0.0):
 
 
 class ThePlanNumbersComeFromTheMeasuredDrivings(unittest.TestCase):
-    """Полосы выведены из планов драйвингов, а не из вкуса."""
+    """The bands are derived from the driving plans, not from taste."""
 
     def test_the_shipped_numbers_are_the_chosen_ones(self):
         self.assertEqual(P.PLAN_RATIO, 0.5625)
@@ -45,17 +45,17 @@ class ThePlanNumbersComeFromTheMeasuredDrivings(unittest.TestCase):
         self.assertEqual(P.STYLED_SIZE_MEASURED, (896, 1200))
 
     def test_the_measured_driving_plans_land_where_the_bands_say(self):
-        """НЕГАТИВНЫЙ КОНТРОЛЬ полос: они обязаны РАЗЛИЧАТЬ драйвинги."""
+        """Run the negative control of the bands: they must tell drivings apart."""
         lo, hi = P.SHOULDERS_BAND
-        self.assertTrue(lo <= 0.375 <= hi, "b2 обязан попадать")
-        self.assertFalse(lo <= 0.531 <= hi, "b4 обязан НЕ попадать")
+        self.assertTrue(lo <= 0.375 <= hi, "b2 must land inside")
+        self.assertFalse(lo <= 0.531 <= hi, "b4 must land outside")
         a_lo, a_hi = P.ANKLES_BAND
-        self.assertTrue(a_lo <= 0.940 <= a_hi, "b2 обязан попадать")
-        self.assertFalse(a_lo <= 0.625 <= a_hi, "b5 обязан НЕ попадать")
+        self.assertTrue(a_lo <= 0.940 <= a_hi, "b2 must land inside")
+        self.assertFalse(a_lo <= 0.625 <= a_hi, "b5 must land outside")
 
 
 class ThePersonBoxIgnoresUnconfidentJoints(unittest.TestCase):
-    """Дефект, а не строчка: mediapipe достраивает суставы ЗА обрезом кадра."""
+    """A defect, not a line: mediapipe extrapolates joints beyond the frame edge."""
 
     def test_a_confident_pose_gives_a_box(self):
         box = P.person_box(GOOD)
@@ -76,12 +76,12 @@ class ThePersonBoxIgnoresUnconfidentJoints(unittest.TestCase):
         self.assertIn("12", got["note"])
 
     def test_no_pose_at_all_is_UNMEASURED(self):
-        for empty in ({}, None, "поза"):
+        for empty in ({}, None, "pose"):
             with self.subTest(empty=empty):
                 self.assertEqual(P.person_box(empty)["outcome"], UNMEASURED)
 
     def test_mutating_the_visibility_bar_both_ways_moves_the_box(self):
-        """планка видимости строже и слабее."""
+        """Mutate the visibility bar stricter and looser."""
         dirty = dict(GOOD, l_ankle=(-0.6, 1.7, 0.4))
         loose = P.person_box(dirty, min_visibility=0.3)
         self.assertEqual(loose["x0"], -0.6)
@@ -90,7 +90,7 @@ class ThePersonBoxIgnoresUnconfidentJoints(unittest.TestCase):
 
 
 class TheCanvasAlwaysPadsAndNeverCrops(unittest.TestCase):
-    """Обрезка — это ровно тот дефект, ради которого модуль написан."""
+    """Cropping is exactly the defect this module was written against."""
 
     def test_the_measured_styled_size_becomes_nine_by_sixteen(self):
         got = P.canvas_for(896, 1200)
@@ -132,7 +132,7 @@ class TheCanvasAlwaysPadsAndNeverCrops(unittest.TestCase):
                 P.canvas_for(*bad)
 
     def test_mutating_the_plan_ratio_both_ways_moves_the_canvas(self):
-        """PLAN_RATIO строже (уже) и слабее (шире)."""
+        """Mutate PLAN_RATIO stricter (narrower) and looser (wider)."""
         was = P.PLAN_RATIO
         try:
             P.PLAN_RATIO = 0.5
@@ -153,13 +153,13 @@ class TheVerdictHasThreeOutcomesOnEveryAxis(unittest.TestCase):
     def test_the_wrong_canvas_is_a_defect(self):
         got = P.plan_verdict(width=896, height=1200, points=GOOD, face_px=140)
         self.assertEqual(got["outcome"], FAIL)
-        self.assertEqual([a["outcome"] for a in got["axes"] if a["name"] == "канвас"], [FAIL])
+        self.assertEqual([a["outcome"] for a in got["axes"] if a["name"] == "canvas"], [FAIL])
 
     def test_a_portrait_crop_fails_on_the_ankles(self):
         waist_up = {k: v for k, v in GOOD.items() if "ankle" not in k and "knee" not in k}
         got = P.plan_verdict(width=1080, height=1920, points=waist_up, face_px=300)
         names = {a["name"]: a["outcome"] for a in got["axes"]}
-        self.assertEqual(names["щиколотки"], UNMEASURED)
+        self.assertEqual(names["ankles"], UNMEASURED)
         self.assertEqual(got["outcome"], UNMEASURED)
 
     def test_an_off_centre_person_is_a_defect(self):
@@ -174,25 +174,25 @@ class TheVerdictHasThreeOutcomesOnEveryAxis(unittest.TestCase):
     def test_a_small_face_only_warns_and_does_not_sink_the_verdict(self):
         got = P.plan_verdict(width=1080, height=1920, points=GOOD, face_px=61)
         self.assertEqual(got["outcome"], PASS)
-        self.assertIn("ПРЕДУПРЕЖДЕНИЕ", got["note"])
+        self.assertIn("WARNING", got["note"])
 
     def test_a_big_face_gets_NO_warning(self):
         got = P.plan_verdict(width=1080, height=1920, points=GOOD, face_px=140)
-        self.assertNotIn("ПРЕДУПРЕЖДЕНИЕ", got["note"])
+        self.assertNotIn("WARNING", got["note"])
 
     def test_a_face_never_asked_about_is_UNMEASURED_not_absent(self):
         got = P.plan_verdict(width=1080, height=1920, points=GOOD)
         names = {a["name"]: a["outcome"] for a in got["axes"]}
-        self.assertEqual(names["лицо"], UNMEASURED)
+        self.assertEqual(names["face"], UNMEASURED)
 
     def test_a_missing_size_is_UNMEASURED_not_failed(self):
         got = P.plan_verdict(points=GOOD, face_px=140)
         names = {a["name"]: a["outcome"] for a in got["axes"]}
-        self.assertEqual(names["канвас"], UNMEASURED)
+        self.assertEqual(names["canvas"], UNMEASURED)
         self.assertEqual(got["outcome"], UNMEASURED)
 
     def test_mutating_each_band_both_ways_turns_the_verdict(self):
-        """по каждой полосе: строже роняет годное, слабее пропускает брак."""
+        """Mutate every band: stricter fails a good input, looser lets a defect pass."""
         ok = dict(width=1080, height=1920, points=GOOD, face_px=140)
         wide = dict(GOOD, l_wrist=(0.95, 0.62, 0.97), r_wrist=(0.05, 0.62, 0.97))
         off_centre = dict(ok, points=shifted(GOOD, dx=0.05))
@@ -224,21 +224,21 @@ class TheVerdictHasThreeOutcomesOnEveryAxis(unittest.TestCase):
                 self.assertEqual(
                     P.plan_verdict(**good)["outcome"],
                     PASS,
-                    f"{name}: годное обязано проходить НА БОЕВОЙ полосе",
+                    f"{name}: a good input must pass on the production band",
                 )
                 setattr(P, name, strict)
                 self.assertEqual(
-                    P.plan_verdict(**good)["outcome"], FAIL, f"{name} строже не покраснел"
+                    P.plan_verdict(**good)["outcome"], FAIL, f"{name} stricter did not go red"
                 )
                 setattr(P, name, was)
                 self.assertEqual(
                     P.plan_verdict(**bad)["outcome"],
                     FAIL,
-                    f"{name}: брак обязан краснеть НА БОЕВОЙ полосе",
+                    f"{name}: a defect must go red on the production band",
                 )
                 setattr(P, name, loose)
                 self.assertEqual(
-                    P.plan_verdict(**bad)["outcome"], PASS, f"{name} слабее не пропустил"
+                    P.plan_verdict(**bad)["outcome"], PASS, f"{name} looser did not let it pass"
                 )
             finally:
                 setattr(P, name, was)
@@ -264,8 +264,8 @@ class TheFullBodyPromptIsADecisionNotAString(unittest.TestCase):
     def test_the_ban_comes_from_the_stand_not_from_a_local_copy(self):
         from lipsync import fork_e2e
 
-        with mock.patch.object(fork_e2e, "NO_BRANDS_CLAUSE", "ЗАПРЕТ-ПОДМЕНА"):
-            self.assertIn("ЗАПРЕТ-ПОДМЕНА", P.full_body_prompt())
+        with mock.patch.object(fork_e2e, "NO_BRANDS_CLAUSE", "SWAPPED-BAN"):
+            self.assertIn("SWAPPED-BAN", P.full_body_prompt())
 
     def test_extra_words_are_appended_not_substituted(self):
         got = P.full_body_prompt(extra="plain grey studio background")
@@ -274,13 +274,13 @@ class TheFullBodyPromptIsADecisionNotAString(unittest.TestCase):
 
 
 class TheDiskIsAnInjectionPoint(unittest.TestCase):
-    """Без PIL и без диска модуль обязан проверяться."""
+    """The module must be checkable without PIL and without the disk."""
 
     def test_an_unopenable_image_is_UNMEASURED_not_failed(self):
         def broken(_):
-            raise OSError("файла нет")
+            raise OSError("no such file")
 
-        got = P.to_plan("нет.png", "out.png", opener=broken)
+        got = P.to_plan("missing.png", "out.png", opener=broken)
         self.assertEqual(got["outcome"], UNMEASURED)
         self.assertIn("OSError", got["note"])
         self.assertIsNone(got["path"])
@@ -291,7 +291,7 @@ if __name__ == "__main__":
 
 
 class TheDrivingDictatesThePlanNotAConstant(unittest.TestCase):
-    """Архитектурное решение составителя шаблонов: композиция кадра драйвинга"""
+    """The template author's architectural decision: the driving frame's composition rules the plan."""
 
     @staticmethod
     def poses(ankle=0.92, shoulder=0.32, centre=0.5, jitter=0.01, n=20):
@@ -333,7 +333,7 @@ class TheDrivingDictatesThePlanNotAConstant(unittest.TestCase):
         self.assertNotIn("0.9", text)
 
     def test_the_clause_does_NOT_dictate_where_the_feet_are_cut(self):
-        """По решению составителя шаблонов обрезка щиколоток в промт не"""
+        """By the template author's decision the ankle crop does not go into the prompt."""
         text = P.framing_clause(P.composition_card(self.poses(ankle=0.95)))
         self.assertNotIn("bottom edge", text)
         self.assertNotIn("feet", text)
@@ -358,7 +358,7 @@ class TheDrivingDictatesThePlanNotAConstant(unittest.TestCase):
         self.assertEqual(got["outcome"], PASS)
 
     def test_a_different_ankle_line_is_NOT_a_defect_any_more(self):
-        """ПЕРЕПИСАН: судятся только оси КОМПОЗИЦИИ — центр и ширина."""
+        """Rewrite: only the composition axes are judged, centre and width."""
         card = P.composition_card(self.poses(ankle=0.913, shoulder=0.531))
         miss = self.poses(ankle=0.7358, shoulder=0.4846)[0]
         self.assertEqual(P.in_card(miss, card)["outcome"], PASS)
@@ -367,14 +367,14 @@ class TheDrivingDictatesThePlanNotAConstant(unittest.TestCase):
         card = P.composition_card(self.poses(ankle=0.913, shoulder=0.531))
         self.assertAlmostEqual(card["shoulders"], 0.5810, places=3)
         got = P.in_card(self.poses(ankle=0.7358)[0], card)
-        self.assertIn("НЕ СУДЯТСЯ", got["note"])
+        self.assertIn("NOT JUDGED", got["note"])
 
     def test_an_off_centre_reference_is_STILL_a_defect(self):
         card = P.composition_card(self.poses(centre=0.5114))
         got = P.in_card(self.poses(centre=0.2601)[0], card)
         self.assertEqual(got["outcome"], FAIL)
-        self.assertIn("центр", got["note"])
-        self.assertIn("уедет за край", got["note"])
+        self.assertIn("centre", got["note"])
+        self.assertIn("slides off the frame edge", got["note"])
 
     def test_without_a_card_the_check_is_UNMEASURED_not_a_pass(self):
         self.assertEqual(P.in_card(self.poses()[0], None)["outcome"], UNMEASURED)

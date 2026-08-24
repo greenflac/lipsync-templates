@@ -1,4 +1,4 @@
-"""Выбор устройства и — главное — молчаливый откат на CPU."""
+"""Test device selection and — above all — the silent fallback to CPU."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ import unittest
 
 
 def _install_module(case: unittest.TestCase, name: str, module) -> None:
-    """Подставить модуль на время теста и вернуть всё как было."""
+    """Install a module for the duration of the test and restore everything afterwards."""
     had = name in sys.modules
     saved = sys.modules.get(name)
     sys.modules[name] = module
@@ -23,7 +23,7 @@ def _install_module(case: unittest.TestCase, name: str, module) -> None:
 
 
 def _fake_torch(version: str, device: str, name=None, boom=None):
-    """torch-заглушка: у бэкенда либо есть имя карты, либо он бросает."""
+    """Build a torch stub: the backend either has a card name or raises."""
     torch = types.ModuleType("torch")
     torch.__version__ = version
     backend = types.SimpleNamespace()
@@ -104,11 +104,11 @@ class DeviceChoiceHasConsequencesBeyondTheName(unittest.TestCase):
         self.assertIn(self.d.detect(), self.d.DEVICE_ORDER)
 
     def test_the_description_starts_with_the_hardware(self):
-        self.assertTrue(self.d.describe("cpu").startswith("устройство cpu"))
+        self.assertTrue(self.d.describe("cpu").startswith("device cpu"))
 
 
 class AlternativesAreNotRequirements(unittest.TestCase):
-    """Дефект: список провайдеров читался как «нужны все», а он «или-или»."""
+    """Defect: the provider list was read as "all required" when it is "either-or"."""
 
     def setUp(self):
         from lipsync import device
@@ -172,7 +172,7 @@ class AlternativesAreNotRequirements(unittest.TestCase):
 
 
 class TorchHasThreeStatesNotTwo(unittest.TestCase):
-    """Дефект: «torch не установлен» говорилось и тогда, когда он установлен."""
+    """Defect: "torch is not installed" was said even when it was installed."""
 
     def setUp(self):
         from lipsync import device
@@ -188,7 +188,7 @@ class TorchHasThreeStatesNotTwo(unittest.TestCase):
         _install_module(self, "torch", None)
         state, _, _, _ = self.d.torch_state("xpu")
         self.assertEqual(state, self.d.TORCH_ABSENT)
-        self.assertIn("не установлен", self.d.describe("xpu"))
+        self.assertIn("not installed", self.d.describe("xpu"))
 
     def test_a_broken_device_query_is_not_called_a_missing_package(self):
         _install_module(
@@ -201,7 +201,7 @@ class TorchHasThreeStatesNotTwo(unittest.TestCase):
         self.assertEqual(version, "2.5.1+xpu")
         self.assertIn("XPU driver not found", reason)
         line = self.d.describe("xpu")
-        self.assertNotIn("не установлен", line)
+        self.assertNotIn("not installed", line)
         self.assertIn("2.5.1+xpu", line)
         self.assertIn("XPU driver not found", line)
 
@@ -213,7 +213,7 @@ class TorchHasThreeStatesNotTwo(unittest.TestCase):
         self.assertEqual(reason, "")
         line = self.d.describe("xpu")
         self.assertIn("Intel Arc A580", line)
-        self.assertNotIn("не установлен", line)
+        self.assertNotIn("not installed", line)
 
     def test_the_three_states_read_differently(self):
         lines = []
@@ -256,7 +256,7 @@ SMI_CSV = "NVIDIA GeForce RTX 3050 Laptop GPU, 6144, 550.54.14\n"
 
 
 def _fake_smi(csv_out=SMI_CSV, head_out=SMI_HEADER, why=""):
-    """Заглушка запуска nvidia-smi: csv для карт, пустой список для шапки."""
+    """Stub the nvidia-smi runner: csv for the cards, an empty arg list for the header."""
 
     def run(args, timeout=None):
         if why:
@@ -267,7 +267,7 @@ def _fake_smi(csv_out=SMI_CSV, head_out=SMI_HEADER, why=""):
 
 
 class TheDriverIsAskedBeforeTorchIs(unittest.TestCase):
-    """nvidia-smi отвечает за десятые доли секунды и знает почти всё нужное."""
+    """nvidia-smi answers within tenths of a second and knows almost everything we need."""
 
     def setUp(self):
         from lipsync import device
@@ -304,19 +304,19 @@ class TheDriverIsAskedBeforeTorchIs(unittest.TestCase):
         self.assertEqual(got["reason"], "")
 
     def test_a_missing_smi_reports_the_reason_rather_than_an_empty_result(self):
-        got = self.d.smi_probe(run=_fake_smi(why="nvidia-smi не найден в PATH"))
+        got = self.d.smi_probe(run=_fake_smi(why="nvidia-smi not found in PATH"))
         self.assertEqual(got["cards"], [])
-        self.assertIn("не найден", got["reason"])
+        self.assertIn("not found", got["reason"])
 
     def test_cards_without_a_cuda_line_are_still_cards(self):
-        got = self.d.smi_probe(run=_fake_smi(head_out="повреждённая шапка"))
+        got = self.d.smi_probe(run=_fake_smi(head_out="corrupted header"))
         self.assertTrue(got["cards"])
         self.assertIsNone(got["cuda"])
         self.assertIn("CUDA Version", got["reason"])
 
 
 class TheDriverMustCoverTheBuild(unittest.TestCase):
-    """Правило, а не абзац: драйвер старше сборки — всё падает непонятно."""
+    """A rule, not a paragraph: a driver older than the build makes everything fail obscurely."""
 
     def setUp(self):
         from lipsync import device
@@ -329,7 +329,7 @@ class TheDriverMustCoverTheBuild(unittest.TestCase):
         self.assertEqual(self.d.version_pair("6144"), (6144, 0))
 
     def test_an_unparseable_version_is_none_not_zero(self):
-        for junk in ("", None, "N/A", "не число"):
+        for junk in ("", None, "N/A", "not a number"):
             self.assertIsNone(self.d.version_pair(junk), junk)
 
     def test_an_older_major_does_not_cover_the_build(self):
@@ -349,7 +349,7 @@ class TheDriverMustCoverTheBuild(unittest.TestCase):
 
 
 class TheCpuBuildIsRecognisedByWhatItWasBuiltWith(unittest.TestCase):
-    """Суффикс `+cpu` не признак: колесо с PyPI его не несёт вовсе."""
+    """The `+cpu` suffix is not a marker: the PyPI wheel does not carry it at all."""
 
     def setUp(self):
         from lipsync import device
@@ -371,12 +371,12 @@ class TheCpuBuildIsRecognisedByWhatItWasBuiltWith(unittest.TestCase):
     def test_a_build_with_cuda_reports_its_version(self):
         _install_module(self, "torch", self._torch("13.0"))
         self.assertEqual(self.d.torch_build_cuda(), "13.0")
-        self.assertIn("собран с CUDA 13.0", self.d.describe("cuda"))
+        self.assertIn("built with CUDA 13.0", self.d.describe("cuda"))
 
     def test_a_clean_version_string_with_no_cuda_is_still_a_cpu_build(self):
         _install_module(self, "torch", self._torch(None))
         self.assertIsNone(self.d.torch_build_cuda())
-        self.assertIn("СОБРАН БЕЗ CUDA", self.d.describe("cuda"))
+        self.assertIn("built WITHOUT CUDA", self.d.describe("cuda"))
 
     def test_an_absent_torch_is_not_reported_as_a_cpu_build(self):
         _install_module(self, "torch", None)

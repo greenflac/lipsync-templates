@@ -1,4 +1,4 @@
-"""Адаптер стиля: фоторференс -> карточка -> рабочий промт по скелету."""
+"""Style adapter: photo reference -> card -> a working prompt over the skeleton."""
 
 from __future__ import annotations
 
@@ -54,23 +54,23 @@ PALETTE_WIDTH = 3
 
 
 def _words(text: str) -> int:
-    """Слов в промте. Считается ОДНИМ способом на весь модуль."""
+    """Count the words in the prompt, in one single way for the whole module."""
     return len(re.findall(r"[A-Za-z][A-Za-z'-]*", text))
 
 
 def _clauses(text: str) -> int:
-    """Клауз в промте: куски, разделённые запятыми. Пустые не считаются."""
+    """Count the clauses in the prompt: comma-separated pieces. Empty ones do not count."""
     return len([c for c in text.split(",") if c.strip()])
 
 
 def subject_leak(text: str) -> list:
-    """Какие запретные слова оказались в промте. Пустой список — чисто."""
+    """List the forbidden words found in the prompt. An empty list means clean."""
     low = text.lower()
     return [w for w in SUBJECT_WORDS if re.search(r"\b" + re.escape(w) + r"\b", low)]
 
 
 def compose(card: dict) -> dict:
-    """Карточка стиля -> промт. Три исхода, а не два."""
+    """Turn a style card into a prompt. Three outcomes, not two."""
     empty = {
         "outcome": UNMEASURED,
         "prompt": None,
@@ -80,7 +80,7 @@ def compose(card: dict) -> dict:
         "card": card,
     }
     if not isinstance(card, dict):
-        return {**empty, "note": "карточка не словарь: стиль НЕ ПРОЧИТАН"}
+        return {**empty, "note": "the card is not a dict: the style was NOT READ"}
 
     colours = card.get("colours") or []
     value = card.get("value_key")
@@ -101,21 +101,23 @@ def compose(card: dict) -> dict:
         return {
             **empty,
             "note": (
-                "в карточке нет полей "
+                "the card is missing the fields "
                 + ", ".join(missing)
-                + ": стиль НЕ ПРОЧИТАН, это не «стиля нет»"
+                + ": the style was NOT READ, which is not 'there is no style'"
             ),
         }
     if value not in VALUE_WORDS:
         return {
             **empty,
-            "note": (f"тональность {value!r} не из словаря {sorted(VALUE_WORDS)}: НЕ ПРОЧИТАНА"),
+            "note": (
+                f"value key {value!r} is not in the dictionary {sorted(VALUE_WORDS)}: NOT READ"
+            ),
         }
     if sat not in SATURATION_WORDS:
         return {
             **empty,
             "note": (
-                f"насыщенность {sat!r} не из словаря {sorted(SATURATION_WORDS)}: НЕ ПРОЧИТАНА"
+                f"saturation {sat!r} is not in the dictionary {sorted(SATURATION_WORDS)}: NOT READ"
             ),
         }
 
@@ -133,22 +135,23 @@ def compose(card: dict) -> dict:
     if leak:
         outcome = FAIL
         note = (
-            f"промт задел запретную зону {leak}: стиль обязан описывать "
-            f"вид, а не персонажа — персонаж приходит из фото и драйвинга"
+            f"the prompt touched the forbidden zone {leak}: style must "
+            f"describe the look, not the subject — the subject comes from "
+            f"the photo and the driving"
         )
     elif not (WORDS_MIN <= w <= WORDS_MAX):
         outcome = FAIL
-        note = f"слов {w}, полоса корпуса {WORDS_MIN}..{WORDS_MAX} (медиана {WORDS_TARGET})"
+        note = f"words {w}, corpus band {WORDS_MIN}..{WORDS_MAX} (median {WORDS_TARGET})"
     elif not (CLAUSES_MIN <= c <= CLAUSES_MAX):
         outcome = FAIL
-        note = f"клауз {c}, полоса корпуса {CLAUSES_MIN}..{CLAUSES_MAX} (медиана {CLAUSES_TARGET})"
+        note = f"clauses {c}, corpus band {CLAUSES_MIN}..{CLAUSES_MAX} (median {CLAUSES_TARGET})"
     else:
         outcome = PASS
         note = (
-            f"слов {w} при медиане корпуса {WORDS_TARGET} "
-            f"(полоса {WORDS_MIN}..{WORDS_MAX}), клауз {c} при медиане "
-            f"{CLAUSES_TARGET} и полосе {CLAUSES_MIN}..{CLAUSES_MAX}; "
-            f"запретных слов 0"
+            f"words {w} against the corpus median {WORDS_TARGET} "
+            f"(band {WORDS_MIN}..{WORDS_MAX}), clauses {c} against the "
+            f"median {CLAUSES_TARGET} and band {CLAUSES_MIN}..{CLAUSES_MAX}; "
+            f"forbidden words 0"
         )
     return {
         "outcome": outcome,
@@ -162,7 +165,7 @@ def compose(card: dict) -> dict:
 
 
 def from_image(path, *, reader=None) -> dict:
-    """Картинка -> промт. `reader` — точка внедрения."""
+    """Turn an image into a prompt. `reader` is an injection point."""
     if reader is None:
 
         def reader(p):
@@ -180,7 +183,7 @@ def from_image(path, *, reader=None) -> dict:
             "clauses": 0,
             "leak": [],
             "card": None,
-            "note": (f"карточку прочитать не удалось: {type(exc).__name__}: {exc}"),
+            "note": (f"the card could not be read: {type(exc).__name__}: {exc}"),
         }
     out = compose(card)
     out["source"] = str(path)
@@ -188,13 +191,13 @@ def from_image(path, *, reader=None) -> dict:
 
 
 def differ(left: dict, right: dict) -> dict:
-    """Дают ли две карточки РАЗНЫЕ промты. Негативный контроль адаптера."""
+    """Check that two cards give different prompts. The adapter's negative control."""
     a, b = compose(left), compose(right)
     if a["outcome"] == UNMEASURED or b["outcome"] == UNMEASURED:
         return {
             "outcome": UNMEASURED,
             "same": None,
-            "note": "хотя бы одна карточка не прочиталась: сравнивать нечего",
+            "note": "at least one card did not read: nothing to compare",
         }
     same = a["prompt"] == b["prompt"]
     return {
@@ -203,16 +206,16 @@ def differ(left: dict, right: dict) -> dict:
         "left": a["prompt"],
         "right": b["prompt"],
         "note": (
-            "промты СОВПАЛИ на разных карточках: адаптер не различает"
+            "the prompts MATCHED on different cards: the adapter does not discriminate"
             if same
-            else "промты разошлись, адаптер различает"
+            else "the prompts differ, the adapter discriminates"
         ),
     }
 
 
 def report_text(out: dict) -> str:
-    """Человеческий отчёт: вердикт, числа, промт. Числа рядом с вердиктом."""
-    head = f"[{out['outcome']:<18}] промт стиля"
+    """Render the human report: verdict, numbers, prompt. The numbers sit next to the verdict."""
+    head = f"[{out['outcome']:<18}] style prompt"
     body = f"  {out['note']}"
-    tail = f"  промт: {out['prompt']}" if out.get("prompt") else "  промта нет"
+    tail = f"  prompt: {out['prompt']}" if out.get("prompt") else "  no prompt"
     return "\n".join([head, body, tail])

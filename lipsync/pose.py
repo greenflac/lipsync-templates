@@ -196,13 +196,13 @@ def pose_delta(a: dict, b: dict) -> dict | None:
     import numpy as np
 
     if a is None or b is None:
-        which = " и ".join(n for n, v in (("первой", a), ("второй", b)) if v is None)
+        which = " and ".join(n for n, v in (("first", a), ("second", b)) if v is None)
         raise ValueError(
-            f"pose_delta: в {which} позе тела не нашли (landmarks вернул None). "
-            f"Сравнивать нечего. Частая причина — сравнение с УСЛОВИЕМ "
-            f"ControlNet: это рисунок скелета на чёрном фоне, детектор поз на "
-            f"нём ничего не находит. Сверять надо с driving-кадром "
-            f"(см. manifest.json рядом с условиями)."
+            f"pose_delta: no body found in the {which} pose (landmarks returned None). "
+            f"There is nothing to compare. A frequent cause is comparing against a "
+            f"ControlNet condition: that is a skeleton drawing on a black background, "
+            f"and the pose detector finds nothing on it. Compare against the driving "
+            f"frame instead (see manifest.json next to the conditions)."
         )
     na, nb = _normalise(a), _normalise(b)
     if na is None or nb is None:

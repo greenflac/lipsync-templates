@@ -1,4 +1,4 @@
-"""Финальная сборка: сторожа кропа, возврата звука и трёх исходов."""
+"""Guard the final assembly: crop, audio return, and the three outcomes."""
 
 from __future__ import annotations
 
@@ -113,7 +113,7 @@ REAL_COLUMNS = [
 
 
 def prober_of(mapping):
-    """Подменный ffprobe: путь -> текст ответа. Ни одного процесса."""
+    """Substitute ffprobe: path -> answer text. Not a single process."""
 
     def _prober(path):
         answer = mapping.get(Path(path).name)
@@ -123,7 +123,7 @@ def prober_of(mapping):
                 "code": None,
                 "out": "",
                 "err": "",
-                "why": "ffprobe не найден: спросить нечем",
+                "why": "ffprobe not found: nothing to ask with",
             }
         if isinstance(answer, int):
             return {
@@ -139,7 +139,7 @@ def prober_of(mapping):
 
 
 class Runner:
-    """Подменный ffmpeg. Запоминает argv, отвечает заказанным исходом."""
+    """Substitute ffmpeg. Remembers argv, answers with the ordered outcome."""
 
     def __init__(self, *, ran=True, code=0, err=""):
         self.ran, self.code, self.err, self.calls = ran, code, err, []
@@ -152,13 +152,13 @@ class Runner:
                 "code": None,
                 "out": "",
                 "err": "",
-                "why": "ffmpeg не найден: собрать нечем",
+                "why": "ffmpeg not found: nothing to assemble with",
             }
         return {"ran": True, "code": self.code, "out": "", "err": self.err, "why": ""}
 
 
 def _files(*names):
-    """Пустышки на диске: `fork_video.probe` обязан видеть, что файл есть."""
+    """Put stubs on disk: `fork_video.probe` must see that the file exists."""
     tmp = Path(tempfile.mkdtemp(prefix="fork_finish_"))
     out = []
     for n in names:
@@ -237,7 +237,7 @@ class CropIsCountedAndNotGuessed(unittest.TestCase):
     def test_a_bias_outside_the_band_is_refused_and_the_edge_is_not(self):
         self.assertEqual(ff.crop_geometry(960, 960, bias=1.5)["outcome"], FAIL)
         self.assertEqual(ff.crop_geometry(960, 960, bias=-1.5)["outcome"], FAIL)
-        self.assertEqual(ff.crop_geometry(960, 960, bias="лево")["outcome"], FAIL)
+        self.assertEqual(ff.crop_geometry(960, 960, bias="left")["outcome"], FAIL)
         self.assertEqual(ff.crop_geometry(960, 960, bias=1.0)["outcome"], PASS)
         self.assertEqual(ff.crop_geometry(960, 960, bias=-1.0)["outcome"], PASS)
 
@@ -251,7 +251,7 @@ class CropIsCountedAndNotGuessed(unittest.TestCase):
 
 
 class CropConstantsAreMutatedInBothDirections(unittest.TestCase):
-    """константу подменяем строже и слабее, тест обязан покраснеть."""
+    """Swap the constant stricter and looser; the test must turn red."""
 
     def test_the_even_multiple_guards_the_window(self):
         was = ff.DIM_MULTIPLE
@@ -308,7 +308,7 @@ class BiasIsChosenOnlyWhenThereIsSomethingToChooseFrom(unittest.TestCase):
 
     def test_a_broken_map_is_refused_and_a_missing_one_is_not(self):
         self.assertEqual(ff.bias_from_columns([1.0, -1.0] * 24)["outcome"], FAIL)
-        self.assertEqual(ff.bias_from_columns(["лево"] * 48)["outcome"], FAIL)
+        self.assertEqual(ff.bias_from_columns(["left"] * 48)["outcome"], FAIL)
         self.assertEqual(ff.bias_from_columns(None)["outcome"], UNMEASURED)
         self.assertEqual(ff.bias_from_columns([])["outcome"], UNMEASURED)
         self.assertEqual(ff.bias_from_columns([1.0])["outcome"], UNMEASURED)
@@ -350,7 +350,7 @@ class TheToleranceIsTimeAndNotFrames(unittest.TestCase):
         self.assertEqual(ff.drift_tolerance_frames(120), 5)
 
     def test_an_unknown_rate_gives_no_tolerance_at_all(self):
-        for bad in (None, 0, -30, "тридцать"):
+        for bad in (None, 0, -30, "thirty"):
             with self.subTest(fps=bad):
                 self.assertIsNone(ff.drift_tolerance_frames(bad))
         self.assertEqual(ff.drift_tolerance_frames(30), 1)
@@ -370,7 +370,7 @@ class TheToleranceIsTimeAndNotFrames(unittest.TestCase):
 
 
 class TheFourMeasuredKlingRunsAreJudgedCorrectly(unittest.TestCase):
-    """ИЗМЕРЕНО 2026-08-22: четыре настоящих прогона, четыре вердикта."""
+    """MEASURED 2026-08-22: four real runs, four verdicts."""
 
     def test_one_hundred_frames_came_back_as_ninety_nine(self):
         r = ff.audio_drift(100, 99, fps=30)
@@ -417,7 +417,7 @@ class TheAudioVerdictHasThreeOutcomes(unittest.TestCase):
             (100, None, 30),
             (None, 99, 30),
             (100, 99, None),
-            (100, 99, "нет"),
+            (100, 99, "no"),
         ):
             with self.subTest(expected=expected, actual=actual, fps=fps):
                 r = ff.audio_drift(expected, actual, fps=fps)
@@ -677,9 +677,9 @@ class TheAssemblyReportsWhatActuallyHappened(unittest.TestCase):
             with self.subTest(step=name):
                 self.assertIn(outcome, (PASS, FAIL, UNMEASURED))
                 self.assertGreater(len(note), 10)
-        self.assertIn("кроп", names)
-        self.assertIn("звук", names)
-        self.assertIn("сборка", names)
+        self.assertIn("crop", names)
+        self.assertIn("audio", names)
+        self.assertIn("assembly", names)
 
     def test_the_elapsed_time_of_the_run_is_printed(self):
         rep = self._finish(Runner())
@@ -707,7 +707,7 @@ class TheModuleDoesNotReinventWhatAlreadyExists(unittest.TestCase):
         self.assertNotIn("avg_frame_rate", self.SRC)
 
     def test_the_verdict_words_are_not_reinvented(self):
-        self.assertEqual((PASS, FAIL, UNMEASURED), ("годно", "не годно", "не смогли проверить"))
+        self.assertEqual((PASS, FAIL, UNMEASURED), ("pass", "fail", "could not measure"))
 
     def test_the_three_outcomes_map_to_three_different_exit_codes(self):
         self.assertEqual(ff.EXIT_BY_OUTCOME[PASS], 0)
@@ -719,6 +719,10 @@ class TheModuleDoesNotReinventWhatAlreadyExists(unittest.TestCase):
         self.assertIn("runner = fork_video.run_decode if runner is None", self.SRC)
 
     def test_every_decision_constant_declares_where_it_came_from(self):
+        # A word boundary is required: a bare substring test would accept
+        # the "MEASURED" hiding inside the imported name "UNMEASURED".
+        import re
+
         lines = self.SRC.splitlines()
         names = (
             "TARGET_RATIO_W",
@@ -733,8 +737,11 @@ class TheModuleDoesNotReinventWhatAlreadyExists(unittest.TestCase):
                 i = next(k for k, ln in enumerate(lines) if ln.startswith(name))
                 above = "\n".join(lines[max(0, i - 20) : i])
                 self.assertTrue(
-                    any(mark in above for mark in ("ИЗМЕРЕНО", "РАСЧЁТ", "ВЫБРАНО")),
-                    f"{name}: происхождение не помечено",
+                    any(
+                        re.search(rf"\b{mark}\b", above)
+                        for mark in ("MEASURED", "DERIVED", "CHOSEN")
+                    ),
+                    f"{name}: provenance not marked",
                 )
 
 

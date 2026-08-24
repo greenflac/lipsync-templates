@@ -1,4 +1,4 @@
-"""Отбор петель в драйвинге: где движение повторяется и как это показать глазам."""
+"""Select loops in the driving: find where motion repeats and show it to the eyes."""
 
 from __future__ import annotations
 
@@ -57,13 +57,13 @@ COARSE_STRIDE = 5
 
 MAX_FRAMES = 36000
 
-FPS_PROBED = "снята с файла"
-FPS_GIVEN = "подана руками"
-FPS_UNKNOWN = "неизвестна"
+FPS_PROBED = "probed from the file"
+FPS_GIVEN = "given by hand"
+FPS_UNKNOWN = "unknown"
 
-SCAN_FULL = "полная частота"
-SCAN_COARSE = "прорежённая"
-SCAN_TOO_LONG = "слишком длинное"
+SCAN_FULL = "full rate"
+SCAN_COARSE = "thinned"
+SCAN_TOO_LONG = "too long"
 
 EXIT_BY_OUTCOME = {PASS: 0, FAIL: 1, UNMEASURED: 2}
 
@@ -73,20 +73,20 @@ CACHE_VERSION = 1
 
 
 def read_pose(path) -> dict:
-    """Снять позу с одного кадра. ТОЧКА ВНЕДРЕНИЯ: тест подменяет её целиком."""
+    """Capture the pose of one frame. Injection point: the test replaces it wholesale."""
     try:
         return {"points": pose.landmarks(path), "why": "", "people": None}
-    except Exception as exc:  # noqa: BLE001 — намеренно широко: причин «спросить
+    except Exception as exc:  # noqa: BLE001 — deliberately broad: any failure means we could not ask
         return {"points": None, "why": f"{type(exc).__name__}: {str(exc)[:200]}"}
 
 
 def read_gray(path):
-    """Уменьшенный серый кадр. ВТОРАЯ ТОЧКА ВНЕДРЕНИЯ."""
+    """Return a downscaled gray frame. Second injection point."""
     return motion._gray(path, CUT_SIDE)
 
 
 def read_head(path) -> dict:
-    """Где в кадре голова. ТРЕТЬЯ ТОЧКА ВНЕДРЕНИЯ."""
+    """Locate the head in the frame. Third injection point."""
     try:
         from PIL import Image
 
@@ -102,19 +102,19 @@ def read_head(path) -> dict:
             return {"head": None, "why": ""}
         x1, x2, y1, y2 = box
         return {"head": ((x1 + x2) / 2.0, (y1 + y2) / 2.0), "why": ""}
-    except Exception as exc:  # noqa: BLE001 — см. `read_pose`: причин «спросить
+    except Exception as exc:  # noqa: BLE001 — see `read_pose`: deliberately broad for the same reason
         return {"head": None, "why": f"{type(exc).__name__}: {str(exc)[:200]}"}
 
 
 def _head_at(paths, k, *, reader, cache) -> dict:
-    """Голова на кадре k с запоминанием: один кадр опрашивается один раз."""
+    """Return the head on frame k with memoisation: each frame is polled once."""
     if k not in cache:
         cache[k] = reader(str(paths[k]))
     return cache[k]
 
 
 def head_scale(paths, *, reader=None, pairs=None, cache=None) -> dict:
-    """Типичное смещение головы за кадр — СВОЯ единица для своей оси."""
+    """Measure the typical head displacement per frame — this axis gets its own unit."""
     import numpy as np
 
     reader = read_head if reader is None else reader
@@ -128,7 +128,7 @@ def head_scale(paths, *, reader=None, pairs=None, cache=None) -> dict:
             "measured": 0,
             "frames": 0,
             "elapsed": 0.0,
-            "reason": "кадров меньше двух",
+            "reason": "fewer than two frames",
             "outcome": UNMEASURED,
         }
     spots = sorted({int(k) for k in np.linspace(0, n - 2, min(pairs, n - 1))})
@@ -151,7 +151,9 @@ def head_scale(paths, *, reader=None, pairs=None, cache=None) -> dict:
             "elapsed": elapsed,
             "outcome": UNMEASURED,
             "reason": (
-                f"спросить нечем: {broken}" if broken else "лица не видно ни на одной паре кадров"
+                f"nothing to ask with: {broken}"
+                if broken
+                else "face not visible on any pair of frames"
             ),
         }
     return {
@@ -165,7 +167,7 @@ def head_scale(paths, *, reader=None, pairs=None, cache=None) -> dict:
 
 
 def head_seam(paths, i, j, *, reader=None, cache=None) -> dict:
-    """Насколько голова НЕ ВЕРНУЛАСЬ на место к концу петли, в пикселях."""
+    """Measure how far the head FAILED to return to its place by the loop end, in pixels."""
     import numpy as np
 
     reader = read_head if reader is None else reader
@@ -176,11 +178,11 @@ def head_seam(paths, i, j, *, reader=None, cache=None) -> dict:
         return {
             "outcome": UNMEASURED,
             "gap": None,
-            "reason": f"спросить нечем: {a['why'] or b['why']}",
+            "reason": f"nothing to ask with: {a['why'] or b['why']}",
         }
     if a["head"] is None or b["head"] is None:
         gone = i if a["head"] is None else j
-        return {"outcome": UNMEASURED, "gap": None, "reason": f"лица не видно на кадре {gone}"}
+        return {"outcome": UNMEASURED, "gap": None, "reason": f"face not visible on frame {gone}"}
     return {
         "outcome": PASS,
         "reason": "",
@@ -189,7 +191,7 @@ def head_seam(paths, i, j, *, reader=None, cache=None) -> dict:
 
 
 def cuts(paths, *, gray=None, jump=None) -> dict:
-    """Где в клипе монтажный рез. Дёшево, по пикселям, ДО снятия поз."""
+    """Find editing cuts in the clip. Cheap, pixel-based, BEFORE capturing poses."""
     import numpy as np
 
     gray = read_gray if gray is None else gray
@@ -210,7 +212,7 @@ def cuts(paths, *, gray=None, jump=None) -> dict:
             "median": None,
             "worst": None,
             "elapsed": elapsed,
-            "note": "кадров меньше двух: резы искать не в чем",
+            "note": "fewer than two frames: nothing to look for cuts in",
         }
     med = float(np.median(steps))
     if med <= 0:
@@ -222,8 +224,8 @@ def cuts(paths, *, gray=None, jump=None) -> dict:
             "worst": round(max(steps), 4),
             "elapsed": elapsed,
             "note": (
-                "типичный межкадровый скачок равен нулю: сравнивать не "
-                "с чем, резы НЕ ИСКАЛИ. Это не «резов нет»"
+                "the typical inter-frame jump is zero: nothing to compare "
+                "against, cuts were NOT SEARCHED for. This is not 'no cuts'"
             ),
         }
     found = [k for k, v in enumerate(steps) if v / med > jump]
@@ -236,15 +238,15 @@ def cuts(paths, *, gray=None, jump=None) -> dict:
         "worst": round(worst, 2),
         "elapsed": elapsed,
         "note": (
-            f"резов найдено {len(found)} по {len(steps)} переходам "
-            f"(планка {jump}x типичного скачка, самый резкий переход "
-            f"{worst:.2f}x)" + (f"; кадры-швы: {found[:10]}" if found else "")
+            f"cuts found {len(found)} across {len(steps)} transitions "
+            f"(bar {jump}x the typical jump, sharpest transition "
+            f"{worst:.2f}x)" + (f"; seam frames: {found[:10]}" if found else "")
         ),
     }
 
 
 def keep_grays(paths, *, gray=None) -> dict:
-    """Серые кадры для ПИКСЕЛЬНОГО СТЫКА, сложенные в память как uint8."""
+    """Load gray frames for the PIXEL seam, stored in memory as uint8."""
     import numpy as np
 
     gray = read_gray if gray is None else gray
@@ -255,9 +257,9 @@ def keep_grays(paths, *, gray=None) -> dict:
         lo, hi = float(arr.min()), float(arr.max())
         if lo < 0 or hi > 255:
             raise ValueError(
-                f"серый кадр {p} вне восьмибитного диапазона: {lo}..{hi}. "
-                f"`read_gray` обязан отдавать яркость 0..255 — склад хранит "
-                f"кадры как uint8, и другое значение завернулось бы молча"
+                f"gray frame {p} is outside the eight-bit range: {lo}..{hi}. "
+                f"`read_gray` must return brightness 0..255 — the store keeps "
+                f"frames as uint8, and any other value would wrap silently"
             )
         out[k] = arr.astype("uint8")
     return {
@@ -269,7 +271,7 @@ def keep_grays(paths, *, gray=None) -> dict:
 
 
 def pixel_gap(grays, i, j):
-    """Насколько РАЗНАЯ КАРТИНКА в двух кадрах, в средней яркости."""
+    """Measure how DIFFERENT the picture is in two frames, in mean brightness."""
     import numpy as np
 
     a, b = grays.get(i), grays.get(j)
@@ -279,7 +281,7 @@ def pixel_gap(grays, i, j):
 
 
 def pixel_step(grays, order) -> float | None:
-    """Типичный ПИКСЕЛЬНЫЙ переход между соседними опрошенными кадрами."""
+    """Measure the typical PIXEL transition between adjacent polled frames."""
     import numpy as np
 
     steps = [
@@ -291,7 +293,7 @@ def pixel_step(grays, order) -> float | None:
 
 
 def presence(poses, *, people=None, index=None, gap_min=None) -> dict:
-    """Есть ли человек, один ли он, и не выходил ли он из кадра."""
+    """Report whether a person is there, whether they are alone, and whether they left the frame."""
     gap_min = PRESENCE_GAP_MIN if gap_min is None else gap_min
     index = list(range(len(poses))) if index is None else list(index)
     seen = [i for i, p in enumerate(poses) if p is not None]
@@ -318,7 +320,7 @@ def presence(poses, *, people=None, index=None, gap_min=None) -> dict:
 
 
 def frame_paths(directory) -> list:
-    """Кадры каталога, отсортованные по имени."""
+    """Return the directory's frames, sorted by name."""
     d = Path(directory)
     return sorted(
         (p for p in d.iterdir() if p.is_file() and p.suffix.lower() in FRAME_SUFFIXES),
@@ -332,7 +334,7 @@ def _cache_key(path) -> str:
 
 
 def read_all(paths, *, reader=None, cache=None) -> dict:
-    """Снять позы со всех кадров. Числа рядом с результатом."""
+    """Capture poses on all frames. The numbers travel next to the result."""
     reader = read_pose if reader is None else reader
     paths = [Path(p) for p in paths]
     t = time.perf_counter()
@@ -395,12 +397,12 @@ def read_all(paths, *, reader=None, cache=None) -> dict:
 
 
 def states(poses) -> list:
-    """Позы, приведённые к торсу и центрированные на бёдрах."""
+    """Return poses normalised to the torso and centred on the hips."""
     return [None if p is None else pose._normalise(p) for p in poses]
 
 
 def pose_gap(a, b):
-    """Расхождение двух ПРИВЕДЁННЫХ поз в длинах торса, или None."""
+    """Measure the divergence of two NORMALISED poses in torso lengths, or None."""
     import numpy as np
 
     if a is None or b is None:
@@ -410,7 +412,7 @@ def pose_gap(a, b):
 
 
 def flow_gap(states_list, i, j):
-    """Расхождение НАПРАВЛЕНИЙ движения в кадрах i и j, в длинах торса за кадр."""
+    """Measure the divergence of motion DIRECTIONS in frames i and j, in torso lengths per frame."""
     import numpy as np
 
     n = len(states_list)
@@ -428,7 +430,7 @@ def flow_gap(states_list, i, j):
 
 
 def typical_step(states_list) -> dict:
-    """Обычный межкадровый шаг клипа — единица, в которой меряется стык."""
+    """Measure the clip's usual inter-frame step — the unit the seam is measured in."""
     import numpy as np
 
     steps = [
@@ -440,22 +442,22 @@ def typical_step(states_list) -> dict:
         return {
             "step": None,
             "measured": 0,
-            "note": "межкадровый шаг НЕ ИЗМЕРЕН: нет ни одной пары соседних "
-            "кадров с пригодной позой",
+            "note": "the inter-frame step is NOT MEASURED: not a single pair of "
+            "adjacent frames has a usable pose",
         }
     step = float(np.median(steps))
     return {
         "step": step,
         "measured": len(steps),
         "note": (
-            f"обычный шаг клипа {step:.4f} длин торса за кадр, "
-            f"по {len(steps)} парам соседних кадров"
+            f"the clip's usual step is {step:.4f} torso lengths per frame, "
+            f"over {len(steps)} pairs of adjacent frames"
         ),
     }
 
 
 def length_is_admissible(length, *, fps=None, min_frames=None) -> bool:
-    """Пройдёт ли такая длина петли обёртку и продуктовую полосу."""
+    """Tell whether a loop of this length survives the wrapper and the product band."""
     min_frames = LOOP_MIN_FRAMES if min_frames is None else min_frames
     if length < min_frames:
         return False
@@ -465,14 +467,14 @@ def length_is_admissible(length, *, fps=None, min_frames=None) -> bool:
 
 
 def admissible_lengths(n_frames, *, fps=None, min_frames=None) -> list:
-    """Длины петли, которые обёртка НЕ прижмёт и продукт примет."""
+    """List loop lengths the wrapper will NOT snap and the product will accept."""
     return [
         L for L in range(1, n_frames + 1) if length_is_admissible(L, fps=fps, min_frames=min_frames)
     ]
 
 
 def admissible_pairs(index, *, fps=None, min_frames=None) -> list:
-    """Пары ПОЗИЦИЙ, чья длина в ИСХОДНЫХ кадрах допустима."""
+    """List pairs of POSITIONS whose length in SOURCE frames is admissible."""
     top = None if fps is None else int(framemath.SECONDS_MAX * fps)
     out = []
     for a in range(len(index)):
@@ -486,7 +488,7 @@ def admissible_pairs(index, *, fps=None, min_frames=None) -> list:
 
 
 def shared_joints(states_list, a, b) -> int:
-    """Сколько суставов реально участвовало в сравнении пары."""
+    """Count the joints that actually took part in comparing the pair."""
     a_st, b_st = states_list[a], states_list[b]
     if a_st is None or b_st is None:
         return 0
@@ -498,7 +500,7 @@ def shared_joints(states_list, a, b) -> int:
 def similarity(
     states_list, *, fps=None, min_frames=None, index=None, blocked=None, grays=None
 ) -> dict:
-    """Матрица самоподобия поз — в разреженном виде, по допустимым парам."""
+    """Build the pose self-similarity matrix — sparse, over admissible pairs."""
     index = list(range(len(states_list))) if index is None else list(index)
     pairs = admissible_pairs(index, fps=fps, min_frames=min_frames)
     pose_m, flow_m, pix_m, joints_m = {}, {}, {}, {}
@@ -534,13 +536,14 @@ def similarity(
 
 
 def score_pairs(sim, step, *, flow_weight=None, pix_step=None, pixel_weight=None) -> list:
-    """Оценка стыка по каждой паре, в единицах обычного шага клипа."""
+    """Score the seam of every pair, in units of the clip's usual step."""
     flow_weight = FLOW_WEIGHT if flow_weight is None else flow_weight
     pixel_weight = PIXEL_WEIGHT if pixel_weight is None else pixel_weight
     if not step or step <= 0:
         raise ValueError(
-            f"обычный шаг клипа {step!r}: делить на него нельзя. Клип, который "
-            f"не движется, — исход «не смогли», и решается он выше"
+            f"the clip's usual step is {step!r}: dividing by it is impossible. "
+            f"A clip that does not move is a 'could not measure' outcome, and "
+            f"that is decided higher up"
         )
     out = []
     for key, pg in sim["pose"].items():
@@ -577,14 +580,14 @@ def score_pairs(sim, step, *, flow_weight=None, pix_step=None, pixel_weight=None
 
 
 def bridge_frames(seam) -> int | None:
-    """Сколько кадров моста стоит стык величиной `seam` типичных шагов."""
+    """Return how many bridge frames a seam of `seam` typical steps costs."""
     if seam is None:
         return None
     return int(math.ceil(float(seam)))
 
 
 def bridge_cost(seams, *, max_frames=None) -> dict:
-    """Цена моста по ЧЕТЫРЁМ осям сразу, с тремя исходами."""
+    """Price the bridge across FOUR axes at once, with three outcomes."""
     max_frames = BRIDGE_MAX_FRAMES if max_frames is None else max_frames
     measured = {k: float(v) for k, v in seams.items() if v is not None}
     missing = sorted(k for k, v in seams.items() if v is None)
@@ -600,7 +603,7 @@ def bridge_cost(seams, *, max_frames=None) -> dict:
             "worst_axis": None,
             "unmeasured": missing,
             "measured": sorted(measured),
-            "reason": "не измерена ни одна ось стыка",
+            "reason": "not a single seam axis was measured",
         }
     if missing:
         if frames > max_frames:
@@ -613,10 +616,10 @@ def bridge_cost(seams, *, max_frames=None) -> dict:
                 "unmeasured": missing,
                 "measured": sorted(measured),
                 "reason": (
-                    f"мост НЕ МЕНЬШЕ {frames} кадров уже по оси "
-                    f"{worst_axis!r} при потолке {max_frames}; "
-                    f"неизмеренная ось ({', '.join(missing)}) его "
-                    f"только удлинит"
+                    f"the bridge is AT LEAST {frames} frames already on the "
+                    f"{worst_axis!r} axis at a ceiling of {max_frames}; "
+                    f"the unmeasured axis ({', '.join(missing)}) can only "
+                    f"make it longer"
                 ),
             }
         return {
@@ -628,8 +631,8 @@ def bridge_cost(seams, *, max_frames=None) -> dict:
             "unmeasured": missing,
             "measured": sorted(measured),
             "reason": (
-                f"мост не меньше {frames} кадров, а точнее сказать "
-                f"нечем: не измерены оси {', '.join(missing)}"
+                f"the bridge is at least {frames} frames, and there is nothing "
+                f"to say it more precisely with: axes {', '.join(missing)} are not measured"
             ),
         }
     if frames > max_frames:
@@ -642,8 +645,8 @@ def bridge_cost(seams, *, max_frames=None) -> dict:
             "unmeasured": [],
             "measured": sorted(measured),
             "reason": (
-                f"мост {frames} кадров при потолке {max_frames}: "
-                f"хуже всех ось {worst_axis!r} ({seam:.2f} шага)"
+                f"a bridge of {frames} frames at a ceiling of {max_frames}: "
+                f"the worst axis is {worst_axis!r} ({seam:.2f} steps)"
             ),
         }
     return {
@@ -659,7 +662,7 @@ def bridge_cost(seams, *, max_frames=None) -> dict:
 
 
 def rank_loops(loops) -> list:
-    """Порядок карточек: ДВЕ ОЧЕРЕДИ, сначала полностью измеренные."""
+    """Order the cards in TWO QUEUES, fully measured ones first."""
 
     def key(lp):
         cost = lp.get("bridge") or {}
@@ -676,7 +679,7 @@ def rank_loops(loops) -> list:
 
 
 def overlap(a, b) -> float:
-    """Какую долю более КОРОТКОЙ из двух петель они делят."""
+    """Return the share of the SHORTER of two loops that they share."""
     inter = min(a["j"], b["j"]) - max(a["i"], b["i"]) + 1
     if inter <= 0:
         return 0.0
@@ -684,7 +687,7 @@ def overlap(a, b) -> float:
 
 
 def select(cands, *, overlap_max=None, top=None) -> dict:
-    """Принять несколько РАЗНЫХ петель, а не десяток сдвинутых на кадр."""
+    """Accept several DIFFERENT loops, not a dozen shifted by one frame."""
     overlap_max = OVERLAP_MAX if overlap_max is None else overlap_max
     top = TOP_LOOPS if top is None else top
     kept, dropped = [], 0
@@ -699,7 +702,7 @@ def select(cands, *, overlap_max=None, top=None) -> dict:
 
 
 def loop_signature(state_at, i, j, *, phases=None) -> list | None:
-    """Чем описывается петля при сверке «одно ли это движение»."""
+    """Describe a loop for the 'is this the same movement' comparison."""
     phases = DUP_PHASES if phases is None else phases
     every = max(1, round(LOOP_MIN_FRAMES / phases))
     out = []
@@ -712,7 +715,7 @@ def loop_signature(state_at, i, j, *, phases=None) -> list | None:
 
 
 def signature_gap(a, b):
-    """Расхождение двух петель как ДВИЖЕНИЙ, в длинах торса."""
+    """Measure the divergence of two loops as MOVEMENTS, in torso lengths."""
     import numpy as np
 
     if not a or not b:
@@ -740,7 +743,7 @@ def signature_gap(a, b):
 
 
 def repeat_plan(length, *, fps=None) -> list:
-    """Сколько повторов петли даёт продуктовую длину 5-10 с."""
+    """Return how many loop repeats give the 5-10 s product length."""
     if fps is None or fps <= 0:
         return []
     if length < 2:
@@ -766,7 +769,7 @@ def repeat_plan(length, *, fps=None) -> list:
 
 
 def gif_indices(i, j, *, max_frames=None) -> list:
-    """Номера кадров для GIF петли [i..j]."""
+    """Return the frame numbers for a GIF of the loop [i..j]."""
     max_frames = GIF_MAX_FRAMES if max_frames is None else max_frames
     body = list(range(i, j))
     if len(body) <= max_frames:
@@ -776,7 +779,7 @@ def gif_indices(i, j, *, max_frames=None) -> list:
 
 
 def make_gif(paths, i, j, out_path, *, fps=None, max_frames=None, max_side=None) -> dict:
-    """Собрать GIF петли. Возвращает путь, число кадров и размер файла."""
+    """Build the loop's GIF. Return the path, frame count, and file size."""
     from PIL import Image
 
     fps = framemath.WRAP_FPS if fps is None else fps
@@ -787,7 +790,7 @@ def make_gif(paths, i, j, out_path, *, fps=None, max_frames=None, max_side=None)
             "path": None,
             "frames": 0,
             "bytes": 0,
-            "note": f"петля [{i}..{j}] пуста — GIF собирать не из чего",
+            "note": f"loop [{i}..{j}] is empty — there is nothing to build a GIF from",
         }
     stride = (idx[1] - idx[0]) if len(idx) > 1 else 1
     frames_img = []
@@ -846,7 +849,7 @@ def refine_all(
     gray=None,
     pix_step=None,
 ) -> dict:
-    """Уточнить границы петель на ПОЛНОЙ частоте в окне ±шаг вокруг найденного."""
+    """Refine loop bounds at FULL rate in a ±stride window around the find."""
     if stride <= 1 or not loops:
         return {"loops": loops, "poses": 0, "elapsed": 0.0, "windows": 0}
     t = time.perf_counter()
@@ -877,7 +880,7 @@ def refine_all(
             "poses": len(order),
             "elapsed": round(time.perf_counter() - t, 4),
             "windows": len(windows),
-            "note": "уточнение не состоялось: на полной частоте поз нет",
+            "note": "refinement did not happen: no poses at full rate",
         }
     step = float(np.median(fine))
     pstep = float(np.median(fine_pix)) if fine_pix else None
@@ -942,7 +945,7 @@ def refine_all(
 
 
 def _flow_between(st, i, j):
-    """Расхождение направлений по словарю состояний (для уточнения)."""
+    """Measure direction divergence over the state dictionary (for refinement)."""
     import numpy as np
 
     quad = [st.get(i), st.get(i + 1), st.get(j), st.get(j + 1)]
@@ -989,7 +992,7 @@ def pick_finalists(
     bridge_max=None,
     head_local_pairs=None,
 ) -> dict:
-    """Набрать финалистов: сита от бесплатного к дорогому и ДВЕ ОЧЕРЕДИ."""
+    """Gather finalists: sieves from free to expensive, and TWO QUEUES."""
     top = TOP_LOOPS if top is None else top
     overlap_max = OVERLAP_MAX if overlap_max is None else overlap_max
     head_weight = HEAD_WEIGHT if head_weight is None else head_weight
@@ -1011,23 +1014,23 @@ def pick_finalists(
         return memo[path]
 
     head_off = scale is None or scale.get("step") in (None, 0)
-    head_off_note = (scale or {}).get("reason") or "масштаб оси головы не измерен"
+    head_off_note = (scale or {}).get("reason") or "the head-axis scale is not measured"
 
     kept, deferred = [], []
     dropped_overlap, dropped_duplicate, dup_unmeasured = 0, 0, 0
     dropped_bridge, dropped_head, tried, budget_hit = 0, 0, 0, False
 
     def clash(cand, against):
-        """Сита диапазона и содержания против уже занятых мест."""
+        """Run the range and content sieves against already occupied places."""
         if any(overlap(cand, k) > overlap_max for k in against):
-            return "пересечение"
+            return "overlap"
         sig = cand.get("signature")
         if sig is not None:
             for k in against:
                 other = k.get("signature")
                 gap = signature_gap(sig, other) if other else None
                 if gap is not None and gap / typical <= duplicate_max:
-                    return "дубль"
+                    return "duplicate"
         return None
 
     for cand in worthy:
@@ -1044,20 +1047,20 @@ def pick_finalists(
                 dup_unmeasured += 1
             else:
                 cand = {**cand, "signature": sig}
-                if clash(cand, kept) == "дубль":
+                if clash(cand, kept) == "duplicate":
                     dropped_duplicate += 1
                     continue
         loop = dict(refine(cand))
         loop["signature"] = cand.get("signature")
         loc = local(loop["i"], loop["j"]) or {}
-        pstep_loc, xstep_loc = loc.get("поза"), loc.get("пиксели")
+        pstep_loc, xstep_loc = loc.get("pose"), loc.get("pixels")
         seams = {
-            "поза": (loop["pose_gap"] / pstep_loc) if pstep_loc else None,
-            "поток": (flow_weight * loop["flow_gap"] / pstep_loc) if pstep_loc else None,
-            "голова": None,
+            "pose": (loop["pose_gap"] / pstep_loc) if pstep_loc else None,
+            "flow": (flow_weight * loop["flow_gap"] / pstep_loc) if pstep_loc else None,
+            "head": None,
         }
         if loop.get("pixel_gap") is not None:
-            seams["пиксели"] = (pixel_weight * loop["pixel_gap"] / xstep_loc) if xstep_loc else None
+            seams["pixels"] = (pixel_weight * loop["pixel_gap"] / xstep_loc) if xstep_loc else None
         loop["pixel_axis_off"] = loop.get("seam_pixel") is None
         if head_off:
             loop["head_state"] = UNMEASURED
@@ -1081,15 +1084,15 @@ def pick_finalists(
                 loop["seam_head"] = (
                     None if not near["step"] else round(seam["gap"] / near["step"], 3)
                 )
-                seams["голова"] = (
+                seams["head"] = (
                     None if not near["step"] else head_weight * seam["gap"] / near["step"]
                 )
                 if not near["step"]:
                     loop["head_state"] = UNMEASURED
                     loop["head_note"] = (
-                        f"стык головы измерен ({seam['gap']} "
-                        f"px), а её обычный шаг ВНУТРИ петли "
-                        f"— нет: {near['reason']}"
+                        f"the head seam is measured ({seam['gap']} "
+                        f"px), but its usual step INSIDE the loop "
+                        f"is not: {near['reason']}"
                     )
             else:
                 loop["head_state"] = UNMEASURED
@@ -1101,7 +1104,7 @@ def pick_finalists(
         loop["bridge_frames"] = cost["frames"]
         if cost["outcome"] == FAIL:
             dropped_bridge += 1
-            dropped_head += 1 if cost["worst_axis"] == "голова" else 0
+            dropped_head += 1 if cost["worst_axis"] == "head" else 0
             continue
         if cost["outcome"] == UNMEASURED:
             if clash(loop, deferred) is None and len(deferred) < top:
@@ -1115,9 +1118,9 @@ def pick_finalists(
         if len(kept) >= top:
             break
         why = clash(loop, kept)
-        if why == "пересечение":
+        if why == "overlap":
             dropped_overlap += 1
-        elif why == "дубль":
+        elif why == "duplicate":
             dropped_duplicate += 1
         else:
             kept.append(loop)
@@ -1165,7 +1168,7 @@ def find_loops(
     max_frames=None,
     bridge_max=None,
 ) -> dict:
-    """Найти петли в драйвинге. Дешёвое раньше дорогого, три исхода."""
+    """Find loops in the driving. Cheap before expensive, three outcomes."""
     fps_source = FPS_UNKNOWN if fps is None else FPS_GIVEN
     min_frames = LOOP_MIN_FRAMES if min_frames is None else min_frames
     advantage_min = ADVANTAGE_MIN if advantage_min is None else advantage_min
@@ -1186,7 +1189,7 @@ def find_loops(
         dest = Path(out_dir or ".") / "frames"
         got = decode(str(src), str(dest), overwrite=True)
         if got.get("outcome") != PASS:
-            steps.append(("кадры", got["outcome"], got["note"], time.perf_counter() - t0))
+            steps.append(("frames", got["outcome"], got["note"], time.perf_counter() - t0))
             return _report(got["outcome"], got["note"], t, steps, frames=0)
         paths = [Path(p) for p in got["paths"]]
         if fps is None:
@@ -1194,40 +1197,40 @@ def find_loops(
             if probed:
                 fps, fps_source = probed, FPS_PROBED
     else:
-        note = f"{src} — не каталог кадров и не файл"
-        steps.append(("кадры", UNMEASURED, note, time.perf_counter() - t0))
+        note = f"{src} is neither a frame directory nor a file"
+        steps.append(("frames", UNMEASURED, note, time.perf_counter() - t0))
         return _report(UNMEASURED, note, t, steps, frames=0)
 
     n = len(paths)
     if n < min_frames + 1:
         note = (
-            f"кадров {n}, а самая короткая петля требует {min_frames} плюс "
-            f"кадр на производную. Материал короче петли — это измерение, "
-            f"а не сбой прибора"
+            f"{n} frames, while the shortest loop needs {min_frames} plus a "
+            f"frame for the derivative. Material shorter than a loop is a "
+            f"measurement, not an instrument failure"
         )
-        steps.append(("кадры", FAIL, note, time.perf_counter() - t0))
+        steps.append(("frames", FAIL, note, time.perf_counter() - t0))
         return _report(FAIL, note, t, steps, frames=n, scan=SCAN_FULL)
     if n > max_frames:
         note = (
-            f"кадров {n}, потолок {max_frames} "
-            f"({max_frames / framemath.WRAP_FPS / 60:.0f} минут при наших "
-            f"{framemath.WRAP_FPS} к/с). Даже по прорежённой это "
-            f"{n / (COARSE_STRIDE or 1) * 0.031 / 60:.0f}+ минут одного "
-            f"только снятия поз — разбирать не беремся. Нарежьте материал"
+            f"{n} frames, ceiling {max_frames} "
+            f"({max_frames / framemath.WRAP_FPS / 60:.0f} minutes at our "
+            f"{framemath.WRAP_FPS} fps). Even on the thinned scan that is "
+            f"{n / (COARSE_STRIDE or 1) * 0.031 / 60:.0f}+ minutes of pose "
+            f"capture alone — we will not take it apart. Slice the material"
         )
-        steps.append(("кадры", UNMEASURED, note, time.perf_counter() - t0))
+        steps.append(("frames", UNMEASURED, note, time.perf_counter() - t0))
         return _report(UNMEASURED, note, t, steps, frames=n, scan=SCAN_TOO_LONG)
 
     steps.append(
         (
-            "частота",
+            "frame rate",
             PASS if fps is not None else UNMEASURED,
             (
-                f"частота источника {fps} к/с ({fps_source})"
+                f"source frame rate {fps} fps ({fps_source})"
                 if fps is not None
-                else f"частота источника {FPS_UNKNOWN}: у каталога кадров её не "
-                f"записано нигде. Длины петель печатаются В КАДРАХ, секунды "
-                f"и план повторов — НЕТ. Задайте --fps, если знаете её"
+                else f"source frame rate {FPS_UNKNOWN}: a frame directory records "
+                f"it nowhere. Loop lengths are printed IN FRAMES; seconds and "
+                f"the repeat plan are NOT. Pass --fps if you know it"
             ),
             0.0,
         )
@@ -1237,25 +1240,25 @@ def find_loops(
     scan = SCAN_FULL if stride == 1 else SCAN_COARSE
     steps.append(
         (
-            "кадры",
+            "frames",
             PASS,
-            f"кадров {n}, разбор по {scan}" + ("" if stride == 1 else f" 1 из {stride}"),
+            f"{n} frames, scanned at {scan}" + ("" if stride == 1 else f" 1 in {stride}"),
             time.perf_counter() - t0,
         )
     )
 
     cut = cuts(paths, gray=gray)
-    steps.append(("резы", cut["outcome"], cut["note"], cut["elapsed"]))
+    steps.append(("cuts", cut["outcome"], cut["note"], cut["elapsed"]))
     cut_set = sorted(cut["cuts"])
 
     index = list(range(0, n, stride))
     got = read_all([paths[k] for k in index], reader=reader, cache=cache)
     if got["unreadable"]:
         note = (
-            f"позу снять нечем: {got['unreadable']} кадр(ов) не опрошены "
-            f"({got['first_why']}). Это НЕ «петель нет»"
+            f"nothing to capture poses with: {got['unreadable']} frame(s) not "
+            f"polled ({got['first_why']}). This is NOT 'no loops'"
         )
-        steps.append(("позы", UNMEASURED, note, got["elapsed"]))
+        steps.append(("poses", UNMEASURED, note, got["elapsed"]))
         return _report(
             UNMEASURED, note, t, steps, frames=n, taken=got["taken"], scan=scan, stride=stride
         )
@@ -1264,26 +1267,26 @@ def find_loops(
     coverage = got["taken"] / len(index)
     steps.append(
         (
-            "позы",
+            "poses",
             PASS if coverage >= MIN_POSE_COVERAGE else UNMEASURED,
-            f"поза снята на {got['taken']} из {len(index)} опрошенных "
-            f"кадров ({coverage:.0%}), из кэша {got['cached']}, "
+            f"pose captured on {got['taken']} of {len(index)} polled "
+            f"frames ({coverage:.0%}), {got['cached']} from cache, "
             f"{got['elapsed'] / max(1, len(index) - got['cached']):.4f} "
-            f"с/кадр",
+            f"s/frame",
             got["elapsed"],
         )
     )
 
     if who["crowd"]:
         note = (
-            f"людей в кадре несколько (до {max(who['crowd'])}). Кого вести "
-            f"— решает разметка `fork_props` (роль "
-            f"{'протагонист'!r}); второго способа выбирать протагониста "
-            f"здесь нет и не будет. Пока он не назван, детектор берёт "
-            f"на каждом кадре первую попавшуюся рамку, и скелет прыгает с "
-            f"человека на человека посреди клипа"
+            f"several people in the frame (up to {max(who['crowd'])}). Whom to "
+            f"follow is decided by the `fork_props` markup (role "
+            f"{'protagonist'!r}); a second way of choosing the protagonist "
+            f"does not exist here and never will. Until one is named, the "
+            f"detector takes the first bounding box it finds on each frame, "
+            f"and the skeleton jumps from person to person mid-clip"
         )
-        steps.append(("люди", UNMEASURED, note, 0.0))
+        steps.append(("people", UNMEASURED, note, 0.0))
         return _report(
             UNMEASURED,
             note,
@@ -1297,28 +1300,32 @@ def find_loops(
         )
     if got["taken"] == 0:
         note = (
-            f"человека в кадре нет ни на одном из {len(index)} опрошенных "
-            f"кадров. Это не «петель нет»: петли ищутся по телу"
+            f"no person in frame on any of the {len(index)} polled frames. "
+            f"This is not 'no loops': loops are found by the body"
         )
-        steps.append(("люди", UNMEASURED, note, 0.0))
+        steps.append(("people", UNMEASURED, note, 0.0))
         return _report(UNMEASURED, note, t, steps, frames=n, taken=0, scan=scan, stride=stride)
     if who["long_gaps"]:
         spans = ", ".join(f"{index[a]}..{index[b]}" for a, b in who["long_gaps"])
         steps.append(
             (
-                "люди",
+                "people",
                 UNMEASURED,
-                f"человек уходит из кадра: подряд без тела кадры {spans}. "
-                f"Петли через эти участки не выпускаются",
+                f"the person leaves the frame: frames {spans} in a row have no "
+                f"body. Loops across these spans are not released",
                 0.0,
             )
         )
     if coverage < MIN_POSE_COVERAGE:
         note = (
-            f"поза снята только на {got['taken']} из {len(index)} кадров "
-            f"({coverage:.0%}, планка {MIN_POSE_COVERAGE:.0%}). Отсутствие "
-            f"петель на таком материале ничего не значит"
-            + (f". Человек уходит из кадра с кадра {who['left_at']}" if who["long_gaps"] else "")
+            f"pose captured on only {got['taken']} of {len(index)} frames "
+            f"({coverage:.0%}, bar {MIN_POSE_COVERAGE:.0%}). The absence of "
+            f"loops on such material means nothing"
+            + (
+                f". The person leaves the frame at frame {who['left_at']}"
+                if who["long_gaps"]
+                else ""
+            )
         )
         return _report(
             UNMEASURED,
@@ -1337,16 +1344,16 @@ def find_loops(
     step_info = typical_step(st)
     if step_info["step"] is None or step_info["step"] <= 0:
         note = (
-            f"{step_info['note']}. Стык не в чем мерить: единица измерения "
-            f"— обычный шаг этого же клипа"
+            f"{step_info['note']}. There is nothing to measure the seam in: "
+            f"the unit of measure is this same clip's usual step"
             if step_info["step"] is None
-            else "клип не движется: обычный шаг равен нулю, ранжировать стыки нечем"
+            else "the clip does not move: the usual step is zero, nothing to rank seams with"
         )
-        steps.append(("масштаб", UNMEASURED, note, 0.0))
+        steps.append(("scale", UNMEASURED, note, 0.0))
         return _report(
             UNMEASURED, note, t, steps, frames=n, taken=got["taken"], scan=scan, stride=stride
         )
-    steps.append(("масштаб", PASS, step_info["note"], 0.0))
+    steps.append(("scale", PASS, step_info["note"], 0.0))
 
     import bisect
 
@@ -1354,9 +1361,9 @@ def find_loops(
 
     def blocked(i, j):
         if bisect.bisect_left(cut_set, i) < bisect.bisect_left(cut_set, j):
-            return "рез внутри петли"
+            return "cut inside the loop"
         if bisect.bisect_left(gone, i) < bisect.bisect_right(gone, j):
-            return "человека нет в кадре внутри петли"
+            return "no person in frame inside the loop"
         return None
 
     t0 = time.perf_counter()
@@ -1364,11 +1371,11 @@ def find_loops(
     pstep = pixel_step(store["grays"], index)
     steps.append(
         (
-            "картинка",
+            "picture",
             PASS if pstep else UNMEASURED,
-            f"серых кадров в памяти {store['frames']}, "
-            f"{store['bytes'] / 1048576:.1f} МБ; типичный пиксельный "
-            f"переход " + (f"{pstep:.3f}" if pstep else "НЕ ИЗМЕРЕН — пиксельная ось выключена"),
+            f"{store['frames']} gray frames in memory, "
+            f"{store['bytes'] / 1048576:.1f} MB; typical pixel "
+            f"transition " + (f"{pstep:.3f}" if pstep else "NOT MEASURED — the pixel axis is off"),
             store["elapsed"],
         )
     )
@@ -1385,14 +1392,14 @@ def find_loops(
     )
     sim_elapsed = time.perf_counter() - t0
     blocked_note = (
-        "; ".join(f"{why}: {cnt}" for why, cnt in sorted(sim["rejected"].items())) or "нет"
+        "; ".join(f"{why}: {cnt}" for why, cnt in sorted(sim["rejected"].items())) or "none"
     )
     if not cands:
         note = (
-            f"допустимых пар {sim['pairs']}, измерить не удалось ни одной. "
-            f"Отвергнуто до измерения — {blocked_note}"
+            f"admissible pairs {sim['pairs']}, not a single one could be "
+            f"measured. Rejected before measuring — {blocked_note}"
         )
-        steps.append(("кандидаты", UNMEASURED, note, sim_elapsed))
+        steps.append(("candidates", UNMEASURED, note, sim_elapsed))
         return _report(
             UNMEASURED,
             note,
@@ -1413,12 +1420,12 @@ def find_loops(
     advantage = median_score / best["score"] if best["score"] > 0 else math.inf
     steps.append(
         (
-            "кандидаты",
+            "candidates",
             PASS,
-            f"пар допустимых {sim['pairs']}, отвергнуто до измерения "
-            f"({blocked_note}), измерено {sim['measured']}, не смогли "
-            f"{sim['unmeasurable']}; лучший стык {best['score']} шага, "
-            f"типичный {median_score:.3f}, преимущество {advantage:.2f}x",
+            f"admissible pairs {sim['pairs']}, rejected before measuring "
+            f"({blocked_note}), measured {sim['measured']}, could not "
+            f"{sim['unmeasurable']}; best seam {best['score']} steps, "
+            f"typical {median_score:.3f}, advantage {advantage:.2f}x",
             sim_elapsed,
         )
     )
@@ -1430,12 +1437,12 @@ def find_loops(
     ]
     if not worthy:
         note = (
-            f"ПЕТЕЛЬ НЕ НАШЛОСЬ ({scan}): ни одна пара не обошла типичную в "
-            f"{advantage_min} раза, лучшая обошла в {advantage:.2f}. Так "
-            f"выглядит материал без повтора — лучшая пара в нём выигрывает "
-            f"только тем, что она короче. Поза снята на {got['taken']} из "
-            f"{len(index)} опрошенных кадров, пар разобрано "
-            f"{sim['measured']}, отвергнуто до измерения ({blocked_note})"
+            f"NO LOOPS FOUND ({scan}): no pair beat the typical one by "
+            f"{advantage_min}x, the best beat it by {advantage:.2f}. This is "
+            f"what material without a repeat looks like — its best pair wins "
+            f"only by being shorter. Pose captured on {got['taken']} of "
+            f"{len(index)} polled frames, pairs examined "
+            f"{sim['measured']}, rejected before measuring ({blocked_note})"
         )
         return _report(
             FAIL,
@@ -1462,14 +1469,14 @@ def find_loops(
     scale = head_scale(paths, reader=head, cache=head_cache)
     steps.append(
         (
-            "голова",
+            "head",
             scale["outcome"],
             (
-                f"типичное смещение головы {scale['step']:.2f} px по "
-                f"{scale['measured']} парам, снято кадров {scale['frames']}"
+                f"typical head displacement {scale['step']:.2f} px over "
+                f"{scale['measured']} pairs, {scale['frames']} frames captured"
                 if scale["outcome"] == PASS
-                else f"ось головы ВЫКЛЮЧЕНА: {scale['reason']}. Петли выйдут "
-                f"помеченными «голова не проверена», а не молча годными"
+                else f"the head axis is OFF: {scale['reason']}. Loops will come "
+                f"out marked 'head not checked' rather than silently passing"
             ),
             scale["elapsed"],
         )
@@ -1509,12 +1516,12 @@ def find_loops(
         return by_frame[pick] if abs(pick - frame) <= stride else None
 
     def local_scale(i, j):
-        """Типичный шаг ВНУТРИ петли: чем меряется ДЛИНА МОСТА (не порядок)."""
+        """Return the typical step INSIDE the loop: it prices BRIDGE LENGTH (not order)."""
         inner = [k for k in index if i <= k <= j]
         sub = [by_frame[k] for k in inner]
         return {
-            "поза": typical_step(sub)["step"],
-            "пиксели": (pixel_step(store["grays"], inner) if pstep else None),
+            "pose": typical_step(sub)["step"],
+            "pixels": (pixel_step(store["grays"], inner) if pstep else None),
         }
 
     chosen = pick_finalists(
@@ -1535,21 +1542,21 @@ def find_loops(
     )
     steps.append(
         (
-            "финалисты",
+            "finalists",
             PASS,
-            f"принято {len(chosen['kept'])}; МОСТЫ: посчитано "
-            f"{chosen['bridge_measured']}, отвергнуто длинных "
-            f"{chosen['dropped_bridge']} (из них по голове "
-            f"{chosen['dropped_head']}) при потолке {bridge_max} кадров, "
-            f"не смогли посчитать {chosen['unchecked']}; отвергнуто: по "
-            f"пересечению кадров {chosen['dropped_overlap']}, КАК ПОВТОР "
-            f"ТОГО ЖЕ ДВИЖЕНИЯ {chosen['dropped_duplicate']}; движение "
-            f"не сверялось у {chosen['dup_unmeasured']}; голову "
-            f"спрашивали {chosen['head_tried']} раз, кадров головы "
-            f"{scale['frames'] + chosen['head_frames']}, поз на "
-            f"уточнение {fine_poses[0]}"
+            f"accepted {len(chosen['kept'])}; BRIDGES: priced "
+            f"{chosen['bridge_measured']}, rejected as too long "
+            f"{chosen['dropped_bridge']} (of them by the head "
+            f"{chosen['dropped_head']}) at a ceiling of {bridge_max} frames, "
+            f"could not price {chosen['unchecked']}; rejected: by frame "
+            f"overlap {chosen['dropped_overlap']}, AS A REPEAT OF THE "
+            f"SAME MOVEMENT {chosen['dropped_duplicate']}; movement "
+            f"not compared for {chosen['dup_unmeasured']}; the head was "
+            f"asked {chosen['head_tried']} times, head frames "
+            f"{scale['frames'] + chosen['head_frames']}, poses for "
+            f"refinement {fine_poses[0]}"
             + (
-                "; БЮДЖЕТ ГОЛОВЫ ИСЧЕРПАН — поиск остановлен, непроверенных не выпускаем"
+                "; HEAD BUDGET EXHAUSTED — search stopped, unchecked loops are not released"
                 if chosen["head_budget_hit"]
                 else ""
             ),
@@ -1576,33 +1583,34 @@ def find_loops(
             )
             if fps is None and loop["gif"]:
                 loop["gif"]["note"] = (
-                    f"скорость показа взята {framemath.WRAP_FPS} к/с, потому "
-                    f"что частота источника неизвестна: движение на GIF может "
-                    f"идти быстрее или медленнее настоящего"
+                    f"playback speed taken as {framemath.WRAP_FPS} fps because "
+                    f"the source frame rate is unknown: motion in the GIF may "
+                    f"run faster or slower than the real thing"
                 )
         loops.append(loop)
 
     short = (
         ""
         if len(loops) >= top
-        else f" РАЗНЫХ ДВИЖЕНИЙ МЕНЬШЕ ЗАКАЗАННЫХ {top}: набралось "
-        f"{len(loops)}, схлопнуто как повтор того же движения "
-        f"{chosen['dropped_duplicate']}. Добивать список повторами нельзя: "
-        f"клиент увидит пять карточек и решит, что у него пять вариантов."
+        else f" FEWER DISTINCT MOVEMENTS THAN THE {top} ORDERED: gathered "
+        f"{len(loops)}, collapsed as a repeat of the same movement "
+        f"{chosen['dropped_duplicate']}. Padding the list with repeats is "
+        f"forbidden: the client would see five cards and decide they have "
+        f"five options."
     )
     note = (
-        f"петель принято {len(loops)} из {len(worthy)} прошедших планку "
-        f"преимущества {advantage_min}x (всего пар с оценкой {len(cands)}, "
-        f"отброшено по пересечению {chosen['dropped_overlap']}, как повтор "
-        f"движения {chosen['dropped_duplicate']}, ДЛИННЫМ МОСТОМ "
-        f"{chosen['dropped_bridge']} при потолке {bridge_max} кадров, "
-        f"мост посчитан у {chosen['bridge_measured']}, не смогли "
-        f"посчитать у {chosen['unchecked']}); кадров "
-        f"{n}, опрошено {len(index)} ({scan}), поза снята на "
-        f"{got['taken']}, резов {len(cut_set)}, пар разобрано "
-        f"{sim['measured']}, не смогли {sim['unmeasurable']}.{short} Это "
-        f"РАНГ, а не вердикт: планки бесшовности для расстояния поз у "
-        f"проекта нет"
+        f"loops accepted {len(loops)} of {len(worthy)} that passed the "
+        f"advantage bar of {advantage_min}x (scored pairs total {len(cands)}, "
+        f"dropped by overlap {chosen['dropped_overlap']}, as a repeat of the "
+        f"movement {chosen['dropped_duplicate']}, for a LONG BRIDGE "
+        f"{chosen['dropped_bridge']} at a ceiling of {bridge_max} frames, "
+        f"bridge priced for {chosen['bridge_measured']}, could not "
+        f"price for {chosen['unchecked']}); frames "
+        f"{n}, polled {len(index)} ({scan}), pose captured on "
+        f"{got['taken']}, cuts {len(cut_set)}, pairs examined "
+        f"{sim['measured']}, could not {sim['unmeasurable']}.{short} This is "
+        f"a RANK, not a verdict: the project has no seamlessness bar for "
+        f"pose distance"
     )
     return _report(
         PASS,
@@ -1648,35 +1656,39 @@ def find_loops(
 
 
 def table(report) -> str:
-    """Таблица петель для человека."""
+    """Render the loop table for a human."""
     fps = report.get("fps")
     head = (
-        f"{'#':>2} {'кадры':>11} {'кадров':>6} {'сек':>6} {'суст':>4} "
-        f"{'мост':>6} | {'поза':>6} {'поток':>6} {'пиксели':>7} "
-        f"{'голова':>7} (локальных шага) | {'стык':>6} {'выигрыш':>8} "
-        f"(клиповых)  повторы -> с        GIF"
+        f"{'#':>2} {'frames':>11} {'count':>6} {'sec':>6} {'jnts':>4} "
+        f"{'bridge':>6} | {'pose':>6} {'flow':>6} {'pixels':>7} "
+        f"{'head':>7} (local steps) | {'seam':>6} {'advantage':>8} "
+        f"(clip steps)  repeats -> s        GIF"
     )
     rows = [head]
     for lp in report.get("loops", []):
         rep = ", ".join(
-            f"{r['repeats']}x={r['frames']}к/{r['seconds']}с" for r in lp["repeats"]
-        ) or ("частота неизвестна — план не считается" if fps is None else "нет в полосе 5-10 с")
+            f"{r['repeats']}x={r['frames']}f/{r['seconds']}s" for r in lp["repeats"]
+        ) or (
+            "frame rate unknown — the plan is not computed"
+            if fps is None
+            else "nothing in the 5-10 s band"
+        )
         g = lp.get("gif") or {}
-        gtxt = f"{Path(g['path']).name} {g['frames']}к {g['bytes']}Б" if g.get("path") else "-"
+        gtxt = f"{Path(g['path']).name} {g['frames']}f {g['bytes']}B" if g.get("path") else "-"
         secs = "—" if lp.get("seconds") is None else f"{lp['seconds']}"
         axes = lp.get("bridge_seams") or {}
 
         def cell(name):
             v = axes.get(name)
-            return "н/п" if v is None else f"{v}"
+            return "n/a" if v is None else f"{v}"
 
         cost = lp.get("bridge") or {}
         if cost.get("frames") is not None:
-            br = f"{cost['frames']}к"
+            br = f"{cost['frames']}f"
         elif cost.get("floor") is not None:
-            br = f"≥{cost['floor']}к"
+            br = f"≥{cost['floor']}f"
         else:
-            br = "н/п"
+            br = "n/a"
         adv = (
             "—"
             if lp.get("advantage") is None
@@ -1685,52 +1697,52 @@ def table(report) -> str:
         rows.append(
             f"{lp['rank']:>2} {lp['i']:>5}..{lp['j']:<5} "
             f"{lp['frames']:>6} {secs:>6} {str(lp.get('joints')):>4} "
-            f"{br:>6} | {cell('поза'):>6} {cell('поток'):>6} "
-            f"{cell('пиксели'):>7} {cell('голова'):>7} "
+            f"{br:>6} | {cell('pose'):>6} {cell('flow'):>6} "
+            f"{cell('pixels'):>7} {cell('head'):>7} "
             f"{'':>17} | {lp['score']:>6} {adv:>8} {'':>10}  {rep}  "
             f"{gtxt}"
         )
     if fps is None:
         rows.append(
-            "    секунды и план повторов не печатаются: частота "
-            "источника неизвестна (см. шаг «частота»)"
+            "    seconds and the repeat plan are not printed: the source "
+            "frame rate is unknown (see the 'frame rate' step)"
         )
     for lp in report.get("loops", []):
         if lp.get("head_state") == UNMEASURED:
-            rows.append(f"    петля {lp['rank']}: ГОЛОВА НЕ ПРОВЕРЕНА — {lp.get('head_note')}")
+            rows.append(f"    loop {lp['rank']}: HEAD NOT CHECKED — {lp.get('head_note')}")
         if lp.get("pixel_axis_off"):
             rows.append(
-                f"    петля {lp['rank']}: пиксельная ось клипа НЕ "
-                f"ИЗМЕРЕНА, мост посчитан по трём осям из четырёх и "
-                f"потому может быть только ДЛИННЕЕ напечатанного"
+                f"    loop {lp['rank']}: the clip's pixel axis is NOT "
+                f"MEASURED, the bridge is priced on three axes of four and "
+                f"can therefore only be LONGER than printed"
             )
         missed = (lp.get("bridge") or {}).get("unmeasured")
         if missed:
             rows.append(
-                f"    петля {lp['rank']}: ЦЕНА МОСТА НЕ ПОСЧИТАНА, не "
-                f"измерены оси {', '.join(missed)} — петля стоит НИЖЕ "
-                f"всех измеренных, а «мост» и «выигрыш» у неё границы, "
-                f"а не числа"
+                f"    loop {lp['rank']}: BRIDGE PRICE NOT COMPUTED, axes "
+                f"{', '.join(missed)} not measured — the loop stands BELOW "
+                f"all measured ones, and its 'bridge' and 'advantage' are "
+                f"bounds, not numbers"
             )
     if report.get("dropped_bridge"):
         rows.append(
-            f"    отвергнуто длинным мостом: {report['dropped_bridge']} "
-            f"(потолок {report.get('bridge_max')} кадров"
-            + ("" if fps is None else f", {report['bridge_max'] / fps:.2f} с при {fps} к/с")
+            f"    rejected for a long bridge: {report['dropped_bridge']} "
+            f"(ceiling {report.get('bridge_max')} frames"
+            + ("" if fps is None else f", {report['bridge_max'] / fps:.2f} s at {fps} fps")
             + ")"
         )
     if report.get("dropped_duplicate"):
         rows.append(
-            f"    схлопнуто как повтор того же движения: "
-            f"{report['dropped_duplicate']} (сверка по "
-            f"{DUP_PHASES} точкам фазы, порог "
-            f"{DUPLICATE_MAX_STEPS} типичных шага)"
+            f"    collapsed as a repeat of the same movement: "
+            f"{report['dropped_duplicate']} (compared at "
+            f"{DUP_PHASES} phase points, threshold "
+            f"{DUPLICATE_MAX_STEPS} typical steps)"
         )
     if any(lp.get("joints") not in (None, len(pose.BODY_POINTS)) for lp in report.get("loops", [])):
         rows.append(
-            f"    «суст» — сколько суставов из {len(pose.BODY_POINTS)} "
-            f"реально сравнивалось: остальные детектор не видел, и в "
-            f"оценку позы они не вошли"
+            f"    'jnts' — how many joints out of {len(pose.BODY_POINTS)} "
+            f"were actually compared: the detector did not see the rest, "
+            f"and they did not enter the pose score"
         )
     return "\n".join(rows)
 
@@ -1740,20 +1752,20 @@ def main(argv=None) -> int:
 
     ap = argparse.ArgumentParser(
         prog="python3 -m lipsync.fork_looper",
-        description="Отбор петель в драйвинге: ранжирует стыки и кладёт GIF.",
+        description="Select loops in the driving: rank seams and write GIFs.",
     )
-    ap.add_argument("source", help="каталог кадров или видеофайл")
-    ap.add_argument("--out", default="looper_out", help="куда класть GIF-ы")
+    ap.add_argument("source", help="frame directory or video file")
+    ap.add_argument("--out", default="looper_out", help="where to put the GIFs")
     ap.add_argument("--fps", type=int, default=None)
     ap.add_argument("--min-frames", type=int, default=None)
     ap.add_argument("--top", type=int, default=None)
     ap.add_argument("--overlap-max", type=float, default=None)
-    ap.add_argument("--cache", default=None, help="JSON с уже снятыми позами")
+    ap.add_argument("--cache", default=None, help="JSON with already captured poses")
     ap.add_argument(
         "--stride",
         type=int,
         default=None,
-        help="шаг прореживания; по умолчанию 1, а на длинном материале включается сам",
+        help="thinning step; defaults to 1, and turns itself on for long material",
     )
     ap.add_argument("--max-frames", type=int, default=None)
     ap.add_argument("--no-gif", action="store_true")
@@ -1771,9 +1783,9 @@ def main(argv=None) -> int:
         max_frames=a.max_frames,
         gif=not a.no_gif,
     )
-    print(f"ИСХОД: {rep['outcome']}")
+    print(f"OUTCOME: {rep['outcome']}")
     for s in rep["steps"]:
-        print(f"  [{s['outcome']:>18}] {s['step']:<12} {s['seconds']:>7.3f} с  {s['note']}")
+        print(f"  [{s['outcome']:>18}] {s['step']:<12} {s['seconds']:>7.3f} s  {s['note']}")
     if rep.get("loops"):
         print()
         print(table(rep))

@@ -218,7 +218,7 @@ FRAME_PATTERN = "%04d.png"
 
 
 def frame_names_sort_correctly(count: int, pattern: str = FRAME_PATTERN) -> bool:
-    """Совпадает ли лексикографический порядок имён с порядком кадров."""
+    """Tell whether the lexicographic order of names matches the frame order."""
     names = [pattern % i for i in range(1, count + 1)]
     return sorted(names) == names
 

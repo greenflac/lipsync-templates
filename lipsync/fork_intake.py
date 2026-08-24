@@ -1,4 +1,4 @@
-"""Приём входов сквозного стенда: драйвинг, фотография клиента, стилевой референс."""
+"""Accept the e2e bench inputs: driving, client photo, style reference."""
 
 from __future__ import annotations
 
@@ -30,24 +30,26 @@ FRAME_COUNT_EXACT = 0
 PHOTO_PEOPLE_EXPECTED = 1
 
 VSYNC_ADVICE = (
-    "распаковывать только с `-vsync 0` (в новых ffmpeg — "
-    "`-fps_mode passthrough`, ИЗМЕРЕНО: оба дают 305 на "
-    "driving_selfie): без него ffmpeg ПОДДЕЛЫВАЕТ пропущенные "
-    "кадры дублями, подгоняя поток под свою решётку"
+    "unpack only with `-vsync 0` (in newer ffmpeg, "
+    "`-fps_mode passthrough`; MEASURED: both give 305 on "
+    "driving_selfie): without it ffmpeg fakes the missing "
+    "frames with duplicates, snapping the stream to its own grid"
 )
 
 EXIT_BY_OUTCOME = fork_looper.EXIT_BY_OUTCOME
 
 
 def read_count_frames(path) -> dict:
-    """Спросить ffprobe ПОКАДРОВО. ТОЧКА ВНЕДРЕНИЯ: тест подменяет целиком."""
+    """Ask ffprobe to count frames one by one. Injection point: the test replaces it wholesale."""
     if shutil.which(fork_video.FFPROBE_BIN) is None:
         return {
             "ran": False,
             "code": None,
             "out": "",
             "err": "",
-            "why": (f"{fork_video.FFPROBE_BIN} не найден: спросить нечем. Это НЕ «файл плохой»"),
+            "why": (
+                f"{fork_video.FFPROBE_BIN} not found: nothing to ask with. This is not 'a bad file'"
+            ),
         }
     try:
         raw = subprocess.run(
@@ -74,7 +76,7 @@ def read_count_frames(path) -> dict:
             "code": None,
             "out": "",
             "err": "",
-            "why": f"{fork_video.FFPROBE_BIN} не отработал: {str(exc)[:120]}",
+            "why": f"{fork_video.FFPROBE_BIN} did not run to completion: {str(exc)[:120]}",
         }
     return {
         "ran": True,
@@ -86,7 +88,7 @@ def read_count_frames(path) -> dict:
 
 
 def read_decoded_frames(path, *, vsync0: bool) -> dict:
-    """Сколько кадров ВЫДАЛ БЫ распаковщик. ТОЧКА ВНЕДРЕНИЯ."""
+    """Count how many frames the unpacker would emit. Injection point."""
     if shutil.which(fork_video.FFMPEG_BIN) is None:
         return {
             "ran": False,
@@ -94,8 +96,8 @@ def read_decoded_frames(path, *, vsync0: bool) -> dict:
             "out": "",
             "err": "",
             "why": (
-                f"{fork_video.FFMPEG_BIN} не найден: посчитать "
-                f"распакованное нечем. Это НЕ «видео плохое»"
+                f"{fork_video.FFMPEG_BIN} not found: nothing to count "
+                f"the unpacked frames with. This is not 'a bad video'"
             ),
         }
     argv = [
@@ -124,9 +126,9 @@ def read_decoded_frames(path, *, vsync0: bool) -> dict:
             "out": "",
             "err": "",
             "why": (
-                f"{fork_video.FFMPEG_BIN} не уложился в "
-                f"{fork_video.DECODE_TIMEOUT_S} с: сколько кадров "
-                f"вышло — НЕИЗВЕСТНО"
+                f"{fork_video.FFMPEG_BIN} did not finish within "
+                f"{fork_video.DECODE_TIMEOUT_S} s: how many frames "
+                f"came out is unknown"
             ),
         }
     except (OSError, subprocess.SubprocessError) as exc:
@@ -135,7 +137,7 @@ def read_decoded_frames(path, *, vsync0: bool) -> dict:
             "code": None,
             "out": "",
             "err": "",
-            "why": f"{fork_video.FFMPEG_BIN} не отработал: {str(exc)[:120]}",
+            "why": f"{fork_video.FFMPEG_BIN} did not run to completion: {str(exc)[:120]}",
         }
     return {
         "ran": True,
@@ -147,7 +149,7 @@ def read_decoded_frames(path, *, vsync0: bool) -> dict:
 
 
 def read_faces(path) -> dict:
-    """Все лица кадра, а не только самое крупное. ТОЧКА ВНЕДРЕНИЯ."""
+    """Return every face in the frame, not only the largest one. Injection point."""
     try:
         from . import identity_arcface
 
@@ -160,12 +162,12 @@ def read_faces(path) -> dict:
             )
         out.sort(key=lambda d: d["face_px"], reverse=True)
         return {"faces": out, "why": ""}
-    except Exception as exc:  # noqa: BLE001 — причин «спросить нечем» много
+    except Exception as exc:  # noqa: BLE001 — many ways for "nothing to ask with" to happen
         return {"faces": None, "why": f"{type(exc).__name__}: {str(exc)[:200]}"}
 
 
 def read_style_card(path) -> dict:
-    """Карточка стиля. ТОЧКА ВНЕДРЕНИЯ, и она же — единственный вход"""
+    """Read the style card. Injection point, and also the only entrance."""
     try:
         from creative_eval.style import style_card  # noqa: PLC0415
 
@@ -175,7 +177,7 @@ def read_style_card(path) -> dict:
 
 
 def tally(checked: int, violations: int, unmeasured: int) -> dict:
-    """Три числа рядом с вердиктом, и вердикт, выведенный ИЗ НИХ."""
+    """Put three numbers beside the verdict, with the verdict derived from them."""
     out = {"checked": int(checked), "violations": int(violations), "unmeasured": int(unmeasured)}
     if checked == 0:
         out["outcome"] = UNMEASURED
@@ -189,7 +191,7 @@ def tally(checked: int, violations: int, unmeasured: int) -> dict:
 
 
 def parse_count_frames(text: str) -> dict:
-    """Ответ `ffprobe -count_frames` -> число кадров. Тест — на литерале."""
+    """Turn a `ffprobe -count_frames` answer into a frame count. The test feeds a literal."""
     import json
 
     try:
@@ -200,7 +202,7 @@ def parse_count_frames(text: str) -> dict:
             "frames": None,
             "fps": None,
             "seconds": None,
-            "why": (f"ответ ffprobe не разобрался как JSON: {(text or '')[:120]!r}"),
+            "why": (f"the ffprobe answer did not parse as JSON: {(text or '')[:120]!r}"),
         }
     streams = (data or {}).get("streams") or []
     if not streams:
@@ -209,7 +211,7 @@ def parse_count_frames(text: str) -> dict:
             "frames": None,
             "fps": None,
             "seconds": None,
-            "why": "видеопотока в ответе нет: считать нечего",
+            "why": "no video stream in the answer: nothing to count",
         }
     s = streams[0]
     raw = s.get("nb_read_frames")
@@ -221,7 +223,10 @@ def parse_count_frames(text: str) -> dict:
             "frames": None,
             "fps": None,
             "seconds": None,
-            "why": (f"nb_read_frames = {raw!r}: ffprobe кадры НЕ СЧИТАЛ. Это не «кадров нет»"),
+            "why": (
+                f"nb_read_frames = {raw!r}: ffprobe did not count the frames. "
+                f"This is not 'there are no frames'"
+            ),
         }
     if frames <= 0:
         return {
@@ -229,7 +234,7 @@ def parse_count_frames(text: str) -> dict:
             "frames": None,
             "fps": None,
             "seconds": None,
-            "why": f"ffprobe насчитал {frames} кадров: считать нечего",
+            "why": f"ffprobe counted {frames} frames: nothing to count",
         }
     fps = fork_video._ratio(s.get("avg_frame_rate"))
     try:
@@ -240,7 +245,7 @@ def parse_count_frames(text: str) -> dict:
 
 
 def parse_decoded_frames(text: str) -> dict:
-    """Строка `-stats` от ffmpeg -> сколько кадров он выдал. Тест — на литерале."""
+    """Turn an ffmpeg `-stats` line into the number of frames it emitted. The test feeds a literal."""
     import re
 
     hits = re.findall(r"frame=\s*(\d+)", text or "")
@@ -249,8 +254,8 @@ def parse_decoded_frames(text: str) -> dict:
             "ok": False,
             "frames": None,
             "why": (
-                f"в ответе ffmpeg нет ни одного `frame=`: сколько "
-                f"кадров вышло — НЕИЗВЕСТНО. Хвост: "
+                f"not a single `frame=` in the ffmpeg answer: how many "
+                f"frames came out is unknown. Tail: "
                 f"{(text or '')[-120:]!r}"
             ),
         }
@@ -258,7 +263,7 @@ def parse_decoded_frames(text: str) -> dict:
 
 
 def timestamp_verdict(probed: int | None, plain: int | None, fixed: int | None) -> dict:
-    """Дырки во временных метках. Три исхода, и совет вместо догадки."""
+    """Judge holes in the timestamps. Three outcomes, and advice instead of a guess."""
     known = [v for v in (probed, plain, fixed) if v is not None]
     if len(known) < 3:
         missing = [
@@ -274,8 +279,8 @@ def timestamp_verdict(probed: int | None, plain: int | None, fixed: int | None) 
             "gap": None,
             "advice": VSYNC_ADVICE,
             "note": (
-                f"счётчики не сняты: {', '.join(missing)}. Это НЕ "
-                f"«кадры на месте» и НЕ «файл битый»"
+                f"counters not taken: {', '.join(missing)}. This is neither "
+                f"'the frames are in place' nor 'the file is broken'"
             ),
         }
     gap = plain - probed
@@ -289,8 +294,8 @@ def timestamp_verdict(probed: int | None, plain: int | None, fixed: int | None) 
             "advice": "",
             "note": (
                 f"ffprobe {probed}, ffmpeg {plain}, ffmpeg -vsync 0 "
-                f"{fixed}: расхождение {gap}, дырок во временных "
-                f"метках не видно"
+                f"{fixed}: gap {gap}, no visible holes in the "
+                f"timestamps"
             ),
         }
     healed = fixed == probed
@@ -302,22 +307,22 @@ def timestamp_verdict(probed: int | None, plain: int | None, fixed: int | None) 
         "gap": gap,
         "advice": VSYNC_ADVICE,
         "note": (
-            f"ffprobe {probed}, ffmpeg БЕЗ ключей {plain} "
-            f"(расхождение {gap:+d}), с -vsync 0 {fixed}. В файле "
-            f"пропущены кадры, и обычная распаковка их ПОДДЕЛЫВАЕТ "
-            f"дублями"
+            f"ffprobe {probed}, ffmpeg with no flags {plain} "
+            f"(gap {gap:+d}), with -vsync 0 {fixed}. The file has "
+            f"dropped frames, and a plain unpack fakes them with "
+            f"duplicates"
             + (
                 f"; {VSYNC_ADVICE}"
                 if healed
-                else f"; и `-vsync 0` НЕ ЛЕЧИТ ({fixed} против {probed}) — "
-                f"материал в работу не брать"
+                else f"; and `-vsync 0` does not heal it ({fixed} versus {probed}) — "
+                f"do not take this material into work"
             )
         ),
     }
 
 
 def scenes(n_frames: int, cut_list) -> list:
-    """Разбиение на сцены по швам. Чистая арифметика, тест — на литералах."""
+    """Split into scenes at the seams. Pure arithmetic, the test feeds literals."""
     if n_frames <= 0:
         return []
     marks = sorted({int(c) for c in (cut_list or []) if 0 <= int(c) < n_frames - 1})
@@ -332,7 +337,7 @@ def scenes(n_frames: int, cut_list) -> list:
 def scene_length_verdict(
     scene_list, fps: float | None, *, min_seconds: float | None = None
 ) -> dict:
-    """Каждая ли сцена не короче планки. КРИТЕРИЙ ПРИЁМА, а не пожелание."""
+    """Check that every scene clears the bar. An acceptance criterion, not a wish."""
     bar = MIN_SCENE_SECONDS if min_seconds is None else min_seconds
     if not scene_list:
         return {
@@ -340,7 +345,7 @@ def scene_length_verdict(
             "bar_seconds": bar,
             "short": [],
             "seconds": [],
-            "note": "сцен нет: разметка не снята, длину мерить не у чего",
+            "note": "no scenes: the markup was not taken, nothing to measure the length of",
         }
     if not fps or fps <= 0:
         return {
@@ -349,9 +354,9 @@ def scene_length_verdict(
             "short": [],
             "seconds": [],
             "note": (
-                f"частота не снята: {len(scene_list)} сцен есть, а "
-                f"перевести кадры в секунды нечем. Это НЕ «сцены "
-                f"короткие» и НЕ «сцены длинные»"
+                f"the rate was not taken: {len(scene_list)} scenes exist, "
+                f"but there is nothing to convert frames to seconds with. "
+                f"This is neither 'the scenes are short' nor 'the scenes are long'"
             ),
         }
     secs = [round(s["frames"] / fps, 3) for s in scene_list]
@@ -362,19 +367,19 @@ def scene_length_verdict(
         "short": short,
         "seconds": secs,
         "note": (
-            f"сцен {len(scene_list)}, планка {bar} с, короче планки "
+            f"scenes {len(scene_list)}, bar {bar} s, below the bar "
             f"{len(short)}"
             + (
-                f": номера {short[:10]}, длины {[secs[i] for i in short[:10]]}"
+                f": indices {short[:10]}, lengths {[secs[i] for i in short[:10]]}"
                 if short
-                else f"; самая короткая {min(secs)} с, самая длинная {max(secs)} с"
+                else f"; shortest {min(secs)} s, longest {max(secs)} s"
             )
         ),
     }
 
 
 def is_orphan_wrist(points) -> bool | None:
-    """Один кадр: есть ли на нём сиротская кисть. Определение — здесь и только."""
+    """Tell whether one frame carries an orphan wrist. The definition lives here and only here."""
     if not points:
         return None
 
@@ -392,7 +397,7 @@ def is_orphan_wrist(points) -> bool | None:
 
 
 def orphan_verdict(share: float | None, checked: int, unmeasured: int) -> dict:
-    """МЯГКАЯ ось: доля сирот и предупреждение. Вердикт НЕ РОНЯЕТ."""
+    """Report the soft axis: orphan share and a warning. It never sinks the verdict."""
     if share is None or checked == 0:
         return {
             **tally(0, 0, max(1, unmeasured)),
@@ -400,8 +405,8 @@ def orphan_verdict(share: float | None, checked: int, unmeasured: int) -> dict:
             "warn": False,
             "bar": ORPHAN_WRIST_WARN,
             "note": (
-                "позу снять не удалось ни на одном кадре: доля сирот "
-                "НЕ ИЗМЕРЕНА. Это не «сирот нет»"
+                "the pose could not be taken on a single frame: the orphan "
+                "share is not measured. This is not 'there are no orphans'"
             ),
         }
     warn = share >= ORPHAN_WRIST_WARN
@@ -412,18 +417,18 @@ def orphan_verdict(share: float | None, checked: int, unmeasured: int) -> dict:
         "warn": warn,
         "bar": ORPHAN_WRIST_WARN,
         "note": (
-            f"сиротских кистей {round(share * 100, 1)}% "
-            f"({checked} кадров с позой, {unmeasured} без)"
+            f"orphan wrists {round(share * 100, 1)}% "
+            f"({checked} frames with a pose, {unmeasured} without)"
             + (
-                f". ПРЕДУПРЕЖДЕНИЕ: доля не ниже "
-                f"{round(ORPHAN_WRIST_WARN * 100)}%. Это ПОПРАВКА К "
-                f"ОЖИДАНИЮ по личности, а не отказ: ИЗМЕРЕНО, что 21% "
-                f"сирот дали ArcFace 0.2960 (81/99 в баре "
-                f"{SAME_PERSON_MAX}) против 0.2430 (98/99) при 0%, то "
-                f"есть около 0.05 по личности. Составитель шаблонов посмотрел "
-                f"выход с 21% и назвал кисти правильными"
+                f". Warning: the share is not below "
+                f"{round(ORPHAN_WRIST_WARN * 100)}%. This is a correction "
+                f"to the identity expectation, not a refusal: MEASURED that 21% "
+                f"of orphans gave ArcFace 0.2960 (81/99 within the bar "
+                f"{SAME_PERSON_MAX}) versus 0.2430 (98/99) at 0%, that "
+                f"is about 0.05 on identity. The template author looked at "
+                f"the output with 21% and called the wrists correct"
                 if warn
-                else f"; ниже планки предупреждения {round(ORPHAN_WRIST_WARN * 100)}%"
+                else f"; below the warning bar {round(ORPHAN_WRIST_WARN * 100)}%"
             )
         ),
     }
@@ -432,7 +437,7 @@ def orphan_verdict(share: float | None, checked: int, unmeasured: int) -> dict:
 def face_size_verdict(
     sizes: list, no_face: int, unmeasured: int, *, min_face_px: int | None = None
 ) -> dict:
-    """Хватает ли лицу пикселей, чтобы личность вообще было чем мерить."""
+    """Check the face has enough pixels for identity to be measurable at all."""
     bar = MIN_FACE_PX if min_face_px is None else min_face_px
     checked = len(sizes) + no_face
     if checked == 0:
@@ -443,15 +448,18 @@ def face_size_verdict(
             "no_face": no_face,
             "min": None,
             "max": None,
-            "note": ("лицо не спрашивали ни на одном кадре: размер НЕ ИЗМЕРЕН. Это не «лица нет»"),
+            "note": (
+                "the face was not asked for on a single frame: the size is "
+                "not measured. This is not 'there is no face'"
+            ),
         }
     small = [v for v in sizes if v < bar]
     hurt = len(small) + no_face
     warn = (
         (
-            f"; ПРЕДУПРЕЖДЕНИЕ: {hurt} из {checked} кадров непригодны для "
-            f"ArcFace — личность на выходе СУДИТ ОПЕРАТОР ГЛАЗАМИ, прибор "
-            f"здесь не судья"
+            f"; warning: {hurt} of {checked} frames are unusable for "
+            f"ArcFace — identity on the output is judged by the operator's "
+            f"eyes, the instrument is not the judge here"
         )
         if hurt
         else ""
@@ -465,18 +473,18 @@ def face_size_verdict(
         "min": min(sizes) if sizes else None,
         "max": max(sizes) if sizes else None,
         "note": (
-            f"планка {bar}px: кадров {checked}, лицо найдено на "
-            f"{len(sizes)}, мельче планки {len(small)}, без лица "
+            f"bar {bar}px: frames {checked}, face found on "
+            f"{len(sizes)}, below the bar {len(small)}, without a face "
             f"{no_face}"
-            + (f"; размах {min(sizes)}..{max(sizes)} px" if sizes else "")
-            + (f", не спросили {unmeasured}" if unmeasured else "")
+            + (f"; range {min(sizes)}..{max(sizes)} px" if sizes else "")
+            + (f", not asked {unmeasured}" if unmeasured else "")
             + warn
         ),
     }
 
 
 def window(scene_list, product_seconds: float, fps: float | None) -> dict:
-    """Границы окна В НОМЕРАХ КАДРОВ. По времени резать НЕЛЬЗЯ."""
+    """Pick the window bounds in frame numbers. Cutting by time is forbidden."""
     if not scene_list:
         return {
             **tally(0, 0, 1),
@@ -484,7 +492,7 @@ def window(scene_list, product_seconds: float, fps: float | None) -> dict:
             "end": None,
             "frames": None,
             "scene": None,
-            "note": "разметки сцен нет: выбирать окно не из чего",
+            "note": "no scene markup: nothing to pick a window from",
         }
     if not fps or fps <= 0:
         return {
@@ -494,8 +502,8 @@ def window(scene_list, product_seconds: float, fps: float | None) -> dict:
             "frames": None,
             "scene": None,
             "note": (
-                "частота не снята: продуктовую длину в кадры "
-                "перевести нечем. Догадку 30 не подставляем"
+                "the rate was not taken: nothing to convert the product "
+                "length into frames with. We do not substitute a guess of 30"
             ),
         }
     need = int(round(product_seconds * fps))
@@ -507,8 +515,7 @@ def window(scene_list, product_seconds: float, fps: float | None) -> dict:
             "frames": None,
             "scene": None,
             "note": (
-                f"продуктовая длина {product_seconds} с при {fps} к/с "
-                f"— это {need} кадров: резать нечего"
+                f"product length {product_seconds} s at {fps} fps is {need} frames: nothing to cut"
             ),
         }
     best = max(range(len(scene_list)), key=lambda i: scene_list[i]["frames"])
@@ -521,9 +528,9 @@ def window(scene_list, product_seconds: float, fps: float | None) -> dict:
             "frames": None,
             "scene": None,
             "note": (
-                f"нужно {need} кадров ({product_seconds} с при {fps} "
-                f"к/с), самая длинная сцена {have} кадров "
-                f"({round(have / fps, 3)} с): окно НЕ ВМЕЩАЕТСЯ"
+                f"{need} frames needed ({product_seconds} s at {fps} "
+                f"fps), the longest scene has {have} frames "
+                f"({round(have / fps, 3)} s): the window does not fit"
             ),
         }
     pad = (have - need) // 2
@@ -536,23 +543,23 @@ def window(scene_list, product_seconds: float, fps: float | None) -> dict:
         "frames": need,
         "scene": best,
         "note": (
-            f"окно {start}..{end} ({need} кадров, "
-            f"{round(need / fps, 3)} с) из сцены {best} "
+            f"window {start}..{end} ({need} frames, "
+            f"{round(need / fps, 3)} s) from scene {best} "
             f"({scene_list[best]['start']}..{scene_list[best]['end']}, "
-            f"{have} кадров), поля по {pad} кадров с каждой стороны"
+            f"{have} frames), margins of {pad} frames on each side"
         ),
     }
 
 
 def window_argv(video_path, out_path, start: int, end: int, *, fps: float | None = None) -> list:
-    """Команда вырезки окна. Собирается ОТДЕЛЬНО от запуска: состав команды —"""
+    """Build the window-cut command apart from running it: its makeup is a decision."""
     if not isinstance(start, int) or not isinstance(end, int) or start < 0:
-        raise ValueError(f"границы окна {start!r}..{end!r}: ждали целые от нуля")
+        raise ValueError(f"window bounds {start!r}..{end!r}: expected integers from zero")
     if end < start:
-        raise ValueError(f"границы окна {start}..{end}: конец раньше начала")
+        raise ValueError(f"window bounds {start}..{end}: the end comes before the start")
     rate = WINDOW_FPS_PROVEN if fps is None else float(fps)
     if rate <= 0:
-        raise ValueError(f"частота {fps!r}: ждали положительное число")
+        raise ValueError(f"rate {fps!r}: expected a positive number")
     return [
         fork_video.FFMPEG_BIN,
         "-v",
@@ -578,7 +585,7 @@ def driving_intake(
     pose_reader=None,
     face_prober=None,
 ) -> dict:
-    """ПРИЁМ ДРАЙВИНГА: пять осей, из них четыре жёсткие и одна мягкая."""
+    """Run the driving intake: five axes, four hard and one soft."""
     t0 = time.perf_counter()
     prober = read_count_frames if prober is None else prober
     decoder = read_decoded_frames if decoder is None else decoder
@@ -631,7 +638,9 @@ def driving_intake(
             **tally(0, 0, 1),
             "cuts": [],
             "bar": CUT_JUMP,
-            "note": ("кадров не подано: швы искать не в чем. Это НЕ «швов нет»"),
+            "note": (
+                "no frames given: nothing to look for seams in. This is not 'there are no seams'"
+            ),
         }
         marks = []
     else:
@@ -664,7 +673,7 @@ def driving_intake(
                 orphans += 1 if verdict else 0
         try:
             d = face_prober(str(p))
-        except Exception:  # noqa: BLE001 — «спросить нечем» на этом кадре
+        except Exception:  # noqa: BLE001 — "nothing to ask with" on this frame
             face_blind += 1
         else:
             if d is None:
@@ -686,12 +695,12 @@ def driving_intake(
             "end": None,
             "frames": None,
             "scene": None,
-            "note": "продуктовая длина не задана: окно не выбирали",
+            "note": "product length not given: the window was not chosen",
         }
     )
 
     return _report(
-        "драйвинг",
+        "driving",
         video_path,
         axes,
         steps,
@@ -702,7 +711,7 @@ def driving_intake(
 
 
 def photo_intake(photo_path, *, faces_prober=None) -> dict:
-    """ПРИЁМ ФОТОГРАФИИ КЛИЕНТА: лицо найдено, размер в px, один человек."""
+    """Run the client photo intake: face found, size in px, one person."""
     t0 = time.perf_counter()
     faces_prober = read_faces if faces_prober is None else faces_prober
     r = faces_prober(str(photo_path))
@@ -710,19 +719,22 @@ def photo_intake(photo_path, *, faces_prober=None) -> dict:
     if r.get("why") or r.get("faces") is None:
         blind = {
             **tally(0, 0, 1),
-            "note": (f"спросить нечем: {r.get('why') or 'детектор молчит'}. Это НЕ «лица нет»"),
+            "note": (
+                f"nothing to ask with: {r.get('why') or 'the detector is silent'}. "
+                f"This is not 'there is no face'"
+            ),
         }
         axes = {"face_found": dict(blind), "face_size": dict(blind), "one_person": dict(blind)}
-        return _report("фото клиента", photo_path, axes, {}, t0, soft=())
+        return _report("client photo", photo_path, axes, {}, t0, soft=())
 
     faces = r["faces"]
     axes["face_found"] = {
         **tally(1, 0 if faces else 1, 0),
         "faces": len(faces),
         "note": (
-            f"лиц найдено {len(faces)}"
+            f"faces found {len(faces)}"
             if faces
-            else "лица не найдено: якорь личности брать не с чего"
+            else "no face found: nothing to take the identity anchor from"
         ),
     }
     if faces:
@@ -731,34 +743,34 @@ def photo_intake(photo_path, *, faces_prober=None) -> dict:
             **tally(1, 0 if biggest >= MIN_FACE_PX else 1, 0),
             "face_px": biggest,
             "bar_px": MIN_FACE_PX,
-            "note": (f"самое крупное лицо {biggest} px при планке {MIN_FACE_PX} px"),
+            "note": (f"largest face {biggest} px against the bar {MIN_FACE_PX} px"),
         }
     else:
         axes["face_size"] = {
             **tally(0, 0, 1),
             "face_px": None,
             "bar_px": MIN_FACE_PX,
-            "note": "лица нет: размер мерить не у чего",
+            "note": "no face: nothing to measure the size of",
         }
     axes["one_person"] = {
         **tally(1, 0 if len(faces) == PHOTO_PEOPLE_EXPECTED else 1, 0),
         "faces": len(faces),
         "expected": PHOTO_PEOPLE_EXPECTED,
         "note": (
-            f"людей на кадре {len(faces)}, ждали {PHOTO_PEOPLE_EXPECTED}"
+            f"people in the frame {len(faces)}, expected {PHOTO_PEOPLE_EXPECTED}"
             + (
                 ""
                 if len(faces) == PHOTO_PEOPLE_EXPECTED
-                else ". Личность меряется по САМОМУ КРУПНОМУ лицу, то есть "
-                "выбирает его прибор, а не человек"
+                else ". Identity is measured on the largest face, so the "
+                "instrument picks it, not a person"
             )
         ),
     }
-    return _report("фото клиента", photo_path, axes, {}, t0, soft=())
+    return _report("client photo", photo_path, axes, {}, t0, soft=())
 
 
 def style_intake(ref_path, *, card_reader=None) -> dict:
-    """ПРИЁМ СТИЛЕВОГО РЕФЕРЕНСА: читается ли карточка стиля."""
+    """Run the style reference intake: whether the style card is readable."""
     t0 = time.perf_counter()
     card_reader = read_style_card if card_reader is None else card_reader
     r = card_reader(str(ref_path))
@@ -769,12 +781,12 @@ def style_intake(ref_path, *, card_reader=None) -> dict:
                 **tally(0, 0, 1),
                 "card": None,
                 "note": (
-                    f"карточку прочитать нечем: {r.get('why') or 'ответа нет'}. "
-                    f"Это НЕ «стиль плохой»"
+                    f"nothing to read the card with: {r.get('why') or 'no answer'}. "
+                    f"This is not 'the style is bad'"
                 ),
             }
         }
-        return _report("стилевой референс", ref_path, axes, {}, t0, soft=())
+        return _report("style reference", ref_path, axes, {}, t0, soft=())
 
     need = ("colours", "value_key", "saturation", "texture")
     if not isinstance(card, dict):
@@ -787,24 +799,24 @@ def style_intake(ref_path, *, card_reader=None) -> dict:
             "card": card,
             "missing": missing,
             "note": (
-                f"полей в карточке {len(need) - len(missing)} из {len(need)}"
+                f"card fields {len(need) - len(missing)} of {len(need)}"
                 + (
-                    f", пусты: {missing}"
+                    f", empty: {missing}"
                     if missing
-                    else f"; палитра {list(card.get('colours') or [])}, "
-                    f"тональность {card.get('value_key')!r}, насыщенность "
-                    f"{card.get('saturation')!r}, фактура {card.get('texture')!r}"
+                    else f"; palette {list(card.get('colours') or [])}, "
+                    f"value key {card.get('value_key')!r}, saturation "
+                    f"{card.get('saturation')!r}, texture {card.get('texture')!r}"
                 )
             ),
         }
     }
-    return _report("стилевой референс", ref_path, axes, {}, t0, soft=())
+    return _report("style reference", ref_path, axes, {}, t0, soft=())
 
 
 def _report(
     kind, source, axes: dict, steps: dict, t0: float, *, soft=(), extra: dict | None = None
 ) -> dict:
-    """Свести оси в один вердикт. Мягкие оси в него НЕ ВХОДЯТ."""
+    """Fold the axes into one verdict. Soft axes are not part of it."""
     hard = {k: v for k, v in axes.items() if k not in soft}
     checked = sum(v.get("checked", 0) for v in hard.values())
     violations = sum(v.get("violations", 0) for v in hard.values())
@@ -833,24 +845,24 @@ def _report(
 
 
 def render(report: dict) -> str:
-    """Отчёт глазами. Числа рядом с вердиктом на каждой строке."""
+    """Render the report for human eyes. Numbers sit beside the verdict on every line."""
     lines = [
-        f"ПРИЁМ: {report['kind']} — {Path(report['source']).name}",
-        f"  ВЕРДИКТ: {report['outcome']}  "
-        f"(проверено {report['checked']}, нарушений "
-        f"{report['violations']}, не смогли {report['unmeasured']})",
+        f"INTAKE: {report['kind']} — {Path(report['source']).name}",
+        f"  VERDICT: {report['outcome']}  "
+        f"(checked {report['checked']}, violations "
+        f"{report['violations']}, unmeasured {report['unmeasured']})",
     ]
     for name, ax in report["axes"].items():
-        mark = " [мягкая]" if name in report.get("soft", []) else ""
+        mark = " [soft]" if name in report.get("soft", []) else ""
         lines.append(
             f"  {name}{mark}: {ax.get('outcome')} "
-            f"(проверено {ax.get('checked')}, нарушений "
-            f"{ax.get('violations')}, не смогли {ax.get('unmeasured')})"
+            f"(checked {ax.get('checked')}, violations "
+            f"{ax.get('violations')}, unmeasured {ax.get('unmeasured')})"
         )
         if ax.get("note"):
             lines.append(f"      {ax['note']}")
     if report.get("warnings"):
-        lines.append(f"  ПРЕДУПРЕЖДЕНИЯ: {report['warnings']}")
+        lines.append(f"  warnings: {report['warnings']}")
     if report.get("steps"):
-        lines.append(f"  длительность шагов, с: {report['steps']}")
+        lines.append(f"  step durations, s: {report['steps']}")
     return "\n".join(lines)

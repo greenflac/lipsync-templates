@@ -1,4 +1,4 @@
-"""Сторожа приёма входов. Каждый тест ловит ДЕФЕКТ, а не строчку."""
+"""Guard the input intake. Every test catches a defect, not a line."""
 
 from __future__ import annotations
 
@@ -59,17 +59,17 @@ ORPHAN_POSE = {**CLEAN_POSE, "l_elbow": pose_point(0.35, 0.5, 0.2)}
 
 class Timestamps(unittest.TestCase):
     def test_the_selfie_numbers_are_called_a_defect(self):
-        """ИЗМЕРЕНО на driving_selfie: 305 / 307 / 305. Это «не годно»."""
+        """MEASURED on driving_selfie: 305 / 307 / 305. That is a "fail"."""
         v = fi.timestamp_verdict(305, 307, 305)
-        self.assertEqual(v["outcome"], "не годно")
+        self.assertEqual(v["outcome"], "fail")
         self.assertEqual((v["checked"], v["violations"], v["unmeasured"]), (1, 1, 0))
         self.assertEqual(v["gap"], 2)
         self.assertIn("-vsync 0", v["advice"])
 
     def test_the_arms_numbers_are_clean(self):
-        """НЕГАТИВНЫЙ КОНТРОЛЬ прибора: на здоровом файле он молчит."""
+        """Run the instrument's negative control: it stays silent on a healthy file."""
         v = fi.timestamp_verdict(373, 373, 373)
-        self.assertEqual(v["outcome"], "годно")
+        self.assertEqual(v["outcome"], "pass")
         self.assertEqual(v["violations"], 0)
         self.assertEqual(v["advice"], "")
 
@@ -77,30 +77,30 @@ class Timestamps(unittest.TestCase):
         for probed, plain, fixed in ((None, 307, 305), (305, None, 305), (305, 307, None)):
             with self.subTest(triple=(probed, plain, fixed)):
                 v = fi.timestamp_verdict(probed, plain, fixed)
-                self.assertEqual(v["outcome"], "не смогли проверить")
+                self.assertEqual(v["outcome"], "could not measure")
                 self.assertEqual(v["checked"], 0)
                 self.assertEqual(v["violations"], 0)
 
     def test_vsync_that_does_not_heal_is_said_out_loud(self):
         v = fi.timestamp_verdict(305, 307, 306)
-        self.assertEqual(v["outcome"], "не годно")
-        self.assertIn("НЕ ЛЕЧИТ", v["note"])
+        self.assertEqual(v["outcome"], "fail")
+        self.assertIn("does not heal", v["note"])
 
     def test_mutating_the_tolerance_both_ways_turns_a_verdict(self):
-        """FRAME_COUNT_EXACT сторожится в обе стороны."""
+        """FRAME_COUNT_EXACT is guarded in both directions."""
         was = fi.FRAME_COUNT_EXACT
         try:
             fi.FRAME_COUNT_EXACT = 2
             self.assertEqual(
                 fi.timestamp_verdict(305, 307, 305)["outcome"],
-                "годно",
-                "допуск 2 обязан пропустить дефект",
+                "pass",
+                "a tolerance of 2 must let the defect through",
             )
             fi.FRAME_COUNT_EXACT = -1
             self.assertEqual(
                 fi.timestamp_verdict(373, 373, 373)["outcome"],
-                "не годно",
-                "отрицательный допуск обязан ронять даже точное совпадение",
+                "fail",
+                "a negative tolerance must sink even an exact match",
             )
         finally:
             fi.FRAME_COUNT_EXACT = was
@@ -115,10 +115,10 @@ class ParsingTheInstruments(unittest.TestCase):
         self.assertEqual(r["fps"], 30.0)
 
     def test_garbage_is_not_a_frame_count(self):
-        """НЕГАТИВНЫЙ КОНТРОЛЬ разбора: мусор обязан дать «не смогли»."""
+        """Run the parser's negative control: garbage must give "could not"."""
         for text in (
             "",
-            "не json",
+            "not json",
             "{}",
             '{"streams":[{}]}',
             '{"streams":[{"nb_read_frames":"N/A"}]}',
@@ -131,7 +131,7 @@ class ParsingTheInstruments(unittest.TestCase):
                 self.assertTrue(r["why"])
 
     def test_the_last_frame_number_wins_not_the_first(self):
-        """Дефект, ради которого тест написан: первое вхождение — `frame= 0`."""
+        """The defect this test was written for: the first hit is `frame= 0`."""
         r = fi.parse_decoded_frames(FFMPEG_STATS)
         self.assertTrue(r["ok"])
         self.assertEqual(r["frames"], 307)
@@ -158,46 +158,46 @@ class Scenes(unittest.TestCase):
         self.assertEqual(sum(s["frames"] for s in got), 100)
 
     def test_scene_shorter_than_three_seconds_is_refused(self):
-        """КРИТЕРИЙ ПРИЁМА. 89 кадров при 30 к/с — это 2.967 с."""
+        """An acceptance criterion. 89 frames at 30 fps is 2.967 s."""
         v = fi.scene_length_verdict(fi.scenes(200, [88]), 30.0)
-        self.assertEqual(v["outcome"], "не годно")
+        self.assertEqual(v["outcome"], "fail")
         self.assertEqual(v["short"], [0])
         self.assertEqual(v["seconds"][0], 2.967)
         self.assertEqual((v["checked"], v["violations"]), (2, 1))
 
     def test_exactly_three_seconds_passes(self):
-        """Граница включительна: 90 кадров при 30 к/с — ровно 3.0 с."""
+        """The boundary is inclusive: 90 frames at 30 fps is exactly 3.0 s."""
         v = fi.scene_length_verdict(fi.scenes(200, [89]), 30.0)
-        self.assertEqual(v["outcome"], "годно")
+        self.assertEqual(v["outcome"], "pass")
         self.assertEqual(v["seconds"][0], 3.0)
 
     def test_without_fps_the_length_is_the_third_outcome(self):
         v = fi.scene_length_verdict(fi.scenes(200, [88]), None)
-        self.assertEqual(v["outcome"], "не смогли проверить")
+        self.assertEqual(v["outcome"], "could not measure")
         self.assertEqual(v["checked"], 0)
         self.assertEqual(v["violations"], 0)
         v0 = fi.scene_length_verdict(fi.scenes(200, [88]), 0)
-        self.assertEqual(v0["outcome"], "не смогли проверить")
+        self.assertEqual(v0["outcome"], "could not measure")
 
     def test_mutating_the_scene_bar_both_ways_turns_the_verdict(self):
-        """MIN_SCENE_SECONDS сторожится строже и слабее."""
+        """MIN_SCENE_SECONDS is guarded stricter and looser."""
         scene_list = fi.scenes(200, [89])
         self.assertEqual(
-            fi.scene_length_verdict(scene_list, 30.0, min_seconds=3.5)["outcome"], "не годно"
+            fi.scene_length_verdict(scene_list, 30.0, min_seconds=3.5)["outcome"], "fail"
         )
         self.assertEqual(
-            fi.scene_length_verdict(scene_list, 30.0, min_seconds=2.5)["outcome"], "годно"
+            fi.scene_length_verdict(scene_list, 30.0, min_seconds=2.5)["outcome"], "pass"
         )
         was = fi.MIN_SCENE_SECONDS
         try:
             fi.MIN_SCENE_SECONDS = 3.5
             self.assertEqual(
                 fi.scene_length_verdict(scene_list, 30.0)["outcome"],
-                "не годно",
-                "подмена самой константы обязана менять вердикт, а не только параметр",
+                "fail",
+                "swapping the constant itself must turn the verdict, not only the parameter",
             )
             fi.MIN_SCENE_SECONDS = 2.5
-            self.assertEqual(fi.scene_length_verdict(scene_list, 30.0)["outcome"], "годно")
+            self.assertEqual(fi.scene_length_verdict(scene_list, 30.0)["outcome"], "pass")
         finally:
             fi.MIN_SCENE_SECONDS = was
         self.assertEqual(fi.MIN_SCENE_SECONDS, 3.0)
@@ -211,11 +211,11 @@ class OrphanWrists(unittest.TestCase):
         self.assertIs(fi.is_orphan_wrist(ORPHAN_POSE), True)
 
     def test_a_whole_arm_is_not_an_orphan(self):
-        """НЕГАТИВНЫЙ КОНТРОЛЬ: прибор, кричащий всегда, ничего не мерит."""
+        """Run the negative control: an instrument that always cries measures nothing."""
         self.assertIs(fi.is_orphan_wrist(CLEAN_POSE), False)
 
     def test_an_invisible_wrist_is_not_an_orphan(self):
-        """Сирота — про ВИДНУЮ кисть. Невидимая кисть нарушением не является."""
+        """An orphan is about a visible wrist. An invisible wrist is not a violation."""
         pts = {
             **CLEAN_POSE,
             "l_wrist": pose_point(0.3, 0.7, 0.1),
@@ -240,29 +240,31 @@ class OrphanWrists(unittest.TestCase):
         self.assertIsNone(fi.is_orphan_wrist({}))
 
     def test_mutating_visibility_both_ways_changes_who_is_an_orphan(self):
-        """MIN_VISIBILITY сторожится в обе стороны."""
+        """MIN_VISIBILITY is guarded in both directions."""
         was = fi.MIN_VISIBILITY
         try:
             fi.MIN_VISIBILITY = 0.1
             self.assertIs(
                 fi.is_orphan_wrist(ORPHAN_POSE),
                 False,
-                "слабая планка обязана перестать видеть сироту",
+                "a loose bar must stop seeing the orphan",
             )
             fi.MIN_VISIBILITY = 0.95
             self.assertIs(
-                fi.is_orphan_wrist(ORPHAN_POSE), False, "строгая планка обязана погасить и кисть"
+                fi.is_orphan_wrist(ORPHAN_POSE),
+                False,
+                "a strict bar must put out the wrist as well",
             )
         finally:
             fi.MIN_VISIBILITY = was
         self.assertEqual(fi.MIN_VISIBILITY, 0.5)
 
     def test_the_soft_axis_never_says_not_good(self):
-        """ГЛАВНОЕ свойство этой оси: она НЕ критерий отказа."""
+        """The key property of this axis: it is not a refusal criterion."""
         for share in (0.0, 0.04, 0.21, 0.99, 1.0):
             with self.subTest(share=share):
                 v = fi.orphan_verdict(share, 100, 0)
-                self.assertNotEqual(v["outcome"], "не годно")
+                self.assertNotEqual(v["outcome"], "fail")
                 self.assertEqual(v["violations"], 0)
 
     def test_the_measured_share_warns_and_a_small_one_does_not(self):
@@ -270,18 +272,18 @@ class OrphanWrists(unittest.TestCase):
         self.assertFalse(fi.orphan_verdict(0.04, 373, 0)["warn"])
 
     def test_mutating_the_warning_bar_both_ways_turns_the_warning(self):
-        """ORPHAN_WRIST_WARN, строже и слабее, на ИЗМЕРЕННЫХ точках 4% и 21%."""
+        """ORPHAN_WRIST_WARN, stricter and looser, on the MEASURED points 4% and 21%."""
         was = fi.ORPHAN_WRIST_WARN
         try:
             fi.ORPHAN_WRIST_WARN = 0.30
             self.assertFalse(
                 fi.orphan_verdict(0.21, 99, 0)["warn"],
-                "планка 30% обязана снять предупреждение с 21%",
+                "a 30% bar must lift the warning off 21%",
             )
             fi.ORPHAN_WRIST_WARN = 0.01
             self.assertTrue(
                 fi.orphan_verdict(0.04, 373, 0)["warn"],
-                "планка 1% обязана поднять предупреждение на 4%",
+                "a 1% bar must raise the warning on 4%",
             )
         finally:
             fi.ORPHAN_WRIST_WARN = was
@@ -289,54 +291,54 @@ class OrphanWrists(unittest.TestCase):
 
     def test_no_pose_anywhere_is_unmeasured_not_zero_orphans(self):
         v = fi.orphan_verdict(None, 0, 12)
-        self.assertEqual(v["outcome"], "не смогли проверить")
+        self.assertEqual(v["outcome"], "could not measure")
         self.assertIsNone(v["share"])
         self.assertFalse(v["warn"])
 
 
 class FaceSize(unittest.TestCase):
     def test_the_selfie_range_passes_the_bar(self):
-        """ИЗМЕРЕНО: driving_selfie 234..369 px — планка не мешает."""
+        """MEASURED: driving_selfie 234..369 px — the bar does not get in the way."""
         v = fi.face_size_verdict([234, 300, 369], 0, 0)
-        self.assertEqual(v["outcome"], "годно")
+        self.assertEqual(v["outcome"], "pass")
         self.assertEqual((v["checked"], v["violations"]), (3, 0))
 
     def test_the_yogaball_range_is_counted_but_no_longer_sinks_the_run(self):
-        """ПЕРЕПИСАН под решение составителя шаблонов: ось — ПРЕДУПРЕЖДЕНИЕ."""
+        """Rewritten for the template author's decision: this axis is a warning."""
         v = fi.face_size_verdict([87, 90, 96], 0, 0)
-        self.assertEqual(v["outcome"], "годно")
+        self.assertEqual(v["outcome"], "pass")
         self.assertEqual(v["small"], 3)
         self.assertEqual(v["hurt"], 3)
-        self.assertIn("ПРЕДУПРЕЖДЕНИЕ", v["note"])
-        self.assertIn("ОПЕРАТОР", v["note"])
+        self.assertIn("warning", v["note"])
+        self.assertIn("operator", v["note"])
 
     def test_a_frame_without_a_face_is_counted_not_excused(self):
         v = fi.face_size_verdict([234], 5, 0)
-        self.assertEqual(v["outcome"], "годно")
+        self.assertEqual(v["outcome"], "pass")
         self.assertEqual(v["hurt"], 5)
         self.assertEqual(v["no_face"], 5)
-        self.assertIn("ПРЕДУПРЕЖДЕНИЕ", v["note"])
+        self.assertIn("warning", v["note"])
 
     def test_a_clean_set_gets_NO_warning(self):
         v = fi.face_size_verdict([234, 369], 0, 0)
-        self.assertEqual(v["outcome"], "годно")
+        self.assertEqual(v["outcome"], "pass")
         self.assertEqual(v["hurt"], 0)
-        self.assertNotIn("ПРЕДУПРЕЖДЕНИЕ", v["note"])
+        self.assertNotIn("warning", v["note"])
 
     def test_a_detector_that_could_not_be_asked_is_the_third_outcome(self):
         v = fi.face_size_verdict([], 0, 7)
-        self.assertEqual(v["outcome"], "не смогли проверить")
+        self.assertEqual(v["outcome"], "could not measure")
         self.assertEqual(v["checked"], 0)
         self.assertEqual(v["violations"], 0)
 
     def test_mutating_the_face_bar_both_ways_moves_the_counted_numbers(self):
-        """MIN_FACE_PX строже и слабее. Вердикт больше не двигается —"""
+        """MIN_FACE_PX stricter and looser. The verdict no longer moves."""
         loose = fi.face_size_verdict([87, 96], 0, 0, min_face_px=80)
         self.assertEqual(loose["small"], 0)
-        self.assertNotIn("ПРЕДУПРЕЖДЕНИЕ", loose["note"])
+        self.assertNotIn("warning", loose["note"])
         strict = fi.face_size_verdict([234, 369], 0, 0, min_face_px=400)
         self.assertEqual(strict["small"], 2)
-        self.assertIn("ПРЕДУПРЕЖДЕНИЕ", strict["note"])
+        self.assertIn("warning", strict["note"])
         was = fi.MIN_FACE_PX
         try:
             fi.MIN_FACE_PX = 80
@@ -352,7 +354,7 @@ class Window(unittest.TestCase):
     def test_the_window_is_in_frame_numbers_and_sits_in_the_middle(self):
         scene_list = [{"start": 0, "end": 199, "frames": 200}]
         v = fi.window(scene_list, 5.0, 30.0)
-        self.assertEqual(v["outcome"], "годно")
+        self.assertEqual(v["outcome"], "pass")
         self.assertEqual((v["start"], v["end"], v["frames"]), (25, 174, 150))
         self.assertEqual(v["scene"], 0)
 
@@ -368,18 +370,18 @@ class Window(unittest.TestCase):
     def test_a_window_that_does_not_fit_is_refused_not_shrunk(self):
         scene_list = [{"start": 0, "end": 89, "frames": 90}]
         v = fi.window(scene_list, 5.0, 30.0)
-        self.assertEqual(v["outcome"], "не годно")
+        self.assertEqual(v["outcome"], "fail")
         self.assertIsNone(v["start"])
         self.assertEqual(v["violations"], 1)
 
     def test_without_fps_the_window_is_unmeasured_not_thirty(self):
         v = fi.window([{"start": 0, "end": 199, "frames": 200}], 5.0, None)
-        self.assertEqual(v["outcome"], "не смогли проверить")
+        self.assertEqual(v["outcome"], "could not measure")
         self.assertIsNone(v["start"])
 
     def test_without_a_markup_the_window_is_unmeasured(self):
         v = fi.window([], 5.0, 30.0)
-        self.assertEqual(v["outcome"], "не смогли проверить")
+        self.assertEqual(v["outcome"], "could not measure")
 
     def test_the_command_carries_setpts_and_frame_numbers(self):
         argv = fi.window_argv("in.mp4", "out.mp4", 25, 174)
@@ -390,7 +392,7 @@ class Window(unittest.TestCase):
         self.assertEqual(argv[-1], "out.mp4")
 
     def test_dropping_setpts_would_be_the_422(self):
-        """Сторож дефекта, а не строчки: без setpts Wan отвечал 422."""
+        """Guard the defect, not the line: without setpts Wan answered 422."""
         expr = fi.window_argv("in.mp4", "out.mp4", 0, 10)[
             fi.window_argv("in.mp4", "out.mp4", 0, 10).index("-vf") + 1
         ]
@@ -405,20 +407,20 @@ class Window(unittest.TestCase):
 
 class ThreeOutcomesAndThreeNumbers(unittest.TestCase):
     def test_zero_violations_over_zero_checks_is_not_success(self):
-        """дословно: ноль нарушений при нуле проверок — не «годно»."""
-        self.assertEqual(fi.tally(0, 0, 0)["outcome"], "не смогли проверить")
+        """Verbatim: zero violations over zero checks is not a "pass"."""
+        self.assertEqual(fi.tally(0, 0, 0)["outcome"], "could not measure")
 
     def test_a_partly_measured_run_does_not_round_up_to_good(self):
-        self.assertEqual(fi.tally(10, 0, 3)["outcome"], "не смогли проверить")
+        self.assertEqual(fi.tally(10, 0, 3)["outcome"], "could not measure")
 
     def test_a_violation_beats_an_unmeasured(self):
-        self.assertEqual(fi.tally(10, 1, 3)["outcome"], "не годно")
+        self.assertEqual(fi.tally(10, 1, 3)["outcome"], "fail")
 
     def test_a_clean_full_run_is_good(self):
-        self.assertEqual(fi.tally(10, 0, 0)["outcome"], "годно")
+        self.assertEqual(fi.tally(10, 0, 0)["outcome"], "pass")
 
     def test_the_three_outcomes_are_the_projects_three(self):
-        self.assertEqual((PASS, FAIL, UNMEASURED), ("годно", "не годно", "не смогли проверить"))
+        self.assertEqual((PASS, FAIL, UNMEASURED), ("pass", "fail", "could not measure"))
 
 
 class DrivingIntake(unittest.TestCase):
@@ -452,26 +454,26 @@ class DrivingIntake(unittest.TestCase):
 
     def test_a_clean_clip_passes_and_the_soft_axis_is_outside_the_verdict(self):
         r = self._run(plain=305, fixed=305, poses={"00002.png": ORPHAN_POSE}, faces={})
-        self.assertEqual(r["axes"]["timestamps"]["outcome"], "годно")
-        self.assertEqual(r["axes"]["orphan_wrists"]["outcome"], "годно")
+        self.assertEqual(r["axes"]["timestamps"]["outcome"], "pass")
+        self.assertEqual(r["axes"]["orphan_wrists"]["outcome"], "pass")
         self.assertGreater(r["axes"]["orphan_wrists"]["share"], 0.0)
         self.assertIn("orphan_wrists", r["soft"])
-        self.assertEqual(r["outcome"], "годно")
+        self.assertEqual(r["outcome"], "pass")
 
     def test_the_timestamp_defect_alone_sinks_the_verdict(self):
         r = self._run(plain=307, fixed=305, poses={}, faces={})
-        self.assertEqual(r["axes"]["timestamps"]["outcome"], "не годно")
-        self.assertEqual(r["outcome"], "не годно")
+        self.assertEqual(r["axes"]["timestamps"]["outcome"], "fail")
+        self.assertEqual(r["outcome"], "fail")
         self.assertIn("-vsync 0", fi.render(r))
 
     def test_orphan_wrists_alone_never_sink_the_verdict(self):
-        """Сторож решения составителя шаблонов: 100% сирот — предупреждение, не отказ."""
+        """Guard the template author's decision: 100% orphans is a warning, not a refusal."""
         r = self._run(
             plain=305, fixed=305, poses={f"{i:05d}.png": ORPHAN_POSE for i in range(95)}, faces={}
         )
         self.assertEqual(r["axes"]["orphan_wrists"]["share"], 1.0)
         self.assertTrue(r["axes"]["orphan_wrists"]["warn"])
-        self.assertEqual(r["outcome"], "годно")
+        self.assertEqual(r["outcome"], "pass")
         self.assertIn("orphan_wrists", r["warnings"])
 
     def test_small_faces_warn_but_no_longer_sink_the_run(self):
@@ -481,33 +483,33 @@ class DrivingIntake(unittest.TestCase):
             poses={},
             faces={f"{i:05d}.png": {"face_px": 90} for i in range(95)},
         )
-        self.assertEqual(r["axes"]["face_size"]["outcome"], "годно")
+        self.assertEqual(r["axes"]["face_size"]["outcome"], "pass")
         self.assertEqual(r["axes"]["face_size"]["small"], 95)
-        self.assertIn("ПРЕДУПРЕЖДЕНИЕ", r["axes"]["face_size"]["note"])
+        self.assertIn("warning", r["axes"]["face_size"]["note"])
 
     def test_a_cut_is_marked_up_and_short_scenes_are_refused(self):
         r = self._run(plain=305, fixed=305, poses={}, faces={}, n=6, cut_at=[2])
         self.assertEqual(r["axes"]["cuts"]["cuts"], [2])
         self.assertEqual([s["frames"] for s in r["scenes"]], [3, 3])
-        self.assertEqual(r["axes"]["scenes"]["outcome"], "не годно")
+        self.assertEqual(r["axes"]["scenes"]["outcome"], "fail")
         self.assertEqual(r["axes"]["scenes"]["short"], [0, 1])
 
     def test_without_frames_the_frame_axes_are_unmeasured_not_clean(self):
-        """нет кадров — «не смогли», а не «швов нет, сирот нет»."""
+        """No frames means "could not", not "no seams, no orphans"."""
         r = fi.driving_intake("clip.mp4", [], prober=probe_stub(), decoder=decode_stub(305, 305))
         for axis in ("cuts", "scenes", "orphan_wrists", "face_size"):
             with self.subTest(axis=axis):
-                self.assertEqual(r["axes"][axis]["outcome"], "не смогли проверить")
-        self.assertEqual(r["axes"]["timestamps"]["outcome"], "годно")
-        self.assertEqual(r["outcome"], "не смогли проверить")
+                self.assertEqual(r["axes"][axis]["outcome"], "could not measure")
+        self.assertEqual(r["axes"]["timestamps"]["outcome"], "pass")
+        self.assertEqual(r["outcome"], "could not measure")
 
     def test_a_dead_prober_does_not_become_a_bad_file(self):
         def dead(path):
-            return {"ran": False, "code": None, "out": "", "err": "", "why": "ffprobe не найден"}
+            return {"ran": False, "code": None, "out": "", "err": "", "why": "ffprobe not found"}
 
         r = fi.driving_intake("clip.mp4", [], prober=dead, decoder=decode_stub(305, 305))
-        self.assertEqual(r["axes"]["timestamps"]["outcome"], "не смогли проверить")
-        self.assertNotEqual(r["axes"]["timestamps"]["outcome"], "не годно")
+        self.assertEqual(r["axes"]["timestamps"]["outcome"], "could not measure")
+        self.assertNotEqual(r["axes"]["timestamps"]["outcome"], "fail")
 
 
 class PhotoIntake(unittest.TestCase):
@@ -516,14 +518,14 @@ class PhotoIntake(unittest.TestCase):
             "p.png",
             faces_prober=lambda p: {"faces": [{"face_px": 420, "det_score": 0.9}], "why": ""},
         )
-        self.assertEqual(r["outcome"], "годно")
+        self.assertEqual(r["outcome"], "pass")
         self.assertEqual(r["axes"]["face_size"]["face_px"], 420)
 
     def test_no_face_is_a_violation_and_not_the_third_outcome(self):
         r = fi.photo_intake("p.png", faces_prober=lambda p: {"faces": [], "why": ""})
-        self.assertEqual(r["axes"]["face_found"]["outcome"], "не годно")
-        self.assertEqual(r["axes"]["face_size"]["outcome"], "не смогли проверить")
-        self.assertEqual(r["outcome"], "не годно")
+        self.assertEqual(r["axes"]["face_found"]["outcome"], "fail")
+        self.assertEqual(r["axes"]["face_size"]["outcome"], "could not measure")
+        self.assertEqual(r["outcome"], "fail")
 
     def test_two_people_are_refused(self):
         r = fi.photo_intake(
@@ -533,16 +535,16 @@ class PhotoIntake(unittest.TestCase):
                 "why": "",
             },
         )
-        self.assertEqual(r["axes"]["one_person"]["outcome"], "не годно")
-        self.assertEqual(r["axes"]["face_found"]["outcome"], "годно")
-        self.assertEqual(r["outcome"], "не годно")
+        self.assertEqual(r["axes"]["one_person"]["outcome"], "fail")
+        self.assertEqual(r["axes"]["face_found"]["outcome"], "pass")
+        self.assertEqual(r["outcome"], "fail")
 
     def test_a_small_face_is_refused(self):
         r = fi.photo_intake(
             "p.png",
             faces_prober=lambda p: {"faces": [{"face_px": 60, "det_score": 0.9}], "why": ""},
         )
-        self.assertEqual(r["axes"]["face_size"]["outcome"], "не годно")
+        self.assertEqual(r["axes"]["face_size"]["outcome"], "fail")
 
     def test_a_dead_detector_is_the_third_outcome_on_every_axis(self):
         r = fi.photo_intake(
@@ -551,11 +553,11 @@ class PhotoIntake(unittest.TestCase):
         )
         for axis in ("face_found", "face_size", "one_person"):
             with self.subTest(axis=axis):
-                self.assertEqual(r["axes"][axis]["outcome"], "не смогли проверить")
-        self.assertEqual(r["outcome"], "не смогли проверить")
+                self.assertEqual(r["axes"][axis]["outcome"], "could not measure")
+        self.assertEqual(r["outcome"], "could not measure")
 
     def test_mutating_the_expected_head_count_both_ways(self):
-        """PHOTO_PEOPLE_EXPECTED строже и слабее."""
+        """PHOTO_PEOPLE_EXPECTED stricter and looser."""
         two = lambda p: {
             "faces": [{"face_px": 420}, {"face_px": 200}],  # noqa: E731
             "why": "",
@@ -565,11 +567,11 @@ class PhotoIntake(unittest.TestCase):
         try:
             fi.PHOTO_PEOPLE_EXPECTED = 2
             self.assertEqual(
-                fi.photo_intake("p.png", faces_prober=two)["axes"]["one_person"]["outcome"], "годно"
+                fi.photo_intake("p.png", faces_prober=two)["axes"]["one_person"]["outcome"], "pass"
             )
             self.assertEqual(
                 fi.photo_intake("p.png", faces_prober=one)["axes"]["one_person"]["outcome"],
-                "не годно",
+                "fail",
             )
         finally:
             fi.PHOTO_PEOPLE_EXPECTED = was
@@ -586,27 +588,27 @@ class StyleIntake(unittest.TestCase):
 
     def test_a_full_card_passes(self):
         r = fi.style_intake("s.png", card_reader=lambda p: {"card": dict(self.GOOD), "why": ""})
-        self.assertEqual(r["outcome"], "годно")
+        self.assertEqual(r["outcome"], "pass")
         self.assertEqual(r["axes"]["card_readable"]["missing"], [])
         self.assertEqual(r["checked"], 4)
 
     def test_an_empty_field_is_a_violation(self):
         card = {**self.GOOD, "texture": ""}
         r = fi.style_intake("s.png", card_reader=lambda p: {"card": card, "why": ""})
-        self.assertEqual(r["outcome"], "не годно")
+        self.assertEqual(r["outcome"], "fail")
         self.assertEqual(r["axes"]["card_readable"]["missing"], ["texture"])
 
     def test_a_missing_package_is_the_third_outcome(self):
-        """пакета нет — это НЕ «стиль плохой»."""
+        """A missing package is not "the style is bad"."""
         r = fi.style_intake(
             "s.png",
             card_reader=lambda p: {"card": None, "why": "ModuleNotFoundError: creative_eval"},
         )
-        self.assertEqual(r["outcome"], "не смогли проверить")
+        self.assertEqual(r["outcome"], "could not measure")
         self.assertEqual(r["violations"], 0)
 
     def test_the_expected_fields_are_a_literal_here(self):
-        """список полей написан в тесте руками и не импортируется."""
+        """The field list is written here by hand and is not imported."""
         r = fi.style_intake(
             "s.png", card_reader=lambda p: {"card": {"colours": ["red"]}, "why": ""}
         )
@@ -616,7 +618,7 @@ class StyleIntake(unittest.TestCase):
 
 
 class BarsAreImportedNotCopied(unittest.TestCase):
-    """планка живёт в одном месте, и здесь только ссылка на неё."""
+    """The bar lives in one place, and here there is only a reference to it."""
 
     def test_the_person_bar_is_the_one_from_fork_identity(self):
         from lipsync import fork_identity
@@ -643,7 +645,7 @@ class BarsAreImportedNotCopied(unittest.TestCase):
         self.assertEqual(fi.MIN_FACE_PX, 100)
 
     def test_the_module_does_not_redefine_a_bar_it_borrowed(self):
-        """Сторож дефекта: копия планки числом в тексте модуля."""
+        """Guard the defect: a copy of the bar as a number in the module text."""
         import ast
         from pathlib import Path
 
@@ -655,11 +657,11 @@ class BarsAreImportedNotCopied(unittest.TestCase):
                 for t in node.targets:
                     if isinstance(t, ast.Name) and t.id in borrowed:
                         offenders.append(t.id)
-        self.assertEqual(offenders, [], f"планки переопределены в модуле: {offenders}")
+        self.assertEqual(offenders, [], f"bars redefined in the module: {offenders}")
 
 
 class EveryInjectionPointIsAParameter(unittest.TestCase):
-    """обеспечивается конструкцией: тест ходит только через параметры."""
+    """Enforced by construction: the test walks only through parameters."""
 
     def test_the_public_instruments_all_take_their_world_as_an_argument(self):
         import inspect
@@ -673,11 +675,12 @@ class EveryInjectionPointIsAParameter(unittest.TestCase):
             with self.subTest(fn=name):
                 params = set(inspect.signature(getattr(fi, name)).parameters)
                 self.assertTrue(
-                    points <= params, f"{name}: нет точек внедрения {sorted(points - params)}"
+                    points <= params,
+                    f"{name}: missing injection points {sorted(points - params)}",
                 )
 
     def test_the_default_style_reader_does_not_import_the_banned_name(self):
-        """Гейт стоит на ИМЕНИ `style`, и обойти его надо честно."""
+        """The gate stands on the name `style`, and it must be passed honestly."""
         import ast
         from pathlib import Path
 
@@ -697,10 +700,10 @@ class TheRenderShowsTheNumbers(unittest.TestCase):
             "p.png", faces_prober=lambda p: {"faces": [{"face_px": 420}], "why": ""}
         )
         text = fi.render(r)
-        self.assertIn("проверено", text)
-        self.assertIn("нарушений", text)
-        self.assertIn("не смогли", text)
-        self.assertIn("ВЕРДИКТ: годно", text)
+        self.assertIn("checked", text)
+        self.assertIn("violations", text)
+        self.assertIn("unmeasured", text)
+        self.assertIn("VERDICT: pass", text)
 
 
 if __name__ == "__main__":

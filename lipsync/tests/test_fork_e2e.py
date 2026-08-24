@@ -1,4 +1,4 @@
-"""Сквозной стенд: весь путь на подставных функциях, без сети и без денег."""
+"""End-to-end stand: the whole path on stub functions, no network and no money."""
 
 from __future__ import annotations
 
@@ -14,18 +14,18 @@ from lipsync.fork_identity import FAIL, PASS, UNMEASURED
 
 
 class _Blocked(RuntimeError):
-    """Сеть в тестах этого файла запрещена раннером, а не договорённостью."""
+    """The runner, not an agreement, bans the network in this file's tests."""
 
 
 def _no_network():
     def deny(*a, **k):
-        raise _Blocked("сеть в тестах запрещена: подставь функцию, а не ходи наружу")
+        raise _Blocked("network is banned in tests: substitute a function instead of going outside")
 
     return mock.patch.object(socket, "socket", deny)
 
 
 def _files(root: Path) -> dict:
-    """Три входа: настоящие файлы на диске, но крошечные и без содержимого."""
+    """Create the three inputs: real files on disk, but tiny and contentless."""
     paths = {}
     for name in ("client.png", "style.png", "driving.mp4"):
         p = root / name
@@ -41,7 +41,7 @@ def _probe_ok(path):
         "frames": 373,
         "width": 960,
         "height": 960,
-        "note": "подставной опрос",
+        "note": "stub probe",
     }
 
 
@@ -51,7 +51,7 @@ def _cutter_ok(src, dst):
 
 
 def _decode_ok(video, out_dir):
-    return {"paths": [f"{out_dir}/{i:05d}.png" for i in range(99)], "note": "подставная раскладка"}
+    return {"paths": [f"{out_dir}/{i:05d}.png" for i in range(99)], "note": "stub frame layout"}
 
 
 def _distances_ok(frames, anchor, **kw):
@@ -60,12 +60,12 @@ def _distances_ok(frames, anchor, **kw):
         "median": 0.0652,
         "inside": len(frames),
         "judged": len(frames),
-        "note": "подставной прибор личности",
+        "note": "stub identity instrument",
     }
 
 
 def _cuts_ok(paths, **kw):
-    return {"outcome": PASS, "cuts": [], "note": "подставной прибор резов"}
+    return {"outcome": PASS, "cuts": [], "note": "stub cuts instrument"}
 
 
 def _similarity_ok(a, b):
@@ -82,12 +82,12 @@ def _kling_ok(*, video_url, image_url, character_orientation, out_path):
 
 
 def _intake_ok(*, client_photo, style_ref, driving):
-    return {"outcome": PASS, "note": "подставной приём"}
+    return {"outcome": PASS, "note": "stub intake"}
 
 
 def _finish_ok(*, driving_path, kling_path, out_path, window):
     Path(out_path).write_bytes(b"\x00" * 64)
-    return {"outcome": PASS, "path": str(out_path), "note": f"подставная сборка, окно {window}"}
+    return {"outcome": PASS, "path": str(out_path), "note": f"stub assembly, window {window}"}
 
 
 def _stylize_ok(*, person, style, prompt, out_path):
@@ -96,7 +96,7 @@ def _stylize_ok(*, person, style, prompt, out_path):
 
 
 def _pose_ok(path):
-    """Подставная поза В ПЛАНЕ: тест ступени не про mediapipe."""
+    """Return a stub pose inside the plan: the stage test is not about mediapipe."""
     return {
         "l_shoulder": (0.58, 0.32, 0.99),
         "r_shoulder": (0.42, 0.32, 0.99),
@@ -106,7 +106,7 @@ def _pose_ok(path):
 
 
 class _PlanOk:
-    """Подставной сосед-план: НЕ ХОДИТ НА ДИСК и не тащит PIL."""
+    """Stub plan neighbour: it does not touch the disk and does not pull in PIL."""
 
     @staticmethod
     def to_plan(src, dst, **kw):
@@ -117,7 +117,7 @@ class _PlanOk:
             "violations": 0,
             "unmeasured": 0,
             "path": str(dst),
-            "note": "подставной план 9:16",
+            "note": "stub 9:16 plan",
         }
 
     @staticmethod
@@ -130,7 +130,7 @@ class _PlanOk:
             "unmeasured": 0,
             "path": str(dst),
             "extended": True,
-            "note": "подставная дорисовка полей",
+            "note": "stub margin outpaint",
         }
 
     from lipsync.fork_plan import (
@@ -177,10 +177,10 @@ class WholePathOnFakes(unittest.TestCase):
         log = io.StringIO()
         with TemporaryDirectory() as td, _no_network():
             got = _run(Path(td), log)
-        self.assertEqual(got["outcome"], "годно")
+        self.assertEqual(got["outcome"], "pass")
         self.assertEqual(got["exit_code"], 0)
         self.assertEqual(len(got["stages"]), 8)
-        self.assertEqual([s["outcome"] for s in got["stages"]], ["годно"] * 8)
+        self.assertEqual([s["outcome"] for s in got["stages"]], ["pass"] * 8)
         self.assertEqual(got["totals"]["stages_passed"], 7)
         self.assertEqual(got["totals"]["violations"], 0)
         self.assertEqual(got["totals"]["unmeasured"], 0)
@@ -192,19 +192,19 @@ class WholePathOnFakes(unittest.TestCase):
         self.assertEqual(
             [s["stage"] for s in got["stages"]],
             [
-                "1 приём трёх входов",
-                "2 стилизация фото клиента",
-                "3 приёмка стилизованного фото",
-                "4 окно драйвинга и нарезка",
-                "5 загрузка входов и вызов Kling",
-                "6 приёмка выхода",
-                "7 финальная сборка",
-                "8 отчёт",
+                "1 intake of three inputs",
+                "2 client photo stylization",
+                "3 styled photo acceptance",
+                "4 driving window and cutting",
+                "5 upload inputs and call Kling",
+                "6 output acceptance",
+                "7 final assembly",
+                "8 report",
             ],
         )
 
     def test_stages_are_printed_while_the_run_is_still_going(self):
-        """Печать ПО ХОДУ — наблюдаемо, а не на слово."""
+        """Printing happens during the run — observed, not taken on faith."""
         log = io.StringIO()
         seen = {}
 
@@ -214,23 +214,23 @@ class WholePathOnFakes(unittest.TestCase):
 
         with TemporaryDirectory() as td, _no_network():
             _run(Path(td), log, stylize=watching_stylize)
-        self.assertIn("1 приём трёх входов", seen["log"])
-        self.assertNotIn("6 приёмка выхода", seen["log"])
+        self.assertIn("1 intake of three inputs", seen["log"])
+        self.assertNotIn("6 output acceptance", seen["log"])
 
 
 class ThirdOutcomeIsNotCollapsed(unittest.TestCase):
     def test_a_falling_kling_is_unmeasured_and_not_a_defect(self):
         def falling(*, video_url, image_url, character_orientation, out_path):
-            raise RuntimeError("очередь fal вернула 503")
+            raise RuntimeError("the fal queue returned 503")
 
         log = io.StringIO()
         with TemporaryDirectory() as td, _no_network():
             got = _run(Path(td), log, kling=falling)
-        self.assertEqual(got["outcome"], "не смогли проверить")
+        self.assertEqual(got["outcome"], "could not measure")
         self.assertEqual(got["exit_code"], 2)
-        self.assertEqual(got["stopped_at"], "5 загрузка входов и вызов Kling")
+        self.assertEqual(got["stopped_at"], "5 upload inputs and call Kling")
         self.assertEqual(got["stopped_index"], 5)
-        self.assertNotEqual(got["outcome"], "не годно")
+        self.assertNotEqual(got["outcome"], "fail")
 
     def test_a_real_defect_is_a_defect_and_stops_the_run_naming_the_stage(self):
         def stranger(frames, anchor, **kw):
@@ -239,46 +239,46 @@ class ThirdOutcomeIsNotCollapsed(unittest.TestCase):
                 "median": 1.0217,
                 "inside": 0,
                 "judged": len(frames),
-                "note": "чужой человек",
+                "note": "a stranger",
             }
 
         log = io.StringIO()
         with TemporaryDirectory() as td, _no_network():
             got = _run(Path(td), log, distances=stranger)
-        self.assertEqual(got["outcome"], "не годно")
+        self.assertEqual(got["outcome"], "fail")
         self.assertEqual(got["exit_code"], 1)
-        self.assertEqual(got["stopped_at"], "3 приёмка стилизованного фото")
+        self.assertEqual(got["stopped_at"], "3 styled photo acceptance")
         self.assertEqual(
             [s["stage"] for s in got["stages"]],
             [
-                "1 приём трёх входов",
-                "2 стилизация фото клиента",
-                "3 приёмка стилизованного фото",
-                "8 отчёт",
+                "1 intake of three inputs",
+                "2 client photo stylization",
+                "3 styled photo acceptance",
+                "8 report",
             ],
         )
-        self.assertIn("ИТОГ: не годно на ступени «3 приёмка стилизованного фото»", log.getvalue())
+        self.assertIn("TOTAL: fail at stage '3 styled photo acceptance'", log.getvalue())
 
     def test_the_three_exit_codes_are_deliberately_different(self):
         self.assertEqual(
             [
-                E.EXIT_BY_OUTCOME["годно"],
-                E.EXIT_BY_OUTCOME["не годно"],
-                E.EXIT_BY_OUTCOME["не смогли проверить"],
+                E.EXIT_BY_OUTCOME["pass"],
+                E.EXIT_BY_OUTCOME["fail"],
+                E.EXIT_BY_OUTCOME["could not measure"],
             ],
             [0, 1, 2],
         )
 
     def test_zero_checks_is_not_a_success(self):
-        self.assertEqual(E.verdict(0, 0, 0), "не смогли проверить")
-        self.assertEqual(E.verdict(1, 0, 0), "годно")
-        self.assertEqual(E.verdict(1, 1, 0), "не годно")
-        self.assertEqual(E.verdict(1, 0, 1), "не смогли проверить")
-        self.assertEqual(E.verdict(2, 1, 1), "не годно")
+        self.assertEqual(E.verdict(0, 0, 0), "could not measure")
+        self.assertEqual(E.verdict(1, 0, 0), "pass")
+        self.assertEqual(E.verdict(1, 1, 0), "fail")
+        self.assertEqual(E.verdict(1, 0, 1), "could not measure")
+        self.assertEqual(E.verdict(2, 1, 1), "fail")
 
 
 class IdentityBarIsGuarded(unittest.TestCase):
-    """Планка личности — константа-решение. Мутация в ОБЕ стороны."""
+    """The identity bar is a decision constant. Mutate it in both directions."""
 
     def _acceptance(self, median):
         def d(frames, anchor, **kw):
@@ -299,19 +299,19 @@ class IdentityBarIsGuarded(unittest.TestCase):
         )
 
     def test_just_inside_the_bar_passes_and_just_outside_is_UNMEASURED(self):
-        self.assertEqual(self._acceptance(0.34)["outcome"], "годно")
-        self.assertEqual(self._acceptance(0.36)["outcome"], "не смогли проверить")
-        self.assertEqual(self._acceptance(0.80)["outcome"], "не годно")
+        self.assertEqual(self._acceptance(0.34)["outcome"], "pass")
+        self.assertEqual(self._acceptance(0.36)["outcome"], "could not measure")
+        self.assertEqual(self._acceptance(0.80)["outcome"], "fail")
 
     def test_the_bar_itself_moved_flips_the_verdict_both_ways(self):
         with mock.patch.object(E, "SAME_PERSON_MAX", 0.30):
-            self.assertEqual(self._acceptance(0.32)["outcome"], "не смогли проверить")
+            self.assertEqual(self._acceptance(0.32)["outcome"], "could not measure")
         with mock.patch.object(E, "SAME_PERSON_MAX", 0.40):
-            self.assertEqual(self._acceptance(0.32)["outcome"], "годно")
+            self.assertEqual(self._acceptance(0.32)["outcome"], "pass")
 
     def test_an_unmeasured_identity_is_not_a_defect(self):
         def d(frames, anchor, **kw):
-            return {"outcome": UNMEASURED, "median": None, "note": "лица на кадре нет"}
+            return {"outcome": UNMEASURED, "median": None, "note": "no face in the frame"}
 
         got = E.stage_style_acceptance(
             styled="styled.png",
@@ -320,12 +320,12 @@ class IdentityBarIsGuarded(unittest.TestCase):
             similarity=_similarity_ok,
             distances=d,
         )
-        self.assertEqual(got["outcome"], "не смогли проверить")
+        self.assertEqual(got["outcome"], "could not measure")
         self.assertEqual((got["checked"], got["violations"], got["unmeasured"]), (1, 0, 1))
 
 
 class StyleFloorIsTheNegativeControl(unittest.TestCase):
-    """Пол считается НА МЕСТЕ, и без него ступень не выносит вердикта."""
+    """The floor is computed on the spot, and without it the stage issues no verdict."""
 
     def _acceptance(self, hit, floor):
         def sim(a, b):
@@ -340,14 +340,14 @@ class StyleFloorIsTheNegativeControl(unittest.TestCase):
         )
 
     def test_the_measured_winner_passes_and_the_rejected_text_route_fails(self):
-        self.assertEqual(self._acceptance(0.8801, 0.6409)["outcome"], "годно")
-        self.assertEqual(self._acceptance(0.6773, 0.6409)["outcome"], "не годно")
+        self.assertEqual(self._acceptance(0.8801, 0.6409)["outcome"], "pass")
+        self.assertEqual(self._acceptance(0.6773, 0.6409)["outcome"], "fail")
 
     def test_the_margin_constant_is_guarded_in_both_directions(self):
         with mock.patch.object(E, "STYLE_MARGIN_MIN", 0.02):
-            self.assertEqual(self._acceptance(0.6773, 0.6409)["outcome"], "годно")
+            self.assertEqual(self._acceptance(0.6773, 0.6409)["outcome"], "pass")
         with mock.patch.object(E, "STYLE_MARGIN_MIN", 0.30):
-            self.assertEqual(self._acceptance(0.8801, 0.6409)["outcome"], "не годно")
+            self.assertEqual(self._acceptance(0.8801, 0.6409)["outcome"], "fail")
 
     def test_without_a_floor_the_stage_says_it_could_not_measure(self):
         def sim(a, b):
@@ -360,12 +360,12 @@ class StyleFloorIsTheNegativeControl(unittest.TestCase):
             similarity=sim,
             distances=_distances_ok,
         )
-        self.assertEqual(got["checks"][0]["outcome"], "не смогли проверить")
-        self.assertEqual(got["outcome"], "не смогли проверить")
+        self.assertEqual(got["checks"][0]["outcome"], "could not measure")
+        self.assertEqual(got["outcome"], "could not measure")
 
 
 class PaletteInstrumentHasBothControls(unittest.TestCase):
-    """У прибора есть вход, где он обязан сказать «нет», и где обязан шевельнуться."""
+    """The instrument has an input where it must say no, and one where it must move."""
 
     def _png(self, root: Path, name: str, colour) -> Path:
         from PIL import Image
@@ -390,7 +390,7 @@ class PaletteInstrumentHasBothControls(unittest.TestCase):
 
 
 class SceneLengthIsGuarded(unittest.TestCase):
-    """3 секунды — критерий приёма окна, а не пожелание (гейт Kling)."""
+    """Three seconds is the window acceptance criterion, not a wish (a Kling gate)."""
 
     def _window(self, first, last, cutter=None):
         return E.stage_window(
@@ -403,32 +403,32 @@ class SceneLengthIsGuarded(unittest.TestCase):
         )
 
     def test_ninety_frames_at_thirty_fps_pass_and_eighty_nine_fail(self):
-        with mock.patch.object(E, "file_fact", lambda p, w: (w, PASS, "подставная проверка файла")):
-            self.assertEqual(self._window(0, 89)["outcome"], "годно")
-            self.assertEqual(self._window(0, 88)["outcome"], "не годно")
+        with mock.patch.object(E, "file_fact", lambda p, w: (w, PASS, "stub file check")):
+            self.assertEqual(self._window(0, 89)["outcome"], "pass")
+            self.assertEqual(self._window(0, 88)["outcome"], "fail")
 
     def test_the_threshold_moved_flips_the_verdict_both_ways(self):
-        with mock.patch.object(E, "file_fact", lambda p, w: (w, PASS, "подставная проверка файла")):
+        with mock.patch.object(E, "file_fact", lambda p, w: (w, PASS, "stub file check")):
             with mock.patch.object(E, "MIN_SCENE_S", 4.0):
-                self.assertEqual(self._window(0, 89)["outcome"], "не годно")
+                self.assertEqual(self._window(0, 89)["outcome"], "fail")
             with mock.patch.object(E, "MIN_SCENE_S", 2.0):
-                self.assertEqual(self._window(0, 88)["outcome"], "годно")
+                self.assertEqual(self._window(0, 88)["outcome"], "pass")
 
     def test_a_window_outside_the_clip_is_a_defect(self):
         got = self._window(300, 500)
-        self.assertEqual(got["outcome"], "не годно")
+        self.assertEqual(got["outcome"], "fail")
         self.assertIn("373", got["checks"][1]["note"])
 
     def test_a_cut_that_returned_the_wrong_frame_count_is_a_defect(self):
-        with mock.patch.object(E, "file_fact", lambda p, w: (w, PASS, "подставная проверка файла")):
+        with mock.patch.object(E, "file_fact", lambda p, w: (w, PASS, "stub file check")):
             got = self._window(100, 199, cutter=lambda s, d: {"path": "w.mp4", "frames": 373})
-        self.assertEqual(got["outcome"], "не годно")
-        self.assertIn("373 при заказанных 100", [c["note"] for c in got["checks"]][-2])
+        self.assertEqual(got["outcome"], "fail")
+        self.assertIn("373 with 100 ordered", [c["note"] for c in got["checks"]][-2])
 
     def test_a_cut_that_could_not_be_counted_is_not_a_defect(self):
-        with mock.patch.object(E, "file_fact", lambda p, w: (w, PASS, "подставная проверка файла")):
+        with mock.patch.object(E, "file_fact", lambda p, w: (w, PASS, "stub file check")):
             got = self._window(100, 199, cutter=lambda s, d: {"path": "w.mp4", "frames": None})
-        self.assertEqual(got["outcome"], "не смогли проверить")
+        self.assertEqual(got["outcome"], "could not measure")
 
     def test_the_cut_command_counts_frames_and_not_seconds(self):
         argv = E.cut_argv("in.mp4", "out.mp4", first=100, last=199, fps=30.0, exe="ffmpeg")
@@ -456,7 +456,7 @@ class MoneyGuards(unittest.TestCase):
             kling=_kling_ok,
             endpoint="fal-ai/kling-video/v2.6/pro/motion-control",
         )
-        self.assertEqual(got["outcome"], "не годно")
+        self.assertEqual(got["outcome"], "fail")
         self.assertEqual(called, [])
 
     def test_the_payload_has_exactly_the_three_measured_fields(self):
@@ -483,20 +483,20 @@ class MoneyGuards(unittest.TestCase):
                 "video_url": "v",
                 "image_url": "i",
                 "character_orientation": "video",
-                "prompt": "лишнее поле",
+                "prompt": "an extra field",
             },
         ):
             got = E.stage_kling(
                 styled="s.png", window="w.mp4", out_path="o.mp4", upload=_upload_ok, kling=_kling_ok
             )
-        self.assertEqual(got["outcome"], "не годно")
-        self.assertIn("лишние ['prompt']", [c["note"] for c in got["checks"]][-1])
+        self.assertEqual(got["outcome"], "fail")
+        self.assertIn("extra ['prompt']", [c["note"] for c in got["checks"]][-1])
 
     def test_a_failed_upload_never_reaches_the_paid_call(self):
         ordered = []
 
         def bad_upload(path):
-            raise OSError("сеть недоступна")
+            raise OSError("network unavailable")
 
         def counting_kling(**kw):
             ordered.append(kw)
@@ -509,7 +509,7 @@ class MoneyGuards(unittest.TestCase):
             upload=bad_upload,
             kling=counting_kling,
         )
-        self.assertEqual(got["outcome"], "не смогли проверить")
+        self.assertEqual(got["outcome"], "could not measure")
         self.assertEqual(ordered, [])
 
 
@@ -528,7 +528,7 @@ class OutputAcceptance(unittest.TestCase):
         return E.stage_output_acceptance(**kw)
 
     def test_any_vertical_geometry_passes_and_landscape_is_a_defect(self):
-        self.assertEqual(self._accept()["outcome"], "годно")
+        self.assertEqual(self._accept()["outcome"], "pass")
         vertical = lambda p: {
             "outcome": PASS,
             "fps": 30.0,
@@ -537,7 +537,7 @@ class OutputAcceptance(unittest.TestCase):
             "height": 1280,
             "note": "",
         }
-        self.assertEqual(self._accept(probe=vertical)["outcome"], "годно")
+        self.assertEqual(self._accept(probe=vertical)["outcome"], "pass")
         landscape = lambda p: {
             "outcome": PASS,
             "fps": 30.0,
@@ -546,7 +546,7 @@ class OutputAcceptance(unittest.TestCase):
             "height": 720,
             "note": "",
         }
-        self.assertEqual(self._accept(probe=landscape)["outcome"], "не годно")
+        self.assertEqual(self._accept(probe=landscape)["outcome"], "fail")
 
     def test_the_ratio_ceiling_moved_flips_the_verdict_both_ways(self):
         square = lambda p: {
@@ -558,48 +558,46 @@ class OutputAcceptance(unittest.TestCase):
             "note": "",
         }
         with mock.patch.object(E, "OUT_RATIO_MAX", 0.9):
-            self.assertEqual(self._accept(probe=square)["outcome"], "не годно")
+            self.assertEqual(self._accept(probe=square)["outcome"], "fail")
         with mock.patch.object(E, "OUT_RATIO_MAX", 1.5):
-            self.assertEqual(self._accept(probe=square)["outcome"], "годно")
+            self.assertEqual(self._accept(probe=square)["outcome"], "pass")
 
     def test_a_single_cut_on_the_output_is_a_defect(self):
         one = lambda paths, **kw: {"outcome": PASS, "cuts": [37], "note": ""}
-        self.assertEqual(self._accept(cuts=one)["outcome"], "не годно")
+        self.assertEqual(self._accept(cuts=one)["outcome"], "fail")
         with mock.patch.object(E, "MAX_CUTS_OUT", 1):
-            self.assertEqual(self._accept(cuts=one)["outcome"], "годно")
+            self.assertEqual(self._accept(cuts=one)["outcome"], "pass")
 
     def test_cuts_that_could_not_be_looked_for_are_not_zero_cuts(self):
         blind = lambda paths, **kw: {
             "outcome": UNMEASURED,
             "cuts": [],
-            "note": "типичный скачок равен нулю",
+            "note": "the typical jump equals zero",
         }
         got = self._accept(cuts=blind)
-        self.assertEqual(got["outcome"], "не смогли проверить")
+        self.assertEqual(got["outcome"], "could not measure")
         self.assertIsNone(got["numbers"]["cuts"])
 
     def test_no_frames_decoded_is_unmeasured_and_stops_before_judging(self):
-        empty = lambda v, d: {"paths": [], "note": "раскладка пуста"}
+        empty = lambda v, d: {"paths": [], "note": "the layout is empty"}
         got = self._accept(decode=empty)
-        self.assertEqual(got["outcome"], "не смогли проверить")
-        self.assertEqual(
-            [c["name"] for c in got["checks"]], ["геометрия выхода", "раскладка на кадры"]
-        )
+        self.assertEqual(got["outcome"], "could not measure")
+        self.assertEqual([c["name"] for c in got["checks"]], ["output geometry", "frame layout"])
 
 
 class NeighbourModulesAreSoft(unittest.TestCase):
-    """Соседа нет — «не смогли проверить», и сказано, кого именно нет."""
+    """A missing neighbour is "could not measure", and it says who exactly is missing."""
 
     def test_a_missing_intake_module_is_unmeasured_not_a_defect(self):
         with TemporaryDirectory() as td:
             f = _files(Path(td))
             with mock.patch.object(
-                E, "soft_import", lambda name: (None, f"модуля lipsync.{name} нет")
+                E, "soft_import", lambda name: (None, f"module lipsync.{name} is missing")
             ):
                 got = E.stage_intake(
                     client_photo=f["client"], style_ref=f["style"], driving=f["driving"]
                 )
-        self.assertEqual(got["outcome"], "не смогли проверить")
+        self.assertEqual(got["outcome"], "could not measure")
         self.assertIn("fork_intake", got["note"])
         self.assertEqual((got["checked"], got["violations"], got["unmeasured"]), (3, 0, 1))
 
@@ -607,35 +605,35 @@ class NeighbourModulesAreSoft(unittest.TestCase):
         with TemporaryDirectory() as td:
             f = _files(Path(td))
             f["driving"].unlink()
-            with mock.patch.object(E, "soft_import", lambda name: (None, "соседа нет")):
+            with mock.patch.object(E, "soft_import", lambda name: (None, "no neighbour")):
                 got = E.stage_intake(
                     client_photo=f["client"], style_ref=f["style"], driving=f["driving"]
                 )
-        self.assertEqual(got["outcome"], "не годно")
+        self.assertEqual(got["outcome"], "fail")
 
     def test_a_neighbour_that_raises_is_unmeasured(self):
         def boom(**kw):
-            raise KeyError("ещё не написан")
+            raise KeyError("not written yet")
 
         with TemporaryDirectory() as td:
             f = _files(Path(td))
             got = E.stage_intake(
                 client_photo=f["client"], style_ref=f["style"], driving=f["driving"], intake=boom
             )
-        self.assertEqual(got["outcome"], "не смогли проверить")
+        self.assertEqual(got["outcome"], "could not measure")
         self.assertIn("KeyError", got["checks"][-1]["note"])
 
     def test_a_neighbour_answering_without_a_verdict_is_not_a_success(self):
-        got = E.outcome_of("готово", what="fork_finish")
-        self.assertEqual(got[0], "не смогли проверить")
-        self.assertEqual(E.outcome_of({"outcome": "годно"}, what="x")[0], "годно")
+        got = E.outcome_of("done", what="fork_finish")
+        self.assertEqual(got[0], "could not measure")
+        self.assertEqual(E.outcome_of({"outcome": "pass"}, what="x")[0], "pass")
 
     def test_a_neighbour_taking_positional_arguments_is_still_called(self):
         seen = []
 
         def positional(a, b, c):
             seen.append((a, b, c))
-            return {"outcome": PASS, "note": "позиционно"}
+            return {"outcome": PASS, "note": "positionally"}
 
         with TemporaryDirectory() as td:
             f = _files(Path(td))
@@ -645,7 +643,7 @@ class NeighbourModulesAreSoft(unittest.TestCase):
                 driving=f["driving"],
                 intake=positional,
             )
-        self.assertEqual(got["outcome"], "годно")
+        self.assertEqual(got["outcome"], "pass")
         self.assertEqual(len(seen), 1)
 
     def test_the_entry_point_refusal_names_what_was_tried(self):
@@ -658,7 +656,7 @@ class NeighbourModulesAreSoft(unittest.TestCase):
 
 
 class FinishSeam(unittest.TestCase):
-    """Сосед-сборщик берёт драйвинг ПЕРВЫМ. Перепутанный порядок — не деталь."""
+    """The assembler neighbour takes the driving first. A mixed-up order is not a detail."""
 
     def test_the_neighbour_gets_the_driving_first_and_the_window_inclusive(self):
         seen = {}
@@ -676,23 +674,23 @@ class FinishSeam(unittest.TestCase):
                 window=(100, 199),
                 finish=finish,
             )
-        self.assertEqual(got["outcome"], "годно")
+        self.assertEqual(got["outcome"], "pass")
         self.assertEqual(seen["driving_path"], "drv.mp4")
         self.assertEqual(seen["kling_path"], "kling.mp4")
         self.assertEqual(seen["window"], (100, 199))
 
     def test_a_neighbour_verdict_of_unmeasured_is_carried_through(self):
         def finish(**kw):
-            return {"outcome": UNMEASURED, "note": "длительность не прочиталась"}
+            return {"outcome": UNMEASURED, "note": "the duration could not be read"}
 
         got = E.stage_finish(
             produced="k.mp4", driving="d.mp4", out_path="f.mp4", window=(0, 99), finish=finish
         )
-        self.assertEqual(got["outcome"], "не смогли проверить")
+        self.assertEqual(got["outcome"], "could not measure")
 
 
 class IntakeSeam(unittest.TestCase):
-    """У соседа-приёмщика ТРИ функции, а не одна. Форма измерена, не угадана."""
+    """The intake neighbour has three functions, not one. The shape is measured, not guessed."""
 
     def test_the_three_intake_functions_are_all_called(self):
         seen = []
@@ -708,7 +706,7 @@ class IntakeSeam(unittest.TestCase):
                     "checked": 3,
                     "violations": 0,
                     "unmeasured": 0,
-                    "note": "лицо одно",
+                    "note": "one face",
                 }
 
             @staticmethod
@@ -719,7 +717,7 @@ class IntakeSeam(unittest.TestCase):
                     "checked": 1,
                     "violations": 0,
                     "unmeasured": 0,
-                    "note": "карточка читается",
+                    "note": "the card is readable",
                 }
 
             @staticmethod
@@ -730,7 +728,7 @@ class IntakeSeam(unittest.TestCase):
                     "checked": 5,
                     "violations": 0,
                     "unmeasured": 0,
-                    "note": "склеек 0",
+                    "note": "cuts 0",
                 }
 
         with TemporaryDirectory() as td:
@@ -739,10 +737,10 @@ class IntakeSeam(unittest.TestCase):
                 got = E.stage_intake(
                     client_photo=f["client"], style_ref=f["style"], driving=f["driving"]
                 )
-        self.assertEqual(got["outcome"], "годно")
+        self.assertEqual(got["outcome"], "pass")
         self.assertEqual([kind for kind, _ in seen], ["photo", "style", "driving"])
         self.assertEqual(got["checked"], 6)
-        self.assertIn("проверено 5, нарушений 0, не смогли 0", got["checks"][-1]["note"])
+        self.assertIn("checked 5, violations 0, unmeasured 0", got["checks"][-1]["note"])
 
     def test_one_refused_input_reddens_the_stage_and_the_others_still_ran(self):
         class Trio:
@@ -755,7 +753,7 @@ class IntakeSeam(unittest.TestCase):
                     "checked": 3,
                     "violations": 1,
                     "unmeasured": 0,
-                    "note": "два лица на фото",
+                    "note": "two faces in the photo",
                 }
 
             @staticmethod
@@ -769,7 +767,7 @@ class IntakeSeam(unittest.TestCase):
                     "checked": 1,
                     "violations": 0,
                     "unmeasured": 4,
-                    "note": "кадров не подали",
+                    "note": "no frames were supplied",
                 }
 
         with TemporaryDirectory() as td:
@@ -778,11 +776,11 @@ class IntakeSeam(unittest.TestCase):
                 got = E.stage_intake(
                     client_photo=f["client"], style_ref=f["style"], driving=f["driving"]
                 )
-        self.assertEqual(got["outcome"], "не годно")
+        self.assertEqual(got["outcome"], "fail")
         self.assertEqual((got["checked"], got["violations"], got["unmeasured"]), (5, 1, 1))
 
     def test_the_card_reader_is_handed_to_the_style_intake_only(self):
-        """Без читателя карточки сосед по стилю честно встаёт: это ИЗМЕРЕНО."""
+        """Without a card reader the style neighbour honestly halts: this is MEASURED."""
         seen = {}
 
         class Trio:
@@ -823,8 +821,8 @@ class IntakeSeam(unittest.TestCase):
                 without = E.stage_intake(
                     client_photo=f["client"], style_ref=f["style"], driving=f["driving"]
                 )
-        self.assertEqual(with_reader["outcome"], "годно")
-        self.assertEqual(without["outcome"], "не смогли проверить")
+        self.assertEqual(with_reader["outcome"], "pass")
+        self.assertEqual(without["outcome"], "could not measure")
         self.assertEqual(seen["photo_kw"], {})
         self.assertEqual(seen["frames"], None)
 
@@ -850,7 +848,7 @@ class BrandBanIsInThePrompt(unittest.TestCase):
         self.assertNotIn("no brand names", built["prompt"])
 
     def test_a_prompt_without_the_ban_reddens_the_stage(self):
-        """Негативный контроль сторожа: без него проверка всегда зелена."""
+        """Negative control of the guard: without it the check is always green."""
         with TemporaryDirectory() as td:
             got = E.stage_stylize(
                 client_photo="c.png",
@@ -861,8 +859,8 @@ class BrandBanIsInThePrompt(unittest.TestCase):
                 pose=_pose_ok,
                 prompt="just make it look nice",
             )
-            self.assertEqual(got["outcome"], "не годно")
-            self.assertEqual(got["checks"][0]["outcome"], "не годно")
+            self.assertEqual(got["outcome"], "fail")
+            self.assertEqual(got["checks"][0]["outcome"], "fail")
             ok = E.stage_stylize(
                 client_photo="c.png",
                 style_ref="s.png",
@@ -872,7 +870,7 @@ class BrandBanIsInThePrompt(unittest.TestCase):
                 pose=_pose_ok,
                 prompt="a look, " + E.NO_BRANDS_CLAUSE,
             )
-            self.assertEqual(ok["outcome"], "годно")
+            self.assertEqual(ok["outcome"], "pass")
 
     def test_the_ban_text_itself_is_a_decision_constant(self):
         with mock.patch.object(E, "NO_BRANDS_CLAUSE", "no logos whatsoever"):
@@ -886,7 +884,7 @@ class BrandBanIsInThePrompt(unittest.TestCase):
                     pose=_pose_ok,
                     prompt="a look, no brand names, no logos",
                 )
-        self.assertEqual(got["outcome"], "не годно")
+        self.assertEqual(got["outcome"], "fail")
 
     def test_a_stylizer_that_fell_is_unmeasured(self):
         def boom(**kw):
@@ -899,7 +897,7 @@ class BrandBanIsInThePrompt(unittest.TestCase):
             stylize=boom,
             card_reader=lambda p: {},
         )
-        self.assertEqual(got["outcome"], "не смогли проверить")
+        self.assertEqual(got["outcome"], "could not measure")
 
 
 class WindowArgument(unittest.TestCase):
@@ -921,7 +919,7 @@ class ReportIsAlwaysWritten(unittest.TestCase):
         with TemporaryDirectory() as td, _no_network():
             got = _run(Path(td), log, kling=falling)
             data = json.loads(Path(got["report"]).read_text(encoding="utf-8"))
-        self.assertEqual(got["stages"][-1]["stage"], "8 отчёт")
+        self.assertEqual(got["stages"][-1]["stage"], "8 report")
         self.assertEqual(len(data["stages"]), 5)
         self.assertEqual(data["unmeasured"], 1)
         self.assertEqual(data["violations"], 0)
@@ -932,7 +930,7 @@ if __name__ == "__main__":
 
 
 class TheStyliserWasChosenByEyeNotByNumber(unittest.TestCase):
-    """Решение составителя шаблонов: `nanobanana-2`, ВОПРЕКИ числу."""
+    """The template author's decision: `nanobanana-2`, despite the number."""
 
     def test_the_chosen_styliser_is_the_one_the_owner_picked(self):
         self.assertEqual(E.STYLE_MODEL, "nanobanana-2")
@@ -949,16 +947,16 @@ class TheStyliserWasChosenByEyeNotByNumber(unittest.TestCase):
 
 
 class TheStyleReferenceLeaksAppearanceAndItIsGuarded(unittest.TestCase):
-    """Боевой прогон: стилизация надела на клиента ОЧКИ с референса."""
+    """A live run put the reference's glasses on the client during stylization."""
 
     def test_the_prompt_forbids_copying_eyewear_from_the_reference(self):
-        built = E.style_prompt("любой.png", card_reader=lambda p: None)
+        built = E.style_prompt("any.png", card_reader=lambda p: None)
         for word in ("eyewear", "accessory", "garment", "pose"):
             with self.subTest(word=word):
                 self.assertIn(word, built["prompt"])
 
     def test_the_role_clause_names_what_to_KEEP_not_only_what_to_take(self):
-        built = E.style_prompt("любой.png", card_reader=lambda p: None)
+        built = E.style_prompt("any.png", card_reader=lambda p: None)
         for word in ("same clothing", "same pose", "same accessories"):
             with self.subTest(word=word):
                 self.assertIn(word, built["prompt"])
@@ -968,12 +966,12 @@ class TheStyleReferenceLeaksAppearanceAndItIsGuarded(unittest.TestCase):
         self.assertNotIn(E.NO_BRANDS_CLAUSE, E.NO_LOOK_TRANSFER_CLAUSE)
 
     def test_removing_the_look_ban_is_visible_in_the_prompt(self):
-        built = E.style_prompt("любой.png", card_reader=lambda p: None)
+        built = E.style_prompt("any.png", card_reader=lambda p: None)
         self.assertIn(E.NO_LOOK_TRANSFER_CLAUSE, built["prompt"])
 
 
 class TheIdentityAxisHasAMiddleBandAndAnOperatorOverride(unittest.TestCase):
-    """Решение составителя шаблонов: очки со стиля — не баг, а фича."""
+    """The template author's decision: glasses from the style are a feature, not a bug."""
 
     def _stage(self, median, **kw):
         return E.stage_style_acceptance(
@@ -986,7 +984,7 @@ class TheIdentityAxisHasAMiddleBandAndAnOperatorOverride(unittest.TestCase):
         )
 
     def _axis(self, res):
-        return [c for c in res["checks"] if "личность" in c["name"]][0]
+        return [c for c in res["checks"] if "identity" in c["name"]][0]
 
     def test_below_the_bar_is_plainly_good(self):
         self.assertEqual(self._axis(self._stage(0.0652))["outcome"], E.PASS)
@@ -997,7 +995,7 @@ class TheIdentityAxisHasAMiddleBandAndAnOperatorOverride(unittest.TestCase):
     def test_the_middle_band_passes_only_with_an_explicit_operator_flag(self):
         got = self._axis(self._stage(0.3928, operator_ok_identity=True))
         self.assertEqual(got["outcome"], E.PASS)
-        self.assertIn("ДОПУЩЕНО ОПЕРАТОРОМ", got["note"])
+        self.assertIn("admitted by the operator", got["note"])
 
     def test_above_the_other_person_rung_stays_FAILED_even_for_the_operator(self):
         got = self._axis(self._stage(0.80, operator_ok_identity=True))
@@ -1010,7 +1008,7 @@ class TheIdentityAxisHasAMiddleBandAndAnOperatorOverride(unittest.TestCase):
 
 
 class TheGeometryCheckGuardsVerticalityNotExactNumbers(unittest.TestCase):
-    """Боевой прогон вернул 816x1104 — ВЕРТИКАЛЬ, и прибор её забраковал."""
+    """A live run returned 816x1104 — vertical — and the instrument rejected it."""
 
     def _geom(self, w, h, fps=30.0, **kw):
         res = E.stage_output_acceptance(
@@ -1028,12 +1026,12 @@ class TheGeometryCheckGuardsVerticalityNotExactNumbers(unittest.TestCase):
             cuts=lambda p: {"outcome": E.PASS, "cuts": [], "note": ""},
             **kw,
         )
-        return [c for c in res["checks"] if "геометрия" in c["name"]][0]
+        return [c for c in res["checks"] if "geometry" in c["name"]][0]
 
     def test_the_new_vertical_output_passes(self):
         got = self._geom(816, 1104)
         self.assertEqual(got["outcome"], E.PASS)
-        self.assertIn("НОВАЯ геометрия", got["note"])
+        self.assertIn("new geometry", got["note"])
 
     def test_the_old_square_output_still_passes(self):
         self.assertEqual(self._geom(960, 960)["outcome"], E.PASS)
@@ -1049,7 +1047,7 @@ class TheGeometryCheckGuardsVerticalityNotExactNumbers(unittest.TestCase):
 
 
 class TheOutputIdentityUsesTheSameLadderAsTheStyledPhoto(unittest.TestCase):
-    """Одно знание — одно место: лестница на выходе та же, что на фото."""
+    """One knowledge — one place: the ladder on the output is the same as on the photo."""
 
     def _axis(self, median, **kw):
         res = E.stage_output_acceptance(
@@ -1067,7 +1065,7 @@ class TheOutputIdentityUsesTheSameLadderAsTheStyledPhoto(unittest.TestCase):
             cuts=lambda p: {"outcome": E.PASS, "cuts": [], "note": ""},
             **kw,
         )
-        return [c for c in res["checks"] if "личность" in c["name"]][0]
+        return [c for c in res["checks"] if "identity" in c["name"]][0]
 
     def test_the_measured_occluded_case_is_UNMEASURED(self):
         self.assertEqual(self._axis(0.5109)["outcome"], E.UNMEASURED)
@@ -1075,14 +1073,14 @@ class TheOutputIdentityUsesTheSameLadderAsTheStyledPhoto(unittest.TestCase):
     def test_the_operator_can_let_the_occluded_case_through(self):
         got = self._axis(0.5109, operator_ok_identity=True)
         self.assertEqual(got["outcome"], E.PASS)
-        self.assertIn("ДОПУЩЕНО ОПЕРАТОРОМ", got["note"])
+        self.assertIn("admitted by the operator", got["note"])
 
     def test_a_real_swap_is_failed_even_for_the_operator(self):
         self.assertEqual(self._axis(0.90, operator_ok_identity=True)["outcome"], E.FAIL)
 
 
 class TheDeliverableIsBuiltEvenWhenIdentityCannotBeMeasured(unittest.TestCase):
-    """Ступень 7 механическая, и «не смогли» на ступени 6 её НЕ отменяет."""
+    """Stage 7 is mechanical, and a "could not measure" on stage 6 does not cancel it."""
 
     @staticmethod
     def _on_output(median):
@@ -1093,26 +1091,26 @@ class TheDeliverableIsBuiltEvenWhenIdentityCannotBeMeasured(unittest.TestCase):
                     "median": 0.0652,
                     "inside": 1,
                     "judged": 1,
-                    "note": "подставной прибор личности",
+                    "note": "stub identity instrument",
                 }
             return {
                 "outcome": PASS,
                 "median": median,
                 "inside": 0,
                 "judged": len(frames),
-                "note": "кадры выхода",
+                "note": "output frames",
             }
 
         return distances
 
     @property
     def _band(self):
-        """Средняя полоса лестницы: 0.5109 — БОЕВОЕ измерение."""
+        """Middle band of the ladder: 0.5109 is a live measurement."""
         return self._on_output(0.5109)
 
     @property
     def _swap(self):
-        """Выше ступени «другой человек» 0.7137 — настоящая подмена."""
+        """Above the "other person" rung 0.7137 — a real swap."""
         return self._on_output(0.9)
 
     def test_an_unmeasurable_identity_still_yields_the_final_file(self):
@@ -1121,7 +1119,7 @@ class TheDeliverableIsBuiltEvenWhenIdentityCannotBeMeasured(unittest.TestCase):
             root = Path(td)
             got = _run(root, log, distances=self._band)
             final = root / "out" / "final_9x16.mp4"
-            self.assertTrue(final.exists(), "финального файла нет — судить нечем")
+            self.assertTrue(final.exists(), "the final file is missing — nothing to judge by")
         names = [s["stage"] for s in got["stages"]]
         self.assertIn(E.STAGES[6], names)
 
@@ -1182,7 +1180,7 @@ class TheDeliverableIsBuiltEvenWhenIdentityCannotBeMeasured(unittest.TestCase):
 
 
 class TheFramesChannelReachesRunFromTheCommandLine(unittest.TestCase):
-    """Канал, который разбирается и теряется, выглядит рабочим до прогона."""
+    """A channel that is parsed and lost looks functional until a run."""
 
     def _seen(self, argv):
         seen = {}
@@ -1223,7 +1221,7 @@ class TheFramesChannelReachesRunFromTheCommandLine(unittest.TestCase):
 
     def test_a_missing_directory_is_refused_not_silently_ignored(self):
         with self.assertRaises(ValueError):
-            E.frame_paths("нет-такого-каталога")
+            E.frame_paths("no-such-directory")
 
     def test_an_empty_directory_is_refused_not_silently_ignored(self):
         with TemporaryDirectory() as td:
@@ -1238,7 +1236,7 @@ class TheFramesChannelReachesRunFromTheCommandLine(unittest.TestCase):
 
 
 class ThePriceIsPerSecondNotPerCall(unittest.TestCase):
-    """Вторая ИЗМЕРЕННАЯ цена исправляет первую, и число сторожится литералом."""
+    """The second MEASURED price corrects the first, and a literal guards the number."""
 
     def test_the_measured_numbers_are_the_ones_shipped(self):
         self.assertEqual(E.KLING_PRICE_PER_SECOND_USD, 0.07)
@@ -1264,7 +1262,7 @@ class ThePriceIsPerSecondNotPerCall(unittest.TestCase):
 
 
 class TheStandActuallyCallsItsNeighbours(unittest.TestCase):
-    """Соседи `fork_aesthetic` и `fork_plan` ПОЗВАНЫ, а не просто написаны."""
+    """The `fork_aesthetic` and `fork_plan` neighbours are actually called, not just written."""
 
     def test_the_neighbours_are_imported_for_real_not_by_string(self):
         self.assertTrue(hasattr(E._default_aesthetic(), "gender_of"))
@@ -1287,7 +1285,7 @@ class TheStandActuallyCallsItsNeighbours(unittest.TestCase):
         class Broken:
             @staticmethod
             def to_plan(src, dst, **kw):
-                raise OSError("картинка не открылась")
+                raise OSError("the image did not open")
 
         with TemporaryDirectory() as td:
             got = E.stage_stylize(
@@ -1303,10 +1301,10 @@ class TheStandActuallyCallsItsNeighbours(unittest.TestCase):
 
 
 class TheGenderGateStopsTheRunBeforeAnyGeneration(unittest.TestCase):
-    """ИЗМЕРЕНО, чем кончается его отсутствие: клиент-мужчина с женской"""
+    """It is MEASURED how its absence ends: a male client with a female aesthetic."""
 
     class _A:
-        """Подставной сосед-эстетика с настоящей сигнатурой."""
+        """Stub aesthetic neighbour with the real signature."""
 
         calls = []
 
@@ -1322,7 +1320,7 @@ class TheGenderGateStopsTheRunBeforeAnyGeneration(unittest.TestCase):
                 "checked": 1,
                 "violations": 0 if ok else 1,
                 "unmeasured": 0,
-                "note": "подставной гейт",
+                "note": "stub gate",
             }
 
         @staticmethod
@@ -1331,11 +1329,11 @@ class TheGenderGateStopsTheRunBeforeAnyGeneration(unittest.TestCase):
 
         @staticmethod
         def compose(aid, *, card=None):
-            return {"prompt": "эстетика словами"}
+            return {"prompt": "aesthetic in words"}
 
         @staticmethod
         def assemble_prompt(*, card=None):
-            return "роли, " + E.NO_BRANDS_CLAUSE
+            return "roles, " + E.NO_BRANDS_CLAUSE
 
     def test_a_mismatched_gender_stops_before_the_styliser_is_called(self):
         seen = []
@@ -1357,8 +1355,8 @@ class TheGenderGateStopsTheRunBeforeAnyGeneration(unittest.TestCase):
                 aesthetic_mod=self._A,
             )
         self.assertEqual(got["outcome"], FAIL)
-        self.assertEqual(seen, [], "стилизатор позван при разъехавшемся поле")
-        self.assertIn("генерация не запускалась", got["note"])
+        self.assertEqual(seen, [], "the styliser was called despite the gender mismatch")
+        self.assertIn("generation was not started", got["note"])
 
     def test_a_matching_gender_goes_through_and_uses_the_aesthetic_file(self):
         seen = {}
@@ -1371,7 +1369,7 @@ class TheGenderGateStopsTheRunBeforeAnyGeneration(unittest.TestCase):
         with TemporaryDirectory() as td:
             got = E.stage_stylize(
                 client_photo="c.png",
-                style_ref="ЧУЖОЙ.png",
+                style_ref="foreign.png",
                 out_path=Path(td) / "styled.png",
                 stylize=counting,
                 plan=_PlanOk,
@@ -1382,12 +1380,12 @@ class TheGenderGateStopsTheRunBeforeAnyGeneration(unittest.TestCase):
             )
         self.assertEqual(got["outcome"], PASS)
         self.assertIn("y2k_f.png", seen["style"])
-        self.assertNotIn("ЧУЖОЙ", seen["style"])
-        self.assertIn("эстетика словами", seen["prompt"])
+        self.assertNotIn("foreign", seen["style"])
+        self.assertIn("aesthetic in words", seen["prompt"])
 
 
 class TheTemplateFlagsReachRunFromTheCommandLine(unittest.TestCase):
-    """Флаг, который разбирается и теряется, выглядит рабочим до прогона."""
+    """A flag that is parsed and lost looks functional until a run."""
 
     def _seen(self, argv):
         seen = {}
@@ -1446,7 +1444,7 @@ class TheTemplateFlagsReachRunFromTheCommandLine(unittest.TestCase):
 
 
 class TheOutpaintFixesTheLetterboxWithoutLosingTheRun(unittest.TestCase):
-    """Поля плана видны полосами. Прибор говорит «годно»: он проверяет"""
+    """The plan margins show as bands. The instrument says "pass": it checks the canvas."""
 
     class _PlanNoExtend:
         from lipsync.fork_plan import (
@@ -1468,7 +1466,7 @@ class TheOutpaintFixesTheLetterboxWithoutLosingTheRun(unittest.TestCase):
                 "violations": 0,
                 "unmeasured": 0,
                 "path": str(dst),
-                "note": "план",
+                "note": "plan",
             }
 
         @staticmethod
@@ -1480,7 +1478,7 @@ class TheOutpaintFixesTheLetterboxWithoutLosingTheRun(unittest.TestCase):
                 "unmeasured": 1,
                 "path": str(src),
                 "extended": False,
-                "note": "дорисовщик не ответил",
+                "note": "the outpainter did not answer",
             }
 
     def test_a_failed_outpaint_does_NOT_sink_the_stage(self):
@@ -1511,7 +1509,7 @@ class TheOutpaintFixesTheLetterboxWithoutLosingTheRun(unittest.TestCase):
 
 
 class ThePrintedPriceFollowsTheWindowLength(unittest.TestCase):
-    """ИЗМЕРЕНО: на десятисекундном прогоне стенд напечатал «$0.35», а"""
+    """MEASURED: on a ten-second run the stand printed "$0.35" instead of the real price."""
 
     @staticmethod
     def _probe(frames, fps):
@@ -1521,7 +1519,7 @@ class ThePrintedPriceFollowsTheWindowLength(unittest.TestCase):
                 "height": 1104,
                 "fps": fps,
                 "frames": frames,
-                "note": "подставной опрос",
+                "note": "stub probe",
             }
 
         return prober
@@ -1552,7 +1550,7 @@ class ThePrintedPriceFollowsTheWindowLength(unittest.TestCase):
 
     def test_an_unmeasurable_window_falls_back_and_does_NOT_guess(self):
         def broken(path):
-            raise OSError("файла нет")
+            raise OSError("the file is missing")
 
         with TemporaryDirectory() as td:
             got = E.stage_kling(
@@ -1568,7 +1566,7 @@ class ThePrintedPriceFollowsTheWindowLength(unittest.TestCase):
 
 
 class ThePersonMustBeInPlanNotJustTheCanvas(unittest.TestCase):
-    """Канвас проверялся, а ПОЗА на рефке — ни разу, и это стоило денег."""
+    """The canvas was checked, but the pose on the reference never was, and it cost money."""
 
     from lipsync import fork_plan as _P
 
@@ -1582,7 +1580,7 @@ class ThePersonMustBeInPlanNotJustTheCanvas(unittest.TestCase):
     }
 
     def _check(self, points):
-        return E._person_in_plan("к.png", plan=self._P, pose=lambda p: points)
+        return E._person_in_plan("k.png", plan=self._P, pose=lambda p: points)
 
     def test_a_reference_in_plan_passes(self):
         self.assertEqual(self._check(self.GOOD)[1], PASS)
@@ -1610,10 +1608,10 @@ class ThePersonMustBeInPlanNotJustTheCanvas(unittest.TestCase):
 
     def test_a_falling_pose_reader_is_UNMEASURED(self):
         def broken(_):
-            raise RuntimeError("mediapipe не загрузился")
+            raise RuntimeError("mediapipe did not load")
 
-        self.assertEqual(E._person_in_plan("к.png", plan=self._P, pose=broken)[1], UNMEASURED)
+        self.assertEqual(E._person_in_plan("k.png", plan=self._P, pose=broken)[1], UNMEASURED)
 
     def test_the_note_says_WHY_it_matters_not_just_that_it_failed(self):
         bad = dict(self.GOOD, l_ankle=(0.55, 0.70, 0.96), r_ankle=(0.45, 0.70, 0.96))
-        self.assertIn("уедет за край", self._check(bad)[2])
+        self.assertIn("past the frame edge", self._check(bad)[2])
