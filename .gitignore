@@ -2,3 +2,7 @@ __pycache__/
 *.pyc
 .env
 work/
+
+# Local state written at runtime, never source.
+*.sqlite3
+studio/uploads/

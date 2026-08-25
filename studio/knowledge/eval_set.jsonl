@@ -1,0 +1,40 @@
+{"query": "warm golden hour light, amber and cream, soft film grain, nostalgic", "must_retrieve": ["amber", "grain"], "must_not_retrieve": [], "control": null, "note": "the plainest brief we get: one light, one palette, one texture"}
+{"query": "shot at sunset, everything glowing warm and golden", "must_retrieve": ["golden-hour"], "must_not_retrieve": [], "control": null, "note": "sunset must map onto the golden-hour allow-list word"}
+{"query": "dark moody night scene, deep navy blue, low key lighting, cinematic", "must_retrieve": ["navy", "dark value key"], "must_not_retrieve": ["light value key"], "control": null}
+{"query": "bright airy high key look, white and off white, light and clean", "must_retrieve": ["light value key"], "must_not_retrieve": ["dark value key"], "control": null}
+{"query": "clean flat matte surfaces, muted stone and beige palette, nothing shiny", "must_retrieve": ["clean flat surfaces", "muted"], "must_not_retrieve": [], "control": null}
+{"query": "heavy analogue film grain, tactile surface, real photographic texture", "must_retrieve": ["visible grain and tactile surface texture"], "must_not_retrieve": [], "control": null}
+{"query": "cool slate grey and steel blue, corporate and calm, cool morning haze", "must_retrieve": ["slate", "haze"], "must_not_retrieve": [], "control": null}
+{"query": "earthy warm terracotta and clay, sun baked, tactile", "must_retrieve": ["terracotta"], "must_not_retrieve": [], "control": null}
+{"query": "natural green tones, olive and sage, forest calm", "must_retrieve": ["emerald"], "must_not_retrieve": [], "control": null, "note": "olive and sage must resolve to the emerald allow-list word"}
+{"query": "bold red and maroon, high energy, saturated", "must_retrieve": ["crimson", "saturated"], "must_not_retrieve": [], "control": null}
+{"query": "fresh turquoise and teal, light and breezy", "must_retrieve": ["teal"], "must_not_retrieve": [], "control": null}
+{"query": "charcoal and black, dramatic contrast, very dark", "must_retrieve": ["charcoal", "dark value key"], "must_not_retrieve": [], "control": null}
+{"query": "soft ivory and cream elegance, quiet luxury, premium", "must_retrieve": ["ivory"], "must_not_retrieve": [], "control": null, "note": "cream and off white must resolve to the ivory allow-list word"}
+{"query": "romantic dusty rose and pink, soft and dreamy", "must_retrieve": ["rose"], "must_not_retrieve": [], "control": null}
+{"query": "autumn rust and copper browns, warm and grounded", "must_retrieve": ["copper"], "must_not_retrieve": [], "control": null, "note": "rust and chocolate must resolve to the copper allow-list word"}
+{"query": "deep indigo and navy, night sky feeling", "must_retrieve": ["indigo"], "must_not_retrieve": [], "control": null}
+{"query": "gold accents, luxurious and elegant, warm highlights", "must_retrieve": ["gold"], "must_not_retrieve": [], "control": null}
+{"query": "neutral sand and taupe, calm and understated", "must_retrieve": ["sand"], "must_not_retrieve": [], "control": null}
+{"query": "soft watercolour paper illustration, hand painted, warm", "must_retrieve": ["watercolor"], "must_not_retrieve": [], "control": null}
+{"query": "hand drawn diary sketch on warm sketchbook paper", "must_retrieve": ["sketch", "paper"], "must_not_retrieve": [], "control": null}
+{"query": "ink on paper, drawn line work, editorial illustration", "must_retrieve": ["ink on paper"], "must_not_retrieve": [], "control": null}
+{"query": "vintage nostalgic film look, faded and warm, old photograph", "must_retrieve": ["film"], "must_not_retrieve": [], "control": null}
+{"query": "serene quiet morning in a kitchen by the window, calm", "must_retrieve": ["kitchen", "window"], "must_not_retrieve": [], "control": null}
+{"query": "dramatic low key nocturne, deep shadow, single light source", "must_retrieve": ["low key diffuse nocturne"], "must_not_retrieve": [], "control": null}
+{"query": "soft neutral studio light on a plain backdrop", "must_retrieve": ["soft neutral studio"], "must_not_retrieve": [], "control": null}
+{"query": "clean diffused daylight, even and gentle, no harsh shadow", "must_retrieve": ["clean diffused daylight"], "must_not_retrieve": [], "control": null}
+{"query": "warm window light falling across the subject", "must_retrieve": ["warm window light"], "must_not_retrieve": [], "control": null}
+{"query": "soft dawn bloom, first light, gentle and pale", "must_retrieve": ["soft dawn bloom"], "must_not_retrieve": [], "control": null}
+{"query": "bold typographic poster, lettering is the hero", "must_retrieve": ["poster"], "must_not_retrieve": [], "control": null}
+{"query": "cinematic editorial photograph, real depth of field", "must_retrieve": ["cinematic", "editorial"], "must_not_retrieve": [], "control": null}
+{"query": "muted desaturated palette, washed out, restrained", "must_retrieve": ["muted"], "must_not_retrieve": ["saturated saturation"], "control": null}
+{"query": "graphite and teal focus palette, cool and analytical", "must_retrieve": ["graphite teal focus palette"], "must_not_retrieve": [], "control": null}
+{"query": "amber cream premium palette with golden hour bloom", "must_retrieve": ["amber cream premium palette", "golden hour bloom"], "must_not_retrieve": [], "control": "positive", "note": "POSITIVE CONTROL: this phrasing is verbatim in our own prompt corpus, so the index must hit it with full recall or it is not working at all"}
+{"query": "matte paper texture with split scene columns", "must_retrieve": ["matte paper texture", "split scene columns"], "must_not_retrieve": [], "control": "positive", "note": "POSITIVE CONTROL: second verbatim phrase pair, from a different template family"}
+{"query": "the colour of wet clay after the rain, dusty and warm", "must_retrieve": ["copper"], "must_not_retrieve": [], "control": null, "note": "HARD: shares no vocabulary with the corpus; only a dense channel can bridge it"}
+{"query": "feels like an old family photograph found in a drawer", "must_retrieve": ["grain"], "must_not_retrieve": [], "control": null, "note": "HARD: the look is named by a memory, not by a term"}
+{"query": "everything washed in the light of a single bedside lamp at night", "must_retrieve": ["dark value key"], "must_not_retrieve": [], "control": null, "note": "HARD: still unsolved at the time of writing, kept as headroom"}
+{"query": "a look that whispers instead of shouting", "must_retrieve": ["muted"], "must_not_retrieve": [], "control": null, "note": "HARD: pure metaphor, no photographic term at all"}
+{"query": "how do I file a quarterly VAT return in Estonia before the filing deadline", "must_retrieve": [], "must_not_retrieve": ["palette", "grain"], "control": "negative", "note": "NEGATIVE CONTROL: no such topic in the corpus; anything returned means the floor is not holding"}
+{"query": "recommend a torque wrench for changing motorcycle sprocket bolts", "must_retrieve": [], "must_not_retrieve": ["palette", "grain"], "control": "negative", "note": "NEGATIVE CONTROL: second off-domain query, different vocabulary from the first"}

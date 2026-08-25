@@ -1,0 +1,1158 @@
+<!doctype html>
+<html lang="ru" data-theme="auto">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<title>Lipsync Studio</title>
+<style>
+/* Every colour is declared here first. The media query and the manual override
+   below only REDEFINE these tokens, never introduce a new one: a colour that
+   exists solely inside a media query is invisible in the other theme. */
+:root {
+  --bg:            #f4f5f7;
+  --surface:       #ffffff;
+  --surface-2:     #eceef2;
+  --surface-3:     #e2e5ea;
+  --text:          #14171c;
+  --muted:         #5b6270;
+  --line:          #d3d7de;
+  --line-strong:   #b3b9c4;
+  --accent:        #3a5bd9;
+  --accent-hover:  #2c47b0;
+  --accent-ink:    #ffffff;
+  --accent-soft:   #e5eaff;
+  --ok:            #1c6b40;
+  --ok-soft:       #daf3e5;
+  --bad:           #a32020;
+  --bad-soft:      #fbe1e1;
+  --warn:          #8a5a00;
+  --warn-soft:     #fdefd2;
+  --shadow:        rgba(18, 22, 30, .12);
+  --overlay:       rgba(18, 22, 30, .55);
+  --skeleton:      #dfe2e8;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg:          #101318;
+    --surface:     #191d24;
+    --surface-2:   #21262f;
+    --surface-3:   #2b313b;
+    --text:        #eef1f5;
+    --muted:       #a3abb9;
+    --line:        #333a45;
+    --line-strong: #4a525f;
+    --accent:      #7d97ff;
+    --accent-hover:#93a9ff;
+    --accent-ink:  #0d1017;
+    --accent-soft: #232b45;
+    --ok:          #7ddba6;
+    --ok-soft:     #163325;
+    --bad:         #ff9a9a;
+    --bad-soft:    #3a1c1c;
+    --warn:        #f0c274;
+    --warn-soft:   #362a12;
+    --shadow:      rgba(0, 0, 0, .5);
+    --overlay:     rgba(0, 0, 0, .65);
+    --skeleton:    #262c35;
+  }
+}
+/* Manual override wins in both directions, so the page can be inspected in one
+   theme on a machine set to the other. */
+:root[data-theme="dark"] {
+  --bg:          #101318;
+  --surface:     #191d24;
+  --surface-2:   #21262f;
+  --surface-3:   #2b313b;
+  --text:        #eef1f5;
+  --muted:       #a3abb9;
+  --line:        #333a45;
+  --line-strong: #4a525f;
+  --accent:      #7d97ff;
+  --accent-hover:#93a9ff;
+  --accent-ink:  #0d1017;
+  --accent-soft: #232b45;
+  --ok:          #7ddba6;
+  --ok-soft:     #163325;
+  --bad:         #ff9a9a;
+  --bad-soft:    #3a1c1c;
+  --warn:        #f0c274;
+  --warn-soft:   #362a12;
+  --shadow:      rgba(0, 0, 0, .5);
+  --overlay:     rgba(0, 0, 0, .65);
+  --skeleton:    #262c35;
+}
+
+* { box-sizing: border-box; }
+/* A class like .preview{display:flex} out-cascades the UA rule for [hidden];
+   one authoritative rule keeps "hidden" meaning hidden everywhere. */
+[hidden] { display: none !important; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  /* System stack only: no webfont may be fetched from a CDN. */
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif;
+  font-size: 16px;
+  line-height: 1.5;
+  padding-bottom: 48px;
+}
+h1, h2, h3 { line-height: 1.25; margin: 0; }
+p { margin: 0 0 .75em; }
+p:last-child { margin-bottom: 0; }
+img, video { max-width: 100%; display: block; }
+
+.wrap { max-width: 720px; margin: 0 auto; padding: 0 16px; }
+
+/* ---------- top bar with the balance ---------- */
+.topbar {
+  position: sticky; top: 0; z-index: 20;
+  background: var(--surface);
+  border-bottom: 1px solid var(--line);
+}
+.topbar-inner {
+  display: flex; align-items: center; gap: 12px;
+  min-height: 60px; flex-wrap: wrap;
+}
+.brand { font-weight: 650; font-size: 17px; letter-spacing: .2px; margin-right: auto; }
+.brand small { display: block; font-weight: 400; font-size: 12px; color: var(--muted); letter-spacing: 0; }
+.balance {
+  display: inline-flex; align-items: baseline; gap: 6px;
+  background: var(--accent-soft); color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 999px; padding: 8px 14px; font-variant-numeric: tabular-nums;
+}
+.balance b { font-size: 17px; }
+.balance span { font-size: 12px; color: var(--muted); }
+.balance[data-unknown="1"] b { color: var(--warn); }
+
+.iconbtn {
+  min-width: 44px; min-height: 44px;
+  border: 1px solid var(--line); border-radius: 12px;
+  background: var(--surface-2); color: var(--text);
+  font-size: 15px; cursor: pointer;
+}
+.iconbtn:hover { border-color: var(--line-strong); }
+
+.demo-bar {
+  background: var(--warn-soft); color: var(--warn);
+  border-bottom: 1px solid var(--line);
+  font-size: 13px;
+}
+.demo-bar .wrap { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; padding-top: 8px; padding-bottom: 8px; }
+.demo-bar label { display: inline-flex; gap: 6px; align-items: center; }
+.demo-bar select {
+  background: var(--surface); color: var(--text);
+  border: 1px solid var(--line-strong); border-radius: 8px;
+  padding: 6px 8px; font: inherit; font-size: 13px; min-height: 36px;
+}
+
+/* ---------- steps ---------- */
+.step {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  margin: 16px 0;
+  box-shadow: 0 1px 2px var(--shadow);
+  overflow: hidden;
+}
+.step-head { display: flex; gap: 12px; align-items: flex-start; padding: 16px; }
+.step-num {
+  flex: 0 0 auto; width: 30px; height: 30px; border-radius: 50%;
+  display: grid; place-items: center; font-size: 14px; font-weight: 650;
+  background: var(--surface-3); color: var(--muted);
+}
+.step[data-state="active"] .step-num { background: var(--accent); color: var(--accent-ink); }
+.step[data-state="done"] .step-num { background: var(--ok-soft); color: var(--ok); }
+.step-title { font-size: 17px; font-weight: 650; }
+.step-sub { font-size: 13px; color: var(--muted); }
+.step-body { padding: 0 16px 16px; }
+.step[data-state="locked"] { opacity: .55; }
+.step[data-state="locked"] .step-body { display: none; }
+.lock-note { padding: 0 16px 16px; font-size: 13px; color: var(--muted); }
+.step:not([data-state="locked"]) .lock-note { display: none; }
+
+/* ---------- controls ---------- */
+.btn {
+  -webkit-appearance: none; appearance: none;
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  min-height: 52px; padding: 12px 20px; width: 100%;
+  border-radius: 14px; border: 1px solid transparent;
+  background: var(--accent); color: var(--accent-ink);
+  font: inherit; font-weight: 600; cursor: pointer;
+}
+.btn:hover:not(:disabled) { background: var(--accent-hover); }
+.btn:disabled { opacity: .5; cursor: not-allowed; }
+.btn-secondary { background: var(--surface-2); color: var(--text); border-color: var(--line-strong); }
+.btn-secondary:hover:not(:disabled) { background: var(--surface-3); }
+.btn .price {
+  font-weight: 500; font-size: 14px; opacity: .85;
+  border-left: 1px solid currentColor; padding-left: 8px; margin-left: 2px;
+}
+.btn-row { display: flex; gap: 10px; flex-wrap: wrap; }
+.btn-row .btn { width: auto; flex: 1 1 200px; }
+
+:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+
+/* ---------- step 1: dropzone ---------- */
+.drop {
+  border: 2px dashed var(--line-strong); border-radius: 14px;
+  background: var(--surface-2);
+  padding: 28px 16px; text-align: center; cursor: pointer;
+  color: var(--muted);
+}
+.drop:hover, .drop[data-drag="1"] { border-color: var(--accent); background: var(--accent-soft); color: var(--text); }
+.drop b { display: block; color: var(--text); font-size: 16px; margin-bottom: 4px; }
+.preview { display: flex; gap: 14px; align-items: flex-start; margin-top: 14px; }
+.preview img {
+  width: 120px; aspect-ratio: 3 / 4; object-fit: cover;
+  border-radius: 12px; border: 1px solid var(--line); background: var(--surface-2);
+}
+.preview-meta { font-size: 13px; color: var(--muted); word-break: break-word; }
+
+/* ---------- step 2: template gallery ---------- */
+.gallery {
+  display: grid; gap: 12px;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  margin: 0; padding: 0; list-style: none;
+}
+.card {
+  position: relative; padding: 0; border: 1px solid var(--line); border-radius: 14px;
+  background: var(--surface-2); color: var(--text);
+  overflow: hidden; cursor: pointer; text-align: left; font: inherit;
+  display: flex; flex-direction: column;
+}
+.card:hover { border-color: var(--line-strong); }
+.card[aria-pressed="true"] { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent) inset; }
+.card .poster {
+  width: 100%; aspect-ratio: 9 / 16; object-fit: cover; background: var(--skeleton);
+}
+.card .cap { padding: 10px 12px; }
+.card .cap b { display: block; font-size: 14px; }
+.card .cap span { font-size: 12px; color: var(--muted); }
+.card .tick {
+  position: absolute; top: 8px; right: 8px; width: 26px; height: 26px; border-radius: 50%;
+  background: var(--accent); color: var(--accent-ink);
+  display: none; place-items: center; font-size: 15px;
+}
+.card[aria-pressed="true"] .tick { display: grid; }
+
+/* ---------- step 3: chat ---------- */
+.chat { display: flex; flex-direction: column; gap: 10px; margin-bottom: 14px; }
+.msg { max-width: 85%; padding: 10px 14px; border-radius: 14px; font-size: 15px; }
+.msg.user { align-self: flex-end; background: var(--accent); color: var(--accent-ink); border-bottom-right-radius: 4px; }
+.msg.bot { align-self: flex-start; background: var(--surface-2); color: var(--text); border-bottom-left-radius: 4px; }
+.composer { display: flex; gap: 10px; align-items: flex-end; }
+.composer textarea {
+  flex: 1; min-height: 52px; max-height: 160px; resize: vertical;
+  padding: 12px 14px; border-radius: 14px;
+  border: 1px solid var(--line-strong); background: var(--surface); color: var(--text);
+  font: inherit;
+}
+.composer .btn { width: auto; flex: 0 0 auto; padding: 12px 18px; }
+
+.spec { margin-top: 14px; border-top: 1px solid var(--line); padding-top: 14px; }
+.spec h3 { font-size: 14px; margin-bottom: 10px; }
+.spec dl { display: grid; grid-template-columns: minmax(88px, auto) 1fr; gap: 8px 12px; margin: 0; align-items: baseline; }
+.spec dt { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; }
+.spec dd { margin: 0; display: flex; gap: 6px; flex-wrap: wrap; }
+.chip {
+  display: inline-block; padding: 5px 11px; border-radius: 999px;
+  background: var(--accent-soft); color: var(--text);
+  border: 1px solid var(--line); font-size: 13px;
+}
+
+/* ---------- outcomes ---------- */
+.note {
+  border-radius: 12px; padding: 12px 14px; margin-top: 14px;
+  border: 1px solid var(--line); background: var(--surface-2); color: var(--text);
+  font-size: 14px;
+}
+.note b { display: block; margin-bottom: 2px; }
+.note[data-outcome="pass"]            { background: var(--ok-soft);   border-color: var(--ok);   }
+.note[data-outcome="pass"] b          { color: var(--ok); }
+.note[data-outcome="fail"]            { background: var(--bad-soft);  border-color: var(--bad);  }
+.note[data-outcome="fail"] b          { color: var(--bad); }
+/* "could not measure" gets its own visual language: it must never be mistaken
+   for the green of a success. */
+.note[data-outcome="unmeasured"]      { background: var(--warn-soft); border-color: var(--warn); }
+.note[data-outcome="unmeasured"] b    { color: var(--warn); }
+.note small { display: block; margin-top: 6px; color: var(--muted); font-size: 13px; }
+
+/* ---------- waiting ---------- */
+.wait { margin-top: 14px; border: 1px solid var(--line); border-radius: 12px; padding: 14px; background: var(--surface-2); }
+.wait-top { display: flex; justify-content: space-between; gap: 10px; font-size: 14px; }
+.wait-top .elapsed { font-variant-numeric: tabular-nums; color: var(--muted); }
+.bar { height: 6px; border-radius: 3px; background: var(--surface-3); overflow: hidden; margin-top: 10px; }
+.bar i { display: block; height: 100%; width: 35%; border-radius: 3px; background: var(--accent); animation: slide 1.6s ease-in-out infinite; }
+@keyframes slide { 0% { margin-left: -35%; } 100% { margin-left: 100%; } }
+@media (prefers-reduced-motion: reduce) { .bar i { animation: none; width: 100%; opacity: .5; } }
+.wait small { display: block; margin-top: 8px; color: var(--muted); font-size: 13px; }
+
+/* ---------- results ---------- */
+.result { margin-top: 14px; }
+.frame-img, .result video {
+  width: 100%; max-width: 320px; aspect-ratio: 9 / 16; object-fit: cover;
+  border-radius: 14px; border: 1px solid var(--line); background: var(--surface-2);
+}
+.result video { object-fit: contain; background: var(--overlay); }
+.hint { font-size: 13px; color: var(--muted); margin-top: 10px; }
+.footer { text-align: center; font-size: 12px; color: var(--muted); padding: 24px 0 8px; }
+.sr-only {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+}
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="wrap topbar-inner">
+    <div class="brand">Lipsync Studio<small>селфи → шаблон → стиль → ролик</small></div>
+    <div class="balance" id="balance" data-unknown="1" title="Кредиты на счёте">
+      <b id="balance-value">—</b><span>кредитов</span>
+    </div>
+    <button class="iconbtn" id="theme-toggle" type="button" title="Сменить тему" aria-label="Сменить тему">◐</button>
+  </div>
+</header>
+
+<div class="demo-bar" id="demo-bar" hidden>
+  <div class="wrap">
+    <span><b>Демо-режим.</b> Страница открыта из файла — данные подставлены, ничего не генерируется и не списывается.</span>
+    <label>Следующий ответ:
+      <select id="demo-outcome">
+        <option value="pass">получилось</option>
+        <option value="fail">не получилось</option>
+        <option value="unmeasured">не смогли проверить</option>
+      </select>
+    </label>
+  </div>
+</div>
+
+<main class="wrap">
+
+  <!-- STEP 1 -->
+  <section class="step" id="step-1" data-state="active" aria-labelledby="t1">
+    <div class="step-head">
+      <div class="step-num">1</div>
+      <div><div class="step-title" id="t1">Селфи</div>
+        <div class="step-sub">Одно лицо, крупно, ровный свет. JPEG или PNG.</div></div>
+    </div>
+    <div class="step-body">
+      <div class="drop" id="drop" role="button" tabindex="0" aria-describedby="selfie-note">
+        <b>Перетащите фото сюда</b>
+        <span>или нажмите, чтобы выбрать файл</span>
+      </div>
+      <input type="file" id="file" accept="image/jpeg,image/png" class="sr-only" tabindex="-1">
+      <div class="preview" id="preview" hidden>
+        <img id="preview-img" alt="Предпросмотр загруженного селфи">
+        <div class="preview-meta" id="preview-meta"></div>
+      </div>
+      <div class="wait" id="wait-1" hidden>
+        <div class="wait-top"><span id="wait-1-label">Проверяем кадр…</span><span class="elapsed" id="wait-1-elapsed">0:00</span></div>
+        <div class="bar"><i></i></div>
+        <small id="wait-1-eta"></small>
+      </div>
+      <div class="note" id="selfie-note" role="status" hidden></div>
+    </div>
+  </section>
+
+  <!-- STEP 2 -->
+  <section class="step" id="step-2" data-state="locked" aria-labelledby="t2">
+    <div class="step-head">
+      <div class="step-num">2</div>
+      <div><div class="step-title" id="t2">Шаблон движения</div>
+        <div class="step-sub">Готовый вертикальный ролик, чьё движение получит ваше лицо.</div></div>
+    </div>
+    <div class="lock-note">Откроется, когда селфи будет принято.</div>
+    <div class="step-body">
+      <div class="wait" id="wait-2" hidden>
+        <div class="wait-top"><span>Загружаем шаблоны…</span><span class="elapsed" id="wait-2-elapsed">0:00</span></div>
+        <div class="bar"><i></i></div>
+      </div>
+      <ul class="gallery" id="gallery"></ul>
+      <div class="note" id="tpl-note" role="status" hidden></div>
+    </div>
+  </section>
+
+  <!-- STEP 3 -->
+  <section class="step" id="step-3" data-state="locked" aria-labelledby="t3">
+    <div class="step-head">
+      <div class="step-num">3</div>
+      <div><div class="step-title" id="t3">Стиль</div>
+        <div class="step-sub">Опишите словами картинку, которую хотите. Ответим тем, что поняли.</div></div>
+    </div>
+    <div class="lock-note">Откроется, когда выберете шаблон.</div>
+    <div class="step-body">
+      <div class="chat" id="chat" role="log" aria-live="polite"></div>
+      <form class="composer" id="chat-form">
+        <label class="sr-only" for="chat-input">Описание стиля</label>
+        <textarea id="chat-input" rows="2" placeholder="Например: тёплый закатный свет, песочная палитра, плёночное зерно"></textarea>
+        <button class="btn" type="submit" id="chat-send">Отправить</button>
+      </form>
+      <div class="wait" id="wait-3" hidden>
+        <div class="wait-top"><span>Разбираем описание…</span><span class="elapsed" id="wait-3-elapsed">0:00</span></div>
+        <div class="bar"><i></i></div>
+      </div>
+      <div class="spec" id="spec" hidden>
+        <h3>Что мы поняли</h3>
+        <dl>
+          <dt>Палитра</dt><dd id="spec-palette"></dd>
+          <dt>Свет</dt><dd id="spec-light"></dd>
+          <dt>Фактура</dt><dd id="spec-texture"></dd>
+          <dt>Настроение</dt><dd id="spec-mood"></dd>
+          <dt>Обстановка</dt><dd id="spec-setting"></dd>
+        </dl>
+      </div>
+      <div class="note" id="style-note" role="status" hidden></div>
+    </div>
+  </section>
+
+  <!-- STEP 4 -->
+  <section class="step" id="step-4" data-state="locked" aria-labelledby="t4">
+    <div class="step-head">
+      <div class="step-num">4</div>
+      <div><div class="step-title" id="t4">Первый кадр</div>
+        <div class="step-sub">Дешёвая проверка стиля до того, как считать ролик.</div></div>
+    </div>
+    <div class="lock-note">Откроется, когда стиль будет распознан.</div>
+    <div class="step-body">
+      <button class="btn" id="frame-btn" type="button">Показать кадр <span class="price" id="frame-price">1 кредит</span></button>
+      <div class="wait" id="wait-4" hidden>
+        <div class="wait-top"><span>Рисуем первый кадр…</span><span class="elapsed" id="wait-4-elapsed">0:00</span></div>
+        <div class="bar"><i></i></div>
+        <small id="wait-4-eta">Обычно занимает около 30 секунд.</small>
+      </div>
+      <div class="result" id="frame-result" hidden>
+        <img class="frame-img" id="frame-img" alt="Первый кадр в выбранном стиле">
+        <p class="hint">Нравится — идём дальше. Нет — поправьте описание в шаге 3 и покажите кадр ещё раз.</p>
+      </div>
+      <div class="note" id="frame-note" role="status" hidden></div>
+    </div>
+  </section>
+
+  <!-- STEP 5 -->
+  <section class="step" id="step-5" data-state="locked" aria-labelledby="t5">
+    <div class="step-head">
+      <div class="step-num">5</div>
+      <div><div class="step-title" id="t5">Ролик</div>
+        <div class="step-sub">Вертикальное видео со звуком. Списываем кредиты только после вашего согласия.</div></div>
+    </div>
+    <div class="lock-note">Откроется, когда первый кадр будет готов.</div>
+    <div class="step-body">
+      <p class="hint" id="consent-text">Нажимая кнопку, вы соглашаетесь на списание. Если генерация сорвётся, кредиты вернутся на счёт.</p>
+      <button class="btn" id="video-btn" type="button">Согласен, сделать ролик <span class="price" id="video-price">10 кредитов</span></button>
+      <div class="wait" id="wait-5" hidden>
+        <div class="wait-top"><span>Считаем ролик…</span><span class="elapsed" id="wait-5-elapsed">0:00</span></div>
+        <div class="bar"><i></i></div>
+        <small id="wait-5-eta">Обычно занимает 2–4 минуты. Страницу можно не закрывать.</small>
+      </div>
+      <div class="result" id="video-result" hidden>
+        <video id="video-el" controls playsinline preload="metadata"></video>
+        <div class="btn-row" style="margin-top:12px">
+          <a class="btn btn-secondary" id="video-download" download>Скачать ролик</a>
+        </div>
+      </div>
+      <div class="note" id="video-note" role="status" hidden></div>
+    </div>
+  </section>
+
+  <p class="footer">Кредиты списываются до генерации и возвращаются, если она не удалась.</p>
+</main>
+
+<script>
+"use strict";
+(function () {
+
+/* ------------------------------------------------------------------ *
+ * API map, read off studio/app.py so the two agree in one place. Every
+ * answer carries {outcome, note}; the server speaks "could not measure"
+ * where this file says UNMEASURED, so normalise() is the only place that
+ * knows both spellings.
+ * ------------------------------------------------------------------ */
+var API = {
+  session:   "/api/session",   // POST {user_id} -> {outcome, session_id}
+  templates: "/api/templates", // GET  -> {outcome, templates[], availability, note}
+  selfie:    "/api/selfie",    // POST FormData(session_id, file) -> {outcome, report, note}
+  style:     "/api/style",     // POST {session_id, text} -> {outcome, spec, prompt, note}
+  frame:     "/api/frame",     // POST {session_id, template_id} -> {outcome, job_id, charged, balance}
+  consent:   "/api/consent",   // POST {session_id} -> {outcome, note}
+  video:     "/api/video",     // POST {session_id} -> {outcome, job_id, charged, balance}
+  balance:   "/api/balance",   // GET -> {credits}. NOT in app.py yet: probed once, silent on 404.
+  jobStatus: function (id) { return "/api/job/" + encodeURIComponent(id); }
+};
+
+/* DEBT(2026-08-25): FRAME_CREDITS / VIDEO_CREDITS live in studio/app.py and no
+   route publishes them, so the label starts from a copy and is corrected by the
+   `charged` field of the first real answer. One route returning both prices
+   would delete these two numbers. */
+var FALLBACK_PRICES = { frame: 1, video: 10 };
+
+/* CHOSEN, not measured: how long a job may run before we stop believing the
+   poll. Overrunning is reported as "could not measure", never as a failure —
+   the backend may still finish and the credits may still come back. */
+var POLL_MS = 1500;
+var JOB_LIMIT_MS = { frame: 120000, video: 480000 };
+var JOB_ETA = { frame: "около 30 секунд", video: "2–4 минуты" };
+
+var PASS = "pass", FAIL = "fail", UNMEASURED = "unmeasured";
+
+/* lipsync.fork_identity spells the third outcome "could not measure"; the CSS
+   hook is one word. Anything unrecognised is UNMEASURED, never a success. */
+function normalise(outcome) {
+  if (outcome === PASS) return PASS;
+  if (outcome === FAIL) return FAIL;
+  return UNMEASURED;
+}
+
+/* Human wording for the three outcomes. The user never sees a code or an HTTP
+   status; "could not measure" gets its own sentence so it cannot read as done. */
+var TEXT = {
+  pass:       "Получилось",
+  fail:       "Не получилось",
+  unmeasured: "Не смогли проверить",
+  offline:    "Сервер не ответил. Похоже, нет связи — проверьте интернет и повторите. Если операция уже была оплачена, кредиты вернутся автоматически.",
+  timeout:    "Ждём слишком долго и больше не можем сказать, чем это кончилось. Обновите страницу через пару минут: готовый результат подхватится, а если генерация сорвалась — кредиты вернутся.",
+  badFile:    "Это не похоже на фотографию. Нужен файл JPEG или PNG.",
+  bigFile:    "Файл больше 12 МБ. Уменьшите фотографию и попробуйте снова."
+};
+
+var state = {
+  demo: false,
+  sessionId: null,
+  balance: null,          // null means "unknown", which is shown as unknown
+  prices: { frame: FALLBACK_PRICES.frame, video: FALLBACK_PRICES.video },
+  templates: [],
+  templateId: null,
+  spec: null,
+  progress: 1
+};
+
+/* ---------- tiny DOM helpers ---------- */
+function $(id) { return document.getElementById(id); }
+function show(el, on) { if (el) el.hidden = !on; }
+function text(el, s) { if (el) el.textContent = s; }
+
+/* `detail` is the server's own sentence. It is kept, because a support request
+   without it is unanswerable, but it never leads: the first line has to be
+   something the user can act on. */
+function setNote(el, outcome, message, detail) {
+  if (!el) return;
+  if (!outcome) { el.hidden = true; return; }
+  el.dataset.outcome = outcome;
+  el.innerHTML = "";
+  var b = document.createElement("b");
+  b.textContent = TEXT[outcome] || outcome;
+  var p = document.createElement("span");
+  p.textContent = message || "";
+  el.appendChild(b); el.appendChild(p);
+  if (detail) {
+    var d = document.createElement("small");
+    d.textContent = "Ответ сервера: " + humanise(detail);
+    el.appendChild(d);
+  }
+  el.hidden = false;
+}
+
+/* Elapsed-time readout: a spinner alone does not tell the user that a
+   four-minute job is normal, so every wait shows real seconds. */
+function startTimer(elId) {
+  var el = $(elId), t0 = Date.now();
+  function tick() {
+    var s = Math.floor((Date.now() - t0) / 1000);
+    text(el, Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0"));
+  }
+  tick();
+  var h = setInterval(tick, 1000);
+  return function () { clearInterval(h); };
+}
+
+function unlock(step) {
+  if (step > state.progress) state.progress = step;
+  for (var i = 1; i <= 5; i++) {
+    var el = $("step-" + i);
+    if (!el) continue;
+    el.dataset.state = i < state.progress ? "done" : (i === state.progress ? "active" : "locked");
+  }
+}
+
+function renderBalance() {
+  var known = state.balance !== null && state.balance !== undefined;
+  text($("balance-value"), known ? String(state.balance) : "—");
+  $("balance").dataset.unknown = known ? "0" : "1";
+  $("balance").title = known ? "Кредиты на счёте" : "Баланс неизвестен: сервер не ответил";
+}
+
+function renderPrices() {
+  text($("frame-price"), plural(state.prices.frame));
+  text($("video-price"), plural(state.prices.video));
+}
+function plural(n) {
+  var t = n % 10, h = n % 100;
+  var word = (t === 1 && h !== 11) ? "кредит"
+           : (t >= 2 && t <= 4 && (h < 12 || h > 14)) ? "кредита" : "кредитов";
+  return n + " " + word;
+}
+
+/* ---------- transport ---------- */
+/* Every call resolves to {outcome, ...}. A dead network is UNMEASURED, not
+   FAIL: we genuinely do not know what happened on the other side. */
+function call(path, opts) {
+  return fetch(path, opts || {})
+    .then(function (r) {
+      return r.text().then(function (body) {
+        var data = {};
+        try { data = body ? JSON.parse(body) : {}; } catch (e) { data = {}; }
+        // 503 is how app.py answers UNMEASURED, so status alone decides when
+        // the body is missing or unparseable.
+        if (!r.ok) {
+          harvestBalance(data);
+          return {
+            outcome: data.outcome ? normalise(data.outcome) : (r.status >= 500 ? UNMEASURED : FAIL),
+            note: data.note || (r.status >= 500 ? "Сервер не смог обработать запрос." : "Запрос отклонён."),
+            status: r.status, data: data
+          };
+        }
+        harvestBalance(data);
+        return { outcome: normalise(data.outcome || PASS), note: data.note || "", status: r.status, data: data };
+      });
+    })
+    .catch(function () { return { outcome: UNMEASURED, note: TEXT.offline, data: {} }; });
+}
+
+/* A refusal carries the balance the ledger saw, which is the only place that
+   number appears at all until a balance route exists. */
+function harvestBalance(data) {
+  var n = null;
+  if (data && typeof data.balance === "number") n = data.balance;
+  else if (data && data.verdict && typeof data.verdict.balance === "number") n = data.verdict.balance;
+  if (n === null) return;
+  state.balance = n;
+  renderBalance();
+}
+
+/* ---------- offline demo data ---------- *
+ * The page must open from the filesystem without a backend, so the stubs are
+ * inline SVG data URIs: no CDN, no bundled binaries. */
+function poster(title, from, to) {
+  var svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 180 320">' +
+    '<defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1">' +
+    '<stop offset="0" stop-color="' + from + '"/><stop offset="1" stop-color="' + to + '"/>' +
+    '</linearGradient></defs><rect width="180" height="320" fill="url(#g)"/>' +
+    '<circle cx="90" cy="120" r="42" fill="rgba(255,255,255,.35)"/>' +
+    '<rect x="42" y="176" width="96" height="120" rx="48" fill="rgba(255,255,255,.28)"/>' +
+    '<text x="90" y="304" font-family="sans-serif" font-size="13" fill="#ffffff" ' +
+    'text-anchor="middle">' + title + '</text></svg>';
+  return "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg);
+}
+var DEMO_TEMPLATES = [
+  { id: "country_f",   title: "Кантри",     duration_s: 8,  poster: poster("Кантри", "#d98d3a", "#7a3f1d") },
+  { id: "y2k_f",       title: "Y2K",        duration_s: 7,  poster: poster("Y2K", "#4f6bff", "#b03fd0") },
+  { id: "icecream_f",  title: "Мороженое",  duration_s: 9,  poster: poster("Мороженое", "#ff9ec4", "#5ad2e0") },
+  { id: "midcentury_f",title: "Мидсенчури", duration_s: 8,  poster: poster("Мидсенчури", "#c8a24a", "#2f4a3f") },
+  { id: "fisheye_m",   title: "Фишай",      duration_s: 6,  poster: poster("Фишай", "#3fb0a0", "#123b4a") },
+  { id: "tomatoes_m",  title: "Томаты",     duration_s: 8,  poster: poster("Томаты", "#e04a3a", "#3a1010") }
+];
+var DEMO_SPEC = {
+  palette: ["песочный", "терракотовый", "оливковый"],
+  light: "закатный",
+  texture: "плёночное зерно",
+  mood: "спокойное",
+  setting: "крыша в старом городе"
+};
+var DEMO_FRAME = poster("первый кадр", "#e8b06a", "#6b3a2a");
+
+function demoOutcome() { return $("demo-outcome") ? $("demo-outcome").value : PASS; }
+function later(ms, value) {
+  return new Promise(function (res) { setTimeout(function () { res(value); }, ms); });
+}
+
+/* ---------- step 1: selfie ---------- */
+var fileInput = $("file"), drop = $("drop");
+
+drop.addEventListener("click", function () { fileInput.click(); });
+drop.addEventListener("keydown", function (e) {
+  if (e.key === "Enter" || e.key === " ") { e.preventDefault(); fileInput.click(); }
+});
+["dragenter", "dragover"].forEach(function (ev) {
+  drop.addEventListener(ev, function (e) { e.preventDefault(); drop.dataset.drag = "1"; });
+});
+["dragleave", "drop"].forEach(function (ev) {
+  drop.addEventListener(ev, function (e) { e.preventDefault(); drop.dataset.drag = "0"; });
+});
+drop.addEventListener("drop", function (e) {
+  if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]);
+});
+fileInput.addEventListener("change", function () {
+  if (fileInput.files && fileInput.files[0]) handleFile(fileInput.files[0]);
+});
+
+function handleFile(file) {
+  setNote($("selfie-note"), null);
+  if (!/^image\/(jpeg|png)$/.test(file.type)) { setNote($("selfie-note"), FAIL, TEXT.badFile); return; }
+  if (file.size > 12 * 1024 * 1024) { setNote($("selfie-note"), FAIL, TEXT.bigFile); return; }
+
+  var url = URL.createObjectURL(file);
+  var img = $("preview-img");
+  // A file the browser cannot decode (a renamed HEIC, a truncated upload) would
+  // otherwise leave a broken-image icon and no explanation.
+  img.onerror = function () {
+    show($("preview"), false);
+    setNote($("selfie-note"), FAIL, "Не смогли открыть этот файл как изображение. Пересохраните фото в JPEG или PNG.");
+  };
+  img.src = url;
+  text($("preview-meta"), file.name + " · " + Math.round(file.size / 1024) + " КБ");
+  show($("preview"), true);
+
+  show($("wait-1"), true);
+  text($("wait-1-eta"), "Ищем лицо и проверяем, хватит ли ему пикселей.");
+  var stop = startTimer("wait-1-elapsed");
+
+  uploadSelfie(file).then(function (res) {
+    stop(); show($("wait-1"), false);
+    if (res.outcome === PASS) {
+      state.sessionId = res.data.session_id || state.sessionId;
+      setNote($("selfie-note"), PASS, res.note || "Лицо найдено, кадр принят.");
+      unlock(2);
+      loadTemplates();
+    } else if (res.outcome === FAIL) {
+      setNote($("selfie-note"), FAIL,
+        "Это фото не подходит. Нужен один человек, лицо крупно и при ровном свете — попробуйте другой кадр.",
+        state.demo ? "" : res.note);
+    } else {
+      setNote($("selfie-note"), UNMEASURED,
+        "Не смогли проверить фото — это не отказ и не согласие. Повторите загрузку через минуту.",
+        state.demo ? "" : res.note);
+    }
+  });
+}
+
+function uploadSelfie(file) {
+  if (state.demo) {
+    var o = demoOutcome();
+    return later(900, {
+      outcome: o,
+      note: o === PASS ? "Лицо найдено, кадр принят (демо)."
+          : o === FAIL ? "Лицо занимает 4% кадра — слишком мелко для переноса."
+          : "Проверка не отработала: сервис распознавания не ответил.",
+      data: { session_id: "demo-session" }
+    });
+  }
+  return openSession().then(function (ok) {
+    if (!ok) {
+      return { outcome: UNMEASURED, note: "Не смогли открыть сессию на сервере, поэтому фото никуда не ушло. Обновите страницу.", data: {} };
+    }
+    var fd = new FormData();
+    fd.append("session_id", state.sessionId);
+    fd.append("file", file);
+    return call(API.selfie, { method: "POST", body: fd });
+  });
+}
+
+/* A session id is what every later call is keyed by, and app.py mints it from
+   a user_id. Nothing here authenticates, so the id is kept per browser: a
+   reload must land on the same ledger, or the balance would reset itself. */
+function userId() {
+  var key = "lipsync-studio-user";
+  var id = null;
+  try { id = localStorage.getItem(key); } catch (e) { id = null; }
+  if (!id) {
+    id = "web-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 8);
+    try { localStorage.setItem(key, id); } catch (e) { /* private mode: one-shot id */ }
+  }
+  return id;
+}
+function openSession() {
+  if (state.sessionId) return Promise.resolve(true);
+  if (state.demo) { state.sessionId = "demo-session"; return Promise.resolve(true); }
+  return call(API.session, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ user_id: userId() })
+  }).then(function (res) {
+    if (res.outcome === PASS && res.data.session_id) { state.sessionId = res.data.session_id; return true; }
+    return false;
+  });
+}
+
+/* ---------- step 2: templates ---------- */
+function loadTemplates() {
+  if (state.templates.length) return;
+  show($("wait-2"), true);
+  var stop = startTimer("wait-2-elapsed");
+  var p = state.demo
+    ? later(500, { outcome: PASS, note: "", data: { templates: DEMO_TEMPLATES } })
+    : call(API.templates);
+  p.then(function (res) {
+    stop(); show($("wait-2"), false);
+    var list = (res.data && res.data.templates) || [];
+    state.templates = list;
+    if (list.length) renderGallery();
+    if (list.length && res.outcome === PASS) {
+      setNote($("tpl-note"), null);
+    } else if (list.length) {
+      // The catalogue still lists a clip whose file is missing; that is a
+      // partial answer, so it is shown as one instead of as an empty shelf.
+      var av = (res.data && res.data.availability) || {};
+      var have = (typeof av.checked === "number" && av.missing)
+        ? (av.checked - av.missing.length) + " из " + av.checked + " шаблонов готовы к работе."
+        : "Часть шаблонов недоступна.";
+      setNote($("tpl-note"), res.outcome, have + " Недоступные помечены и не выбираются.");
+    } else if (res.outcome === FAIL) {
+      setNote($("tpl-note"), FAIL, res.note || "Шаблоны недоступны.");
+    } else {
+      setNote($("tpl-note"), UNMEASURED, res.note || "Не смогли получить список шаблонов. Обновите страницу.");
+    }
+  });
+}
+
+function renderGallery() {
+  var ul = $("gallery");
+  ul.innerHTML = "";
+  state.templates.forEach(function (t) {
+    var li = document.createElement("li");
+    var b = document.createElement("button");
+    b.type = "button"; b.className = "card";
+    b.setAttribute("aria-pressed", "false");
+    b.dataset.id = t.id;
+
+    var title = t.name || t.title || t.id;
+    var img = document.createElement("img");
+    img.className = "poster"; img.loading = "lazy";
+    // A poster that will not load must not leave a broken icon: the generated
+    // placeholder keeps the card readable and the page free of remote assets.
+    img.src = mediaUrl(t.poster || t.poster_path) || poster(title, "#8892a6", "#39404d");
+    img.alt = "Превью шаблона «" + title + "»";
+    img.addEventListener("error", function () { img.src = poster(title, "#8892a6", "#39404d"); });
+
+    var cap = document.createElement("div");
+    cap.className = "cap";
+    var name = document.createElement("b"); name.textContent = title;
+    var meta = document.createElement("span");
+    var unavailable = t.available === false;
+    meta.textContent = unavailable
+      ? "нет в этой сборке"
+      : (t.duration_s ? t.duration_s + " с · " : "") + "вертикальное";
+    cap.appendChild(name); cap.appendChild(meta);
+    if (unavailable) { b.disabled = true; b.title = "Этот шаблон не поставлен в этой сборке."; }
+
+    var tick = document.createElement("span");
+    tick.className = "tick"; tick.textContent = "✓"; tick.setAttribute("aria-hidden", "true");
+
+    b.appendChild(img); b.appendChild(cap); b.appendChild(tick);
+    b.addEventListener("click", function () { pickTemplate(t.id); });
+    li.appendChild(b); ul.appendChild(li);
+  });
+}
+
+function pickTemplate(id) {
+  state.templateId = id;
+  Array.prototype.forEach.call($("gallery").querySelectorAll(".card"), function (c) {
+    c.setAttribute("aria-pressed", String(c.dataset.id === id));
+  });
+  // The choice travels with the frame request, so nothing is sent here.
+  unlock(3);
+  if (!$("chat").children.length) {
+    addMsg("bot", "Опишите картинку словами: цвета, свет, фактура, настроение, где всё происходит.");
+  }
+}
+
+/* ---------- step 3: style chat ---------- */
+function addMsg(who, s) {
+  var d = document.createElement("div");
+  d.className = "msg " + who;
+  d.textContent = s;
+  $("chat").appendChild(d);
+  d.scrollIntoView({ block: "nearest" });
+}
+
+$("chat-form").addEventListener("submit", function (e) {
+  e.preventDefault();
+  var input = $("chat-input");
+  var value = input.value.trim();
+  if (!value) return;
+  addMsg("user", value);
+  input.value = "";
+  setNote($("style-note"), null);
+  $("chat-send").disabled = true;
+  show($("wait-3"), true);
+  var stop = startTimer("wait-3-elapsed");
+
+  sendStyle(value).then(function (res) {
+    stop(); show($("wait-3"), false);
+    $("chat-send").disabled = false;
+    // app.py answers with a spec, not with chat prose, so the readback IS the
+    // reply: repeating the fields back is how the user checks we understood.
+    if (res.data && res.data.reply) addMsg("bot", res.data.reply);
+    else if (res.outcome === PASS && res.data.spec) addMsg("bot", "Поняли так — плашки ниже.");
+    // A refusal is not put in the chat: it belongs in the note, in our words.
+
+    if (res.outcome === PASS && res.data.spec) {
+      state.spec = res.data.spec;
+      renderSpec(res.data.spec);
+      setNote($("style-note"), PASS, "Стиль принят. Можно посмотреть первый кадр.");
+      unlock(4);
+    } else if (res.outcome === FAIL) {
+      show($("spec"), false);
+      // A refusal is a sentence, never a code: the user cannot act on "FAIL/403".
+      setNote($("style-note"), FAIL,
+        "Такое описание мы не берём в работу. Опишите цвета, свет, фактуру и обстановку — без конкретных людей, брендов и надписей в кадре.",
+        state.demo ? "" : res.note);
+    } else {
+      show($("spec"), false);
+      setNote($("style-note"), UNMEASURED,
+        "Не смогли разобрать описание — ответа от разбора не было. Отправьте текст ещё раз.",
+        state.demo ? "" : res.note);
+    }
+  });
+});
+
+function sendStyle(value) {
+  if (state.demo) {
+    var o = demoOutcome();
+    return later(800, {
+      outcome: o,
+      note: o === FAIL ? "В описании просьба, которую мы не выполняем: узнаваемый человек в кадре." : "",
+      data: {
+        spec: o === PASS ? DEMO_SPEC : null,
+        reply: o === PASS ? "Поняли так: тёплый закатный свет, песочная палитра, плёночное зерно."
+             : o === FAIL ? "Так не получится — уберите из описания конкретного человека."
+             : "Не смогли разобрать: помощник не ответил вовремя."
+      }
+    });
+  }
+  return call(API.style, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ session_id: state.sessionId, text: value })
+  });
+}
+
+function renderSpec(spec) {
+  fillChips($("spec-palette"), spec.palette || []);
+  fillChips($("spec-light"), spec.light ? [spec.light] : []);
+  fillChips($("spec-texture"), spec.texture ? [spec.texture] : []);
+  fillChips($("spec-mood"), spec.mood ? [spec.mood] : []);
+  fillChips($("spec-setting"), spec.setting ? [spec.setting] : []);
+  show($("spec"), true);
+}
+function fillChips(dd, values) {
+  dd.innerHTML = "";
+  if (!values.length) {
+    var em = document.createElement("span");
+    em.className = "chip"; em.textContent = "не указано";
+    dd.appendChild(em); return;
+  }
+  values.forEach(function (v) {
+    var c = document.createElement("span");
+    c.className = "chip"; c.textContent = v;
+    dd.appendChild(c);
+  });
+}
+
+/* ---------- steps 4 and 5: paid jobs ---------- */
+$("frame-btn").addEventListener("click", function () { runJob("frame"); });
+$("video-btn").addEventListener("click", function () { runJob("video"); });
+
+function runJob(kind) {
+  var isFrame = kind === "frame";
+  var btn = isFrame ? $("frame-btn") : $("video-btn");
+  var note = isFrame ? $("frame-note") : $("video-note");
+  var wait = isFrame ? $("wait-4") : $("wait-5");
+  var elapsedId = isFrame ? "wait-4-elapsed" : "wait-5-elapsed";
+  var result = isFrame ? $("frame-result") : $("video-result");
+
+  btn.disabled = true;
+  setNote(note, null);
+  show(result, false);
+  show(wait, true);
+  var stop = startTimer(elapsedId);
+
+  submitJob(kind)
+    .then(function (res) {
+      if (res.outcome !== PASS || !(res.data && res.data.job_id)) {
+        if (res.outcome === FAIL) {
+          var short = res.status === 402;
+          throw {
+            outcome: FAIL,
+            note: short
+              ? ("Не хватает кредитов: на счёте " + plural(state.balance === null ? 0 : state.balance) +
+                 ", нужно " + plural(state.prices[kind]) + ". Ничего не списано.")
+              : "Запуск не состоялся, деньги не списаны. Проверьте предыдущие шаги и повторите.",
+            detail: res.note
+          };
+        }
+        throw { outcome: UNMEASURED, note: TEXT.offline, detail: res.note };
+      }
+      // Bill what the server says it billed, not what the button promised.
+      if (typeof res.data.charged === "number") { state.prices[kind] = res.data.charged; renderPrices(); }
+      return pollJob(res.data.job_id, kind);
+    })
+    .then(function (done) {
+      stop(); show(wait, false); btn.disabled = false;
+      refreshBalance();
+      if (isFrame) {
+        $("frame-img").src = done.result;
+        show(result, true);
+        setNote(note, PASS, "Кадр готов. Списан " + plural(state.prices.frame) + ".");
+        unlock(5);
+      } else {
+        $("video-el").src = done.result;
+        $("video-el").poster = done.poster || "";
+        var a = $("video-download");
+        a.href = done.result;
+        a.setAttribute("download", "lipsync-" + (state.templateId || "clip") + ".mp4");
+        show(result, true);
+        setNote(note, PASS, "Ролик готов. Списано " + plural(state.prices.video) + ".");
+      }
+    })
+    .catch(function (err) {
+      stop(); show(wait, false); btn.disabled = false;
+      refreshBalance();
+      var outcome = (err && err.outcome) || UNMEASURED;
+      setNote(note, outcome, (err && err.note) || TEXT.timeout, state.demo ? "" : (err && err.detail));
+    });
+}
+
+function submitJob(kind) {
+  if (state.demo) {
+    var o = demoOutcome();
+    if (o === PASS) return later(400, { outcome: PASS, note: "", data: { job_id: "demo-" + kind } });
+    if (o === FAIL) return later(400, { outcome: FAIL, note: "На счёте " + plural(state.balance || 0) + ", нужно " + plural(state.prices[kind]) + ". Пополните счёт." });
+    return later(400, { outcome: UNMEASURED, note: "Очередь не подтвердила приём задачи." });
+  }
+  var json = { method: "POST", headers: { "Content-Type": "application/json" } };
+  if (kind === "frame") {
+    return call(API.frame, Object.assign({}, json, {
+      body: JSON.stringify({ session_id: state.sessionId, template_id: state.templateId })
+    }));
+  }
+  // The video is gated on consent server-side, so the button records the
+  // consent first and only then asks for the expensive call.
+  return call(API.consent, Object.assign({}, json, {
+    body: JSON.stringify({ session_id: state.sessionId })
+  })).then(function (res) {
+    if (res.outcome !== PASS) return res;
+    return call(API.video, Object.assign({}, json, {
+      body: JSON.stringify({ session_id: state.sessionId })
+    }));
+  });
+}
+
+/* A path from the engine is not a URL. Absolute links and data: URIs are used
+   as they are; a repo-relative path is turned into a root-relative one, which
+   works the moment the server serves those files and fails visibly if it does
+   not — better than a silently blank picture. */
+function mediaUrl(value) {
+  if (!value || typeof value !== "string") return "";
+  if (/^(https?:|data:|blob:|\/)/.test(value)) return value;
+  return "/" + value.replace(/^\.?\//, "");
+}
+function resultUrl(result) {
+  if (!result) return "";
+  if (typeof result === "string") return mediaUrl(result);
+  var keys = ["url", "video_url", "frame_url", "image_url", "video", "frame", "image", "path", "output"];
+  for (var i = 0; i < keys.length; i++) {
+    if (typeof result[keys[i]] === "string") return mediaUrl(result[keys[i]]);
+  }
+  return "";
+}
+
+/* Server notes are English sentences meant for a log. Show them, but never a
+   bare code, and never in place of an instruction the user can act on. */
+function humanise(note) {
+  return String(note || "").replace(/\s+/g, " ").trim();
+}
+
+/* Poll until the job reports a terminal state. Three outcomes survive the whole
+   way: done -> resolve, failed -> FAIL, anything else (timeout, dead network,
+   an outcome the server itself calls unmeasured) -> UNMEASURED. */
+function pollJob(jobId, kind) {
+  if (state.demo) {
+    return later(2200).then(function () {
+      var o = demoOutcome();
+      if (o === PASS) {
+        return kind === "frame"
+          ? { result: DEMO_FRAME }
+          : Promise.reject({ outcome: UNMEASURED, note: "Демо-режим: настоящего ролика без сервера не существует, поэтому показать нечего. Это не успех и не отказ — просто нечего проверять." });
+      }
+      if (o === FAIL) return Promise.reject({ outcome: FAIL, note: "Генерация не удалась: лицо потерялось на середине. Кредиты вернулись на счёт." });
+      return Promise.reject({ outcome: UNMEASURED, note: TEXT.timeout });
+    });
+  }
+  var deadline = Date.now() + (JOB_LIMIT_MS[kind] || JOB_LIMIT_MS.video);
+  return new Promise(function (resolve, reject) {
+    (function tick() {
+      if (Date.now() > deadline) { reject({ outcome: UNMEASURED, note: TEXT.timeout }); return; }
+      call(API.jobStatus(jobId)).then(function (res) {
+        var d = res.data || {};
+        // A dropped request mid-poll is a hiccup, not a verdict: keep polling
+        // until the deadline rather than declaring anything.
+        if (!d.state) { setTimeout(tick, POLL_MS); return; }
+        if (d.state === "queued" || d.state === "running") { setTimeout(tick, POLL_MS); return; }
+        if (d.state === "done") {
+          var url = resultUrl(d.result);
+          if (!url) {
+            reject({ outcome: UNMEASURED, note: "Задача завершилась, но файла не пришло — показывать нечего. Напишите в поддержку, если кредиты не вернулись.", detail: d.note });
+            return;
+          }
+          resolve({ result: url, poster: mediaUrl(d.result && d.result.poster) });
+          return;
+        }
+        if (d.state === "failed") {
+          // app.py writes a compensating entry for a FAILED job, so this
+          // promise is the server's behaviour, not a hope.
+          reject({ outcome: FAIL, note: "Генерация не удалась. Кредиты вернулись на счёт — можно попробовать ещё раз.", detail: d.note });
+          return;
+        }
+        // "unknown": jobs.py says the work may have happened. Not a failure,
+        // and deliberately no promise about the credits — a human checks it.
+        reject({ outcome: UNMEASURED, note: TEXT.timeout, detail: d.note });
+      });
+    })();
+  });
+}
+
+/* ---------- balance ---------- */
+function refreshBalance() {
+  if (state.demo) {
+    if (state.balance === null) state.balance = 42;
+    renderBalance(); renderPrices();
+    return;
+  }
+  // app.py has no balance route yet, only the `balance` field that comes back
+  // with a charge. The probe is silent on purpose: a 404 here is a missing
+  // feature, not something to alarm the user about. Until a number arrives the
+  // balance reads "—", because a guessed zero would look like an empty account.
+  call(API.balance).then(function (res) {
+    var d = res.data || {};
+    if (res.outcome === PASS && typeof d.credits === "number") state.balance = d.credits;
+    if (typeof d.frame_credits === "number") state.prices.frame = d.frame_credits;
+    if (typeof d.video_credits === "number") state.prices.video = d.video_credits;
+    renderBalance(); renderPrices();
+  });
+}
+
+/* ---------- theme override ---------- */
+$("theme-toggle").addEventListener("click", function () {
+  var root = document.documentElement;
+  var next = root.getAttribute("data-theme") === "dark" ? "light"
+           : root.getAttribute("data-theme") === "light" ? "auto" : "dark";
+  root.setAttribute("data-theme", next);
+  $("theme-toggle").textContent = next === "dark" ? "☾" : next === "light" ? "☀" : "◐";
+});
+
+/* ---------- boot ---------- */
+/* file:// means there is no backend to talk to, so the page runs on stubs
+   instead of throwing a network error at the user. */
+state.demo = location.protocol === "file:" || /(^|[?&])demo=1/.test(location.search);
+show($("demo-bar"), state.demo);
+renderPrices();
+refreshBalance();
+if (state.demo) { unlock(1); }
+
+})();
+</script>
+</body>
+</html>

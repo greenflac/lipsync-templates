@@ -6,3 +6,7 @@ pillow==12.3.0
 ruff==0.15.8
 mypy==1.19.1
 types-requests==2.33.0.20260712
+# Studio web layer — pinned to what was installed and measured on 2026-08-25.
+fastapi==0.141.1
+uvicorn==0.52.4
+python-multipart==0.0.32
