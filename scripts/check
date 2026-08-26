@@ -15,3 +15,29 @@ python -m mypy lipsync/ --ignore-missing-imports
 
 echo "== tests"
 python -m unittest discover -s lipsync/tests -t .
+
+# The Self-RAG prompt engineer. Gated here rather than described in a document,
+# because a rule that is only written down is a rule that gets skipped under a
+# deadline and leaves no trace in the diff.
+#
+# Only studio/selfrag is checked, not all of studio/: the rest of the studio
+# suite needs httpx2, which requirements-dev.txt does not pin, so adding it here
+# would turn a missing dependency into a red build for everybody. That gap is
+# reported to the owner of requirements-dev.txt rather than papered over.
+echo "== ruff check (selfrag)"
+ruff check studio/selfrag/
+
+echo "== ruff format (selfrag)"
+ruff format --check studio/selfrag/
+
+echo "== mypy (selfrag)"
+MYPYPATH=. python -m mypy --explicit-package-bases studio/selfrag/ --ignore-missing-imports
+
+echo "== tests (selfrag)"
+python -m unittest discover -s studio/selfrag/tests -t .
+
+# The retriever scored against its gold set, with the negative controls that
+# make the score mean anything. Exit code 2 is "could not measure" and is a
+# red build here on purpose: a corpus that vanished must not read as green.
+echo "== selfrag retrieval eval"
+python -m studio.selfrag --state :memory: eval

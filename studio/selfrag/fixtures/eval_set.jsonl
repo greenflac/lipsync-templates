@@ -1,0 +1,15 @@
+{"id": "g01", "query": "rain-slick rooftop at dusk with warm amber golden-hour light and film grain", "model": "veo-3.1", "expect": "hit", "must_retrieve": ["cyclist"]}
+{"id": "g02", "query": "teal and gold studio portrait, soft light, matte, elegant", "model": "flux-2", "expect": "hit", "must_retrieve": ["dancer"]}
+{"id": "g03", "query": "she turns her head slowly toward camera, coat lifting in the wind", "model": "kling-3.0", "expect": "hit", "must_retrieve": ["turns her head"]}
+{"id": "g04", "query": "crimson neon alley at night, hazy and mysterious, handheld tracking", "model": "kling-3.0", "expect": "hit", "must_retrieve": ["neon alley"]}
+{"id": "g05", "query": "slate overcast harbour, crisp texture, melancholic, gulls drifting", "model": "wan-2.6-flash", "expect": "hit", "must_retrieve": ["harbour"]}
+{"id": "g06", "query": "ivory high-key kitchen, glossy, playful, quick whip pan", "model": "runway-gen-4.5", "expect": "hit", "must_retrieve": ["kitchen"]}
+{"id": "g07", "query": "emerald forest floor in low-key light, smoky texture, serene, slow push in", "model": "veo-3.1", "expect": "hit", "must_retrieve": ["forest floor"]}
+{"id": "g08", "query": "copper desert dunes at golden hour, dramatic, orbiting crane shot", "model": "veo-3.1", "expect": "hit", "must_retrieve": ["desert dunes"]}
+{"id": "g09", "query": "charcoal studio backdrop with hard light and metallic texture", "model": "flux-2", "expect": "hit", "must_retrieve": ["charcoal studio"]}
+{"id": "g10", "query": "rose candlelit dining room, velvet texture, dreamy, gentle handheld drift", "model": "seedance-2.0", "expect": "hit", "must_retrieve": ["dining room"]}
+{"id": "g11", "query": "golden-hour film grain nostalgic cinematic dusk", "model": "veo-3.1", "expect": "hit", "must_retrieve": ["golden-hour"]}
+{"id": "g12", "query": "low-key smoky serene woodland interior", "model": "veo-3.1", "expect": "hit", "must_retrieve": ["low-key"]}
+{"id": "n01", "query": "quarterly value-added tax reconciliation spreadsheet for a tractor dealership", "model": "veo-3.1", "expect": "abstain", "must_retrieve": []}
+{"id": "n02", "query": "kubernetes ingress controller certificate rotation runbook", "model": "kling-3.0", "expect": "abstain", "must_retrieve": []}
+{"id": "n03", "query": "recipe for sourdough starter hydration percentages", "model": "flux-2", "expect": "abstain", "must_retrieve": []}

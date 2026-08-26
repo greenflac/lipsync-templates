@@ -6,3 +6,7 @@ work/
 # Local state written at runtime, never source.
 *.sqlite3
 studio/uploads/
+
+# The operator's own prompt corpus. Private data, named by the product brief;
+# the demo corpus that ships with the code lives in studio/selfrag/fixtures/.
+corpus/
