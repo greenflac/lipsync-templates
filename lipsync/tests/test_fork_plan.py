@@ -144,6 +144,199 @@ class TheCanvasAlwaysPadsAndNeverCrops(unittest.TestCase):
         self.assertEqual(P.PLAN_RATIO, 0.5625)
 
 
+class TheRatioToleranceIsGuardedOnBothSides(unittest.TestCase):
+    """The defect: the tolerance was 0.015 while the error it had to catch was 0.0044."""
+
+    # MEASURED 2026-08-26: what nanobanana-2 returns for a 9:16 request through
+    # each route. Both are 0.5581, and both used to read as the plan.
+    STYLISER_RETURNS = (768, 1376)
+    OUTPAINT_RETURNS = (1536, 2752)
+
+    def test_the_shipped_tolerances_are_the_chosen_ones(self):
+        self.assertEqual(P.PLAN_TOLERANCE, 0.001)
+        self.assertEqual(P.TRIM_MAX_SHARE, 0.02)
+
+    def test_the_measured_route_returns_do_not_read_as_the_plan(self):
+        for size in (self.STYLISER_RETURNS, self.OUTPAINT_RETURNS):
+            with self.subTest(size=size):
+                self.assertEqual(P.ratio_axis(*size)["outcome"], FAIL)
+
+    def test_an_exact_frame_still_passes(self):
+        """Negative control at both ends of the range and in the middle."""
+        for size in ((720, 1280), (1152, 2048), (1530, 2720)):
+            with self.subTest(size=size):
+                self.assertEqual(P.ratio_axis(*size)["outcome"], PASS)
+
+    def test_one_pixel_of_rounding_still_passes(self):
+        """The tolerance exists for whole-pixel rounding, and must still admit it."""
+        self.assertEqual(P.ratio_axis(769, 1367)["outcome"], PASS)
+
+    def test_mutating_the_tolerance_both_ways_turns_the_axis(self):
+        """Loosen and the measured defect passes; tighten and rounding fails."""
+        was = P.PLAN_TOLERANCE
+        try:
+            P.PLAN_TOLERANCE = 0.015
+            self.assertEqual(P.ratio_axis(*self.STYLISER_RETURNS)["outcome"], PASS)
+            P.PLAN_TOLERANCE = 0.0000001
+            self.assertEqual(P.ratio_axis(769, 1367)["outcome"], FAIL)
+        finally:
+            P.PLAN_TOLERANCE = was
+        self.assertEqual(P.PLAN_TOLERANCE, 0.001)
+
+
+class AFrameIsTrimmedOrPaddedAndNeverGuessed(unittest.TestCase):
+    """Three outcomes: already the plan, off it by a rounding, off it by a framing."""
+
+    STYLISER_RETURNS = (768, 1376)
+    OUTPAINT_RETURNS = (1536, 2752)
+    THREE_BY_FOUR = (896, 1200)
+
+    def test_a_frame_already_the_plan_is_left_alone(self):
+        for size in ((720, 1280), (1152, 2048), (1530, 2720)):
+            with self.subTest(size=size):
+                got = P.fit_to_plan(*size)
+                self.assertEqual(got["action"], "none")
+                self.assertEqual((got["width"], got["height"]), size)
+                self.assertEqual(got["trimmed_share"], 0.0)
+
+    def test_the_measured_returns_are_trimmed_to_the_exact_plan(self):
+        for size, want, share in (
+            (self.STYLISER_RETURNS, (768, 1364), 0.0087),
+            (self.OUTPAINT_RETURNS, (1536, 2730), 0.008),
+        ):
+            with self.subTest(size=size):
+                got = P.fit_to_plan(*size)
+                self.assertEqual(got["action"], "crop")
+                self.assertEqual((got["width"], got["height"]), want)
+                self.assertEqual(got["trimmed_share"], share)
+
+    def test_the_trim_only_ever_shrinks_and_lands_on_the_plan(self):
+        for size in (self.STYLISER_RETURNS, self.OUTPAINT_RETURNS):
+            with self.subTest(size=size):
+                got = P.fit_to_plan(*size)
+                self.assertLessEqual(got["width"], size[0])
+                self.assertLessEqual(got["height"], size[1])
+                self.assertLessEqual(abs(got["width"] / got["height"] - 0.5625), 0.001)
+                self.assertEqual(got["width"] % 2, 0)
+                self.assertEqual(got["height"] % 2, 0)
+                self.assertGreater(got["trimmed_share"], 0.0)
+                self.assertLessEqual(got["trimmed_share"], 0.02)
+
+    def test_a_frame_far_from_the_plan_is_padded_not_trimmed(self):
+        """Negative control: trimming 3:4 would cut the subject, not a margin."""
+        for size, want in ((self.THREE_BY_FOUR, (896, 1594)), ((1920, 1080), (1920, 3414))):
+            with self.subTest(size=size):
+                got = P.fit_to_plan(*size)
+                self.assertEqual(got["action"], "pad")
+                self.assertEqual((got["width"], got["height"]), want)
+                self.assertEqual(got["trimmed_share"], 0.0)
+                self.assertGreaterEqual(got["width"], size[0])
+                self.assertGreaterEqual(got["height"], size[1])
+
+    def test_padding_is_counted_as_a_violation_not_as_a_repair(self):
+        """The criterion of 2026-08-26: 9:16 with no padding in 100% of cases."""
+        for size in (self.THREE_BY_FOUR, (1920, 1080), (1024, 1024)):
+            with self.subTest(size=size):
+                got = P.fit_to_plan(*size)
+                self.assertEqual(got["action"], "pad")
+                self.assertEqual(got["outcome"], FAIL)
+                self.assertEqual(got["checked"], 1)
+                self.assertGreaterEqual(got["violations"], 1)
+                self.assertEqual(got["unmeasured"], 0)
+
+    def test_the_refusal_says_what_it_is_in_words(self):
+        note = P.fit_to_plan(*self.THREE_BY_FOUR)["note"]
+        self.assertIn("was NOT brought to the plan", note)
+        self.assertIn("refusal", note)
+        self.assertIn("nothing padded may ship", note)
+
+    def test_trimming_and_leaving_alone_are_NOT_violations(self):
+        """Negative control: the rule above must condemn padding and nothing else."""
+        for size in ((720, 1280), (1152, 2048), self.STYLISER_RETURNS, self.OUTPAINT_RETURNS):
+            with self.subTest(size=size):
+                got = P.fit_to_plan(*size)
+                self.assertIn(got["action"], ("none", "crop"))
+                self.assertEqual(got["outcome"], PASS)
+                self.assertEqual(got["violations"], 0)
+
+    def test_the_padded_geometry_is_still_returned_for_the_outpainter(self):
+        """A refusal still hands over the canvas: the outpaint downstream may save it."""
+        got = P.fit_to_plan(*self.THREE_BY_FOUR)
+        self.assertEqual((got["canvas"]["width"], got["canvas"]["height"]), (896, 1594))
+        self.assertEqual((got["left"], got["top"]), (0, 197))
+
+    def test_the_two_sides_of_the_budget_behave_differently(self):
+        """Half a budget in is trimmed; twice a budget out is not."""
+        self.assertEqual(P.fit_to_plan(568, 1000)["action"], "crop")
+        self.assertEqual(P.fit_to_plan(586, 1000)["action"], "pad")
+
+    def test_nonsense_sizes_are_refused_not_guessed(self):
+        for bad in ((0, 100), (100, -1)):
+            with self.subTest(bad=bad), self.assertRaises(ValueError):
+                P.fit_to_plan(*bad)
+        for bad in (("896", 1200), (896.0, 1200)):
+            with self.subTest(bad=bad), self.assertRaises(TypeError):
+                P.fit_to_plan(*bad)
+
+    def test_mutating_the_trim_budget_both_ways_turns_the_action(self):
+        """Tighten and a rounding is padded; loosen and a face is cut."""
+        was = P.TRIM_MAX_SHARE
+        try:
+            P.TRIM_MAX_SHARE = 0.001
+            self.assertEqual(P.fit_to_plan(*self.STYLISER_RETURNS)["action"], "pad")
+            P.TRIM_MAX_SHARE = 0.5
+            self.assertEqual(P.fit_to_plan(*self.THREE_BY_FOUR)["action"], "crop")
+        finally:
+            P.TRIM_MAX_SHARE = was
+        self.assertEqual(P.TRIM_MAX_SHARE, 0.02)
+
+    def test_mutating_the_tolerance_both_ways_turns_the_action(self):
+        """Loosen and the defect needs no trim at all; tighten and no trim lands."""
+        was = P.PLAN_TOLERANCE
+        try:
+            P.PLAN_TOLERANCE = 0.015
+            self.assertEqual(P.fit_to_plan(*self.STYLISER_RETURNS)["action"], "none")
+            P.PLAN_TOLERANCE = 0.0000001
+            self.assertEqual(P.fit_to_plan(*self.STYLISER_RETURNS)["action"], "pad")
+        finally:
+            P.PLAN_TOLERANCE = was
+        self.assertEqual(P.PLAN_TOLERANCE, 0.001)
+
+
+class TheOutpaintAsksForTheSizeItWants(unittest.TestCase):
+    """The defect: the call took the route default 1080x1920, where 1080 is not a multiple of 16."""
+
+    def test_the_asked_size_is_exactly_the_plan_and_on_the_grid(self):
+        self.assertEqual(P.EXTEND_SIZE, (1152, 2048))
+        self.assertEqual(P.EXTEND_SIZE[0] / P.EXTEND_SIZE[1], 0.5625)
+        self.assertEqual((P.EXTEND_SIZE[0] % 16, P.EXTEND_SIZE[1] % 16), (0, 0))
+
+    def test_the_size_reaches_the_call(self):
+        from lipsync import pollinations
+
+        with mock.patch.object(pollinations, "images_edit") as edit:
+            got = P.extend_to_plan("in.png", "out.png", sizer=lambda _: (1152, 2048))
+        self.assertEqual(edit.call_args.kwargs["width"], 1152)
+        self.assertEqual(edit.call_args.kwargs["height"], 2048)
+        self.assertEqual(got["outcome"], PASS)
+        self.assertEqual(tuple(got["asked"]), (1152, 2048))
+
+    def test_a_caller_may_ask_for_another_size(self):
+        from lipsync import pollinations
+
+        with mock.patch.object(pollinations, "images_edit") as edit:
+            P.extend_to_plan("in.png", "out.png", size=(720, 1280), sizer=lambda _: (720, 1280))
+        self.assertEqual(edit.call_args.kwargs["width"], 720)
+        self.assertEqual(edit.call_args.kwargs["height"], 1280)
+
+    def test_an_off_plan_return_is_reported_as_a_violation(self):
+        got = P.extend_to_plan(
+            "in.png", "out.png", extender=lambda *a: None, sizer=lambda _: (1536, 2752)
+        )
+        self.assertEqual(got["outcome"], FAIL)
+        self.assertIn("asked for 1152x2048", got["note"])
+
+
 class TheVerdictHasThreeOutcomesOnEveryAxis(unittest.TestCase):
     def test_a_photo_in_plan_is_plainly_good(self):
         got = P.plan_verdict(width=1080, height=1920, points=GOOD, face_px=140)

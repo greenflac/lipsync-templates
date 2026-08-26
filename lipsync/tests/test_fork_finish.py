@@ -44,6 +44,26 @@ RESULT_JSON = """{
  "format": {"duration": "3.300000", "size": "1735695"}
 }"""
 
+
+# MEASURED 2026-08-26: 768x1376 = 0.5581 is what the styliser returns for a
+# 9:16 request, and 1536x2752 is the same ratio from the outpaint route. Kept
+# as a written result so the finisher can be asked about a real off-plan clip.
+RESULT_OFF_PLAN_JSON = RESULT_JSON.replace(
+    '"width": 540,\n   "height": 960', '"width": 768,\n   "height": 1376'
+)
+
+
+# A tiny frame where the crop plan itself lands off the plan: 20x20 gives a
+# 10x20 window (0.5000), because evening the side down moves the ratio. The
+# written file then matches the plan exactly and is still not 9:16 — only a
+# measurement of the file itself can see this.
+KLING_TINY_JSON = KLING_JSON.replace(
+    '"width": 960,\n   "height": 960', '"width": 20,\n   "height": 20'
+)
+RESULT_TINY_JSON = RESULT_JSON.replace(
+    '"width": 540,\n   "height": 960', '"width": 10,\n   "height": 20'
+)
+
 RESULT_SILENT_JSON = RESULT_JSON.replace(
     """,
   {"index": 1, "codec_name": "aac", "codec_type": "audio",
@@ -743,6 +763,191 @@ class TheModuleDoesNotReinventWhatAlreadyExists(unittest.TestCase):
                     ),
                     f"{name}: provenance not marked",
                 )
+
+
+class TheShippedRatioIsMeasuredAndNotAssumed(unittest.TestCase):
+    """Д7: nothing measured the ratio of the file that leaves for the client."""
+
+    def setUp(self):
+        self.drv, self.kln, self.out = _files("driving_arms.mp4", "kling.mp4", "finish.mp4")
+        self.answers = {
+            "driving_arms.mp4": DRIVING_JSON,
+            "kling.mp4": KLING_JSON,
+            "finish.mp4": RESULT_JSON,
+        }
+
+    def _finish(self, runner=None, **over):
+        answers = dict(self.answers, **over.pop("answers", {}))
+        return ff.finish(
+            self.drv,
+            self.kln,
+            self.out,
+            window=(100, 199),
+            prober=prober_of(answers),
+            runner=Runner() if runner is None else runner,
+            **over,
+        )
+
+    # --- the instrument itself, three outcomes -------------------------------
+
+    def test_an_exact_frame_is_the_yes_of_the_instrument(self):
+        for width, height in ((720, 1280), (540, 960), (1080, 1920)):
+            with self.subTest(size=(width, height)):
+                axis = ff.shipped_ratio_axis(width, height)
+                self.assertEqual(axis["outcome"], "pass", axis["note"])
+                self.assertEqual(axis["ratio"], 0.5625)
+                self.assertEqual((axis["checked"], axis["violations"]), (1, 0))
+
+    def test_the_measured_square_from_kling_is_the_no_of_the_instrument(self):
+        """Negative control: 960x960 is the MEASURED Kling return on eight orders."""
+        axis = ff.shipped_ratio_axis(960, 960)
+        self.assertEqual(axis["outcome"], "fail", axis["note"])
+        self.assertEqual(axis["ratio"], 1.0)
+        self.assertEqual((axis["checked"], axis["violations"], axis["unmeasured"]), (1, 1, 0))
+
+    def test_the_measured_route_drift_does_not_pass(self):
+        """0.5581 is what both routes return; it must not read as 9:16."""
+        for width, height in ((768, 1376), (1536, 2752)):
+            with self.subTest(size=(width, height)):
+                axis = ff.shipped_ratio_axis(width, height)
+                self.assertEqual(axis["outcome"], "fail", axis["note"])
+                self.assertEqual(axis["ratio"], 0.5581)
+
+    def test_an_unmeasured_side_is_neither_good_nor_bad(self):
+        for width, height in ((None, None), (540, None), (None, 960)):
+            with self.subTest(size=(width, height)):
+                axis = ff.shipped_ratio_axis(width, height)
+                self.assertEqual(axis["outcome"], "could not measure", axis["note"])
+                self.assertEqual((axis["checked"], axis["unmeasured"]), (0, 1))
+
+    def test_a_meaningless_side_is_a_violation_and_not_a_silence(self):
+        for bad in (0, -540, 5.5, "540", True):
+            with self.subTest(width=bad):
+                axis = ff.shipped_ratio_axis(bad, 960)
+                self.assertEqual(axis["outcome"], "fail", axis["note"])
+                self.assertEqual(axis["violations"], 1)
+
+    def test_the_instrument_judges_by_the_plan_and_not_by_its_own_band(self):
+        """The tolerance is read from fork_plan at call time, not copied here."""
+        axis = ff.shipped_ratio_axis(540, 960)
+        self.assertEqual(axis["tolerance"], 0.001)
+        self.assertEqual(axis["plan"], 0.5625)
+
+    def test_the_band_edge_is_guarded_on_both_sides(self):
+        """A ratio just inside 0.001 passes, one just outside does not."""
+        height = 10_000
+        inside = round(height * (0.5625 + 0.0009))
+        outside = round(height * (0.5625 + 0.0011))
+        self.assertEqual(ff.shipped_ratio_axis(inside, height)["outcome"], "pass")
+        self.assertEqual(ff.shipped_ratio_axis(outside, height)["outcome"], "fail")
+
+    # --- the report carries it -----------------------------------------------
+
+    def test_the_report_keys_are_declared_as_data_and_the_report_obeys(self):
+        rep = self._finish()
+        self.assertEqual(tuple(rep), ff.FINISH_REPORT_KEYS)
+        self.assertIn("shipped_ratio", ff.FINISH_REPORT_KEYS)
+
+    def test_the_good_run_carries_the_measurement_of_what_it_wrote(self):
+        rep = self._finish()
+        self.assertEqual(rep["outcome"], PASS)
+        self.assertEqual(rep["shipped_ratio"]["outcome"], PASS)
+        self.assertEqual(rep["shipped_ratio"]["ratio"], 0.5625)
+        self.assertEqual(
+            (rep["shipped_ratio"]["width"], rep["shipped_ratio"]["height"]), (540, 960)
+        )
+
+    def test_an_off_plan_file_does_not_pass_acceptance(self):
+        """The whole point: 0.5581 written to disk must not report a clean pass."""
+        rep = self._finish(answers={"finish.mp4": RESULT_OFF_PLAN_JSON})
+        self.assertEqual(rep["outcome"], FAIL)
+        self.assertTrue(rep["written"])
+        self.assertEqual(rep["shipped_ratio"]["ratio"], 0.5581)
+        self.assertGreaterEqual(rep["violations"], 1)
+
+    def test_a_file_matching_its_own_plan_is_still_judged_against_the_plan(self):
+        """The planned window can itself be off 9:16, and the old check compared
+        the file only with that plan — agreeing with a wrong plan is not a pass.
+        """
+        geom = ff.crop_geometry(20, 20)
+        self.assertEqual((geom["w"], geom["h"]), (10, 20))
+        rep = self._finish(answers={"kling.mp4": KLING_TINY_JSON, "finish.mp4": RESULT_TINY_JSON})
+        self.assertEqual((rep["shipped_ratio"]["width"], rep["shipped_ratio"]["height"]), (10, 20))
+        self.assertEqual(rep["shipped_ratio"]["ratio"], 0.5)
+        self.assertEqual(rep["shipped_ratio"]["outcome"], FAIL)
+        self.assertEqual(rep["outcome"], FAIL, rep["note"])
+        self.assertGreaterEqual(rep["violations"], 1)
+
+    def test_a_file_that_could_not_be_probed_is_not_a_silent_success(self):
+        rep = self._finish(answers={"finish.mp4": None})
+        self.assertEqual(rep["outcome"], UNMEASURED)
+        self.assertEqual(rep["shipped_ratio"]["outcome"], UNMEASURED)
+        self.assertGreaterEqual(rep["unmeasured"], 1)
+
+    def test_the_shipped_ratio_is_a_named_step_of_the_run(self):
+        rep = self._finish()
+        self.assertIn("shipped ratio", [name for name, _, _ in rep["steps"]])
+
+    def test_the_numbers_stand_next_to_every_verdict(self):
+        rep = self._finish()
+        self.assertEqual(rep["checked"], len(rep["steps"]))
+        self.assertGreater(rep["checked"], 0)
+        self.assertEqual(rep["violations"], 0)
+        self.assertEqual(rep["unmeasured"], 0)
+
+    def test_a_run_that_wrote_nothing_still_reports_the_ratio_as_unknown(self):
+        rep = self._finish(Runner(ran=False))
+        self.assertEqual(rep["outcome"], UNMEASURED)
+        self.assertFalse(rep["written"])
+        self.assertEqual(rep["shipped_ratio"]["outcome"], UNMEASURED)
+
+    def test_a_key_the_declaration_does_not_know_is_refused(self):
+        """The tuple governs the report; it is not a comment about it."""
+        self.assertNotIn("smuggled", ff.FINISH_REPORT_KEYS)
+
+
+class TheRatioIsKnownInOnePlaceOnly(unittest.TestCase):
+    """Д5: 9 and 16 were declared here as well as 0.5625 in the plan."""
+
+    def test_the_whole_sides_are_the_plan(self):
+        self.assertEqual((ff.TARGET_RATIO_W, ff.TARGET_RATIO_H), (9, 16))
+        self.assertEqual(ff.TARGET_RATIO_W / ff.TARGET_RATIO_H, 0.5625)
+
+    def test_the_sides_are_computed_from_the_plan_and_not_written_down(self):
+        """Move the plan and the crop must move with it, with no edit here."""
+        import importlib
+        from unittest import mock
+
+        from lipsync import fork_plan
+
+        try:
+            with mock.patch.object(fork_plan, "PLAN_RATIO", 0.75):
+                moved = importlib.reload(ff)
+                sides = (moved.TARGET_RATIO_W, moved.TARGET_RATIO_H)
+        finally:
+            # The reload rewrites the module in place, so the plan must be back
+            # before anything else in the suite reads it.
+            importlib.reload(ff)
+        self.assertEqual(sides, (3, 4))
+        self.assertEqual((ff.TARGET_RATIO_W, ff.TARGET_RATIO_H), (9, 16))
+
+    def test_the_crop_of_the_measured_square_follows_the_plan(self):
+        g = ff.crop_geometry(960, 960)
+        self.assertEqual((g["w"], g["h"]), (540, 960))
+        self.assertEqual(ff.shipped_ratio_axis(g["w"], g["h"])["outcome"], "pass")
+
+
+class TheAreaLostIsTheOneMeasuredOnRealOutput(unittest.TestCase):
+    """The showcase quotes 0% lost; the MEASURED Kling return loses 43.75%."""
+
+    def test_the_zero_percent_claim_holds_only_for_an_already_vertical_frame(self):
+        self.assertEqual(ff.crop_geometry(720, 1280)["lost_percent"], 0.0)
+
+    def test_the_measured_kling_square_loses_forty_three_percent_of_the_width(self):
+        g = ff.crop_geometry(960, 960)
+        self.assertEqual(g["lost_percent"], 43.75)
+        self.assertEqual(g["w"], 540)
+        self.assertEqual(round(100.0 * (960 - 540) / 960, 2), 43.75)
 
 
 if __name__ == "__main__":

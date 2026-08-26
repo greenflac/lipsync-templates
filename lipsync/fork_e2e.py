@@ -459,6 +459,263 @@ def _default_plan():
     return fork_plan
 
 
+def _size_pair(value):
+    """Return `(width, height)` of whole positive pixels, or `None` when the value is not a size."""
+    if isinstance(value, dict):
+        value = (value.get("width"), value.get("height"))
+    if not isinstance(value, (tuple, list)) or len(value) != 2:
+        return None
+    try:
+        width, height = int(value[0]), int(value[1])
+    except (TypeError, ValueError):
+        return None
+    if width <= 0 or height <= 0:
+        return None
+    return (width, height)
+
+
+def frame_size(path, *, sizer=None) -> tuple:
+    """Read the pixel size of an image file.
+
+    :param path: the image to measure.
+    :param sizer: injection point returning `(width, height)`; PIL is used
+        when it is omitted, so a test never needs a real decodable file.
+    :returns: `((width, height) or None, note)` — the note says why the size
+        is missing, because "not measured" has to be told apart from "wrong".
+
+    >>> frame_size("x.png", sizer=lambda p: (720, 1280))[0]
+    (720, 1280)
+    """
+    if sizer is None:
+
+        def sizer(image_path):
+            from PIL import Image  # noqa: PLC0415
+
+            with Image.open(image_path) as im:
+                return im.size
+
+    try:
+        raw = sizer(str(path))
+    except Exception as exc:  # noqa: BLE001 - any reader failure is "not measured"
+        return (None, f"the size of {path} was not taken: {type(exc).__name__}: {exc}")
+    got = _size_pair(raw)
+    if got is None:
+        return (None, f"the size reader answered {raw!r}, which is not a pixel size")
+    return (got, f"{got[0]}x{got[1]}")
+
+
+def styliser_kept_the_plan(*, asked, got) -> dict:
+    """Judge the styliser's answer against the size that was asked for.
+
+    The name of this check promises a comparison with the request, so the
+    request is compared — not the ratio band. A frame that is vertical, or
+    even exactly 9:16, but is not the size that was ordered is still a route
+    that ignored the order, and that fact must survive into the report on its
+    own line.
+
+    :param asked: the ordered size, `(width, height)` or a `{"width", "height"}` mapping.
+    :param got: the returned size, in the same shapes; `None` when it was never measured.
+    :returns: `outcome` plus `checked` / `violations` / `unmeasured`, the
+        `asked` and `got` sizes as data, and a note carrying both numbers.
+
+    >>> styliser_kept_the_plan(asked=(720, 1280), got=(768, 1376))["outcome"]
+    'fail'
+    """
+    want = _size_pair(asked)
+    have = _size_pair(got)
+    if want is None:
+        return {
+            "outcome": UNMEASURED,
+            "checked": 0,
+            "violations": 0,
+            "unmeasured": 1,
+            "asked": None,
+            "got": have,
+            "note": f"the asked size is not a size: {asked!r}; nothing to compare against",
+        }
+    if have is None:
+        return {
+            "outcome": UNMEASURED,
+            "checked": 0,
+            "violations": 0,
+            "unmeasured": 1,
+            "asked": want,
+            "got": None,
+            "note": (
+                f"asked for {want[0]}x{want[1]}, and the returned size was "
+                f"never measured ({got!r}): NOT MEASURED, which is not a pass"
+            ),
+        }
+    same = have == want
+    return {
+        "outcome": PASS if same else FAIL,
+        "checked": 1,
+        "violations": 0 if same else 1,
+        "unmeasured": 0,
+        "asked": want,
+        "got": have,
+        "note": (
+            f"asked for {want[0]}x{want[1]} = {want[0] / want[1]:.4f}, "
+            f"returned {have[0]}x{have[1]} = {have[0] / have[1]:.4f}"
+            + (
+                ""
+                if same
+                else "; the route answered with a size nobody ordered, so the "
+                "frame is not the plan by construction"
+            )
+        ),
+    }
+
+
+def _default_cropper(source, out_path, box) -> None:
+    """Cut the box out of the image and write it. Kept separate so a test never needs PIL."""
+    from PIL import Image  # noqa: PLC0415
+
+    Path(out_path).parent.mkdir(parents=True, exist_ok=True)
+    with Image.open(source) as im:
+        rgb = im.convert("RGB")
+    left, top = int(box["left"]), int(box["top"])
+    rgb.crop((left, top, left + int(box["width"]), top + int(box["height"]))).save(str(out_path))
+
+
+def fit_frame_to_plan(src, dst, *, plan, sizer=None, cropper=None) -> dict:
+    """Bring one frame onto the plan on disk, and say in numbers what that cost.
+
+    The decision is the plan neighbour's (`fit_to_plan`); this only carries it
+    out and reports it. Three outcomes: the frame is on the plan, the frame
+    could not be brought there, or nothing could be measured at all.
+
+    :param src: the frame as it arrived from the route.
+    :param dst: where a trimmed or padded frame is written; an untouched frame stays at `src`.
+    :param plan: the plan neighbour, injected so the stage can be tested without it.
+    :param sizer: size reader, see `frame_size`.
+    :param cropper: `(source, out_path, box)` writer; PIL is used when omitted.
+    :returns: `action`, `path`, `arrived`, `shipped`, `trimmed_share` and the
+        three-outcome numbers.
+
+    >>> fit_frame_to_plan("a.png", "b.png", plan=None, sizer=lambda p: None)["outcome"]
+    'unmeasured'
+    """
+    arrived, why = frame_size(src, sizer=sizer)
+    base = {
+        "action": "none",
+        "path": str(src),
+        "arrived": arrived,
+        "shipped": None,
+        "trimmed_share": 0.0,
+    }
+    if arrived is None:
+        return {
+            **base,
+            "outcome": UNMEASURED,
+            "checked": 0,
+            "violations": 0,
+            "unmeasured": 1,
+            "note": f"{why}; the frame was neither judged nor repaired",
+        }
+
+    try:
+        fit = plan.fit_to_plan(*arrived)
+    except Exception as exc:  # noqa: BLE001
+        return {
+            **base,
+            "outcome": UNMEASURED,
+            "checked": 0,
+            "violations": 0,
+            "unmeasured": 1,
+            "note": (
+                f"arrived {arrived[0]}x{arrived[1]}; the plan neighbour could not "
+                f"decide: {type(exc).__name__}: {exc}"
+            ),
+        }
+
+    action = fit.get("action")
+    shipped = _size_pair(fit)
+    head = f"arrived {arrived[0]}x{arrived[1]} = {arrived[0] / arrived[1]:.4f}"
+
+    if action == "none":
+        return {
+            **base,
+            "outcome": PASS,
+            "checked": 1,
+            "violations": 0,
+            "unmeasured": 0,
+            "shipped": arrived,
+            "note": f"{head}; trimmed 0 px; leaving {arrived[0]}x{arrived[1]} untouched",
+        }
+
+    if action == "crop":
+        cut = _default_cropper if cropper is None else cropper
+        try:
+            cut(str(src), str(dst), fit)
+        except Exception as exc:  # noqa: BLE001
+            return {
+                **base,
+                "outcome": UNMEASURED,
+                "checked": 0,
+                "violations": 0,
+                "unmeasured": 1,
+                "note": (
+                    f"{head}; the trim to {shipped} was decided but not carried out: "
+                    f"{type(exc).__name__}: {exc}"
+                ),
+            }
+        return {
+            "outcome": PASS,
+            "checked": 1,
+            "violations": 0,
+            "unmeasured": 0,
+            "action": "crop",
+            "path": str(dst),
+            "arrived": arrived,
+            "shipped": shipped,
+            "trimmed_share": fit.get("trimmed_share", 0.0),
+            "note": (
+                f"{head}; trimmed {fit.get('trimmed_share')} of one side; "
+                f"leaving {shipped[0]}x{shipped[1]} = {shipped[0] / shipped[1]:.4f}"
+            ),
+        }
+
+    # Too far from the plan to trim: `fit_to_plan` chose padding, which the plan
+    # neighbour already knows how to write, bands and all.
+    try:
+        laid = plan.to_plan(str(src), str(dst))
+    except Exception as exc:  # noqa: BLE001
+        return {
+            **base,
+            "outcome": UNMEASURED,
+            "checked": 0,
+            "violations": 0,
+            "unmeasured": 1,
+            "note": f"{head}; the padding was not written: {type(exc).__name__}: {exc}",
+        }
+    padded = _size_pair(laid.get("plan") or {}) or shipped
+    written = laid.get("outcome") == PASS
+    return {
+        # A padded frame is 9:16 by arithmetic and blurred bars by eye. The
+        # owner's criterion, 2026-08-26, is 9:16 with no padding in 100% of
+        # cases, so this is a violation and not a repair — it is written all
+        # the same, because the outpaint downstream is what may still save it.
+        "outcome": FAIL if written else laid.get("outcome", UNMEASURED),
+        "checked": 1 if written else int(laid.get("checked", 0)),
+        "violations": 1 if written else int(laid.get("violations", 0)),
+        "unmeasured": 0 if written else int(laid.get("unmeasured", 1)),
+        "action": "pad",
+        "path": str(laid.get("path") or dst),
+        "arrived": arrived,
+        "shipped": padded,
+        "trimmed_share": 0.0,
+        "added_share": (laid.get("plan") or {}).get("added_share"),
+        "note": (
+            f"{head}; trimmed 0 px because a cut this deep would take the "
+            f"subject; padded to {padded[0]}x{padded[1]} instead, "
+            f"{(laid.get('plan') or {}).get('added_share')} of the area added "
+            f"as bands — and a padded frame is a VIOLATION, not a repair: it "
+            f"only reaches the plan if the outpaint below turns the bands into scene"
+        ),
+    }
+
+
 def _person_in_plan(image, *, plan, pose=None, card=None) -> tuple:
     """Check whether the person in the image fits the plan bands. Three outcomes."""
     if pose is None:
@@ -523,8 +780,11 @@ def stage_stylize(
     extend=None,
     pose=None,
     card=None,
+    sizer=None,
+    cropper=None,
+    operator_ok_styliser_size: bool = False,
 ) -> dict:
-    """Turn the client photo and the style reference into a styled photo."""
+    """Turn the client photo and the style reference into a styled photo on the plan."""
     A = _default_aesthetic() if aesthetic_mod is None else aesthetic_mod
     checks_pre = []
     if aesthetic is not None:
@@ -577,40 +837,53 @@ def stage_stylize(
 
     P = _default_plan() if plan is None else plan
     planned = Path(str(out_path)).with_name(Path(str(out_path)).stem + "_9x16.png")
-    try:
-        laid = P.to_plan(made, planned)
-    except Exception as exc:  # noqa: BLE001
-        checks.append(("9:16 plan", UNMEASURED, f"{type(exc).__name__}: {exc}"))
-        return _result(
-            STAGES[1], checks, styled=made, prompt=prompt, note=str(built["card_note"] or "")[:160]
-        )
-    checks.append(("9:16 plan", laid["outcome"], str(laid.get("note"))[:200]))
-    if laid["outcome"] == PASS:
-        made = laid["path"]
 
-        source = laid.get("source") or {}
-        native = P.ratio_axis(source.get("width"), source.get("height"))
-        checks.append(
-            (
-                "styliser returned the plan",
-                native["outcome"],
-                f"asked for {STYLED_SIZE[0]}x{STYLED_SIZE[1]}; {native['note']}",
+    fitted = fit_frame_to_plan(made, planned, plan=P, sizer=sizer, cropper=cropper)
+
+    # Two separate facts about the same frame, and they are never merged: what
+    # the route was ordered to return, and what the frame is after the repair.
+    # Folding the first into the second is exactly how 0.5581 shipped as "pass".
+    kept = styliser_kept_the_plan(asked=STYLED_SIZE, got=fitted.get("arrived"))
+    kept_outcome, kept_note = kept["outcome"], kept["note"]
+    # The admission is offered ONLY on a frame that reached the plan cleanly,
+    # which — since `fit_frame_to_plan` counts padding as a violation — means a
+    # trimmed one. A frame padded with blurred bands is 9:16 by arithmetic and
+    # a different photograph by eye: the 3:4 fossil goes down that branch and
+    # stays red whatever the operator says.
+    if kept_outcome == FAIL and fitted["outcome"] == PASS:
+        repair = (
+            f"; repaired by {fitted['action']} to {fitted['shipped'][0]}x{fitted['shipped'][1]}"
+        )
+        if operator_ok_styliser_size:
+            kept_outcome = PASS
+            kept_note += repair + ", and the OPERATOR ADMITTED that repaired frame by eye"
+        else:
+            kept_note += repair + (
+                ", which is the plan — but the route still ignored the order, "
+                "so the run stops here; pass --operator-ok-styliser-size once "
+                "the repaired frame has been looked at"
             )
-        )
+    checks.append(("styliser returned the plan", kept_outcome, kept_note))
+    checks.append(("9:16 frame", fitted["outcome"], str(fitted.get("note"))[:250]))
 
-        added = (laid.get("plan") or {}).get("added_share")
-        if added == 0:
+    if fitted["outcome"] != UNMEASURED:
+        # A padded frame is a violation and still a file: the outpaint below is
+        # the only thing that can turn it back into the plan, so it runs.
+        made = fitted["path"]
+
+        if fitted["action"] != "pad":
             checks.append(
                 (
                     "margin outpaint",
                     PASS,
-                    f"not called: the styliser returned the plan itself, so "
-                    f"nothing was padded ({added} of the area added). A call "
-                    f"here would cost a generation and could repaint the person "
-                    f"for no gain",
+                    f"not called: the frame reached the plan by '{fitted['action']}' "
+                    f"({fitted['trimmed_share']} of one side trimmed), so nothing "
+                    f"was padded. A call here would cost a generation and could "
+                    f"repaint the person for no gain",
                 )
             )
         else:
+            added = fitted.get("added_share")
             grown = Path(made).with_name(Path(made).stem + "_full.png")
             ext = P.extend_to_plan(made, grown, extender=extend)
             checks.append(
@@ -622,7 +895,28 @@ def stage_stylize(
                 )
             )
             if ext["outcome"] == PASS:
-                made = ext["path"]
+                # The outpainter answers on its own size grid too, so its own
+                # answer goes through the same trim before anything is paid for.
+                exact = Path(ext["path"]).with_name(Path(ext["path"]).stem + "_exact.png")
+                refit = fit_frame_to_plan(ext["path"], exact, plan=P, sizer=sizer, cropper=cropper)
+                checks.append(
+                    ("9:16 frame after the outpaint", refit["outcome"], str(refit["note"])[:250])
+                )
+                if refit["outcome"] == PASS:
+                    made = refit["path"]
+
+        shipped, why = frame_size(made, sizer=sizer)
+        if shipped is None:
+            checks.append(("frame going to the paid call", UNMEASURED, why))
+        else:
+            axis = P.ratio_axis(*shipped)
+            checks.append(
+                (
+                    "frame going to the paid call",
+                    axis["outcome"],
+                    f"{Path(made).name} is {shipped[0]}x{shipped[1]}; {axis['note']}",
+                )
+            )
 
         checks.append(_person_in_plan(made, plan=P, pose=pose, card=card))
 
@@ -1244,9 +1538,12 @@ def run(
     card_reader=None,
     driving_frames=None,
     operator_ok_identity: bool = False,
+    operator_ok_styliser_size: bool = False,
     aesthetic=None,
     client_gender=None,
     plan=None,
+    sizer=None,
+    cropper=None,
     aesthetic_mod=None,
     extend=None,
     pose=None,
@@ -1310,6 +1607,9 @@ def run(
                 extend=extend,
                 pose=pose,
                 card=card,
+                sizer=sizer,
+                cropper=cropper,
+                operator_ok_styliser_size=operator_ok_styliser_size,
             )
         )
         if r2["outcome"] == PASS:
@@ -1449,6 +1749,14 @@ def main(argv=None) -> int:
         action="store_true",
         help="the operator looked by eye and admitted the identity",
     )
+    ap.add_argument(
+        "--operator-ok-styliser-size",
+        action="store_true",
+        help=(
+            "the operator looked by eye and admitted the frame the route "
+            "returned off the asked size and we trimmed back onto the plan"
+        ),
+    )
     a = ap.parse_args(argv)
     if a.aesthetic is None and a.style is None:
         ap.error("either --style or --aesthetic is required")
@@ -1466,6 +1774,7 @@ def main(argv=None) -> int:
         aesthetic=a.aesthetic,
         client_gender=a.client_gender,
         operator_ok_identity=a.operator_ok_identity,
+        operator_ok_styliser_size=a.operator_ok_styliser_size,
     )
     return got["exit_code"]
 
