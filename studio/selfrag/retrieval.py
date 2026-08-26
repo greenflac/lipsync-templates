@@ -23,7 +23,6 @@ Three differences from `studio.knowledge`, each for a reason found in review:
 
 from __future__ import annotations
 
-import math
 import re
 import sqlite3
 import threading
@@ -426,7 +425,3 @@ def rating_prior(record: CorpusRecord) -> float:
     span = RATING_MAX - RATING_MIN
     # Linear from 0.5 at the worst rating to 1.5 at the best. CHOSEN.
     return 0.5 + (record.rating - RATING_MIN) / span
-
-
-def _unused_math_guard() -> float:  # pragma: no cover - keeps the import honest
-    return math.inf
