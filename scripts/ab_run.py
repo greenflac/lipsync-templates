@@ -198,6 +198,44 @@ def build() -> list[dict]:
     return plan
 
 
+METER_KEYS = (
+    "x-usage-completion-video-seconds",
+    "x-usage-completion-audio-seconds",
+    "x-usage-completion-image-count",
+    "x-usage-total-cost",
+    "x-usage",
+    "x-cost",
+    "x-model-used",
+    "x-cache",
+    "x-request-id",
+)
+
+
+def _capture_headers(sink: list[dict]):
+    """Record the metering headers of every response, without reimplementing
+    the client.
+
+    `lipsync.pollinations.image` returns bytes and drops the response, so cost
+    is invisible through it — and `lipsync/**` is frozen by CONTRACTS.md, so it
+    cannot be changed here. Wrapping requests records what the server said
+    about the price without a second copy of the call logic.
+    """
+    import requests
+
+    real_get, real_post = requests.get, requests.post
+
+    def note(r):
+        sink.append(
+            {k: v for k, v in ((k, r.headers.get(k)) for k in METER_KEYS) if v}
+            | {"status": r.status_code, "bytes": len(r.content or b"")}
+        )
+        return r
+
+    requests.get = lambda *a, **k: note(real_get(*a, **k))  # type: ignore[assignment]
+    requests.post = lambda *a, **k: note(real_post(*a, **k))  # type: ignore[assignment]
+    return lambda: (setattr(requests, "get", real_get), setattr(requests, "post", real_post))
+
+
 def run(plan: list[dict]) -> list[dict]:
     """Make the calls. Only reached with --spend."""
     from lipsync.pollinations import image, images_edit
@@ -205,6 +243,8 @@ def run(plan: list[dict]) -> list[dict]:
     OUT.mkdir(parents=True, exist_ok=True)
     done: list[dict] = []
     for step in plan:
+        meter: list[dict] = []
+        restore = _capture_headers(meter)
         target = OUT / f"{step['id']}.jpg"
         if not step["prompt"]:
             step["error"] = "empty prompt: not called"
@@ -238,6 +278,9 @@ def run(plan: list[dict]) -> list[dict]:
             step["bytes"] = target.stat().st_size
         except Exception as exc:  # noqa: BLE001 - a failed call is a result too
             step["error"] = f"{type(exc).__name__}: {exc}"
+        finally:
+            restore()
+        step["metering"] = meter
         done.append(step)
     return done
 

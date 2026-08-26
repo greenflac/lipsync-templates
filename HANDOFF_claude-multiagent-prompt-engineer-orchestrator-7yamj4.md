@@ -627,3 +627,54 @@ New CLI: `python -m studio.selfrag facts [--model X]` and `learn [--export F]`.
 `bash scripts/check` — green, exit 0. Studio suite **254 passed, 2 skipped**;
 104 selfrag tests. Retrieval eval unchanged: fixture 1.0/0.8333/3-of-3, real
 corpus 0.95/0.74/6-of-6.
+
+## Agent: orchestrator, seventh pass — 2026-08-26 — the first generations this project has ever looked at
+
+The owner agreed the A/B run and gave the go. `scripts/ab_run.py --spend`
+produced **6 of 6 in 47 seconds, no failures**. Files in `work/ab/`, which is
+gitignored: the images are not committed.
+
+### MEASURED: the price is still unknown, and that is the honest answer
+
+The metering wrapper captured every response header. The image endpoint
+returned **no cost or usage header at all** — only `x-model-used` and
+`x-cache`. So the per-call price was NOT measured, and after this session's
+earlier mistake it will not be estimated from latency or byte count either.
+
+Unexplained observation, recorded rather than interpreted: **`x-cache: HIT` on
+all six**, including prompts the agent assembled minutes earlier and which
+therefore cannot have been generated before. Either the header describes a CDN
+edge rather than the generation, or the cache does not mean what it reads.
+Someone with vendor documentation should settle it.
+
+### The negative control did its job, and it is the most valuable frame here
+
+`c_neg` deliberately broke three things this project had only ever *cited*:
+on-screen lettering, chained causal actions, and two contradictory light
+sources. The image reproduces the predicted failure exactly — the word
+"LUMIERE" renders, and directly beneath it a second line of confident,
+well-kerned **gibberish**: "fruscitin the migque / harde lorf chnre". The
+chained actions collapsed to the last state.
+
+That is the first time this project has OBSERVED a failure mode instead of
+quoting an arXiv abstract about it. `model_facts.jsonl` carries the claim
+"text garbling is a character-blind text encoder" with a paper URL and a `fix`
+of "do not ask for on-screen text; composite it in post". It now has a
+photograph of itself being right.
+
+### Blind judging, and why the key was written first
+
+The owner judges. The key mapping neutral labels to arms was written to
+`work/ab/key.json` (sha256 0e38876e...) BEFORE anything was shown, because a
+key produced afterwards can be fitted to whatever answer arrives. Order within
+the two pairs is deliberately different, so the label carries no signal.
+
+My own reading of the six frames is deliberately withheld until the verdict is
+in. I wrote one of the arms; describing what I see first would anchor the only
+independent judgement available (rule И1 — the verdict is not the doer's).
+
+### Waiting on
+
+The owner's picks for pair 1 and pair 2, and a 1-10 for each control. Those
+ratings, applied with `ReplayBuffer.judge_run`, become the first rated rows in
+`examples` — the first training data this system has ever held.
