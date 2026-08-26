@@ -22,6 +22,7 @@ import json
 import os
 import re
 import sqlite3
+import threading
 from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
@@ -279,8 +280,51 @@ DEFAULT_DB_PATH = Path(__file__).with_name("knowledge") / "index.sqlite3"
 CORE_RULES_PATH = Path(__file__).with_name("knowledge") / "core_rules.md"
 EVAL_SET_PATH = Path(__file__).with_name("knowledge") / "eval_set.jsonl"
 GALLERY_PROMPTS_PATH = Path(__file__).with_name("knowledge") / "gallery_prompts.jsonl"
-OUR_PROMPTS_DIR = Path("/home/user/cyclerunner/demo/instories/fixtures/gen")
-REFERENCE_CARDS_DIR = Path("/home/user/cyclerunner/demo/instories/references")
+
+# Where the two example corpora live. These were absolute paths into one
+# developer's home directory, and the consequence was measured on 2026-08-26:
+# on a fresh clone the index built with 12 core entries and 0 examples, every
+# `retrieve` answered "could not measure", `evaluate` could not run at all, and
+# the two tests that would have caught it skipped. The recall numbers in
+# HANDOFF_studio-mvp.md were not reproducible by anybody else.
+#
+# Resolution order, first existing directory wins:
+#   1. $STUDIO_KNOWLEDGE_OUR_PROMPTS / $STUDIO_KNOWLEDGE_REFERENCE_CARDS
+#   2. a directory inside this repository
+#   3. the original absolute path, kept last so the machine that has the data
+#      keeps working — but no longer the only way to have any data at all.
+OUR_PROMPTS_ENV = "STUDIO_KNOWLEDGE_OUR_PROMPTS"
+REFERENCE_CARDS_ENV = "STUDIO_KNOWLEDGE_REFERENCE_CARDS"
+
+_LEGACY_ROOT = Path("/home/user/cyclerunner/demo/instories")
+
+
+def _resolve_dir(env_name: str, in_repo: Path, legacy: Path) -> Path:
+    """First existing candidate, or the in-repo path so the error names this repo.
+
+    Returning the in-repo path when nothing exists matters: a caller that
+    prints "sources absent" should name a path the reader can create, not one
+    on a machine they have never seen.
+    """
+    override = os.environ.get(env_name, "").strip()
+    candidates = [Path(override).expanduser()] if override else []
+    candidates += [in_repo, legacy]
+    for candidate in candidates:
+        if candidate.is_dir():
+            return candidate
+    return in_repo
+
+
+OUR_PROMPTS_DIR = _resolve_dir(
+    OUR_PROMPTS_ENV,
+    Path(__file__).with_name("knowledge") / "our_prompts",
+    _LEGACY_ROOT / "fixtures" / "gen",
+)
+REFERENCE_CARDS_DIR = _resolve_dir(
+    REFERENCE_CARDS_ENV,
+    Path(__file__).with_name("knowledge") / "reference_cards",
+    _LEGACY_ROOT / "references",
+)
 
 DENSE_MODEL_ID = "sentence-transformers/all-MiniLM-L6-v2"  # apache-2.0, checked
 DENSE_ENV_FLAG = "STUDIO_KNOWLEDGE_DENSE"
@@ -590,6 +634,10 @@ class KnowledgeIndex:
 
     def __init__(self, conn: sqlite3.Connection) -> None:
         self.conn = conn
+        # Guards every statement on `conn`. sqlite3 serialises access itself,
+        # but a cursor's rows must be drained before the next statement runs on
+        # the same connection, and two threads interleaving that is the bug.
+        self.lock = threading.Lock()
         self.entries: list[Entry] = []
         self.by_id: dict[int, Entry] = {}
         self.dense_ids: list[int] = []
@@ -617,36 +665,39 @@ class KnowledgeIndex:
             mood = _first(structure["mood"])
             provenance = str(record["provenance"])
             weight = PROVENANCE_WEIGHT.get(provenance, 0.5)
-            cur = self.conn.execute(
-                "INSERT INTO entries (kind, text, palette, light, texture, mood,"
-                " provenance, weight, source) VALUES (?,?,?,?,?,?,?,?,?)",
-                (
-                    str(record["kind"]),
-                    text,
-                    " ".join(palette),
-                    light,
-                    texture,
-                    mood,
-                    provenance,
-                    weight,
-                    str(record.get("source", "")),
-                ),
-            )
-            entry_id = int(cur.lastrowid or 0)
-            self.conn.execute(
-                "INSERT INTO entries_fts (rowid, text, structured) VALUES (?,?,?)",
-                (entry_id, text, _structure_text(structure)),
-            )
+            with self.lock:
+                cur = self.conn.execute(
+                    "INSERT INTO entries (kind, text, palette, light, texture, mood,"
+                    " provenance, weight, source) VALUES (?,?,?,?,?,?,?,?,?)",
+                    (
+                        str(record["kind"]),
+                        text,
+                        " ".join(palette),
+                        light,
+                        texture,
+                        mood,
+                        provenance,
+                        weight,
+                        str(record.get("source", "")),
+                    ),
+                )
+                entry_id = int(cur.lastrowid or 0)
+                self.conn.execute(
+                    "INSERT INTO entries_fts (rowid, text, structured) VALUES (?,?,?)",
+                    (entry_id, text, _structure_text(structure)),
+                )
             added += 1
-        self.conn.commit()
+        with self.lock:
+            self.conn.commit()
         return added
 
     def reload(self) -> None:
         """Refresh the in-memory mirror used by the non-lexical channels."""
-        rows = self.conn.execute(
-            "SELECT id, kind, text, palette, light, texture, mood, provenance,"
-            " weight, source FROM entries ORDER BY id"
-        ).fetchall()
+        with self.lock:
+            rows = self.conn.execute(
+                "SELECT id, kind, text, palette, light, texture, mood, provenance,"
+                " weight, source FROM entries ORDER BY id"
+            ).fetchall()
         self.entries = [
             Entry(
                 entry_id=int(row[0]),
@@ -685,16 +736,17 @@ class KnowledgeIndex:
         self.dense_ids = [e.entry_id for e in targets]
         self.dense_matrix = matrix
         dim = int(matrix.shape[1])
-        for entry_id, row in zip(self.dense_ids, matrix):
+        with self.lock:
+            for entry_id, row in zip(self.dense_ids, matrix):
+                self.conn.execute(
+                    "INSERT OR REPLACE INTO vectors (id, dim, data) VALUES (?,?,?)",
+                    (entry_id, dim, row.tobytes()),
+                )
             self.conn.execute(
-                "INSERT OR REPLACE INTO vectors (id, dim, data) VALUES (?,?,?)",
-                (entry_id, dim, row.tobytes()),
+                "INSERT OR REPLACE INTO meta (key, value) VALUES ('dense_model', ?)",
+                (model_id,),
             )
-        self.conn.execute(
-            "INSERT OR REPLACE INTO meta (key, value) VALUES ('dense_model', ?)",
-            (model_id,),
-        )
-        self.conn.commit()
+            self.conn.commit()
         self.dense_report = _result(
             PASS,
             f"embedded {len(self.dense_ids)} entries with {model_id}",
@@ -704,7 +756,8 @@ class KnowledgeIndex:
 
     def load_dense_from_db(self, *, model_id: str = DENSE_MODEL_ID) -> dict:
         """Reuse vectors already stored in the file, without re-embedding."""
-        rows = self.conn.execute("SELECT id, dim, data FROM vectors").fetchall()
+        with self.lock:
+            rows = self.conn.execute("SELECT id, dim, data FROM vectors").fetchall()
         if not rows:
             self.dense_report = _result(
                 UNMEASURED, "no stored vectors", unmeasured=1, error_code="EMPTY"
@@ -730,9 +783,11 @@ class KnowledgeIndex:
     def counts(self) -> dict[str, int]:
         """Entry count per provenance, plus the total."""
         out: dict[str, int] = {}
-        for row in self.conn.execute(
-            "SELECT provenance, COUNT(*) FROM entries GROUP BY provenance"
-        ):
+        with self.lock:
+            rows = self.conn.execute(
+                "SELECT provenance, COUNT(*) FROM entries GROUP BY provenance"
+            ).fetchall()
+        for row in rows:
             out[str(row[0])] = int(row[1])
         out["total"] = sum(out.values())
         return out
@@ -789,16 +844,25 @@ def build_index(
     A missing source is reported, never fatal: the index must come up without
     the gallery harvest, because that file is produced by another agent.
 
+    An index that comes up with core rules but no examples is reported as
+    `could not measure`, not `pass`: it cannot answer a retrieval query.
+
     >>> index = build_index(core_rules=CORE_RULES_PATH,
     ...                     our_prompts=Path("/nowhere"),
     ...                     reference_cards=Path("/nowhere"),
     ...                     gallery_prompts=Path("/nowhere"))
     >>> index.build_report["outcome"], index.counts()["core"] > 0
-    ('pass', True)
+    ('could not measure', True)
     """
     if db_path != ":memory:":
         Path(db_path).parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(str(db_path))
+    # `check_same_thread=False`, with every statement taken under the index's
+    # own lock. Every route in studio/app.py is a plain `def`, which FastAPI
+    # runs in a threadpool worker; with sqlite3's default the first route to
+    # call `retrieve()` from a worker raises ProgrammingError. Nothing calls it
+    # yet, so this has never fired — which is exactly why it was worth fixing
+    # before the commit that wires retrieval into the web layer.
+    conn = sqlite3.connect(str(db_path), check_same_thread=False)
     conn.executescript(SCHEMA)
     conn.execute("DELETE FROM entries")
     conn.execute("DELETE FROM entries_fts")
@@ -824,12 +888,23 @@ def build_index(
         index.attach_dense()
 
     total = sum(loaded.values())
+    examples = total - loaded["core"]
     if total == 0:
         outcome = UNMEASURED
         note = "no source produced a single entry"
     elif loaded["core"] == 0:
         outcome = FAIL
         note = "core rules missing: the index has examples but no source of truth"
+    elif examples == 0:
+        # The verdict that was missing, and its absence is what let the defect
+        # above survive: an index holding only core rules reports PASS while
+        # being unable to answer a single retrieval query. Zero examples is
+        # never a built index; it is an index nobody can measure.
+        outcome = UNMEASURED
+        note = (
+            f"{loaded['core']} core rules and 0 examples: every retrieval will "
+            "answer 'could not measure' and evaluate cannot run"
+        )
     else:
         outcome = PASS
         note = "built"
@@ -905,10 +980,12 @@ def _channel_bm25(index: KnowledgeIndex, terms: Sequence[str]) -> tuple[list[int
             if not escaped:
                 continue
             try:
-                rows = index.conn.execute(
-                    "SELECT rowid, bm25(entries_fts) FROM entries_fts WHERE entries_fts MATCH ?",
-                    (f'"{escaped}"',),
-                ).fetchall()
+                with index.lock:
+                    rows = index.conn.execute(
+                        "SELECT rowid, bm25(entries_fts) FROM entries_fts"
+                        " WHERE entries_fts MATCH ?",
+                        (f'"{escaped}"',),
+                    ).fetchall()
             except sqlite3.OperationalError:
                 continue
             for rowid, score in rows:
@@ -1069,7 +1146,10 @@ def retrieve(
         fused[entry_id] *= index.by_id[entry_id].weight
 
     ordered = sorted((i for i in fused if i in admitted), key=lambda i: (-fused[i], i))
-    rejected = len(fused) - len(ordered)
+    # An entry that scored but did not clear the admission floor is the floor
+    # doing its job, not a breach. It used to be reported as `violations`,
+    # which made that field unreadable next to every other module's use of it.
+    below_floor = len(fused) - len(ordered)
 
     picked: list[dict] = []
     per_provenance: dict[str, int] = defaultdict(int)
@@ -1108,13 +1188,14 @@ def retrieve(
         outcome,
         note,
         checked=len(candidates),
-        violations=rejected,
+        violations=0,
         unmeasured=channels_off,
         core_rules=core,
         examples=picked,
         k=k,
         terms=terms,
         channels=sorted(rankings),
+        below_floor=below_floor,
     )
 
 

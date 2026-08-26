@@ -8,11 +8,14 @@ dense channel is therefore always stubbed rather than downloaded.
 from __future__ import annotations
 
 import json
+import os
 import socket
 import sqlite3
 import tempfile
+import threading
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from lipsync.fork_identity import FAIL, PASS, UNMEASURED
 from studio import knowledge as K
@@ -87,8 +90,13 @@ CARDS = [
 
 
 def tiny_index() -> KnowledgeIndex:
-    """Build an in-memory index over the hand-written corpus above."""
-    conn = sqlite3.connect(":memory:")
+    """Build an in-memory index over the hand-written corpus above.
+
+    The connection is opened the same way `build_index` opens it, thread flag
+    included. A helper that connects differently from production is a helper
+    that tests a different object.
+    """
+    conn = sqlite3.connect(":memory:", check_same_thread=False)
     conn.executescript(K.SCHEMA)
     index = KnowledgeIndex(conn)
     index.add(
@@ -242,16 +250,116 @@ class Building(unittest.TestCase):
         self.assertEqual(index.build_report["violations"], 1)
         self.assertEqual(index.build_report["per_source"]["gallery"], 1)
 
-    def test_core_rules_alone_build_and_pass(self) -> None:
+    def test_core_rules_alone_are_not_a_built_index(self) -> None:
+        """This test used to assert PASS, and that assertion is what let the
+        real defect hide for a session: with both example corpora behind
+        absolute paths to one machine, every other machine built exactly this
+        index — 12 core rules, 0 examples — and was told it had passed. Such an
+        index cannot answer a single retrieval query and `evaluate` cannot run
+        against it, so the honest verdict is "could not measure"."""
         index = build_index(
             core_rules=KNOWLEDGE_DIR / "core_rules.md",
             our_prompts=Path("/nowhere/gen"),
             reference_cards=Path("/nowhere/refs"),
             gallery_prompts=Path("/nowhere/gallery.jsonl"),
         )
-        self.assertEqual(index.build_report["outcome"], PASS)
+        self.assertEqual(index.build_report["outcome"], UNMEASURED)
+        self.assertIn("0 examples", index.build_report["note"])
         self.assertGreaterEqual(index.build_report["per_source"]["core"], 10)
         self.assertEqual(index.build_report["unmeasured"], 3)
+
+    def test_one_example_is_enough_to_make_it_a_built_index(self) -> None:
+        """The other side of the mutation above: add a single example and the
+        verdict must flip. A floor nothing can cross is a floor nobody has
+        measured."""
+        with tempfile.TemporaryDirectory() as tmp:
+            gallery = Path(tmp) / "gallery.jsonl"
+            gallery.write_text(
+                json.dumps({"prompt": "amber golden-hour light, film-grain texture"}) + "\n",
+                encoding="utf-8",
+            )
+            index = build_index(
+                core_rules=KNOWLEDGE_DIR / "core_rules.md",
+                our_prompts=Path("/nowhere/gen"),
+                reference_cards=Path("/nowhere/refs"),
+                gallery_prompts=gallery,
+            )
+        self.assertEqual(index.build_report["outcome"], PASS)
+
+    def test_the_corpus_directories_are_not_one_machine(self) -> None:
+        """They were absolute paths into one developer's home directory, so
+        every other clone built an empty index. The resolver now takes an
+        environment override first, then a path inside this repository, and
+        only then the original absolute path."""
+        with tempfile.TemporaryDirectory() as tmp:
+            here = Path(tmp)
+            (here / "gen").mkdir()
+            with mock.patch.dict(os.environ, {K.OUR_PROMPTS_ENV: str(here / "gen")}, clear=False):
+                self.assertEqual(
+                    K._resolve_dir(
+                        K.OUR_PROMPTS_ENV, Path("/nowhere/in-repo"), Path("/nowhere/legacy")
+                    ),
+                    here / "gen",
+                )
+        # With nothing set and nothing on disk, the path it names belongs to
+        # this repository — a reader can create it. Naming a stranger's home
+        # directory is what made the original failure unactionable.
+        with mock.patch.dict(os.environ, {K.OUR_PROMPTS_ENV: ""}, clear=False):
+            fallback = K._resolve_dir(
+                K.OUR_PROMPTS_ENV, Path("/nowhere/in-repo"), Path("/nowhere/legacy")
+            )
+        self.assertEqual(fallback, Path("/nowhere/in-repo"))
+
+    def test_retrieve_is_safe_from_several_threads(self) -> None:
+        """Every route in studio/app.py is a plain `def`, which FastAPI runs in
+        a threadpool worker. With sqlite3's default check_same_thread the first
+        such call raises ProgrammingError. Nothing calls retrieve() from the web
+        layer yet, so this guards the commit that will."""
+        index = tiny_index()
+        errors: list[BaseException] = []
+
+        def query() -> None:
+            try:
+                for _ in range(10):
+                    retrieve("amber golden-hour light film-grain", index=index)
+            except BaseException as exc:  # noqa: BLE001 - the point is to catch it
+                errors.append(exc)
+
+        threads = [threading.Thread(target=query) for _ in range(4)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+        self.assertEqual(errors, [], f"threaded retrieval raised {errors[:1]}")
+
+    def test_the_thread_guard_would_notice_the_old_connection(self) -> None:
+        """The mutation: a connection opened the old way must fail from another
+        thread, or the test above proves nothing."""
+        conn = sqlite3.connect(":memory:", check_same_thread=True)
+        conn.execute("CREATE TABLE t (x INTEGER)")
+        errors: list[BaseException] = []
+
+        def touch() -> None:
+            try:
+                conn.execute("SELECT * FROM t").fetchall()
+            except BaseException as exc:  # noqa: BLE001
+                errors.append(exc)
+
+        thread = threading.Thread(target=touch)
+        thread.start()
+        thread.join()
+        self.assertEqual(len(errors), 1)
+        self.assertIsInstance(errors[0], sqlite3.ProgrammingError)
+
+    def test_below_floor_candidates_are_not_reported_as_violations(self) -> None:
+        """An entry that scored but did not clear the admission floor is the
+        floor working. Counting it as a violation made that field unreadable
+        against every other module's use of it."""
+        index = tiny_index()
+        out = retrieve("amber golden-hour light film-grain", index=index)
+        self.assertEqual(out["violations"], 0)
+        self.assertIn("below_floor", out)
+        self.assertGreaterEqual(out["below_floor"], 0)
 
     def test_a_missing_gallery_file_is_reported_not_fatal(self) -> None:
         index = build_index(

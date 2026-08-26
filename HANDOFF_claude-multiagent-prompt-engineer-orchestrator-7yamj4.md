@@ -162,3 +162,77 @@ either way.
   the rules. Doing that honestly needs generated results rated by someone who
   did not write the prompt, which is what the replay buffer is for and what
   nobody has fed it yet.
+
+## Agent: orchestrator, second pass — 2026-08-26
+
+The owner of `studio/knowledge.py` confirmed in this session that they are the
+owner, and asked for the review findings to be fixed rather than handed on. The
+Ц2 note in the first section is therefore superseded for that module only.
+
+### Fixed in studio/knowledge.py
+
+1. **The corpus paths are no longer one machine's.** `OUR_PROMPTS_DIR` and
+   `REFERENCE_CARDS_DIR` resolve through `_resolve_dir`: environment override
+   (`STUDIO_KNOWLEDGE_OUR_PROMPTS`, `STUDIO_KNOWLEDGE_REFERENCE_CARDS`), then a
+   directory inside this repo, then — last — the original absolute path, so the
+   machine that has the data keeps working. When nothing exists the reported
+   path is the in-repo one, because an error should name a path the reader can
+   create.
+2. **An index with core rules and zero examples now reports `could not
+   measure`, not `pass`.** This is the verdict whose absence let the defect
+   survive: such an index cannot answer a single retrieval query and
+   `evaluate` cannot run against it.
+3. **sqlite is opened `check_same_thread=False` with a lock on the index.**
+   Every statement on the connection — `add`, `reload`, `attach_dense`,
+   `load_dense_from_db`, `counts`, and the BM25 read on the query path — now
+   runs under `KnowledgeIndex.lock`.
+4. **`retrieve` no longer reports below-floor candidates as `violations`.**
+   `violations` is 0 and the count moved to a new `below_floor` key. An entry
+   that scored but did not clear the admission floor is the floor working.
+
+### Tests changed and added
+
+- `test_core_rules_alone_build_and_pass` **asserted the bug**. Renamed to
+  `test_core_rules_alone_are_not_a_built_index` and it now asserts
+  `could not measure`, with the reason in its docstring.
+- `test_one_example_is_enough_to_make_it_a_built_index` — the other direction
+  of that mutation: one example flips the verdict back to `pass`.
+- `test_the_corpus_directories_are_not_one_machine` — the resolver's order.
+- `test_retrieve_is_safe_from_several_threads` — four threads, ten retrievals
+  each.
+- `test_the_thread_guard_would_notice_the_old_connection` — the negative
+  control on that guard.
+- `test_below_floor_candidates_are_not_reported_as_violations`.
+- `tiny_index()` now opens its connection exactly as `build_index` does. A
+  helper that connects differently from production tests a different object.
+
+### MUTATION RUN, MEASURED 2026-08-26 (И2 — the defect observed, then fixed)
+
+Setting the helper's connection back to `check_same_thread=True`:
+
+```
+FAILED studio/tests/test_knowledge.py::Building::test_retrieve_is_safe_from_several_threads
+threaded retrieval raised [ProgrammingError('SQLite objects created in a thread
+can only be used in that same thread. The object was created in thread id
+140432856916096 and this is thread id 140432824256192.')]
+```
+
+Restored: 2 passed. So the guard bites, and the failure it guards against is
+the exact one predicted in the review rather than a hypothesis about it.
+
+### Numbers after this pass
+
+`bash scripts/check` — green, exit 0. 770 lipsync tests, 79 selfrag tests.
+Full studio suite: 227 passed, 2 skipped.
+
+### Still open, on purpose
+
+- The two `SKIPPED` tests in `test_knowledge.py` remain skipped: they need the
+  actual prompt fixtures, which are not in this repository. They will stop
+  skipping when the corpus archive lands in `studio/knowledge/our_prompts/`.
+  Until then a skip is honest — but it is still not a pass, and the build
+  report is now the signal that says so out loud.
+- Carded model limits stay at `CONFIDENCE_WEAK` by the owner's decision. No
+  vendor document has been read.
+- `httpx2` is still unpinned, so the rest of the studio suite still cannot run
+  in CI. `scripts/check` gates `studio/selfrag` only.
