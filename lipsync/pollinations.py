@@ -9,6 +9,19 @@ from pathlib import Path
 from urllib.parse import quote
 
 
+#: CHOSEN (2026-08-26): the one default frame every image route asks for.
+#: A size that is 9:16 only in arithmetic is not enough. The model MEASURABLY
+#: snaps each side to a 16px grid (asked 768x1024, it returned 896x1200), so an
+#: off-grid request such as 1080x1920 comes back moved sideways and no longer
+#: 9:16 — and a frame that is not 9:16 gets padded with blurred bands on its way
+#: to the client. 1152x2048 survives the snap untouched: 1152 = 72*16,
+#: 2048 = 128*16, and 1152*16 == 2048*9 exactly. It is the same point already
+#: chosen for `fork_plan.EXTEND_SIZE`, for the same two reasons.
+#: One constant, not one literal per route: the 3:4 default outlived its removal
+#: on `compose` alone precisely because each route carried its own copy.
+PLAN_SIZE = (1152, 2048)
+
+
 def _base() -> str:
     return os.environ.get("POLLINATIONS_BASE", "https://gen.pollinations.ai").rstrip("/")
 
@@ -48,8 +61,8 @@ def image(
     *,
     model: str = "flux",
     seed: int = 0,
-    width: int = 1080,
-    height: int = 1920,
+    width: int = PLAN_SIZE[0],
+    height: int = PLAN_SIZE[1],
     image_url: str | None = None,
 ) -> str:
     """Generate a still (text->image). Returns image bytes synchronously."""
@@ -78,8 +91,8 @@ def images_edit(
     out_path: str | Path,
     *,
     model: str = "kontext",
-    width: int = 1080,
-    height: int = 1920,
+    width: int = PLAN_SIZE[0],
+    height: int = PLAN_SIZE[1],
 ) -> str:
     """Image-to-image from a LOCAL reference, no media host needed. [verified live]"""
     import requests
@@ -113,16 +126,19 @@ def compose(
     out_path: str | Path,
     *,
     model: str = "nanobanana",
-    width: int = 1080,
-    height: int = 1920,
+    width: int = PLAN_SIZE[0],
+    height: int = PLAN_SIZE[1],
     seed: int = 0,
 ) -> str:
     """Generate from SEVERAL reference images at once. [verified live]
 
-    The default is 9:16, as on `image` and `images_edit`. It used to be 768x1024
-    here alone, and that 3:4 was the real reason the styled reference arrived
-    letterboxed: nobody asked this route for a vertical frame. Callers that care
-    about the exact grid pass their own size — see `fork_e2e.STYLED_SIZE`.
+    The default is `PLAN_SIZE`, shared with `image` and `images_edit`. It used
+    to be 768x1024 here alone, and that 3:4 was the real reason the styled
+    reference arrived letterboxed: two references route here while one routes to
+    `images_edit`, so the route choice — not the prompt — decided whether the
+    frame came back vertical. The size now lives in one place so a route cannot
+    drift away from its siblings again. Callers wanting another frame pass their
+    own size — see `fork_e2e.STYLED_SIZE`.
     """
     import requests
 
