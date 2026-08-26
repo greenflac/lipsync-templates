@@ -88,10 +88,18 @@ def cmd_write(args: argparse.Namespace) -> int:
 
 
 def cmd_eval(args: argparse.Namespace) -> int:
-    load = load_corpus(paths=[Path(args.corpus)] if args.corpus else None)
-    if load["outcome"] == UNMEASURED:
-        print(f"no corpus found; falling back to the demo corpus at {DEMO_CORPUS_PATH}")
-        load = load_corpus(paths=[DEMO_CORPUS_PATH])
+    # The gate evaluates the COMMITTED fixture unless told otherwise, and that
+    # is the whole point. It used to fall back to the configured corpus paths,
+    # so the moment an operator dropped their own 4593-row corpus on disk the
+    # CI gate started scoring the fixture's gold set against a corpus the gold
+    # set knows nothing about, and went red (OBSERVED 2026-08-26). A gate whose
+    # verdict depends on an uncommitted local file is not a gate.
+    #
+    # Measuring a real corpus is a separate and deliberate act: pass --corpus.
+    # It needs its own gold set, because a gold set written for one corpus
+    # measures nothing about another.
+    source = Path(args.corpus) if args.corpus else DEMO_CORPUS_PATH
+    load = load_corpus(paths=[source])
     index = build_corpus_index(load.get("records") or [])
     channels = tuple(args.channels.split(",")) if args.channels else None
     result = evaluate(index, load_gold(), k=args.k, channels=channels)
@@ -190,7 +198,11 @@ def build_parser() -> argparse.ArgumentParser:
 
     ev = subs.add_parser("eval", help="score the retriever against the gold set")
     ev.add_argument("--k", type=int, default=5)
-    ev.add_argument("--corpus", default=None)
+    ev.add_argument(
+        "--corpus",
+        default=None,
+        help="a .jsonl to score instead of the committed fixture; needs its own gold set",
+    )
     ev.add_argument("--channels", default=None, help="comma separated, to run a mutation")
     ev.set_defaults(func=cmd_eval)
 

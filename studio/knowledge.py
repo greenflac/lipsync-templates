@@ -1154,9 +1154,16 @@ def retrieve(
     picked: list[dict] = []
     per_provenance: dict[str, int] = defaultdict(int)
     seen_prefixes: set[str] = set()
+    # How many entries the quota turned away. MEASURED 2026-08-26: with a
+    # corpus of 4601 rows all carrying one provenance, the quota caps every
+    # answer at 2 however large k is, and nothing in the result said so — a
+    # caller asking for 5 got 2 and could not tell "the corpus has no more"
+    # from "the guard stopped counting". The guard stays; the silence does not.
+    quota_blocked = 0
     for entry_id in ordered:
         entry = index.by_id[entry_id]
         if per_provenance[entry.provenance] >= MAX_PER_PROVENANCE:
+            quota_blocked += 1
             continue
         prefix = " ".join(entry.text.lower().split())[:DEDUP_PREFIX]
         if prefix in seen_prefixes:
@@ -1182,6 +1189,12 @@ def retrieve(
 
     if picked:
         outcome, note = PASS, f"{len(picked)} examples above the floor"
+        if len(picked) < k and quota_blocked:
+            note = (
+                f"{note}; {k} were asked for and the per-provenance quota of "
+                f"{MAX_PER_PROVENANCE} turned away {quota_blocked} more — this "
+                "index does not hold enough distinct sources to fill k"
+            )
     else:
         outcome, note = FAIL, "nothing in the index clears the relevance floor"
     return _result(
@@ -1196,6 +1209,7 @@ def retrieve(
         terms=terms,
         channels=sorted(rankings),
         below_floor=below_floor,
+        quota_blocked=quota_blocked,
     )
 
 

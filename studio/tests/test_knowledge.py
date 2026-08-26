@@ -21,6 +21,7 @@ from lipsync.fork_identity import FAIL, PASS, UNMEASURED
 from studio import knowledge as K
 from studio.knowledge import (
     KIND_CORE,
+    KIND_GALLERY_PROMPT,
     KIND_OUR_PROMPT,
     KIND_STYLE_CARD,
     KnowledgeIndex,
@@ -360,6 +361,78 @@ class Building(unittest.TestCase):
         self.assertEqual(out["violations"], 0)
         self.assertIn("below_floor", out)
         self.assertGreaterEqual(out["below_floor"], 0)
+
+    def test_a_single_source_index_says_the_quota_capped_the_answer(self) -> None:
+        """MEASURED 2026-08-26 on a real 4601-row corpus: every row shared one
+        provenance, so the quota capped every answer at MAX_PER_PROVENANCE
+        however large k was, and the result did not say so. A caller asking for
+        5 and getting 2 could not tell "the corpus has no more" from "the guard
+        stopped counting"."""
+        conn = sqlite3.connect(":memory:", check_same_thread=False)
+        conn.executescript(K.SCHEMA)
+        index = KnowledgeIndex(conn)
+        index.add(
+            [
+                {
+                    "kind": KIND_CORE,
+                    "text": CORE_TEXT,
+                    "provenance": K.PROVENANCE_CORE,
+                    "source": "core_rules.md",
+                }
+            ]
+        )
+        index.add(
+            [
+                {
+                    "kind": KIND_GALLERY_PROMPT,
+                    "text": f"warm amber golden hour light with soft film grain, variant {n}",
+                    "provenance": K.PROVENANCE_THIRD_PARTY,
+                    "source": f"g-{n}",
+                }
+                for n in range(8)
+            ]
+        )
+        index.reload()
+        out = retrieve("warm amber golden hour light soft film grain", index=index, k=5)
+        self.assertEqual(out["outcome"], PASS)
+        self.assertEqual(len(out["examples"]), K.MAX_PER_PROVENANCE)
+        self.assertGreater(out["quota_blocked"], 0)
+        self.assertIn("quota", out["note"])
+
+    def test_a_multi_source_index_fills_k_without_the_quota_note(self) -> None:
+        """The other direction: with enough distinct sources the quota never
+        bites, and the note must not claim it did."""
+        conn = sqlite3.connect(":memory:", check_same_thread=False)
+        conn.executescript(K.SCHEMA)
+        index = KnowledgeIndex(conn)
+        index.add(
+            [
+                {
+                    "kind": KIND_CORE,
+                    "text": CORE_TEXT,
+                    "provenance": K.PROVENANCE_CORE,
+                    "source": "core_rules.md",
+                }
+            ]
+        )
+        for n, provenance in enumerate(
+            (K.PROVENANCE_OURS, K.PROVENANCE_REFERENCE_CARD, K.PROVENANCE_THIRD_PARTY)
+        ):
+            index.add(
+                [
+                    {
+                        "kind": KIND_GALLERY_PROMPT,
+                        "text": f"warm amber golden hour light with soft film grain, take {n}{m}",
+                        "provenance": provenance,
+                        "source": f"s-{n}-{m}",
+                    }
+                    for m in range(2)
+                ]
+            )
+        index.reload()
+        out = retrieve("warm amber golden hour light soft film grain", index=index, k=5)
+        self.assertEqual(len(out["examples"]), 5)
+        self.assertNotIn("quota", out["note"])
 
     def test_a_missing_gallery_file_is_reported_not_fatal(self) -> None:
         index = build_index(

@@ -236,3 +236,125 @@ Full studio suite: 227 passed, 2 skipped.
   vendor document has been read.
 - `httpx2` is still unpinned, so the rest of the studio suite still cannot run
   in CI. `scripts/check` gates `studio/selfrag` only.
+
+## Agent: orchestrator, third pass — 2026-08-26 — the corpus arrived
+
+4601 harvested gallery rows plus a schema document. Ingested, measured, NOT
+committed. The data file is gitignored; see the licence section below.
+
+### Ingest, and two defects the boundary had against this file
+
+`studio/knowledge/ingest_gallery.py` already stamped `provenance` and `rights`,
+which is the part that mattered. Two things it got wrong on this shape:
+
+1. **It read `source_url`/`url` and this file calls the field `page`**, so the
+   source URL — the one thing that makes an exact removal possible if the
+   gallery's owner asks — was being dropped silently. Now also reads `page`,
+   and carries `record`/`element`/`ordinal` through, which PROVENANCE.md calls
+   the row's identity.
+2. **It deduplicated on wording alone.** The schema document is explicit that
+   the identity is the *(wording, image)* pair, because the same prompt shown
+   against different results is deliberately two records — for `--sref` and
+   `--cref` that distinction is the whole point. Deduplicating on wording would
+   have discarded **539 of 4601 rows** without a word. Now keyed on the pair.
+
+Ingest result: `pass: kept 4601, dropped 0, duplicates 0, matched to a card
+4601, median words 87` — matching the schema document's own counts exactly.
+
+### FIRST REPRODUCIBLE RETRIEVAL NUMBERS FROM THIS REPOSITORY
+
+```
+build: pass | per_source: {'core': 12, 'ours': 0, 'reference_card': 0, 'gallery': 4601}
+evaluate: FAIL | recall@5 0.5395 | precision@5 0.5263 | checked 40
+  negative controls 2/2 OK      <- the retriever can still say "nothing here"
+  positive controls 0/2 FAILED  <- and this is why the run is a FAIL
+```
+
+**Do not read 0.5395 against the 0.9737 in `HANDOFF_studio-mvp.md`.** They
+measure different corpora. The gold set's two positive controls are verbatim
+phrases from `ours` and `reference_card`, which are still absent (0 rows). The
+instrument is behaving correctly: it is refusing to certify itself against a
+corpus that is not loaded. The number that IS meaningful is the negative
+controls, 2 of 2 — abstention holds on a corpus 380× larger than the fixture.
+
+A gold set for the gallery corpus does not exist and would have to be written
+before recall@5 over it means anything.
+
+### The channel question is now answered, and the fixture had it wrong
+
+MEASURED on 4593 records (8 rows over the 4000-char cap, reported not dropped
+silently), 200 known-item queries — the first nine words of every 23rd record —
+at k=5:
+
+| channels | own record in top-5 | empty |
+|---|---|---|
+| bm25 | 85.5% | 1 |
+| bm25+phrase | **89.0%** | 1 |
+| bm25+tag | 85.5% | 1 |
+| bm25+phrase+tag | 89.0% | 1 |
+| bm25+phrase+tag+rating | 89.0% | 1 |
+| phrase alone | 87.5% | 5 |
+| tag alone | 0.0% | 200 |
+
+Full fusion vs bm25-only: **same top-5 set in 27% of queries, same order in
+21%.** On the ten-record fixture they were identical every time — so that
+fixture was not measuring the channels, it was too small to.
+
+- **The phrase channel is the entire gain**, +3.5 points. The stop condition
+  written in the first pass ("if the fusion doesn't beat BM25 at 200 records,
+  delete three channels") is therefore NOT triggered.
+- **MEASURED NEGATIVE: the tag channel buys zero here** — identical to bm25
+  alone, and nothing at all on its own. Cause is specific: this corpus's tags
+  are the gallery's Russian section names and the queries are English prompt
+  text. Not evidence about a corpus whose tags share its queries' vocabulary.
+- **MEASURED NEGATIVE: the rating channel has no data.** 0 of 4593 rows carry
+  a rating; a harvested gallery does not publish one. It ranks nothing until
+  the replay buffer fills.
+
+Caveat on all three: this is **known-item** retrieval — the query is a verbatim
+prefix of the target. That is easier than a real request, so +3.5 is evidence
+the channel works, not a measurement of the gain on real queries.
+
+**Latency 5.85 ms per search over 4593 records**, single core, no ANN index.
+That settles the vector-database question with a number instead of arithmetic.
+
+### Fixed in studio/knowledge.py this pass
+
+`retrieve` now reports `quota_blocked`, and says so in its note when the
+per-provenance quota stopped it filling `k`. MEASURED: with all 4601 rows
+sharing one provenance, the quota capped every answer at 2 however large `k`
+was, and nothing in the result said so — a caller asking for 5 and getting 2
+could not tell "the corpus has no more" from "the guard stopped counting". On
+the real corpus it now reads:
+
+```
+2 examples above the floor; 5 were asked for and the per-provenance quota of 2
+turned away 3368 more — this index does not hold enough distinct sources to fill k
+```
+
+The quota itself is unchanged. Raising it to 5 was measured: +0.039 recall for
+−0.037 precision, which is not a reason to loosen an anti-poisoning guard. The
+right answer is more distinct sources, not a higher cap. Two tests cover it,
+one for each direction.
+
+### LICENCE — the data is NOT committed, and this needs the owner's decision
+
+`studio/knowledge/gallery_prompts.jsonl` (6.1 MB, 4601 rows of third-party
+prompt wording) is in `.gitignore`. It is not in any commit. Facts:
+
+- **This repository is public** (`"private": false`, confirmed via the API).
+- **Its LICENCE clause 2(d)** reserves the copyright holder's rights over
+  "the prompts, prompt fragments, directive strings ... contained here, which
+  are the substance of the work". Committing this file would make that clause
+  assert rights over aidsgn.ru's commercial catalogue.
+- **This repository has no NOTICE file.** `NOTICE_replacement.md` was written
+  for `cyclerunner`'s NOTICE and does not apply here.
+- The owner's 2026-08-25 decision recorded in `PROVENANCE.md` was to *collect*
+  the wording. Publishing it in a public repository is a further step, and one
+  a `git add -A` should not be able to take by accident.
+
+Publishing it needs, at minimum: a NOTICE in this repository stating the
+material is aidsgn.ru's and that this project claims nothing over it, and a
+carve-out in LICENCE clause 2(d). Both are drafted the moment the owner says
+to. Until then the system runs off the local file and CI runs off the
+ten-record demo fixture, which is ours.

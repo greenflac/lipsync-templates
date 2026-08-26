@@ -201,7 +201,9 @@ cannot produce them.
 - **No vector database.** 10k × 384 float32 is ~15 MB; a query is one matvec.
   An ANN index buys a speedup below perception and costs a service, a memory
   floor, a build step and a test dependency. This was the clearest cargo-cult
-  item on the list.
+  item on the list. **Now measured rather than argued: 5.85 ms per search over
+  4593 real records** (2026-08-26, single core, FTS5 plus in-process scans). An
+  ANN index would shave milliseconds off something nobody can perceive.
 - **Cross-encoder reranking is the highest-leverage remaining component**, and
   its real value is not accuracy — it is that its score is a usable
   *abstention* signal, which BM25 and cosine scores are not. Not implemented

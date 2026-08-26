@@ -217,11 +217,53 @@ MEASURED 2026-08-26, 10 records, 15 gold rows, k=5:
 **Read this honestly: BM25 alone scores identically to the full fusion.** The
 demo gold set is saturated — it cannot discriminate between channel sets, so it
 proves the retriever works and proves nothing about whether the fusion earns
-its keep. That matches the wider evidence that BM25 is hard to beat on an
-out-of-domain corpus. Build a gold set against your real corpus before treating
-the fusion as justified. The rating-alone row is the one informative line: it
-scores zero because the rating channel deliberately never *nominates* a record,
-it only reorders ones another channel found.
+its keep. The rating-alone row is the one informative line: it scores zero
+because the rating channel deliberately never *nominates* a record, it only
+reorders ones another channel found.
+
+### What the real corpus says — and it disagrees with the fixture
+
+MEASURED 2026-08-26 on the harvested gallery corpus: **4593 records**, 200
+known-item queries (the first nine words of every 23rd record), k=5. No gold
+set is needed for the first number, which is the decisive one.
+
+| channels | own record in top-5 | empty answers |
+|---|---|---|
+| `bm25` | 85.5% | 1 |
+| `bm25+phrase` | **89.0%** | 1 |
+| `bm25+tag` | 85.5% | 1 |
+| `bm25+phrase+tag` | 89.0% | 1 |
+| `bm25+phrase+tag+rating` | 89.0% | 1 |
+| `phrase` alone | 87.5% | 5 |
+| `tag` alone | 0.0% | 200 |
+
+Full fusion and BM25-only return the **same top-5 set in only 27% of queries**
+and the same order in 21%. On the ten-record fixture they were identical every
+time. So the fixture was not measuring the channels; it was too small to.
+
+Three findings, and two of them are negative:
+
+- **The phrase channel is the entire gain**: +3.5 points over BM25 alone. The
+  jargon of this trade is multi-word, and single-token BM25 cannot tell
+  "matte paper texture" from a document that says "paper" three times.
+- **The tag channel buys exactly zero on this corpus.** `bm25+tag` scores
+  identically to `bm25`, and tag alone returns nothing at all for all 200
+  queries. The reason is specific and worth knowing rather than generalising:
+  this corpus's tags are the source gallery's own Russian section names, and
+  the queries are English prompt text. On a corpus whose tags share a
+  vocabulary with its queries the channel has something to fire on. Here it
+  does not.
+- **The rating channel has no data.** 0 of 4593 records carry a rating,
+  because a harvested gallery does not publish one. It ranks nothing until the
+  replay buffer starts filling in.
+
+**Latency: 5.85 ms per search over 4593 records**, brute force, single core, no
+index beyond FTS5. This is the measurement that settles the vector-database
+question for this scale — see `docs/SELFRAG_RESEARCH.md`.
+
+Neither negative result is a reason to delete a channel yet: both describe
+*this* corpus, which has no ratings and foreign-language tags. They are the
+reason to be honest that today `bm25+phrase` is the system doing the work.
 
 ## 8. Adding a model
 

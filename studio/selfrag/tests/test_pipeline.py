@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import json
 import socket
+import tempfile
 import unittest
+from pathlib import Path
 
 from lipsync.fork_identity import FAIL, PASS, UNMEASURED
 from studio.selfrag.corpus import CorpusRecord, load_corpus
@@ -237,3 +240,34 @@ class Async(unittest.IsolatedAsyncioTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class GateIsDeterministic(unittest.TestCase):
+    """The CI gate must depend only on committed content.
+
+    It used to fall back to the configured corpus paths when no --corpus was
+    given, so the moment an operator dropped their own corpus on disk the gate
+    scored the fixture's gold set against a corpus that gold set knows nothing
+    about, and CI went red on a file nobody had committed (OBSERVED
+    2026-08-26). A gate whose verdict depends on an uncommitted local file is
+    not a gate.
+    """
+
+    def test_eval_ignores_the_operators_corpus(self) -> None:
+        import os
+        from unittest import mock
+
+        from studio.selfrag import cli
+
+        with tempfile.TemporaryDirectory() as tmp:
+            decoy = Path(tmp) / "operator.jsonl"
+            decoy.write_text(
+                json.dumps({"prompt": "a decoy nobody's gold set has ever seen"}) + "\n",
+                encoding="utf-8",
+            )
+            with mock.patch.dict(os.environ, {"STUDIO_CORPUS_PATHS": str(decoy)}, clear=False):
+                args = cli.build_parser().parse_args(["--state", ":memory:", "--json", "eval"])
+                code = cli.cmd_eval(args)
+        # 0 is pass. Had the decoy been picked up, the fixture's gold set would
+        # have found nothing in it and this would be 1.
+        self.assertEqual(code, 0)

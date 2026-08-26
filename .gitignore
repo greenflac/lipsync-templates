@@ -10,3 +10,11 @@ studio/uploads/
 # The operator's own prompt corpus. Private data, named by the product brief;
 # the demo corpus that ships with the code lives in studio/selfrag/fixtures/.
 corpus/
+
+# Harvested third-party gallery wording. NOT committed: this repository is
+# public, and its LICENCE clause 2(d) asserts the copyright holder's rights
+# over "the prompts ... contained here" — which would be a claim over
+# aidsgn.ru's catalogue. Publishing it is the owner's decision to take
+# explicitly, not something a `git add -A` should be able to do by accident.
+# See studio/knowledge/PROVENANCE.md and NOTICE_replacement.md.
+studio/knowledge/gallery_prompts.jsonl
