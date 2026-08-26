@@ -429,7 +429,7 @@ class SubstitutionIsSpanBased(unittest.TestCase):
         result = calibrate(template, {"tint_shade": "rose-", "tint_hue": "grey"})
         self.assertEqual(result["outcome"], PASS)
         prompt = str(result["prompt"])
-        self.assertIn("soft shadows and rose-grey light creating", prompt)
+        self.assertIn("rose-grey light and long soft shadows", prompt)
         self.assertNotIn("silver", prompt)
         self.assertNotIn("--", prompt.split(" --ar")[0])
 
@@ -484,7 +484,7 @@ class SubstitutionIsSpanBased(unittest.TestCase):
         assert template is not None
         choices = {
             "texture": "porous volcanic",
-            "light": "Hard, raking studio lighting",
+            "light": "hard, raking studio lighting",
             "backdrop": "a pale, plain backdrop",
         }
         result = calibrate(template, choices)
@@ -493,7 +493,7 @@ class SubstitutionIsSpanBased(unittest.TestCase):
         for value in choices.values():
             self.assertIn(value, prompt)
         self.assertNotIn("granular, sandy", prompt)
-        self.assertIn("crumpled, fabric-like layers", prompt)
+        self.assertIn("crumpled fabric-like layers", prompt)
 
 
 class Verify(unittest.TestCase):
@@ -538,7 +538,7 @@ class Verify(unittest.TestCase):
         assert template is not None
         applied = {"subject": "worn brown leather satchel", "light": "a low winter sun"}
         out = str(calibrate(template, applied)["prompt"])
-        corrupted = out.replace("casually draped", "carelessly draped")
+        corrupted = out.replace("folded once", "folded twice")
         self.assertNotEqual(corrupted, out)
         result = verify(template.prompt, corrupted, template.elements, applied)
         self.assertEqual(result["outcome"], FAIL)

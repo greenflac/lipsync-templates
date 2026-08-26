@@ -66,6 +66,7 @@ __all__ = [
     "TemplateError",
     "calibrate",
     "catalogue",
+    "describe",
     "element",
     "get",
     "locate",
@@ -226,49 +227,56 @@ def element(
 
 
 # ---------------------------------------------------------------------------
-# The catalogue: real prompts, real spans.
+# The catalogue: three prompts, and every span in them MEASURED by `locate`.
 # ---------------------------------------------------------------------------
 
-# ВЫБРАНО by agent A, 2026-08-26, from `studio/knowledge/gallery_prompts.jsonl`
-# (4,601 harvested prompts, MEASURED by `wc -l` on that file the same day).
-# Three prompts were kept out of that corpus by hand on two criteria: they are
-# long and comma-separated in the house style, and each names a light or a
-# lens, so the elements below are things the prompt actually says rather than
-# slots invented for the demo. The corpus file is gitignored, so the prompt
-# text is inlined here VERBATIM with its corpus id in the comment — a template
-# whose base disappears on a fresh clone is not a proven base.
+# ВЫБРАНО — the prompts themselves are WRITTEN BY agent A, 2026-08-26, and that
+# is a licence decision, not a stylistic one. Ц5, checked before anything was
+# embedded:
 #
-# The alternatives on each allow-list are ВЫБРАНО by agent A in the register of
-# the surrounding prompt. They are NOT measured: nobody has generated an image
-# from them. That is the honest status of every value here and it is why this
-# module never claims a calibrated prompt is a good one — only that it differs
-# from a proven one exactly where the owner said it may.
+#   `studio/knowledge/gallery_prompts.jsonl` (4,601 rows, MEASURED by `wc -l`,
+#   2026-08-26) holds prompt wording harvested from a third party's commercial
+#   gallery. `.gitignore` keeps that file out of this repository ON PURPOSE,
+#   and the reason is written next to the rule: this repository is public and
+#   its LICENCE clause 2(d) claims "the prompts, prompt fragments, directive
+#   strings ... contained here" as the substance of the work. Pasting the
+#   gallery's sentences into a committed source file would publish somebody
+#   else's wording AND drag it under that claim — the exact outcome the ignore
+#   rule exists to prevent (see `studio/knowledge/PROVENANCE.md` and
+#   `NOTICE_replacement.md`).
+#
+# So the corpus was read for REGISTER and not for text. Three of its rows were
+# used as models for length, comma rhythm, and the habit of naming a light and
+# a lens: 000e2e1cad896387, 167b0499bb600934, 0de6b15623ad1dd3. The sentences
+# below are this project's own. If the owner decides the literal corpus wording
+# should ship here, that is the same kind of explicit decision they took on
+# 2026-08-25 about collecting it at all, and it needs the same paperwork.
+#
+# HONEST STATUS OF EVERY VALUE HERE: nothing below has been generated. These
+# are not yet "proven bases" in the sense `docs/PRODUCT_LOGIC.md` means — the
+# owner has not run them. The module therefore never claims a calibrated prompt
+# is a GOOD prompt; it claims only that the output differs from its base
+# exactly where the template said it may, which is a fact about text and needs
+# no generation to be true.
 
-# corpus id 000e2e1cad896387, model midjourney, harvested 2026-08-26.
 _WINTER = (
-    "a stylish deep burgundy velvet dinner jacket with sharp satin lapels, casually "
-    "draped over a snowy bench under a full moon, faint frost forming on its surface, "
-    "soft shadows and silver-blue light creating an ethereal mood, shot on a Leica M10 "
-    "with a 50mm Summilux lens, film grain adding timeless elegance --ar 3:4 --style raw "
-    "--sref 3698819553 442764520 1347328953 --p --stylize 400 --v 6.1"
+    "a tailored deep burgundy velvet dinner jacket, folded once and left on a snowy bench "
+    "under a full moon, frost creeping along the slats, silver-blue light and long soft "
+    "shadows, shot on a 50mm Summilux lens, fine film grain, --ar 3:4 --style raw "
+    "--stylize 300 --v 6.1"
 )
 
-# corpus id 167b0499bb600934, model unlabelled in the corpus; the prompt names
-# no vendor syntax, so it is recorded as generic rather than guessed at.
 _APPLIANCE = (
-    "product photo of beautiful minimalistic design high-tech modern unbranded washing "
-    "machine, its door is open, various fragrant flowers fall out of it, high resolution, "
-    "high detail, hyper realistic style, shot on Canon EF 16-35mm f/2.8L III USM lens on a "
-    "Canon EOS 5D Mark IV camera, soft studio lighting"
+    "product photo of an unbranded washing machine in a bare studio, its door standing "
+    "open, various fragrant flowers spilling out across the floor, clean minimal styling, "
+    "high detail, shot on a Canon EF 16-35mm f/2.8L III USM lens, soft studio lighting"
 )
 
-# corpus id 0de6b15623ad1dd3, model unlabelled in the corpus.
 _ABSTRACT = (
-    "Close-up of an abstract object with a granular, sandy texture. The object is composed "
-    "of crumpled, fabric-like layers in a complex arrangement. The colors are muted but "
-    "rich: dark grey, purple, magenta, and olive green, with accents of orange and white. "
-    "Soft, diffused studio lighting emphasizes the intricate, porous texture. Extremely "
-    "detailed, on a dark, plain backdrop."
+    "close-up of a small abstract object with a granular, sandy texture, built from "
+    "crumpled fabric-like layers, muted colours running from dark grey to olive green with "
+    "accents of orange, soft, diffused studio lighting raking across the surface, set "
+    "against a dark, plain backdrop"
 )
 
 CATALOGUE: tuple[PromptTemplate, ...] = (
@@ -393,8 +401,8 @@ CATALOGUE: tuple[PromptTemplate, ...] = (
                 _ABSTRACT,
                 "light",
                 "How it is lit",
-                "Soft, diffused studio lighting",
-                ("Hard, raking studio lighting", "Low, warm tungsten lighting"),
+                "soft, diffused studio lighting",
+                ("hard, raking studio lighting", "low, warm tungsten lighting"),
             ),
             element(
                 _ABSTRACT,
