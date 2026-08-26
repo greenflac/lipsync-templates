@@ -47,7 +47,10 @@ from studio.knowledge import (  # type: ignore[attr-defined]
 from studio.selfrag.corpus import RATING_MAX, RATING_MIN, CorpusRecord
 
 __all__ = [
+    "ALL_CHANNELS",
     "CHANNELS",
+    "DF_CEILING_MIN_DOCS",
+    "TERM_DF_CEILING",
     "CHANNEL_WEIGHT",
     "MIN_TERM_HITS",
     "RATING_PRIOR_FLOOR",
@@ -61,7 +64,36 @@ __all__ = [
 
 # Which rankings are fused. Named as data so a test can drop a channel and
 # watch recall move; a hard-wired call chain cannot be mutated.
-CHANNELS: tuple[str, ...] = ("bm25", "phrase", "tag", "rating")
+#
+# `phrase` is IMPLEMENTED AND OFF. MEASURED 2026-08-26 on 4593 real records
+# against a 46-row gold set whose ground truth is the source gallery's own
+# section labels — a grouping we did not make, so the measurement is not of
+# our own taste:
+#
+#     bm25                      recall@5 0.95   precision@5 0.740
+#     bm25 + phrase             recall@5 0.90   precision@5 0.675
+#     bm25 + tag                recall@5 0.95   precision@5 0.740
+#     bm25 + phrase + tag       recall@5 0.90   precision@5 0.675
+#
+# Across the 40 topical queries the phrase channel hurt 2 and helped 0, and
+# cost 2.6 of summed precision. It never once won.
+#
+# This reverses an earlier reading, and the reason is worth keeping. On a
+# known-item test — where the query is a verbatim prefix of the record being
+# looked for — the phrase channel measured +3.5 points. That test flatters it:
+# long exact phrases exist only because the query was copied out of the answer.
+# When a person describes what they want in their own words, no such phrase
+# exists, and the channel contributes generic bigrams instead. The known-item
+# number was an artefact of the easier test.
+#
+# It is kept rather than deleted because the condition under which it wins is
+# now known and stated: a corpus where queries share exact phrasing with the
+# records. Turn it on with `channels=("bm25", "phrase", "tag", "rating")` and
+# measure before trusting it.
+CHANNELS: tuple[str, ...] = ("bm25", "tag", "rating")
+
+#: Every channel that exists, including the ones the default leaves off.
+ALL_CHANNELS: tuple[str, ...] = ("bm25", "phrase", "tag", "rating")
 
 # Per-channel weight in the fusion. CHOSEN as starting values, mirroring the
 # ratios `studio.knowledge` measured on its own gold set: phrase above bm25
@@ -77,6 +109,28 @@ CHANNEL_WEIGHT: dict[str, float] = {
 # channel. CHOSEN. Without an admission floor the retriever can never answer
 # "nothing here", and a retriever that never says no is measuring nothing.
 MIN_TERM_HITS = 2
+
+# A term matching more of the corpus than this does not count toward the
+# admission floor. It still contributes to the BM25 ranking; it just stops
+# being evidence that a record is relevant.
+#
+# CHOSEN at 0.10, then measured. The defect it fixes was found by a negative
+# control, which is what negative controls are for: the query "difference
+# between LIFO and FIFO inventory accounting" came back with four confident
+# records, because "difference" and "between" each appear in thousands of
+# prompts and two hits cleared a floor that counts terms without asking how
+# rare they are. Adding those two words to a stopword list would have been
+# whack-a-mole; a document-frequency ceiling is the same fix for every generic
+# word nobody has thought of yet.
+TERM_DF_CEILING = 0.10
+
+# Below this many documents the ceiling stops being a fraction. Document
+# frequency is not a meaningful statistic over a handful of records: at five
+# records `int(0.10 * 5)` is 0, the ceiling collapses to 1, and any word
+# appearing twice stops being evidence — which strangles a small corpus
+# (OBSERVED 2026-08-26 on a five-record test fixture, where every query
+# returned nothing). CHOSEN at 3.
+DF_CEILING_MIN_DOCS = 3
 
 # A record only rides the rating channel if the corpus actually rated it well.
 # CHOSEN at the midpoint of the documented 1..10 scale, rounded up: 6.
@@ -158,6 +212,11 @@ def build_corpus_index(records: Sequence[CorpusRecord]) -> CorpusIndex:
     return CorpusIndex(records)
 
 
+def _df_ceiling(size: int, fraction: float) -> int:
+    """How many documents a term may match and still count as evidence."""
+    return max(DF_CEILING_MIN_DOCS, int(fraction * size)) if size else DF_CEILING_MIN_DOCS
+
+
 def _phrases(terms: Sequence[str]) -> list[str]:
     """Every contiguous n-gram of the query, longest first."""
     out: list[str] = []
@@ -167,28 +226,68 @@ def _phrases(terms: Sequence[str]) -> list[str]:
     return out
 
 
-def _channel_bm25(index: CorpusIndex, terms: Sequence[str]) -> tuple[list[int], dict[int, int]]:
-    """Rank by summed BM25 over single terms; also count distinct terms hit."""
+def _channel_bm25(
+    index: CorpusIndex, terms: Sequence[str], *, df_ceiling: float | None = None
+) -> tuple[list[int], dict[int, int]]:
+    """Rank by summed BM25 over single terms; count only the DISCRIMINATING hits.
+
+    The returned count is what the admission floor is applied to, so a term
+    that matches most of the corpus deliberately does not increment it. It
+    still moves the ranking — it is weak evidence, not no evidence — but it
+    cannot on its own carry a record over the floor.
+    """
     scores: dict[int, float] = defaultdict(float)
     hits: dict[int, int] = defaultdict(int)
+    # Resolved at CALL time, not bound as a default at definition time. A
+    # default argument freezes the module constant when the function is
+    # defined, so patching the constant moves nothing — which is how a
+    # mutation test comes back green while proving nothing (OBSERVED
+    # 2026-08-26: six ceilings from 1.00 to 0.01 produced identical numbers).
+    fraction = TERM_DF_CEILING if df_ceiling is None else df_ceiling
+    ceiling = _df_ceiling(len(index), fraction)
     for term in terms:
         matched: set[int] = set()
         for row, score in index.match(term):
             scores[row] += score
             matched.add(row)
+        if len(matched) > ceiling:
+            continue
         for row in matched:
             hits[row] += 1
     return sorted(scores, key=lambda r: (-scores[r], r)), dict(hits)
 
 
-def _channel_phrase(index: CorpusIndex, terms: Sequence[str]) -> list[int]:
-    """Rank by multi-word phrase matches, longer phrases counting for more."""
+def _channel_phrase(
+    index: CorpusIndex, terms: Sequence[str], discriminating: set[str]
+) -> tuple[list[int], set[int]]:
+    """Rank by multi-word phrase matches, and say which matches are evidence.
+
+    Returns the ranking and, separately, the rows a phrase is strong enough to
+    ADMIT. The two are not the same, and conflating them was a real abstention
+    hole: this channel used to admit every row any phrase matched, with no
+    floor at all. The negative control "difference between LIFO and FIFO
+    inventory accounting" therefore came back with three confident records,
+    because the bigram "difference between" happens to occur in three prompts
+    (MEASURED 2026-08-26, 4593 records).
+
+    Note what does NOT fix that: a document-frequency ceiling. "difference
+    between" matches 3 rows of 4593 — it is rare. The problem is not that the
+    phrase is common, it is that it carries no subject. So admission asks the
+    same question the lexical channel asks: does this match rest on at least
+    `MIN_TERM_HITS` terms that discriminate? A phrase built entirely from
+    words that describe nothing admits nothing.
+    """
     scores: dict[int, float] = defaultdict(float)
+    admits: set[int] = set()
     for phrase in _phrases(terms):
-        weight = float(len(phrase.split()))
+        words = phrase.split()
+        weight = float(len(words))
+        strong = sum(1 for w in words if w in discriminating) >= MIN_TERM_HITS
         for row, score in index.match(phrase):
             scores[row] += weight * score
-    return sorted(scores, key=lambda r: (-scores[r], r))
+            if strong:
+                admits.add(row)
+    return sorted(scores, key=lambda r: (-scores[r], r)), admits
 
 
 def _channel_tag(
@@ -255,6 +354,8 @@ def search(
     model: str = "",
     boost: Callable[[CorpusRecord], float] | None = None,
     channels: Sequence[str] = CHANNELS,
+    df_ceiling: float | None = None,
+    widened: bool = False,
 ) -> dict:
     """Retrieve up to `k` corpus records for a request. Three outcomes.
 
@@ -267,6 +368,11 @@ def search(
         a Flux request, not no evidence.
     :param boost: optional per-record multiplier, e.g. the replay buffer's.
     :param channels: which channels to fuse; mutate this in tests.
+    :param df_ceiling: fraction of the corpus above which a term stops counting
+        toward the admission floor. Mutate it in both directions and watch
+        abstention move.
+    :param widened: True when this text is a rewrite rather than what the user
+        typed. A widened query does not get the short-query concession below.
     :returns: the studio judging dict plus `hits` and `terms`.
     """
     if len(index) == 0:
@@ -283,24 +389,42 @@ def search(
 
     terms = query_terms(text)
     structure = structure_from_text(text)
+    # Which query terms discriminate: computed once, used by both lexical
+    # channels, so "what counts as evidence" has one definition rather than
+    # one per channel.
+    fraction = TERM_DF_CEILING if df_ceiling is None else df_ceiling
+    ceiling = _df_ceiling(len(index), fraction)
+    discriminating = {term for term in terms if 0 < len(index.match(term)) <= ceiling}
     rankings: dict[str, list[int]] = {}
     admitted: set[int] = set()
     off = 0
 
     if "bm25" in channels:
-        ranking, hits = _channel_bm25(index, terms)
+        ranking, hits = _channel_bm25(index, terms, df_ceiling=df_ceiling)
         rankings["bm25"] = ranking
-        floor = min(MIN_TERM_HITS, max(1, len(terms)))
+        # The floor drops for a genuinely short query, because a user who typed
+        # two words should still get an answer. A WIDENED query gets no such
+        # concession: the system shortened it, the user did not.
+        #
+        # Without that distinction the rewrite ladder defeats abstention
+        # outright. MEASURED 2026-08-26: the control "difference between LIFO
+        # and FIFO inventory accounting" abstained correctly at step 0, then
+        # step 3 reduced it to the single word "difference", the floor fell to
+        # 1 because the rewritten query had one term, and eight prompts
+        # containing that word came back as confident answers. A ladder whose
+        # last rung always finds something is a ladder that guarantees an
+        # answer to every question ever asked.
+        floor = MIN_TERM_HITS if widened else min(MIN_TERM_HITS, max(1, len(terms)))
         admitted |= {r for r in ranking if hits.get(r, 0) >= floor}
     else:
         off += 1
         hits = {}
 
     if "phrase" in channels:
-        ranking = _channel_phrase(index, terms)
+        ranking, phrase_admits = _channel_phrase(index, terms, discriminating)
         if ranking:
             rankings["phrase"] = ranking
-            admitted |= set(ranking)
+            admitted |= phrase_admits
     else:
         off += 1
 
@@ -390,7 +514,9 @@ def search_with_fallback(
     last: dict = {}
     for step in range(0, max(0, steps) + 1):
         query = rewrite_query(text, step)
-        out = dict(search(query, index=index, k=k, **kwargs))  # type: ignore[arg-type]
+        out = dict(
+            search(query, index=index, k=k, widened=step > 0, **kwargs)  # type: ignore[arg-type]
+        )
         out["rewrite_step"] = step
         out["query_used"] = query
         last = out

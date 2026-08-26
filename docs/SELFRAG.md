@@ -221,49 +221,80 @@ its keep. The rating-alone row is the one informative line: it scores zero
 because the rating channel deliberately never *nominates* a record, it only
 reorders ones another channel found.
 
-### What the real corpus says — and it disagrees with the fixture
+### What the real corpus says, and why it reversed twice
 
-MEASURED 2026-08-26 on the harvested gallery corpus: **4593 records**, 200
-known-item queries (the first nine words of every 23rd record), k=5. No gold
-set is needed for the first number, which is the decisive one.
+MEASURED 2026-08-26 on the harvested gallery corpus, **4593 records**, against
+`fixtures/gallery_eval_set.jsonl` — 40 topical queries plus 6 negative
+controls. Ground truth is the **source gallery's own section label**: a query
+passes when the retriever returns a record filed under that section. The
+grouping is a third party's, which is what keeps the measurement from grading
+the retriever against records we picked ourselves.
 
-| channels | own record in top-5 | empty answers |
-|---|---|---|
-| `bm25` | 85.5% | 1 |
-| `bm25+phrase` | **89.0%** | 1 |
-| `bm25+tag` | 85.5% | 1 |
-| `bm25+phrase+tag` | 89.0% | 1 |
-| `bm25+phrase+tag+rating` | 89.0% | 1 |
-| `phrase` alone | 87.5% | 5 |
-| `tag` alone | 0.0% | 200 |
+| channels | recall@5 | precision@5 | abstained |
+|---|---|---|---|
+| **`bm25`** | **0.95** | **0.740** | 6/6 |
+| `bm25+tag` | 0.95 | 0.740 | 6/6 |
+| `bm25+phrase` | 0.90 | 0.675 | 6/6 |
+| `bm25+phrase+tag+rating` | 0.90 | 0.675 | 6/6 |
+| `phrase` alone | 0.70 | 0.542 | 6/6 |
+| `tag` alone | 0.00 | 0.000 | 6/6 |
 
-Full fusion and BM25-only return the **same top-5 set in only 27% of queries**
-and the same order in 21%. On the ten-record fixture they were identical every
-time. So the fixture was not measuring the channels; it was too small to.
+**BM25 alone is the best configuration, so `phrase` is now off by default.**
+Across the 40 topical queries it hurt 2, helped 0, and cost 2.6 of summed
+precision. It never once won.
 
-Three findings, and two of them are negative:
+That reverses an earlier reading in this same document, and the reason is the
+useful part. A first pass measured the channels by **known-item** retrieval —
+the query was a verbatim prefix of the record being looked for — and there the
+phrase channel scored **+3.5 points**. That test flatters it: long exact
+phrases exist only because the query was copied out of the answer. When a
+person describes what they want in their own words no such phrase exists, and
+the channel contributes generic bigrams instead. An earlier pass than that, on
+the ten-record fixture, found no difference between any channel set at all,
+because ten records cannot discriminate anything.
 
-- **The phrase channel is the entire gain**: +3.5 points over BM25 alone. The
-  jargon of this trade is multi-word, and single-token BM25 cannot tell
-  "matte paper texture" from a document that says "paper" three times.
-- **The tag channel buys exactly zero on this corpus.** `bm25+tag` scores
-  identically to `bm25`, and tag alone returns nothing at all for all 200
-  queries. The reason is specific and worth knowing rather than generalising:
-  this corpus's tags are the source gallery's own Russian section names, and
-  the queries are English prompt text. On a corpus whose tags share a
-  vocabulary with its queries the channel has something to fire on. Here it
-  does not.
-- **The rating channel has no data.** 0 of 4593 records carry a rating,
-  because a harvested gallery does not publish one. It ranks nothing until the
-  replay buffer starts filling in.
+Three measurements, three answers, and only the last one is about the task the
+system actually does. The channel is kept rather than deleted, because the
+condition under which it wins is now known and written down: a corpus where
+queries share exact phrasing with the records. Turn it on with
+`channels=("bm25", "phrase", "tag", "rating")` and measure before trusting it.
+
+- **The tag channel buys nothing here** and returns nothing on its own. The
+  cause is specific: this corpus's tags are the gallery's Russian section
+  names, and the queries are English prompt text. Not evidence about a corpus
+  whose tags share its queries' vocabulary.
+- **The rating channel has no data.** 0 of 4593 records carry a rating — a
+  harvested gallery does not publish one. It ranks nothing until the replay
+  buffer fills.
 
 **Latency: 5.85 ms per search over 4593 records**, brute force, single core, no
-index beyond FTS5. This is the measurement that settles the vector-database
-question for this scale — see `docs/SELFRAG_RESEARCH.md`.
+index beyond FTS5. That settles the vector-database question with a number.
 
-Neither negative result is a reason to delete a channel yet: both describe
-*this* corpus, which has no ratings and foreign-language tags. They are the
-reason to be honest that today `bm25+phrase` is the system doing the work.
+### Two abstention holes the negative controls found
+
+Neither was visible on the ten-record fixture. Both let the retriever answer a
+question the corpus cannot answer, which is the failure mode that matters most
+— a confident wrong precedent is worse than none.
+
+1. **The phrase channel admitted with no floor at all.** Any record matching
+   any bigram was admitted, so `difference between LIFO and FIFO inventory
+   accounting` came back with three confident image prompts: the bigram
+   "difference between" occurs in three of them. Note what does *not* fix
+   this — a document-frequency ceiling. That phrase matches 3 rows of 4593; it
+   is rare. The problem is that it carries no subject. Admission now asks the
+   same question the lexical channel asks: does the match rest on at least
+   `MIN_TERM_HITS` terms that discriminate?
+2. **The widening ladder defeated abstention outright.** The query abstained
+   correctly as typed, then step 3 reduced it to the single word "difference",
+   the admission floor dropped to 1 because the *rewritten* query had one
+   term, and eight prompts containing that word came back as answers. The
+   floor drops for a genuinely short query, because someone who typed two
+   words should still get an answer — but a widened query gets no such
+   concession. The system shortened it; the user did not.
+
+Both are covered by tests, including the opposite direction in each case: a
+phrase of real words must still admit, and a query the user genuinely typed
+short must still be answered.
 
 ## 8. Adding a model
 

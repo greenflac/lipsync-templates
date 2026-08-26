@@ -28,6 +28,7 @@ from studio.selfrag.retrieval import CorpusIndex, search_with_fallback
 __all__ = [
     "ABSTENTION_FLOOR",
     "DEFAULT_EVAL_PATH",
+    "GALLERY_EVAL_PATH",
     "PRECISION_FLOOR",
     "RECALL_FLOOR",
     "evaluate",
@@ -48,6 +49,9 @@ PRECISION_FLOOR = 0.30
 # a retriever that answers one of three unanswerable questions is a retriever
 # that will answer an unanswerable question in production.
 ABSTENTION_FLOOR = 1.0
+
+
+GALLERY_EVAL_PATH = Path(__file__).with_name("fixtures") / "gallery_eval_set.jsonl"
 
 
 def load_gold(path: Path = DEFAULT_EVAL_PATH) -> list[dict]:
@@ -129,12 +133,23 @@ def evaluate(
             unmeasurable += 1
             per_query.append({"id": row.get("id"), "outcome": UNMEASURED, "note": out["note"]})
             continue
-        wanted = [str(w).lower() for w in (row.get("must_retrieve") or [])]
-        texts = [_haystack(hit.record) for hit in out["hits"]]
-        found = [w for w in wanted if any(w in text for text in texts)]
-        recall = len(found) / len(wanted) if wanted else 0.0
-        hit_count = sum(1 for text in texts if any(w in text for w in wanted))
-        precision = hit_count / len(texts) if texts else 0.0
+        category = str(row.get("must_category") or "").lower()
+        if category:
+            # Ground truth is membership of a section the SOURCE filed the
+            # record under, not a phrase we chose. A grouping somebody else
+            # made is what keeps this from measuring our own taste: with
+            # phrases we picked, we would be grading the retriever against
+            # the records we already had in mind.
+            marks = [1 if category in hit.record.tags else 0 for hit in out["hits"]]
+            recall = 1.0 if any(marks) else 0.0
+            precision = sum(marks) / len(marks) if marks else 0.0
+        else:
+            wanted = [str(w).lower() for w in (row.get("must_retrieve") or [])]
+            texts = [_haystack(hit.record) for hit in out["hits"]]
+            found = [w for w in wanted if any(w in text for text in texts)]
+            recall = len(found) / len(wanted) if wanted else 0.0
+            hit_count = sum(1 for text in texts if any(w in text for w in wanted))
+            precision = hit_count / len(texts) if texts else 0.0
         recalls.append(recall)
         precisions.append(precision)
         per_query.append(
@@ -144,7 +159,7 @@ def evaluate(
                 "recall": round(recall, 4),
                 "precision": round(precision, 4),
                 "rewrite_step": out.get("rewrite_step", 0),
-                "returned": len(texts),
+                "returned": len(out["hits"]),
             }
         )
 

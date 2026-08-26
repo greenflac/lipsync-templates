@@ -118,7 +118,11 @@ class Search(unittest.TestCase):
             self.assertEqual(veo["hits"][0].record.model, "veo-3.1")
 
     def test_boost_reorders_and_can_be_mutated_both_ways(self) -> None:
-        query = "light texture mood"
+        # Words that discriminate. "light texture mood" appear in most of this
+        # corpus, so the document-frequency ceiling correctly stops them being
+        # evidence and nothing is admitted — which measures the floor, not the
+        # boost this test is about.
+        query = "charcoal studio backdrop metallic dramatic"
         plain = search(query, index=self.index)
         lifted = search(
             query, index=self.index, boost=lambda r: 5.0 if r.record_id == "r5" else 1.0
@@ -128,11 +132,100 @@ class Search(unittest.TestCase):
             index=self.index,
             boost=lambda r: 0.0 if r.record_id == plain["hits"][0].record.record_id else 1.0,
         )
+        self.assertEqual(plain["hits"][0].record.record_id, "r5")
         self.assertEqual(lifted["hits"][0].record.record_id, "r5")
-        self.assertLess(
-            buried["hits"][-1].score,
-            plain["hits"][0].score,
+        self.assertLess(buried["hits"][-1].score, plain["hits"][0].score)
+
+
+class Abstention(unittest.TestCase):
+    """The two holes that let a retriever answer an unanswerable question.
+
+    Both were found by a negative control on a real 4593-record corpus, which
+    is what negative controls are for. Neither was visible on the ten-record
+    fixture.
+    """
+
+    def index(self):
+        """A corpus varied enough for words to discriminate.
+
+        Fixtures from both ends and the middle: two records carry the generic
+        bigram under test, the rest are ordinary and share little vocabulary.
+        A corpus of near-identical records would put every term at 100%
+        document frequency, which makes the ceiling reject everything and
+        proves nothing either way.
+        """
+        subjects = [
+            "crimson neon alley at night, hazy air, handheld tracking",
+            "emerald forest floor under low-key light, smoky, serene",
+            "charcoal studio backdrop, hard light, metallic sheen",
+            "copper desert dunes at golden hour, crane shot rising",
+            "ivory kitchen counter in high-key daylight, glossy tiles",
+            "rose candlelit dining table, velvet chairs, dreamy",
+            "slate harbour under overcast sky, crisp air, gulls",
+            "amber rooftop at dusk, film grain, a cyclist riding past",
+            "teal swimming pool seen from overhead, midday sun",
+            "indigo night sky over a quiet motorway, long exposure",
+        ]
+        prompts = [f"{text}, take {n}" for n in range(6) for text in subjects]
+        # "between" is an ordinary English word and turns up all over a real
+        # corpus; here it is in 10 of 62, above the ceiling. "difference" is
+        # rare, in 2. That asymmetry is what the defence rests on, and it only
+        # exists once the corpus is big enough for document frequency to be a
+        # statistic at all.
+        prompts += [f"shot from between the pillars, variation {n}" for n in range(10)]
+        prompts += [
+            "the difference between a matte and a glossy ceramic finish",
+            "the difference between warm and cool white balance in a portrait",
+        ]
+        idx = build_corpus_index(
+            [CorpusRecord(f"r{n}", text, model="flux-2") for n, text in enumerate(prompts)]
         )
+        self.addCleanup(idx.close)
+        return idx
+
+    def test_a_phrase_of_generic_words_admits_nothing(self) -> None:
+        """The phrase channel used to admit every row any phrase matched, with
+        no floor at all, so the bigram "difference between" carried an
+        accounting question into a corpus of image prompts."""
+        idx = self.index()
+        out = search("difference between LIFO and FIFO inventory accounting", index=idx)
+        self.assertEqual(out["outcome"], FAIL)
+        self.assertEqual(out["hits"], [])
+
+    def test_a_phrase_of_real_words_still_admits(self) -> None:
+        """The other direction. A floor that rejects everything is not a floor,
+        it is a broken retriever."""
+        idx = self.index()
+        out = search("crimson neon alley hazy handheld", index=idx)
+        self.assertEqual(out["outcome"], PASS)
+        self.assertTrue(out["hits"])
+        self.assertIn("crimson neon alley", out["hits"][0].record.prompt)
+
+    def test_the_widening_ladder_cannot_manufacture_an_answer(self) -> None:
+        """A query that abstains as typed must still abstain after widening.
+
+        The ladder's last rung reduces a query to its single longest word, and
+        the admission floor used to drop to 1 whenever the query was short —
+        so the rung always found something. A ladder that always finds
+        something guarantees an answer to every question ever asked.
+        """
+        idx = self.index()
+        out = search_with_fallback(
+            "difference between LIFO and FIFO inventory accounting", index=idx
+        )
+        self.assertEqual(out["outcome"], FAIL)
+        self.assertEqual(out["hits"], [])
+        self.assertEqual(out["rewrite_step"], 3)
+
+    def test_the_concession_still_exists_for_a_query_the_user_typed_short(self) -> None:
+        """The floor drops for a genuinely short query, because a person who
+        typed two words should still get an answer. Only the machine's own
+        rewrite is denied that concession."""
+        idx = self.index()
+        typed = search("crimson", index=idx, widened=False)
+        rewritten = search("crimson", index=idx, widened=True)
+        self.assertEqual(typed["outcome"], PASS)
+        self.assertEqual(rewritten["outcome"], FAIL)
 
 
 class RewriteLadder(unittest.TestCase):

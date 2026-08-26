@@ -358,3 +358,115 @@ material is aidsgn.ru's and that this project claims nothing over it, and a
 carve-out in LICENCE clause 2(d). Both are drafted the moment the owner says
 to. Until then the system runs off the local file and CI runs off the
 ten-record demo fixture, which is ours.
+
+## Agent: orchestrator, fourth pass — 2026-08-26 — a gold set, and what it overturned
+
+Owner's decisions this session: the corpus stays local and uncommitted; write a
+gold set for it. Both done.
+
+### The gold set
+
+`studio/selfrag/fixtures/gallery_eval_set.jsonl` — 40 topical queries over 20
+gallery sections, plus 6 negative controls. Ground truth is `must_category`:
+the **source gallery's own section label**. A query passes when the retriever
+returns any record filed under that section.
+
+That choice is the point. Judging against phrases we picked ourselves would
+grade the retriever on our own taste; a grouping a third party made is the only
+non-circular ground truth available, and `PROVENANCE.md` already says so. Every
+query is written from scratch in English; no corpus wording is reproduced in
+the committed file.
+
+`evaluate()` gained `must_category` support, and the CLI gained `--gold`.
+
+### The channel question, answered a third time — and the third answer stands
+
+| channels | recall@5 | precision@5 | abstained |
+|---|---|---|---|
+| **bm25** | **0.95** | **0.740** | 6/6 |
+| bm25+tag | 0.95 | 0.740 | 6/6 |
+| bm25+phrase | 0.90 | 0.675 | 6/6 |
+| bm25+phrase+tag+rating | 0.90 | 0.675 | 6/6 |
+| phrase alone | 0.70 | 0.542 | 6/6 |
+| tag alone | 0.00 | 0.000 | 6/6 |
+
+**`phrase` is now OFF by default.** Across 40 topical queries it hurt 2, helped
+0, cost 2.6 of summed precision, and never won once.
+
+Three passes, three answers, and the reason they differ is worth keeping:
+
+1. **Ten-record fixture:** every channel set identical. The fixture was too
+   small to discriminate anything.
+2. **Known-item on 4593 records** (query = verbatim prefix of the target):
+   phrase +3.5 points. That test flatters the channel — long exact phrases
+   exist only because the query was copied out of the answer.
+3. **Topical on 4593 records** (query = a person's own words, judged by the
+   source's grouping): phrase costs 0.05 recall and 0.065 precision.
+
+Only the third measures the task the system does. The channel is kept, not
+deleted, because the condition under which it wins is now known and written
+into the constant's comment: a corpus where queries share exact phrasing with
+the records.
+
+The stop condition written in the first pass is therefore discharged, in the
+direction it was written to allow.
+
+### Two abstention holes, both found by a negative control
+
+Neither was visible on the ten-record fixture. Both let the retriever answer a
+question the corpus cannot answer, which is the worst failure available to it.
+
+1. **The phrase channel admitted with no floor whatsoever.** Any row matching
+   any bigram was admitted, so `difference between LIFO and FIFO inventory
+   accounting` returned three confident image prompts — the bigram "difference
+   between" occurs in three of them. **A document-frequency ceiling does not
+   fix this**: that phrase matches 3 rows of 4593, it is *rare*. The problem is
+   that it carries no subject. Admission now asks what the lexical channel
+   asks: does the match rest on at least `MIN_TERM_HITS` discriminating terms?
+2. **The widening ladder defeated abstention outright.** The query abstained
+   correctly at step 0; step 3 reduced it to the single word "difference"; the
+   floor dropped to 1 because the *rewritten* query had one term; eight prompts
+   came back. The short-query concession exists for a person who typed two
+   words. A query the machine shortened does not get it. `search(widened=True)`
+   is the distinction.
+
+Also added `TERM_DF_CEILING` (0.10) with `DF_CEILING_MIN_DOCS` (3): a term
+matching more of the corpus than the ceiling still ranks but stops being
+evidence. The minimum-documents floor exists because at five records
+`int(0.10 * 5)` is 0, the ceiling collapses to 1, and any word appearing twice
+stops being evidence — which strangled a small test corpus until it was fixed.
+
+### Two mistakes I made in my own measuring, recorded so they are not repeated
+
+- **A default argument froze the constant.** `df_ceiling: float = TERM_DF_CEILING`
+  binds at definition time, so patching the module constant moved nothing and a
+  six-point mutation sweep came back with six identical rows. A constant that
+  cannot be patched is not mutable and therefore not proven. Resolved at call
+  time now.
+- **Two test fixtures were too homogeneous to test what they claimed.** Five
+  near-identical records put every term at 100% document frequency, so the
+  ceiling rejected everything and the test "proved" a floor that was actually
+  broken. Fixtures now span a realistic vocabulary, and the abstention fixture
+  is 62 records because the defence *rests* on document frequency being a
+  statistic — on a dozen records it cannot work, and saying so is more useful
+  than a green test that hides it.
+
+### Numbers at the close of this pass
+
+`bash scripts/check` — green, exit 0. Full studio suite **234 passed, 2
+skipped**; 84 selfrag tests; 770 lipsync.
+
+- Committed fixture gate: recall@5 1.0, precision@5 0.8333, 3/3 controls.
+- Real corpus + real gold set: **recall@5 0.95, precision@5 0.74, 6/6 controls.**
+
+### Still open
+
+- The 4 topical queries BM25 misses are genuine hard cases: two categories both
+  contain a PlayStation controller, so "chrome game controller" lands in the
+  product-photography section instead of Chrome. Not obviously fixable by
+  ranking; a reranker is the candidate, and it still needs a measured CPU
+  latency before it earns a place.
+- `studio/knowledge.py`'s own gold set still cannot run: its two positive
+  controls are phrases from corpora that remain absent (`ours`,
+  `reference_card`). Only `gallery` is loaded.
+- The corpus remains uncommitted, by the owner's decision this session.
