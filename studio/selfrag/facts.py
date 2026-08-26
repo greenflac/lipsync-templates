@@ -85,6 +85,15 @@ MULTI_VALUED: frozenset[str] = frozenset(
         "artifact_taxonomy",
         "override_parameter",
         "long_video_method",
+        # Three findings that read as a contradiction and are not one. Longer
+        # prompts helped when the USER wrote the extra words (+24% length, half
+        # the measured gain); machine rewriting HURT (-58% of the gain); and
+        # length alone barely correlates with quality (r about -0.07). The
+        # reconciliation is in who adds the words, not in which source is
+        # wrong, so these belong in a list rather than in a dispute.
+        "expander_evidence",
+        "retrieval_grounding",
+        "expands_internally",
     }
 )
 
