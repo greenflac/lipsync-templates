@@ -10,6 +10,7 @@ from pathlib import Path
 
 from .fork_identity import FAIL, PASS, UNMEASURED, SAME_PERSON_MAX
 from .fork_video import EXIT_BY_OUTCOME
+from . import fork_plan
 
 
 KLING_ENDPOINT = "fal-ai/kling-video/v2.6/standard/motion-control"
@@ -59,13 +60,14 @@ STYLE_MODEL = "nanobanana-2"
 STYLE_ROUTE = "pollinations.compose"
 STYLE_IMAGES = 2
 
-#: CHOSEN: the size we ASK the styliser for, and the reason padding is not the
-#: normal path. 720x1280 is exactly 9:16 (720*16 == 1280*9) AND both sides are
-#: multiples of 16 — the grid the model MEASURABLY snaps to: asked 768x1024, it
-#: returned 896x1200 = 56x16 by 75x16. An off-grid 9:16 such as 1080x1920 would
-#: be snapped sideways and stop being 9:16. It is also the geometry the video
-#: model returned on the shipped family, so reference and clip share one frame.
-STYLED_SIZE = (720, 1280)
+#: The size we ASK the styliser for: `fork_plan.FRAME`, taken rather than
+#: restated. The reference and the clip must share one frame or the reference is
+#: padded on its way into the video model, and the frame the video model returns
+#: is what the plan measured. Both sides being multiples of 16 also matters —
+#: that is the grid the model MEASURABLY snaps to (asked 768x1024, it returned
+#: 896x1200 = 56x16 by 75x16) — but that is a property of the frame, checked
+#: where the frame is declared, not a second reason to write the number again.
+STYLED_SIZE = fork_plan.FRAME
 
 STYLE_HIT_REFERENCE = 0.8156
 STYLE_HIT_REJECTED = 0.8801

@@ -307,7 +307,7 @@ class TheOutpaintAsksForTheSizeItWants(unittest.TestCase):
     """The defect: the call took the route default 1080x1920, where 1080 is not a multiple of 16."""
 
     def test_the_asked_size_is_exactly_the_plan_and_on_the_grid(self):
-        self.assertEqual(P.EXTEND_SIZE, (1152, 2048))
+        self.assertEqual(P.EXTEND_SIZE, (720, 1280))
         self.assertEqual(P.EXTEND_SIZE[0] / P.EXTEND_SIZE[1], 0.5625)
         self.assertEqual((P.EXTEND_SIZE[0] % 16, P.EXTEND_SIZE[1] % 16), (0, 0))
 
@@ -316,25 +316,27 @@ class TheOutpaintAsksForTheSizeItWants(unittest.TestCase):
 
         with mock.patch.object(pollinations, "images_edit") as edit:
             got = P.extend_to_plan("in.png", "out.png", sizer=lambda _: (1152, 2048))
-        self.assertEqual(edit.call_args.kwargs["width"], 1152)
-        self.assertEqual(edit.call_args.kwargs["height"], 2048)
+        self.assertEqual(edit.call_args.kwargs["width"], 720)
+        self.assertEqual(edit.call_args.kwargs["height"], 1280)
         self.assertEqual(got["outcome"], PASS)
-        self.assertEqual(tuple(got["asked"]), (1152, 2048))
+        self.assertEqual(tuple(got["asked"]), (720, 1280))
 
     def test_a_caller_may_ask_for_another_size(self):
+        # The size asked for here must differ from `EXTEND_SIZE`, or the test
+        # passes on the default and says nothing about the argument.
         from lipsync import pollinations
 
         with mock.patch.object(pollinations, "images_edit") as edit:
-            P.extend_to_plan("in.png", "out.png", size=(720, 1280), sizer=lambda _: (720, 1280))
-        self.assertEqual(edit.call_args.kwargs["width"], 720)
-        self.assertEqual(edit.call_args.kwargs["height"], 1280)
+            P.extend_to_plan("in.png", "out.png", size=(1152, 2048), sizer=lambda _: (1152, 2048))
+        self.assertEqual(edit.call_args.kwargs["width"], 1152)
+        self.assertEqual(edit.call_args.kwargs["height"], 2048)
 
     def test_an_off_plan_return_is_reported_as_a_violation(self):
         got = P.extend_to_plan(
             "in.png", "out.png", extender=lambda *a: None, sizer=lambda _: (1536, 2752)
         )
         self.assertEqual(got["outcome"], FAIL)
-        self.assertIn("asked for 1152x2048", got["note"])
+        self.assertIn("asked for 720x1280", got["note"])
 
 
 class TheVerdictHasThreeOutcomesOnEveryAxis(unittest.TestCase):

@@ -19,8 +19,12 @@ from unittest import mock
 
 from lipsync import pollinations as PO
 
-# The frame the pipeline plans for, written out rather than imported.
-EXPECTED_SIZE = (1152, 2048)
+# The frame the pipeline delivers, written out rather than imported: MEASURED
+# on the six shipped clips, where Kling returned this size and all six final
+# videos carry it. The module now derives its default from `fork_plan.FRAME`,
+# so importing the expectation would let the frame move and this test follow it
+# in silence.
+EXPECTED_SIZE = (720, 1280)
 SNAP_GRID = 16
 ROUTES = ("image", "images_edit", "compose")
 
@@ -132,7 +136,7 @@ class TheDefaultReachesTheWire(unittest.TestCase):
         ref = self._out("ref.jpg")
         ref.write_bytes(b"x")
         PO.images_edit("p", ref, self._out())
-        self.assertEqual(self.calls[-1]["size"], "1152x2048")
+        self.assertEqual(self.calls[-1]["size"], "720x1280")
 
     def _out(self, name: str = "out.png"):
         import tempfile

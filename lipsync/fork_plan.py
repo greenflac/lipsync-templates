@@ -10,6 +10,14 @@ from .fork_identity import FAIL, PASS, UNMEASURED
 
 PLAN_RATIO = 0.5625
 
+#: MEASURED 2026-08-23 on the six shipped clips: Kling returned exactly this
+#: size on every one of them, and all six final videos are this size too. It is
+#: therefore the frame the product actually delivers, not a frame we would like
+#: it to have. It is declared here, once, and every other size in the pipeline
+#: is derived from it: the 3:4 default outlived its removal on `compose` alone
+#: precisely because the two neighbouring routes held their own copies.
+FRAME = (720, 1280)
+
 #: CHOSEN. One pixel of rounding at our working heights (768..2752 px) moves the
 #: ratio by under 0.0005, so this bound admits an exact crop and nothing else.
 #: The measured route drift is 0.0044 — nine times this — and must not pass.
@@ -35,7 +43,7 @@ MIN_VISIBILITY = 0.5
 
 #: MEASURED, and a record of a defect rather than of a requirement: this is what
 #: the styliser returned back when the call asked for 768x1024. It is 3:4, not
-#: the plan — see `fork_e2e.STYLED_SIZE` for the size we ask for now.
+#: the plan — see `FRAME` for the size we ask for now.
 STYLED_SIZE_MEASURED = (896, 1200)
 
 SHOULDER_POINTS = ("l_shoulder", "r_shoulder")
@@ -526,12 +534,14 @@ def extend_prompt(*, extra: str = "") -> str:
     return ". ".join(parts)
 
 
-#: CHOSEN. The size the outpainter is asked for. Exactly 9:16 (1152/2048 =
-#: 0.5625) with both sides divisible by 16, so the request cannot itself be the
-#: reason the route snaps to a neighbouring grid point — that was the defect
-#: `compose` was fixed for. The route may still answer with another size; that
-#: is what the ratio axis below is for.
-EXTEND_SIZE = (1152, 2048)
+#: The size the outpainter is asked for: `FRAME`, not a size of its own. The
+#: outpaint feeds the same delivery frame as everything else, so a second point
+#: here would only be a second thing to keep in step. The canvas asked for is
+#: smaller than the 1152x2048 this used to name; the outpainter is asked to
+#: continue the scene into the margins, and the margins are a share of the
+#: frame, not a pixel count. The route may still answer with another size; that
+#: is what the ratio axis above is for.
+EXTEND_SIZE = FRAME
 
 
 def extend_to_plan(src, dst, *, extender=None, sizer=None, size=EXTEND_SIZE) -> dict:

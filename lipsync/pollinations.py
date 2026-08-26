@@ -8,18 +8,26 @@ import os
 from pathlib import Path
 from urllib.parse import quote
 
+from . import fork_plan
 
-#: CHOSEN (2026-08-26): the one default frame every image route asks for.
-#: A size that is 9:16 only in arithmetic is not enough. The model MEASURABLY
-#: snaps each side to a 16px grid (asked 768x1024, it returned 896x1200), so an
-#: off-grid request such as 1080x1920 comes back moved sideways and no longer
-#: 9:16 — and a frame that is not 9:16 gets padded with blurred bands on its way
-#: to the client. 1152x2048 survives the snap untouched: 1152 = 72*16,
-#: 2048 = 128*16, and 1152*16 == 2048*9 exactly. It is the same point already
-#: chosen for `fork_plan.EXTEND_SIZE`, for the same two reasons.
-#: One constant, not one literal per route: the 3:4 default outlived its removal
-#: on `compose` alone precisely because each route carried its own copy.
-PLAN_SIZE = (1152, 2048)
+
+#: The one default frame every image route asks for: `fork_plan.FRAME`, taken
+#: rather than restated. A size that is 9:16 only in arithmetic is not enough —
+#: the model MEASURABLY snaps each side to a 16px grid (asked 768x1024, it
+#: returned 896x1200), so an off-grid request comes back moved sideways and no
+#: longer 9:16, and a frame that is not 9:16 is padded with blurred bands on its
+#: way to the client. The delivery frame satisfies both, and taking it from the
+#: plan means no route can drift away from it one route at a time, which is how
+#: the 3:4 default outlived its removal on `compose` alone.
+#:
+#: This gateway imports the domain module for it, which points the wrong way
+#: across the layers. It is deliberate: the frame is one product fact and it is
+#: measured on what the pipeline delivers, so the plan owns it and this module
+#: reads it. Hiding it in a neutral leaf module would satisfy the layering and
+#: cost the pipeline the single place to look. The edge is safe in practice —
+#: `fork_plan` reaches this module only from inside a function, so there is no
+#: import cycle, and it pulls in no third-party import at module level.
+PLAN_SIZE = fork_plan.FRAME
 
 
 def _base() -> str:
@@ -138,7 +146,7 @@ def compose(
     `images_edit`, so the route choice — not the prompt — decided whether the
     frame came back vertical. The size now lives in one place so a route cannot
     drift away from its siblings again. Callers wanting another frame pass their
-    own size — see `fork_e2e.STYLED_SIZE`.
+    own size; the pipeline's own routes do not — they all ask for one frame.
     """
     import requests
 
