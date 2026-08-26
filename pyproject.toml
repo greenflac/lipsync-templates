@@ -42,12 +42,16 @@ line-length = 100
 # the exclusion apply to a file named on the command line (MEASURED 2026-08-26,
 # both ways, on a copy).
 force-exclude = true
+# Data patterns and directories that hold ONLY data. `studio/knowledge/` is
+# deliberately absent: it also holds `ingest_gallery.py`, and excluding the
+# directory silenced ruff on a real module — it answered "No Python files found"
+# and then "All checks passed!", which is a zero-checks pass in somebody else's
+# tool (OBSERVED 2026-08-26, on my own first attempt at this guard).
 extend-exclude = [
     "*.jsonl",
     "*.json",
     "studio/fixtures/",
     "studio/selfrag/fixtures/",
-    "studio/knowledge/",
 ]
 
 [tool.ruff.lint.per-file-ignores]
