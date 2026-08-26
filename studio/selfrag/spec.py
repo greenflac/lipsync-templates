@@ -36,18 +36,18 @@ from studio.selfrag.registry import (
     fits_duration,
 )
 from studio.style import (
-    SETTING_MAX,
+    SETTING_KEEP,
     StyleSpec,
     banned_topics,
     build_prompt as build_style_prompt,
     gate_input,
-    sanitise_setting,
 )
 
 __all__ = [
     "MEDIA_IMAGE",
     "MEDIA_VIDEO",
     "MODE_EDIT",
+    "REFERENCE_MODES",
     "MODE_I2V",
     "MODE_T2I",
     "MODE_T2V",
@@ -63,9 +63,22 @@ MODE_I2V = "i2v"
 MODE_EDIT = "edit"
 MODES: tuple[str, ...] = (MODE_T2I, MODE_T2V, MODE_I2V, MODE_EDIT)
 
-# Free-text slot cap, matching studio.style's SETTING_MAX so one clause cannot
-# grow to dominate the prompt. Imported, not re-chosen.
-SLOT_MAX = SETTING_MAX
+# Free-text cap for a VENDOR slot (subject, action, camera, motion, audio).
+#
+# This used to be studio.style's SETTING_MAX, 60 characters, inherited without
+# being re-derived. That number is right for what it was chosen for — the
+# studio's `setting` field, a short place description — and too tight for the
+# slots a vendor skeleton asks for. An ordinary edit instruction, "the
+# background becomes wet dark slate, the light turns cooler", is 61 characters
+# and was refused (OBSERVED 2026-08-26, while planning a paid run).
+#
+# CHOSEN at 120, and the reasoning is the published length bands: Veo's own
+# guide asks for 100-150 words for the WHOLE prompt, so a single slot at ~24
+# words is already a quarter of the budget. The cap still bounds the field; it
+# no longer refuses a sentence a person would normally write.
+#
+# The studio's own `setting` keeps its 60, because studio.style sanitises it.
+SLOT_MAX = 120
 
 # Only these characters survive in a free-text slot. Same rule as
 # studio.style.sanitise_setting, reused rather than re-implemented.
@@ -118,8 +131,23 @@ class GenSpec:
 
 
 def _slot(text: str) -> str:
-    """Sanitise one free-text slot the same way the studio sanitises settings."""
-    return sanitise_setting(_MULTI_WS.sub(" ", str(text or "")).strip())[:SLOT_MAX]
+    """Clean one vendor slot: the studio's character rule, and NO truncation.
+
+    The character allow-list is imported from `studio.style`, not copied: it is
+    a security rule and there is one of it.
+
+    Length is deliberately not enforced here. `studio.style.sanitise_setting`
+    cuts to 60 as part of its own contract, and calling it for a vendor slot
+    inherited that cut — so after `SLOT_MAX` was raised to 120 the gate began
+    ACCEPTING a 61-character instruction that the assembler then silently
+    truncated to "the light turns coole" (OBSERVED 2026-08-26). Silent
+    truncation is worse than the refusal it replaced: the caller is told the
+    prompt is fine and never learns it means less than they wrote.
+
+    Length now lives in one place only — `gate_spec`, which refuses out loud.
+    """
+    cleaned = SETTING_KEEP.sub(" ", str(text or ""))
+    return _MULTI_WS.sub(" ", cleaned).strip()
 
 
 # How each named vendor slot is filled from a GenSpec. Named as data so that a
@@ -162,6 +190,14 @@ FIELD_SOURCES: dict[str, tuple[str, ...]] = {
 # by marking it as appearance, so the drop has to be recognised by field name
 # too, not only by which slot was filtered.
 I2V_INTENTIONAL_FIELDS: frozenset[str] = frozenset({"subject"})
+
+# Modes that start from a reference image. Both drop the appearance slots for
+# the same reason, and only I2V used to: an edit is conditioned on a picture
+# exactly as an image-to-video is, so re-describing the subject fights the
+# reference in both. Leaving `edit` out made an assembled edit prompt identical
+# to a naive one plus decoration (OBSERVED 2026-08-26 while designing an A/B
+# run whose whole point was to test that difference).
+REFERENCE_MODES: frozenset[str] = frozenset({MODE_I2V, MODE_EDIT})
 
 # Slots that describe how the subject LOOKS. In image-to-video these are the
 # single most common mistake: every vendor guide that discusses I2V says the
@@ -254,7 +290,7 @@ def gate_spec(spec: GenSpec) -> dict:
     else:
         if spec.mode in (MODE_T2V, MODE_I2V) and availability_card.media != MEDIA_VIDEO:
             problems.append(f"{availability_card.model_id} does not make video")
-        if spec.mode == MODE_I2V and not availability_card.i2v_skeleton:
+        if spec.mode == MODE_I2V and not availability_card.reference_skeleton:
             problems.append(f"{availability_card.model_id} has no documented image-to-video mode")
         if spec.audio and not availability_card.audio:
             problems.append(
@@ -327,8 +363,8 @@ def assemble(spec: GenSpec, *, card: ModelCard | None = None) -> dict:
         return {**gate, **_EMPTY_DRAFT}
 
     skeleton = (
-        resolved.i2v_skeleton
-        if spec.mode == MODE_I2V and resolved.i2v_skeleton
+        resolved.reference_skeleton
+        if spec.mode in REFERENCE_MODES and resolved.reference_skeleton
         else resolved.skeleton
     )
     bits = _style_bits(spec)
@@ -341,7 +377,7 @@ def assemble(spec: GenSpec, *, card: ModelCard | None = None) -> dict:
     # to claim a field keeps it.
     claimed: set[str] = set()
     for name in skeleton:
-        if spec.mode == MODE_I2V and name in APPEARANCE_SLOTS:
+        if spec.mode in REFERENCE_MODES and name in APPEARANCE_SLOTS:
             continue
         sources = resolved.slot_sources.get(name) or (SLOT_BUILDERS.get(name),)
         pieces: list[str] = []
@@ -402,7 +438,7 @@ def assemble(spec: GenSpec, *, card: ModelCard | None = None) -> dict:
         for source in resolved.slot_sources.get(name) or (SLOT_BUILDERS.get(name),):
             if source is None:
                 continue
-            if spec.mode == MODE_I2V and name in APPEARANCE_SLOTS:
+            if spec.mode in REFERENCE_MODES and name in APPEARANCE_SLOTS:
                 design_only.add(source)
             else:
                 reachable.add(source)
@@ -411,7 +447,7 @@ def assemble(spec: GenSpec, *, card: ModelCard | None = None) -> dict:
             continue
         if any(source in claimed for source in sources):
             continue
-        by_design = spec.mode == MODE_I2V and name in I2V_INTENTIONAL_FIELDS
+        by_design = spec.mode in REFERENCE_MODES and name in I2V_INTENTIONAL_FIELDS
         by_design = by_design or any(
             source in design_only and source not in reachable for source in sources
         )
@@ -526,4 +562,6 @@ def slots_for(model: str, mode: str) -> Sequence[str]:
     card = card_for(model)
     if card is None:
         return ()
-    return card.i2v_skeleton if mode == MODE_I2V and card.i2v_skeleton else card.skeleton
+    return (
+        card.reference_skeleton if mode == MODE_I2V and card.reference_skeleton else card.skeleton
+    )

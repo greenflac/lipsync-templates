@@ -76,9 +76,16 @@ class ModelCard:
     status: str
     # The ordered prompt slots the vendor's own guide names, text-to-X.
     skeleton: tuple[str, ...]
-    # The slots for image-to-video. Empty when the model has no I2V mode.
-    # The cross-vendor rule: in I2V you describe MOTION, not appearance.
-    i2v_skeleton: tuple[str, ...] = ()
+    # The slots used when the call starts from a REFERENCE IMAGE — image-to-video
+    # for a video model, an edit for an image one. Empty when the model has no
+    # such mode. The cross-vendor rule is the same in both: describe what
+    # CHANGES, never what the reference already shows.
+    #
+    # Named for the reference rather than for i2v because an image editor has
+    # no "video" in it, and a field called i2v_skeleton on flux-2 simply got
+    # left empty — so an edit prompt had nowhere to put the edit and the
+    # instruction was dropped (OBSERVED 2026-08-26).
+    reference_skeleton: tuple[str, ...] = ()
     max_seconds: float | None = None
     fps: int | None = None
     resolutions: tuple[str, ...] = ()
@@ -124,7 +131,7 @@ _VEO_31 = ModelCard(
         "audio",
     ),
     # Veo is the only card here with audio as a first-class prompt slot.
-    i2v_skeleton=("action", "camera", "ambiance", "audio"),
+    reference_skeleton=("action", "camera", "ambiance", "audio"),
     max_seconds=8.0,
     fps=24,
     resolutions=("720p", "1080p", "4k"),
@@ -157,7 +164,7 @@ _KLING_30 = ModelCard(
     status=STATUS_SHIPPING,
     skeleton=("subject", "action", "context", "style"),
     # Kling's own I2V guide collapses the formula to subject + movement.
-    i2v_skeleton=("subject", "movement"),
+    reference_skeleton=("subject", "movement"),
     slot_sources={"style": ("camera", "_light", "_texture", "_style")},
     max_seconds=15.0,
     fps=None,
@@ -198,7 +205,7 @@ _RUNWAY_45 = ModelCard(
     media=MEDIA_VIDEO,
     status=STATUS_SHIPPING,
     skeleton=("subject", "action", "setting", "camera", "motion", "style", "constraints"),
-    i2v_skeleton=("motion", "camera"),
+    reference_skeleton=("motion", "camera"),
     max_seconds=10.0,
     fps=None,
     resolutions=("720p",),
@@ -235,7 +242,7 @@ _WAN_26_FLASH = ModelCard(
     media=MEDIA_VIDEO,
     status=STATUS_SHIPPING,
     skeleton=("subject", "scene", "motion", "aesthetic", "stylisation"),
-    i2v_skeleton=("motion", "aesthetic"),
+    reference_skeleton=("motion", "aesthetic"),
     # Wan's aesthetic-control slot is documented as light source, shot size,
     # perspective, lens and camera movement — one slot, five things.
     slot_sources={"aesthetic": ("_light", "camera")},
@@ -267,7 +274,7 @@ _SEEDANCE_20 = ModelCard(
     media=MEDIA_VIDEO,
     status=STATUS_SHIPPING,
     skeleton=("subject", "movement", "scene", "shot", "style"),
-    i2v_skeleton=("movement", "shot"),
+    reference_skeleton=("movement", "shot"),
     # The conservative end of a contradiction: one source says up to 12s at
     # 1080p, another cites a ByteDance report saying 4-15s at 480p/720p.
     max_seconds=12.0,
@@ -303,7 +310,9 @@ _FLUX_2 = ModelCard(
     media=MEDIA_IMAGE,
     status=STATUS_SHIPPING,
     skeleton=("subject", "composition", "lighting", "texture", "palette", "style"),
-    i2v_skeleton=(),
+    # An edit says what changes and how it should look. Everything the picture
+    # already shows is deliberately absent.
+    reference_skeleton=("action", "lighting", "style"),
     max_seconds=None,
     fps=None,
     resolutions=("up to 4MP",),
@@ -340,7 +349,7 @@ _SORA_2 = ModelCard(
     media=MEDIA_VIDEO,
     status=STATUS_SUNSETTING,
     skeleton=("subject", "action", "setting", "camera", "style"),
-    i2v_skeleton=(),
+    reference_skeleton=(),
     max_seconds=None,
     fps=None,
     resolutions=(),

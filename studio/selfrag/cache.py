@@ -26,8 +26,9 @@ from typing import Any, Sequence
 from lipsync.fork_identity import PASS, UNMEASURED
 from studio.selfrag.corpus import CorpusRecord
 from studio.selfrag.db import connect, lock_for, state_path
-from studio.selfrag.reflect import RULES
+from studio.selfrag.reflect import MAX_ACTIONS, RULES
 from studio.selfrag.registry import MODEL_CARDS
+from studio.selfrag.spec import SLOT_MAX
 
 __all__ = ["PromptCache", "fingerprint", "spec_key"]
 
@@ -36,7 +37,15 @@ def fingerprint(records: Sequence[CorpusRecord]) -> str:
     """A hash of everything that shapes an answer, so a change expires the cache.
 
     Covers the corpus (ids and ratings — a re-rated record changes ranking),
-    the registry (every card's identity and limits) and the rule table.
+    the registry (every card's identity and limits), the rule table, AND the
+    assembler's own constants.
+
+    That last part was missing and the cache proved it by failing at its own
+    job: `SLOT_MAX` was raised from 60 to 120, a request that had been refused
+    for a 61-character slot became legal, and the cache went on serving the
+    stored refusal because the key had not moved (OBSERVED 2026-08-26). A
+    number that decides what a prompt may contain shapes the answer as surely
+    as a model card does.
 
     >>> len(fingerprint([]))
     16
@@ -48,10 +57,11 @@ def fingerprint(records: Sequence[CorpusRecord]) -> str:
         card = MODEL_CARDS[model_id]
         digest.update(
             f"{model_id}|{card.status}|{card.max_seconds}|{card.skeleton}|"
-            f"{card.i2v_skeleton}|{card.negative_prompt}|{card.word_band}\x00".encode()
+            f"{card.reference_skeleton}|{card.negative_prompt}|{card.word_band}\x00".encode()
         )
     for name, _ in RULES:
         digest.update(f"rule:{name}\x00".encode())
+    digest.update(f"slot_max:{SLOT_MAX}|max_actions:{MAX_ACTIONS}\x00".encode())
     return digest.hexdigest()[:16]
 
 

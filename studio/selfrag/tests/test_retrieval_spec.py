@@ -295,6 +295,23 @@ class Assemble(unittest.TestCase):
         self.assertIn("subject", out["dropped_by_design"])
         self.assertEqual(out["dropped"], [])
 
+    def test_an_edit_drops_appearance_exactly_as_image_to_video_does(self) -> None:
+        """An edit is conditioned on a picture too. Applying the rule only to
+        i2v made an assembled edit prompt a naive one plus decoration."""
+        edit = assemble(
+            GenSpec(
+                model="flux-2",
+                mode="edit",
+                style=STYLE,
+                subject="an amber serum bottle",
+                action="the background becomes wet slate",
+            )
+        )
+        self.assertEqual(edit["outcome"], PASS)
+        self.assertNotIn("amber serum bottle", edit["prompt"])
+        self.assertIn("subject", edit["dropped_by_design"])
+        self.assertEqual(edit["dropped"], [])
+
     def test_a_field_with_nowhere_to_go_is_reported(self) -> None:
         """Silent data loss: the caller described something, paid for a render,
         and never learned the words went nowhere."""
@@ -358,6 +375,43 @@ class Assemble(unittest.TestCase):
         self.assertEqual(kling["negative_prompt"], "warped background")
         self.assertEqual(runway["negative_prompt"], "")
         self.assertIn("warped background", runway["prompt"])
+
+    def test_a_slot_is_never_silently_truncated(self) -> None:
+        """The gate refuses an over-long slot out loud. Nothing quietly cuts
+        one down and hands back a prompt that means less than was written."""
+        from studio.selfrag.spec import SLOT_MAX
+
+        action = "the background becomes wet dark slate, the light turns cooler"
+        self.assertGreater(len(action), 60)
+        self.assertLess(len(action), SLOT_MAX)
+        out = assemble(
+            GenSpec(model="flux-2", mode="edit", style=STYLE, subject="a bottle", action=action)
+        )
+        self.assertEqual(out["outcome"], PASS)
+        self.assertIn("the light turns cooler", out["prompt"])
+
+    def test_the_slot_cap_bites_in_both_directions(self) -> None:
+        """It was raised from 60 to 120 after an ordinary instruction was
+        refused. A cap that is raised must still be a cap."""
+        from studio.selfrag.spec import SLOT_MAX
+
+        ok = GenSpec(
+            model="veo-3.1", mode=MODE_T2V, style=STYLE, subject="x", action="a" * (SLOT_MAX - 1)
+        )
+        too_long = GenSpec(
+            model="veo-3.1", mode=MODE_T2V, style=STYLE, subject="x", action="a" * (SLOT_MAX + 1)
+        )
+        self.assertEqual(gate_spec(ok)["outcome"], PASS)
+        self.assertEqual(gate_spec(too_long)["outcome"], FAIL)
+        # And the instruction that provoked the change now fits.
+        real = GenSpec(
+            model="flux-2",
+            mode="edit",
+            style=STYLE,
+            subject="a bottle",
+            action="the background becomes wet dark slate, the light turns cooler",
+        )
+        self.assertEqual(gate_spec(real)["outcome"], PASS)
 
     def test_the_gate_refuses_what_the_vendor_cannot_do(self) -> None:
         cases = {

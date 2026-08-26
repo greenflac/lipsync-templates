@@ -222,6 +222,25 @@ class Cache(unittest.TestCase):
         cache.fingerprint = after
         self.assertEqual(cache.get({"model": "veo-3.1"})["outcome"], UNMEASURED)
 
+    def test_changing_an_assembler_constant_expires_the_entry(self) -> None:
+        """The cache failed at its own job once: SLOT_MAX was raised, a request
+        that had been refused became legal, and the stored refusal kept being
+        served because the key had not moved."""
+        import studio.selfrag.cache as cache_module
+        import studio.selfrag.spec as spec_module
+
+        before = fingerprint([])
+        real = spec_module.SLOT_MAX
+        try:
+            spec_module.SLOT_MAX = real + 1
+            cache_module.SLOT_MAX = real + 1
+            after = fingerprint([])
+        finally:
+            spec_module.SLOT_MAX = real
+            cache_module.SLOT_MAX = real
+        self.assertNotEqual(before, after)
+        self.assertEqual(fingerprint([]), before)
+
     def test_a_miss_is_unmeasured_not_a_failure(self) -> None:
         cache = PromptCache(path=":memory:", fingerprint_value="abc")
         self.addCleanup(cache.close)

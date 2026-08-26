@@ -154,8 +154,8 @@ def cmd_cards(args: argparse.Namespace) -> int:
         state = availability(model_id)
         print(f"{model_id:<16} {state['outcome']:<18} {card.media:<6} {card.status}")
         print(f"  skeleton    {' -> '.join(card.skeleton)}")
-        if card.i2v_skeleton:
-            print(f"  i2v         {' -> '.join(card.i2v_skeleton)}")
+        if card.reference_skeleton:
+            print(f"  i2v         {' -> '.join(card.reference_skeleton)}")
         duration = (
             "n/a (still image)"
             if card.media == "image"
