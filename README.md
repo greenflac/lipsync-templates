@@ -40,7 +40,9 @@ driving videos.</sub>
 | | |
 |---|---|
 | `$0.70` | cost of a 10-second video; the `$0.07/s` rate was confirmed by four separate balance measurements |
-| `720×1280` | the model returns exact 9:16, so assembly crops nothing |
+| `0.5581` | the aspect ratio the image model actually returns for a 9:16 request, on both routes — not the `0.5625` of exact 9:16. Asked for `720×1280` and for `864×1536` through `compose` it returns `768×1376`; asked for `1080×1920` through `images_edit` it returns `1536×2752`. nanobanana-2 has no exact 9:16 point on its vertical grid |
+| `1536×2752` | the size all six shipped templates and both client fixtures actually are — that same `0.5581`, frozen into the product |
+| `43.75 %` | of the width a 9:16 crop takes off the video output. Kling returns `960×960`, measured across eight orders: assembly does crop |
 | `300 frames` | all six videos came out at exactly 10.0 seconds |
 | `0 cuts` | no edit seams inside any of the six videos |
 
@@ -103,10 +105,15 @@ during the turn the face leaves the frame entirely.
 python -m unittest discover -s lipsync/tests -p "test_*.py"
 ```
 
-770 tests, no network, no GPU. Each one guards a specific defect that
-actually happened — the test name says which one. Decision thresholds are
-covered by mutation: changing a threshold in either direction makes tests
-fail.
+795 tests in 13 files, no network, no GPU. Each one guards a specific defect
+that actually happened — the test name says which one. Decision thresholds are
+covered by mutation: changing a threshold in either direction makes tests fail.
+
+The run is **not green** as of 2026-08-26: `FAILED (failures=3, errors=2,
+skipped=12)`. Every failure is in `test_ratio_chain.py`, the gate written
+before its implementation for the aspect-ratio defect described above; the
+implementation is in progress. A skipped test is not a passed test, and the
+count of red moves between runs while the code is being changed.
 
 ## Licence
 
@@ -160,7 +167,9 @@ and recalibrate the thresholds.
 | | |
 |---|---|
 | `$0.70` | стоимость ролика на 10 секунд; ставка `$0.07/с` подтверждена четырьмя независимыми замерами баланса |
-| `720×1280` | модель возвращает ровно 9:16, сборка ничего не обрезает |
+| `0.5581` | соотношение, которое картиночная модель на самом деле отдаёт на запрос 9:16, на обоих маршрутах, — а не `0.5625` ровного 9:16. На запрос `720×1280` и на запрос `864×1536` через `compose` приходит `768×1376`; на запрос `1080×1920` через `images_edit` приходит `1536×2752`. У nanobanana-2 нет точки ровно 9:16 на вертикальной сетке |
+| `1536×2752` | размер, которым на самом деле являются все шесть отгруженных шаблонов и обе клиентские фикстуры, — тот же `0.5581`, вмороженный в продукт |
+| `43.75 %` | ширины срезает кроп в 9:16 на выходе видеомодели. Kling отдаёт `960×960`, измерено на восьми заказах: сборка обрезает |
 | `300 кадров` | все шесть роликов вышли ровно по 10.0 секунды |
 | `0 склеек` | ни в одном из шести роликов нет монтажных швов |
 
@@ -220,9 +229,15 @@ and recalibrate the thresholds.
 python -m unittest discover -s lipsync/tests -p "test_*.py"
 ```
 
-770 тестов, без сети и без GPU. Каждый сторожит конкретный дефект, который
-действительно случился, — имя теста называет какой. Пороги принятия решений
-покрыты мутациями: сдвиг порога в любую сторону роняет тесты.
+795 тестов в 13 файлах, без сети и без GPU. Каждый сторожит конкретный дефект,
+который действительно случился, — имя теста называет какой. Пороги принятия
+решений покрыты мутациями: сдвиг порога в любую сторону роняет тесты.
+
+На 2026-08-26 прогон **не зелёный**: `FAILED (failures=3, errors=2,
+skipped=12)`. Все падения — в `test_ratio_chain.py`, это гейт, написанный до
+реализации под описанный выше дефект соотношения сторон; реализация в работе.
+Пропущенный тест — не пройденный, а число красных меняется от прогона к
+прогону, пока код правится.
 
 ## Лицензия
 
