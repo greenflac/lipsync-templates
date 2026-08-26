@@ -101,7 +101,18 @@ class EndToEnd(unittest.TestCase):
         out = self.engineer.write(self.request())
         self.assertEqual(
             set(out["stages"]),
-            {"availability", "cache", "retrieval", "context", "extract", "reflect"},
+            {
+                "availability",
+                "cache",
+                "retrieval",
+                "context",
+                "extract",
+                "reflect",
+                # Added when the corpus gained a second job: judging the
+                # finished prompt against the prompts that were worth keeping,
+                # which no rule table can do.
+                "quality",
+            },
         )
 
     def test_the_second_identical_call_is_served_from_cache(self) -> None:

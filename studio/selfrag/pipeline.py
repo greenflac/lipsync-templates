@@ -30,6 +30,7 @@ from lipsync.fork_identity import FAIL, PASS, UNMEASURED
 from studio.knowledge import structure_from_text  # type: ignore[attr-defined]
 from studio.selfrag.cache import PromptCache, fingerprint
 from studio.selfrag.evidence import craft_phrases
+from studio.selfrag.quality import calibrate, score as quality_score
 from studio.selfrag.corpus import CorpusRecord, load_corpus
 from studio.selfrag.monitor import Journal, RunRecord
 from studio.selfrag.reflect import (
@@ -276,6 +277,13 @@ class PromptEngineer:
         self.extractor = extractor
         self.reviser = reviser
         self.rounds = rounds
+        # The corpus's OTHER job, and the one nothing else in this system does:
+        # a standard to judge a finished prompt against. `reflect.py` grades
+        # compliance with a rule table; a prompt can pass every rule and still
+        # read nothing like the prompts that work. Calibration costs ~570 ms
+        # once per engineer over 4585 prompts, and refuses to hand back a
+        # scorer that cannot separate a shipped prompt from unrelated prose.
+        self.quality: dict = calibrate([r.prompt for r in self.records])
 
     # ------------------------------------------------------------- helpers
 
@@ -426,6 +434,7 @@ class PromptEngineer:
         )
 
         # 6. reflect: draft, grade, revise, bounded.
+        quality: dict = {}
         # Fields nobody stated are reported but kept OUT of the prompt: this
         # module's guess must not read like the user's instruction.
         defaulted_fields = list(style.get("defaulted") or [])
@@ -464,6 +473,29 @@ class PromptEngineer:
             current = revised
         stages["reflect"] = {"outcome": grade.get("outcome", UNMEASURED), "rounds": len(history)}
 
+        # 7. score the finished prompt against the corpus. This is not a gate:
+        # a prompt unlike the corpus may still be right, and the corpus is
+        # somebody else's taste. It is reported so a writer can see WHERE they
+        # fall and on which feature — the answer to "is this any good" that a
+        # rule table cannot give.
+        if self.quality["outcome"] == PASS and draft.get("prompt"):
+            quality = quality_score(str(draft["prompt"]), model=self.quality["model"])
+        else:
+            quality = {
+                "outcome": UNMEASURED,
+                "note": self.quality["note"]
+                if self.quality["outcome"] != PASS
+                else "no prompt to score",
+                "score": 0.0,
+                "percentiles": {},
+                "weakest": None,
+            }
+        stages["quality"] = {
+            "outcome": quality["outcome"],
+            "score": quality.get("score"),
+            "weakest": quality.get("weakest"),
+        }
+
         findings = grade.get("findings", [])
         rules_fired = sorted({f.rule for f in findings})
 
@@ -496,6 +528,7 @@ class PromptEngineer:
             "words": draft.get("words", 0),
             "examples": examples,
             "evidence": evidence_report["phrases"],
+            "quality": quality,
             "findings": [
                 {"rule": f.rule, "severity": f.severity, "message": f.message, "fix": f.fix}
                 for f in findings

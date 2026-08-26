@@ -845,3 +845,69 @@ has not yet authorised: pair 1 repeated on the fixed prompt, plus a control
 that varies ONE thing.
 
 `bash scripts/check` — green, exit 0. 121 selfrag tests.
+
+## Agent: orchestrator, tenth pass — 2026-08-26 — the corpus's actual job
+
+The owner, correcting me a second time: the RAG is how the agent is TAUGHT and
+how the user interacts with a prompt; the corpus of good prompts exists for
+QUALITY ASSESSMENT.
+
+I had been using it as a supply of words (`evidence.py`) and had not built the
+thing they named at all. `reflect.py` grades COMPLIANCE against a rule table.
+A prompt can pass every rule and read nothing like the prompts that work — and
+on 2026-08-26 one did: ten rules passed, it went to flux, and it lost a blind
+comparison to the user's own untouched sentence.
+
+### studio/selfrag/quality.py — the corpus as a standard
+
+Five features, each scored as a PERCENTILE against the corpus rather than
+against a threshold somebody chose: clause count, word count, craft density,
+share of clauses carrying craft vocabulary, and specificity (a number, a proper
+noun, a unit — the difference between "nice light" and something a camera could
+be set to).
+
+`calibrate` REFUSES to return a scorer unless a held-out corpus prompt scores
+well AND unrelated prose scores badly. Calibrated on 4585 prompts in ~570 ms:
+negative control 0.126, positive control 0.49.
+
+### It reproduced the owner's blind verdict without seeing it
+
+    raw request (the owner chose it)   0.486
+    agent, after this session's fixes  0.467
+    agent, the prompt that lost        0.434
+
+Built from the corpus, never shown the verdict, and it ranks them in the same
+order. That is the first independent corroboration of anything in this project.
+
+### And it says why ALL THREE were bad
+
+    corpus median   87 words, 14 clauses
+    corpus 10th pct 32 words,  6 clauses
+    our prompts     17 words,  4 clauses
+
+Every prompt in that A/B — the agent's AND the user's raw text — sits in the
+bottom few per cent of the corpus for length and clause count. `specificity`
+is 0.0 against a corpus median of 0.08: not one lens, camera body or aspect
+ratio between them, where corpus prompts say "Leica M10", "50mm Summilux",
+"3:4".
+
+**This contradicts the registry.** `flux-2`'s word band is 30-120, taken from
+vendor blogs; the corpus of 4585 shipped prompts has a median of 87 and a long
+tail above it. Two sources of truth disagree and only one has 4585
+observations. Not changed yet — the band is a `weak`-confidence card value and
+the corpus is one gallery's house style, so this needs the owner's call rather
+than a quiet edit.
+
+The score is REPORTED, never a gate: a prompt unlike the corpus may still be
+right, and the corpus is somebody else's taste.
+
+### Still missing, and it is the same gap as ever
+
+"Teaching via RAG" in the full sense means a generator writing in the pattern
+of retrieved examples — few-shot in-context learning. There is no generator:
+the extractor is deterministic and `evidence.py` splices clauses because
+nothing can write them. `lipsync.pollinations.chat` exists and would close it,
+at a paid call per prompt.
+
+`bash scripts/check` — green, exit 0. Studio suite 281 passed, 2 skipped;
+131 selfrag tests.
