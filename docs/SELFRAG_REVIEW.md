@@ -2,6 +2,12 @@
 
 Reviewed on 2026-08-26, at commit `f5e5bfa`, on a fresh clone.
 
+**Status: the four findings marked FIXED below were fixed later the same day,
+after the module's owner asked for repairs rather than a hand-off. The measured
+output that follows each one is what the code did BEFORE the fix — it is kept
+because a finding with its evidence deleted is a finding nobody can re-check.
+Everything marked OPEN belongs to a module this branch did not touch.**
+
 The request said the architecture to review was "presented above". It was not
 in the message. What exists is this repository's `studio/` package, and that is
 what was reviewed: `studio/knowledge.py` (1302 lines, hybrid retrieval),
@@ -45,7 +51,7 @@ not fill up with one source.
 
 ---
 
-## Critical: the retrieval system is empty on any machine but one
+## FIXED — Critical: the retrieval system was empty on any machine but one
 
 This is the finding that matters. Everything else is smaller than it.
 
@@ -90,18 +96,29 @@ A skipped test is not a passed test, and here the skip is load-bearing: it is
 the only signal that the system under test is empty, and it is printed in grey
 next to 143 green dots.
 
-**Recommended fix, for the owner of `studio/knowledge.py`:** make the paths
-repo-relative with an environment override, and make an absent corpus a
-build-time `could not measure` that the CI eval treats as red. The new
-`studio/selfrag/corpus.py` does exactly this and can be copied — its
-`load_corpus` returns `could not measure` with the list of paths it looked in,
-and its docstring names this defect as the reason.
+**Fixed.** `_resolve_dir` now takes an environment override
+(`STUDIO_KNOWLEDGE_OUR_PROMPTS`, `STUDIO_KNOWLEDGE_REFERENCE_CARDS`), then a
+directory inside this repository, then the original absolute path last so the
+machine that has the data keeps working. When nothing exists the reported path
+is the in-repo one, because an error should name a path the reader can create.
+
+**And the second half, which mattered more:** `build_index` reported `pass` for
+an index of 12 core rules and 0 examples. It now reports `could not measure`,
+because such an index cannot answer a single retrieval query.
+`test_core_rules_alone_build_and_pass` — the test that asserted the old
+behaviour, and so the reason this survived a session — is renamed to
+`test_core_rules_alone_are_not_a_built_index` and inverted, with
+`test_one_example_is_enough_to_make_it_a_built_index` as the other direction.
+
+The two tests that skip still skip: they need fixtures that are not in this
+repository. A skip is honest there. What changed is that the build report now
+says so out loud instead of saying `pass`.
 
 ---
 
-## Will break in production
+## FIXED — would have broken in production
 
-### The sqlite connection is not thread-safe, and FastAPI will use it from threads
+### The sqlite connection was not thread-safe, and FastAPI uses it from threads
 
 `studio/knowledge.py:801` opens the index with sqlite3's default
 `check_same_thread=True`, and `default_index()` caches that one connection in a
@@ -121,11 +138,22 @@ nothing — so this is latent, not live. It becomes live on the commit that wire
 retrieval into the web layer, which is the commit where nobody will be looking
 for it.
 
-**Fix:** `sqlite3.connect(path, check_same_thread=False)` plus a lock around
-every `execute`. `studio/selfrag/db.py` does this and says why in its
-docstring.
+**Fixed**, and the failure was reproduced first rather than assumed. Reverting
+the flag in the test helper produces exactly the predicted error:
 
-### `default_index()` never invalidates
+```
+FAILED test_knowledge.py::Building::test_retrieve_is_safe_from_several_threads
+threaded retrieval raised [ProgrammingError('SQLite objects created in a thread
+can only be used in that same thread. ...')]
+```
+
+The connection is now opened `check_same_thread=False`, and every statement on
+it — `add`, `reload`, `attach_dense`, `load_dense_from_db`, `counts`, and the
+BM25 read on the query path — runs under `KnowledgeIndex.lock`.
+`test_the_thread_guard_would_notice_the_old_connection` is the negative control
+on that guard.
+
+### OPEN — `default_index()` never invalidates
 
 The cached index is rebuilt only when someone passes `rebuild=True`. Drop a new
 `gallery_prompts.jsonl` into place and a long-running server serves the old
@@ -135,7 +163,7 @@ index until it restarts. There is no fingerprint, no mtime check, nothing.
 (corpus contents, registry, rule table) and key on it, so a change expires
 entries with no manual invalidation step.
 
-### `retrieve` counts below-floor candidates as "violations"
+### FIXED — `retrieve` counted below-floor candidates as "violations"
 
 ```python
 ordered = sorted((i for i in fused if i in admitted), ...)
@@ -148,6 +176,8 @@ A record that scored but did not clear the floor is the floor working, not a
 violation. Feeding it into the same field as a real breach makes the
 `violations` count unreadable across the codebase, which is a shame given how
 carefully the three outcomes are handled everywhere else.
+
+**Fixed:** `violations` is 0 and the count moved to a new `below_floor` key.
 
 ---
 
@@ -196,7 +226,7 @@ modules, importing them and editing neither, because they have other owners.
 
 ---
 
-## Smaller notes, for their owners
+## OPEN — smaller notes, for their owners
 
 - `studio/tests/` has no `__init__.py`, so `python -m unittest discover -s
   studio/tests -t .` fails with "Start directory is not importable". Only
@@ -218,6 +248,9 @@ modules, importing them and editing neither, because they have other owners.
 The foundations are better than most: the security boundary is right, the three
 outcomes are real, the retriever can abstain, and somebody has already been
 mutating the fusion and writing down what happened. The system's problem is not
-its design. Its problem is that **on any machine but one it is empty, and it
-says so only in a skipped test**, and that the retrieval it does have is
-connected to nothing that ships.
+its design. Its problem was that **on any machine but one it was empty, and it said so only
+in a skipped test**, and that the retrieval it does have is connected to
+nothing that ships.
+
+The first half is fixed. The second is what `studio/selfrag/` exists to
+address — and it does so beside these modules, not inside them.
