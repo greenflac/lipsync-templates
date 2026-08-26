@@ -114,10 +114,30 @@ promise; an element with one is a fact.
   element does not exist in it, or the request is ambiguous. **Ambiguous means
   ask, never guess.**
 
+## The rest, settled the same day
+
+**The owner writes the templates.** The prompting in the main branch was done
+by hand, so the shipped style templates already carry the owner's own creative
+vision. That is also the real argument for where RAG belongs: the corpus is a
+record of that vision, which makes it an excellent instrument for the owner and
+their colleagues to author with, and the wrong thing to put between a customer
+and a picture.
+
+**Allowed values come from the template itself**, not from `studio/style.py`.
+The template's author knows which alternatives actually work in that
+composition; a global word list does not.
+
+**There is no "no template fits" case, and asking about it was a mistake in the
+framing.** The user does not describe a need. They pick a template — the
+driving clip inside it is fixed and not negotiable — and they style it to their
+own vision *using what is already in the prompt*. Nothing is searched for,
+because nothing is being looked for.
+
+That last point is worth keeping because it is the sentence that makes the
+whole design safe: **the user never asks for something the system has to
+invent.**
+
 ## What is still open
 
-- Who writes the templates, and how many are needed before this is a product.
-- Whether the allowed values per element come from `studio/style.py`'s existing
-  word lists (they were built for exactly this shape) or from the template.
-- Whether a user who wants something no template offers is shown the nearest
-  template, or told plainly that it is not available.
+- How many templates before this is a product.
+- Whether an element may be calibrated to a value the template did not list.
