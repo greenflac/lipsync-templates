@@ -67,6 +67,7 @@ CRAFT_TOKENS: frozenset[str] = frozenset(
     reflective translucent transparent opaque polished brushed frosted
     velvety powdery tactile grainy smooth glossy sharpness clarity
     render rendered photograph photography shot shoot lit
+    shallow field deep bokeh-rich stopped-down wide-open handheld tripod
     """.split()
 )
 

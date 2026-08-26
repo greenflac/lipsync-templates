@@ -112,6 +112,9 @@ class EndToEnd(unittest.TestCase):
                 # finished prompt against the prompts that were worth keeping,
                 # which no rule table can do.
                 "quality",
+                # The product rule made checkable: the agent optimises for the
+                # model and invents nothing.
+                "fidelity",
             },
         )
 

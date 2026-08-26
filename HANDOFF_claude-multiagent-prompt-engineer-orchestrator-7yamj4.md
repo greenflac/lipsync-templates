@@ -990,3 +990,76 @@ how they discover the criteria. That is exactly what happened with our
 controls — the owner discovered mid-run that "shows product design and labels"
 was the criterion, which is why the control comparison was confounded. It is a
 known failure of the method, not a lapse.
+
+## Agent: orchestrator, twelfth pass — 2026-08-26 — the product rule, made checkable
+
+The owner stated the product task precisely: the user cannot write a good
+prompt; the agent writes one FROM THEIR INTENT; it **invents nothing** and only
+optimises for the model.
+
+That is a sharper spec than anything this session had, and half of it can be
+checked mechanically. So it is checked on every run.
+
+### studio/selfrag/fidelity.py
+
+`audit(prompt, sources)` returns the content words in the prompt that no source
+accounts for. Three outcomes, and it BLOCKS: it is the only stage that turns a
+pass into a FAIL outright rather than softening it to "could not measure". A
+prompt naming something the user did not is not a weaker answer to their
+request; it is an answer to a different one.
+
+The line is WHAT versus HOW:
+
+    INVENTED       an object, material, place, colour or creature the user
+                   never named -> violation
+    NOT INVENTED   anything they wrote in any inflection; craft vocabulary
+                   (lens, light, finish); measurements ("50mm", "24fps",
+                   "3:4"); the assembler's scaffolding ("a palette of")
+
+Rearranging the user's subject into Veo's slot order is optimisation. Adding a
+swan is not.
+
+### It catches both of today's real defects, before generation
+
+    the losing prompt   FAIL — invented 'sand', 'calm'
+    after the fixes     PASS
+    the user's own text PASS   <- the control that matters most
+    with an added swan  FAIL — invented 'swan', 'fountain', 'marble'
+
+The first row is the prompt that actually went to flux this morning and lost.
+`sand` is the synonym map reading the user's "stone" as a palette colour;
+`calm` is a DEFAULT nobody asked for. Both would have been stopped here for
+free, before a credit was spent.
+
+The third row is the negative control this session said it was missing: **a
+good prompt survives untouched.** If the agent cannot leave a good prompt
+alone, everything else it does is downside.
+
+### Corpus phrases are now OFF by default
+
+`PromptRequest.use_corpus_phrases` defaults to False. A corpus clause is still
+a detail the user did not ask for; that it came from a precedent rather than
+from a dictionary does not make it their intent, and whether it helps is
+unmeasured here. The randomised trial that measured the cost of added detail
+(58% of DALL-E 3's gain, https://arxiv.org/abs/2407.14333) is about exactly
+this move. Turning it on is a recorded decision: the phrases then pass into
+`extra_allowed` and the audit reports that they were allowed. There is no way
+to switch the rule off.
+
+### Two boundary calls made while building it, both recorded
+
+- `palette` and `mood` are the assembler's scaffolding, like "of" — they name
+  a category, not a thing in the scene. The colour after them IS checked.
+- A token carrying a unit ("50mm", "f2.8", "3:4") is a camera setting, so it
+  is format. Without that rule "shot on a 50mm lens" reported inventing
+  "50mm".
+
+`bash scripts/check` — green, exit 0. Studio suite 291 passed, 2 skipped;
+141 selfrag tests.
+
+### What is still not built
+
+The rewriter itself. What exists now is the CONSTRAINT it must satisfy and the
+control that proves the constraint bites. That order was the point: build the
+gate before the thing it gates, or there is nothing to stop the thing being
+wrong.

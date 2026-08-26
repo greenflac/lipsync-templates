@@ -30,6 +30,7 @@ from lipsync.fork_identity import FAIL, PASS, UNMEASURED
 from studio.knowledge import structure_from_text  # type: ignore[attr-defined]
 from studio.selfrag.cache import PromptCache, fingerprint
 from studio.selfrag.evidence import craft_phrases
+from studio.selfrag.fidelity import audit as fidelity_audit
 from studio.selfrag.quality import calibrate, score as quality_score
 from studio.selfrag.corpus import CorpusRecord, load_corpus
 from studio.selfrag.monitor import Journal, RunRecord
@@ -113,6 +114,12 @@ class PromptRequest:
     tags: tuple[str, ...] = ()
     subject_locked: bool = False
     k: int = 5
+    #: Let clauses from the corpus into the prompt. OFF by default: a corpus
+    #: phrase is a detail the user did not ask for, and invented detail is the
+    #: documented way this kind of tool loses its gain. Turning it on is a
+    #: recorded decision — the phrases then count as allowed in the fidelity
+    #: audit, and the audit reports that they were allowed.
+    use_corpus_phrases: bool = False
     extra: dict = field(default_factory=dict, compare=False)
 
 
@@ -447,7 +454,16 @@ class PromptEngineer:
         # over five requests against the 4593-record corpus: at k=5 three got
         # any corpus material, at k=15 four did, and at k=30 still four.
         evidence_report = craft_phrases([hit.record for hit in wide_hits], avoid=request.text)
-        evidence_phrases = [p["phrase"] for p in evidence_report["phrases"]]
+        # OFF unless the caller asks. The only randomised trial in this field
+        # measured what added detail costs: automatic rewriting erased 58% of
+        # DALL-E 3's gain because rewrites "added extra details or changed the
+        # meaning" (https://arxiv.org/abs/2407.14333). A corpus phrase is still
+        # a detail the user did not ask for; that it came from a precedent
+        # rather than from a dictionary does not make it their intent. Whether
+        # it helps is UNMEASURED here, so it is a decision, not a default.
+        evidence_phrases = (
+            [p["phrase"] for p in evidence_report["phrases"]] if request.use_corpus_phrases else []
+        )
         current = spec
         history: list[dict] = []
         draft: dict = {}
@@ -490,6 +506,23 @@ class PromptEngineer:
                 "percentiles": {},
                 "weakest": None,
             }
+        # 8. fidelity: did the prompt name anything the user did not? This one
+        # BLOCKS. The product rule is that the agent optimises for the model and
+        # invents nothing, and this is the half of it that can be checked.
+        sources = [request.text] + [
+            getattr(current, name) or ""
+            for name in ("subject", "action", "camera", "motion", "audio")
+        ]
+        fidelity = fidelity_audit(
+            str(draft.get("prompt") or ""),
+            sources,
+            extra_allowed=evidence_phrases,
+        )
+        stages["fidelity"] = {
+            "outcome": fidelity["outcome"],
+            "invented": fidelity["invented"],
+        }
+
         stages["quality"] = {
             "outcome": quality["outcome"],
             "score": quality.get("score"),
@@ -513,6 +546,17 @@ class PromptEngineer:
             note_parts.append(avail["note"])
             if outcome == PASS:
                 outcome = UNMEASURED
+        # Fidelity BLOCKS, and it is the only stage here that overrides a pass
+        # outright rather than softening it to "could not measure". The product
+        # rule is that the agent invents nothing; a prompt that names something
+        # the user did not is not a weaker answer to their request, it is an
+        # answer to a different one.
+        if fidelity["outcome"] == FAIL:
+            outcome = FAIL
+            note_parts.append(fidelity["note"])
+        elif fidelity["outcome"] == UNMEASURED and outcome == PASS:
+            outcome = UNMEASURED
+            note_parts.append(fidelity["note"])
 
         payload = {
             "outcome": outcome,
@@ -525,6 +569,7 @@ class PromptEngineer:
             "negative_prompt": draft.get("negative_prompt", ""),
             "parameters": {**draft.get("parameters", {}), **current.extra},
             "slots": draft.get("slots", {}),
+            "invented": fidelity["invented"],
             "words": draft.get("words", 0),
             "examples": examples,
             "evidence": evidence_report["phrases"],
