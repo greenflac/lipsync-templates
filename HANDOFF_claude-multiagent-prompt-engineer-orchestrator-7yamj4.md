@@ -1063,3 +1063,131 @@ The rewriter itself. What exists now is the CONSTRAINT it must satisfy and the
 control that proves the constraint bites. That order was the point: build the
 gate before the thing it gates, or there is nothing to stop the thing being
 wrong.
+
+## Agent A — the rewriter itself (`studio/selfrag/rewriter.py`)
+
+Append-only entry, per Ц6. Files owned and written: `studio/selfrag/rewriter.py`
+and `studio/selfrag/tests/test_rewriter.py`. Nothing else was edited.
+
+`rewrite(intent, *, card, examples=(), model=None)`. Two paths.
+
+- `model=None` — deterministic. Clauses of the user's text are filed under the
+  card's skeleton slots and emitted in slot order. Every character of the
+  output is a character of the input; the audit runs over it anyway, as a
+  negative control on that claim.
+- `model=<callable>` — few-shot. Examples are shown as demonstrations of FORM;
+  `fidelity.audit`'s sources are the intent ALONE, so a word borrowed from an
+  example is caught as invention exactly like one the model made up. Rejected
+  output is retried once with the invented words named, then falls back to the
+  deterministic prompt with `source="model_rejected"`.
+
+Four defects were found by agent B's control set, which was written without
+sight of this code. All four are fixed and each has a comment naming the row:
+
+1. `u02`/`u03` — an unclassified clause was sent to slot 0, shuffling prompts
+   the user had already written in the vendor's order. It now inherits the
+   previous clause's slot, which makes "leave a good prompt alone" the default
+   rather than a case to detect.
+2. `r11` — one cue word ("matte") inside a five-word subject clause filed the
+   whole clause as texture and dropped it on a card with no texture slot.
+   `CUE_SHARE = 0.30` now requires the cue to be a share of the clause.
+3. `u03` — a clause whose category has no slot was dropped even when the card
+   could carry it in prose. `_FALLBACK` routes what the picture SHOWS to the
+   nearest slot; only what the model DOES (audio, camera, action, constraints)
+   is dropped, and always reported.
+4. `s01`/`s03`/`s04`/`s06` — shortening cut from the end, which kept "i will be
+   honest i am not good at this" and cut "and there is a single lamp on". It
+   now cuts the clause with the lowest SHARE of scene words. Density, not
+   count: counting preferred a long rambling clause over the short one naming
+   the espresso machine.
+
+`bash scripts/check` exits 1 on mypy errors in
+`studio/selfrag/tests/test_rewriter_contract.py` (agent B's file, not editable
+by agent A). Everything else is green: 770 unittest tests OK, 197 selfrag
+pytest tests, ruff format and ruff check clean.
+
+## Agent: orchestrator, thirteenth pass — 2026-08-26 — the rewriter, built by two agents who could not see each other
+
+Owner asked for a multi-agent build holding the product logic. The split was
+chosen to satisfy И1 — the verdict is not cast by whoever did the work.
+
+    agent A   studio/selfrag/rewriter.py + its own tests
+    agent B   the control set + the contract test, FORBIDDEN to read A's code
+    contract  studio/selfrag/REWRITER_CONTRACT.md, written first, shared
+
+### The split paid for itself
+
+Agent B's blind control set, written from the contract alone, failed **14 rows**
+on first contact and found four defect classes A's own tests did not:
+
+1. An unclassified clause went to slot 0 and **shuffled prompts that were
+   already in vendor order** — so "leave a good prompt alone" was failing.
+2. One cue word (`matte`) inside a five-word subject clause filed the whole
+   clause as texture and **dropped the user's subject**.
+3. A category with no slot was dropped even where the card could carry it.
+4. Shortening cut from the END, keeping "i am not good at this" and cutting
+   "a single lamp on". It now cuts by lowest share of scene words — density,
+   not position.
+
+All four fixed, each with the failing row id in the comment. Final: the control
+set is fully green, 17 tests and 352 subtests.
+
+Agent B also found a defect in the METHOD: mutating the length constant in both
+directions changed nothing, because no row exercised it. The constant was
+guarded by nothing. B extracted the check and built a negative control for it;
+after that the mutation kills tests in both directions.
+
+Agent A caught an invalid mutation run of its own: same-size edits within one
+second reused stale `.pyc` files, so results lagged one mutation. Re-run with
+the cache cleared, which is how a surviving `MAX_ROUNDS` mutation was found.
+
+### What I fixed as integrator
+
+7 mypy errors in agent B's file, which A was forbidden to edit and B had
+finished before they surfaced — an ownership deadlock that only the integrator
+can break. `rewrite` is now imported through a typed optional alias, so a
+missing implementation still SKIPS with the reason instead of crashing
+collection.
+
+`bash scripts/check` — green, exit 0. Studio suite **347 passed, 2 skipped**;
+197 selfrag tests.
+
+### MEASURED, and it is the finding that matters
+
+I ran the rewriter myself rather than trusting green tests:
+
+    19 of 26 buildable control rows come back COMPLETELY UNCHANGED.
+    7 changed.
+
+    "i want like a photo of my serum bottle, make it look expensive, on some
+     rock thing, nice warm light"        -> returned verbatim
+
+    a 35-word rambling wan intent opening "honestly i am not great at this
+    but"                                 -> returned verbatim, 35 words in,
+                                            35 out, no shortening
+
+**The deterministic path is a near-passthrough.** It satisfies "invents
+nothing" perfectly — trivially, by doing almost nothing — and delivers the
+product value on 7 cases in 26. A path incapable of invention by construction
+turns out to be largely incapable of improvement too.
+
+That is not a failure of agent A: it built what the contract specified, and the
+contract specified a path that cannot invent. It is the honest boundary of what
+can be done without a generator. **The safety floor is finished; the value is
+not.** The value needs the model path, which exists, is gated by the audit, and
+has never been run — no paid call has been made.
+
+### Named weaknesses, from the builders themselves, not found by me
+
+- **No parameter extraction.** The contract allowed moving prose into a real
+  parameter (`camera_fixed`, `--ar`); `rewrite` returns a string only. Both
+  agents flagged this independently as a hole in MY contract.
+- **No mode argument.** `card.reference_skeleton` is never used, so an
+  image-to-video or edit intent builds against the text-to-video skeleton and
+  will re-describe appearance — the exact mistake `REFERENCE_MODES` exists to
+  prevent. Latent until the pipeline calls this for i2v.
+- **`SHORTEN_MAX_WORDS = 40` is РАСЧЁТ, never ИЗМЕРЕНО.** Nobody has run Wan
+  at 40 words against 80.
+- **The gibberish gate is phonotactic**: it catches `asdkjhasd qwoieu`, but
+  "blorp fnid" gets a prompt.
+- **The cue lists are hand-written, English-only and unmeasured on real users.**
