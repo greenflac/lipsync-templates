@@ -20,6 +20,7 @@ Nothing here reaches the network at import time, and no test in
 """
 
 from studio.selfrag.corpus import CorpusRecord, load_corpus
+from studio.selfrag.pipeline import PromptEngineer, PromptRequest
 from studio.selfrag.registry import MODEL_CARDS, ModelCard, card_for
 from studio.selfrag.spec import GenSpec, MEDIA_IMAGE, MEDIA_VIDEO
 
@@ -30,6 +31,8 @@ __all__ = [
     "CorpusRecord",
     "GenSpec",
     "ModelCard",
+    "PromptEngineer",
+    "PromptRequest",
     "card_for",
     "load_corpus",
 ]

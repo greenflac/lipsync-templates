@@ -145,9 +145,18 @@ def cmd_cards(args: argparse.Namespace) -> int:
         print(f"  skeleton    {' -> '.join(card.skeleton)}")
         if card.i2v_skeleton:
             print(f"  i2v         {' -> '.join(card.i2v_skeleton)}")
+        duration = (
+            "n/a (still image)"
+            if card.media == "image"
+            else (
+                f"max {card.max_seconds}s"
+                if card.max_seconds is not None
+                else "max duration NOT SOURCED"
+            )
+        )
         print(
-            f"  limits      max {card.max_seconds}s, {card.resolutions}, "
-            f"audio {card.audio}, negative prompt {card.negative_prompt}"
+            f"  limits      {duration}, {', '.join(card.resolutions) or 'resolution NOT SOURCED'}"
+            f", audio {card.audio}, negative prompt {card.negative_prompt}"
         )
         print(f"  confidence  {card.confidence} ({len(card.sources)} source(s))")
         if state["note"]:
@@ -205,7 +214,16 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(list(argv) if argv is not None else None)
-    return int(args.func(args))
+    try:
+        return int(args.func(args))
+    except BrokenPipeError:
+        # `... | head` closes the pipe early. That is the reader's choice, not
+        # an error in the run, and a traceback here would look like one.
+        try:
+            sys.stdout.close()
+        except BrokenPipeError:
+            pass
+        return 0
 
 
 if __name__ == "__main__":  # pragma: no cover - the entry point itself
