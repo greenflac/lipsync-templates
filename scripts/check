@@ -36,6 +36,30 @@ MYPYPATH=. python -m mypy --explicit-package-bases studio/selfrag/ --ignore-miss
 echo "== tests (selfrag)"
 python -m unittest discover -s studio/selfrag/tests -t .
 
+# The calibration path, named module by module rather than by directory.
+#
+# `studio/tests/` as a whole still cannot be gated: test_app.py needs httpx2,
+# which requirements-dev.txt does not pin. But the calibration modules need
+# nothing beyond the standard library, and leaving them ungated had already
+# cost something — a commit landed with the `verify()` invariant failing in two
+# tests and CI stayed green, because the gate could not see the file
+# (OBSERVED 2026-08-26). Gate what can be gated; report the rest.
+echo "== ruff check (calibration)"
+ruff check studio/prompt_templates.py studio/tests/test_prompt_templates.py \
+    studio/tests/test_calibration_contract.py
+
+echo "== ruff format (calibration)"
+ruff format --check studio/prompt_templates.py studio/tests/test_prompt_templates.py \
+    studio/tests/test_calibration_contract.py
+
+echo "== mypy (calibration)"
+MYPYPATH=. python -m mypy --explicit-package-bases studio/prompt_templates.py \
+    studio/tests/test_prompt_templates.py studio/tests/test_calibration_contract.py \
+    --ignore-missing-imports
+
+echo "== tests (calibration)"
+python -m unittest studio.tests.test_prompt_templates studio.tests.test_calibration_contract
+
 # The retriever scored against its gold set, with the negative controls that
 # make the score mean anything. Exit code 2 is "could not measure" and is a
 # red build here on purpose: a corpus that vanished must not read as green.

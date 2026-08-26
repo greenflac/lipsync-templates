@@ -1191,3 +1191,94 @@ has never been run — no paid call has been made.
 - **The gibberish gate is phonotactic**: it catches `asdkjhasd qwoieu`, but
   "blorp fnid" gets a prompt.
 - **The cue lists are hand-written, English-only and unmeasured on real users.**
+
+## Agent: orchestrator, fourteenth pass — 2026-08-26 — calibration, built blind on both sides
+
+Second multi-agent build under `studio/CALIBRATION_CONTRACT.md`. Agent A owned
+`studio/prompt_templates.py`; agent B owned the control set and never read A's
+code. Final state: **411 studio tests, 68 calibration tests, blind control set
+9 tests / 225 subtests, `scripts/check` exit 0.**
+
+### What each side found that the other could not
+
+**Agent B built a real negative control**: it injected a naive `str.replace`
+implementation and got **12 failures across 9 trap rows**. Its own honest
+reading of that result is the useful part — *adjacent spans do not catch naive
+replace; repeated text does*. A control set that cannot fail a wrong
+implementation is decoration, and this one demonstrably can.
+
+**Agent B found a contradiction in MY contract**: it said both "`prompt: str |
+None`, None when refused" and "return the untouched base prompt". B could turn
+neither into an assertion and reported the clash instead of guessing. Settled
+toward returning the base. A had independently resolved it the same way.
+
+**Agent A found a surviving mutant.** Loosening the span bounds check to
+`end > len(prompt) + 1` left all 53 tests green, because the only
+out-of-bounds fixture was far enough out to clear a check with a character of
+slack. A wrote `test_a_span_that_ends_exactly_one_past_the_end_is_reported`;
+the same mutant then killed it. A mutation that survives is the only kind worth
+finding.
+
+**Agent A caught a licence problem I had set up.** I told it to build example
+templates from `studio/knowledge/gallery_prompts.jsonl`. A inlined three
+prompts verbatim, then read why that file is gitignored — third-party wording
+from a commercial catalogue, in a public repo whose LICENSE clause 2(d) claims
+"the prompts … contained here" — and rewrote them as this project's own prose
+in the same register, using the corpus rows only as models for length and
+rhythm. **My instruction was the defect; the agent refused to carry it out
+literally and said why.** If literal corpus wording should ever ship, it needs
+the same explicit owner decision and NOTICE paperwork as collecting it did.
+
+### My own defect, recorded because it is greppable this way
+
+`git add -A` in commit c393a43 swept agent A's half-written files into a commit
+about something else entirely, while A was still editing them. The project
+handoff warns about exactly this. **Use explicit paths while another writer is
+live.**
+
+### The gate could not see the failure it needed to see
+
+Commit 8f980ae landed with the `verify()` invariant failing in two tests and CI
+stayed green, because `scripts/check` covered `lipsync/` and `studio/selfrag/`
+and nothing else. `studio/tests/` as a whole still cannot be gated —
+`test_app.py` needs httpx2, which `requirements-dev.txt` does not pin — so the
+two calibration modules are now named individually.
+
+MUTATION, to prove the extended gate bites: flipping substitution from
+right-to-left to left-to-right gives **`scripts/check` exit 1, 17 failures**.
+Restored: exit 0, module byte-identical by `diff`.
+
+### FOUND BY LOOKING (П3), not by 411 green tests
+
+    a tailored FOLDED ivory linen suit, FOLDED once and left on a snowy bench
+
+The substituter is correct — the diff is confined to the span — and the
+sentence reads badly. A value has to fit the grammar it lands in, and nothing
+checks that.
+
+Swept all 42 template/element/value combinations: **2 substitution-induced
+clashes**, `folded ivory linen suit` against the base's "folded once", and
+`pale grey cashmere scarf shaped like a full moon` against the base's "a full
+moon" — which is another element's text, so A's deliberate naive-replace trap
+turns out to be a grammar trap too. The other 10 hits were words already
+repeated in the base and are not caused by substitution; a checker that does
+not separate those two reports noise.
+
+**This is the next thing worth building: a template linter for the owner**, who
+is the template author. It would render every allowed value in place and refuse
+a template whose values collide with their own frame. Cheap, deterministic, and
+it catches the one error class this design is actually exposed to.
+
+### Named weaknesses, from agent A
+
+- **No template is proven.** Nothing in `CATALOGUE` has been generated.
+  `verify` proves text fidelity, never quality — the module never claims a
+  calibrated prompt is good, only that it differs from its base exactly where
+  the template permits.
+- `element()` silently prepends the base phrase to `allowed`, so keeping the
+  owner's value is always legal.
+- `changed_spans` includes identity substitutions, where nothing moved.
+- `tint_shade`/`tint_hue` are an artificial pair; they exist to make off-by-one
+  observable on a real prompt and would not be shown to a customer.
+- 74 pre-existing mypy errors across the older studio test modules, untouched
+  and outside the gate.
