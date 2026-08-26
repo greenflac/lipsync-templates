@@ -351,7 +351,11 @@ DEFAULTED_BITS: dict[str, str] = {
 
 
 def assemble(
-    spec: GenSpec, *, card: ModelCard | None = None, defaulted: Sequence[str] = ()
+    spec: GenSpec,
+    *,
+    card: ModelCard | None = None,
+    defaulted: Sequence[str] = (),
+    evidence: Sequence[str] = (),
 ) -> dict:
     """Build the prompt this model's own guide asks for. Three outcomes.
 
@@ -362,6 +366,11 @@ def assemble(
 
     :param defaulted: style fields nobody stated, which this module filled in.
         They are REPORTED but never written into the prompt.
+    :param evidence: craft phrases several retrieved precedents agree on, from
+        `evidence.craft_phrases`. This is the only route by which the corpus
+        reaches the finished prompt; before it existed, retrieval fed nothing
+        and the words five precedents contributed were "a", "of" and "palette"
+        (MEASURED 2026-08-26).
 
     A defaulted field is this module's guess, and a guess printed next to the
     user's own words is indistinguishable from their instruction. MEASURED
@@ -394,6 +403,7 @@ def assemble(
         else resolved.skeleton
     )
     bits = _style_bits(spec)
+    bits["_evidence"] = ", ".join(dict.fromkeys(str(p) for p in evidence if p))
     for guessed in defaulted:
         bit = DEFAULTED_BITS.get(guessed)
         if bit:
@@ -448,6 +458,15 @@ def assemble(
         seen.add(clause.lower())
         clauses.append(clause)
     body = ", ".join(clauses)
+
+    # The corpus's contribution, appended after the vendor's own skeleton: it
+    # is craft material, and every skeleton in the registry ends with its style
+    # clause. Phrases already present in the body are dropped — a precedent
+    # agreeing with the user is not new information.
+    used = body.lower()
+    borrowed = [p for p in dict.fromkeys(str(p) for p in evidence if p) if p.lower() not in used]
+    if borrowed:
+        body = ", ".join([body, *borrowed])
 
     # Anything the caller filled in that no slot in this skeleton could carry.
     # Silently dropping it is the failure this list exists to prevent: the user

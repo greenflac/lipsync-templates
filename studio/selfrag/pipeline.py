@@ -29,6 +29,7 @@ from typing import Callable, Sequence
 from lipsync.fork_identity import FAIL, PASS, UNMEASURED
 from studio.knowledge import structure_from_text  # type: ignore[attr-defined]
 from studio.selfrag.cache import PromptCache, fingerprint
+from studio.selfrag.evidence import craft_phrases
 from studio.selfrag.corpus import CorpusRecord, load_corpus
 from studio.selfrag.monitor import Journal, RunRecord
 from studio.selfrag.reflect import (
@@ -77,6 +78,14 @@ def _style_fields(style: StyleSpec) -> dict:
 # a field the user never mentioned is a claim about their intent, and the
 # result must be reported as `could not measure`, never as a clean pass.
 # CHOSEN: the most neutral member of each allow-list.
+#: How many precedents the EVIDENCE layer reads, as against the `k` examples
+#: shown as context. Wider on purpose: the support floor is what keeps a
+#: borrowed clause honest, so more evidence must come from more witnesses and
+#: never from a lower floor. MEASURED 2026-08-26 over five requests against the
+#: 4593-record corpus: k=5 gave three of five any corpus material, k=15 gave
+#: four, k=30 still four.
+EVIDENCE_K = 15
+
 DEFAULTS: dict[str, object] = {
     "palette": ("slate",),
     "light": "soft",
@@ -348,10 +357,12 @@ class PromptEngineer:
             return payload
 
         # 3. retrieve, widening only when the first try comes back empty.
+        # `k` here is the EVIDENCE width; the context keeps `request.k`. One
+        # search serves both, so the wider slice costs nothing extra.
         found = search_with_fallback(
             request.text,
             index=self.index,
-            k=request.k,
+            k=max(request.k, EVIDENCE_K),
             tags=request.tags,
             # The resolved id, not the alias: corpus rows carry "veo-3.1", so
             # searching for "veo" would push every genuinely in-model example
@@ -366,6 +377,8 @@ class PromptEngineer:
         }
 
         # 4. grade what came back; a weak set is dropped, not down-weighted.
+        wide_hits = list(found["hits"])
+        found["hits"] = wide_hits[: request.k]
         graded = grade_context(found["hits"], rewrite_step=found.get("rewrite_step", 0))
         stages["context"] = {"outcome": graded["outcome"], "note": graded["note"]}
         examples = [
@@ -416,12 +429,22 @@ class PromptEngineer:
         # Fields nobody stated are reported but kept OUT of the prompt: this
         # module's guess must not read like the user's instruction.
         defaulted_fields = list(style.get("defaulted") or [])
+        # The corpus's only route into the finished prompt. Before this the
+        # retrieval was decorative: five precedents contributed the words "a",
+        # "of" and "palette" (MEASURED 2026-08-26).
+        # Evidence reads a WIDER slice than the context does. The support
+        # floor is what keeps a borrowed clause honest, so the way to get more
+        # evidence is more witnesses, never a lower floor. MEASURED 2026-08-26
+        # over five requests against the 4593-record corpus: at k=5 three got
+        # any corpus material, at k=15 four did, and at k=30 still four.
+        evidence_report = craft_phrases([hit.record for hit in wide_hits], avoid=request.text)
+        evidence_phrases = [p["phrase"] for p in evidence_report["phrases"]]
         current = spec
         history: list[dict] = []
         draft: dict = {}
         grade: dict = {}
         for round_no in range(1, max(1, self.rounds) + 1):
-            draft = assemble(current, defaulted=defaulted_fields)
+            draft = assemble(current, defaulted=defaulted_fields, evidence=evidence_phrases)
             grade = grade_draft(current, draft)
             history.append(
                 {
@@ -472,6 +495,7 @@ class PromptEngineer:
             "slots": draft.get("slots", {}),
             "words": draft.get("words", 0),
             "examples": examples,
+            "evidence": evidence_report["phrases"],
             "findings": [
                 {"rule": f.rule, "severity": f.severity, "message": f.message, "fix": f.fix}
                 for f in findings

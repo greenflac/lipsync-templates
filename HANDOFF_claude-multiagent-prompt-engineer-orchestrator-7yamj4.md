@@ -770,3 +770,78 @@ defensible reading, and it is the user's own word.
   register every arm, and the schema needs somewhere to put a preference.
 - Two pairs is an anecdote. The mechanisms above are solid because they are
   visible in the code and in the image; the 0-2 scoreline is not a finding.
+
+## Agent: orchestrator, ninth pass — 2026-08-26 — the RAG was not wired to generation
+
+The owner, repeatedly and correctly: an untrained agent will of course lose;
+build the RAG first. Verified, and the state was worse than stated.
+
+### MEASURED: the corpus contributed nothing
+
+For the request that lost pair 1, the retriever returned five precedents — one
+of them an Apple Watch on porous volcanic stone, very nearly the same scene.
+The words those five contributed to the finished prompt:
+
+    ['a', 'of', 'palette']
+
+`assemble()` did not take an `examples` argument at all. Retrieval fed the
+context report and the payload, and nothing else. 4601 records and recall@5 of
+0.95 were decorative: the prompt was assembled entirely from four allow-lists
+of single words and a vendor skeleton, which is a template filler, not a RAG.
+
+That fully explains the A/B loss. The agent was not using the corpus; it was
+REPLACING the user's rich description with a poorer vocabulary.
+
+### studio/selfrag/evidence.py — the corpus's route into the prompt
+
+Mines craft clauses several precedents agree on, and `assemble(evidence=[...])`
+appends them after the vendor skeleton.
+
+Three rules, each earned by a defect found while building it:
+
+1. **Clauses, not n-grams.** The first version took n-grams and produced "view
+   softly illuminated cinematic" — three words of somebody's sentence with the
+   grammar removed. Prompts in this trade are comma-separated descriptors, so a
+   comma is where one thought ends.
+2. **`MIN_SUPPORT = 2`, and it does two jobs.** A clause two authors reached for
+   independently is a convention of the trade; a clause in one prompt is one
+   author's habit and may be wrong. It is also the licence rule: a convention
+   several authors share is a fact about how this work is written, not any one
+   author's expression. `gallery_prompts.jsonl` is a third party's catalogue.
+3. **`CRAFT_SHARE = 0.5` — craft-dominant, not craft-containing.** The
+   contains-check admitted "petals softly catching the rim light" on the words
+   "rim" and "light", which would have put petals into a photograph of a serum
+   bottle. That is the SAME defect as the synonym map turning "stone" into
+   sand — scene content nobody asked for — arriving through the corpus instead
+   of through a dictionary. Found by reading the output, again.
+
+`EVIDENCE_K = 15`: evidence reads a wider slice than the context does, because
+the support floor is what keeps a borrowed clause honest, so more evidence must
+come from more witnesses and never from a lower floor. One search serves both,
+so the wider slice costs nothing. MEASURED over five requests: k=5 gave three
+of five any material, k=15 gave four, k=30 still four.
+
+### The coverage trade, stated plainly
+
+    contains-check   4 of 5 requests got material — including "petals"
+    craft-dominant   2 of 5 requests got material — all clean
+
+2 of 5 with clean clauses is better than 4 of 5 that puts petals in a bottle
+shot. What survives now: "cinematic editorial product photography", "shot on
+35mm film", "sharp natural daylight", "warm slightly desaturated editorial
+tones".
+
+The craft list was extended once during this — and extended with vocabulary
+that belongs there on its own terms (light names, surface finishes, the words
+for how a photograph was taken), not with whatever words would have raised the
+coverage number. That distinction is the whole difference between calibrating
+and fitting.
+
+### Not claimed
+
+Nothing here has been re-generated. Whether these prompts actually produce
+better pictures is unmeasured, and the honest next step is the re-run the owner
+has not yet authorised: pair 1 repeated on the fixed prompt, plus a control
+that varies ONE thing.
+
+`bash scripts/check` — green, exit 0. 121 selfrag tests.
