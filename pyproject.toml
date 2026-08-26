@@ -31,6 +31,25 @@ packages = ["lipsync", "lipsync.tests"]
 [tool.ruff]
 line-length = 100
 
+# Data, not code. `ruff format <directory>` skips these on its own, but
+# `ruff format path/to/set.jsonl` FORCES the file to be parsed as Python and
+# rewrites it into unparseable output — OBSERVED 2026-08-26, when a 39-row
+# control set was turned into 386 lines of wreckage by one explicit path. The
+# fixture had to be rebuilt. An exclusion makes the accident impossible instead
+# of relying on everyone remembering.
+# An exclusion alone does NOT stop an explicitly-passed path: ruff reformatted
+# the fixture anyway with `extend-exclude` set, and only `force-exclude` made
+# the exclusion apply to a file named on the command line (MEASURED 2026-08-26,
+# both ways, on a copy).
+force-exclude = true
+extend-exclude = [
+    "*.jsonl",
+    "*.json",
+    "studio/fixtures/",
+    "studio/selfrag/fixtures/",
+    "studio/knowledge/",
+]
+
 [tool.ruff.lint.per-file-ignores]
 # Lambda fakes are the standard test double in this suite: a one-line stub
 # injected as a parameter. Converting them to defs adds noise, not clarity.

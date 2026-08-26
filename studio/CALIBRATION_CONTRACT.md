@@ -42,7 +42,9 @@ def calibrate(template: PromptTemplate, choices: Mapping[str, str]) -> dict:
 
 `calibrate` returns the studio judging dict plus:
 
-    prompt: str | None      the calibrated prompt, None when refused
+    prompt: str | None      the calibrated prompt; the UNTOUCHED BASE when the
+                            request is refused; None only when there is no
+                            template and therefore no base to fall back to
     applied: dict[str, str] element name -> value actually substituted
     rejected: dict[str, str] element name -> why that choice was refused
     changed_spans: list[tuple[int, int]]   ranges in the OUTPUT that moved
@@ -70,7 +72,16 @@ broken template, and it must be reported as such rather than silently skipped.
   outside a named span. **Return the untouched base prompt**: the user is
   better off with the template as the owner wrote it than with nothing.
 - `could not measure` — no template, no elements declared, or no choices given.
-  Zero substitutions is never `pass`.
+  Zero substitutions is never `pass`. The base comes back untouched whenever
+  there IS a base; `prompt` is None only when no template was supplied at all.
+
+**Contradiction found and settled 2026-08-26.** This document said both
+"`prompt: str | None`, None when refused" and "Return the untouched base
+prompt", which cannot both be true. Agent B, writing the control set from this
+text alone, could not turn either into an assertion and reported the clash
+instead of guessing — which is what a blind reviewer is for. Settled toward
+returning the base: a user is better off with the template as its author wrote
+it than with nothing, and `None` now means only "there was no template".
 
 ## Rules that hold
 
