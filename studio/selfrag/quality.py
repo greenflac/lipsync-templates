@@ -28,6 +28,29 @@ Each is scored as a PERCENTILE against the corpus, not against a threshold
 somebody chose. The corpus decides what normal looks like; this module only
 reports where a candidate falls in it.
 
+WHAT THIS IS NOT, AND THE LITERATURE IS BLUNT ABOUT IT
+
+Every reference-free score has a known spurious correlate — length, fluency or
+typicality — and "in-distribution" is NOT "good". MAUVE's low scores have been
+attributed to length discrepancy rather than quality; generative-perplexity
+scoring rewards cliché by construction. The survey position is that these
+belong as GUARD-RAILS — flagging an output far outside the corpus — and not as
+a ranking of near-in-distribution candidates.
+(https://arxiv.org/abs/2501.12011, https://arxiv.org/pdf/2102.01454,
+https://arxiv.org/html/2606.08417 — read via search summaries, not opened:
+this environment's proxy blocks arxiv.)
+
+So: `score()` is an out-of-distribution detector. Read `outcome` and
+`weakest`; treat `score` as a rough position, never as a quality ordering.
+
+One check worth keeping, because it cuts the other way. On the three prompts
+from the 2026-08-26 A/B, the ranking agreed with the owner's blind verdict —
+and the agreement came from `craft_clauses` (spread 0.425), while `words` and
+`clauses` ran in the OPPOSITE direction: the prompt that LOST was the longest
+of the three. So in that one case the length artefact was not what produced the
+agreement. Three prompts and one judge is not a validation of anything; it is
+one observation that happens to survive the obvious objection.
+
 THE CONTROLS ARE NOT OPTIONAL
 
 `calibrate` refuses to return a usable scorer unless a held-out corpus prompt
@@ -62,6 +85,10 @@ MIN_CORPUS = 50
 #: corpus". CHOSEN low on purpose: the corpus's own tenth percentile is still a
 #: prompt somebody shipped, and the aim is to catch prompts unlike anything in
 #: it, not to demand the median.
+#:
+#: Being BELOW it on `words` says the prompt is shorter than almost anything in
+#: this corpus. It does NOT say a longer prompt would produce a better picture —
+#: that is a claim about generation, and nothing here measures generation.
 GOOD_PERCENTILE = 0.10
 
 FEATURES: tuple[str, ...] = ("clauses", "words", "craft_density", "craft_clauses", "specificity")

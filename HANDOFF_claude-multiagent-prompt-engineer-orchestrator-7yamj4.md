@@ -911,3 +911,82 @@ at a paid call per prompt.
 
 `bash scripts/check` — green, exit 0. Studio suite 281 passed, 2 skipped;
 131 selfrag tests.
+
+## Agent: orchestrator, eleventh pass — 2026-08-26 — the evaluation research, and two of my own claims it retracts
+
+Research track on measurement came back. Same caveat as every other web result
+this session: the proxy blocks arxiv, ACL and every vendor doc, so **not one
+primary source was opened** — all of it is search-engine paraphrase, WEAK by
+channel. Two findings land directly on work done today.
+
+### RETRACTED: "the quality scorer independently corroborated the verdict"
+
+Overstated. The literature is blunt that every reference-free score has a known
+spurious correlate — length, fluency or typicality — and that "in-distribution"
+is not "good"; such scores belong as out-of-distribution GUARD-RAILS, not as a
+ranking of near-in-distribution candidates
+(https://arxiv.org/abs/2501.12011, https://arxiv.org/pdf/2102.01454).
+
+`quality.py` scores `words` and `clauses`, so it is exactly the kind of metric
+that can reward length and call it quality. The docstring now says so and the
+module is described as a detector, not a ranker.
+
+**One check that cuts the other way, and it is worth keeping.** On the three
+A/B prompts the ranking DID match the owner's blind verdict, and the agreement
+came from `craft_clauses` (spread 0.425) while `words` and `clauses` ran in the
+opposite direction — the prompt that LOST was the longest of the three. So in
+that one case the length artefact is not what produced the agreement. Three
+prompts and one judge validates nothing; it is one observation that survives
+the obvious objection, and that is all it is.
+
+### DOWNGRADED: "the corpus says write five times longer"
+
+Being below the corpus's 10th percentile on `words` says the prompt is shorter
+than almost anything in that corpus. It does NOT say a longer prompt makes a
+better picture. That is a claim about GENERATION, and nothing in this
+repository measures generation. Recorded in the constant's comment.
+
+### The sample size, so nobody repeats the 2-pair mistake
+
+Two-proportion power calculation, α=0.05, power 0.8, ties dropped
+(the researcher's own arithmetic, not a citation):
+
+| true win rate of the better variant | non-tie comparisons needed |
+|---|---|
+| 0.65 | ~79 |
+| 0.60 | ~188 |
+| 0.55 | ~776 |
+
+Our A/B was **2 pairs**. It is an anecdote and the arithmetic now says by how
+much. A 20-example A/B cannot establish anything below roughly a 0.75 win rate.
+
+### What this changes about wiring a judge
+
+- **Never judge with the writer's own model.** Self-preference is documented;
+  the competing explanations are self-recognition
+  (https://arxiv.org/abs/2410.21819 attributes it instead to familiarity —
+  judges over-reward low-perplexity text). Either way the rule is the same.
+  `lipsync.pollinations.judge_frame` already defaults to a different model
+  than `chat`, which is the right shape by accident.
+- **Pairwise with the order swapped, and disagreement is a third outcome.**
+  Reported judge self-consistency under swap is only ~65% for the strongest
+  judge, ~77.5% once swapping is applied as a mitigation
+  (https://arxiv.org/abs/2306.05685). A single-order verdict is close to a
+  coin. Swapping converts an unreliable verdict into an honest "could not
+  measure", which is the outcome this codebase already has everywhere.
+- **A raw judge pass-rate is a biased estimator.** Correcting it needs judge
+  sensitivity and specificity measured on a human-labelled calibration set,
+  with the confidence interval propagating uncertainty from both sets
+  (https://arxiv.org/abs/2511.21140).
+- **Gate on paired per-item flips, not on a threshold over a mean.** Every
+  named tool (promptfoo, DeepEval, Braintrust, Langfuse, LangSmith) gates on a
+  mean, which is insensitive to a few catastrophic flips.
+
+### The finding that names what happened to us
+
+"Who Validates the Validators?" (https://arxiv.org/abs/2404.12272) documents
+*criteria drift*: users need criteria to grade outputs, but grading outputs is
+how they discover the criteria. That is exactly what happened with our
+controls — the owner discovered mid-run that "shows product design and labels"
+was the criterion, which is why the control comparison was confounded. It is a
+known failure of the method, not a lapse.
