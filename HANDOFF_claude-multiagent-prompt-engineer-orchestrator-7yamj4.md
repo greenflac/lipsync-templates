@@ -1282,3 +1282,100 @@ it catches the one error class this design is actually exposed to.
   observable on a real prompt and would not be shown to a customer.
 - 74 pre-existing mypy errors across the older studio test modules, untouched
   and outside the gate.
+
+## Agent: orchestrator, fifteenth pass — 2026-08-26 — the template linter
+
+Third multi-agent build, `studio/LINTER_CONTRACT.md`. Agent A owned
+`studio/template_lint.py`; agent B owned the control set and never read A's
+code. `scripts/check` extended to gate both, exit 0.
+
+### The event this whole method exists to produce
+
+Agent A shipped `REPETITION_WINDOW_WORDS = 5`, chosen from a measurement on the
+shipped catalogue. Agent B, who had never seen A's code, planted a repetition
+**7 words apart** — a real defect of exactly the motivating kind. Window 5 was
+blind to it.
+
+A's own plateau data already said windows 7 and 8 cost nothing on the
+catalogue, so 5 was reach thrown away for free. Widened to 8; catalogue output
+unchanged.
+
+**An independent judge found the doer's constant had been fitted to the doer's
+own example.** That is И1 paying for itself, and it is not something A could
+have found alone — the number looked measured, and it was, on the wrong sample.
+
+### Two defects agent A found in its own tests, by mutation
+
+1. **Two of its article tests were decorations.** They put the bad pairing in
+   the BASE, where A's own subtraction rule correctly hid it, so mutating the
+   exception list turned nothing red. Investigating showed the exception lists
+   were never reached by a hyphenated word at all — `"one-piece"` was looked up
+   whole. A real bug, found only because a mutation failed to kill anything.
+2. **pytest does not honour `load_tests`**, so the doctests were never running
+   under `pytest -q`. `lint`'s docstring claimed 25 combinations where the real
+   number is 24 — green under pytest, red under unittest, for as long as it
+   existed.
+
+VERIFIED by me: `unittest` runs 59 tests in `test_prompt_templates` and 52 in
+`test_template_lint` where pytest runs 55 and 48. The four extra in each are
+the doctests. **`scripts/check` runs `unittest`, so the gate does cover them**
+— the blind spot is local `pytest` only. Worth knowing before someone
+"simplifies" the gate to pytest.
+
+### The subtraction rule, measured twice
+
+Running the repetition detector over the same 49 catalogue pairs *without* the
+base subtraction: **34 raw, 2 introduced, 32 suppressed as already-in-base —
+sixteen lies per truth.** My own earlier sweep put it at six per truth with a
+narrower window; A's figure is on the shipped configuration and is the one to
+quote.
+
+The subtraction is structural rather than a convention: every text check is a
+row in `_TEXT_CHECKS` with a uniform detector signature, and `_lint_combination`
+is the single call site that runs each detector over base and calibrated and
+subtracts. A new check cannot skip it without rewriting that loop.
+
+### On the window, and a worry of mine that the data dismissed
+
+I measured the corpus: at window 8, **55% of the 4,593 prompts practitioners
+actually wrote repeat a content word.** That looked like grounds to demote
+`repetition` from violation to risk.
+
+It was not. On the real catalogue the linter reports **2 violations in 49
+combinations, 4.1%** — because it only reports what substitution introduced.
+The base rate never reaches the output. **The subtraction is what makes a wide
+window safe**, and without measuring both numbers I would have loosened a check
+that is working.
+
+MUTATION on the shipped constant, both directions, through the full gate:
+8 → 2 gives `exit=1, 23 failures`; 8 → 20 gives `exit=1, 4 failures`; restored,
+exit 0 and the module byte-identical by `diff`.
+
+### On the real catalogue
+
+    fail — 49 combinations, 222 checks, 2 violations, 1 risk, 0 unmeasured
+      risk      cross_element  subject='pale grey cashmere scarf shaped like a full moon'
+      violation repetition     subject='folded ivory linen suit'   ('folded' twice)
+      violation repetition     light='hard, raking studio lighting' ('raking' twice)
+
+Exactly the two repetitions I had measured independently before the linter
+existed, plus the scarf/moon trap correctly graded RISK rather than blocking.
+
+### Weaknesses named by agent A, not found by me
+
+- **The subtraction is a set difference, not a count difference.** A base
+  repeating "folded" once and an output repeating it three times reports
+  nothing. Deliberate — over-reporting is the expensive failure — but real.
+- **One element at a time.** 49 pairs versus 3,000+ tuples on the winter
+  template alone. A defect that only appears when two elements are calibrated
+  together is invisible. A names this as the single biggest coverage gap.
+- Repetition is exact-string: fold/folded/folding are three words.
+- `cross_element` is a substring test with a 4-character floor, not a
+  word-boundary check: an element based on "moon" would flag "moonlight".
+- The article check cannot judge acronyms and abstains rather than guessing.
+
+### My own note
+
+I committed agent B's files alone (503d3f4) while A was still writing, using
+explicit paths, and said so in that commit message. That is the correction to
+the `git add -A` mistake recorded two passes ago, and it worked.

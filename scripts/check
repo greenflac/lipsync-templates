@@ -60,6 +60,22 @@ MYPYPATH=. python -m mypy --explicit-package-bases studio/prompt_templates.py \
 echo "== tests (calibration)"
 python -m unittest studio.tests.test_prompt_templates studio.tests.test_calibration_contract
 
+echo "== ruff check (lint)"
+ruff check studio/template_lint.py studio/tests/test_template_lint.py \
+    studio/tests/test_lint_contract.py studio/fixtures/lint_control_set.py
+
+echo "== ruff format (lint)"
+ruff format --check studio/template_lint.py studio/tests/test_template_lint.py \
+    studio/tests/test_lint_contract.py studio/fixtures/lint_control_set.py
+
+echo "== mypy (lint)"
+MYPYPATH=. python -m mypy --explicit-package-bases studio/template_lint.py \
+    studio/tests/test_template_lint.py studio/tests/test_lint_contract.py \
+    studio/fixtures/lint_control_set.py --ignore-missing-imports
+
+echo "== tests (lint)"
+python -m unittest studio.tests.test_template_lint studio.tests.test_lint_contract
+
 # The retriever scored against its gold set, with the negative controls that
 # make the score mean anything. Exit code 2 is "could not measure" and is a
 # red build here on purpose: a corpus that vanished must not read as green.
