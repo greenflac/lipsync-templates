@@ -114,6 +114,16 @@ def _first(words: Sequence[str], found: set[str]) -> str:
     return ""
 
 
+def _stated_only(values: set[str], text: str) -> set[str]:
+    """Keep the allow-list words the text actually contains, drop the inferred.
+
+    A value counts as stated when it appears in the text literally, spaced or
+    hyphenated ("golden-hour" and "golden hour" are the same statement).
+    """
+    lowered = text.lower()
+    return {v for v in values if v in lowered or v.replace("-", " ") in lowered}
+
+
 def spec_from_text(text: str, *, request: PromptRequest) -> dict:
     """Derive a StyleSpec from free text with no model call. Three outcomes.
 
@@ -128,6 +138,18 @@ def spec_from_text(text: str, *, request: PromptRequest) -> dict:
     'could not measure'
     """
     found = structure_from_text(text)
+    # A style word the user WROTE is a fact. A style word reached through the
+    # synonym map is a guess about what they meant, and a guess must not be
+    # emitted into a prompt as though it were stated.
+    #
+    # MEASURED 2026-08-26, and visible in work/ab/p1_A.jpg. The request said
+    # "porous volcanic stone" — a material, naming the podium. SYNONYMS maps
+    # "stone" to the palette colour "sand", so the assembled prompt carried
+    # "a palette of amber, sand", and flux put literal sand under the bottle.
+    # The user never asked for sand. The synonym is still right for RETRIEVAL,
+    # where a wrong guess costs one example slot; in the prompt it costs the
+    # picture.
+    found = {field: _stated_only(values, text) for field, values in found.items()}
     palette = tuple(w for w in PALETTE_WORDS if w in found["palette"])[:4]
     light = _first(LIGHT_WORDS, found["light"])
     texture = _first(TEXTURE_WORDS, found["texture"])
@@ -391,12 +413,15 @@ class PromptEngineer:
         )
 
         # 6. reflect: draft, grade, revise, bounded.
+        # Fields nobody stated are reported but kept OUT of the prompt: this
+        # module's guess must not read like the user's instruction.
+        defaulted_fields = list(style.get("defaulted") or [])
         current = spec
         history: list[dict] = []
         draft: dict = {}
         grade: dict = {}
         for round_no in range(1, max(1, self.rounds) + 1):
-            draft = assemble(current)
+            draft = assemble(current, defaulted=defaulted_fields)
             grade = grade_draft(current, draft)
             history.append(
                 {

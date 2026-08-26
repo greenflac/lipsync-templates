@@ -46,6 +46,7 @@ from studio.style import (
 __all__ = [
     "MEDIA_IMAGE",
     "MEDIA_VIDEO",
+    "DEFAULTED_BITS",
     "MODE_EDIT",
     "REFERENCE_MODES",
     "MODE_I2V",
@@ -336,13 +337,38 @@ def gate_spec(spec: GenSpec) -> dict:
     }
 
 
-def assemble(spec: GenSpec, *, card: ModelCard | None = None) -> dict:
+#: Which `_bit` a defaulted style field would fill. Used to keep a value the
+#: user never gave out of the finished prompt.
+DEFAULTED_BITS: dict[str, str] = {
+    "palette": "_palette",
+    "light": "_light",
+    "texture": "_texture",
+    # The mood fills the vendors' "style" slot, not a "_mood" one. Mapping it
+    # to a bit that does not exist silently did nothing, and a defaulted mood
+    # kept reaching the prompt (OBSERVED 2026-08-26, one fix after the other).
+    "mood": "_style",
+}
+
+
+def assemble(
+    spec: GenSpec, *, card: ModelCard | None = None, defaulted: Sequence[str] = ()
+) -> dict:
     """Build the prompt this model's own guide asks for. Three outcomes.
 
     The slot order comes from the card, so a Veo prompt ends with its audio
     cue and a Kling prompt ends with its style clause, because that is what
     each vendor documented. In image-to-video the appearance slots are
     dropped rather than reworded: the reference image already carries them.
+
+    :param defaulted: style fields nobody stated, which this module filled in.
+        They are REPORTED but never written into the prompt.
+
+    A defaulted field is this module's guess, and a guess printed next to the
+    user's own words is indistinguishable from their instruction. MEASURED
+    2026-08-26 and visible in work/ab/p1_A.jpg: nobody mentioned texture, the
+    default "matte" went into the prompt, and a glossy glass bottle came back
+    matte. Saying nothing about texture leaves the model free; saying "matte"
+    tells it something false.
 
     :returns: the judging dict plus `prompt`, `negative_prompt`, `parameters`
         and `slots` — the last so a reviewer can see which slot said what.
@@ -368,6 +394,10 @@ def assemble(spec: GenSpec, *, card: ModelCard | None = None) -> dict:
         else resolved.skeleton
     )
     bits = _style_bits(spec)
+    for guessed in defaulted:
+        bit = DEFAULTED_BITS.get(guessed)
+        if bit:
+            bits[bit] = ""
     slots: dict[str, str] = {}
     # Several vendor slot names read the same GenSpec field — Veo asks for
     # "camera", "composition" and "focus", and one camera description answers

@@ -376,6 +376,47 @@ class Assemble(unittest.TestCase):
         self.assertEqual(runway["negative_prompt"], "")
         self.assertIn("warped background", runway["prompt"])
 
+    def test_an_inferred_style_word_never_reaches_the_prompt(self) -> None:
+        """FOUND BY LOOKING AT A PICTURE (work/ab/p1_A.jpg, 2026-08-26).
+
+        The request said "porous volcanic stone" — a material naming the
+        podium. The synonym map reads "stone" as the palette colour "sand", the
+        prompt carried "a palette of amber, sand", and the model put literal
+        sand under the bottle. No metric caught it: retrieval was fine, every
+        rule passed, the word count was in band.
+        """
+        from studio.selfrag.pipeline import PromptRequest, spec_from_text
+
+        text = "an amber glass serum bottle standing on porous volcanic stone"
+        out = spec_from_text(text, request=PromptRequest(text=text, model="flux"))
+        self.assertIn("amber", out["spec"].palette, "a word the user WROTE must survive")
+        self.assertNotIn("sand", out["spec"].palette, "a word only INFERRED must not")
+
+    def test_a_stated_word_reached_through_spacing_still_counts(self) -> None:
+        """The other direction. Dropping inferences must not drop statements:
+        "golden hour" and "golden-hour" are the same thing said twice."""
+        from studio.selfrag.pipeline import PromptRequest, spec_from_text
+
+        for text in ("shot at golden hour", "shot at golden-hour"):
+            with self.subTest(text=text):
+                out = spec_from_text(text, request=PromptRequest(text=text, model="flux"))
+                self.assertEqual(out["spec"].light, "golden-hour")
+
+    def test_a_defaulted_field_is_reported_but_not_written(self) -> None:
+        """Also from p1_A.jpg: nobody mentioned texture, the default "matte"
+        went into the prompt, and a glossy glass bottle came back matte.
+        Saying nothing leaves the model free; saying "matte" tells it something
+        false."""
+        spec = GenSpec(model="flux-2", mode="t2i", style=STYLE, subject="a glass bottle")
+        with_guess = assemble(spec)
+        without = assemble(spec, defaulted=["texture", "mood"])
+        self.assertIn("film-grain texture", with_guess["prompt"])
+        self.assertIn("calm mood", with_guess["prompt"])
+        self.assertNotIn("film-grain texture", without["prompt"])
+        self.assertNotIn("calm mood", without["prompt"])
+        # And what the user DID state is untouched.
+        self.assertIn("teal", without["prompt"])
+
     def test_a_slot_is_never_silently_truncated(self) -> None:
         """The gate refuses an over-long slot out loud. Nothing quietly cuts
         one down and hands back a prompt that means less than was written."""

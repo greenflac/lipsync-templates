@@ -678,3 +678,95 @@ independent judgement available (rule И1 — the verdict is not the doer's).
 The owner's picks for pair 1 and pair 2, and a 1-10 for each control. Those
 ratings, applied with `ReplayBuffer.judge_run`, become the first rated rows in
 `examples` — the first training data this system has ever held.
+
+## Agent: orchestrator, eighth pass — 2026-08-26 — the verdict, and what the picture showed
+
+### The owner's blind verdict
+
+Key was fixed before anything was shown (sha256 0e38876e, `work/ab/key.json`).
+
+| shown as | actually | verdict |
+|---|---|---|
+| pair1_X | p1_B — **raw request** | **chosen** |
+| pair1_Y | p1_A — agent | |
+| pair2_X | p2_A — agent | |
+| pair2_Y | p2_B — **raw request** | **chosen** |
+| extra_1 | c_pos — positive control | 3/10 |
+| extra_2 | c_neg — negative control | 8/10 |
+
+**The agent lost both pairs, 0 of 2.**
+
+### The controls were confounded, and the owner caught it
+
+The owner's note: extra_1 shows no product design and no labels; extra_2 does,
+with crooked text; comparing them is not valid.
+
+That is correct and it voids the control comparison. The two frames differ in
+at least TWO ways — the technical breakage I designed in, and the presence of
+product branding, which I did not control. A control must differ from what it
+controls in exactly one way, and mine did not.
+
+So the run has NO working check on the judging. Recorded before it could be
+written up: the conclusion I was heading for — "rule compliance is not what
+sells" — rests on that confounded pair and is therefore **not supported**. The
+pair results stand on their own (one request, one model, one seed, only the
+prompt differs); the control-derived claim does not.
+
+Next control design: hold product identity constant and vary ONLY the
+technical breakage — the same bottle, the same framing, with and without
+on-screen lettering.
+
+### WHY the agent lost — three mechanisms, all visible in one image
+
+Found by opening `work/ab/p1_A.jpg` and reading it against the prompt. No
+metric caught any of these: retrieval passed, every rule passed, the word count
+was in band.
+
+    request : "...standing on porous volcanic stone, warm directional light,
+               soft shadow, product photography"
+    agent   : "...standing on porous volcanic stone, soft shadow, soft light,
+               matte texture, a palette of amber, SAND, calm mood"
+
+1. **"stone" became sand, and the model drew sand.** `SYNONYMS["stone"]` maps
+   to the palette colour `sand`. The word was naming the podium's MATERIAL.
+   The prompt then asked for a sand palette and flux put literal sand under the
+   bottle. Nobody asked for sand.
+2. **`DEFAULTS["texture"] = "matte"` matted a glossy glass bottle.** Nobody
+   mentioned texture. Saying nothing leaves the model free; saying "matte"
+   tells it something false.
+3. **The user's "warm directional light" was dropped** and replaced by "soft
+   light", because "soft" in "soft **shadow**" matched `LIGHT_WORDS`.
+
+Arm A lost something the user asked for and gained three things they did not.
+
+### Fixed
+
+- **An inferred style word never reaches the prompt.** A word the user WROTE is
+  a fact; a word reached through the synonym map is a guess. Guesses still
+  serve retrieval, where a wrong one costs an example slot; in a prompt it
+  costs the picture. `_stated_only` in `pipeline.py`.
+- **A defaulted field is reported but never written.** `assemble(...,
+  defaulted=[...])` blanks those bits. The report still names them, so
+  "the user asked for calm" and "nobody said, so we picked calm" stay
+  distinguishable — they just no longer look identical to the model.
+- A bug inside that fix, found one step later: the mood fills the vendors'
+  `_style` bit, not a `_mood` one, so mapping it to a bit that does not exist
+  silently did nothing and a defaulted mood kept reaching the prompt.
+
+Measured on the exact request that lost:
+
+    before : ... soft shadow, soft light, matte texture, a palette of amber, sand, calm mood
+    after  : ... soft shadow, soft light, a palette of amber
+
+Point 3 is deliberately NOT fixed: "soft shadow" implying soft light is a
+defensible reading, and it is the user's own word.
+
+### Still unresolved
+
+- Nothing could be RECORDED from this run. Only the two agent arms went through
+  the pipeline, so only they have `run_id`s — the baselines and both controls
+  bypassed it and cannot be rated. And a preference is not a score: the owner
+  chose between frames, they did not put a number on them. The harness must
+  register every arm, and the schema needs somewhere to put a preference.
+- Two pairs is an anecdote. The mechanisms above are solid because they are
+  visible in the code and in the image; the 0-2 scoreline is not a finding.
