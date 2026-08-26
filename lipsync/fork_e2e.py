@@ -59,6 +59,14 @@ STYLE_MODEL = "nanobanana-2"
 STYLE_ROUTE = "pollinations.compose"
 STYLE_IMAGES = 2
 
+#: CHOSEN: the size we ASK the styliser for, and the reason padding is not the
+#: normal path. 720x1280 is exactly 9:16 (720*16 == 1280*9) AND both sides are
+#: multiples of 16 — the grid the model MEASURABLY snaps to: asked 768x1024, it
+#: returned 896x1200 = 56x16 by 75x16. An off-grid 9:16 such as 1080x1920 would
+#: be snapped sideways and stop being 9:16. It is also the geometry the video
+#: model returned on the shipped family, so reference and clip share one frame.
+STYLED_SIZE = (720, 1280)
+
 STYLE_HIT_REFERENCE = 0.8156
 STYLE_HIT_REJECTED = 0.8801
 STYLE_FLOOR_REFERENCE = 0.6409
@@ -317,14 +325,19 @@ def live_kling(
     return str(out_path)
 
 
-def live_stylize(*, person, style, prompt: str, out_path, model: str = STYLE_MODEL) -> str:
+def live_stylize(
+    *, person, style, prompt: str, out_path, model: str = STYLE_MODEL, size=STYLED_SIZE
+) -> str:
     """Stylize with two images through the measured winner. Goes to the network."""
     from . import pollinations  # noqa: PLC0415
 
     urls = [pollinations.upload(person), pollinations.upload(style)]
     if len(urls) != STYLE_IMAGES:
         raise RuntimeError(f"expected exactly {STYLE_IMAGES} links, got {len(urls)}")
-    return pollinations.compose(prompt, urls, out_path, model=model)
+    width, height = size
+    return pollinations.compose(
+        prompt, urls, out_path, model=model, width=int(width), height=int(height)
+    )
 
 
 def file_fact(path, what: str) -> tuple:
@@ -575,11 +588,41 @@ def stage_stylize(
     if laid["outcome"] == PASS:
         made = laid["path"]
 
-        grown = Path(made).with_name(Path(made).stem + "_full.png")
-        ext = P.extend_to_plan(made, grown, extender=extend)
-        checks.append(("margin outpaint", ext["outcome"], str(ext.get("note"))[:200]))
-        if ext["outcome"] == PASS:
-            made = ext["path"]
+        source = laid.get("source") or {}
+        native = P.ratio_axis(source.get("width"), source.get("height"))
+        checks.append(
+            (
+                "styliser returned the plan",
+                native["outcome"],
+                f"asked for {STYLED_SIZE[0]}x{STYLED_SIZE[1]}; {native['note']}",
+            )
+        )
+
+        added = (laid.get("plan") or {}).get("added_share")
+        if added == 0:
+            checks.append(
+                (
+                    "margin outpaint",
+                    PASS,
+                    f"not called: the styliser returned the plan itself, so "
+                    f"nothing was padded ({added} of the area added). A call "
+                    f"here would cost a generation and could repaint the person "
+                    f"for no gain",
+                )
+            )
+        else:
+            grown = Path(made).with_name(Path(made).stem + "_full.png")
+            ext = P.extend_to_plan(made, grown, extender=extend)
+            checks.append(
+                (
+                    "margin outpaint",
+                    ext["outcome"],
+                    f"repairing a padded reference ({added} of the area added "
+                    f"as bands); {str(ext.get('note'))[:200]}",
+                )
+            )
+            if ext["outcome"] == PASS:
+                made = ext["path"]
 
         checks.append(_person_in_plan(made, plan=P, pose=pose, card=card))
 

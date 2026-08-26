@@ -113,11 +113,17 @@ def compose(
     out_path: str | Path,
     *,
     model: str = "nanobanana",
-    width: int = 768,
-    height: int = 1024,
+    width: int = 1080,
+    height: int = 1920,
     seed: int = 0,
 ) -> str:
-    """Generate from SEVERAL reference images at once. [verified live]"""
+    """Generate from SEVERAL reference images at once. [verified live]
+
+    The default is 9:16, as on `image` and `images_edit`. It used to be 768x1024
+    here alone, and that 3:4 was the real reason the styled reference arrived
+    letterboxed: nobody asked this route for a vertical frame. Callers that care
+    about the exact grid pass their own size — see `fork_e2e.STYLED_SIZE`.
+    """
     import requests
 
     if len(image_urls) < 2:

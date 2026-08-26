@@ -22,6 +22,9 @@ from .fork_intake import MIN_FACE_PX  # noqa: E402
 
 MIN_VISIBILITY = 0.5
 
+#: MEASURED, and a record of a defect rather than of a requirement: this is what
+#: the styliser returned back when the call asked for 768x1024. It is 3:4, not
+#: the plan — see `fork_e2e.STYLED_SIZE` for the size we ask for now.
 STYLED_SIZE_MEASURED = (896, 1200)
 
 SHOULDER_POINTS = ("l_shoulder", "r_shoulder")
@@ -233,7 +236,15 @@ def to_plan(src, dst, *, opener=None, filler=None) -> dict:
     out.paste(im, (plan["left"], plan["top"]))
     Path(dst).parent.mkdir(parents=True, exist_ok=True)
     out.save(str(dst))
-    return {**tally(1, 0, 0), "path": str(dst), "plan": plan, "note": plan["note"]}
+    return {
+        **tally(1, 0, 0),
+        "path": str(dst),
+        "plan": plan,
+        # What came IN, so the caller can judge the styliser without decoding the
+        # file a second time. `plan` describes the canvas we made, not the source.
+        "source": {"width": int(w), "height": int(h)},
+        "note": plan["note"],
+    }
 
 
 CARD_TOL_MIN = 0.05

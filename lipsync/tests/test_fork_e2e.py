@@ -118,6 +118,10 @@ class _PlanOk:
             "violations": 0,
             "unmeasured": 0,
             "path": str(dst),
+            # The normal case since the styliser is asked for the plan itself:
+            # the source already IS 9:16, so the canvas adds nothing.
+            "source": {"width": 720, "height": 1280},
+            "plan": {"added_share": 0.0},
             "note": "stub 9:16 plan",
         }
 
@@ -139,6 +143,7 @@ class _PlanOk:
     SHOULDERS_BAND = fork_plan.SHOULDERS_BAND
     WIDTH_MAX = fork_plan.WIDTH_MAX
     person_box = staticmethod(fork_plan.person_box)
+    ratio_axis = staticmethod(fork_plan.ratio_axis)
 
 
 def _run(root: Path, log, **over):
@@ -922,6 +927,58 @@ class ReportIsAlwaysWritten(unittest.TestCase):
         self.assertEqual(data["violations"], 0)
 
 
+class TheStyliserIsAskedForThePlanNotForWhateverTheRouteDefaultsTo(unittest.TestCase):
+    """MEASURED defect: `pollinations.compose` alone defaulted to 768x1024 while its
+    two sibling routes defaulted to 1080x1920, and `live_stylize` passed no size at
+    all. So the styliser was asked for 3:4 and honestly returned 3:4 (896x1200) —
+    and every padded band downstream was our own request coming back."""
+
+    def test_the_asked_size_is_exactly_9_16(self):
+        w, h = E.STYLED_SIZE
+        self.assertEqual(w * 16, h * 9, f"{w}x{h} is not 9:16")
+
+    def test_both_sides_sit_on_the_grid_the_model_snaps_to(self):
+        """MEASURED: asked 768x1024, the model returned 896x1200 = 56x16 by 75x16.
+        An off-grid 9:16 such as 1080x1920 would be snapped sideways and stop
+        being 9:16 — which is the whole defect, re-entered through the fix."""
+        for side in E.STYLED_SIZE:
+            self.assertEqual(side % 16, 0, f"{side} is not a multiple of 16")
+
+    def test_the_asked_size_reaches_the_gateway_call(self):
+        from lipsync import pollinations
+
+        seen = {}
+
+        def compose(prompt, urls, out_path, **kw):
+            seen.update(kw)
+            seen["urls"] = list(urls)
+            return str(out_path)
+
+        with (
+            mock.patch.object(pollinations, "upload", lambda p: f"u://{p}"),
+            mock.patch.object(pollinations, "compose", compose),
+        ):
+            E.live_stylize(person="c.png", style="s.png", prompt="p", out_path="o.png")
+        self.assertEqual((seen.get("width"), seen.get("height")), E.STYLED_SIZE)
+        self.assertEqual(seen.get("model"), E.STYLE_MODEL)
+        self.assertEqual(len(seen["urls"]), E.STYLE_IMAGES)
+
+    def test_the_gateway_default_no_longer_disagrees_with_its_siblings(self):
+        """The trap was that one route out of three defaulted to 3:4. A caller that
+        forgets the size must now land on the plan, not on a letterbox."""
+        import inspect
+
+        from lipsync import pollinations
+
+        sizes = {}
+        for name in ("image", "images_edit", "compose"):
+            params = inspect.signature(getattr(pollinations, name)).parameters
+            sizes[name] = (params["width"].default, params["height"].default)
+        self.assertEqual(len(set(sizes.values())), 1, sizes)
+        w, h = sizes["compose"]
+        self.assertEqual(w * 16, h * 9, f"the gateway default {w}x{h} is not 9:16")
+
+
 if __name__ == "__main__":
     unittest.main()
 
@@ -1276,7 +1333,27 @@ class TheStandActuallyCallsItsNeighbours(unittest.TestCase):
                 pose=_pose_ok,
                 prompt="a look, " + E.NO_BRANDS_CLAUSE,
             )
-        self.assertTrue(got["styled"].endswith("_9x16_full.png"), got["styled"])
+        self.assertTrue(got["styled"].endswith("_9x16.png"), got["styled"])
+        names = [c["name"] for c in got["checks"]]
+        self.assertIn("styliser returned the plan", names)
+
+    def test_the_outpaint_is_NOT_called_when_nothing_was_padded(self):
+        """A no-op outpaint is a paid generation that can repaint the person."""
+        with TemporaryDirectory() as td:
+            got = E.stage_stylize(
+                client_photo="c.png",
+                style_ref="s.png",
+                out_path=Path(td) / "styled.png",
+                stylize=_stylize_ok,
+                plan=_PlanOk,
+                pose=_pose_ok,
+                extend=lambda *a, **k: self.fail("the outpainter must not be called"),
+                prompt="a look, " + E.NO_BRANDS_CLAUSE,
+            )
+        outpaint = [c for c in got["checks"] if c["name"] == "margin outpaint"]
+        self.assertEqual([c["outcome"] for c in outpaint], [PASS])
+        self.assertIn("not called", outpaint[0]["note"])
+        self.assertTrue(got["styled"].endswith("_9x16.png"), got["styled"])
 
     def test_a_plan_that_could_not_be_laid_is_UNMEASURED_not_a_defect(self):
         class Broken:
@@ -1449,6 +1526,7 @@ class TheOutpaintFixesTheLetterboxWithoutLosingTheRun(unittest.TestCase):
         SHOULDERS_BAND = fork_plan.SHOULDERS_BAND
         WIDTH_MAX = fork_plan.WIDTH_MAX
         person_box = staticmethod(fork_plan.person_box)
+        ratio_axis = staticmethod(fork_plan.ratio_axis)
 
         @staticmethod
         def to_plan(src, dst, **kw):
@@ -1459,6 +1537,10 @@ class TheOutpaintFixesTheLetterboxWithoutLosingTheRun(unittest.TestCase):
                 "violations": 0,
                 "unmeasured": 0,
                 "path": str(dst),
+                # The old 3:4 return, kept alive on purpose: this is the case the
+                # outpaint exists to repair.
+                "source": {"width": 896, "height": 1200},
+                "plan": {"added_share": 0.2469},
                 "note": "plan",
             }
 
@@ -1474,9 +1556,9 @@ class TheOutpaintFixesTheLetterboxWithoutLosingTheRun(unittest.TestCase):
                 "note": "the outpainter did not answer",
             }
 
-    def test_a_failed_outpaint_does_NOT_sink_the_stage(self):
+    def _padded(self):
         with TemporaryDirectory() as td:
-            got = E.stage_stylize(
+            return E.stage_stylize(
                 client_photo="c.png",
                 style_ref="s.png",
                 out_path=Path(td) / "styled.png",
@@ -1485,7 +1567,26 @@ class TheOutpaintFixesTheLetterboxWithoutLosingTheRun(unittest.TestCase):
                 pose=_pose_ok,
                 prompt="a look, " + E.NO_BRANDS_CLAUSE,
             )
-        self.assertEqual(got["outcome"], UNMEASURED)
+
+    def test_a_styliser_that_ignored_the_asked_size_reddens_the_stage(self):
+        """MEASURED defect: nobody asked this route for a vertical frame, and the
+        reference arrived 896x1200. Now the size is asked for explicitly, so a 3:4
+        answer is a violation of the request — and it stops the run BEFORE the
+        one paid call, not after it."""
+        got = self._padded()
+        self.assertEqual(got["outcome"], FAIL)
+        named = {c["name"]: c for c in got["checks"]}
+        self.assertEqual(named["styliser returned the plan"]["outcome"], FAIL)
+        self.assertIn("720x1280", named["styliser returned the plan"]["note"])
+        self.assertIn("896x1200", named["styliser returned the plan"]["note"])
+
+    def test_the_repair_still_runs_so_a_padded_reference_is_never_shipped_as_is(self):
+        """The outpaint is not deleted, it is demoted: it only runs on the repair
+        path, and its refusal is visible on its own line."""
+        got = self._padded()
+        named = {c["name"]: c for c in got["checks"]}
+        self.assertEqual(named["margin outpaint"]["outcome"], UNMEASURED)
+        self.assertIn("repairing a padded reference", named["margin outpaint"]["note"])
         self.assertTrue(got["styled"].endswith("_9x16.png"), got["styled"])
 
     def test_the_extend_prompt_forbids_redrawing_the_person(self):
