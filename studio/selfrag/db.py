@@ -47,6 +47,38 @@ CREATE TABLE IF NOT EXISTS replay (
     created_at  TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS replay_record ON replay(record_id);
+-- One complete (asked -> produced) pair, which is the only shape any training
+-- can consume. Written on every uncached run.
+--
+-- This table exists because neither `replay` nor `runs` recorded the INPUT.
+-- `replay` held the prompt and its rating, `runs` held metadata, and between
+-- them there was no way to reconstruct a single "this was asked, this was
+-- produced, it scored 8" row. A system meant to learn from its own output was
+-- recording everything except the half that makes it learnable — the counter
+-- was missing before anyone reached for the knob.
+--
+-- `rating` and `artifact` are filled in LATER, when somebody has looked at what
+-- was generated. NULL rating means nobody has judged it, which is not zero.
+CREATE TABLE IF NOT EXISTS examples (
+    run_id        TEXT PRIMARY KEY,
+    created_at    TEXT NOT NULL,
+    model         TEXT NOT NULL,
+    mode          TEXT NOT NULL,
+    request       TEXT NOT NULL,
+    fields        TEXT NOT NULL DEFAULT '{}',
+    style         TEXT NOT NULL DEFAULT '{}',
+    prompt        TEXT NOT NULL,
+    negative      TEXT NOT NULL DEFAULT '',
+    parameters    TEXT NOT NULL DEFAULT '{}',
+    outcome       TEXT NOT NULL,
+    findings      TEXT NOT NULL DEFAULT '[]',
+    precedents    TEXT NOT NULL DEFAULT '[]',
+    rating        INTEGER,
+    artifact      TEXT NOT NULL DEFAULT '',
+    judged_at     TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS examples_rated ON examples(rating);
+
 CREATE TABLE IF NOT EXISTS runs (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     run_id      TEXT NOT NULL,

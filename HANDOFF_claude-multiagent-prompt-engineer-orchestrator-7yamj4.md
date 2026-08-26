@@ -519,3 +519,111 @@ Do not call `lipsync.pollinations.image` / `images_edit` / `compose`, or
 anything behind `FAL_KEY`, without an explicit instruction for that specific
 run. Tests never reach the network, and that is enforced by the runner, not by
 this paragraph — but nothing enforces it for a human or an agent at a shell.
+
+## Agent: orchestrator, sixth pass — 2026-08-26 — learning, and living model knowledge
+
+Two corrections from the owner, both accepted:
+
+1. **The prompt corpus is auxiliary by design; learning is the must-have.** The
+   system was built corpus-first, with the corpus as the centre.
+2. **The agent must always know current models — which, for what, and why.**
+   The registry was a hand-written snapshot with no way to stay current and no
+   layer for "which model for what / how to fix what".
+
+### The blocker that had to be fixed before any learning is possible
+
+Neither `replay` nor `runs` stored the **input**. `replay` held the prompt and
+its rating, `runs` held metadata, and between them there was no way to
+reconstruct a single "this was asked, this was produced, it scored 8" row. A
+system meant to learn from its own output was recording everything except the
+half that makes it learnable.
+
+New `examples` table: run_id, request, fields, style, prompt, negative,
+parameters, outcome, findings, precedents, rating, artifact. Written on every
+uncached run whatever its outcome — keeping only the good ones is how a
+training set learns to agree with whoever filtered it. `rating` and `artifact`
+are filled in later by `ReplayBuffer.judge_run`, because a pair is evidence of
+what the agent did, and only a look at the result makes it evidence of quality.
+
+### studio/selfrag/learn.py — four kinds of "the agent learns", honestly tiered
+
+    1. FEEDBACK WEIGHTING   live already; works from the first rating
+    2. MEASURED EFFECTS     implemented; honest from a few dozen rated runs
+    3. SUPERVISED TUNING    export_pairs() writes the file; needs GPU + labels
+    4. SELF-RAG PROPER      reflection tokens; furthest away
+
+`effects()` reports which choices went with a better rating, as counts and
+differences a person can argue with. Deliberately NOT a learned model: at a few
+hundred rows a learned re-ranker fits the noise, and fits it invisibly — nobody
+can look at its weights and say "that one is wrong". Guards: `MIN_PER_ARM` (8)
+per side or the comparison is skipped rather than reported thin, and
+`TRUSTWORTHY_ROWS` (100) below which the whole report is labelled a set of
+directions to investigate rather than findings to retune from.
+
+`preference_pairs()` builds (chosen, rejected) over the SAME request at a
+margin, for later preference tuning. It reports `could not measure` when every
+question was asked once — a corpus of unique questions contains no preferences.
+
+**Current state: 0 rated rows.** Everything above is plumbing until somebody
+generates and rates. That is the same E2E step already blocked on a paid call.
+
+**Licence, before anyone trains on the corpus.** Training on
+`gallery_prompts.jsonl` is training on a third party's commercial catalogue.
+This repository's own LICENCE names "training data for a machine learning
+model" as a prohibited use of ITS material; the same consideration applies to
+material it does not own. Two trainings worth separating: on corpus TEXT a
+model learns FORM (licence question live); on RATED runs it learns QUALITY
+(that material is ours, and there are zero rows of it).
+
+### studio/selfrag/facts.py — model knowledge that keeps its disagreements
+
+`registry.py` holds ONE answer per attribute because the assembler needs one
+number. `facts.py` holds ALL the answers anybody gave, with URL, tier and date.
+
+The failure it prevents was measured this session. Asked how long one Kling 3.0
+generation can be, sources say **15 s**, **10 s**, and **"3 minutes"** (which
+turns out to mean several renders joined by an Extend feature). A third-party
+summary of those same sources confidently reported **"up to 5 minutes in a
+single generation"** — a number none of them gave. Flattening a pile of
+secondary sources into one sentence invents an answer nobody published.
+
+So contradiction is a first-class outcome: `claims()` returns `fail` and both
+sides when sources disagree. It never votes, never averages, never picks the
+newest.
+
+Tiers: `vendor` > `paper` > `benchmark` > `blog`. **A fact carried only by blog
+tier stays unestablished however many blogs repeat it** — ten blogs quoting
+each other are one source, and a blog states a number without stating how it
+was obtained, so a reader cannot tell a measurement from a guess.
+
+`studio/knowledge/model_facts.jsonl`: 33 seed facts over 8 models. Its own
+audit reads **fail — 27 blog, 6 paper, 3 contested**, and that is the correct
+description of the evidence, not a defect in the file.
+
+Contested today: `kling-3.0.max_seconds`, `runway-gen-4.5.max_resolution`,
+`seedance-2.0.max_seconds`.
+
+A modelling bug found and fixed while building it: `failure_mode` and
+`metric_blind_spot` were reported as contradictions when several were recorded.
+A model has many failure modes and one maximum duration; `MULTI_VALUED` now
+separates a list from a dispute. Before the fix, 7 attributes read as contested
+and 4 of them were merely lists.
+
+### On the proposal to scrape benchmark and troubleshooting blogs on a schedule
+
+Taken up in substance — the fact base is exactly that layer, and the seed rows
+include the Fix Ladder material, the artifact taxonomy and the metric blind
+spots. Not taken up in method: a scheduled scrape of a dozen commercial blogs
+would multiply the volume of blog-tier claims without moving a single fact
+above blog tier, and this session already measured what that produces. The
+thing that promotes a card is **opening the vendor's own document**, and that
+needs egress this environment refuses. Scraping those sites also raises the
+same licence question the gallery corpus raised.
+
+New CLI: `python -m studio.selfrag facts [--model X]` and `learn [--export F]`.
+
+### Numbers
+
+`bash scripts/check` — green, exit 0. Studio suite **254 passed, 2 skipped**;
+104 selfrag tests. Retrieval eval unchanged: fixture 1.0/0.8333/3-of-3, real
+corpus 0.95/0.74/6-of-6.

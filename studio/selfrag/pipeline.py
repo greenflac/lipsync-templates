@@ -60,6 +60,18 @@ from studio.style import (
 
 __all__ = ["DEFAULTS", "PromptEngineer", "PromptRequest", "spec_from_text"]
 
+
+def _style_fields(style: StyleSpec) -> dict:
+    """The StyleSpec as plain data, for storage and for feature extraction."""
+    return {
+        "palette": list(style.palette),
+        "light": style.light,
+        "texture": style.texture,
+        "mood": style.mood,
+        "setting": style.setting,
+    }
+
+
 # Values used when the user's text commits to nothing for a field. They are
 # named here rather than buried at the call site because a default that fills
 # a field the user never mentioned is a claim about their intent, and the
@@ -450,6 +462,10 @@ class PromptEngineer:
         # failed draft is cached too — recomputing a known-bad answer is still
         # a waste — but it is cached AS a failure, outcome and all.
         self.cache.put(request, payload)
+        # The training pair. Written whatever the outcome: a refused draft is
+        # as informative as an accepted one, and keeping only the good ones is
+        # how a training set learns to agree with whoever filtered it.
+        self.store_example(request, current, payload)
         self.journal.append(
             RunRecord(
                 run_id=run_id,
@@ -482,6 +498,33 @@ class PromptEngineer:
         import asyncio
 
         return await asyncio.to_thread(self.write, request)
+
+    def store_example(self, request: PromptRequest, spec: GenSpec, payload: dict) -> None:
+        """Record one (asked -> produced) pair for later training.
+
+        `rating` and `artifact` stay empty until somebody has looked at what the
+        prompt generated. That is deliberate: the pair is evidence of what the
+        agent did, and only a look at the result turns it into evidence of
+        whether it was any good.
+        """
+        self.replay.remember(
+            run_id=str(payload.get("run_id") or ""),
+            model=spec.model,
+            mode=spec.mode,
+            request=request.text,
+            fields={
+                name: getattr(request, name)
+                for name in ("subject", "action", "camera", "motion", "audio")
+                if getattr(request, name)
+            },
+            style=_style_fields(spec.style),
+            prompt=str(payload.get("prompt") or ""),
+            negative=str(payload.get("negative_prompt") or ""),
+            parameters=dict(payload.get("parameters") or {}),
+            outcome=str(payload.get("outcome") or UNMEASURED),
+            findings=[f.get("rule", "") for f in (payload.get("findings") or [])],
+            precedents=[e.get("record_id", "") for e in (payload.get("examples") or [])],
+        )
 
     # ------------------------------------------------------------ feedback
 

@@ -36,6 +36,9 @@ __all__ = [
     "ReplayBuffer",
 ]
 
+import json
+from typing import Any, Mapping, Sequence
+
 # The furthest feedback can move one record's ranking weight. CHOSEN, and
 # bounded on purpose: a record at the floor is demoted, not deleted, because a
 # deletion is a decision no automatic signal here is good enough to make.
@@ -128,6 +131,128 @@ class ReplayBuffer:
             "unmeasured": 0,
             "note": f"recorded {record_id} -> {artifact}",
         }
+
+    def remember(
+        self,
+        *,
+        run_id: str,
+        model: str,
+        mode: str,
+        request: str,
+        fields: Mapping[str, Any],
+        style: Mapping[str, Any],
+        prompt: str,
+        negative: str = "",
+        parameters: Mapping[str, Any] | None = None,
+        outcome: str = UNMEASURED,
+        findings: Sequence[str] = (),
+        precedents: Sequence[str] = (),
+    ) -> None:
+        """Store one (asked -> produced) pair. Unrated until somebody looks."""
+        if not run_id:
+            return
+        with self._lock, self._conn:
+            self._conn.execute(
+                "INSERT OR REPLACE INTO examples(run_id, created_at, model, mode, request,"
+                " fields, style, prompt, negative, parameters, outcome, findings,"
+                " precedents, rating, artifact, judged_at)"
+                " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,"
+                " (SELECT rating FROM examples WHERE run_id = ?),"
+                " COALESCE((SELECT artifact FROM examples WHERE run_id = ?), ''),"
+                " COALESCE((SELECT judged_at FROM examples WHERE run_id = ?), ''))",
+                (
+                    run_id,
+                    datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                    model,
+                    mode,
+                    request,
+                    json.dumps(dict(fields), ensure_ascii=False),
+                    json.dumps(dict(style), ensure_ascii=False),
+                    prompt,
+                    negative,
+                    json.dumps(dict(parameters or {}), ensure_ascii=False, default=str),
+                    outcome,
+                    json.dumps(list(findings)),
+                    json.dumps(list(precedents)),
+                    run_id,
+                    run_id,
+                    run_id,
+                ),
+            )
+
+    def judge_run(self, *, run_id: str, rating: int, artifact: str = "", note: str = "") -> dict:
+        """Attach a rating to a stored pair, turning it into a training row.
+
+        Three outcomes. An unknown `run_id` is `could not measure`, not a
+        failure: the rating is real, the run it names is simply not here, and
+        silently discarding it would lose the one scarce thing in this system.
+        """
+        if not RATING_MIN <= rating <= RATING_MAX:
+            return {
+                "outcome": FAIL,
+                "checked": 1,
+                "violations": 1,
+                "unmeasured": 0,
+                "note": f"rating {rating} is outside {RATING_MIN}..{RATING_MAX}",
+            }
+        with self._lock, self._conn:
+            row = self._conn.execute(
+                "SELECT prompt FROM examples WHERE run_id = ?", (run_id,)
+            ).fetchone()
+            if row is None:
+                return {
+                    "outcome": UNMEASURED,
+                    "checked": 0,
+                    "violations": 0,
+                    "unmeasured": 1,
+                    "note": f"no stored run {run_id!r}: the rating was not lost, it was not filed",
+                }
+            self._conn.execute(
+                "UPDATE examples SET rating = ?, artifact = ?, judged_at = ? WHERE run_id = ?",
+                (
+                    rating,
+                    artifact,
+                    datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                    run_id,
+                ),
+            )
+        if not artifact:
+            return {
+                "outcome": UNMEASURED,
+                "checked": 1,
+                "violations": 0,
+                "unmeasured": 1,
+                "note": (
+                    "rated, but with no artifact path: nobody can open what this "
+                    "produced, so the rating is a claim rather than an observation"
+                ),
+            }
+        return {
+            "outcome": PASS,
+            "checked": 1,
+            "violations": 0,
+            "unmeasured": 0,
+            "note": f"run {run_id} rated {rating}, artifact {artifact}",
+        }
+
+    def training_rows(self, *, rated_only: bool = True) -> list[dict]:
+        """Every stored pair, newest last. The raw material for any training."""
+        clause = " WHERE rating IS NOT NULL" if rated_only else ""
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT run_id, created_at, model, mode, request, fields, style,"
+                " prompt, negative, parameters, outcome, findings, precedents,"
+                f" rating, artifact FROM examples{clause} ORDER BY created_at, run_id"
+            ).fetchall()
+        out: list[dict] = []
+        for row in rows:
+            item = dict(row)
+            for key in ("fields", "style", "parameters", "findings", "precedents"):
+                item[key] = json.loads(
+                    item[key] or ("[]" if key in ("findings", "precedents") else "{}")
+                )
+            out.append(item)
+        return out
 
     def tally(self) -> dict[str, tuple[int, int, int]]:
         """Per record id: (good reports, bad reports, reports with no rating)."""

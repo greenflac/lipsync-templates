@@ -23,6 +23,8 @@ from typing import Sequence
 from lipsync.fork_identity import FAIL, PASS, UNMEASURED
 from studio.selfrag.corpus import load_corpus
 from studio.selfrag.evaluate import DEMO_CORPUS_PATH, evaluate, load_gold
+from studio.selfrag.facts import FactStore
+from studio.selfrag.learn import effects, export_pairs, render as render_effects
 from studio.selfrag.monitor import Journal
 from studio.selfrag.pipeline import PromptEngineer, PromptRequest
 from studio.selfrag.registry import MODEL_CARDS, availability
@@ -174,6 +176,49 @@ def cmd_cards(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_facts(args: argparse.Namespace) -> int:
+    store = FactStore()
+    if args.model:
+        attributes = store.attributes(args.model) + store.attributes("*")
+        if not attributes:
+            print(f"nothing recorded about {args.model!r}. Known: {', '.join(store.models())}")
+            return 2
+        worst = 0
+        for attribute in sorted(set(attributes)):
+            for owner in (args.model, "*"):
+                claim = store.claims(owner, attribute)
+                if claim["outcome"] == UNMEASURED and not claim["claims"]:
+                    continue
+                print(f"{owner}.{attribute}  [{claim['outcome']}]")
+                for row in claim["claims"]:
+                    print(f"    {row['value']}")
+                    for src in row["sources"]:
+                        age = f", {src['age_days']}d old" if src["age_days"] is not None else ""
+                        print(f"      {src['tier']:<10} {src['url']}{age}")
+                worst = max(worst, EXIT.get(claim["outcome"], 2))
+        return worst
+    report = store.audit()
+    print(f"facts:     {report['checked']}")
+    print(f"contested: {report.get('contested') or 'none'}")
+    return _exit(report)
+
+
+def cmd_learn(args: argparse.Namespace) -> int:
+    buffer = ReplayBuffer(path=args.state)
+    rows = buffer.training_rows(rated_only=False)
+    if args.export:
+        result = export_pairs(rows, args.export)
+        buffer.close()
+        return _exit(result)
+    report = effects(rows)
+    buffer.close()
+    if args.json:
+        print(json.dumps(report, indent=2, default=str))
+        return EXIT.get(report["outcome"], 2)
+    print(render_effects(report))
+    return EXIT.get(report["outcome"], 2)
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="python -m studio.selfrag")
     parser.add_argument("--state", default=None, help="sqlite state file")
@@ -228,6 +273,20 @@ def build_parser() -> argparse.ArgumentParser:
 
     cards = subs.add_parser("cards", help="print the model registry")
     cards.set_defaults(func=cmd_cards)
+
+    facts = subs.add_parser(
+        "facts", help="what is known about a model, who said it, and where they disagree"
+    )
+    facts.add_argument("--model", default=None, help="omit to audit the whole fact base")
+    facts.set_defaults(func=cmd_facts)
+
+    learn = subs.add_parser(
+        "learn", help="what the agent's own rated output says about its choices"
+    )
+    learn.add_argument(
+        "--export", default=None, help="write rated (asked -> produced) pairs to this .jsonl"
+    )
+    learn.set_defaults(func=cmd_learn)
     return parser
 
 
