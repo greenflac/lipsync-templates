@@ -79,6 +79,12 @@ VENDOR_SOURCES: dict[str, tuple[str, ...]] = {
         "ir.kuaishou.com",
     ),
     "flux": ("bfl.ai", "docs.bfl.ai", "api.bfl.ai", "blackforestlabs.ai"),
+    # Two keys, and the longer one wins by the longest-match rule: `runway-gen`
+    # keeps its own entry so a later split stays possible, while `runway` covers
+    # the models that are not Gen-N at all — `aleph2` edits a video, `act_two`
+    # transfers a performance, and neither is named gen-anything. Without this
+    # they classified as `blog` on Runway's own documentation host.
+    "runway": ("runwayml.com", "help.runwayml.com", "docs.dev.runwayml.com"),
     "runway-gen": ("runwayml.com", "help.runwayml.com", "docs.dev.runwayml.com"),
     "seedance": ("docs.byteplus.com", "byteplus.com", "seed.bytedance.com"),
     "omnihuman": ("docs.byteplus.com", "byteplus.com", "seed.bytedance.com"),

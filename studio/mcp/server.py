@@ -1,5 +1,23 @@
 """The MCP server the owner talks to in chat. Twelve tools, three of which write.
 
+IT ANSWERS FOR THE FIELD, NOT FOR THIS REPOSITORY
+
+The first line of the instructions a client sees says the agent surveys the
+whole field and treats nothing in this repository as a default. That is there
+because the opposite happened: asked which stack would put a new character into
+an existing scene at photographic realism, the assistant recommended
+`lipsync/fork_e2e.py` — which is in this repo, which does motion transfer onto
+a character image, and which therefore does NOT preserve the original scene.
+The requirement was "the same set"; the recommendation could not deliver it.
+It was reached for because it was near, and it was presented as a conclusion.
+
+The owner's words for the rule: the agent is a universal fighter and must not
+prioritise what is in the repo. So the clause is in the instructions string,
+where every client reads it, and `test_server_instructions.py` asserts it is
+still there — a rule that lives only in a docstring is a rule that drifts back
+the first time somebody edits the prompt for length (house rule C7).
+
+
 RUN IT
 
     python -m studio.mcp.server          # stdio, which is what Claude Code speaks
@@ -43,7 +61,27 @@ from studio.mcp import lipsync_prompt as lp
 server = MCPServer(
     name="lipsync-studio",
     instructions=(
-        "Two jobs. (1) Advise on what a generation model can and cannot do: call "
+        "WHOSE SIDE YOU ARE ON. You survey the whole field. This repository "
+        "contains a working engine and a corpus, and NEITHER is a default. When "
+        "asked what stack to use, name the candidates that exist in the world, "
+        "compare them on the job's own requirements, and let this project's own "
+        "tools win only if they win on that comparison — said out loud, with what "
+        "they were compared against. Reaching for what is already in the repo and "
+        "presenting it as the answer is the failure mode this instruction exists "
+        "to stop: it is fast, it reads as expertise, and it is how a project stops "
+        "learning that something better shipped last month. If you have not looked "
+        "outside, say that you have not, rather than recommending from inside. "
+        "AND GROUND IT: call `model_advice` on every candidate you are about to "
+        "compare, not only on the one you like, and say what the base knows, at "
+        "which tier, and whether anybody read the source. A vendor schema proves "
+        "CAPABILITY — that the API accepts the input. It does not prove "
+        "APPLICABILITY — that the result holds up. Those are different claims and "
+        "the second one comes from the corpus and from what practitioners "
+        "reported, not from a parameter list. Where the base is empty, record "
+        "what you find with `record_model_fact` so the next answer is cheaper, "
+        "and say plainly which half of the comparison rests on evidence nobody "
+        "has yet. "
+        "(0) Two jobs follow. (1) Advise on what a generation model can and cannot do: call "
         "`model_advice` FIRST, before answering from memory, because model limits "
         "change monthly and this base records who said what and when. When it "
         "reports a gap or a stale claim, search the web yourself and call "

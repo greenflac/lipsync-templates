@@ -609,6 +609,134 @@ READINGS: tuple[dict[str, object], ...] = (
         ),
         "read_directly": True,
     },
+    # -- putting a NEW character into an EXISTING scene ---------------------
+    #
+    # Recorded because the base had nothing on it and the assistant answered
+    # from what was lying in the repository instead. Three architectures, and
+    # the difference between them decides the job: only the first keeps the
+    # original footage.
+    {
+        "model": "runway-aleph2",
+        "attribute": "architecture",
+        "value": "edits the input video, so the original scene survives",
+        "source_url": "https://docs.dev.runwayml.com/openapi.json",
+        "tier": "vendor",
+        "stated_on": READ_ON,
+        "note": (
+            "READ (OpenAPI): POST /v1/video_to_video, model `aleph2`, field "
+            "`videoUri` — 'The input video to edit. Must be 30 seconds or shorter.' "
+            "Plus `keyframes` (up to 5 timed guidance images) and `promptText`. "
+            "This is the family that preserves a real plate: the real lighting, "
+            "grain and camera motion stay because the footage stays."
+        ),
+        "read_directly": True,
+    },
+    {
+        "model": "runway-aleph2",
+        "attribute": "output_formats",
+        "value": "mp4, prores (up to 4444 XQ), png_sequence, sdr_rec709_10bit",
+        "source_url": "https://docs.dev.runwayml.com/openapi.json",
+        "tier": "vendor",
+        "stated_on": READ_ON,
+        "note": (
+            "READ (OpenAPI): `outputFormat` and `proresProfile` enums. The only "
+            "candidate in this comparison that delivers a finishing-grade "
+            "container rather than an H.264 preview."
+        ),
+        "read_directly": True,
+    },
+    {
+        "model": "runway-act-two",
+        "attribute": "architecture",
+        "value": "performance transfer ONTO a character, so the scene comes from the character",
+        "source_url": "https://docs.dev.runwayml.com/openapi.json",
+        "tier": "vendor",
+        "stated_on": READ_ON,
+        "note": (
+            "READ (OpenAPI): POST /v1/character_performance, model `act_two`. "
+            "`character` — 'The character to control. You can either provide a "
+            "video or an image. A visually recognizable face must be present.' "
+            "`reference` — 'The reference video containing the performance to "
+            "apply to the character.' Also `bodyControl` and `expressionIntensity` "
+            "1-5. So the reference supplies MOVEMENT, not the set. Using it to "
+            "keep an existing room is a category error."
+        ),
+        "read_directly": True,
+    },
+    {
+        "model": "runway-act-two",
+        "attribute": "max_resolution",
+        "value": "720p",
+        "source_url": "https://docs.dev.runwayml.com/openapi.json",
+        "tier": "vendor",
+        "stated_on": READ_ON,
+        "note": (
+            "READ (OpenAPI): ratio enum 1280:720, 720:1280, 960:960, 1104:832, "
+            "832:1104, 1584:672. Nothing above 720p, in a document that offers "
+            "3840:2160 to another model."
+        ),
+        "read_directly": True,
+    },
+    {
+        "model": "wan-animate-replace",
+        "attribute": "architecture",
+        "value": "replaces the character in a reference video, keeping the scene",
+        "source_url": "https://fal.ai/models/fal-ai/wan/v2.2-14b/animate/replace/api",
+        "tier": "portal",
+        "stated_on": READ_ON,
+        "note": (
+            "READ: 'Wan-Animate Replace is a model that can integrate animated "
+            "characters into reference videos, replacing the original character "
+            "while preserving the scene's lighting and color tone for seamless "
+            "environmental integration.' Inputs `video_url` and `image_url`, both "
+            "required. Portal tier and not vendor: this is fal running Alibaba's "
+            "model, not Alibaba's own page."
+        ),
+        "read_directly": True,
+    },
+    {
+        "model": "wan-animate-replace",
+        "attribute": "max_resolution",
+        "value": "720p",
+        "source_url": "https://fal.ai/models/fal-ai/wan/v2.2-14b/animate/replace/api",
+        "tier": "portal",
+        "stated_on": READ_ON,
+        "note": "READ: resolution enum 480p, 580p, 720p; default 480p.",
+        "read_directly": True,
+    },
+    {
+        "model": "wan-animate-replace",
+        "attribute": "max_frames",
+        "value": "161",
+        "source_url": "https://fal.ai/models/fal-ai/wan/v2.2-14b/animate/replace/api",
+        "tier": "portal",
+        "stated_on": READ_ON,
+        "note": (
+            "READ: `num_frames` 17 to 161 inclusive, default 81; "
+            "`frames_per_second` 4 to 60. So the ceiling is a FRAME count, not a "
+            "duration: 161 frames is 5.4 s at 30 fps and 10.1 s at 16 fps. A "
+            "10-second plate at 30 fps needs chunking."
+        ),
+        "read_directly": True,
+    },
+    {
+        "model": "kling-3.0",
+        "attribute": "motion_control_architecture",
+        "value": "motion transfer onto a character image, not an edit of the reference",
+        "source_url": "https://fal.ai/models/fal-ai/kling-video/v2.6/standard/motion-control/api",
+        "tier": "portal",
+        "stated_on": READ_ON,
+        "note": (
+            "READ: the endpoint description says it applies 'the motion from a reference "
+            "video to any character image. Cost-effective mode for motion "
+            "transfer, perfect for portraits and simple animations.' Duration enum "
+            "3-13. Same family as act_two: the reference gives movement, the "
+            "character gives the scene. Recorded because this repository's own "
+            "engine calls this endpoint and it was recommended for a job that "
+            "required keeping an existing room, which it cannot do."
+        ),
+        "read_directly": True,
+    },
     # -- opened, and the reading could NOT settle it: three outcomes --------
     {
         "model": "*",
