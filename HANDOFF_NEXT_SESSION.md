@@ -76,3 +76,82 @@ a skip is not a pass and it is named here rather than after being asked.
   claims 3.11+ — the floor is stated twice and the two disagree.
 - `docs/course/` is deliberately NOT in any repository and is in .gitignore by
   name. It was handed over as files. Do not commit it back.
+
+## 6. Final audit: 39 checked, 14 violations, 3 unmeasurable
+
+Run by an agent that took no part in the work, on throwaway copies, with
+every substitution grepped back off disk before the run. It reproduced the
+headline figures exactly (`Ran 1000 tests in 116.970s / OK (skipped=12)`,
+`SCRIPTS_CHECK_EXIT=0`, 39 source files clean), confirmed the gate was
+committed red and never edited by the writers who greened it, and found no
+secret in any of the 630 objects in the repository's history.
+
+Four findings are new. They are listed first because nothing else in this
+handoff is unknown.
+
+### 6.1 A repair that hides a breakage — fix this first
+
+`fork_e2e.similarity_source()` names the instrument by whether it *imports*,
+not by which branch actually ran. The auditor planted a `creative_eval` that
+imports and then throws: the report named
+`creative_eval.style.similarity (external, shipped)` while the number came
+from `palette_similarity`, the coarser fallback — and the exception text
+(`model weights corrupt: checksum mismatch on style.bin`) was discarded whole
+by two bare `except Exception`. The tests cover "absent" and "present"; they
+do not cover "present and broken", which is the case that ships.
+
+This quietly corrupts every future style measurement, and it is the exact
+mechanism rule S13 exists for: the repair masks the breakage, and when the
+repair itself fails the defect reaches the client.
+
+### 6.2 The truncation sweep was never run across the repository
+
+`fork_e2e.py` is clean. The same form is alive in 16 places elsewhere:
+`fork_intake.py` x6, `fork_video.py` x5, `fork_looper.py` x3,
+`fork_aesthetic.py` x1. Rule I7 asks for the grep before the fix; the fix was
+made in one file and the grep was not done. Do the sweep, then fix, and put
+the count in the commit.
+
+### 6.3 A duplicate introduced by this session's own work
+
+`PROVENANCE_MARKS` is now declared twice — `test_fork_finish.py:137` and
+`test_product_shape.py:282` — with two independent block extractors beside it
+(`provenance_block` by regex, `_provenance_block` by lineno). Add a fourth
+mark to one and the other goes blind. This is the rule the session spent the
+day enforcing, broken while enforcing it.
+
+### 6.4 CI has never run on this branch
+
+`.github/workflows/ci.yml` triggers on `push: branches: [main]` and on
+pull_request. This branch is pushed and has no PR, so not one CI run exists:
+every green figure here comes from one developer machine. K7 asks that the
+local check and CI be one source of truth; right now only half of it is
+observable.
+
+### 6.5 Two more, measured rather than asserted
+
+- The provenance gate's blind spot has a number: 176 top-level constants, 46
+  demanded, 42 passed into a call and therefore not demanded, **37 of those
+  unmarked** — `SHOULDERS_BAND`, `ANKLES_BAND`, `CARD_TOL_MIN/MAX`,
+  `PROBE_TIMEOUT_S`, `NAME_DIGITS` and the rest.
+- `test_fork_identity.py:654` carries a guard that says "A skip is not a
+  pass" — and it sits *inside* the class the skip disables, so the same
+  condition switches off both the tests and their watchman. Twelve skips
+  currently pass through `scripts/check` with exit 0.
+
+### 6.6 What the audit confirmed as sound
+
+Nine untouched thresholds were mutated both ways, 18 runs: all nine clamped
+on both sides. Forty-nine provenance marks were stripped one at a time: 47
+reddened on exactly their own constant, the other two being private caches the
+gate does not demand. Three commit bodies were checked against their diffs and
+matched. Nineteen commits, zero non-conventional. No source-text test remains.
+
+### 6.7 Drift, named rather than hidden
+
+The branch is called `fix/exact-9x16` and its last three commits have nothing
+to do with the frame ratio: they close an external audit and mark provenance
+on 39 constants across 12 modules. The reason is written down in this file, so
+the drift is explained rather than silent — but a branch named for a frame
+format now carries 463 lines about where constants came from. Worth splitting
+if it ever goes to review as a unit.
