@@ -37,6 +37,7 @@ from studio.style import (
 )
 
 __all__ = [
+    "DEFAULT_EXCLUSION_REASONS",
     "DEFAULT_K",
     "DEDUP_PREFIX",
     "DENSE_FLOOR",
@@ -50,6 +51,7 @@ __all__ = [
     "PROVENANCE_WEIGHT",
     "RECALL_FLOOR",
     "RRF_K",
+    "WORDING_KINDS",
     "KnowledgeIndex",
     "build_index",
     "dense_probe",
@@ -85,6 +87,31 @@ PROVENANCE_GALLERY = "gallery"
 # it: the row's own statement of where it came from is the evidence, and a
 # name we invent here would be a second, divergent story.
 PROVENANCE_THIRD_PARTY = "third_party_gallery"
+
+# Provenances the default corpus deliberately leaves out, and the reason each
+# is out. An exclusion that lives only in a default argument is indistinguishable
+# from a source that broke, so the reason travels in the build report.
+# CHOSEN by the owner, 2026-08-26.
+DEFAULT_EXCLUSION_REASONS: dict[str, str] = {
+    PROVENANCE_OURS: (
+        "our 288 shipped prompts were written for several unrelated projects "
+        "and tasks; merged into one index they teach the average of jobs that "
+        "share nothing (owner decision 2026-08-26). Pass our_prompts= to "
+        "build_index to put them back for a deliberate experiment."
+    ),
+}
+
+# Kinds whose text is a prompt as somebody actually wrote it. MEASURED on the
+# 522 extracted cards in knowledge/PROVENANCE.md: a card holds colours,
+# saturation, texture, value_key, grain residual and a wordless skeleton
+# (chars/words/clauses counts) — not one sentence typed at a generator. A style
+# card therefore teaches what a picture looks like, never how a prompt is said.
+WORDING_KINDS: frozenset[str] = frozenset({KIND_OUR_PROMPT, KIND_GALLERY_PROMPT})
+# DEBT(2026-08-26): mutated both ways — adding KIND_STYLE_CARD and emptying the
+# set — and the corpus gate stayed green either way, because it only reads the
+# count and the count is 0 in both readings today. The claim that a card is not
+# a wording rests on reading the 522 files, not on a test. It becomes testable
+# the moment the gallery harvest lands and the two readings differ.
 
 # CHOSEN by us as starting values (not measured): core is the source of truth,
 # our own shipped prompts outrank harvested style cards, and anything scraped
@@ -241,17 +268,38 @@ CHANNEL_WEIGHT: dict[str, float] = {
 # "paper" three times.
 PHRASE_MAX = 3
 
-# MEASURED on the 40-record gold set in knowledge/eval_set.jsonl, 822 entries,
-# 2026-08-25, k=5:
-#   bm25 + phrase + structural + dense  recall@5 0.9737  precision@5 0.7237  PASS
-#   bm25 + phrase + structural          recall@5 0.8947  precision@5 0.6711  PASS
-#   bm25 + phrase                       recall@5 0.8947  precision@5 0.7500  PASS
-#   bm25 only                           recall@5 0.8289  precision@5 0.7039  FAIL
-# Two readings to keep: the fusion is worth 0.14 recall over BM25 alone, and
-# the structural channel currently buys no recall at all while costing 0.079
-# precision. It is kept because it is the only channel that can rank a query
-# carrying no corpus vocabulary at all, but that case does not occur in this
-# gold set — so the claim is unproven, not proven.
+# MEASURED ON CORPUS: 534 entries
+# MEASURED 2026-08-26 on the 40-record gold set in knowledge/eval_set.jsonl
+# (38 of the 40 carry a `must_retrieve` and are scored), k=5, dense channel on
+# all-MiniLM-L6-v2. The corpus is the default one: 12 core rules + 522 style
+# cards, our 288 prompts excluded (DEFAULT_EXCLUSION_REASONS), no gallery
+# harvest on disk yet.
+#   bm25 + phrase + structural + dense  recall@5 0.4474  precision@5 0.4737  FAIL
+#   bm25 + phrase + structural          recall@5 0.4474  precision@5 0.4737  FAIL
+#   bm25 + phrase                       recall@5 0.4211  precision@5 0.4474  FAIL
+#   bm25 only                           recall@5 0.4342  precision@5 0.4474  FAIL
+# Every configuration FAILs, and it is the controls that fail, not the average:
+# negative controls 2/2 ok, positive controls 0/2. Recall is below the 0.60
+# floor in all four.
+#
+# The previous block recorded 0.9737 / 0.8947 / 0.8947 / 0.8289 on 822 entries
+# (2026-08-25). That corpus was these 534 plus our 288 prompts. Re-running the
+# same four configurations on 822 entries today reproduced those four numbers
+# exactly, so the drop below is a change of corpus and not of instrument.
+#
+# Three readings to keep, all uncomfortable:
+#  - the gold set was written against a corpus that contained our prompts; most
+#    of its `must_retrieve` phrases were only ever present in them. Removing
+#    them removed the answers, not merely the noise. The gold set has to be
+#    rewritten against the corpus the writer will actually read from, and until
+#    it is, this number measures the mismatch rather than the retriever.
+#  - the fusion no longer beats BM25 alone (0.4474 vs 0.4342 — one record).
+#    The 0.14 recall the hybrid was justified by was earned on prose prompts;
+#    over 522 six-field appearance sentences there is almost no prose left for
+#    phrase or dense channels to work on.
+#  - the corpus holds zero prompt wordings (build_report["wording_examples"]),
+#    which is why build_report raises `unmeasured`. A retrieval score over a
+#    corpus that demonstrates none of the output is not a quality signal.
 
 # Admission floors. An entry only competes if some channel has real evidence
 # for it; without a floor the index can never answer "nothing here", and a
@@ -779,7 +827,7 @@ def build_index(
     db_path: str | Path = ":memory:",
     *,
     core_rules: Path = CORE_RULES_PATH,
-    our_prompts: Path = OUR_PROMPTS_DIR,
+    our_prompts: Path | None = None,
     reference_cards: Path = REFERENCE_CARDS_DIR,
     gallery_prompts: Path = GALLERY_PROMPTS_PATH,
     dense: bool | None = None,
@@ -787,14 +835,26 @@ def build_index(
     """Build the index from every source that is present.
 
     A missing source is reported, never fatal: the index must come up without
-    the gallery harvest, because that file is produced by another agent.
+    the gallery harvest, because that file is produced by another agent. A
+    deliberately excluded source is reported separately, under `excluded`: a
+    source that vanishes without a record comes back by accident later.
+
+    :param our_prompts: our own fixture prompts. `None` — the default — keeps
+        them out of the corpus for the reason in DEFAULT_EXCLUSION_REASONS;
+        pass a directory to include them for a deliberate experiment.
+    :returns: the index, with `build_report` carrying `per_source`,
+        `excluded` and `wording_examples`.
 
     >>> index = build_index(core_rules=CORE_RULES_PATH,
-    ...                     our_prompts=Path("/nowhere"),
     ...                     reference_cards=Path("/nowhere"),
     ...                     gallery_prompts=Path("/nowhere"))
     >>> index.build_report["outcome"], index.counts()["core"] > 0
     ('pass', True)
+    >>> index.build_report["excluded"] == {PROVENANCE_OURS:
+    ...     DEFAULT_EXCLUSION_REASONS[PROVENANCE_OURS]}
+    True
+    >>> index.build_report["wording_examples"]
+    0
     """
     if db_path != ":memory:":
         Path(db_path).parent.mkdir(parents=True, exist_ok=True)
@@ -805,18 +865,29 @@ def build_index(
     conn.execute("DELETE FROM vectors")
     index = KnowledgeIndex(conn)
 
-    loaded: dict[str, int] = {}
-    missing: list[str] = []
-    for name, records, where in (
+    sources: list[tuple[str, list[dict], Path]] = [
         ("core", load_core_rules(core_rules), core_rules),
-        ("ours", load_our_prompts(our_prompts), our_prompts),
-        ("reference_card", load_style_cards(reference_cards), reference_cards),
-        ("gallery", load_gallery_prompts(gallery_prompts), gallery_prompts),
-    ):
+    ]
+    if our_prompts is not None:
+        sources.append(("ours", load_our_prompts(our_prompts), our_prompts))
+    sources.append(("reference_card", load_style_cards(reference_cards), reference_cards))
+    sources.append(("gallery", load_gallery_prompts(gallery_prompts), gallery_prompts))
+
+    # Every source keeps a key whether or not it ran, so "excluded" and
+    # "loaded nothing" stay two different readings of per_source.
+    loaded: dict[str, int] = {"core": 0, "ours": 0, "reference_card": 0, "gallery": 0}
+    missing: list[str] = []
+    for name, records, where in sources:
         loaded[name] = index.add(records)
         if not records:
             missing.append(f"{name}({where})")
     index.reload()
+
+    # Derived from what was actually skipped, not from what was intended: the
+    # report has to agree with the corpus even when a caller overrides.
+    excluded: dict[str, str] = {}
+    if our_prompts is None:
+        excluded[PROVENANCE_OURS] = DEFAULT_EXCLUSION_REASONS[PROVENANCE_OURS]
 
     if dense is None:
         dense = os.environ.get(DENSE_ENV_FLAG, "") == "1"
@@ -824,6 +895,7 @@ def build_index(
         index.attach_dense()
 
     total = sum(loaded.values())
+    wording_examples = sum(1 for entry in index.entries if entry.kind in WORDING_KINDS)
     if total == 0:
         outcome = UNMEASURED
         note = "no source produced a single entry"
@@ -833,13 +905,33 @@ def build_index(
     else:
         outcome = PASS
         note = "built"
+    if missing:
+        note += f"; sources absent: {', '.join(missing)}"
+    if excluded:
+        note += f"; excluded on purpose: {', '.join(sorted(excluded))}"
+
+    unmeasured = len(missing)
+    if wording_examples == 0:
+        # The writer's entire output is wording. A corpus that demonstrates
+        # none of it has not been measured on the thing that matters, however
+        # many appearance cards it holds, so it may not report a clean count.
+        # `max` rather than `+ 1`: the only wording source is the gallery
+        # harvest, so when that file is absent this is the same fact the
+        # missing-source count already carries, not a second one.
+        # DEBT(2026-08-26): while the harvest is absent that makes the bump
+        # unobservable — removing this line leaves the gate green.
+        unmeasured = max(unmeasured, 1)
+        note += "; no entry carries prompt wording"
+
     index.build_report = _result(
         outcome,
-        note + (f"; sources absent: {', '.join(missing)}" if missing else ""),
+        note,
         checked=total,
         violations=0 if outcome != FAIL else 1,
-        unmeasured=len(missing),
+        unmeasured=unmeasured,
         per_source=loaded,
+        excluded=excluded,
+        wording_examples=wording_examples,
         dense=index.dense_report["outcome"],
         dense_note=index.dense_report["note"],
     )

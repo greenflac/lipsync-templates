@@ -604,9 +604,14 @@ class Mutation(unittest.TestCase):
 class ShippedIndex(unittest.TestCase):
     """The real corpus, if it is on this machine. Absent sources are not a failure."""
 
+    # our_prompts is passed explicitly because build_index stopped loading it by
+    # default on 2026-08-26. The gold set below was written against the corpus
+    # that contained it, so these two tests keep measuring that corpus; nothing
+    # here guards retrieval over the new default one.
     def test_full_build_and_evaluation(self) -> None:
         index = build_index(
             core_rules=KNOWLEDGE_DIR / "core_rules.md",
+            our_prompts=K.OUR_PROMPTS_DIR,
             gallery_prompts=KNOWLEDGE_DIR / "gallery_prompts.jsonl",
         )
         if index.build_report["per_source"]["ours"] == 0:
@@ -623,6 +628,7 @@ class ShippedIndex(unittest.TestCase):
         # test goes quiet, nothing is guarding the fusion.
         index = build_index(
             core_rules=KNOWLEDGE_DIR / "core_rules.md",
+            our_prompts=K.OUR_PROMPTS_DIR,
             gallery_prompts=KNOWLEDGE_DIR / "gallery_prompts.jsonl",
         )
         if index.build_report["per_source"]["ours"] == 0:

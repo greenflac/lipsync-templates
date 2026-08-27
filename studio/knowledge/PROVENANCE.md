@@ -4,15 +4,45 @@ Provenance is data, not documentation: every record carries its own origin
 fields, so anyone who takes the file sees where it came from without reading
 this page. This page explains the basis.
 
+RIGHTS: we hold the right to use the aidsgn.ru gallery cards as training and
+retrieval material for the prompt writer — the owner holds paid access to that
+gallery and confirmed the use on 2026-08-26. The right covers use, not
+redistribution: what is stored here is our own derived measurement of each
+card (see the style cards row below), and every record keeps the origin fields
+that make an exact removal possible if the rights-holder asks for one.
+
 ## Sources
 
-| Source | Records | Origin | Basis |
-|---|---|---|---|
-| `core_rules.md` | — | written by us from the model vendor's published prompt guidance | ours |
-| our prompts | 288 | our own generations, we paid for them | ours |
-| style cards | 522 | derived measurements over a third party's public gallery: palette in our own vocabulary, wordless skeleton, digest, URL | derivative, no wording reproduced |
-| judge verdicts | 528 | our own evaluations | ours |
-| `gallery_prompts.jsonl` | 522 (expected) | prompt wording from the same third-party gallery | owner decision, see DEBT below |
+Two columns, because "in the corpus" and "we have it" are different facts.
+`build_index()` reports the same split under `per_source` and `excluded`.
+
+| Source | Records | In default corpus | Origin | Basis |
+|---|---|---|---|---|
+| `core_rules.md` | 12 | yes | written by us from the model vendor's published prompt guidance | ours |
+| style cards | 522 | yes | derived measurements over a third party's public gallery: palette in our own vocabulary, wordless skeleton, digest, URL | derivative, no wording reproduced |
+| our prompts | 288 | **no** — excluded 2026-08-26 | our own generations, we paid for them | ours |
+| judge verdicts | 528 | no — never indexed | our own evaluations | ours |
+| `gallery_prompts.jsonl` | 522 (expected) | yes, once harvested | prompt wording from the same third-party gallery | owner decision, see DEBT below |
+
+Default corpus today: **534 entries** (12 + 522). The excluded rows are not
+deleted and not lost; `build_index(our_prompts=...)` puts ours back for a
+deliberate experiment, and the exclusion travels in the build report so it
+cannot be mistaken for a source that broke.
+
+## DECISION(2026-08-26): our own 288 prompts are not training material
+
+They were written for several unrelated projects and tasks. Merged into one
+index they teach the writer the average of jobs that share nothing, and the
+retrieval quota cannot separate them because provenance, not subject, is what
+it counts. The owner decided to take them out of the default corpus.
+
+Measured consequence, recorded because it is a cost and not a footnote: on the
+40-record gold set, recall@5 falls from 0.9737 (822 entries, with our prompts)
+to 0.4474 (534 entries, without), and both positive controls stop passing. The
+gold set was written against the larger corpus and most of its expected
+phrases lived only in our prompts, so the number currently measures that
+mismatch rather than the retriever. Numbers and channel breakdown are in the
+measurement block in `knowledge.py`.
 
 ## Format of `gallery_prompts.jsonl`
 

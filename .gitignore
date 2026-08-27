@@ -6,3 +6,8 @@ work/
 # Local state written at runtime, never source.
 *.sqlite3
 studio/uploads/
+
+# The interview course is internal preparation material, not product.
+# It is handed over as files; publication to a repository under review is
+# not reversible, so it is kept out by name rather than by care.
+docs/course/
