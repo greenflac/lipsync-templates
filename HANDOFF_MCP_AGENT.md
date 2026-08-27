@@ -915,3 +915,149 @@ the list can be cut at any group boundary.
    base has no notion of value normalisation and inventing one silently would
    be worse than the contest — but it is the next thing that will annoy a
    reader of `model_advice`.
+
+---
+
+# Session 2026-08-27 (last) — the licence was cleared, so the collectors got built
+
+> «Решили вопросы лицензий с юристом, получили разрешения, юридические риски
+> отсутствуют. За тобой техническая реализация.»
+
+Recorded as `rights: "owner_authorisation_2026-08-27"` on every collected row,
+and in `studio/knowledge/PROVENANCE.md` beside the ToS text it is an exception
+to. The ToS wording is kept deliberately — an authorisation you cannot see the
+shape of is one nobody can check later.
+
+Two collectors were asked for. **One collects; one cannot, and the reason is
+not the licence.** Both answers came from measuring before building.
+
+## Civitai — collecting, 473 pairs on target families
+
+`studio/mcp/civitai.py`, run by `scripts/collect_civitai.py`.
+
+**The plan two sessions carried was aimed at the wrong endpoint.** Measured,
+unauthenticated, all three routes:
+
+| route | meta |
+|---|---|
+| `/api/v1/images` | null on **300 of 300** — also for `?postId=`, `?sort=Newest`, `?sort=Most Reactions` |
+| `/api/v1/models` | `hasMeta` and `hasPositivePrompt` FLAGS, `meta` null on **0 of 1754** |
+| `/api/v1/model-versions/{id}` | populated — **60 of 63** carry a prompt |
+
+So the walk is: list models, take version ids, fetch each version. The listing
+is what makes it affordable — `hasPositivePrompt` says in advance which
+versions are worth a request, and 499 of 2284 were skipped without one.
+
+`civitai-api.prompt_metadata_exposed = "no"` was in the fact base from the
+previous session. It was measured on ONE route and stated about the API, so it
+is withdrawn and replaced by a claim per endpoint. **Worth knowing for next
+time:** `replaces` in a reading only withdraws at the SAME url — correct, since
+a claim is identified by its source — so a correction that moves to a DIFFERENT
+source needs an explicit `WITHDRAWN` entry. This one did.
+
+### Three defects, each found a different way
+
+1. **By looking at the summary.** The first run: 29 pairs, ONE uploader. The
+   listing arrives grouped by model, so any ceiling cuts inside the first one.
+   The walk is now round-robin by (uploader, model) — same set collected, only
+   the order changes. Re-run: 170 pairs, 20 uploaders.
+2. **By looking at the base-model column.** 750 pairs by Most Downloaded gave
+   368 SD 1.5, 127 SDXL — and **zero** rows on any family this project
+   targets. Civitai hosts weights, so our closed API models are barely there.
+   `--base-model "Flux.1 D"` and friends reach the open-weight ones. The filter
+   is CASE-SENSITIVE and an unknown name returns 200 with an empty list, so a
+   typo collects nothing in silence; an empty harvest under a filter now says
+   so itself.
+3. **By looking at one row with eyes (rule П3).** It passed the image ceiling
+   at level 2 and its checkpoint was named "NSFW MASTER". The model's own
+   `nsfw` BOOLEAN is False for it — the signal is `nsfwLevel`, a BITMASK of
+   every rung the model's images span (3 = 1|2, 31 = 1|2|4|8|16). Comparing it
+   as a rating would have let 31 through on the strength of its 1 bit.
+
+   The count of rows from such checkpoints prints on every run;
+   `--safe-models-only` skips them. **90 of 100 candidate versions on a
+   Flux.1 D run.** A count and a switch rather than a quiet default, because
+   the image gate is a question about the data and this is one about the
+   product — the owner's, with the number in front of them.
+
+### The corpus
+
+Not committed; `.gitignore` carries it beside `gallery_prompts.jsonl`. This
+repository is public and its LICENCE clause 2(d) would assert rights over other
+people's prompts. Collecting and using them is covered by the authorisation;
+republishing them under this licence is a separate decision, and **that one is
+still open.**
+
+Provenance is `civitai:<uploader>`, not `civitai`. `MAX_PER_PROVENANCE` admits
+2 records per provenance, so one bucket would cap the whole corpus at two —
+the defect already recorded against the gallery rows, repeated. The platform
+stays recoverable from the prefix, so a removal request naming Civitai matches
+every row with one grep.
+
+## Reddit — built, blocked, and a credential probably will not help
+
+`studio/mcp/reddit.py`. Parsing and credential handling complete and tested;
+**it has collected nothing.** Measured, and the pair of lines is the point:
+
+| endpoint | answer |
+|---|---|
+| `www.reddit.com/api/v1/access_token` | `401 {"message": "Unauthorized", "error": 401}` |
+| `www.reddit.com/r/comfyui/hot.json` | 403, a Reddit web page |
+| `oauth.reddit.com/r/comfyui/hot` | 403, Reddit's **"Blocked"** page — identical with and without an `Authorization` header |
+
+The token host behaves like an API. `oauth.reddit.com`, where every
+authenticated read goes, serves the Blocked page regardless of what
+authorisation is presented: an edge block on this caller, decided before any
+credential is examined.
+
+**So an app id and secret would probably NOT make this work from this
+container.** Strong evidence, not proof — a valid token has never been
+presented, and only that settles it. Recorded as
+`reddit-api.authenticated_read_reachable` so nobody registers an app on the
+strength of the 401 alone.
+
+The egress policy is not the obstacle; it lets reddit.com through. This is
+Reddit's own decision about being read from a datacentre and it is not routed
+around — no proxy, no residential exit, no scraping past the 403.
+
+The live POST path IS verified as far as Reddit allows: a deliberately wrong
+credential reached the token endpoint and came back 401 through this module's
+own error handling, so the request shape, the Basic auth encoding and the
+failure reporting are exercised against the real host. No runner script was
+written — a command whose only possible output today is a 403 is a command
+nobody can check.
+
+Separately still unread: the Data API TERMS live on `www.redditinc.com` and
+`support.reddithelp.com`, both refused by the egress policy. So no rate limit
+in this package is quoted from a page anybody opened; the 100-queries-per-
+minute figure is relayed, marked UNVERIFIED, and the collector's interval is
+chosen to sit under it rather than read from it.
+
+## `fetch()` grew two parameters, deliberately in one place
+
+`headers` and `data`, so an authenticated API is reached THROUGH the one client
+rather than beside it. A second HTTP path would be a second place a policy
+refusal could be swallowed, retried, or fail to reach the allowlist request —
+the bookkeeping only works because there is one door.
+
+It also keeps the error BODY now. That is what distinguished "you are blocked"
+from "your token is wrong" above, which is the difference between a credential
+being worth obtaining and not; discarding it turns a diagnosable refusal into a
+bare number.
+
+## Where this leaves the owner
+
+1. **Publishing the Civitai corpus.** Collecting and using it is covered.
+   Committing it to a public repository whose LICENCE claims rights over "the
+   prompts contained here" is a different act and is not done.
+2. **`--safe-models-only`.** 90 of 100 candidate Flux versions come from
+   checkpoints that publish above PG-13. Every collected IMAGE is PG or PG-13
+   regardless. Your call which matters for this product.
+3. **Reddit.** Either accept that it is unreachable from here and drop it —
+   rule Ц9 wants that stop condition written down — or move the collector
+   somewhere Reddit does not block, in which case the module is ready and only
+   the credential is missing.
+4. Unchanged: `MAX_PER_PROVENANCE = 2` in another module's file; Yandex as a
+   third search backend; **no prompt in this package has been proven by a
+   generation** — and there are now 473 collected prompts with the images they
+   produced, which is the closest this project has come to material for that.
