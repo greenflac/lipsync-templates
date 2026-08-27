@@ -3,3 +3,6 @@ __pycache__/
 .env
 work/
 build/
+
+# Internal, never published: handed to the owner as a file (rule K12).
+docs/MANUAL_ru.md
