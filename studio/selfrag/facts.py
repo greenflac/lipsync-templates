@@ -102,6 +102,7 @@ from lipsync.fork_identity import FAIL, PASS, UNMEASURED
 __all__ = [
     "DEFAULT_FACTS_PATH",
     "BREAKAGE_ATTRIBUTES",
+    "CLASS_SUFFIX",
     "MULTI_VALUED",
     "STALE_AFTER_DAYS",
     "TIERS",
@@ -172,6 +173,12 @@ STALE_AFTER_DAYS = 90
 #: The attribute names that all answer "where does this stop working". Kept as
 #: a named tuple rather than spelled out inside `failure_modes`, so a fourth
 #: word somebody starts harvesting is added in one visible place.
+#: A model id ending in this is a SCOPE, not a model: `*` is the whole field
+#: and `elevenlabs-*` is one vendor's line. Kept as a constant because two
+#: places have to agree on it — the recorder that writes such a row and
+#: `class_claims`, which is the only thing that can find one again.
+CLASS_SUFFIX = "*"
+
 BREAKAGE_ATTRIBUTES: tuple[str, ...] = ("failure_mode", "limitation", "degrades_when")
 
 MULTI_VALUED: frozenset[str] = frozenset(
@@ -463,6 +470,44 @@ class FactStore:
             if m == low and a in BREAKAGE_ATTRIBUTES
             for f in facts
         ]
+
+    def class_claims(self, model: str) -> list[Fact]:
+        """Facts recorded about the CLASS this model belongs to.
+
+        WHY THESE EXIST AND WHY THEY WERE INVISIBLE
+
+        Some findings are not about one model. "FVD barely moves under large
+        temporal corruption" is about the metric; "logos smear when each shot
+        is an independent request" is about the technique. They were recorded
+        with `*` as the model, which is the honest scope — and it meant no
+        query ever returned them, because every query starts with a model
+        name. MEASURED 2026-08-27: 26 such rows sat in the base, reachable by
+        nobody.
+
+        Two scopes are understood, and the narrower one is not a decoration:
+
+        * `*`             — true of the field. Returned for every model.
+        * `<family>-*`    — true of one vendor's line, e.g. `elevenlabs-*`.
+          Returned only for models in that family, because "a voice clone
+          never reproduces the source acoustics" is a claim about ElevenLabs'
+          cloning and saying it about Veo would be a different kind of wrong.
+
+        A class fact is never merged into the per-model answer and never votes
+        in a contradiction. It comes back in its own list, so a reader can see
+        that it was said about the class rather than measured on this model.
+        """
+        low = str(model or "").strip().lower()
+        out: list[Fact] = []
+        for (recorded, _attribute), facts in self._index.items():
+            if not recorded.endswith(CLASS_SUFFIX):
+                continue
+            family = recorded[: -len(CLASS_SUFFIX)].rstrip("-_.")
+            if family and not (
+                low == family or any(low.startswith(family + sep) for sep in ("-", "_", "."))
+            ):
+                continue
+            out.extend(facts)
+        return out
 
     def contested(self) -> list[tuple[str, str]]:
         """Every (model, attribute) the sources do not agree on."""

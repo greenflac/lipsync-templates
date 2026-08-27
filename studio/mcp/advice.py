@@ -110,6 +110,7 @@ def advise(model: str, attribute: str = "", *, path: Path | None = None) -> dict
             "availability": None,
             "claims": {},
             "failure_modes": [],
+            "class_findings": [],
             "contested": [],
         }
 
@@ -137,6 +138,29 @@ def advise(model: str, attribute: str = "", *, path: Path | None = None) -> dict
         for fact in store.failure_modes(name)
     ]
 
+    # Findings about the CLASS, in their own list and never folded into the
+    # per-model answer. They were recorded with `*` (the field) or
+    # `<family>-*` (one vendor's line) as the model, which is the honest scope
+    # and meant nothing ever returned them: every query starts with a model
+    # name. MEASURED 2026-08-27, 26 such rows were in the base and reachable
+    # by nobody.
+    #
+    # Separate rather than merged, because "said about the class" and
+    # "measured on this model" are different claims and a reader has to be
+    # able to tell them apart. They also never vote in a contradiction.
+    class_findings = [
+        {
+            "scope": fact.model,
+            "attribute": fact.attribute,
+            "value": fact.value,
+            "fix": fact.fix,
+            "source_url": fact.source_url,
+            "tier": fact.tier,
+            "stated_on": fact.stated_on,
+        }
+        for fact in store.class_claims(name)
+    ]
+
     if live["card"] is None and not known_here:
         return {
             "outcome": UNMEASURED,
@@ -150,7 +174,12 @@ def advise(model: str, attribute: str = "", *, path: Path | None = None) -> dict
             ),
             "availability": live,
             "claims": {},
+            # The class findings come back even here. They are true of the
+            # field, not of this name, so an unknown model does not make them
+            # less true — and the outcome stays `could not measure` with
+            # `checked` at 0, so nothing reads as having been verified.
             "failure_modes": [],
+            "class_findings": class_findings,
             "contested": [],
         }
 
@@ -165,6 +194,7 @@ def advise(model: str, attribute: str = "", *, path: Path | None = None) -> dict
             "availability": live,
             "claims": claims,
             "failure_modes": failures,
+            "class_findings": class_findings,
             "contested": contested,
         }
 
@@ -182,6 +212,7 @@ def advise(model: str, attribute: str = "", *, path: Path | None = None) -> dict
             "availability": live,
             "claims": claims,
             "failure_modes": failures,
+            "class_findings": class_findings,
             "contested": contested,
         }
 
@@ -198,6 +229,7 @@ def advise(model: str, attribute: str = "", *, path: Path | None = None) -> dict
             "availability": live,
             "claims": {},
             "failure_modes": failures,
+            "class_findings": class_findings,
             "contested": [],
         }
 
@@ -215,6 +247,7 @@ def advise(model: str, attribute: str = "", *, path: Path | None = None) -> dict
             "availability": live,
             "claims": claims,
             "failure_modes": failures,
+            "class_findings": class_findings,
             "contested": [],
         }
 
@@ -229,6 +262,7 @@ def advise(model: str, attribute: str = "", *, path: Path | None = None) -> dict
         "availability": live,
         "claims": claims,
         "failure_modes": failures,
+        "class_findings": class_findings,
         "contested": [],
     }
 

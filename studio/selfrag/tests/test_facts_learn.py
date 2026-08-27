@@ -137,6 +137,44 @@ class Facts(unittest.TestCase):
             {"hands mangle", "faces may not render properly", "the take passes six seconds"},
         )
 
+    def test_a_class_finding_reaches_every_model_and_a_family_one_does_not(self) -> None:
+        """The scope is not decoration.
+
+        26 rows sat in the base under `*` and `elevenlabs-*` and NOTHING ever
+        returned them, because every query starts with a model name
+        (MEASURED 2026-08-27). They come back now — but the narrow scope has
+        to stay narrow, or "a voice clone never reproduces the source
+        acoustics" gets said about Veo, which is a different kind of wrong.
+        """
+        store = FactStore(
+            [
+                fact("*", "metric_blind_spot", "FVD barely moves under corruption", TIER_PAPER),
+                fact("eleven-*", "limitation", "a clone loses the source acoustics", TIER_PAPER),
+                fact("veo-3.1", "max_seconds", "8", TIER_PAPER),
+            ]
+        )
+        everyone = {f.value for f in store.class_claims("veo-3.1")}
+        self.assertEqual(everyone, {"FVD barely moves under corruption"})
+
+        family = {f.value for f in store.class_claims("eleven_v3")}
+        self.assertEqual(
+            family,
+            {"FVD barely moves under corruption", "a clone loses the source acoustics"},
+        )
+
+    def test_a_class_finding_never_becomes_a_claim_about_one_model(self) -> None:
+        """The control. Folding the class into the model's own answer would
+        make a statement about a benchmark read as a measurement of this
+        model, and would let it vote in a contradiction."""
+        store = FactStore(
+            [
+                fact("*", "max_seconds", "5", TIER_PAPER),
+                fact("veo-3.1", "max_seconds", "8", TIER_PAPER),
+            ]
+        )
+        self.assertEqual(store.claims("veo-3.1", "max_seconds")["values"], ["8"])
+        self.assertEqual(store.contested(), [])
+
     def test_an_unknown_attribute_is_unmeasured(self) -> None:
         store = FactStore([fact("k", "max_seconds", "9")])
         self.assertEqual(store.claims("k", "nothing_recorded")["outcome"], UNMEASURED)

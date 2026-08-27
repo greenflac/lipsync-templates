@@ -53,6 +53,14 @@ from studio.selfrag.facts import (  # noqa: E402
 # The hand-reasoned reading pass, imported so this bulk ingest can YIELD to it.
 from read_sources import READINGS  # noqa: E402
 
+# The canonical-id table, IMPORTED and not restated. It is the same knowledge
+# as `ALIASES` below — which spelling of a model the base files a claim under —
+# and a second copy would go stale the first time either moved. MEASURED
+# 2026-08-27: the merge ran, and this gate went red on 22 rows whose model had
+# been filed under the vendor's own id while this file was still looking for
+# the old spelling.
+from merge_model_ids import MERGES  # noqa: E402
+
 DEFAULT_HARVEST = (
     Path(__file__).resolve().parents[1] / "studio" / "knowledge" / "harvest_2026-08-27.jsonl"
 )
@@ -114,6 +122,19 @@ def _reading_pass_keys() -> set[tuple[str, str, str, str]]:
     return keys
 
 
+def _canonical(model: str) -> str:
+    """The id the base files this model's claims under.
+
+    Two steps, and they are different questions. `ALIASES` answers "the
+    harvest called it this, what does the base already call it" — a harvest
+    problem. `MERGES` answers "what does the vendor call it" — a base
+    problem, applied afterwards so a harvest alias that lands on a spelling
+    the merge has since retired still ends up in the right place.
+    """
+    name = ALIASES.get(str(model), str(model))
+    return MERGES.get(name, name)
+
+
 def _rows(path: Path) -> list[dict]:
     rows: list[dict] = []
     for line in path.read_text(encoding="utf-8").splitlines():
@@ -169,7 +190,7 @@ def _check(path: Path) -> int:
     yielded = 0
     checked = 0
     for row in _rows(path):
-        model = ALIASES.get(str(row.get("model", "")), str(row.get("model", "")))
+        model = _canonical(str(row.get("model", "")))
         key = claim_key(
             model,
             str(row.get("attribute", "")),
@@ -210,7 +231,7 @@ def main(argv: list[str]) -> int:
 
     for row in rows:
         row = dict(row)
-        row["model"] = ALIASES.get(str(row.get("model", "")), str(row.get("model", "")))
+        row["model"] = _canonical(str(row.get("model", "")))
         key = claim_key(
             str(row.get("model", "")),
             str(row.get("attribute", "")),

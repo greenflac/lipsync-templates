@@ -134,6 +134,9 @@ python scripts/read_sources.py --check
 # The harvest, asserted rather than trusted. Reads the fact file and the
 # harvest file only -- no network -- and fails if a row is malformed or if the
 # harvest has drifted out of the base.
+echo "== model ids still merged"
+python scripts/merge_model_ids.py --check
+
 echo "== harvest still applied (capability)"
 python scripts/ingest_harvest.py --check
 
