@@ -85,7 +85,7 @@ class WebClient(unittest.TestCase):
         assert out["outcome"] == "fail"
         assert out["host"] == ""
 
-    def test_a_denial_is_recorded_once_and_becomes_the_allowlist_request(self) -> None:
+    def test_the_ask_is_one_row_per_host_carrying_its_latest_reason(self) -> None:
         error = urllib.error.URLError(DENIAL_TEXT)
         with mock.patch.object(fetch.urllib.request, "urlopen", side_effect=error):
             fetch.fetch("https://arxiv.org/abs/1", why_wanted="a paper")
@@ -96,7 +96,9 @@ class WebClient(unittest.TestCase):
         assert asked["outcome"] == "fail"
         hosts = [row["host"] for row in asked["hosts"]]
         assert hosts == ["arxiv.org", "docs.bfl.ai"], "one row per host, not per attempt"
-        assert asked["hosts"][0]["why_wanted"] == "a paper"
+        assert asked["hosts"][0]["why_wanted"] == "another paper", (
+            "the newest reason is the one written against today's fact base"
+        )
 
     def test_with_nothing_denied_there_is_nothing_to_ask_for(self) -> None:
         out = fetch.wanted()
@@ -134,6 +136,41 @@ class WebClient(unittest.TestCase):
         )
         assert asked["hosts"] == []
         assert [row["host"] for row in asked["also_refused"]] == ["wavespeed.ai"]
+
+    def test_a_better_reason_replaces_the_one_the_ask_was_frozen_at(self) -> None:
+        """OBSERVED 2026-08-27, by reading the rendered request.
+
+        `docs.bfl.ai` was still being asked for because "every recorded claim
+        about it is blog tier" — which the re-tiering had made false that same
+        morning. Keeping only the first reason freezes the request at whatever
+        the base looked like the day the host was first refused, and a stale
+        reason in a request a human has to justify is worse than a short one.
+        """
+        self._deny("https://docs.bfl.ai/", "every claim about it is blog tier", incidental=False)
+        self._deny("https://docs.bfl.ai/", "three claims cite it, none read", incidental=False)
+
+        asked = fetch.wanted()
+        assert [row["host"] for row in asked["hosts"]] == ["docs.bfl.ai"], "still one host"
+        assert asked["hosts"][0]["why_wanted"] == "three claims cite it, none read"
+
+    def test_restating_the_same_reason_writes_nothing(self) -> None:
+        """Otherwise re-running the request generator grows the file forever."""
+        self._deny("https://arxiv.org/", "ten paper facts, none read", incidental=False)
+        first = fetch.DENIED_PATH.read_text(encoding="utf-8")
+        self._deny("https://arxiv.org/", "ten paper facts, none read", incidental=False)
+        assert fetch.DENIED_PATH.read_text(encoding="utf-8") == first
+
+    def test_the_history_of_reasons_is_kept_not_overwritten(self) -> None:
+        self._deny("https://arxiv.org/", "first reason", incidental=False)
+        self._deny("https://arxiv.org/", "second reason", incidental=False)
+        rows = [
+            json.loads(line)
+            for line in fetch.DENIED_PATH.read_text(encoding="utf-8").splitlines()
+            if line.strip()
+        ]
+        assert [r["why_wanted"] for r in rows] == ["first reason", "second reason"], (
+            "append-only: the request can be read back as it changed"
+        )
 
     def test_a_map_refresh_does_not_fill_the_ask_with_hosts_nobody_wanted(self) -> None:
         """Second place this shape appeared, 2026-08-27.

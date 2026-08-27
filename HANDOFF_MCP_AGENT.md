@@ -478,3 +478,93 @@ answers exist:
 
 `bash scripts/check` exits 0; blind control set 54 checked, 0 violations,
 0 unmeasured.
+
+---
+
+# Session 2026-08-27 — the allowlist request, assembled and rendered
+
+The owner asked for a final host list to add to the whitelist, then a handoff.
+
+## First, correcting the premise: web access EXISTS, it is just narrow
+
+"У нас всё ещё нет доступа к вебу?" — no, we have it, and it worked twice in
+this session. Re-measured across 51 hosts: **15 open, 36 refused.**
+
+Gemini grounding search runs and returns real results
+(`generativelanguage.googleapis.com`). The vendors' **API** hosts answer
+(`api.klingai.com`, `api.fal.ai`). `cloud.google.com`, `github.com`,
+`huggingface.co`, `pypi.org` all answer. What is shut is almost every
+**documentation** host and **every** community platform. That shape is the
+whole problem: we can call the models but not read about them, and we can
+search the web but not open most of what the search returns.
+
+## `docs/ALLOWLIST_REQUEST.md` — generated, not typed
+
+`scripts/allowlist_request.py` probes each host NOW, records the refusal with
+its own question, and renders the document. Re-run it and a host that has since
+opened drops off by itself; a hand-typed list would not.
+
+**20 hosts asked for**, in groups ordered by how cheap they are to say yes to,
+so the list can be cut at any group boundary:
+
+1. **a narrowing** — `docs.cloud.google.com` (parent `cloud.google.com` is
+   already open, so this grants no new organisation)
+2. **settles a contradiction** — `kling.ai`, `help.runwayml.com`,
+   `ir.kuaishou.com`
+3. **vendor pages nobody has read** — `docs.bfl.ai`, `docs.byteplus.com`,
+   `elevenlabs.io`, `help.elevenlabs.io`, `ai.google.dev`,
+   `platform.openai.com`
+4. **the paper rung** — `arxiv.org` (10 paper-tier facts, not one read)
+5. **community corpora** — `civitai.com`, `api.civitai.com`,
+   `image.civitai.com`, `www.reddit.com`, `reddit.com`, `oauth.reddit.com`,
+   `old.reddit.com`
+6. **platforms already cited** — `fal.ai`, `wavespeed.ai`
+
+The document also lists the **15 already-open hosts** (re-measured on every
+run, so nobody is asked for access they already have) and the **23 incidental**
+refusals that are deliberately NOT part of the ask.
+
+Reddit carries the licence caveat from the previous section, restated in the
+document itself: its free Data API tier reportedly bars commercial use.
+
+## A defect found by reading what was produced (rule П3)
+
+Six hosts came out of the generator still carrying reasons written days
+earlier, because `wanted()` kept the FIRST row per host. One of them,
+`docs.bfl.ai`, was being asked for on the grounds that "every recorded claim
+about it is blog tier" — **which the re-tiering had made false that same
+morning**. A stale reason in a request a human has to justify is worse than a
+short one.
+
+Fixed: `denied_hosts.jsonl` stays append-only, a re-probe with a DIFFERENT
+reason appends a row (an identical one does not, so the generator is
+idempotent — verified, 63 lines before and after a second run), and `wanted()`
+now presents the LATEST reason per host. The history of how a request was
+argued is readable back from the file.
+
+3 mutations both ways, all red. One existing test encoded the old
+first-reason-wins rule and was updated rather than deleted.
+
+## Next session: start here
+
+1. `bash scripts/check` — exits 0 today. Note `mypy` and `mcp` are not
+   preinstalled: `python3 -m pip install --ignore-installed PyJWT -r
+   requirements-dev.txt`.
+2. **Re-run `python scripts/allowlist_request.py`.** If the owner has granted
+   hosts, the granted ones vanish from the ask by themselves and the document
+   shrinks. That is the signal to start reading vendor pages and recording
+   facts with `read_directly=True`.
+3. If Civitai opened, the collector is the next real piece of work: the
+   `/api/v1/images` endpoint returns prompts WITH results, which is the pairing
+   this project has never had. Tier it `portal` (already in the table). Check
+   the per-upload licence FIRST (rule C5).
+4. If Reddit did not open, or its commercial terms are refused, drop it and
+   say so — do not keep it in the ask indefinitely (rule C9: a stop condition
+   is written before the attempt, not after).
+
+## Still open from before, unchanged
+
+`MAX_PER_PROVENANCE = 2` in another module's file; Yandex as a third search
+backend (open and keyed, price unverified, owner's ad-work key); no prompt in
+this package has been proven by a generation; the 7 facts citing a bare site
+root, 5 of which now sit above `blog` on a link pointing at no statement.

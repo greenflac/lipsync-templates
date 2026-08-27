@@ -111,17 +111,33 @@ def note_denial(url: str, reason: str, why_wanted: str = "", *, incidental: bool
         "first_seen": date.today().isoformat(),
     }
     DENIED_PATH.parent.mkdir(parents=True, exist_ok=True)
-    # A host first met by a bulk probe and later actually needed gets a second
-    # row, so it can be promoted into the ask. Without this, the order two
-    # calls happened in would decide whether a host the owner needs is ever
-    # asked for.
-    known = {r.get("host"): bool(r.get("incidental", False)) for r in _read_denied()}
+    # This file is append-only history, and three things make a new row worth
+    # appending:
+    #
+    #  fresh     nobody has recorded this host at all
+    #  promoted  it was met by a bulk probe and is now actually needed, so it
+    #            can move into the ask. Without this, the order two calls
+    #            happened in would decide whether a host the owner needs is
+    #            ever asked for.
+    #  restated  it is already in the ask, but for a DIFFERENT reason. The
+    #            reason is the whole request — OBSERVED 2026-08-27, docs.bfl.ai
+    #            was still asked for because "every recorded claim about it is
+    #            blog tier", which the re-tiering had made false that morning.
+    #            Keeping only the first reason freezes the request at whatever
+    #            the base looked like the day the host was first refused.
+    rows = _read_denied()
+    known = {r.get("host"): bool(r.get("incidental", False)) for r in rows}
+    latest_reason = ""
+    for previous in rows:
+        if previous.get("host") == host and not previous.get("incidental", False):
+            latest_reason = str(previous.get("why_wanted", ""))
     fresh = host not in known
     promoted = not fresh and known[host] and not incidental
-    if fresh or promoted:
+    restated = not fresh and not incidental and why_wanted.strip() != latest_reason.strip()
+    if fresh or promoted or restated:
         with DENIED_PATH.open("a", encoding="utf-8") as handle:
             handle.write(json.dumps(row, ensure_ascii=False) + "\n")
-    return {"recorded": fresh or promoted, "host": host}
+    return {"recorded": fresh or promoted or restated, "host": host}
 
 
 def _read_denied() -> list[dict]:
@@ -328,11 +344,12 @@ def wanted() -> dict:
         if not host:
             continue
         kept = by_host.get(host)
-        # A host wanted for a real question outranks the same host met by a
-        # bulk probe, whichever row was written first.
-        if kept is None or (
-            bool(kept.get("incidental", False)) and not row.get("incidental", False)
-        ):
+        # Two rules, in this order. A host wanted for a real question outranks
+        # the same host met by a bulk probe, whichever was written first. And
+        # among real questions the LATEST wins, because the file is append-only
+        # history and the newest reason is the one written against today's
+        # fact base — an old reason can have gone stale under it.
+        if kept is None or not row.get("incidental", False):
             by_host[host] = row
 
     asked = [by_host[h] for h in sorted(by_host) if not by_host[h].get("incidental", False)]
