@@ -16,9 +16,9 @@ video. One template ("Ice cream"), 10 seconds, real speed. The same clip
 The repository contains two tools.
 
 **The generation pipeline** turns a selfie into a finished video in eight
-stages. Seven of them are free checks that run before the one paid call, so
-most defects are caught on a still image for a fraction of a cent instead of
-on a rendered video for a dollar.
+stages, and orders the video exactly once. On a clean run it makes 32 checks:
+**22 of them fire before the video is ordered** and 10 after. That is why most
+defects are caught on a still image, for cents, instead of on a rendered clip.
 
 **The template builder** is for the person who designs templates: they write a
 prompt, feed in a stock demo person, and get back a style reference (an
@@ -39,25 +39,34 @@ driving videos.</sub>
 
 | | |
 |---|---|
-| `$0.70` | cost of a 10-second video; the `$0.07/s` rate was confirmed by four separate balance measurements |
-| `0.5581` | the aspect ratio the image model actually returns for a 9:16 request, on both routes — not the `0.5625` of exact 9:16. Asked for `720×1280` and for `864×1536` through `compose` it returns `768×1376`; asked for `1080×1920` through `images_edit` it returns `1536×2752`. nanobanana-2 has no exact 9:16 point on its vertical grid |
-| `1536×2752` | the size all six shipped templates and both client fixtures actually are — that same `0.5581`, frozen into the product |
-| `43.75 %` | of the width a 9:16 crop takes off the video output. Kling returns `960×960`, measured across eight orders: assembly does crop |
-| `300 frames` | all six videos came out at exactly 10.0 seconds |
+| `$0.07/s` | the video rate, confirmed by four separate balance measurements. The pipeline's default product is 5 seconds — `$0.35` a clip (`PRODUCT_SECONDS` in `fork_e2e`); the six showcase clips below are 10 seconds, so they cost `$0.70` each |
+| `0.5581` | the aspect ratio the image model actually returns for a 9:16 request, on both routes — not the `0.5625` of exact 9:16. Asked for `720×1280` and for `864×1536` through `compose` it returns `768×1376`; asked for `1080×1920` through `images_edit` it returns `1536×2752`. nanobanana-2 has no exact 9:16 point on its vertical grid. This is a fact about the model and still holds; what no longer holds is that the product ships it — see the row below |
+| `1530×2720` | the size all ten shipped images are — six templates, two client fixtures, two framing references — measured on the files in `assets/`. That is exactly `0.5625`. They were `1536×2752` until commit `1ca55da` on this branch trimmed them: 32 px off the height (1.16 %) and 6 px off the width (0.39 %), inside the 2 % trim budget |
+| `720×1280` | what the video model returns, MEASURED on 11 runs on disk: 7 came back exactly 9:16, 3 came back `816×1104`, 1 came back `960×960`. Kling inherits the ratio of the image it is given — every vertical reference produced a vertical clip, and assembly cropped nothing off all six shipped ones |
+| `300 frames` | all six showcase videos came out at exactly 10.0 seconds, 30 fps |
 | `0 cuts` | no edit seams inside any of the six videos |
 
 ## How it works
 
+The eight stages are `fork_e2e.STAGES`; the check counts are from one clean
+run of the end-to-end stand.
+
 ```
-1  driving intake        cuts, scene length, window         free
-2  aesthetic             prompt + demo person               cents
-3  aesthetic check       demo identity still there          free
-4  reference assembly    client photo + aesthetic           cents
-5  reference check       face leak, framing, composition    free
-6  video generation      Kling Motion Control               $0.07/s
-7  assembly              9:16, sound, duration              free
-8  final check           human review                       free
+                                                       cost      checks
+1  intake of three inputs   photo, style ref, driving   free        4
+2  client photo stylization prompt, frame, person       cents       8
+3  styled photo acceptance  style hit, identity         free        2
+4  driving window           cuts, scene length, window  free        5
+5  upload and call Kling    the one video order         $0.07/s     5
+6  output acceptance        geometry, identity, cuts    free        4
+7  final assembly           9:16, sound, duration       free        2
+8  report                   the run written to disk     free        2
 ```
+
+Stage 5 is where the video is paid for. Three of its five checks — the pro-tier
+guard, the input upload and the request composition — run *before* the order
+goes out; the remaining two read what came back. Stage 2 is the only other
+paid call, and it costs cents on a still image.
 
 Every check returns one of three outcomes: `pass`, `fail`, or `could not
 measure`. The third one is never silently converted into the other two, and
@@ -101,19 +110,37 @@ during the turn the face leaves the frame entirely.
 
 ## Tests
 
+From the repository root:
+
 ```
-python -m unittest discover -s lipsync/tests -p "test_*.py"
+python3 -m unittest discover -s . -p "test_*.py"
 ```
 
-795 tests in 13 files, no network, no GPU. Each one guards a specific defect
-that actually happened — the test name says which one. Decision thresholds are
-covered by mutation: changing a threshold in either direction makes tests fail.
+The root is not decoration: the suite uses package-relative imports, so
+discovering from `lipsync/tests` collects a smaller suite and errors out on the
+first relative import.
 
-The run is **not green** as of 2026-08-26: `FAILED (failures=3, errors=2,
-skipped=12)`. Every failure is in `test_ratio_chain.py`, the gate written
-before its implementation for the aspect-ratio defect described above; the
-implementation is in progress. A skipped test is not a passed test, and the
-count of red moves between runs while the code is being changed.
+**917 tests in 18 files, no network, no GPU.** Run of 2026-08-27, quoted verbatim:
+
+```
+Ran 917 tests in 32.4s
+
+OK (skipped=12)
+```
+
+Each test guards a specific defect that actually happened — the test name says
+which one. Decision thresholds are covered by mutation: changing a threshold in
+either direction makes tests fail.
+
+**A skipped test is not a passed test.** All 12 skips are one class,
+`TheMeasuredRowsAreReproduced` in `test_fork_identity.py`: it runs the real
+ArcFace against the recorded acceptance rows, and the `buffalo_l` weights and
+the `demo/lora_dataset` frames are not in the repository. Without them there is
+nothing to reproduce the numbers from, so the class reports "not measured"
+rather than green.
+
+The numbers above are a run, not a target. The count moves as the suite is
+written; what is quoted is whatever the last run printed.
 
 ## Licence
 
@@ -143,10 +170,10 @@ and recalibrate the thresholds.
 
 В репозитории два инструмента.
 
-**Пайплайн генерации** превращает селфи в готовый ролик за восемь ступеней.
-Семь из них — бесплатные проверки перед единственным платным вызовом, поэтому
-большинство дефектов ловится на картинке за доли цента, а не на готовом видео
-за доллар.
+**Пайплайн генерации** превращает селфи в готовый ролик за восемь ступеней и
+заказывает видео ровно один раз. На чистом прогоне он делает 32 проверки:
+**22 из них срабатывают до того, как видео заказано**, и 10 — после. Поэтому
+большинство дефектов ловится на картинке за центы, а не на готовом ролике.
 
 **Сборщик шаблонов** — для того, кто шаблоны придумывает: он пишет промт,
 подаёт стоковую демо-личность и получает стилевой референс («эстетику»),
@@ -166,25 +193,34 @@ and recalibrate the thresholds.
 
 | | |
 |---|---|
-| `$0.70` | стоимость ролика на 10 секунд; ставка `$0.07/с` подтверждена четырьмя независимыми замерами баланса |
-| `0.5581` | соотношение, которое картиночная модель на самом деле отдаёт на запрос 9:16, на обоих маршрутах, — а не `0.5625` ровного 9:16. На запрос `720×1280` и на запрос `864×1536` через `compose` приходит `768×1376`; на запрос `1080×1920` через `images_edit` приходит `1536×2752`. У nanobanana-2 нет точки ровно 9:16 на вертикальной сетке |
-| `1536×2752` | размер, которым на самом деле являются все шесть отгруженных шаблонов и обе клиентские фикстуры, — тот же `0.5581`, вмороженный в продукт |
-| `43.75 %` | ширины срезает кроп в 9:16 на выходе видеомодели. Kling отдаёт `960×960`, измерено на восьми заказах: сборка обрезает |
-| `300 кадров` | все шесть роликов вышли ровно по 10.0 секунды |
+| `$0.07/с` | ставка за видео, подтверждена четырьмя независимыми замерами баланса. Продуктовая длительность по умолчанию — 5 секунд, то есть `$0.35` за ролик (`PRODUCT_SECONDS` в `fork_e2e`); шесть витринных роликов ниже — десятисекундные, они стоили по `$0.70` |
+| `0.5581` | соотношение, которое картиночная модель на самом деле отдаёт на запрос 9:16, на обоих маршрутах, — а не `0.5625` ровного 9:16. На запрос `720×1280` и на запрос `864×1536` через `compose` приходит `768×1376`; на запрос `1080×1920` через `images_edit` приходит `1536×2752`. У nanobanana-2 нет точки ровно 9:16 на вертикальной сетке. Это факт о модели, и он в силе; в силе больше не то, что продукт её отдаёт как есть, — см. строку ниже |
+| `1530×2720` | размер всех десяти отгруженных картинок — шесть шаблонов, две клиентские фикстуры, два плановых референса, — замерено на файлах в `assets/`. Это ровно `0.5625`. До коммита `1ca55da` на этой ветке они были `1536×2752`; обрезка сняла 32 px высоты (1.16 %) и 6 px ширины (0.39 %) — внутри двухпроцентного бюджета |
+| `720×1280` | что отдаёт видеомодель, ИЗМЕРЕНО на 11 прогонах на диске: 7 вернулись ровно 9:16, 3 вернулись `816×1104`, один `960×960`. Kling наследует соотношение поданной картинки — с каждого вертикального референса выходил вертикальный ролик, и на всех шести отгруженных сборка не срезала ничего |
+| `300 кадров` | все шесть витринных роликов вышли ровно по 10.0 секунды, 30 fps |
 | `0 склеек` | ни в одном из шести роликов нет монтажных швов |
 
 ## Как это работает
 
+Восемь ступеней — это `fork_e2e.STAGES`; числа проверок сняты с одного чистого
+прогона сквозного стенда.
+
 ```
-1  приём драйвинга      склейки, длина сцены, окно          бесплатно
-2  эстетика             промт + демо-личность               центы
-3  проверка эстетики    демо-личность на месте              бесплатно
-4  сборка референса     фото клиента + эстетика             центы
-5  проверка референса   утечка лица, план, композиция       бесплатно
-6  генерация видео      Kling Motion Control                $0.07/с
-7  сборка               9:16, звук, длительность            бесплатно
-8  финальная проверка   смотрит человек                     бесплатно
+                                                          цена     проверок
+1  приём трёх входов     фото, стилевой реф, драйвинг    бесплатно     4
+2  стилизация фото       промт, кадр, человек в плане    центы         8
+3  приёмка стилизации    попадание в стиль, личность     бесплатно     2
+4  окно драйвинга        склейки, длина сцены, окно      бесплатно     5
+5  загрузка и Kling      единственный заказ видео        $0.07/с       5
+6  приёмка выхода        геометрия, личность, склейки    бесплатно     4
+7  финальная сборка      9:16, звук, длительность        бесплатно     2
+8  отчёт                 прогон записан на диск          бесплатно     2
 ```
+
+Деньги за видео списываются на пятой ступени. Три её проверки из пяти —
+запрет pro-тарифа, загрузка входов и состав запроса — идут *до* того, как
+заказ ушёл; оставшиеся две читают то, что вернулось. Вторая ступень —
+единственный другой платный вызов, и он стоит центы на неподвижной картинке.
 
 Каждая проверка возвращает один из трёх исходов: `годно`, `не годно` или
 `не смогли проверить`. Третий никогда молча не превращается в первые два, и
@@ -225,19 +261,36 @@ and recalibrate the thresholds.
 
 ## Тесты
 
+Из корня репозитория:
+
 ```
-python -m unittest discover -s lipsync/tests -p "test_*.py"
+python3 -m unittest discover -s . -p "test_*.py"
 ```
 
-795 тестов в 13 файлах, без сети и без GPU. Каждый сторожит конкретный дефект,
-который действительно случился, — имя теста называет какой. Пороги принятия
-решений покрыты мутациями: сдвиг порога в любую сторону роняет тесты.
+Корень здесь не для красоты: набор пользуется относительными импортами пакета,
+поэтому запуск из `lipsync/tests` собирает меньший набор и падает ошибкой на
+первом же относительном импорте.
 
-На 2026-08-26 прогон **не зелёный**: `FAILED (failures=3, errors=2,
-skipped=12)`. Все падения — в `test_ratio_chain.py`, это гейт, написанный до
-реализации под описанный выше дефект соотношения сторон; реализация в работе.
-Пропущенный тест — не пройденный, а число красных меняется от прогона к
-прогону, пока код правится.
+**917 тестов в 18 файлах, без сети и без GPU.** Прогон 2026-08-27, вывод дословно:
+
+```
+Ran 917 tests in 32.4s
+
+OK (skipped=12)
+```
+
+Каждый тест сторожит конкретный дефект, который действительно случился, — имя
+теста называет какой. Пороги принятия решений покрыты мутациями: сдвиг порога в
+любую сторону роняет тесты.
+
+**Пропущенный тест — не пройденный.** Все 12 пропуска — это один класс,
+`TheMeasuredRowsAreReproduced` в `test_fork_identity.py`: он гоняет настоящий
+ArcFace против записанных строк приёмки, а весов `buffalo_l` и кадров
+`demo/lora_dataset` в репозитории нет. Без них воспроизводить числа нечем, и
+класс честно говорит «не смогли измерить», а не зеленеет.
+
+Числа выше — это прогон, а не цель. Счёт двигается по мере того, как набор
+дописывается; приведено то, что напечатал последний прогон.
 
 ## Лицензия
 

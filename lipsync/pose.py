@@ -1,4 +1,4 @@
-"""Body pose as a measurement: did the pose survive, and is the body anatomical."""
+"""Body landmarks as a measurement: read a skeleton, compare two of them."""
 
 from __future__ import annotations
 
@@ -21,27 +21,20 @@ BODY_POINTS = {
     "r_ankle": 28,
 }
 
-LIMBS = (
-    ("l_shoulder", "l_elbow"),
-    ("l_elbow", "l_wrist"),
-    ("r_shoulder", "r_elbow"),
-    ("r_elbow", "r_wrist"),
-    ("l_hip", "l_knee"),
-    ("l_knee", "l_ankle"),
-    ("r_hip", "r_knee"),
-    ("r_knee", "r_ankle"),
-)
-
 MIN_VISIBILITY = 0.5
 
-
-SAME_POSE_MAX = 0.15
-
-POSE_WANDER_MAX = 0.45
-
-WORST_JOINT_MAX = 0.40
-
-LIMB_WOBBLE_MAX = 0.25
+#: Declared instruments: public here, called by no production path on purpose.
+#:
+#: `pose_delta` is the reference implementation of the quantity the product
+#: actually runs, `fork_looper.pose_gap`. The two are not a duplicate: this one
+#: takes RAW landmark points and normalises them afresh on every call, which is
+#: the obvious way to compute it and the wrong way to compute it hundreds of
+#: thousands of times; `pose_gap` normalises once per frame and reuses the
+#: result across pairs. Keeping the slow, obvious version is what makes the fast
+#: one checkable — `test_pose_gap_is_the_same_number_as_pose_delta` asserts the
+#: two numbers agree on a fixture. Delete this and the product's own instrument
+#: has nothing to be wrong against.
+INSTRUMENTS = ("pose_delta",)
 
 MODEL_ENV = "LIPSYNC_POSE_MODEL"
 DEFAULT_MODEL = "~/.mediapipe/pose_landmarker_lite.task"
@@ -107,65 +100,6 @@ def landmarks(path: str | Path) -> dict | None:
     }
 
 
-def world_landmarks(path: str | Path) -> dict | None:
-    """Body landmarks in METRIC 3D space, rooted at the hips — view-independent."""
-    import mediapipe as mp  # type: ignore
-    import numpy as np
-    from PIL import Image
-
-    with Image.open(path) as im:
-        rgb = np.asarray(im.convert("RGB"), dtype=np.uint8)
-    result = _pose_model().detect(mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb))
-    if not result.pose_landmarks or not result.pose_world_landmarks:
-        return None
-    lm = result.pose_world_landmarks[0]
-    vis = result.pose_landmarks[0]
-    return {
-        name: (float(lm[i].x), float(lm[i].y), float(lm[i].z), float(vis[i].visibility))
-        for name, i in BODY_POINTS.items()
-    }
-
-
-def world_proportions(path: str | Path) -> dict | None:
-    """Build as view-independent ratios, in torso lengths."""
-    import numpy as np
-
-    pts = world_landmarks(path)
-    if pts is None:
-        return None
-
-    def v(name):
-        return np.array(pts[name][:3])
-
-    def seen(*names):
-        return all(pts[n][3] >= MIN_VISIBILITY for n in names)
-
-    if not seen("l_hip", "r_hip", "l_shoulder", "r_shoulder"):
-        return None
-    hip_c = (v("l_hip") + v("r_hip")) / 2
-    sho_c = (v("l_shoulder") + v("r_shoulder")) / 2
-    torso = float(np.linalg.norm(sho_c - hip_c))
-    if torso < 1e-6:
-        return None
-
-    out: dict = {"torso_metres": round(torso, 4)}
-    for a, b in LIMBS:
-        if seen(a, b):
-            out[f"{a}->{b}"] = round(float(np.linalg.norm(v(a) - v(b))) / torso, 4)
-    if seen("l_shoulder", "r_shoulder"):
-        out["shoulder_width"] = round(
-            float(np.linalg.norm(v("l_shoulder") - v("r_shoulder"))) / torso, 4
-        )
-    if seen("l_hip", "r_hip"):
-        out["hip_width"] = round(float(np.linalg.norm(v("l_hip") - v("r_hip"))) / torso, 4)
-    if out.get("shoulder_width") and out.get("hip_width"):
-        out["shoulder_to_hip"] = round(out["shoulder_width"] / out["hip_width"], 4)
-    legs = [out.get("l_hip->l_knee"), out.get("l_knee->l_ankle")]
-    if None not in legs:
-        out["leg_length"] = round(sum(x for x in legs if x is not None), 4)
-    return out
-
-
 def _normalise(points: dict) -> dict | None:
     """Centre on the hips and scale by torso length."""
     import numpy as np
@@ -199,10 +133,9 @@ def pose_delta(a: dict, b: dict) -> dict | None:
         which = " and ".join(n for n, v in (("first", a), ("second", b)) if v is None)
         raise ValueError(
             f"pose_delta: no body found in the {which} pose (landmarks returned None). "
-            f"There is nothing to compare. A frequent cause is comparing against a "
-            f"ControlNet condition: that is a skeleton drawing on a black background, "
-            f"and the pose detector finds nothing on it. Compare against the driving "
-            f"frame instead (see manifest.json next to the conditions)."
+            f"There is nothing to compare. The frequent cause is a frame with no torso "
+            f"in it — a head-and-shoulders crop of the client photo, or a driving frame "
+            f"the subject has walked out of. Compare two frames that both show a body."
         )
     na, nb = _normalise(a), _normalise(b)
     if na is None or nb is None:
@@ -220,133 +153,4 @@ def pose_delta(a: dict, b: dict) -> dict | None:
         "measurable": len(na),
         "coverage": round(len(per) / len(na), 3) if na else 0.0,
         "joints": {n: round(v, 4) for n, v in per.items()},
-    }
-
-
-def pose_distance(a: dict, b: dict) -> float | None:
-    """Mean joint displacement between two poses, in torso lengths."""
-    d = pose_delta(a, b)
-    return None if d is None else d["mean"]
-
-
-def pose_drift(
-    frame_paths,
-    reference_path,
-    *,
-    max_pose_distance: float = SAME_POSE_MAX,
-    max_worst_joint: float = WORST_JOINT_MAX,
-) -> dict:
-    """How far the frames drift from the reference's pose."""
-    import numpy as np
-
-    ref = landmarks(reference_path)
-    empty: dict = {
-        "per_frame": {},
-        "median": None,
-        "worst": (None, None),
-        "worst_joint": None,
-        "coverage": 0.0,
-        "measured": 0,
-        "frames": 0,
-        "held": False,
-    }
-    if ref is None or _normalise(ref) is None:
-        return {
-            **empty,
-            "note": "no usable body in the pose reference (hips and shoulders must be visible).",
-        }
-    per_frame: dict[str, float] = {}
-    per_joint: dict[str, float] = {}
-    total = 0
-    for p in frame_paths:
-        total += 1
-        got = landmarks(p)
-        if got is None:
-            continue
-        d = pose_delta(ref, got)
-        if d is not None:
-            per_frame[Path(p).name] = d["mean"]
-            per_joint[Path(p).name] = d["worst"]
-    if not per_frame:
-        return {
-            **empty,
-            "frames": total,
-            "note": f"pose NOT VERIFIABLE: no body measurable in {total} frame(s).",
-        }
-    vals = sorted(per_frame.values())
-    median = round(float(np.median(vals)), 4)
-    worst = max(per_frame, key=lambda n: per_frame[n])
-    coverage = round(len(per_frame) / total, 3)
-    worst_joint = round(float(np.median(sorted(per_joint.values()))), 4)
-    held = median <= max_pose_distance and worst_joint <= max_worst_joint
-    return {
-        "per_frame": per_frame,
-        "median": median,
-        "worst_joint": worst_joint,
-        "worst": (worst, per_frame[worst]),
-        "coverage": coverage,
-        "measured": len(per_frame),
-        "frames": total,
-        "held": held,
-        "note": (
-            f"pose distance median {median} torso-lengths from the "
-            f"reference, worst single joint {worst_joint}, over "
-            f"{len(per_frame)}/{total} measurable frame(s); "
-            f"{'held' if held else 'DRIFTED'} against "
-            f"{max_pose_distance}/{max_worst_joint}."
-        ),
-    }
-
-
-def limb_consistency(frame_paths, *, max_wobble: float = LIMB_WOBBLE_MAX) -> dict:
-    """Do the limbs keep their length across the clip — is this a real body."""
-    import numpy as np
-
-    lengths: dict[str, list[float]] = {f"{a}->{b}": [] for a, b in LIMBS}
-    measured = 0
-    for p in frame_paths:
-        got = landmarks(p)
-        if got is None:
-            continue
-        norm = _normalise(got)
-        if norm is None:
-            continue
-        measured += 1
-        for a, b in LIMBS:
-            if norm[a][1] < MIN_VISIBILITY or norm[b][1] < MIN_VISIBILITY:
-                continue
-            lengths[f"{a}->{b}"].append(float(np.linalg.norm(norm[a][0] - norm[b][0])))
-    wobble = {}
-    for name, vals in lengths.items():
-        if len(vals) < 3:
-            continue
-        mean = float(np.mean(vals))
-        if mean > 1e-6:
-            wobble[name] = round(float(np.std(vals)) / mean, 4)
-    if not wobble:
-        return {
-            "wobble": {},
-            "worst": (None, None),
-            "anatomical": False,
-            "measured": measured,
-            "note": "limb consistency NOT VERIFIABLE: no limb tracked across enough frames.",
-        }
-    worst = max(wobble, key=lambda n: wobble[n])
-    bad = [n for n, v in wobble.items() if v > max_wobble]
-    verdict = (
-        "anatomically stable"
-        if not bad
-        else f"{len(bad)} limb(s) past {max_wobble:.0%} — the body is stretching"
-    )
-    return {
-        "wobble": wobble,
-        "worst": (worst, wobble[worst]),
-        "anatomical": not bad,
-        "measured": measured,
-        "unstable": bad,
-        "note": (
-            f"limb length varies most on {worst} "
-            f"({wobble[worst]:.0%} of its own length) over {measured} "
-            f"frame(s); {verdict}."
-        ),
     }

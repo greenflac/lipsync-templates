@@ -8,7 +8,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from .. import framemath as fork_comfy
+from .. import framemath
 from .. import pose
 from .. import fork_looper as fl
 from ..fork_identity import FAIL, PASS, UNMEASURED
@@ -270,24 +270,33 @@ class FlowAxis(unittest.TestCase):
         )
 
 
+def admissible_lengths(n_frames, *, fps=None, min_frames=None) -> list:
+    """Enumerate the lengths the module admits. The predicate under test is the module's."""
+    return [
+        L
+        for L in range(1, n_frames + 1)
+        if fl.length_is_admissible(L, fps=fps, min_frames=min_frames)
+    ]
+
+
 class Lengths(unittest.TestCase):
     def test_every_length_survives_the_wrapper_snap(self):
         """The wrapper snapping by one frame pulls the loop apart."""
-        for L in fl.admissible_lengths(NFRAMES):
-            self.assertEqual(fork_comfy.snap_frames(L), L, f"length {L} would be snapped")
+        for L in admissible_lengths(NFRAMES):
+            self.assertEqual(framemath.snap_frames(L), L, f"length {L} would be snapped")
 
     def test_the_floor_is_forty_one_frames(self):
-        got = fl.admissible_lengths(NFRAMES)
+        got = admissible_lengths(NFRAMES)
         self.assertEqual(got[0], 41)
         self.assertNotIn(37, got, "37 frames is 1.23 s, a dozen repeats in a row")
         self.assertNotIn(5, got)
 
     def test_the_ceiling_comes_from_the_product_length_and_not_from_here(self):
-        got = fl.admissible_lengths(100000, fps=30)
-        self.assertLessEqual(got[-1], fork_comfy.SECONDS_MAX * 30)
+        got = admissible_lengths(100000, fps=30)
+        self.assertLessEqual(got[-1], framemath.SECONDS_MAX * 30)
         self.assertEqual(got[-1], 297)
         self.assertEqual(
-            fl.admissible_lengths(100000, fps=24)[-1],
+            admissible_lengths(100000, fps=24)[-1],
             237,
             "the ceiling must follow the source rate: 10 s at "
             "24 fps is 240 frames, the nearest 4k+1 below is 237",
@@ -295,12 +304,12 @@ class Lengths(unittest.TestCase):
 
     def test_without_a_frame_rate_there_is_no_ceiling_at_all(self):
         """The ceiling belongs to the product and is stated in seconds; no rate, no ceiling."""
-        got = fl.admissible_lengths(1000, fps=None)
+        got = admissible_lengths(1000, fps=None)
         self.assertEqual(got[-1], 997)
         self.assertEqual(got[0], 41)
 
     def test_a_clip_shorter_than_the_floor_admits_nothing(self):
-        self.assertEqual(fl.admissible_lengths(40), [])
+        self.assertEqual(admissible_lengths(40), [])
 
 
 class SeamScore(unittest.TestCase):
@@ -331,27 +340,61 @@ class SeamScore(unittest.TestCase):
 
 
 def cand(i, j, score):
-    return {"i": i, "j": j, "frames": j - i + 1, "score": score}
+    return {"i": i, "j": j, "frames": j - i + 1, "score": score, "pose_gap": 0.0, "flow_gap": 0.0}
+
+
+# The head walks one pixel per frame and returns to its place every 44, so a
+# loop whose length is a multiple of 44 closes the head seam exactly.
+HEAD_PERIOD = 44
+
+
+def _head_reader(path):
+    return {"head": (float(int(Path(path).stem) % HEAD_PERIOD), 0.0), "why": ""}
 
 
 class Suppression(unittest.TestCase):
+    """Overlap suppression lives in `pick_finalists`; it is the only copy of it."""
+
+    def _pick(self, cands, **kw):
+        paths = [f"/x/{k}.png" for k in range(600)]
+        return fl.pick_finalists(
+            cands,
+            paths,
+            head=_head_reader,
+            scale={"step": 1.0},
+            local=lambda i, j: {"pose": 1.0, "pixels": 1.0},
+            **kw,
+        )
+
     def test_overlap_is_a_share_of_the_shorter_loop(self):
         self.assertAlmostEqual(fl.overlap(cand(0, 44, 1), cand(30, 74, 1)), 15 / 45, places=6)
         self.assertEqual(fl.overlap(cand(0, 44, 1), cand(45, 89, 1)), 0.0)
 
     def test_a_copy_shifted_by_four_frames_is_not_a_second_loop(self):
-        got = fl.select([cand(0, 44, 0.5), cand(4, 48, 0.6)])
+        got = self._pick([cand(0, 44, 0.5), cand(4, 48, 0.6)])
         self.assertEqual([(c["i"], c["j"]) for c in got["kept"]], [(0, 44)])
         self.assertEqual(got["dropped_overlap"], 1)
+        self.assertEqual(
+            (got["deferred"], got["bridge_measured"]),
+            (0, 1),
+            "the fixture fell through to the deferred queue: this sieve was never run",
+        )
 
     def test_a_third_of_a_loop_in_common_still_counts_as_a_different_loop(self):
-        got = fl.select([cand(0, 44, 0.5), cand(30, 74, 0.6)])
-        self.assertEqual([(c["i"], c["j"]) for c in got["kept"]], [(0, 44), (30, 74)])
+        got = self._pick([cand(0, 44, 0.5), cand(30, 74, 0.6)])
+        self.assertEqual(sorted((c["i"], c["j"]) for c in got["kept"]), [(0, 44), (30, 74)])
+        self.assertEqual(got["dropped_overlap"], 0)
 
     def test_the_table_is_capped(self):
         many = [cand(k * 50, k * 50 + 44, 0.1 * k) for k in range(8)]
-        got = fl.select(many)
+        got = self._pick(many)
         self.assertEqual(len(got["kept"]), 5)
+
+    def test_the_overlap_bar_is_guarded_in_both_directions(self):
+        """Mutate the decision constant both ways: 15/45 in common, bar 0.5."""
+        pair = [cand(0, 44, 0.5), cand(30, 74, 0.6)]
+        self.assertEqual(len(self._pick(pair, overlap_max=0.2)["kept"]), 1)
+        self.assertEqual(len(self._pick(pair, overlap_max=0.9)["kept"]), 2)
 
 
 class Repeats(unittest.TestCase):
@@ -364,7 +407,7 @@ class Repeats(unittest.TestCase):
         )
 
     def test_every_glued_length_survives_the_wrapper_snap(self):
-        for L in fl.admissible_lengths(NFRAMES):
+        for L in admissible_lengths(NFRAMES):
             for r in fl.repeat_plan(L):
                 self.assertEqual(
                     r["snapped"], r["frames"], f"splice {r['repeats']}x{L} would be snapped"
@@ -372,7 +415,7 @@ class Repeats(unittest.TestCase):
 
     def test_every_admissible_loop_can_be_grown_to_product_length(self):
         """Check a property, not a coincidence: the 5-10 s band is twice as wide, so"""
-        for L in fl.admissible_lengths(NFRAMES, fps=FIXTURE_FPS):
+        for L in admissible_lengths(NFRAMES, fps=FIXTURE_FPS):
             self.assertTrue(
                 fl.repeat_plan(L, fps=FIXTURE_FPS), f"length {L} cannot be grown into 5-10 s"
             )
@@ -678,12 +721,11 @@ class Cuts(unittest.TestCase):
 
 class Presence(unittest.TestCase):
     def test_several_people_are_not_this_module_to_decide(self):
-        """The protagonist choice is already made in `fork_props`; no second one here."""
+        """A crowd is "could not measure": no protagonist markup exists to point at."""
         m = Material(loop_sequence(), people={k: 2 for k in range(NFRAMES)})
         got = analyse(m)
         self.assertEqual(got["outcome"], UNMEASURED, got["note"])
-        self.assertIn("fork_props", got["note"])
-        self.assertIn("protagonist", got["note"])
+        self.assertIn("no protagonist markup", got["note"])
         self.assertEqual(got["crowd"], [2])
 
     def test_nobody_at_all_is_not_the_same_as_no_loops(self):
@@ -787,7 +829,7 @@ class LongMaterial(unittest.TestCase):
     def test_the_default_ceiling_is_twenty_minutes(self):
         """Pin the default with a literal: 36000 frames at 30 fps."""
         self.assertEqual(fl.MAX_FRAMES, 36000)
-        self.assertEqual(fl.MAX_FRAMES / fork_comfy.WRAP_FPS / 60, 20)
+        self.assertEqual(fl.MAX_FRAMES / framemath.WRAP_FPS / 60, 20)
 
 
 def many_exercises(count, *, each=50):

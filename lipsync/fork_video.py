@@ -118,13 +118,6 @@ def run_decode(argv) -> dict:
     }
 
 
-def frame_name(index: int) -> str:
-    """Name a frame. The field width is a constant, not a literal in two places."""
-    if not isinstance(index, int) or isinstance(index, bool) or index < 0:
-        raise ValueError(f"frame number {index!r}: expected an integer from zero")
-    return f"{index:0{NAME_DIGITS}d}{FRAME_SUFFIX}"
-
-
 def _ratio(raw) -> float | None:
     """Turn `30000/1001` into 29.97003. Broken or zero gives `None`, not a guess."""
     if raw is None:
@@ -415,17 +408,6 @@ def _probe_report(outcome: str, note: str, t0: float, **extra) -> dict:
     }
     rep.update(extra)
     return rep
-
-
-def fps_prober(path):
-    """Return the source rate as one number. Drop-in replacement for `_ffprobe_fps`."""
-    rep = probe(path)
-    return rep["fps"] if rep["outcome"] == PASS else None
-
-
-def plan_for_seconds(seconds, *, fps=None) -> dict:
-    """Compute how many driving frames a clip of this length needs."""
-    return framemath.frames_for_seconds(seconds, fps=fps)
 
 
 def frames(

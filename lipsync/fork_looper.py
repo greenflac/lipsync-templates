@@ -470,13 +470,6 @@ def length_is_admissible(length, *, fps=None, min_frames=None) -> bool:
     return (length - framemath.LENGTH_BASE) % framemath.LENGTH_STEP == 0
 
 
-def admissible_lengths(n_frames, *, fps=None, min_frames=None) -> list:
-    """List loop lengths the wrapper will NOT snap and the product will accept."""
-    return [
-        L for L in range(1, n_frames + 1) if length_is_admissible(L, fps=fps, min_frames=min_frames)
-    ]
-
-
 def admissible_pairs(index, *, fps=None, min_frames=None) -> list:
     """List pairs of POSITIONS whose length in SOURCE frames is admissible."""
     top = None if fps is None else int(framemath.SECONDS_MAX * fps)
@@ -688,22 +681,6 @@ def overlap(a, b) -> float:
     if inter <= 0:
         return 0.0
     return inter / min(a["frames"], b["frames"])
-
-
-def select(cands, *, overlap_max=None, top=None) -> dict:
-    """Accept several DIFFERENT loops, not a dozen shifted by one frame."""
-    overlap_max = OVERLAP_MAX if overlap_max is None else overlap_max
-    top = TOP_LOOPS if top is None else top
-    kept: list = []
-    dropped = 0
-    for c in cands:
-        if len(kept) >= top:
-            break
-        if any(overlap(c, k) > overlap_max for k in kept):
-            dropped += 1
-            continue
-        kept.append(c)
-    return {"kept": kept, "dropped_overlap": dropped, "considered": len(cands)}
 
 
 def loop_signature(state_at, i, j, *, phases=None) -> list | None:
@@ -1285,9 +1262,9 @@ def find_loops(
     if who["crowd"]:
         note = (
             f"several people in the frame (up to {max(who['crowd'])}). Whom to "
-            f"follow is decided by the `fork_props` markup (role "
-            f"{'protagonist'!r}); a second way of choosing the protagonist "
-            f"does not exist here and never will. Until one is named, the "
+            f"follow is a decision this pipeline never makes: there is no "
+            f"protagonist markup anywhere in this product, and a second way "
+            f"of choosing one does not belong in a loop finder. So the "
             f"detector takes the first bounding box it finds on each frame, "
             f"and the skeleton jumps from person to person mid-clip"
         )

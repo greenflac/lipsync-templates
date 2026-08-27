@@ -84,3 +84,44 @@ nanobanana-2 не отдаёт 9:16 или это от промта?
 **НЕПРОВЕРЕНО (Ц4/Ц10):** что модель отдаёт ровно `720×1280`. Нужен живой вызов
 с ключом; здесь нет ни ключа, ни доступа к их API. До первого живого прогона
 строка `styliser returned the plan` — это и есть тот замер, который его закроет.
+
+## DEBT(2026-08-26): the whole 9:16 repair is UNVERIFIED by a live run
+
+Owner's decision, verbatim: «прогон запиши в долг до завтра».
+
+Nothing in the aspect-ratio work has ever run against the real route. The
+Pollinations balance was spent on the measurements that produced the
+diagnosis (18 calls), and every call since answers HTTP 402. What exists is
+873 green tests and a code path read by eye.
+
+That is the weaker kind of evidence, and it has already failed twice today:
+two claims about padding that survived a full test suite were wrong when
+someone finally looked at the pixels.
+
+What the run has to settle, in one pass:
+1. Does `compose` honour a 1152x2048 request, or answer on its own grid? If
+   it answers 768x1376 as measured, the crop takes 0.87% and nothing is
+   padded — that is the expected path, not a failure.
+2. Is the frame that reaches the paid call free of blurred bands, by eye at
+   full resolution, not by a detector?
+3. Does Kling return 720x1280 for a template run, as it did for all six
+   shipped clips, or does it drift as it did on the earlier runs
+   (816x1104, 960x960)?
+
+Until that run: the sentence "no more bands" rests on reading the code, not
+on measuring the result. Say so in every report.
+
+## What the owner's own observation settled (2026-08-26)
+
+«когда грузили драйвинг и юзерфото без шаблона — никаких полос не было»
+
+That is the cleanest evidence in the whole investigation, and it is not ours:
+one image goes through `images_edit`, two images go through `compose`, and the
+3:4 default lived on `compose` alone. The route chose the aspect ratio; the
+prompt never had anything to do with it. Every run with a template got 3:4,
+got padded by 24.6% of its area, and then depended on a flaky outpaint call to
+hide it. Every run without a template went vertical from the start.
+
+Six styliser returns, six unrelated prompts, one ratio: 896x1200 = 0.7467.
+That is what rules out the prompt as a cause, and the owner's observation is
+what rules in the route.

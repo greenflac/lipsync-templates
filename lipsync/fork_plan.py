@@ -49,6 +49,12 @@ STYLED_SIZE_MEASURED = (896, 1200)
 SHOULDER_POINTS = ("l_shoulder", "r_shoulder")
 ANKLE_POINTS = ("l_ankle", "r_ankle")
 
+#: The axes of `plan_verdict` that judge the PERSON rather than the canvas or
+#: the face. A caller holding an image but no face measurement reads these four
+#: and leaves the other two alone; naming them here keeps that subset from being
+#: retyped at the call site, where it would drift silently.
+PERSON_AXES = ("shoulders", "ankles", "centre", "width")
+
 
 def tally(checked: int, violations: int, unmeasured: int) -> dict:
     """Return the numbers next to the verdict. Zero violations with zero checks is not a success."""
@@ -151,7 +157,7 @@ def plan_verdict(*, width=None, height=None, points=None, face_px=None) -> dict:
 
     box = person_box(points or {})
     if box["outcome"] != PASS:
-        axes += [_axis(n, None, box["note"]) for n in ("shoulders", "ankles", "centre", "width")]
+        axes += [_axis(n, None, box["note"]) for n in PERSON_AXES]
     else:
         axes.append(_band_axis("shoulders", box["shoulders"], SHOULDERS_BAND, "shoulders"))
         axes.append(_band_axis("ankles", box["ankles"], ANKLES_BAND, "ankles"))
@@ -603,39 +609,8 @@ def extend_to_plan(src, dst, *, extender=None, sizer=None, size=EXTEND_SIZE) -> 
     }
 
 
-FULL_BODY_CLAUSE = (
-    "show the SAME person from the first image at FULL HEIGHT, head to feet, "
-    "standing upright and facing the camera, the whole body inside the frame "
-    "with clear margin above the head and below the feet, centred horizontally"
-)
-
-KEEP_IDENTITY_CLAUSE = (
-    "keep the face, hair, skin tone and body type unchanged — this must read "
-    "as the same person, not a lookalike"
-)
-
-
 def no_brands_clause() -> str:
     """Return the brand ban from its single source per project: it lives in the stand."""
     from .fork_e2e import NO_BRANDS_CLAUSE  # noqa: PLC0415
 
     return NO_BRANDS_CLAUSE
-
-
-def full_body_prompt(*, extra: str = "") -> str:
-    """Build the full-height prompt, assembled separately from the call."""
-    parts = [FULL_BODY_CLAUSE, KEEP_IDENTITY_CLAUSE, no_brands_clause()]
-    if extra:
-        parts.append(extra.strip())
-    return "; ".join(parts)
-
-
-def render(report: dict) -> str:
-    """Render for a human: the verdict, the numbers, then each axis on its own line."""
-    head = (
-        f"PLAN: {report['outcome']}  (checked {report['checked']}, "
-        f"violations {report['violations']}, unmeasured "
-        f"{report['unmeasured']})"
-    )
-    rows = [f"  {a['name']}: {a['outcome']} — {a['note']}" for a in report.get("axes", [])]
-    return "\n".join([head, *rows])

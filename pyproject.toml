@@ -10,17 +10,41 @@ readme = "README.md"
 requires-python = ">=3.11"
 license = { file = "LICENSE" }
 
-# Only what the measuring layer cannot run without; its tests need neither
-# a GPU nor the network. Heavy packages live in extras: insightface is only
-# needed for live identity measurement, numpy+pillow covers everything else.
+# What the pipeline cannot run without. The test suite needs neither a GPU nor
+# the network, so the heavy and the live-only packages sit in extras below.
+#
+# `requests` and `fal-client` were both imported and neither declared until
+# 2026-08-27. Three guards stayed quiet for three different reasons: the
+# imports sit inside functions, `pollinations` had no tests, and mypy runs with
+# --ignore-missing-imports. The research tree this package was carved out of
+# did declare `requests>=2.31` — the declaration was lost in the cut, not the
+# dependency.
 dependencies = [
     "numpy",
     "pillow",
+    "requests",
+    "fal-client",
 ]
 
 [project.optional-dependencies]
-identity = ["insightface", "onnxruntime"]
-pose = ["mediapipe"]
+# ArcFace is the one model that runs on this machine, and onnxruntime is what
+# executes it — `device.detect` asks onnxruntime which providers exist.
+identity = [
+    "insightface",
+    "onnxruntime",
+]
+pose = [
+    "mediapipe",
+]
+# The owner's separate repository (vertical-creative-eval), imported by
+# `fork_e2e`, `fork_intake` and `fork_style_prompt` behind a try/except and
+# absent from any package index. UNVERIFIED as an installable name: existence
+# was proven only as an importable module on the owner's machine
+# (creative_eval 0.1.0, /home/user/greenflac/vertical-creative-eval), so this
+# extra resolves from a checkout, not from PyPI.
+style = [
+    "creative-eval",
+]
 
 [tool.setuptools]
 packages = ["lipsync", "lipsync.tests"]

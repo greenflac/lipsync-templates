@@ -213,9 +213,13 @@ def differ(left: dict, right: dict) -> dict:
     }
 
 
-def report_text(out: dict) -> str:
-    """Render the human report: verdict, numbers, prompt. The numbers sit next to the verdict."""
-    head = f"[{out['outcome']:<18}] style prompt"
-    body = f"  {out['note']}"
-    tail = f"  prompt: {out['prompt']}" if out.get("prompt") else "  no prompt"
-    return "\n".join([head, body, tail])
+# A measuring device, exercised by the tests and never by the paid path.
+#
+# `compose` is the whole product of this module, and its failure mode is silent:
+# an adapter that has stopped reading the card still returns a fluent, plausible
+# prompt — the same one for every reference. Nothing downstream can tell, because
+# a prompt is judged by the picture it produces and the picture always arrives.
+# `differ` is the control that separates the two: it feeds two cards that must
+# not agree and reports FAIL when they do. It measures the adapter rather than
+# any one prompt, so no production call site exists or should.
+INSTRUMENTS = ("differ",)

@@ -717,14 +717,70 @@ def fit_frame_to_plan(src, dst, *, plan, sizer=None, cropper=None) -> dict:
     }
 
 
+#: CHOSEN: how many driving frames the composition card is measured over. The
+#: card is a set of medians with a measured spread, so it needs enough frames to
+#: have a middle, and few enough that reading poses stays cheap next to the one
+#: paid call. The frames are taken evenly across the whole directory rather than
+#: from the front, which would describe the opening pose and call it the clip.
+CARD_SAMPLE_FRAMES = 24
+
+
+def _read_pose(path) -> dict:
+    """Read the pose points of one image. The one reader every card and check uses."""
+    from . import fork_looper  # noqa: PLC0415
+
+    return (fork_looper.read_pose(str(path)) or {}).get("points") or {}
+
+
+def driving_card(frames, *, pose=None, plan=None) -> dict:
+    """Measure where the person stands on the driving, as a composition card.
+
+    `frames` are the unpacked driving frames in order. Returns the reply of
+    `fork_plan.composition_card`: medians and tolerances when the pose reads,
+    "could not measure" when it does not — never a guessed card.
+
+    Example:
+        >>> card = driving_card(["000.png", "001.png"], pose=lambda p: {})
+        >>> card["outcome"]
+        'could not measure'
+    """
+    P = fork_plan if plan is None else plan
+    if not frames:
+        return {
+            **P.tally(0, 0, 1),
+            "note": (
+                "the driving was not unpacked into frames: the composition "
+                "card is NOT MEASURED and the framing is left to the template"
+            ),
+        }
+    reader = _read_pose if pose is None else pose
+    picked = list(frames)
+    step = max(1, len(picked) // CARD_SAMPLE_FRAMES)
+    picked = picked[::step][:CARD_SAMPLE_FRAMES]
+    poses, broke = [], []
+    for frame in picked:
+        try:
+            poses.append(reader(str(frame)))
+        except Exception as exc:  # noqa: BLE001
+            broke.append(f"{type(exc).__name__}: {exc}")
+    if not poses:
+        return {
+            **P.tally(0, 0, 1),
+            "note": (
+                f"the pose reader answered on none of the {len(picked)} "
+                f"sampled frames: {broke[0] if broke else 'no reply'}"
+            ),
+        }
+    got = P.composition_card(poses)
+    if broke:
+        got = dict(got, note=f"{got['note']}; {len(broke)} frames threw: {broke[0]}")
+    return got
+
+
 def _person_in_plan(image, *, plan, pose=None, card=None) -> tuple:
     """Check whether the person in the image fits the plan bands. Three outcomes."""
     if pose is None:
-
-        def pose(path):
-            from . import fork_looper  # noqa: PLC0415
-
-            return (fork_looper.read_pose(str(path)) or {}).get("points") or {}
+        pose = _read_pose
 
     try:
         points = pose(str(image))
@@ -734,36 +790,34 @@ def _person_in_plan(image, *, plan, pose=None, card=None) -> tuple:
             UNMEASURED,
             f"the pose was not captured: {type(exc).__name__}: {exc}",
         )
-    if card is not None:
+    # A card OBJECT is not a card: `driving_card` always answers, and its answer
+    # is "could not measure" whenever the driving poses did not read. Branching
+    # on existence would swap the plan bands for a check that can only say
+    # "no card", which is how a run loses its person check without going red.
+    if card and card.get("outcome") == PASS:
         got = plan.in_card(points, card)
         return ("person in the driving card", got["outcome"], str(got.get("note"))[:250])
-    box = plan.person_box(points)
-    if box["outcome"] != PASS:
-        return ("person in plan", UNMEASURED, str(box.get("note"))[:200])
-    bad = []
-    lo, hi = plan.SHOULDERS_BAND
-    if not lo <= (box["shoulders"] or -1) <= hi:
-        bad.append(f"shoulders {box['shoulders']} outside {lo}..{hi}")
-    lo, hi = plan.ANKLES_BAND
-    if not lo <= (box["ankles"] or -1) <= hi:
-        bad.append(f"ankles {box['ankles']} outside {lo}..{hi}")
-    if abs(box["centre"] - 0.5) > plan.CENTRE_TOL:
-        bad.append(f"centre {box['centre']} farther than {plan.CENTRE_TOL} from the middle")
-    if box["width"] > plan.WIDTH_MAX:
-        bad.append(f"width {box['width']} above {plan.WIDTH_MAX}")
-    tail = (
-        f"shoulders {box['shoulders']}, ankles {box['ankles']}, centre "
-        f"{box['centre']}, width {box['width']}"
-    )
+    # The four bands are the plan's decision and `plan_verdict` is where it is
+    # made. This function used to compare against `SHOULDERS_BAND` and its three
+    # neighbours itself, which meant one plan judged in two implementations:
+    # moving a band in `fork_plan` left this copy agreeing by coincidence, and
+    # nothing would have gone red the day the coincidence ended. Only the person
+    # axes are read — the canvas is checked by the caller and the face is not
+    # measured on this image at all.
+    axes = [a for a in plan.plan_verdict(points=points)["axes"] if a["name"] in plan.PERSON_AXES]
+    if any(a["unmeasured"] for a in axes):
+        return ("person in plan", UNMEASURED, str(axes[0]["note"])[:200])
+    bad = [a["note"] for a in axes if a["violations"]]
+    tail = "; ".join(a["note"] for a in axes)
     if bad:
         return (
             "person in plan",
             FAIL,
-            "; ".join(bad) + f" ({tail}). Kling scales the character to the "
-            f"driving skeleton: a reference outside the plan will drift "
-            f"past the frame edge",
+            "; ".join(bad) + ". Kling scales the character to the driving "
+            "skeleton: a reference outside the plan will drift past the "
+            "frame edge",
         )
-    return ("person in plan", PASS, tail)
+    return ("person in plan", PASS, tail[:250])
 
 
 def stage_stylize(
@@ -788,13 +842,26 @@ def stage_stylize(
     """Turn the client photo and the style reference into a styled photo on the plan."""
     A = _default_aesthetic() if aesthetic_mod is None else aesthetic_mod
     checks_pre = []
+    # The card decides the framing clause in the prompt and which question the
+    # person check asks, so the stage carries it as a fact rather than implying
+    # it: a run framed by the driving and a run framed by the template produce
+    # the same-looking output and are not the same run. It is reported and not
+    # counted as an axis — the absence of a card is a narrower run, not a
+    # defect of the stylization this stage is about.
+    card_fact = {
+        "outcome": (card or {}).get("outcome", UNMEASURED),
+        "note": str((card or {}).get("note", "no composition card was built for this run"))[:250],
+    }
     if aesthetic is not None:
         gender = A.gender_of(aesthetic)
         pair = A.pair_check(client_gender=client_gender, aesthetic_gender=gender)
         checks_pre.append(("client and template gender", pair["outcome"], pair["note"]))
         if pair["outcome"] != PASS:
             return _result(
-                STAGES[1], checks_pre, note="gender mismatch: generation was not started"
+                STAGES[1],
+                checks_pre,
+                driving_card=card_fact,
+                note="gender mismatch: generation was not started",
             )
         style_ref = str(A.aesthetic_file(aesthetic))
         prompt = f"{A.compose(aesthetic, card=card)['prompt']}. {A.assemble_prompt(card=card)}"
@@ -823,7 +890,11 @@ def stage_stylize(
     except Exception as exc:  # noqa: BLE001
         checks.append(("stylization", UNMEASURED, f"{type(exc).__name__}: {exc}"))
         return _result(
-            STAGES[1], checks, prompt=prompt, note="the styliser did not answer: nothing to measure"
+            STAGES[1],
+            checks,
+            prompt=prompt,
+            driving_card=card_fact,
+            note="the styliser did not answer: nothing to measure",
         )
     checks.append(
         (
@@ -922,7 +993,12 @@ def stage_stylize(
         checks.append(_person_in_plan(made, plan=P, pose=pose, card=card))
 
     return _result(
-        STAGES[1], checks, styled=made, prompt=prompt, note=str(built["card_note"] or "")[:160]
+        STAGES[1],
+        checks,
+        styled=made,
+        prompt=prompt,
+        driving_card=card_fact,
+        note=str(built["card_note"] or "")[:160],
     )
 
 
@@ -933,6 +1009,18 @@ def stage_style_acceptance(
     similarity = shipped_similarity if similarity is None else similarity
     checks, numbers = [], {}  # type: list, dict
 
+    # `shipped_similarity` falls back to the palette measure whenever the
+    # external package is absent or throws, and the number it returns looks the
+    # same either way. A style verdict that does not name the device that
+    # produced it cannot be compared with yesterday's, so the source is read off
+    # what is actually about to run rather than off what was intended.
+    instrument = (
+        similarity_source()
+        if similarity is shipped_similarity
+        else f"injected: {getattr(similarity, '__name__', type(similarity).__name__)}"
+    )
+    numbers["style_instrument"] = instrument
+
     floor = similarity(style_ref, client_photo)
     hit = similarity(style_ref, styled)
     numbers["floor"] = floor
@@ -942,7 +1030,8 @@ def stage_style_acceptance(
             (
                 "style hit",
                 UNMEASURED,
-                f"the style instrument gave no number: floor={floor}, hit={hit}",
+                f"the style instrument gave no number: floor={floor}, "
+                f"hit={hit}; measured by {instrument}",
             )
         )
     else:
@@ -955,7 +1044,7 @@ def stage_style_acceptance(
                 PASS if ok else FAIL,
                 f"hit {hit} with floor {floor} (floor = style against the "
                 f"unstyled photo), margin {margin} with bar "
-                f"{STYLE_MARGIN_MIN}",
+                f"{STYLE_MARGIN_MIN}; measured by {instrument}",
             )
         )
 
@@ -1594,6 +1683,14 @@ def run(
         )
     )
     if r1["outcome"] == PASS:
+        # Nothing in the shipped run used to produce this card, so `framing_clause`
+        # and `in_card` — both already wired to consume it — were dead in every
+        # run that did not hand one in by hand. The driving is the only thing that
+        # knows where the person stands, and it is on disk by now, so the card is
+        # measured from it rather than left for an operator to remember.
+        if card is None:
+            card = driving_card(driving_frames, pose=pose, plan=plan)
+            say(f"      · driving card: {card['outcome']} — {card['note']}", log=log)
         r2 = step(
             lambda: stage_stylize(
                 client_photo=client_photo,

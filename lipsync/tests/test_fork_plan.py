@@ -439,33 +439,20 @@ class TheVerdictHasThreeOutcomesOnEveryAxis(unittest.TestCase):
                 setattr(P, name, was)
 
 
-class TheFullBodyPromptIsADecisionNotAString(unittest.TestCase):
-    def test_the_prompt_asks_for_head_to_feet_and_keeps_the_person(self):
-        got = P.full_body_prompt()
-        self.assertIn("FULL HEIGHT", got)
-        self.assertIn("head to feet", got)
-        self.assertIn("same person", got)
+class TheBrandBanIsImportedAndNotCopied(unittest.TestCase):
+    """`no_brands_clause` must forward the stand's text, never hold a copy of it."""
 
-    def test_removing_the_identity_clause_is_visible_in_the_prompt(self):
-        with mock.patch.object(P, "KEEP_IDENTITY_CLAUSE", ""):
-            self.assertNotIn("same person", P.full_body_prompt())
-
-    def test_the_brand_ban_is_in_the_prompt_and_is_not_a_copy(self):
+    def test_the_ban_in_the_prompt_is_the_stand_text_itself(self):
         from lipsync import fork_e2e
 
-        self.assertIn(fork_e2e.NO_BRANDS_CLAUSE, P.full_body_prompt())
-        self.assertIn("no logos", P.full_body_prompt())
+        self.assertIn(fork_e2e.NO_BRANDS_CLAUSE, P.extend_prompt())
 
-    def test_the_ban_comes_from_the_stand_not_from_a_local_copy(self):
+    def test_swapping_the_stand_text_swaps_the_prompt(self):
+        """Negative control: a local copy would keep the old words."""
         from lipsync import fork_e2e
 
         with mock.patch.object(fork_e2e, "NO_BRANDS_CLAUSE", "SWAPPED-BAN"):
-            self.assertIn("SWAPPED-BAN", P.full_body_prompt())
-
-    def test_extra_words_are_appended_not_substituted(self):
-        got = P.full_body_prompt(extra="plain grey studio background")
-        self.assertIn("FULL HEIGHT", got)
-        self.assertIn("grey studio", got)
+            self.assertIn("SWAPPED-BAN", P.extend_prompt())
 
 
 class TheDiskIsAnInjectionPoint(unittest.TestCase):

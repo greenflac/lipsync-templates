@@ -248,6 +248,19 @@ def assemble_prompt(*, legacy: bool = False, card=None) -> str:
     return f"{AESTHETIC_ROLE_CLAUSE}. {NEVER_THE_FACE_CLAUSE}.{tail} {no_brands_clause()}"
 
 
+# A measuring device, exercised by the tests and never by the paid path.
+#
+# `accept` — the axis the pipeline does run — asks one question: is the demo
+# identity still on the aesthetic? One distance cannot answer the question that
+# actually costs money. A similarity measure can say "close", it cannot say
+# "close to THIS person rather than THAT one", so a reference carrying the
+# DEMO's face instead of the client's reads as a pass on that axis. Measuring
+# both distances and looking at their difference is the only way to see it, and
+# a stranger in the client's clip is the most expensive defect this repository
+# can ship.
+INSTRUMENTS = ("leak_verdict",)
+
+
 def leak_verdict(*, made, client, demo, distances=None) -> dict:
     """Measure from both sides: who is on the assembled reference — the client or the demo."""
     t0 = time.perf_counter()
@@ -489,12 +502,3 @@ def accept(*, made, demo, distances=None) -> dict:
             f"identity ({tail})"
         ),
     }
-
-
-def render(report: dict) -> str:
-    """Render the report for a human."""
-    return (
-        f"AESTHETIC: {report['outcome']}  (checked {report['checked']}, "
-        f"violations {report['violations']}, unmeasured "
-        f"{report['unmeasured']})\n  {report.get('note', '')}"
-    )

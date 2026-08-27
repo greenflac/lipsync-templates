@@ -133,7 +133,12 @@ class _PlanOk:
     CENTRE_TOL = fork_plan.CENTRE_TOL
     SHOULDERS_BAND = fork_plan.SHOULDERS_BAND
     WIDTH_MAX = fork_plan.WIDTH_MAX
+    PERSON_AXES = fork_plan.PERSON_AXES
+    composition_card = staticmethod(fork_plan.composition_card)
+    in_card = staticmethod(fork_plan.in_card)
     person_box = staticmethod(fork_plan.person_box)
+    tally = staticmethod(fork_plan.tally)
+    plan_verdict = staticmethod(fork_plan.plan_verdict)
     ratio_axis = staticmethod(fork_plan.ratio_axis)
     fit_to_plan = staticmethod(fork_plan.fit_to_plan)
 
@@ -430,6 +435,76 @@ class StyleFloorIsTheNegativeControl(unittest.TestCase):
         )
         self.assertEqual(got["checks"][0]["outcome"], "could not measure")
         self.assertEqual(got["outcome"], "could not measure")
+
+
+class TheStyleVerdictNamesTheDeviceThatProducedIt(unittest.TestCase):
+    """`shipped_similarity` repairs a missing external package by falling back.
+
+    A repair that hides the breakage is how a defect ships: two runs measured by
+    two different devices report the same-looking number. The stage must say
+    which one answered. Both controls are run here, so the test does not depend
+    on whether `creative_eval` happens to be installed on the machine.
+    """
+
+    def _hidden_external(self):
+        """Make the lazy import fail the way a machine without the package would."""
+        import sys
+
+        return mock.patch.dict(sys.modules, {"creative_eval.style": None})
+
+    def _present_external(self):
+        """Put a working `creative_eval.style` where the lazy import will find it."""
+        import sys
+        import types
+
+        pkg = types.ModuleType("creative_eval")
+        style = types.ModuleType("creative_eval.style")
+        style.similarity = lambda a, b: 0.9
+        pkg.style = style
+        return mock.patch.dict(sys.modules, {"creative_eval": pkg, "creative_eval.style": style})
+
+    def _acceptance(self, **kw):
+        return E.stage_style_acceptance(
+            styled="styled.png",
+            style_ref="s.png",
+            client_photo="c.png",
+            distances=_distances_ok,
+            **kw,
+        )
+
+    def test_the_fallback_device_is_named_in_the_numbers_and_in_the_note(self):
+        with self._hidden_external():
+            got = self._acceptance()
+        self.assertIn("fallback", got["numbers"]["style_instrument"])
+        self.assertIn("palette_similarity", got["numbers"]["style_instrument"])
+        self.assertIn(
+            got["numbers"]["style_instrument"],
+            " ".join(c["note"] for c in got["checks"]),
+        )
+
+    def test_the_shipped_device_is_named_when_the_package_is_there(self):
+        """Negative control: the same call, the only difference being the package."""
+        with self._present_external():
+            got = self._acceptance()
+        self.assertEqual(
+            got["numbers"]["style_instrument"],
+            "creative_eval.style.similarity (external, shipped)",
+        )
+        self.assertNotIn("fallback", got["numbers"]["style_instrument"])
+
+    def test_the_two_devices_do_not_report_the_same_name(self):
+        with self._hidden_external():
+            without = self._acceptance()["numbers"]["style_instrument"]
+        with self._present_external():
+            within = self._acceptance()["numbers"]["style_instrument"]
+        self.assertNotEqual(without, within)
+
+    def test_an_injected_device_is_never_reported_as_the_shipped_one(self):
+        """The name comes from what will run, not from what the default would be."""
+        got = self._acceptance(similarity=_similarity_ok)
+        self.assertIn("injected", got["numbers"]["style_instrument"])
+        self.assertIn("_similarity_ok", got["numbers"]["style_instrument"])
+        self.assertNotIn("palette_similarity", got["numbers"]["style_instrument"])
 
 
 class PaletteInstrumentHasBothControls(unittest.TestCase):
@@ -1655,6 +1730,153 @@ class ThePrintedPriceFollowsTheWindowLength(unittest.TestCase):
         self.assertEqual(got["numbers"]["price_usd"], E.KLING_PRICE_USD)
 
 
+class TheDrivingCardIsMeasuredAndNotWaitedFor(unittest.TestCase):
+    """`framing_clause` and `in_card` were wired to a card nothing ever produced.
+
+    The stand accepted `card=` from a caller and `main` never passed one, so
+    every shipped run framed the reference by the template's own words and
+    checked the person against the global bands instead of against the driving.
+    The card is now measured from the driving frames.
+    """
+
+    _P = fork_plan
+    FRAMES = [f"{i:05d}.png" for i in range(96)]
+
+    def test_a_readable_driving_gives_a_measured_card(self):
+        card = E.driving_card(self.FRAMES, pose=_pose_ok)
+        self.assertEqual(card["outcome"], PASS)
+        self.assertEqual(card["centre"], 0.5)
+        self.assertEqual(card["ankles"], 0.92)
+
+    def test_an_unreadable_driving_gives_no_card_and_says_so(self):
+        """Negative control: the card is never guessed when the pose does not read."""
+        card = E.driving_card(self.FRAMES, pose=lambda p: {})
+        self.assertEqual(card["outcome"], UNMEASURED)
+        self.assertNotIn("centre", card)
+
+    def test_no_frames_at_all_is_could_not_measure_and_not_an_empty_card(self):
+        card = E.driving_card(None, pose=_pose_ok)
+        self.assertEqual(card["outcome"], UNMEASURED)
+        self.assertIn("NOT MEASURED", card["note"])
+
+    def test_a_thrown_reader_is_reported_and_does_not_sink_the_run(self):
+        def broken(_):
+            raise RuntimeError("mediapipe did not load")
+
+        card = E.driving_card(self.FRAMES, pose=broken)
+        self.assertEqual(card["outcome"], UNMEASURED)
+        self.assertIn("mediapipe did not load", card["note"])
+
+    def test_the_sample_is_spread_over_the_clip_and_bounded(self):
+        seen = []
+
+        def watching(path):
+            seen.append(path)
+            return _pose_ok(path)
+
+        E.driving_card(self.FRAMES, pose=watching)
+        # The sample size as a LITERAL: imported it would travel with a change
+        # to the module and the change would go unseen.
+        self.assertEqual(len(seen), 24)
+        self.assertEqual(seen[0], self.FRAMES[0])
+        self.assertGreater(seen[-1], self.FRAMES[len(self.FRAMES) // 2])
+
+    def test_the_sample_size_moved_both_ways_moves_the_reading(self):
+        seen = []
+
+        def watching(path):
+            seen.append(path)
+            return _pose_ok(path)
+
+        with mock.patch.object(E, "CARD_SAMPLE_FRAMES", 4):
+            E.driving_card(self.FRAMES, pose=watching)
+        self.assertEqual(len(seen), 4)
+        seen.clear()
+        with mock.patch.object(E, "CARD_SAMPLE_FRAMES", 96):
+            E.driving_card(self.FRAMES, pose=watching)
+        self.assertEqual(len(seen), 96)
+
+
+class TheCardBuiltFromTheDrivingReachesThePromptAndTheCheck(unittest.TestCase):
+    def _stylize(self, **over):
+        with TemporaryDirectory() as td:
+            return _stylize_stage(Path(td) / "styled.png", **over)
+
+    def _card(self):
+        return E.driving_card([f"{i:05d}.png" for i in range(48)], pose=_pose_ok)
+
+    def test_the_run_builds_a_card_when_the_caller_hands_none_in(self):
+        log = io.StringIO()
+        with TemporaryDirectory() as td, _no_network():
+            got = _run(Path(td), log, driving_frames=[f"{i:05d}.png" for i in range(48)])
+        stage = got["stages"][1]
+        self.assertEqual(stage["driving_card"]["outcome"], PASS)
+        self.assertIn("driving card: pass", log.getvalue())
+
+    def test_without_frames_the_card_is_could_not_measure_and_the_run_still_passes(self):
+        """Negative control: the wiring must not turn a narrower run into a defect."""
+        log = io.StringIO()
+        with TemporaryDirectory() as td, _no_network():
+            got = _run(Path(td), log)
+        self.assertEqual(got["outcome"], "pass")
+        self.assertEqual(got["stages"][1]["driving_card"]["outcome"], UNMEASURED)
+
+    def test_the_measured_card_is_what_the_prompt_builders_are_handed(self):
+        """Link one: the stage passes the card on instead of dropping it."""
+        seen = {}
+
+        class _A:
+            @staticmethod
+            def gender_of(aid):
+                return "f"
+
+            @staticmethod
+            def pair_check(*, client_gender, aesthetic_gender):
+                return {"outcome": PASS, "note": "stub gate"}
+
+            @staticmethod
+            def aesthetic_file(aid):
+                return f"assets/aesthetics/{aid}_f.png"
+
+            @staticmethod
+            def compose(aid, *, card=None):
+                seen["compose"] = card
+                return {"prompt": "aesthetic in words"}
+
+            @staticmethod
+            def assemble_prompt(*, card=None):
+                seen["assemble"] = card
+                return "roles, " + E.NO_BRANDS_CLAUSE
+
+        card = self._card()
+        self._stylize(prompt=None, aesthetic="y2k", client_gender="f", aesthetic_mod=_A, card=card)
+        self.assertEqual(seen["compose"], card)
+        self.assertEqual(seen["assemble"], card)
+
+    def test_the_real_prompt_builder_turns_that_card_into_a_framing_clause(self):
+        """Link two: and an unmeasured card is the negative control, giving no clause."""
+        from lipsync import fork_aesthetic
+
+        measured = fork_aesthetic.assemble_prompt(card=self._card())
+        blank = fork_aesthetic.assemble_prompt(card=E.driving_card(None, pose=_pose_ok))
+        self.assertIn("FRAMING, this outranks", measured)
+        self.assertNotIn("FRAMING, this outranks", blank)
+
+    def test_a_measured_card_changes_which_question_the_person_check_asks(self):
+        without = self._stylize(card=None)
+        withcard = self._stylize(card=self._card())
+        names = lambda r: [c["name"] for c in r["checks"]]  # noqa: E731
+        self.assertIn("person in plan", names(without))
+        self.assertIn("person in the driving card", names(withcard))
+
+    def test_an_unmeasured_card_leaves_the_plan_bands_in_charge(self):
+        """Negative control: an object that is not a measurement must not take over."""
+        blank = E.driving_card(None, pose=_pose_ok)
+        got = self._stylize(card=blank)
+        self.assertIn("person in plan", [c["name"] for c in got["checks"]])
+        self.assertNotIn("person in the driving card", [c["name"] for c in got["checks"]])
+
+
 class ThePersonMustBeInPlanNotJustTheCanvas(unittest.TestCase):
     """The canvas was checked, but the pose on the reference never was, and it cost money."""
 
@@ -1705,6 +1927,83 @@ class ThePersonMustBeInPlanNotJustTheCanvas(unittest.TestCase):
     def test_the_note_says_WHY_it_matters_not_just_that_it_failed(self):
         bad = dict(self.GOOD, l_ankle=(0.55, 0.70, 0.96), r_ankle=(0.45, 0.70, 0.96))
         self.assertIn("past the frame edge", self._check(bad)[2])
+
+    @staticmethod
+    def _axis(name, violations, note):
+        return {
+            "name": name,
+            "checked": 1,
+            "violations": violations,
+            "unmeasured": 0,
+            "note": note,
+        }
+
+    def _with_verdict(self, axes, points):
+        """Run the check with `plan_verdict` replaced by a stub that returns `axes`."""
+        seen = {}
+
+        def fake(**kw):
+            seen.update(kw)
+            return {"axes": axes}
+
+        with mock.patch.object(self._P, "plan_verdict", fake):
+            got = E._person_in_plan("k.png", plan=self._P, pose=lambda p: points)
+        return got, seen
+
+    def test_the_pose_reaches_plan_verdict_and_its_answer_is_the_answer(self):
+        """Negative control on the wiring: silence the judge and the check goes silent.
+
+        A second copy of the bands here would ignore the stub and keep
+        answering on its own — which is exactly the defect this replaced.
+        """
+        got, seen = self._with_verdict([self._axis("centre", 1, "SENTINEL-OFF-CENTRE")], self.GOOD)
+        self.assertEqual(seen, {"points": self.GOOD})
+        self.assertEqual(got[1], FAIL)
+        self.assertIn("SENTINEL-OFF-CENTRE", got[2])
+
+    def test_a_pose_the_bands_would_refuse_passes_when_the_judge_says_pass(self):
+        """The other direction: nothing here re-judges what the judge admitted."""
+        refused = dict(self.GOOD, l_ankle=(0.55, 0.10, 0.96), r_ankle=(0.45, 0.10, 0.96))
+        self.assertEqual(self._check(refused)[1], FAIL)
+        got, _ = self._with_verdict(
+            [self._axis(name, 0, f"{name} SENTINEL-OK") for name in self._P.PERSON_AXES],
+            refused,
+        )
+        self.assertEqual(got[1], PASS)
+        self.assertIn("SENTINEL-OK", got[2])
+
+    def test_each_of_the_four_axes_can_sink_the_check_on_its_own(self):
+        """Without this the axis list is clamped from one side only.
+
+        Widening it goes red at once; dropping an axis went unnoticed, because
+        no case made that axis the only violation. The axis names are written
+        out as literals so the tuple cannot move the expectation with it.
+        """
+        cases = {
+            "shoulders": dict(
+                self.GOOD, l_shoulder=(0.58, 0.50, 0.99), r_shoulder=(0.42, 0.50, 0.99)
+            ),
+            "ankles": dict(self.GOOD, l_ankle=(0.55, 0.60, 0.96), r_ankle=(0.45, 0.60, 0.96)),
+            "centre": {k: (v[0] + 0.20, v[1], v[2]) for k, v in self.GOOD.items()},
+            "width": dict(self.GOOD, l_shoulder=(0.90, 0.32, 0.99), r_shoulder=(0.10, 0.32, 0.99)),
+        }
+        for axis, points in cases.items():
+            with self.subTest(axis=axis):
+                name, outcome, note = self._check(points)
+                self.assertEqual(outcome, FAIL, f"{axis} alone did not sink the check")
+                self.assertIn(axis, note)
+
+    def test_the_good_pose_is_the_negative_control_for_all_four(self):
+        """Each case above must differ from this one on its own axis and nothing else."""
+        self.assertEqual(self._check(self.GOOD)[1], PASS)
+
+    def test_only_the_person_axes_are_read_and_the_canvas_is_left_to_the_caller(self):
+        """The real verdict cannot measure the canvas here, and that must not sink the check."""
+        canvas = [
+            a for a in self._P.plan_verdict(points=self.GOOD)["axes"] if a["name"] == "canvas"
+        ]
+        self.assertEqual([a["unmeasured"] for a in canvas], [1])
+        self.assertEqual(self._check(self.GOOD)[1], PASS)
 
 
 # The plan, and the bound around it, as LITERALS. Imported from the module they

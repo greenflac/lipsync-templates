@@ -383,27 +383,6 @@ class Window(unittest.TestCase):
         v = fi.window([], 5.0, 30.0)
         self.assertEqual(v["outcome"], "could not measure")
 
-    def test_the_command_carries_setpts_and_frame_numbers(self):
-        argv = fi.window_argv("in.mp4", "out.mp4", 25, 174)
-        self.assertIn("-vf", argv)
-        expr = argv[argv.index("-vf") + 1]
-        self.assertEqual(expr, "select='between(n\\,25\\,174)',setpts=N/30/TB")
-        self.assertIn("-an", argv)
-        self.assertEqual(argv[-1], "out.mp4")
-
-    def test_dropping_setpts_would_be_the_422(self):
-        """Guard the defect, not the line: without setpts Wan answered 422."""
-        expr = fi.window_argv("in.mp4", "out.mp4", 0, 10)[
-            fi.window_argv("in.mp4", "out.mp4", 0, 10).index("-vf") + 1
-        ]
-        self.assertIn("setpts=", expr)
-
-    def test_broken_bounds_raise_instead_of_guessing(self):
-        for a, b in ((5, 4), (-1, 10)):
-            with self.subTest(bounds=(a, b)):
-                with self.assertRaises(ValueError):
-                    fi.window_argv("in.mp4", "out.mp4", a, b)
-
 
 class ThreeOutcomesAndThreeNumbers(unittest.TestCase):
     def test_zero_violations_over_zero_checks_is_not_success(self):
@@ -452,6 +431,15 @@ class DrivingIntake(unittest.TestCase):
             face_prober=face_prober,
         )
 
+    def test_the_intake_reports_six_axes_of_which_two_are_soft(self):
+        """The docstring said five axes and one soft while the code ran six and two."""
+        r = self._run(plain=305, fixed=305, poses={}, faces={})
+        self.assertEqual(
+            sorted(r["axes"]),
+            ["cuts", "face_size", "orphan_wrists", "scenes", "timestamps", "window"],
+        )
+        self.assertEqual(sorted(r["soft"]), ["orphan_wrists", "window"])
+
     def test_a_clean_clip_passes_and_the_soft_axis_is_outside_the_verdict(self):
         r = self._run(plain=305, fixed=305, poses={"00002.png": ORPHAN_POSE}, faces={})
         self.assertEqual(r["axes"]["timestamps"]["outcome"], "pass")
@@ -464,7 +452,7 @@ class DrivingIntake(unittest.TestCase):
         r = self._run(plain=307, fixed=305, poses={}, faces={})
         self.assertEqual(r["axes"]["timestamps"]["outcome"], "fail")
         self.assertEqual(r["outcome"], "fail")
-        self.assertIn("-vsync 0", fi.render(r))
+        self.assertIn("-vsync 0", r["axes"]["timestamps"]["note"])
 
     def test_orphan_wrists_alone_never_sink_the_verdict(self):
         """Guard the template author's decision: 100% orphans is a warning, not a refusal."""
@@ -692,18 +680,6 @@ class EveryInjectionPointIsAParameter(unittest.TestCase):
             elif isinstance(node, ast.Import):
                 for a in node.names:
                     self.assertFalse(a.name == "style" or a.name.endswith(".style"))
-
-
-class TheRenderShowsTheNumbers(unittest.TestCase):
-    def test_every_axis_prints_its_three_numbers(self):
-        r = fi.photo_intake(
-            "p.png", faces_prober=lambda p: {"faces": [{"face_px": 420}], "why": ""}
-        )
-        text = fi.render(r)
-        self.assertIn("checked", text)
-        self.assertIn("violations", text)
-        self.assertIn("unmeasured", text)
-        self.assertIn("VERDICT: pass", text)
 
 
 if __name__ == "__main__":

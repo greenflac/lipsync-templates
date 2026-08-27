@@ -5,7 +5,6 @@ from __future__ import annotations
 import shutil
 import subprocess
 import time
-from pathlib import Path
 
 from . import fork_looper, fork_video
 from .fork_identity import FAIL, PASS, UNMEASURED
@@ -22,8 +21,6 @@ from .identity_arcface import MIN_FACE_PX  # noqa: E402
 MIN_SCENE_SECONDS = 3.0
 
 ORPHAN_WRIST_WARN = 0.10
-
-WINDOW_FPS_PROVEN = 30.0
 
 FRAME_COUNT_EXACT = 0
 
@@ -556,29 +553,6 @@ def window(scene_list, product_seconds: float, fps: float | None) -> dict:
     }
 
 
-def window_argv(video_path, out_path, start: int, end: int, *, fps: float | None = None) -> list:
-    """Build the window-cut command apart from running it: its makeup is a decision."""
-    if not isinstance(start, int) or not isinstance(end, int) or start < 0:
-        raise ValueError(f"window bounds {start!r}..{end!r}: expected integers from zero")
-    if end < start:
-        raise ValueError(f"window bounds {start}..{end}: the end comes before the start")
-    rate = WINDOW_FPS_PROVEN if fps is None else float(fps)
-    if rate <= 0:
-        raise ValueError(f"rate {fps!r}: expected a positive number")
-    return [
-        fork_video.FFMPEG_BIN,
-        "-v",
-        "error",
-        "-y",
-        "-i",
-        str(video_path),
-        "-vf",
-        f"select='between(n\\,{start}\\,{end})',setpts=N/{rate:g}/TB",
-        "-an",
-        str(out_path),
-    ]
-
-
 def driving_intake(
     video_path,
     frame_paths=None,
@@ -590,7 +564,7 @@ def driving_intake(
     pose_reader=None,
     face_prober=None,
 ) -> dict:
-    """Run the driving intake: five axes, four hard and one soft."""
+    """Run the driving intake: six axes, four hard and two soft."""
     t0 = time.perf_counter()
     prober = read_count_frames if prober is None else prober
     decoder = read_decoded_frames if decoder is None else decoder
@@ -847,27 +821,3 @@ def _report(
         "elapsed": round(time.perf_counter() - t0, 3),
         **(extra or {}),
     }
-
-
-def render(report: dict) -> str:
-    """Render the report for human eyes. Numbers sit beside the verdict on every line."""
-    lines = [
-        f"INTAKE: {report['kind']} — {Path(report['source']).name}",
-        f"  VERDICT: {report['outcome']}  "
-        f"(checked {report['checked']}, violations "
-        f"{report['violations']}, unmeasured {report['unmeasured']})",
-    ]
-    for name, ax in report["axes"].items():
-        mark = " [soft]" if name in report.get("soft", []) else ""
-        lines.append(
-            f"  {name}{mark}: {ax.get('outcome')} "
-            f"(checked {ax.get('checked')}, violations "
-            f"{ax.get('violations')}, unmeasured {ax.get('unmeasured')})"
-        )
-        if ax.get("note"):
-            lines.append(f"      {ax['note']}")
-    if report.get("warnings"):
-        lines.append(f"  warnings: {report['warnings']}")
-    if report.get("steps"):
-        lines.append(f"  step durations, s: {report['steps']}")
-    return "\n".join(lines)

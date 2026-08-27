@@ -750,5 +750,21 @@ def main(argv=None) -> int:
     return EXIT_BY_OUTCOME[rep["outcome"]]
 
 
+# A measuring device, exercised by the tests and by an operator, never by the
+# paid path.
+#
+# `finish` takes the crop bias as a number and `main` exposes it as `--bias`,
+# because the person who is looking at the clip is the one who knows where the
+# subject stands. `bias_from_columns` is the device that turns a per-column
+# motion map into that number, or refuses to: it compares the best window
+# against the central one and says "could not measure" below BIAS_GAIN_MIN
+# rather than reading a bias out of noise. Nothing in the product produces a
+# motion map — the movement decisions all live on the driving side — so wiring
+# this into `finish` would mean inventing a producer whose output nobody has
+# measured. It stays what it is: the instrument the operator reads before
+# choosing `--bias`.
+INSTRUMENTS = ("bias_from_columns",)
+
+
 if __name__ == "__main__":
     raise SystemExit(main())
