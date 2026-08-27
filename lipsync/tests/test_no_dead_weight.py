@@ -27,6 +27,7 @@ from __future__ import annotations
 import ast
 import os
 import re
+import shlex
 import subprocess
 import sys
 import unittest
@@ -69,9 +70,7 @@ def _occurrences(name: str, *, tests: bool = False) -> int:
 
 class NoNameIsDeclaredAndNeverUsed(unittest.TestCase):
     def test_the_names_the_course_found_dead_are_gone_or_wired(self) -> None:
-        still_dead = {
-            name: _occurrences(name) for name in FOUND_DEAD if _occurrences(name) == 1
-        }
+        still_dead = {name: _occurrences(name) for name in FOUND_DEAD if _occurrences(name) == 1}
         self.assertEqual(
             still_dead,
             {},
@@ -104,8 +103,7 @@ class NoNameIsDeclaredAndNeverUsed(unittest.TestCase):
         self.assertEqual(
             offenders,
             [],
-            "module-level constants read by nothing at all, tests included: "
-            f"{offenders}",
+            f"module-level constants read by nothing at all, tests included: {offenders}",
         )
 
     def test_a_constant_only_a_test_reads_is_not_called_dead(self) -> None:
@@ -139,6 +137,7 @@ class ADocstringDoesNotClaimATestThatDoesNotExist(unittest.TestCase):
 # Without a guard that is unbounded recursion: the first version of this gate
 # hung on exactly that, and the hang is the evidence. The child sets the
 # variable, so the child skips instead of spawning a grandchild.
+README_TEXT = (ROOT / "README.md").read_text(encoding="utf-8")
 _INNER = "LIPSYNC_GATE_INNER_RUN"
 
 
@@ -150,18 +149,22 @@ class TheDocumentedCommandRuns(unittest.TestCase):
             self.skipTest("inner run: the outer gate already checks this")
 
     def _commands(self) -> list[str]:
-        text = (ROOT / "README.md").read_text(encoding="utf-8")
-        return re.findall(r"^(python3?\s+-m\s+unittest[^\n]*)$", text, re.MULTILINE)
+        return re.findall(r"^(python3?\s+-m\s+unittest[^\n]*)$", README_TEXT, re.MULTILINE)
 
     def test_the_readme_documents_a_command(self) -> None:
         """Zero violations over zero checks is not a pass."""
         self.assertTrue(self._commands(), "README documents no test command")
 
     def test_every_documented_command_collects_the_whole_suite(self) -> None:
-        failures = []
+        failures: list[str] = []
+        ran: list[int] = []
         for command in self._commands():
-            argv = command.replace("python3", sys.executable, 1)
-            argv = argv.replace("python ", f"{sys.executable} ", 1)
+            # Anchored, and once: the two chained replaces used to substitute
+            # into their own output whenever the running interpreter was named
+            # `python` (the name `scripts/check` uses), producing
+            # `/usr/local/bin//usr/local/bin/python` and exit 127 — CI red on
+            # a defect in the gate, not in the product.
+            argv = re.sub(r"^python3?\b", shlex.quote(sys.executable), command, count=1)
             done = subprocess.run(
                 argv,
                 shell=True,
@@ -174,11 +177,25 @@ class TheDocumentedCommandRuns(unittest.TestCase):
             tail = (done.stderr or "") + (done.stdout or "")
             match = re.search(r"Ran (\d+) tests?", tail)
             if done.returncode != 0 or match is None:
-                failures.append(f"{command!r} exited {done.returncode}")
+                # The whole text, not a slice of it: a diagnosis was once
+                # made from a truncated error and the cause was in the part
+                # that had been cut off.
+                failures.append(f"{command!r} exited {done.returncode}\n{tail.strip()}")
                 continue
             if "FAILED" in tail or "Error" in tail.split("\n")[-6:][0]:
-                failures.append(f"{command!r} did not pass: {tail.strip()[-160:]}")
+                failures.append(f"{command!r} did not pass:\n{tail.strip()}")
+                continue
+            ran.append(int(match.group(1)))
         self.assertEqual(failures, [], str(failures))
+        self.assertTrue(ran, "no command produced a count")
+        # The README quotes the run twice, once per language. A quoted figure
+        # is a copy of something the suite already knows, and both copies had
+        # already drifted — 917 against a real 979 — by the time an auditor
+        # looked. Comparing them against the run is what stops the drift.
+        quoted = re.findall(r"^Ran (\d+) tests?", README_TEXT, re.MULTILINE)
+        self.assertTrue(quoted, "README quotes no run")
+        stale = [n for n in quoted if int(n) != ran[0]]
+        self.assertEqual(stale, [], f"README quotes {stale}, the suite ran {ran[0]}")
 
 
 if __name__ == "__main__":

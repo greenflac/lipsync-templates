@@ -9,12 +9,13 @@ from . import fork_plan, fork_video
 from .fork_identity import FAIL, PASS, UNMEASURED
 
 
+_PLAN_FRACTION = Fraction(fork_plan.PLAN_RATIO).limit_denominator(10_000)
+
 #: DERIVED from `fork_plan.PLAN_RATIO`, never declared here. The crop needs the
 #: ratio as two whole numbers and the plan states it as one float; that is a
 #: difference of format, not a second thing to know, so the pair is computed
 #: from the plan and moves whenever the plan moves. Declaring `9, 16` here
 #: again would let the two drift apart with nothing to notice it.
-_PLAN_FRACTION = Fraction(fork_plan.PLAN_RATIO).limit_denominator(10_000)
 TARGET_RATIO_W, TARGET_RATIO_H = _PLAN_FRACTION.numerator, _PLAN_FRACTION.denominator
 
 # A float that no small fraction reproduces would silently hand the crop a
@@ -32,7 +33,10 @@ DIM_MULTIPLE = 2
 #: DERIVED (not our measurement: ITU-R BT.1359-1): audio ahead of the picture is noticeable from 45 ms; the narrow side is taken because the sign of the shift is unknown by construction.
 LIPSYNC_AUDIO_AHEAD_MS = 45
 
-#: CHOSEN from what was MEASURED: the best window on live material scores 1.0024 of the central one — that is noise; the bar must not go lower.
+#: CHOSEN, above what was MEASURED: on the 48-column fixture `REAL_COLUMNS`
+#: in the tests the best window beats the central one by 1.0009x, which is
+#: the instrument's own noise. The bar sits well above it because a bar at
+#: the noise floor would read that noise as a person standing aside.
 BIAS_GAIN_MIN = 1.05
 
 #: CHOSEN: the window bias is a fraction from -1 to +1, not pixels (the output resolution has already changed once).
@@ -620,7 +624,7 @@ def finish(
             else (UNMEASURED if not ran.get("ran") else FAIL),
             (
                 ran.get("why")
-                or f"ffmpeg returned {ran.get('code')}: {(ran.get('err') or '').strip()[:200]}"
+                or f"ffmpeg returned {ran.get('code')}: {(ran.get('err') or '').strip()}"
             )
             if (not ran.get("ran") or ran.get("code"))
             else f"ffmpeg ran to completion, a command of {len(argv)} words",
@@ -637,7 +641,7 @@ def finish(
     if ran.get("code"):
         return report(
             FAIL,
-            f"ffmpeg returned {ran['code']}: {(ran.get('err') or '').strip()[:200]}",
+            f"ffmpeg returned {ran['code']}: {(ran.get('err') or '').strip()}",
             crop=geom,
             audio_plan=plan,
             argv=argv,

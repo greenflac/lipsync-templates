@@ -560,3 +560,33 @@ class TheDrivingDictatesThePlanNotAConstant(unittest.TestCase):
 
     def test_without_a_card_the_check_is_UNMEASURED_not_a_pass(self):
         self.assertEqual(P.in_card(self.poses()[0], None)["outcome"], UNMEASURED)
+
+
+class TheBoxsReasonReachesTheCardWhole(unittest.TestCase):
+    """`in_card` answers "could not measure" by quoting the box, and the quote must be whole.
+
+    The reason a pose did not read is the only thing an operator can act on;
+    cutting it at 200 characters leaves the count and drops the condition.
+    """
+
+    CARD = {"outcome": PASS, "centre": 0.5, "tol_centre": 0.05, "width": 0.4, "tol_width": 0.05}
+
+    def _in_card(self, note):
+        def box(points, *, min_visibility=0.5):
+            return {**P.tally(0, 0, 1), "note": note}
+
+        with mock.patch.object(P, "person_box", box):
+            return P.in_card({"nose": (0.5, 0.5, 0.9)}, self.CARD)
+
+    def test_a_long_reason_keeps_its_tail(self):
+        note = "banner " * 60 + "WHY-THE-POSE-DID-NOT-READ"
+        self.assertGreater(len(note), 200)
+        got = self._in_card(note)
+        self.assertEqual(got["unmeasured"], 1)
+        self.assertIn("WHY-THE-POSE-DID-NOT-READ", got["note"])
+
+    def test_a_short_reason_is_quoted_as_it_stands(self):
+        """Negative control: nothing is added on the short path."""
+        self.assertEqual(
+            self._in_card("no pose: nothing to read")["note"], "no pose: nothing to read"
+        )

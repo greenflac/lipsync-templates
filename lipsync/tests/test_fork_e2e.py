@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import io
+import json
 import socket
 import unittest
+import urllib.request
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest import mock
@@ -1891,6 +1893,19 @@ class ThePersonMustBeInPlanNotJustTheCanvas(unittest.TestCase):
         "r_ankle": (0.45, 0.92, 0.96),
     }
 
+    def test_every_named_axis_is_one_the_judge_actually_returns(self):
+        """Clamps PERSON_AXES from above; the per-axis tests clamp it below.
+
+        An auditor showed the list was guarded on one side only: removing an
+        axis reddened, but adding `elbows` — an axis no judge produces — left
+        all 956 tests green, and the filter would then have selected nothing
+        under that name while still reading as a checked axis.
+        """
+        produced = {a["name"] for a in self._P.plan_verdict(points=self.GOOD)["axes"]}
+        self.assertTrue(produced, "the judge returned no axes at all")
+        unknown = [n for n in self._P.PERSON_AXES if n not in produced]
+        self.assertEqual(unknown, [], f"PERSON_AXES names axes no judge produces: {unknown}")
+
     def _check(self, points):
         return E._person_in_plan("k.png", plan=self._P, pose=lambda p: points)
 
@@ -2302,3 +2317,152 @@ class TheRunDoesNotReachThePaidCallOnAnUnadmittedFrame(unittest.TestCase):
                 ["--client", "c.png", "--style", "s.png", "--driving", "d.mp4", "--window", "1:9"]
             )
         self.assertIs(seen["operator_ok_styliser_size"], False)
+
+
+class EvidenceReachesTheReaderWhole(unittest.TestCase):
+    """A truncated reason produced a wrong diagnosis and a spent balance once.
+
+    Every note in this module is the reason behind a verdict, and the cause of
+    a failure sits at the end of the text at least as often as at the front:
+    an ffmpeg or an API answer opens with a banner and closes with the line
+    that says what went wrong. Each test below carries a sentinel past the
+    limit the code used to cut at, and each is paired with a short input on
+    which it must stay silent — otherwise it would pass on any note at all.
+    """
+
+    from lipsync import fork_plan as _P
+
+    GOOD = ThePersonMustBeInPlanNotJustTheCanvas.GOOD
+
+    @staticmethod
+    def _long(sentinel: str, width: int = 500) -> str:
+        """A note whose only distinguishing word sits past `width` characters."""
+        return "banner " * (width // 7) + sentinel
+
+    def test_a_neighbours_reason_is_not_cut_at_four_hundred(self):
+        note = self._long("CAUSE-AT-THE-END")
+        self.assertGreater(len(note), 400)
+        self.assertIn(
+            "CAUSE-AT-THE-END", E.outcome_of({"outcome": FAIL, "note": note}, what="x")[1]
+        )
+
+    def test_a_short_reason_is_handed_over_unchanged(self):
+        """Negative control: nothing is appended or reworded, so a short note stays itself."""
+        self.assertEqual(E.outcome_of({"outcome": FAIL, "note": "short"}, what="x")[1], "short")
+
+    def _with_verdict(self, axes):
+        def fake(**kw):
+            return {"axes": axes}
+
+        with mock.patch.object(self._P, "plan_verdict", fake):
+            return E._person_in_plan("k.png", plan=self._P, pose=lambda p: self.GOOD)
+
+    @staticmethod
+    def _axis(name, *, violations=0, unmeasured=0, note=""):
+        return {
+            "name": name,
+            "checked": 0 if unmeasured else 1,
+            "violations": violations,
+            "unmeasured": unmeasured,
+            "note": note,
+        }
+
+    def test_an_unmeasured_axis_keeps_the_tail_of_its_reason(self):
+        note = self._long("WHY-IT-DID-NOT-READ")
+        got = self._with_verdict([self._axis("centre", unmeasured=1, note=note)])
+        self.assertEqual(got[1], UNMEASURED)
+        self.assertIn("WHY-IT-DID-NOT-READ", got[2])
+
+    def test_an_unmeasured_axis_with_a_short_reason_says_exactly_it(self):
+        """Negative control: the short path is a pass-through, not a formatting stage."""
+        got = self._with_verdict([self._axis("centre", unmeasured=1, note="no pose")])
+        self.assertEqual(got[2], "no pose")
+
+    def test_the_passing_axes_keep_the_tail_of_their_joined_reasons(self):
+        axes = [
+            self._axis(n, note=self._long(f"AXIS-{n.upper()}", 200)) for n in ("centre", "width")
+        ]
+        got = self._with_verdict(axes)
+        self.assertEqual(got[1], PASS)
+        self.assertIn("AXIS-CENTRE", got[2])
+        self.assertIn("AXIS-WIDTH", got[2])
+
+    def test_two_short_passing_axes_are_joined_and_nothing_else(self):
+        """Negative control: the join is the whole transformation on the short path."""
+        axes = [self._axis("centre", note="a"), self._axis("width", note="b")]
+        self.assertEqual(self._with_verdict(axes)[2], "a; b")
+
+    def test_the_driving_card_verdict_keeps_the_tail_of_its_reason(self):
+        note = self._long("CARD-SAID-THIS")
+
+        def in_card(points, card):
+            return {"outcome": FAIL, "note": note}
+
+        with mock.patch.object(self._P, "in_card", in_card):
+            got = E._person_in_plan(
+                "k.png", plan=self._P, pose=lambda p: self.GOOD, card={"outcome": PASS}
+            )
+        self.assertEqual(got[1], FAIL)
+        self.assertIn("CARD-SAID-THIS", got[2])
+
+    def test_a_short_card_verdict_is_reported_as_it_stands(self):
+        """Negative control."""
+
+        def in_card(points, card):
+            return {"outcome": PASS, "note": "inside"}
+
+        with mock.patch.object(self._P, "in_card", in_card):
+            got = E._person_in_plan(
+                "k.png", plan=self._P, pose=lambda p: self.GOOD, card={"outcome": PASS}
+            )
+        self.assertEqual(got[2], "inside")
+
+    def _window(self, note):
+        return E.stage_window(
+            driving="d.mp4", out_path="w.mp4", first=0, last=9, probe=lambda p: {"note": note}
+        )
+
+    def test_a_probe_that_could_not_measure_keeps_the_tail_of_its_reason(self):
+        got = self._window(self._long("FFPROBE-TAIL"))
+        self.assertEqual(got["checks"][0]["outcome"], UNMEASURED)
+        self.assertIn("FFPROBE-TAIL", got["checks"][0]["note"])
+
+    def test_a_short_probe_reason_is_reported_as_it_stands(self):
+        """Negative control."""
+        self.assertEqual(self._window("no such file")["checks"][0]["note"], "no such file")
+
+    def test_the_paid_orders_reply_is_quoted_whole_when_it_carries_no_video(self):
+        """The fal answer is the only evidence of a call that was already paid for."""
+        reply = {"detail": self._long("REASON-FAL-REFUSED")}
+        answers = [{"request_id": "r1"}, {"status": "COMPLETED"}, reply]
+
+        class _Fh:
+            def __init__(self, payload):
+                self._payload = payload
+
+            def read(self):
+                return json.dumps(self._payload).encode()
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                return False
+
+        def urlopen(req, timeout=None):
+            return _Fh(answers.pop(0))
+
+        with (
+            mock.patch.dict("os.environ", {"FAL_KEY": "k"}),
+            mock.patch.object(urllib.request, "urlopen", urlopen),
+            mock.patch.object(E.time, "sleep", lambda s: None),
+        ):
+            with self.assertRaises(RuntimeError) as caught:
+                E.live_kling(
+                    video_url="v",
+                    image_url="i",
+                    character_orientation="portrait",
+                    out_path="o.mp4",
+                    poll_s=0,
+                )
+        self.assertIn("REASON-FAL-REFUSED", str(caught.exception))

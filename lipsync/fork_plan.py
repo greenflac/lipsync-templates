@@ -49,8 +49,9 @@ STYLED_SIZE_MEASURED = (896, 1200)
 SHOULDER_POINTS = ("l_shoulder", "r_shoulder")
 ANKLE_POINTS = ("l_ankle", "r_ankle")
 
-#: The axes of `plan_verdict` that judge the PERSON rather than the canvas or
-#: the face. A caller holding an image but no face measurement reads these four
+#: CHOSEN, from the axes `plan_verdict` returns: these four read the pose, the
+#: rest read the canvas and the face. The axes of `plan_verdict` that judge the
+#: PERSON rather than the canvas or the face. A caller holding an image but no face measurement reads these four
 #: and leaves the other two alone; naming them here keeps that subset from being
 #: retyped at the call site, where it would drift silently.
 PERSON_AXES = ("shoulders", "ankles", "centre", "width")
@@ -493,7 +494,7 @@ def in_card(points, card, *, min_visibility: float = MIN_VISIBILITY) -> dict:
         return {**tally(0, 0, 1), "note": "no composition card: nothing to compare against"}
     box = person_box(points, min_visibility=min_visibility)
     if box["outcome"] != PASS:
-        return {**tally(0, 0, 1), "note": str(box.get("note"))[:200]}
+        return {**tally(0, 0, 1), "note": str(box.get("note"))}
     bad, seen = [], 0
     for key, label in (("centre", "centre"), ("width", "width")):
         want, tol, got = card.get(key), card.get(f"tol_{key}"), box.get(key)

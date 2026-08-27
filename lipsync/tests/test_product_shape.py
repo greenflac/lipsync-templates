@@ -98,9 +98,7 @@ def _declaration_string_ids(tree: ast.Module) -> set[int]:
     for node in tree.body:
         if not isinstance(node, ast.Assign):
             continue
-        if not any(
-            isinstance(t, ast.Name) and "INSTRUMENTS" in t.id for t in node.targets
-        ):
+        if not any(isinstance(t, ast.Name) and "INSTRUMENTS" in t.id for t in node.targets):
             continue
         for inner in ast.walk(node.value):
             if isinstance(inner, ast.Constant):
@@ -239,14 +237,11 @@ class EveryPublicFunctionIsCalledOrDeclaredAnInstrument(unittest.TestCase):
                 self.assertTrue(skip, f"{path.name}: declaration strings not skipped")
             # A name that appears nowhere else in the module can only be kept
             # alive by the declaration, so it is where the claim is testable.
-            elsewhere = text.count('"') and text
             for name in _declared_instruments(path):
-                if elsewhere.count(f'"{name}"') > 1:
+                if text.count(f'"{name}"') > 1:
                     continue
                 checked += 1
-                self.assertNotIn(
-                    name, spoken, f"{path.name}: {name!r} votes for itself"
-                )
+                self.assertNotIn(name, spoken, f"{path.name}: {name!r} votes for itself")
         self.assertGreater(checked, 0, "no instrument was in a testable position")
 
     def test_a_dispatch_tuple_still_votes(self) -> None:
@@ -261,6 +256,24 @@ class EveryPublicFunctionIsCalledOrDeclaredAnInstrument(unittest.TestCase):
         self.assertIn("photo_intake", spoken)
 
 
+def _pre_fork_hits(text: str, label: str) -> list[str]:
+    """Every pre-fork name in one text, as `label:line word`.
+
+    The sweep lives here rather than inside the test because its negative
+    control has to run this exact code. An auditor proved the earlier control
+    worthless: it held its own copy of the pattern, so restoring the defective
+    form of the sweep left both the sweep and its control green.
+    """
+    hits = []
+    for word in PRE_FORK_WORDS:
+        # No leading \b: `test_..._from_fork_comfy` hid a pre-fork name behind
+        # an underscore, which is a word character, so the boundary matched
+        # nothing and the sweep stayed green on it.
+        for match in re.finditer(rf"{re.escape(word)}\b", text):
+            hits.append(f"{label}:{text[: match.start()].count(chr(10)) + 1} {word}")
+    return hits
+
+
 class NothingSpeaksOfTheStackThisIsNotBuiltOn(unittest.TestCase):
     def test_no_pre_fork_name_survives(self) -> None:
         found = []
@@ -273,21 +286,35 @@ class NothingSpeaksOfTheStackThisIsNotBuiltOn(unittest.TestCase):
             if p.name != Path(__file__).name
         ]
         for path in watched:
-            text = path.read_text(encoding="utf-8")
-            for word in PRE_FORK_WORDS:
-                # No leading \b: `test_..._from_fork_comfy` hid a pre-fork
-                # name behind an underscore, which is a word character, so the
-                # boundary matched nothing and the sweep stayed green on it.
-                for match in re.finditer(rf"{re.escape(word)}\b", text):
-                    line = text[: match.start()].count("\n") + 1
-                    found.append(f"{path.name}:{line} {word}")
+            found += _pre_fork_hits(path.read_text(encoding="utf-8"), path.name)
         self.assertEqual(found, [], f"{len(found)} pre-fork names: {found}")
 
     def test_the_sweep_can_see_a_planted_name(self) -> None:
-        """Negative control on the sweep itself."""
-        self.assertTrue(re.search(r"ComfyUI\b", "a line mentioning ComfyUI here"))
-        # Both sides: the boundary bug was that an underscore hid the name.
-        self.assertTrue(re.search(r"fork_comfy\b", "named_from_fork_comfy here"))
+        """Negative control on the sweep, through the sweep itself."""
+        self.assertEqual(
+            _pre_fork_hits("a line mentioning ComfyUI here", "planted"),
+            ["planted:1 ComfyUI"],
+        )
+        # The boundary bug was that an underscore hid the name, so the control
+        # has to plant one that way too — this is the case that used to pass.
+        self.assertEqual(
+            _pre_fork_hits("def test_rate_from_fork_comfy(self):", "planted"),
+            ["planted:1 fork_comfy"],
+        )
+
+    def test_the_sweep_stays_silent_on_a_clean_text(self) -> None:
+        """The other side: a device that always says yes measures nothing."""
+        self.assertEqual(_pre_fork_hits("nothing to see, plain lipsync", "x"), [])
+
+    def test_a_longer_word_that_merely_starts_with_one_is_not_a_hit(self) -> None:
+        """Clamps the sweep from above, where the first control left it open.
+
+        Dropping the leading boundary was the fix; dropping the trailing one
+        as well would make the sweep report any identifier that happens to
+        begin with a forbidden word, and a sweep that always says yes is as
+        useless as one that always says no.
+        """
+        self.assertEqual(_pre_fork_hits("ControlNetworkPolicy = 1", "x"), [])
 
 
 class EveryThirdPartyImportIsDeclared(unittest.TestCase):
@@ -314,6 +341,8 @@ class EveryThirdPartyImportIsDeclared(unittest.TestCase):
                     roots = [a.name.split(".")[0] for a in node.names]
                 elif isinstance(node, ast.ImportFrom) and not node.level:
                     roots = [(node.module or "").split(".")[0]]
+                else:
+                    continue
                 for root in roots:
                     if not root or root in STDLIB_OK:
                         continue

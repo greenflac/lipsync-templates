@@ -2,19 +2,24 @@
 
 from __future__ import annotations
 
-#: Every answer `detect` can give, best first — and the source it answers from,
-#: so the set of answers is declared in one place rather than spelled out again
-#: at each return. Only two entries, because only two are reachable:
+#: CHOSEN, from the two contexts insightface actually distinguishes. Every
+#: answer `detect` can give, best first — and the source it answers from, so
+#: the set of answers is declared in one place rather than spelled out again at
+#: each return. Only two entries, because only two are reachable:
 #: `insightface_ctx` maps everything that is not CUDA onto the CPU context
 #: anyway, so an `xpu`/`mps` answer would have changed nothing while reading as
 #: a supported path.
 DEVICE_ORDER = ("cuda", "cpu")
 
-#: The provider whose presence means the card is actually usable by the model
-#: we run. Named once, read by `detect`.
+#: MEASURED 2026-08-27 against the installed onnxruntime 1.28.0: this spelling
+#: is the one `onnxruntime.get_all_providers()` returns, so it is the provider
+#: name the runtime answers to and not a name we invented for it. It is the
+#: provider whose presence means the card is usable by the model we run.
 CUDA_PROVIDER = "CUDAExecutionProvider"
 
-#: The devices insightface can be handed a non-negative ctx_id for.
+#: CHOSEN, as the subset of `DEVICE_ORDER` that earns a non-negative ctx_id.
+#: Kept as a set rather than an equality test so adding a second accelerated
+#: device is one edit here instead of a new branch in `insightface_ctx`.
 INSIGHTFACE_GPU_DEVICES = ("cuda",)
 
 

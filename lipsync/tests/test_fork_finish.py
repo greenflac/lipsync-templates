@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import ast
+import re
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from lipsync import fork_finish as ff
 from lipsync.fork_identity import FAIL, PASS, UNMEASURED
@@ -130,6 +132,33 @@ REAL_COLUMNS = [
     2.88,
     1.45,
 ]
+
+
+PROVENANCE_MARKS = ("MEASURED", "DERIVED", "CHOSEN")
+
+
+def provenance_block(text: str, name: str) -> str:
+    """Return the comment block written directly above `name`, and nothing else.
+
+    An auditor showed a fixed window of lines above the assignment is not a
+    window at all: with the marks spaced two constants apart, stripping the
+    mark off one of them left the test green on the neighbour's mark. Only the
+    contiguous comment lines touching the assignment are that constant's own.
+    """
+    lines = text.splitlines()
+    # `TARGET_RATIO_W, TARGET_RATIO_H = ...` is one assignment binding two
+    # names, so the line does not start with the name and a space; matching on
+    # the separator covers plain, tuple and annotated assignments alike.
+    head = re.compile(rf"^{re.escape(name)}\s*[,:=]")
+    i = next((k for k, ln in enumerate(lines) if head.match(ln)), None)
+    if i is None:
+        # Not "no mark found": the constant was not found at all, which is a
+        # different answer and must not be reported as the first one.
+        raise LookupError(f"{name}: no assignment found in the source")
+    start = i
+    while start > 0 and lines[start - 1].lstrip().startswith("#"):
+        start -= 1
+    return "\n".join(lines[start:i])
 
 
 def prober_of(mapping):
@@ -723,8 +752,35 @@ class TheModuleDoesNotReinventWhatAlreadyExists(unittest.TestCase):
                 self.assertNotIn(forbidden, imported)
 
     def test_the_probe_answer_is_not_parsed_a_second_time(self):
-        self.assertNotIn("json.loads", self.SRC)
-        self.assertNotIn("avg_frame_rate", self.SRC)
+        """The neighbour's parsed numbers are the only ones the finisher reads.
+
+        Two parsers for one ffprobe answer is two chances to read the shape
+        differently, and the second one is invisible: it agrees until the day
+        ffprobe changes a field. Observably, the finisher must work off a
+        `probe()` answer that carries numbers and NO raw text at all — a second
+        parser inside the finisher would have nothing to parse and would miss
+        the crop, so it cannot be there.
+        """
+        seen = []
+
+        def probe_without_any_text(path, prober=None):
+            seen.append(Path(path).name)
+            return {
+                "outcome": PASS,
+                "note": "stubbed neighbour",
+                "width": 960,
+                "height": 960,
+                "fps": 30.0,
+                "frames": 99,
+                "duration": 3.3,
+                "has_audio": Path(path).name != "kling.mp4",
+            }
+
+        drv, kln, out = _files("driving_arms.mp4", "kling.mp4", "finish.mp4")
+        with mock.patch.object(ff.fork_video, "probe", probe_without_any_text):
+            rep = ff.finish(drv, kln, out, window=(100, 198), prober=None, runner=Runner())
+        self.assertIn("kling.mp4", seen)
+        self.assertEqual((rep["crop"]["w"], rep["crop"]["h"]), (540, 960))
 
     def test_the_verdict_words_are_not_reinvented(self):
         self.assertEqual((PASS, FAIL, UNMEASURED), ("pass", "fail", "could not measure"))
@@ -736,14 +792,34 @@ class TheModuleDoesNotReinventWhatAlreadyExists(unittest.TestCase):
         self.assertEqual(len(set(ff.EXIT_BY_OUTCOME.values())), 3)
 
     def test_the_injection_points_are_resolved_in_the_body(self):
-        self.assertIn("runner = fork_video.run_decode if runner is None", self.SRC)
+        """`runner=None` must find the real runner at call time, not at import time.
+
+        A default bound in the signature freezes whatever object existed when
+        the module was imported: patching the neighbour then changes nothing
+        and the test stand quietly shells out to the real ffmpeg. Here the
+        neighbour is replaced after import, and the call must reach the
+        replacement.
+        """
+        calls = []
+
+        def instead_of_ffmpeg(argv):
+            calls.append(list(argv))
+            return {"ran": True, "code": 0, "out": "", "err": "", "why": ""}
+
+        drv, kln, out = _files("driving_arms.mp4", "kling.mp4", "finish.mp4")
+        answers = {
+            "driving_arms.mp4": DRIVING_JSON,
+            "kling.mp4": KLING_JSON,
+            "finish.mp4": RESULT_JSON,
+        }
+        with mock.patch.object(ff.fork_video, "run_decode", instead_of_ffmpeg):
+            ff.finish(drv, kln, out, window=(100, 199), prober=prober_of(answers), runner=None)
+        self.assertEqual(len(calls), 1, "the default runner did not reach the patched neighbour")
+        self.assertIn("-i", calls[0])
 
     def test_every_decision_constant_declares_where_it_came_from(self):
         # A word boundary is required: a bare substring test would accept
         # the "MEASURED" hiding inside the imported name "UNMEASURED".
-        import re
-
-        lines = self.SRC.splitlines()
         names = (
             "TARGET_RATIO_W",
             "DIM_MULTIPLE",
@@ -754,13 +830,9 @@ class TheModuleDoesNotReinventWhatAlreadyExists(unittest.TestCase):
         )
         for name in names:
             with self.subTest(constant=name):
-                i = next(k for k, ln in enumerate(lines) if ln.startswith(name))
-                above = "\n".join(lines[max(0, i - 20) : i])
+                above = provenance_block(self.SRC, name)
                 self.assertTrue(
-                    any(
-                        re.search(rf"\b{mark}\b", above)
-                        for mark in ("MEASURED", "DERIVED", "CHOSEN")
-                    ),
+                    any(re.search(rf"\b{mark}\b", above) for mark in PROVENANCE_MARKS),
                     f"{name}: provenance not marked",
                 )
 
@@ -952,3 +1024,55 @@ class TheAreaLostIsTheOneMeasuredOnRealOutput(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TheToolsComplaintReachesTheReaderWhole(unittest.TestCase):
+    """ffmpeg opens with a banner and closes with the line that says what broke.
+
+    A stderr cut at 200 characters keeps the banner and drops the cause, which
+    is the wrong half. Each test carries a sentinel past that mark, and each is
+    paired with a short stderr on which it must stay silent.
+    """
+
+    BANNER = (
+        "ffmpeg version 6.0 Copyright (c) 2000-2023 the FFmpeg developers\n"
+        "  built with gcc 13; configuration: --enable-gpl --enable-libx264\n"
+        "  libavutil 58.2.100 / libavcodec 60.3.100 / libavformat 60.3.100\n"
+        "Input #0, mov,mp4, from 'kling.mp4': Duration: 00:00:03.30\n"
+    )
+    CAUSE = "Error while filtering: THE-LINE-THAT-SAYS-WHY"
+
+    def setUp(self):
+        self.drv, self.kln, self.out = _files("driving_arms.mp4", "kling.mp4", "finish.mp4")
+        self.answers = {
+            "driving_arms.mp4": DRIVING_JSON,
+            "kling.mp4": KLING_JSON,
+            "finish.mp4": RESULT_JSON,
+        }
+
+    def _finish(self, runner):
+        return ff.finish(
+            self.drv,
+            self.kln,
+            self.out,
+            window=(100, 199),
+            prober=prober_of(self.answers),
+            runner=runner,
+        )
+
+    def test_the_cause_at_the_end_of_a_long_stderr_survives(self):
+        self.assertGreater(len(self.BANNER), 200)
+        rep = self._finish(Runner(code=1, err=self.BANNER + self.CAUSE))
+        self.assertEqual(rep["outcome"], FAIL)
+        self.assertIn("THE-LINE-THAT-SAYS-WHY", rep["note"])
+
+    def test_the_step_carries_the_same_whole_complaint(self):
+        rep = self._finish(Runner(code=1, err=self.BANNER + self.CAUSE))
+        step = next(note for name, _, note in rep["steps"] if name == "assembly")
+        self.assertIn("THE-LINE-THAT-SAYS-WHY", step)
+
+    def test_a_short_complaint_is_quoted_as_it_stands(self):
+        """Negative control: on a short stderr the report is the stderr, not a rewrite."""
+        rep = self._finish(Runner(code=1, err="Invalid argument"))
+        self.assertIn("Invalid argument", rep["note"])
+        self.assertNotIn("THE-LINE-THAT-SAYS-WHY", rep["note"])

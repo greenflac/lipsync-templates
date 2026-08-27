@@ -197,7 +197,7 @@ def _call(fn, kwargs: dict, positional: tuple):
 def outcome_of(reply, *, what: str) -> tuple:
     """Extract the verdict from a neighbour reply. No verdict means "could not measure", not "pass"."""
     if isinstance(reply, dict) and reply.get("outcome") in (PASS, FAIL, UNMEASURED):
-        return reply["outcome"], str(reply.get("note") or "")[:400]
+        return reply["outcome"], str(reply.get("note") or "")
     return UNMEASURED, (
         f"{what} replied {type(reply).__name__} without an outcome field: "
         f"no verdict, nothing to judge by"
@@ -319,7 +319,7 @@ def live_kling(
     res = _req(f"https://queue.fal.run/{app}/requests/{rid}")
     url = (res.get("video") or {}).get("url")
     if not url:
-        raise RuntimeError(f"the reply has no video link: {str(res)[:300]}")
+        raise RuntimeError(f"the reply has no video link: {str(res)}")
     Path(out_path).parent.mkdir(parents=True, exist_ok=True)
     with urllib.request.urlopen(url, timeout=600) as fh:
         Path(out_path).write_bytes(fh.read())
@@ -717,10 +717,11 @@ def fit_frame_to_plan(src, dst, *, plan, sizer=None, cropper=None) -> dict:
     }
 
 
-#: CHOSEN: how many driving frames the composition card is measured over. The
-#: card is a set of medians with a measured spread, so it needs enough frames to
-#: have a middle, and few enough that reading poses stays cheap next to the one
-#: paid call. The frames are taken evenly across the whole directory rather than
+#: CHOSEN, and chosen rather than measured: the cost of reading 24 poses has
+#: never been timed, so this number is a judgement and may be moved. How many
+#: driving frames the composition card is measured over. The card is a set of
+#: medians with a measured spread, so it needs enough frames to have a middle,
+#: and few enough that reading poses stays cheap next to the one paid call. The frames are taken evenly across the whole directory rather than
 #: from the front, which would describe the opening pose and call it the clip.
 CARD_SAMPLE_FRAMES = 24
 
@@ -796,7 +797,7 @@ def _person_in_plan(image, *, plan, pose=None, card=None) -> tuple:
     # "no card", which is how a run loses its person check without going red.
     if card and card.get("outcome") == PASS:
         got = plan.in_card(points, card)
-        return ("person in the driving card", got["outcome"], str(got.get("note"))[:250])
+        return ("person in the driving card", got["outcome"], str(got.get("note")))
     # The four bands are the plan's decision and `plan_verdict` is where it is
     # made. This function used to compare against `SHOULDERS_BAND` and its three
     # neighbours itself, which meant one plan judged in two implementations:
@@ -806,7 +807,7 @@ def _person_in_plan(image, *, plan, pose=None, card=None) -> tuple:
     # measured on this image at all.
     axes = [a for a in plan.plan_verdict(points=points)["axes"] if a["name"] in plan.PERSON_AXES]
     if any(a["unmeasured"] for a in axes):
-        return ("person in plan", UNMEASURED, str(axes[0]["note"])[:200])
+        return ("person in plan", UNMEASURED, str(axes[0]["note"]))
     bad = [a["note"] for a in axes if a["violations"]]
     tail = "; ".join(a["note"] for a in axes)
     if bad:
@@ -817,7 +818,7 @@ def _person_in_plan(image, *, plan, pose=None, card=None) -> tuple:
             "skeleton: a reference outside the plan will drift past the "
             "frame edge",
         )
-    return ("person in plan", PASS, tail[:250])
+    return ("person in plan", PASS, tail)
 
 
 def stage_stylize(
@@ -850,7 +851,7 @@ def stage_stylize(
     # defect of the stylization this stage is about.
     card_fact = {
         "outcome": (card or {}).get("outcome", UNMEASURED),
-        "note": str((card or {}).get("note", "no composition card was built for this run"))[:250],
+        "note": str((card or {}).get("note", "no composition card was built for this run")),
     }
     if aesthetic is not None:
         gender = A.gender_of(aesthetic)
@@ -936,7 +937,7 @@ def stage_stylize(
                 "the repaired frame has been looked at"
             )
     checks.append(("styliser returned the plan", kept_outcome, kept_note))
-    checks.append(("9:16 frame", fitted["outcome"], str(fitted.get("note"))[:250]))
+    checks.append(("9:16 frame", fitted["outcome"], str(fitted.get("note"))))
 
     if fitted["outcome"] != UNMEASURED:
         # A padded frame is a violation and still a file: the outpaint below is
@@ -963,7 +964,7 @@ def stage_stylize(
                     "margin outpaint",
                     ext["outcome"],
                     f"repairing a padded reference ({added} of the area added "
-                    f"as bands); {str(ext.get('note'))[:200]}",
+                    f"as bands); {str(ext.get('note'))}",
                 )
             )
             if ext["outcome"] == PASS:
@@ -972,7 +973,7 @@ def stage_stylize(
                 exact = Path(ext["path"]).with_name(Path(ext["path"]).stem + "_exact.png")
                 refit = fit_frame_to_plan(ext["path"], exact, plan=P, sizer=sizer, cropper=cropper)
                 checks.append(
-                    ("9:16 frame after the outpaint", refit["outcome"], str(refit["note"])[:250])
+                    ("9:16 frame after the outpaint", refit["outcome"], str(refit["note"]))
                 )
                 if refit["outcome"] == PASS:
                     made = refit["path"]
@@ -998,7 +999,7 @@ def stage_stylize(
         styled=made,
         prompt=prompt,
         driving_card=card_fact,
-        note=str(built["card_note"] or "")[:160],
+        note=str(built["card_note"] or ""),
     )
 
 
@@ -1057,7 +1058,7 @@ def stage_style_acceptance(
     numbers["identity_median"] = d.get("median")
     numbers["identity_bar"] = SAME_PERSON_MAX
     if d.get("outcome") == UNMEASURED:
-        checks.append(("identity on the styled photo", UNMEASURED, str(d.get("note"))[:300]))
+        checks.append(("identity on the styled photo", UNMEASURED, str(d.get("note"))))
     else:
         med = d.get("median")
         if med is None:
@@ -1167,9 +1168,9 @@ def stage_window(*, driving, first: int, last: int, out_path, probe=None, cutter
     numbers["fps"] = fps
     numbers["source_frames"] = total
     if not fps or not total:
-        checks.append(("driving probe", UNMEASURED, str(info.get("note"))[:200]))
+        checks.append(("driving probe", UNMEASURED, str(info.get("note"))))
         return _result(STAGES[3], checks, numbers=numbers)
-    checks.append(("driving probe", PASS, str(info.get("note"))[:200]))
+    checks.append(("driving probe", PASS, str(info.get("note"))))
 
     want = last - first + 1
     numbers["want_frames"] = want
@@ -1375,7 +1376,7 @@ def stage_output_acceptance(
     numbers["fps"] = info.get("fps")
     numbers["frames"] = info.get("frames")
     if not info.get("width"):
-        checks.append(("output geometry", UNMEASURED, str(info.get("note"))[:200]))
+        checks.append(("output geometry", UNMEASURED, str(info.get("note"))))
     else:
         w, h = info.get("width"), info.get("height")
         ratio = w / h
@@ -1428,9 +1429,7 @@ def stage_output_acceptance(
     paths = list(got.get("paths") or [])
     numbers["decoded"] = len(paths)
     if not paths:
-        checks.append(
-            ("frame layout", UNMEASURED, f"no frames came out: {str(got.get('note'))[:200]}")
-        )
+        checks.append(("frame layout", UNMEASURED, f"no frames came out: {str(got.get('note'))}"))
         return _result(STAGES[5], checks, numbers=numbers)
     checks.append(("frame layout", PASS, f"frames {len(paths)}"))
 
@@ -1443,7 +1442,7 @@ def stage_output_acceptance(
     numbers["identity_inside"] = d.get("inside")
     numbers["identity_judged"] = d.get("judged")
     if d.get("outcome") == UNMEASURED:
-        checks.append(("identity on the output", UNMEASURED, str(d.get("note"))[:300]))
+        checks.append(("identity on the output", UNMEASURED, str(d.get("note"))))
     else:
         med = d.get("median")
         tail = (
@@ -1496,14 +1495,14 @@ def stage_output_acceptance(
         c = {"outcome": UNMEASURED, "note": f"{type(exc).__name__}: {exc}"}
     numbers["cuts"] = None if c.get("outcome") == UNMEASURED else len(c.get("cuts") or [])
     if c.get("outcome") == UNMEASURED:
-        checks.append(("editorial cuts", UNMEASURED, str(c.get("note"))[:300]))
+        checks.append(("editorial cuts", UNMEASURED, str(c.get("note"))))
     else:
         found = len(c.get("cuts") or [])
         checks.append(
             (
                 "editorial cuts",
                 PASS if found <= MAX_CUTS_OUT else FAIL,
-                f"cuts {found} with allowance {MAX_CUTS_OUT}; {str(c.get('note'))[:160]}",
+                f"cuts {found} with allowance {MAX_CUTS_OUT}; {str(c.get('note'))}",
             )
         )
     return _result(STAGES[5], checks, numbers=numbers)

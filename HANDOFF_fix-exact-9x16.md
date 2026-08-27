@@ -577,3 +577,50 @@ ArcFace крутится на onnxruntime, а `detect()` спрашивал torc
 Остаток (не в моём наряде из 12): `test_fork_video.py:615`
 `test_the_output_rate_is_not_copied_from_fork_comfy` — до-форковое имя в названии
 теста. Гейт его не видит: перед `fork` стоит `_`, границы слова нет.
+
+## External audit and what it changed (this session, after a41fd91)
+
+An audit run that took no part in the work reported 26 checks, 11 violations,
+3 unmeasurable. Five violations are closed here; the rest are listed below as
+open, not as done.
+
+Closed:
+
+- `scripts/check` was red on HEAD. The formatter complaint was real but not
+  the cause: the documented-command test substituted the interpreter path
+  twice into its own output whenever the running interpreter is named
+  `python` (`/usr/local/bin//usr/local/bin/python`), so the child exited 127.
+  Manual runs use `python3` and stayed green — locally green, CI red, which is
+  the split K7 forbids. Anchored substitution; the old form now reddens under
+  `python`.
+- The same failure reported only `exited 127` and dropped the child's output,
+  which is why the cause was not visible at once. The whole text is kept now.
+- The pre-fork sweep's negative control held its own copy of the pattern, so
+  restoring the defective sweep left both green. The sweep is a function and
+  the control calls it. Clamped from above too: dropping the trailing boundary
+  now reddens.
+- `PERSON_AXES` was clamped from one side only — removing an axis reddened,
+  adding an axis no judge produces did not. Both sides redden now.
+- The README quoted `Ran 917 tests` twice, once per language, against a real
+  979. The quoted figure is now compared with the run that the same test
+  performs, so it cannot drift again.
+
+Corrected on the way: `BIAS_GAIN_MIN` carried "1.0024" as the instrument's own
+noise. Measured on the 48-column `REAL_COLUMNS` fixture the gain is 1.0009.
+The claim was right, the number was not, and no source for 1.0024 was found.
+
+A writer was mid-way through the provenance work when its session ended. Its
+finished part is kept (contiguous-comment window, so a neighbour's mark no
+longer satisfies a constant's test); the unfinished part — a tuple assignment
+the helper could not find — is completed here, and each of four marks was
+stripped in turn to prove it is guarded alone.
+
+Open, from the same audit, not addressed:
+
+- `test_fork_finish.py:726,739` check for a string in the module's own source
+  instead of behaviour (introduced before this branch).
+- `[:N]` truncation of evidence in `fork_e2e.py` — 18 occurrences, unclassified
+  into evidence and data.
+- Provenance marks are still absent on `CARD_SAMPLE_FRAMES`, `PERSON_AXES` and
+  the three `device.py` constants.
+- The journal is still written in blocks rather than as work proceeds.

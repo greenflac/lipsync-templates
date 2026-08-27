@@ -95,7 +95,9 @@ class NoFrameLiteralsSurviveOutsideTheDeclaration(unittest.TestCase):
         offenders = []
         for name in self.WATCHED:
             module = importlib.import_module(f"lipsync.{name}")
-            tree = ast.parse(Path(module.__file__).read_text(encoding="utf-8"))
+            source = module.__file__
+            self.assertIsNotNone(source, f"lipsync.{name} has no file on disk")
+            tree = ast.parse(Path(str(source)).read_text(encoding="utf-8"))
             for node in ast.walk(tree):
                 if not isinstance(node, ast.Tuple) or len(node.elts) != 2:
                     continue

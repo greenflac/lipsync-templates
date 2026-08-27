@@ -1,4 +1,5 @@
 """Render docs/MANUAL_ru.md into the artifact page. The markdown stays the source."""
+
 import html
 import re
 from pathlib import Path
@@ -50,10 +51,12 @@ def render(md: str) -> tuple[str, list]:
                 block.append(html.escape(lines[i]))
                 i += 1
             i += 1
-            body.append('<div class="scroll"><pre><code>' + "\n".join(block) + "</code></pre></div>")
+            body.append(
+                '<div class="scroll"><pre><code>' + "\n".join(block) + "</code></pre></div>"
+            )
             continue
         if ln.strip() == "---":
-            body.append('<hr />')
+            body.append("<hr />")
             i += 1
             continue
         if ln.startswith("# "):
@@ -109,7 +112,10 @@ def render(md: str) -> tuple[str, list]:
             continue
         if re.match(r"^\s*[*-] ", ln):
             items, cur = [], []
-            while i < n and (re.match(r"^\s*[*-] ", lines[i]) or (cur and lines[i].startswith("  ") and lines[i].strip())):
+            while i < n and (
+                re.match(r"^\s*[*-] ", lines[i])
+                or (cur and lines[i].startswith("  ") and lines[i].strip())
+            ):
                 if re.match(r"^\s*[*-] ", lines[i]):
                     if cur:
                         items.append(" ".join(cur))
@@ -123,7 +129,10 @@ def render(md: str) -> tuple[str, list]:
             continue
         if re.match(r"^\s*\d+\. ", ln):
             items, cur = [], []
-            while i < n and (re.match(r"^\s*\d+\. ", lines[i]) or (cur and lines[i].startswith("   ") and lines[i].strip())):
+            while i < n and (
+                re.match(r"^\s*\d+\. ", lines[i])
+                or (cur and lines[i].startswith("   ") and lines[i].strip())
+            ):
                 if re.match(r"^\s*\d+\. ", lines[i]):
                     if cur:
                         items.append(" ".join(cur))
@@ -139,7 +148,11 @@ def render(md: str) -> tuple[str, list]:
             i += 1
             continue
         para = []
-        while i < n and lines[i].strip() and not re.match(r"^(#|\||```|\s*[*-] |\s*\d+\. |---$)", lines[i]):
+        while (
+            i < n
+            and lines[i].strip()
+            and not re.match(r"^(#|\||```|\s*[*-] |\s*\d+\. |---$)", lines[i])
+        ):
             para.append(lines[i].strip())
             i += 1
         body.append(f"<p>{inline(' '.join(para))}</p>")

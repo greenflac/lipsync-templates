@@ -192,10 +192,10 @@ def compose(
         timeout=600,
     )
     if not r.ok:
-        raise RuntimeError(f"compose: HTTP {r.status_code} {r.text[:300]}")
+        raise RuntimeError(f"compose: HTTP {r.status_code} {r.text}")
     if "image" not in r.headers.get("content-type", ""):
         raise RuntimeError(
-            f"compose: expected image bytes, got {r.headers.get('content-type')}: {r.text[:200]!r}"
+            f"compose: expected image bytes, got {r.headers.get('content-type')}: {r.text!r}"
         )
     out_path = Path(out_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)

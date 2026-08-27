@@ -574,3 +574,42 @@ class TheOtherStacksRoutesAreGone(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TheRefusalBodyReachesTheReaderWhole(_Wire):
+    """The server's body is the only account of a call that already left.
+
+    Provider errors put a banner and a request id first and the reason last,
+    so a body cut at 200 or 300 characters keeps the part that says nothing.
+    Each test carries a sentinel past that mark; each has a short body on
+    which it must stay silent.
+    """
+
+    BANNER = "x" * 400
+    CAUSE = "REASON-THE-SERVER-GAVE"
+
+    def test_a_refusal_quotes_the_whole_body(self) -> None:
+        self.responses.append(_FakeResponse(status=402, text=self.BANNER + self.CAUSE))
+        with self.assertRaises(RuntimeError) as caught:
+            PO.compose("p", ["u1", "u2"], self.out())
+        self.assertIn(self.CAUSE, str(caught.exception))
+
+    def test_an_answer_that_is_not_a_picture_quotes_the_whole_body(self) -> None:
+        self.responses.append(
+            _FakeResponse(
+                headers={"content-type": "application/json"},
+                content=b"{}",
+                text=self.BANNER + self.CAUSE,
+            )
+        )
+        with self.assertRaises(RuntimeError) as caught:
+            PO.compose("p", ["u1", "u2"], self.out())
+        self.assertIn(self.CAUSE, str(caught.exception))
+
+    def test_a_short_body_is_quoted_as_it_stands(self) -> None:
+        """Negative control: a short body carries no sentinel and must raise no alarm."""
+        self.responses.append(_FakeResponse(status=402, text="payment required"))
+        with self.assertRaises(RuntimeError) as caught:
+            PO.compose("p", ["u1", "u2"], self.out())
+        self.assertIn("payment required", str(caught.exception))
+        self.assertNotIn(self.CAUSE, str(caught.exception))

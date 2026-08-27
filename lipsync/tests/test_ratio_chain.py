@@ -248,8 +248,9 @@ class TheOutpaintAsksForWhatItWants(unittest.TestCase):
             seen.update(kwargs)
             return "/dev/null/out.png"
 
-        with mock.patch.object(P, "pollinations", create=True), mock.patch(
-            "lipsync.pollinations.images_edit", side_effect=fake_edit
+        with (
+            mock.patch.object(P, "pollinations", create=True),
+            mock.patch("lipsync.pollinations.images_edit", side_effect=fake_edit),
         ):
             try:
                 P.extend_to_plan("in.png", "out.png", sizer=lambda _: (1152, 2048))
@@ -265,8 +266,7 @@ class TheOutpaintAsksForWhatItWants(unittest.TestCase):
         self.assertIn("height", seen)
         self.assertTrue(
             _exact(int(seen["width"]), int(seen["height"])),
-            f"the outpainter was asked for {seen['width']}x{seen['height']}, "
-            "which is not the plan",
+            f"the outpainter was asked for {seen['width']}x{seen['height']}, which is not the plan",
         )
 
 
@@ -339,8 +339,7 @@ class TheAssetsThemselvesAreThePlan(unittest.TestCase):
         self.assertEqual(
             wrong,
             [],
-            f"{len(wrong)} shipped assets are not 9:16, and every run starts "
-            f"from them: {wrong}",
+            f"{len(wrong)} shipped assets are not 9:16, and every run starts from them: {wrong}",
         )
 
 

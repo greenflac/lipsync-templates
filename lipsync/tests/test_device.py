@@ -183,3 +183,32 @@ class TheDiagnosticBranchIsGoneAndStaysGone(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class EveryDecisionConstantDeclaresWhereItCameFrom(unittest.TestCase):
+    """A chosen number handed over as a measured one is a number nobody dares move.
+
+    This reads the module text on purpose, and it is not the "grep the source
+    for a word and call it a behaviour check" defect: provenance lives in a
+    comment and has no runtime shadow at all, so the text is the only place
+    the claim exists. What the constants DO is guarded by the tests above.
+    """
+
+    def test_the_three_device_constants_carry_a_provenance_mark(self):
+        import re
+        from pathlib import Path
+
+        from lipsync import device as dv
+
+        from lipsync.tests.test_fork_finish import PROVENANCE_MARKS, provenance_block
+
+        src = Path(dv.__file__).read_text(encoding="utf-8")
+        for name in ("DEVICE_ORDER", "CUDA_PROVIDER", "INSIGHTFACE_GPU_DEVICES"):
+            with self.subTest(constant=name):
+                # A word boundary is required: a bare substring test would take
+                # the "MEASURED" inside "UNMEASURED" for a provenance mark.
+                above = provenance_block(src, name)
+                self.assertTrue(
+                    any(re.search(rf"\b{m}\b", above) for m in PROVENANCE_MARKS),
+                    f"{name}: provenance not marked",
+                )
