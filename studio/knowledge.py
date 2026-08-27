@@ -160,6 +160,7 @@ def provenance_weight(provenance: str) -> float:
         return PROVENANCE_WEIGHT[text]
     return PROVENANCE_WEIGHT.get(provenance_family(text), 0.5)
 
+
 # The structural fields. Imported from studio.style, never re-declared: one
 # word list, one place. A word that is not on these lists cannot be a field
 # value, in the index or in a query.
@@ -342,6 +343,17 @@ DEFAULT_DB_PATH = Path(__file__).with_name("knowledge") / "index.sqlite3"
 CORE_RULES_PATH = Path(__file__).with_name("knowledge") / "core_rules.md"
 EVAL_SET_PATH = Path(__file__).with_name("knowledge") / "eval_set.jsonl"
 GALLERY_PROMPTS_PATH = Path(__file__).with_name("knowledge") / "gallery_prompts.jsonl"
+
+#: The community corpus: prompts posted on Civitai together with the image they
+#: produced, by the person who ran them. Same row shape as the gallery harvest,
+#: so it goes through the same loader — one knowledge, one place.
+#:
+#: It is NOT committed. `LICENCE` clause 2(d) of that site would have this
+#: repository claim rights over other people's prompts, so the file is
+#: gitignored and rebuilt with `python scripts/collect_civitai.py`. A build on
+#: a fresh clone therefore reports it absent, which is correct and is why a
+#: missing source has always been reported rather than fatal.
+COMMUNITY_PROMPTS_PATH = Path(__file__).with_name("knowledge") / "civitai_prompts.jsonl"
 
 # Where the two example corpora live. These were absolute paths into one
 # developer's home directory, and the consequence was measured on 2026-08-26:
@@ -603,7 +615,10 @@ def load_gallery_prompts(path: Path = GALLERY_PROMPTS_PATH) -> list[dict]:
         declared = str(payload.get("provenance") or PROVENANCE_GALLERY)
         provenance = declared if _known_provenance(declared) else PROVENANCE_GALLERY
         rights = payload.get("rights")
-        source = str(payload.get("id") or path.name)
+        # `source_url` before the file name: a row whose source is only
+        # "civitai_prompts.jsonl" cannot be gone and checked, and every row
+        # in a 473-row file would carry the same one.
+        source = str(payload.get("id") or payload.get("source_url") or path.name)
         entries.append(
             {
                 "kind": KIND_GALLERY_PROMPT,
@@ -899,6 +914,7 @@ def build_index(
     our_prompts: Path = OUR_PROMPTS_DIR,
     reference_cards: Path = REFERENCE_CARDS_DIR,
     gallery_prompts: Path = GALLERY_PROMPTS_PATH,
+    community_prompts: Path = COMMUNITY_PROMPTS_PATH,
     dense: bool | None = None,
 ) -> KnowledgeIndex:
     """Build the index from every source that is present.
@@ -912,7 +928,8 @@ def build_index(
     >>> index = build_index(core_rules=CORE_RULES_PATH,
     ...                     our_prompts=Path("/nowhere"),
     ...                     reference_cards=Path("/nowhere"),
-    ...                     gallery_prompts=Path("/nowhere"))
+    ...                     gallery_prompts=Path("/nowhere"),
+    ...                     community_prompts=Path("/nowhere"))
     >>> index.build_report["outcome"], index.counts()["core"] > 0
     ('could not measure', True)
     """
@@ -938,6 +955,7 @@ def build_index(
         ("ours", load_our_prompts(our_prompts), our_prompts),
         ("reference_card", load_style_cards(reference_cards), reference_cards),
         ("gallery", load_gallery_prompts(gallery_prompts), gallery_prompts),
+        ("community", load_gallery_prompts(community_prompts), community_prompts),
     ):
         loaded[name] = index.add(records)
         if not records:

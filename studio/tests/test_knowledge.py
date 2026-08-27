@@ -228,6 +228,7 @@ class Building(unittest.TestCase):
             our_prompts=Path("/nowhere/gen"),
             reference_cards=Path("/nowhere/refs"),
             gallery_prompts=Path("/nowhere/gallery.jsonl"),
+            community_prompts=Path("/nowhere/community.jsonl"),
         )
         self.assertEqual(index.build_report["outcome"], UNMEASURED)
         self.assertEqual(index.build_report["checked"], 0)
@@ -246,6 +247,7 @@ class Building(unittest.TestCase):
                 our_prompts=Path("/nowhere/gen"),
                 reference_cards=Path("/nowhere/refs"),
                 gallery_prompts=gallery,
+                community_prompts=Path("/nowhere/community.jsonl"),
             )
         self.assertEqual(index.build_report["outcome"], FAIL)
         self.assertEqual(index.build_report["violations"], 1)
@@ -263,11 +265,12 @@ class Building(unittest.TestCase):
             our_prompts=Path("/nowhere/gen"),
             reference_cards=Path("/nowhere/refs"),
             gallery_prompts=Path("/nowhere/gallery.jsonl"),
+            community_prompts=Path("/nowhere/community.jsonl"),
         )
         self.assertEqual(index.build_report["outcome"], UNMEASURED)
         self.assertIn("0 examples", index.build_report["note"])
         self.assertGreaterEqual(index.build_report["per_source"]["core"], 10)
-        self.assertEqual(index.build_report["unmeasured"], 3)
+        self.assertEqual(index.build_report["unmeasured"], 4)
 
     def test_one_example_is_enough_to_make_it_a_built_index(self) -> None:
         """The other side of the mutation above: add a single example and the
@@ -284,6 +287,7 @@ class Building(unittest.TestCase):
                 our_prompts=Path("/nowhere/gen"),
                 reference_cards=Path("/nowhere/refs"),
                 gallery_prompts=gallery,
+                community_prompts=Path("/nowhere/community.jsonl"),
             )
         self.assertEqual(index.build_report["outcome"], PASS)
 
@@ -553,12 +557,54 @@ class Building(unittest.TestCase):
         self.assertEqual(len(out["examples"]), 5)
         self.assertNotIn("quota", out["note"])
 
+    def test_the_community_corpus_is_a_source_of_the_index(self) -> None:
+        """The counter before the knob. Without this, deleting the community
+        line from `build_index` leaves every other test green — the corpus is
+        gitignored, so on a fresh clone nothing would notice it stopped being
+        loaded, and the whole point of collecting it would quietly lapse."""
+        with tempfile.TemporaryDirectory() as tmp:
+            corpus = Path(tmp) / "civitai_prompts.jsonl"
+            corpus.write_text(
+                "\n".join(
+                    json.dumps(
+                        {
+                            "prompt": f"amber golden-hour light on film grain, take {n}",
+                            "provenance": f"civitai:author{n}",
+                            "rights": "owner_authorisation_2026-08-27",
+                            "source_url": f"https://civitai.com/api/v1/model-versions/{n}",
+                        }
+                    )
+                    for n in range(3)
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            index = build_index(
+                core_rules=KNOWLEDGE_DIR / "core_rules.md",
+                our_prompts=Path("/nowhere/gen"),
+                reference_cards=Path("/nowhere/refs"),
+                gallery_prompts=Path("/nowhere/gallery.jsonl"),
+                community_prompts=corpus,
+            )
+            self.assertEqual(index.build_report["per_source"]["community"], 3)
+            self.assertEqual(index.build_report["outcome"], PASS)
+            out = retrieve("amber golden hour light film grain", index=index, k=5)
+            # Three authors, quota two per provenance: all three survive only
+            # because the namespace makes them three sources, not one corpus.
+            self.assertEqual(len(out["examples"]), 3, out["note"])
+            sources = {e["source"] for e in out["examples"]}
+            self.assertTrue(
+                all("civitai.com/api/v1/model-versions/" in s for s in sources),
+                f"a row must cite where it can be re-read, got {sources}",
+            )
+
     def test_a_missing_gallery_file_is_reported_not_fatal(self) -> None:
         index = build_index(
             core_rules=KNOWLEDGE_DIR / "core_rules.md",
             our_prompts=Path("/nowhere/gen"),
             reference_cards=Path("/nowhere/refs"),
             gallery_prompts=Path("/nowhere/gallery.jsonl"),
+            community_prompts=Path("/nowhere/community.jsonl"),
         )
         self.assertIn("gallery", index.build_report["note"])
 
@@ -568,6 +614,7 @@ class Building(unittest.TestCase):
             our_prompts=Path("/nowhere/gen"),
             reference_cards=Path("/nowhere/refs"),
             gallery_prompts=Path("/nowhere/gallery.jsonl"),
+            community_prompts=Path("/nowhere/community.jsonl"),
         )
         self.assertEqual(index.dense_report["outcome"], UNMEASURED)
         self.assertEqual(index.dense_report["error_code"], "OFF")
