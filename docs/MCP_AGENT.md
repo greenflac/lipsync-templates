@@ -430,3 +430,40 @@ otherwise. It finds the door; `fetch_url` says whether it opens.
 hits forced to `pass`, missing credentials ignored, the per-host probe cache
 removed, the page-size clamp removed — each turns the suite red, with a green
 control before and after.
+
+### A correction: "Search the entire web" is gone
+
+This document recommended turning that switch on. **That advice was already
+wrong when it was written.** Google withdrew "Search the entire web" for NEW
+Programmable Search engines in **March 2026**; a new engine is capped at 50
+named domains, and engines still on the full index must migrate by
+2027-01-01. The owner hit the wall in the setup form and asked whether general
+Google search could just be connected instead. It can.
+
+**Measured 2026-08-27** — every `*.googleapis.com` host probed answers:
+
+```
+discoveryengine.googleapis.com  generativelanguage.googleapis.com
+aiplatform.googleapis.com  vertexai.googleapis.com  us-central1-aiplatform...
+```
+
+So `search_web` now has two backends, and prefers the one without a list:
+
+| backend | key | coverage |
+|---|---|---|
+| **Gemini grounding** (preferred) | `GEMINI_API_KEY` from aistudio.google.com | the whole index, no domain list |
+| Programmable Search (fallback) | `GOOGLE_SEARCH_KEY` + `GOOGLE_CSE_ID` | at most 50 curated domains |
+
+`backend` in every result says which one answered.
+
+A curated list is not merely tedious here, it is wrong for this job in a way
+already measured: `cloud.google.com` is reachable and `docs.cloud.google.com`
+is not. Vendors move documentation between subdomains, and a fixed list stops
+covering them without ever saying so.
+
+**Stated plainly: the Gemini response parsing is UNVERIFIED.** No key has been
+available on this machine, so it follows the documented `groundingMetadata`
+shape and is written to survive a shape it does not recognise. The first real
+call is the test, and it belongs to the owner. One documented wrinkle is
+handled up front: the URLs in `groundingChunks` are Google redirect links, not
+publisher addresses, so the host is taken from `web.title` instead.

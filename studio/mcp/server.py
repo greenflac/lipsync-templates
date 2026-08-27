@@ -1,4 +1,4 @@
-"""The MCP server the owner talks to in chat. Nine tools, two of which write.
+"""The MCP server the owner talks to in chat. Ten tools, two of which write.
 
 RUN IT
 
@@ -11,8 +11,9 @@ THE TOOLS THAT WRITE
 
 `record_model_fact` appends to `studio/knowledge/model_facts.jsonl`, and
 `fetch_url` appends a refused host to `denied_hosts.jsonl` so the allowlist
-request assembles itself. Everything else reads. That asymmetry is deliberate and worth stating in the tool list a
-model sees: an assistant deciding on its own to "tidy" the knowledge base is a
+request assembles itself. Everything else reads.
+
+That asymmetry is deliberate and worth stating in the tool list a model sees: an assistant deciding on its own to "tidy" the knowledge base is a
 worse outcome than a stale one, because a stale claim announces its age and a
 rewritten one does not.
 
@@ -44,7 +45,8 @@ server = MCPServer(
         "change monthly and this base records who said what and when. When it "
         "reports a gap or a stale claim, search the web yourself and call "
         "`record_model_fact` with the value, the source URL, the source tier and "
-        "the date the source stated it. Prefer a VENDOR artefact over an article: "
+        "the date the source stated it. `search_web` is the research entry point — "
+        "start there rather than from memory. Prefer a VENDOR artefact over an article: "
         "`fetch_url` reaches raw.githubusercontent.com, api.github.com, pypi.org, "
         "huggingface.co and cloud.google.com, so an SDK source or an OpenAPI spec "
         "is readable. For a numeric limit whose documentation host is blocked, use "
@@ -177,10 +179,16 @@ def check_lipsync_prompt(prompt: str) -> str:
 def search_web(query: str, site: str = "", count: int = 8) -> str:
     """Search the web. This is the research entry point — start here.
 
-    Runs against Google's Programmable Search JSON API, the one search backend
-    this session's egress policy permits (measured 2026-08-27: Brave, Tavily,
-    Exa, SerpAPI, Serper, DuckDuckGo, Bing, SearxNG and Perplexity are all
-    refused; GitHub answers but blocks its search paths).
+    Two backends, both Google, both reachable through this session's egress
+    policy (measured 2026-08-27: Brave, Tavily, Exa, SerpAPI, Serper,
+    DuckDuckGo, Bing, SearxNG and Perplexity are all refused; GitHub answers
+    but blocks its search paths).
+
+    Gemini grounding is used when GEMINI_API_KEY is set — it searches the whole
+    index with no domain list. Programmable Search is the fallback and is
+    capped at 50 curated domains, because Google withdrew "search the entire
+    web" from new engines in March 2026. `backend` in the result says which
+    one answered.
 
     Every result says whether its host can also be OPENED. A host the policy
     refuses still gives you a title, a snippet and a URL you can cite — you

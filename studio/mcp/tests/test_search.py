@@ -19,7 +19,28 @@ ENDPOINT_HOST = "customsearch.googleapis.com"
 
 DENIAL_TEXT = "Tunnel connection failed: 403 Forbidden"
 
+# Programmable Search credentials, with every Gemini variable explicitly
+# absent — otherwise these tests would silently exercise the other backend.
 CREDS = {"GOOGLE_SEARCH_KEY": "test-key", "GOOGLE_CSE_ID": "test-cx"}
+
+GEMINI_CREDS = {"GEMINI_API_KEY": "test-gemini-key"}
+
+
+def _grounded(hosts: list[str], answer: str = "an answer") -> dict:
+    return {
+        "candidates": [
+            {
+                "content": {"parts": [{"text": answer}]},
+                "groundingMetadata": {
+                    "webSearchQueries": ["what the model searched"],
+                    "groundingChunks": [
+                        {"web": {"uri": f"https://redirect.google/{n}", "title": host}}
+                        for n, host in enumerate(hosts)
+                    ],
+                },
+            }
+        ]
+    }
 
 
 class _Response:
@@ -176,6 +197,106 @@ class Search(unittest.TestCase):
                 with mock.patch.object(search, "_fetchable", return_value=True):
                     search.search("q", count=500)
         assert "num=10" in captured["url"], "the API's page size maximum is 10"
+
+
+class GeminiBackend(unittest.TestCase):
+    """The whole-index route. Preferred, because the 50-domain cap is not."""
+
+    def test_gemini_wins_when_both_are_configured(self) -> None:
+        both = {**CREDS, **GEMINI_CREDS}
+        with mock.patch.dict("os.environ", both, clear=True):
+            with mock.patch.object(
+                search.urllib.request, "urlopen", return_value=_Response(_grounded(["kling.ai"]))
+            ):
+                with mock.patch.object(search, "_fetchable", return_value=False):
+                    out = search.search("q")
+        assert out["backend"] == "gemini", (
+            "the whole index beats 50 curated domains when both are available"
+        )
+
+    def test_the_publisher_becomes_the_host_because_the_url_is_a_redirect(self) -> None:
+        with mock.patch.dict("os.environ", GEMINI_CREDS, clear=True):
+            with mock.patch.object(
+                search.urllib.request,
+                "urlopen",
+                return_value=_Response(_grounded(["kling.ai", "arxiv.org"])),
+            ):
+                with mock.patch.object(search, "_fetchable", return_value=True):
+                    out = search.search("q")
+        assert out["outcome"] == "pass"
+        assert [r["host"] for r in out["results"]] == ["kling.ai", "arxiv.org"]
+        assert all(r["url"].startswith("https://redirect.google/") for r in out["results"])
+
+    def test_a_title_that_is_not_a_domain_yields_no_host(self) -> None:
+        with mock.patch.dict("os.environ", GEMINI_CREDS, clear=True):
+            with mock.patch.object(
+                search.urllib.request,
+                "urlopen",
+                return_value=_Response(_grounded(["Some Article Headline"])),
+            ):
+                with mock.patch.object(search, "_fetchable") as probe:
+                    out = search.search("q")
+        assert out["results"][0]["host"] == ""
+        assert probe.call_count == 0, "there is no host to probe, so none is invented"
+
+    def test_grounding_nothing_at_all_is_could_not_measure(self) -> None:
+        empty = {
+            "candidates": [
+                {
+                    "content": {"parts": [{"text": "  "}]},
+                    "groundingMetadata": {"groundingChunks": []},
+                }
+            ]
+        }
+        with mock.patch.dict("os.environ", GEMINI_CREDS, clear=True):
+            with mock.patch.object(search.urllib.request, "urlopen", return_value=_Response(empty)):
+                out = search.search("q")
+        assert out["outcome"] == "could not measure"
+        assert out["checked"] == 0
+
+    def test_an_answer_with_no_sources_still_counts_as_unmeasured(self) -> None:
+        # Text but no citations: something came back, but nothing is checkable.
+        payload = {
+            "candidates": [
+                {
+                    "content": {"parts": [{"text": "a real answer"}]},
+                    "groundingMetadata": {"groundingChunks": []},
+                }
+            ]
+        }
+        with mock.patch.dict("os.environ", GEMINI_CREDS, clear=True):
+            with mock.patch.object(
+                search.urllib.request, "urlopen", return_value=_Response(payload)
+            ):
+                out = search.search("q")
+        assert out["outcome"] == "pass"
+        assert out["checked"] == 0
+        assert out["unmeasured"] == 1, "an uncited answer is not a sourced one"
+        assert out["answer"] == "a real answer"
+
+    def test_an_api_error_is_fail_and_says_which_variable_held_the_key(self) -> None:
+        body = json.dumps({"error": {"message": "API key not valid"}}).encode()
+        error = urllib.error.HTTPError("https://x", 400, "Bad Request", {}, None)  # type: ignore[arg-type]
+        error.read = lambda n=-1: body  # type: ignore[method-assign]
+        with mock.patch.dict("os.environ", GEMINI_CREDS, clear=True):
+            with mock.patch.object(search.urllib.request, "urlopen", side_effect=error):
+                out = search.search("q")
+        assert out["outcome"] == "fail"
+        assert "GEMINI_API_KEY" in out["note"]
+
+    def test_the_gemini_key_never_appears_in_what_is_returned(self) -> None:
+        creds = {"GEMINI_API_KEY": "SECRET-gemini-99"}
+        with mock.patch.dict("os.environ", creds, clear=True):
+            with mock.patch.object(
+                search.urllib.request, "urlopen", return_value=_Response(_grounded(["x.test"]))
+            ):
+                with mock.patch.object(search, "_fetchable", return_value=True):
+                    out = search.search("q")
+        assert "SECRET-gemini-99" not in json.dumps(out, default=str)
+
+    def test_the_setup_text_leads_with_gemini_and_warns_about_the_cap(self) -> None:
+        assert search.SETUP.index("GEMINI GROUNDING") < search.SETUP.index("PROGRAMMABLE SEARCH")
+        assert "March" in search.SETUP and "50" in search.SETUP
 
 
 if __name__ == "__main__":
