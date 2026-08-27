@@ -274,6 +274,120 @@ def _pre_fork_hits(text: str, label: str) -> list[str]:
     return hits
 
 
+# Rule I4 asks provenance of a DECISION constant — a value some branch depends
+# on. Asking it of every constant would be the wrong instrument: measured on
+# this tree, 176 top-level constants exist and 160 carry no mark, most of them
+# word lists and labels where "where did this number come from" has no answer.
+# Comparing narrows it to 47, which is the set the rule actually names.
+PROVENANCE_MARKS = ("MEASURED", "DERIVED", "CHOSEN")
+
+
+def _compared_names(tree: ast.Module) -> set[str]:
+    """Every name some comparison in the module tests against."""
+    names: set[str] = set()
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Compare):
+            continue
+        for side in [node.left, *node.comparators]:
+            for inner in ast.walk(side):
+                if isinstance(inner, ast.Name):
+                    names.add(inner.id)
+                elif isinstance(inner, ast.Attribute):
+                    names.add(inner.attr)
+    return names
+
+
+def _provenance_block(lines: list[str], lineno: int) -> str:
+    """The comment lines touching the assignment, and nothing further.
+
+    A fixed window of lines above is not a window: with marks spaced two
+    constants apart, stripping one left the check green on the neighbour's.
+    """
+    i = lineno - 1
+    start = i
+    while start > 0 and lines[start - 1].lstrip().startswith("#"):
+        start -= 1
+    return "\n".join(lines[start:i])
+
+
+def _unmarked_decisions(text: str, label: str) -> list[str]:
+    """Decision constants in one module that do not say where they came from."""
+    lines = text.splitlines()
+    tree = ast.parse(text)
+    compared = _compared_names(tree)
+    unmarked = []
+    for node in tree.body:
+        if not isinstance(node, ast.Assign):
+            continue
+        names = [t.id for t in node.targets if isinstance(t, ast.Name)]
+        names += [
+            e.id
+            for t in node.targets
+            if isinstance(t, ast.Tuple)
+            for e in t.elts
+            if isinstance(e, ast.Name)
+        ]
+        names = [n for n in names if n.isupper() and not n.startswith("_") and n in compared]
+        if not names:
+            continue
+        above = _provenance_block(lines, node.lineno)
+        # A word boundary is required: the bare substring "MEASURED" hides
+        # inside the verdict word "UNMEASURED", which many modules import.
+        if any(re.search(rf"\b{m}\b", above) for m in PROVENANCE_MARKS):
+            continue
+        unmarked.append(f"{label}:{node.lineno} {','.join(names)}")
+    return unmarked
+
+
+class EveryDecisionConstantSaysWhereItCameFrom(unittest.TestCase):
+    """A chosen number presented as a measured one is never touched again."""
+
+    MARKED = "#: CHOSEN: a bar.\nBAR = 3\n\n\ndef f(x):\n    return x > BAR\n"
+
+    def test_there_are_decision_constants_to_check(self) -> None:
+        """Zero violations over zero checks is not a pass."""
+        total = 0
+        for path in _sources():
+            text = path.read_text(encoding="utf-8")
+            tree = ast.parse(text)
+            compared = _compared_names(tree)
+            for node in tree.body:
+                if isinstance(node, ast.Assign) and any(
+                    isinstance(t, ast.Name) and t.id in compared for t in node.targets
+                ):
+                    total += 1
+        self.assertGreater(total, 20, f"only {total} decision constants found")
+
+    def test_no_decision_constant_is_silent_about_its_origin(self) -> None:
+        unmarked = []
+        for path in _sources():
+            unmarked += _unmarked_decisions(path.read_text(encoding="utf-8"), path.name)
+        self.assertEqual(
+            unmarked,
+            [],
+            f"{len(unmarked)} decision constants with no MEASURED/DERIVED/CHOSEN mark: {unmarked}",
+        )
+
+    def test_a_marked_constant_is_accepted(self) -> None:
+        """Negative control, through the same code the real check runs."""
+        self.assertEqual(_unmarked_decisions(self.MARKED, "planted"), [])
+
+    def test_stripping_the_mark_is_seen(self) -> None:
+        """The other side: the check must move when the mark goes."""
+        stripped = self.MARKED.replace("#: CHOSEN: a bar.\n", "")
+        self.assertEqual(_unmarked_decisions(stripped, "planted"), ["planted:1 BAR"])
+
+    def test_a_neighbours_mark_does_not_count(self) -> None:
+        """The window is the comments touching the assignment, not N lines."""
+        text = "#: CHOSEN: a bar.\nBAR = 3\nBAZ = 4\n\n\ndef f(x):\n    return x > BAZ\n"
+        self.assertEqual(_unmarked_decisions(text, "planted"), ["planted:3 BAZ"])
+
+    def test_a_constant_no_branch_compares_is_not_demanded(self) -> None:
+        """Clamps the definition from above: not every constant is a decision."""
+        text = "SEP = '|'\n\n\ndef f(parts):\n    return SEP.join(parts)\n"
+        self.assertEqual(_unmarked_decisions(text, "planted"), [])
+
+
 class NothingSpeaksOfTheStackThisIsNotBuiltOn(unittest.TestCase):
     def test_no_pre_fork_name_survives(self) -> None:
         found = []
