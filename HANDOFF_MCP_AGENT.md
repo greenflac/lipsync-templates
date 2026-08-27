@@ -1061,3 +1061,124 @@ bare number.
    third search backend; **no prompt in this package has been proven by a
    generation** — and there are now 473 collected prompts with the images they
    produced, which is the closest this project has come to material for that.
+
+---
+
+# Session 2026-08-27 (final) — Reddit dropped, and the agent learned to look
+
+> «reddit снимаем, все остальное финализируй и проверь функционал который
+> позволяет анализировать загруженные вручную креативы»
+
+## Reddit is gone, and the stop condition is written down
+
+The collector is deleted rather than left as code nobody can run. What survives
+is the measurement, as `reddit-api.authenticated_read_reachable`:
+`oauth.reddit.com` serves the "Blocked" page identically with and without a
+bearer, so a registered app would probably not have helped from this container.
+
+**Reopen only if** the work moves somewhere Reddit does not block, or a valid
+token gets something other than the Blocked page from `oauth.reddit.com`.
+Written in `studio/knowledge/PROVENANCE.md` per rule Ц9, so it is a condition
+rather than a thing that trailed off.
+
+### A third state in the allowlist file
+
+Its two terms hosts had to leave the ask and there was no honest way to do it:
+the file recorded `refused` and `open`, and marking them open would have put a
+lie in it — they never answered. So `unwanted` exists: still refused, no longer
+wanted, with the reason beside it. The ask went **16 → 14**.
+
+Adding a third state broke two rules written when there were two, and **both
+were found by the tests written for the new behaviour, not by reading**:
+
+- a host withdrawn and then refused again did not return to the ask — the
+  re-refusal rule tested for `open` instead of "not refused";
+- a withdrawn host that LATER answered was never recorded as open, because
+  `note_open` fired only from `refused`, so the file would have lost the fact
+  that access arrived.
+
+Both are now written against "not refused" and "not already open", so a fourth
+state cannot slip past them the way the third did.
+
+## The creative-analysis question, answered by measuring
+
+**What already existed.** The product path is real and correct:
+`studio/app.py` saves an upload and runs `lipsync.fork_intake.photo_intake` on
+it, which reports per axis and degrades to `could not measure` — verified by
+running it.
+
+**What did not.** The chat agent had eleven tools and **not one took a file**.
+
+**What can actually run here, MEASURED:**
+
+| | |
+|---|---|
+| present | `numpy`, `Pillow` — so the look measurements and `lipsync.motion` run |
+| absent | `insightface`, `mediapipe`, `cv2`, `onnxruntime`, `torch`, `ffmpeg`, `ffprobe` |
+
+So every face axis, every pose axis and any mp4 decoding cannot run in this
+container at all. `pose.*` and `identity_arcface.*` **raise
+`ModuleNotFoundError`** rather than returning the third outcome; `photo_intake`
+wraps them properly and does return it.
+
+## `analyse_creative`, the twelfth tool
+
+Takes an image, plus a directory of frames for a clip. Answers in the SAME
+vocabulary `write_lipsync_prompt` takes — imported from `style.py` and the
+prompt card, never restated.
+
+| slot | how |
+|---|---|
+| `palette` | dominant colours named against `PALETTE_WORDS` |
+| `saturation` | mean chroma against the card's own three buckets |
+| `light` | `high-key` / `low-key` from the luminance histogram, **or neither** |
+| `mood` | never — nothing in a histogram says "melancholic" |
+
+**Measured end to end through the MCP server:** a creative analysed, its own
+words fed back as an intent, and `write_lipsync_prompt` fills **3 of 4** card
+slots and ASKS for texture instead of guessing. That refusal is the design
+working.
+
+Two design points worth keeping:
+
+- The lighting middle band returns **no word at all** rather than the nearer of
+  the two. An instrument that always answers looks exactly like a working one.
+  Saturation genuinely covers its whole range, so its control is three-point —
+  both ends and the middle — instead.
+- `could_not_run` NAMES each instrument that did not run and why. No violations
+  out of no checks is not a clean creative, and `unmeasured` carries them.
+
+24 tests, 22 mutations both ways, all red. Two were green at first: dropping
+the palette de-duplication, and measuring grain on the small sample — every
+other fixture is flat and reads zero either way. Both have a fixture that can
+tell now.
+
+## Findings for other owners — NOT patched, both modules are theirs
+
+`lipsync/**` is frozen by `studio/CONTRACTS.md`; `studio/app.py` is agent C's.
+
+1. **`photo_intake` returns no top-level `note`.** `studio/app.py` renders
+   `f"the photo could not be checked: {report.get('note', '')}"` — so the user
+   is told nothing, while "nothing to ask with: ModuleNotFoundError: No module
+   named 'insightface'. This is not 'there is no face'" sits one level down in
+   `axes`. `analyse_creative` lifts the axis notes to work around it.
+2. **A missing file and an unanalysable one give the identical intake report**,
+   because the first axis cannot run at all and short-circuits. A path check
+   costs 1 ms and would separate them — rule П2, cheap checks before expensive.
+3. **`pose.*` and `identity_arcface.*` raise instead of returning
+   `could not measure`.** Every other judging function in this repository
+   returns the third outcome. A caller that does not wrap them crashes on a
+   machine without the models.
+
+## Where the project stands
+
+- **Civitai collects.** 1409 pairs held, 659 on families this project targets,
+  106 uploaders. `--base-model` points it; `--safe-models-only` and its counter
+  handle the checkpoint question.
+- **Reddit is closed**, with a reopen condition.
+- **The agent can look at a creative** and hand what it sees to the prompt
+  writer.
+- Still open, unchanged: publishing the Civitai corpus (it is gitignored);
+  `MAX_PER_PROVENANCE = 2` in another module's file; Yandex as a third search
+  backend; and **no prompt in this package has been proven by a generation** —
+  though there are now 659 on-target prompts with the images they produced.
