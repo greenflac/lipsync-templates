@@ -147,6 +147,13 @@ def strip_anthropometry(prompt: str) -> dict:
     }
 
 
+#: CHOSEN (owner's decision, 22.08): the project's two demo identities, one per
+#: declared gender, both already framed to the universal 9:16 plan. Gender is
+#: declared and not classified — a classifier is one more instrument to measure
+#: and guard, and it would be wrong on live clients — so these keys double as
+#: the gender vocabulary `pair_check` holds the pairs to. Paid for by eye: a
+#: male client built with the female y2k aesthetic came back in a mini skirt
+#: while identity, leak, lettering and plan were all green.
 DEMOS = {
     "m": "assets/fork_plan_man_fullbody.png",
     "f": "assets/fork_plan_woman_fullbody.png",

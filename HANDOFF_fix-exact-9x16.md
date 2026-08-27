@@ -624,3 +624,61 @@ Open, from the same audit, not addressed:
 - Provenance marks are still absent on `CARD_SAMPLE_FRAMES`, `PERSON_AXES` and
   the three `device.py` constants.
 - The journal is still written in blocks rather than as work proceeds.
+
+## Provenance, evidence and the two source-text tests (three writers, disjoint modules)
+
+The audit's five named constants were the wrong size of job. Counted on the
+tree: 176 top-level constants, 16 marked, 160 silent. Marking five would have
+looked closed at 155 open; demanding a mark of all 176 would have asked where
+`SEP = "|"` came from. Rule I4 says decision constant — a value a branch
+depends on — and that is mechanically checkable: 47 constants are compared
+against somewhere in their own module, 39 of them silent. The gate (committed
+red, before the fixes, as `cbb9ffd`) checks that set.
+
+All 39 are marked now, and each mark was proved to be guarded on its own:
+stripping it reddens the gate on that constant and no other. 15 + 12 + 12,
+three writers, one module set each.
+
+Not one writer wrote MEASURED without a trace. Where the trace was a lost
+artefact or someone else's claim, the mark says CHOSEN and names what it was
+chosen from — including `COARSE_ABOVE_FRAMES`, whose old comment claimed
+MEASURED with numbers the writer did not reproduce.
+
+Two defects found while marking, both real:
+
+- `_person_in_plan` returned `axes[0]["note"]` under a "could not measure"
+  verdict. When the unread axis was not the first, the report named an axis
+  that had in fact read and hid the one that had not — evidence substituted,
+  not truncated. The existing test passed a single axis, where `axes[0]` is
+  accidentally right. Now every unread axis is quoted.
+- `FRAME_SUFFIXES` and `KLING_OUT_SIZE` had no guard at all: mutating either
+  in any direction left the suite green. Both are guarded now, both sides.
+
+Evidence truncation: 16 of the 18 occurrences the audit counted were already
+gone in `e8a0c88`. The audit's own pattern missed the negative slice, and one
+of those survived — `run.stderr[-300:]`, which cuts the head. A first test for
+it planted its marker in the tail and would have passed on the defect; it was
+replaced by a pair, one per end.
+
+The two source-text tests were already replaced by the writer whose session
+ran out; what was missing was proof. Planting the exact defect each one names
+shows the point: the substituted defect contains neither `json.loads` nor
+`avg_frame_rate`, so the old string test would have stayed green on it.
+
+Open and not resolved, named rather than quietly dropped:
+
+- `KLING_OUT_SIZE = (960, 960)` and `fork_plan.FRAME = (720, 1280)` are both
+  marked MEASURED about the same thing — what Kling returns — and the
+  arithmetic reconciles neither way (960x960 cropped to 9:16 is 540x960). One
+  live order settles it; there is no live output in the repository.
+- `OUT_RATIO_MAX` is a ceiling with no floor: a square passes a gate for
+  vertical video.
+- `FRAME_SUFFIXES` exists twice (`fork_e2e` as a set, `fork_looper` as a
+  tuple), and `MIN_VISIBILITY` twice (`pose`, `fork_plan`).
+- The provenance gate sees only constants a branch compares against, so
+  `SHOULDERS_BAND` and friends — passed into a helper that compares inside —
+  are not demanded. Known gap, not a claim of full coverage.
+- MediaPipe's licence is still not established: no file, no README line, only
+  an extra in `pyproject.toml` and a weights URL.
+- `test_device.py` imports helpers from `test_fork_finish.py`, and both
+  duplicate the gate's logic.

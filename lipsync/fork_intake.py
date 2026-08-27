@@ -20,10 +20,28 @@ from .identity_arcface import MIN_FACE_PX  # noqa: E402
 
 MIN_SCENE_SECONDS = 3.0
 
+#: CHOSEN 0.10 (at the intake handover 22.08, out of exactly two measured
+#: points: 21% orphan wrists gave ArcFace 0.2960 at 81/99 inside the band, 0%
+#: gave 0.2430 at 98/99 — about 0.05 of identity per 21%). Read linearly, 10% is
+#: some 0.024, half the instrument's own noise (`fork_identity.
+#: UPSCALE_DRIFT_MAX` = 0.05); below that a warning would be about noise. NOT
+#: measured at 10% itself — nothing was measured between 0% and 21%, and the
+#: linearity between two points is an assumption, not an observation.
 ORPHAN_WRIST_WARN = 0.10
 
+#: MEASURED at the 22.08 intake run: on `driving_selfie.mp4` ffprobe
+#: -count_frames gave 305, ffmpeg without flags 307, ffmpeg with `-vsync 0`
+#: exactly 305; on `driving_arms.mp4` and `driving_yogaball.mp4` all three
+#: agreed (373 and 362). A healthy file disagrees by exactly zero, so there is
+#: no tolerance to spend: one frame of slack would hide the very defect this
+#: instrument exists to catch. Those clips are not shipped in this repository,
+#: so the numbers stand as a record and cannot be re-run here.
 FRAME_COUNT_EXACT = 0
 
+#: CHOSEN 1 (by the product, out of how identity is measured): the identity axis
+#: reads the LARGEST face, because `identity_arcface.face_detail` sorts by area.
+#: With two people in the photo it is the instrument, not the operator, that
+#: picks whose face the whole axis is about.
 PHOTO_PEOPLE_EXPECTED = 1
 
 VSYNC_ADVICE = (

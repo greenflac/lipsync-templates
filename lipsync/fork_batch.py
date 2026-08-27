@@ -18,6 +18,9 @@ from . import fork_e2e as E
 #: repeating 5, 5 and 2 as bare literals that could drift away from it.
 OWNER_MATRIX = (5, 5, 2)
 
+#: CHOSEN by this module out of the only two coverage modes with a provable
+#: property: `full` gives comparability, `cover` gives reach. A third mode
+#: picked by eye would sell an arbitrary subset of the matrix as a measurement.
 MODES = ("full", "cover")
 
 MAX_STREAK = 3

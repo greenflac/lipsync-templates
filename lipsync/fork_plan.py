@@ -8,6 +8,12 @@ from pathlib import Path
 from .fork_identity import FAIL, PASS, UNMEASURED
 
 
+#: CHOSEN (by the product, out of the vertical feed's own standard): 9:16 is
+#: what the feed shows. It is stated as the exact 0.5625 and not as "roughly
+#: vertical" because only an exact number makes the final crop nothing at all.
+#: Half the pipeline hangs off this one line — `fork_finish` reduces it to whole
+#: sides, `fit_to_plan` and `exact_plan_box` reshape against it — so a second
+#: copy of the ratio anywhere would be a second thing to keep in step.
 PLAN_RATIO = 0.5625
 
 #: MEASURED 2026-08-23 on the six shipped clips: Kling returned exactly this
@@ -33,8 +39,16 @@ SHOULDERS_BAND = (0.20, 0.42)
 
 ANKLES_BAND = (0.86, 0.99)
 
+#: CHOSEN 0.08 (by this module, out of how the generator behaves, not out of a
+#: distribution): Kling scales the character onto the driving skeleton, so a
+#: subject standing off-centre in the photo travels off-centre into the video.
+#: Nothing in this tree measured where the bar belongs, only that it is needed.
 CENTRE_TOL = 0.08
 
+#: CHOSEN 0.72 (by this module, out of one observed failure): a subject already
+#: filling the width loses the arms when they swing out, which is exactly what
+#: spoiled run b4 on 88.1% of its frames. The run says "too wide"; it does not
+#: say 0.72, so the share itself is a choice and not a measurement.
 WIDTH_MAX = 0.72
 
 from .fork_intake import MIN_FACE_PX  # noqa: E402

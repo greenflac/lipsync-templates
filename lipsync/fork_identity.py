@@ -7,6 +7,9 @@ from pathlib import Path
 
 from .identity_arcface import HARD_DRIFT_MAX, SAME_PERSON_MAX
 
+#: CHOSEN: the instrument is a parameter, not a wired-in dependency. Swapping
+#: it voids every number taken before it, so the swap has to be a visible
+#: decision by the caller and not the side effect of editing an import.
 DEFAULT_INSTRUMENT = "identity_arcface"
 
 INSTRUMENT_LICENCE = {
@@ -17,6 +20,10 @@ INSTRUMENT_LICENCE = {
     ),
 }
 
+#: CHOSEN: three outcomes instead of two, because "could not measure" folds
+#: into neither of the other two. Words rather than flags — they are printed
+#: into reports — and the whole package imports them from here, so the three
+#: cannot drift into two spellings of the same verdict.
 PASS, FAIL, UNMEASURED = "pass", "fail", "could not measure"
 
 from .identity_arcface import MIN_COVERAGE  # noqa: E402

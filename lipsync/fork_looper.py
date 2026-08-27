@@ -39,6 +39,10 @@ BRIDGE_MAX_FRAMES = 8
 
 TOP_LOOPS = 5
 
+#: CHOSEN: the share of frames the pose has to be captured on for the
+#: analysis to mean anything at all. Under it the outcome is "could not
+#: measure" and not "no loops": on a driving where the person is missing from
+#: a quarter of the frames, finding no loops says nothing about the material.
 MIN_POSE_COVERAGE = 0.8
 
 GIF_MAX_FRAMES = 24
@@ -51,6 +55,11 @@ CUT_SIDE = 96
 
 PRESENCE_GAP_MIN = 15
 
+#: CHOSEN from a wait a person tolerates: 900 frames is 30 s at 30 fps, about
+#: half a minute of CPU for pose capture at the per-frame cost recorded in
+#: 61e49b9 (0.031 s/frame here, 0.058 s/frame by the template author). Half a
+#: minute is waited for; the seventeen minutes the full scan would cost on
+#: long material is not.
 COARSE_ABOVE_FRAMES = 900
 
 COARSE_STRIDE = 5
@@ -67,8 +76,13 @@ SCAN_TOO_LONG = "too long"
 
 EXIT_BY_OUTCOME = {PASS: 0, FAIL: 1, UNMEASURED: 2}
 
+#: CHOSEN: what counts as a frame in a directory. The list is closed on
+#: purpose — anything else sitting there is not silently taken for a frame.
 FRAME_SUFFIXES = (".png", ".jpg", ".jpeg")
 
+#: CHOSEN: first version of the pose cache format. It moves with the shape of
+#: the record, so a cache written by an older shape is rejected instead of
+#: being read as if it were the new one.
 CACHE_VERSION = 1
 
 

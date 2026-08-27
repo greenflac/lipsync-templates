@@ -12,7 +12,13 @@ from pathlib import Path
 from . import framemath
 from .fork_identity import FAIL, PASS, UNMEASURED
 
+#: CHOSEN: the bare tool name, so PATH decides which build runs. It is a
+#: constant and not a literal inside argv because a test points it at a name
+#: that does not exist to reach the "nothing to ask with" branch, and doing
+#: that by uninstalling ffmpeg is not a test.
 FFPROBE_BIN = "ffprobe"
+
+#: CHOSEN for the same reason as FFPROBE_BIN: the decoder is reached by name.
 FFMPEG_BIN = "ffmpeg"
 
 PROBE_TIMEOUT_S = 20
@@ -23,10 +29,21 @@ NAME_DIGITS = 5
 
 FRAME_SUFFIX = ".png"
 
+#: DERIVED from how the expectation is computed: a container without
+#: `nb_frames` has its count taken as duration x rate, and rounding that to a
+#: whole frame misses by exactly one. Two cannot be blamed on rounding, so
+#: such a run answers "completeness not confirmed" rather than "pass".
 FRAME_COUNT_TOLERANCE = 1
 
+#: DERIVED from NTSC: 30000/1001 = 29.97003 lies 0.02997 away from 30, so the
+#: tolerance has to stay under three hundredths or 29.97 passes for 30 and an
+#: upward conform slips by in silence. Zero is out too: the rate arrives as a
+#: division of integers and does not always land on the same double.
 FPS_TOLERANCE = 0.01
 
+#: CHOSEN by this module out of what the operator has to be able to tell
+#: apart: the three rate modes are printed into the report, so they are words
+#: and not flags — "drop" and "refuse" must not both read as "not as is".
 AS_IS, DROP, REFUSE = "as is", "drop", "refuse"
 
 EXIT_BY_OUTCOME = {PASS: 0, FAIL: 1, UNMEASURED: 2}

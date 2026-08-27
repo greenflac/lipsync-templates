@@ -3,6 +3,11 @@
 from __future__ import annotations
 
 LENGTH_STEP = 4
+#: DERIVED from the sampler wrapper this arithmetic was lifted out of verbatim:
+#: its node reference gives a step of 4 over a minimum length of 1. The wrapper's
+#: prose said "length is a multiple of 4" and was dropped as the weaker source —
+#: the wrapper's own stock length of 77 is not a multiple of 4, so the prose read
+#: literally would have condemned the stack's standard geometry.
 LENGTH_BASE = 1
 
 WRAP_FPS = 30

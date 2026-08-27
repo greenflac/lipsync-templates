@@ -17,6 +17,11 @@ KLING_ENDPOINT = "fal-ai/kling-video/v2.6/standard/motion-control"
 
 KLING_FIELDS = ("video_url", "image_url", "character_orientation")
 
+#: MEASURED by probing the endpoint with a negative control: the probe sent
+#: `character_orientation: 0` and the API answered "Input should be 'image' or
+#: 'video'", so the admitted pair is the vendor's own list rather than our
+#: reading of a document. The probe reply was kept as `work/bake_kling26_o0.json`,
+#: which no longer survives in the tree — this line is now the only record of it.
 KLING_ORIENTATIONS = ("image", "video")
 
 CHARACTER_ORIENTATION = "video"
@@ -44,19 +49,61 @@ KLING_LATENCY_S = (107.4, 190.0)
 
 KLING_WAIT_S = 1520
 
+#: MEASURED by ffprobe on the eight live orders placed up to 2026-08-22: every
+#: one came back 960x960. Kept as a RECORD OF WHAT ARRIVED and not as a
+#: requirement — a later live order returned 816x1104 once the input photo was
+#: vertical, and the geometry check gates on `OUT_RATIO_MAX` for that reason.
+#: Nothing branches on this pair; it only lets the note say whether the
+#: geometry is the familiar one. The reading is corroborated where the crop
+#: lives: `test_fork_finish` carries the ffprobe answer for a 960x960 clip and
+#: expects it cropped to 540x960.
 KLING_OUT_SIZE = (960, 960)
+#: MEASURED on those same eight orders, and unlike the size this one IS a gate:
+#: the audio assembly counts frames at 30, so any other rate leaves the output
+#: unjudgeable rather than bad.
 KLING_OUT_FPS = 30.0
 
+#: CHOSEN: the still-image suffixes our own frame dumps write, so that a frames
+#: directory can be read without picking up the report and the manifest lying
+#: beside them. No measurement stands behind the set.
 FRAME_SUFFIXES = {".png", ".jpg", ".jpeg"}
 
+#: CHOSEN 1.0 as a CEILING ("not landscape"), deliberately not the plan ratio.
+#: The first edition compared the output with `KLING_OUT_SIZE` and failed a live
+#: run that came back 816x1104 — the vertical we had been chasing all day. The
+#: instrument was right by the letter and wrong on the substance, which is why
+#: the bar guards the PROPERTY and not the numbers. A square is admitted because
+#: eight orders delivered one and it crops to 9:16, only at a higher loss.
+#: Clamped on one side only, and knowingly so: a floor is a second decision and
+#: is not taken here.
 OUT_RATIO_MAX = 1.0
 
+#: MEASURED against Kling's own gate, which refuses with "Video duration can
+#: not less than 3s" — the message is quoted in the check so the reason travels
+#: with the verdict. All three ways round it were tried and failed: rate
+#: stretching returned 88 frames instead of 15, freeze padding was animated by
+#: the model, and per-scene rendering meets the same gate. So this is an
+#: acceptance criterion for the window, not a preference.
 MIN_SCENE_S = 3.0
 
+#: CHOSEN by the owner: the `pro` tier is excluded for good, and the exclusion
+#: has to be machine-made — a line in a document does not stop an order that is
+#: already paid. The price is the reason: $0.8960 per second against $0.0700.
 FORBIDDEN_TIERS = ("pro",)
 
+#: CHOSEN by the owner with his eyes on 2026-08-22, AGAINST the number. The
+#: style-hit measure scored `gpt-image-2` 0.8801 against 0.8156 here — and it
+#: won precisely by copying what it had no business copying: an olive belted
+#: dress over the client's grey top, a hip-hand lean over a straight stance.
+#: The measure is built on colour and texture, and clothing and pose are colour
+#: and texture too, so it REWARDS repainting. A one-sided measure cannot say
+#: "alike on these axes while differing on those", and that is the thing wanted.
 STYLE_MODEL = "nanobanana-2"
 STYLE_ROUTE = "pollinations.compose"
+#: CHOSEN with the model above: `compose` is called with two pictures, the
+#: first carrying the person and the second only the look. The count is a
+#: decision because the roles are positional — a third image has no role to
+#: hold, and one image cannot keep the two apart.
 STYLE_IMAGES = 2
 
 #: The size we ASK the styliser for: `fork_plan.FRAME`, taken rather than
@@ -73,10 +120,30 @@ STYLE_HIT_REJECTED = 0.8801
 STYLE_FLOOR_REFERENCE = 0.6409
 STYLE_TEXT_ROUTE_REFERENCE = 0.6773
 
+#: CHOSEN 0.05: above the instrument's own noise and well below its signal. On
+#: the styliser comparison the REJECTED text route scored 0.6773 against a floor
+#: of 0.6409, so the noise here is +0.0364, while the accepted route stood
+#: +0.2392 clear. A bar at the noise floor would pass noise as style; a bar near
+#: the winner would pass nothing. What this number does not know: it was taken
+#: on one instrument's scale, which is why the floor is recomputed on the spot
+#: by the same instrument and compared only with itself.
+#: DEBT(2026-08-22): the margin is stated in fractions, not in sigmas.
 STYLE_MARGIN_MIN = 0.05
 
+#: CHOSEN by the owner: an editing cut inside a single scene is a defect of the
+#: generation and not a style, so the allowance is none. The detector's own
+#: threshold is `fork_looper.CUT_JUMP` and is read from there, never copied here.
 MAX_CUTS_OUT = 0
 
+#: CHOSEN by the owner and revised on 2026-08-22: ban the DRAWN mark and the
+#: lettering, not the brand word. The earlier wording opened with "no brand
+#: names" and so fought the owner's own prompts, which name "Adidas sneakers"
+#: and a "Balenciaga trench". A ban that argues with the prompt does not win,
+#: and that was MEASURED: on `y2k_f` no logo appeared, on `y2k_m` a readable
+#: "adidas" did — the outcome was settled by chance. Stage 2 checks the clause
+#: is present in the prompt, which is why the decision lives as a constant and
+#: not as a sentence in a document. No instrument here reads lettering off an
+#: image: that axis is judged by the owner's eye, and the acceptance says so.
 NO_BRANDS_CLAUSE = (
     "no logo, no logos, no brand marks, no lettering or text anywhere in the frame or on clothing"
 )
@@ -88,7 +155,16 @@ ROLE_CLAUSE = (
     "photographic look from the SECOND image"
 )
 
+#: MEASURED with ArcFace on our own material in one run, as three rungs: the
+#: same face after stylisation, the reference the owner rejected, and a known
+#: stranger (the driving actor against the client photo). One ladder, one place.
 LADDER_SAME = 0.0652
+#: MEASURED on that run as the distance to the REJECTED reference — by then a
+#: different person. Both identity checks branch on this rung and on no other:
+#: between the pass bar and here the face is merely occluded, which is a "could
+#: not measure" for the operator's eye rather than a swap. Eyewear carried over
+#: from a style reference put ArcFace at 0.3928 on the same person, and that is
+#: what the middle band exists to hold.
 LADDER_REJECTED = 0.7137
 LADDER_STRANGER = 1.0217
 
@@ -721,7 +797,8 @@ def fit_frame_to_plan(src, dst, *, plan, sizer=None, cropper=None) -> dict:
 #: never been timed, so this number is a judgement and may be moved. How many
 #: driving frames the composition card is measured over. The card is a set of
 #: medians with a measured spread, so it needs enough frames to have a middle,
-#: and few enough that reading poses stays cheap next to the one paid call. The frames are taken evenly across the whole directory rather than
+#: and few enough that reading poses stays cheap next to the one paid call.
+#: The frames are taken evenly across the whole directory rather than
 #: from the front, which would describe the opening pose and call it the clip.
 CARD_SAMPLE_FRAMES = 24
 
@@ -756,7 +833,8 @@ def driving_card(frames, *, pose=None, plan=None) -> dict:
         }
     reader = _read_pose if pose is None else pose
     picked = list(frames)
-    step = max(1, len(picked) // CARD_SAMPLE_FRAMES)
+    available = len(picked)
+    step = max(1, available // CARD_SAMPLE_FRAMES)
     picked = picked[::step][:CARD_SAMPLE_FRAMES]
     poses, broke = [], []
     for frame in picked:
@@ -769,12 +847,20 @@ def driving_card(frames, *, pose=None, plan=None) -> dict:
             **P.tally(0, 0, 1),
             "note": (
                 f"the pose reader answered on none of the {len(picked)} "
-                f"sampled frames: {broke[0] if broke else 'no reply'}"
+                f"frames sampled from {available}: "
+                # Every reason, not the first: the frames fail for different
+                # causes, and the one that explains the run may be any of them.
+                f"{'; '.join(broke) if broke else 'no reply'}"
             ),
         }
     got = P.composition_card(poses)
+    if len(picked) < available:
+        # `composition_card` counts the frames it was handed, and that is the
+        # sample. Without both numbers a card read off 24 frames of 300 reads
+        # as a card read off the clip.
+        got = dict(got, note=f"{got['note']}; sampled {len(picked)} of {available} frames")
     if broke:
-        got = dict(got, note=f"{got['note']}; {len(broke)} frames threw: {broke[0]}")
+        got = dict(got, note=f"{got['note']}; {len(broke)} frames threw: {'; '.join(broke)}")
     return got
 
 
@@ -806,8 +892,12 @@ def _person_in_plan(image, *, plan, pose=None, card=None) -> tuple:
     # axes are read — the canvas is checked by the caller and the face is not
     # measured on this image at all.
     axes = [a for a in plan.plan_verdict(points=points)["axes"] if a["name"] in plan.PERSON_AXES]
-    if any(a["unmeasured"] for a in axes):
-        return ("person in plan", UNMEASURED, str(axes[0]["note"]))
+    unread = [str(a["note"]) for a in axes if a["unmeasured"]]
+    if unread:
+        # `axes[0]` is not the axis that failed to read: under a "could not
+        # measure" verdict it handed back a note from an axis that had in fact
+        # read, naming the wrong axis as the reason and hiding the others.
+        return ("person in plan", UNMEASURED, "; ".join(unread))
     bad = [a["note"] for a in axes if a["violations"]]
     tail = "; ".join(a["note"] for a in axes)
     if bad:
@@ -1211,7 +1301,10 @@ def stage_window(*, driving, first: int, last: int, out_path, probe=None, cutter
                 text=True,
             )
             if run.returncode != 0:
-                raise RuntimeError(f"ffmpeg returned {run.returncode}: {run.stderr[-300:]}")
+                # Whole, not a tail: ffmpeg names the offending option in the
+                # banner at the front and the failure near the end, and a cut
+                # that did not happen leaves no other account of why.
+                raise RuntimeError(f"ffmpeg returned {run.returncode}: {run.stderr}")
             return {"path": str(dst), "frames": _decoded_frames(dst, exe)}
 
     try:

@@ -2466,3 +2466,190 @@ class EvidenceReachesTheReaderWhole(unittest.TestCase):
                     poll_s=0,
                 )
         self.assertIn("REASON-FAL-REFUSED", str(caught.exception))
+
+    # -- the reason a cut did not happen ------------------------------------
+
+    def _cut_failing_with(self, stderr: str) -> dict:
+        """Run the real ffmpeg branch of `stage_window` with a failing cut."""
+
+        class _Run:
+            returncode = 1
+            # Declared on the class, not stuck on the instance afterwards:
+            # the typechecker is part of `scripts/check`, and an attribute
+            # that only exists at runtime fails it.
+            stderr = ""
+
+        run = _Run()
+        run.stderr = stderr
+        with (
+            mock.patch("shutil.which", lambda name: "/usr/bin/ffmpeg"),
+            mock.patch.object(E.subprocess, "run", lambda *a, **kw: run),
+        ):
+            return E.stage_window(
+                driving="d.mp4",
+                out_path="w.mp4",
+                first=0,
+                last=149,
+                probe=lambda p: {"fps": 30.0, "frames": 1000, "note": "probed"},
+            )
+
+    def test_the_opening_of_a_long_ffmpeg_reason_is_not_dropped(self):
+        """This cut kept the LAST 300 characters, so the half it lost was the opening.
+
+        ffmpeg names the option it would not accept in its first lines and
+        reports the failure near the end; a tail-only note reads as if the
+        command had been fine up to the moment it stopped.
+        """
+        stderr = "OPENING-OPTION-NAMED " + "filler " * 200 + "and then it stopped"
+        cut = [c for c in self._cut_failing_with(stderr)["checks"] if c["name"] == "cut"][0]
+        self.assertEqual(cut["outcome"], UNMEASURED)
+        self.assertIn("OPENING-OPTION-NAMED", cut["note"])
+
+    def test_the_closing_of_a_long_ffmpeg_reason_is_kept_too(self):
+        """The end was never the side this call dropped: this holds it so it cannot become one."""
+        cut = [
+            c
+            for c in self._cut_failing_with(self._long("FILTER-REJECTED-HERE"))["checks"]
+            if c["name"] == "cut"
+        ][0]
+        self.assertIn("FILTER-REJECTED-HERE", cut["note"])
+
+    def test_a_short_ffmpeg_reason_is_reported_as_it_stands(self):
+        """Negative control: a device that always finds its sentinel measures nothing."""
+        cut = [c for c in self._cut_failing_with("no such file")["checks"] if c["name"] == "cut"][0]
+        self.assertEqual(cut["note"], "RuntimeError: ffmpeg returned 1: no such file")
+
+    # -- the axis that did not read, not the first one ----------------------
+
+    def test_the_unmeasured_axis_is_the_one_quoted(self):
+        """`axes[0]` quoted an axis that had read, under a "could not measure" verdict."""
+        got = self._with_verdict(
+            [
+                self._axis("centre", note="CENTRE-READ-FINE"),
+                self._axis("width", unmeasured=1, note="WIDTH-HAD-NO-POINTS"),
+            ]
+        )
+        self.assertEqual(got[1], UNMEASURED)
+        self.assertIn("WIDTH-HAD-NO-POINTS", got[2])
+        self.assertNotIn("CENTRE-READ-FINE", got[2])
+
+    def test_every_axis_that_did_not_read_is_quoted(self):
+        got = self._with_verdict(
+            [
+                self._axis("centre", unmeasured=1, note="CENTRE-BLIND"),
+                self._axis("width", unmeasured=1, note="WIDTH-BLIND"),
+            ]
+        )
+        self.assertIn("CENTRE-BLIND", got[2])
+        self.assertIn("WIDTH-BLIND", got[2])
+
+    def test_axes_that_all_read_do_not_reach_the_unmeasured_branch(self):
+        """Negative control: the branch must stay shut when every axis answered."""
+        got = self._with_verdict([self._axis("centre", note="a"), self._axis("width", note="b")])
+        self.assertEqual(got[1], PASS)
+
+    # -- every reason the pose reader gave, and the sample against the whole -
+
+    FRAMES = [f"{i:05d}.png" for i in range(300)]
+
+    def _card_with_breakages(self, how_many: int) -> dict:
+        seen = []
+
+        def reader(path):
+            seen.append(path)
+            if len(seen) <= how_many:
+                raise RuntimeError(f"FRAME-{len(seen)}-BROKE")
+            return _pose_ok(path)
+
+        return E.driving_card(self.FRAMES, pose=reader)
+
+    def test_every_frame_that_threw_is_named_not_only_the_first(self):
+        note = self._card_with_breakages(3)["note"]
+        for n in (1, 2, 3):
+            self.assertIn(f"FRAME-{n}-BROKE", note)
+
+    def test_a_card_read_without_breakage_says_nothing_about_throwing(self):
+        """Negative control: the tail is added only when there is something to add."""
+        self.assertNotIn("threw", self._card_with_breakages(0)["note"])
+
+    def test_a_reader_that_threw_on_every_frame_names_every_reason(self):
+        note = E.driving_card(self.FRAMES, pose=self._always_throwing())["note"]
+        self.assertIn("FRAME-1-BROKE", note)
+        self.assertIn("FRAME-24-BROKE", note)
+        self.assertIn("frames sampled from 300", note)
+
+    @staticmethod
+    def _always_throwing():
+        seen = []
+
+        def reader(path):
+            seen.append(path)
+            raise RuntimeError(f"FRAME-{len(seen)}-BROKE")
+
+        return reader
+
+    def test_a_card_measured_on_a_sample_says_the_sample_and_the_whole(self):
+        """A partial result printed as numbers, so 24 frames cannot read as the clip."""
+        self.assertIn(
+            "sampled 24 of 300 frames", E.driving_card(self.FRAMES, pose=_pose_ok)["note"]
+        )
+
+    def test_a_card_measured_on_every_frame_claims_no_sampling(self):
+        """Negative control: with nothing skipped there is no sample to declare."""
+        note = E.driving_card(self.FRAMES[:10], pose=_pose_ok)["note"]
+        self.assertNotIn("sampled", note)
+        self.assertIn("over 10 frames of 10", note)
+
+
+class TwoDecisionConstantsNobodyWasWatching(unittest.TestCase):
+    """Both survived every mutation of their value with the suite still green.
+
+    A constant no test moves with is a decision nobody guards: `FRAME_SUFFIXES`
+    could be cut to `.png` alone and every jpeg driving would have gone
+    unreadable in silence, and `KLING_OUT_SIZE` could be set to any pair at all
+    without the note it exists to phrase saying anything different.
+    """
+
+    def test_a_jpeg_frame_directory_is_read_as_frames(self):
+        with TemporaryDirectory() as td:
+            for name in ("a.jpg", "b.JPEG", "c.png"):
+                (Path(td) / name).write_bytes(b"")
+            got = E.frame_paths(td)
+        self.assertEqual([Path(p).name for p in got], ["a.jpg", "b.JPEG", "c.png"])
+
+    def test_a_directory_of_something_else_is_refused_by_name(self):
+        """Negative control, and the other side of the bar.
+
+        The wanted list is matched with its opening words attached, so that a
+        FOURTH suffix moves this too: a set clamped only against shrinking is
+        not clamped.
+        """
+        with TemporaryDirectory() as td:
+            (Path(td) / "report.json").write_bytes(b"{}")
+            with self.assertRaises(ValueError) as caught:
+                E.frame_paths(td)
+        self.assertIn("expected files .jpeg, .jpg, .png", str(caught.exception))
+
+    @staticmethod
+    def _geometry_note(w, h):
+        res = E.stage_output_acceptance(
+            produced="p.mp4",
+            client_photo="c.png",
+            frames_dir="d",
+            probe=lambda p: {"width": w, "height": h, "fps": 30.0, "frames": 99},
+            decode=_decode_ok,
+            distances=lambda fr, an: {"outcome": PASS, "median": 0.20, "inside": 99, "judged": 99},
+            cuts=lambda p: {"outcome": PASS, "cuts": [], "note": ""},
+        )
+        return [c for c in res["checks"] if c["name"] == "output geometry"][0]
+
+    def test_the_recorded_geometry_is_recognised_as_the_familiar_one(self):
+        self.assertEqual(self._geometry_note(960, 960)["outcome"], PASS)
+        self.assertIn("as on previous orders", self._geometry_note(960, 960)["note"])
+
+    def test_an_unfamiliar_vertical_geometry_still_passes_but_is_named_as_new(self):
+        """The record is a record, not a bar: 816x1104 passed and had to keep passing."""
+        note = self._geometry_note(816, 1104)
+        self.assertEqual(note["outcome"], PASS)
+        self.assertIn("new geometry", note["note"])
+        self.assertIn("960x960", note["note"])

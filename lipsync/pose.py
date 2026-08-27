@@ -21,6 +21,11 @@ BODY_POINTS = {
     "r_ankle": 28,
 }
 
+#: CHOSEN 0.5, the midpoint of MediaPipe's 0..1 visibility score: under it a
+#: point is the model's guess rather than something it saw. No run in this tree
+#: measured where the guessing starts. It is declared here alone — the intake and
+#: the loop finder import this bar — so that every reading of a skeleton in the
+#: product discards the same points.
 MIN_VISIBILITY = 0.5
 
 #: Declared instruments: public here, called by no production path on purpose.
