@@ -55,7 +55,7 @@ from typing import Any
 from mcp.server.mcpserver import MCPServer
 
 from studio import knowledge
-from studio.mcp import advice, contract, creative, fetch, probe, search
+from studio.mcp import advice, contract, creative, fetch, probe, proposal, search
 from studio.mcp import lipsync_prompt as lp
 
 server = MCPServer(
@@ -94,6 +94,11 @@ server = MCPServer(
         "`probe_model_limit` — the vendor API's own refusal is the measurement, and "
         "it records at `probe` tier. A host the policy refuses is reported, never "
         "routed around: no mirror, no cache, no read-through proxy. "
+        "When free sources have run out and only a real generation would settle "
+        "the question, do not run it and do not go quiet: call "
+        "`propose_measurement` — name the gap, write the exact test, name the "
+        "price, and let the operator decide. You cannot approve it yourself, so "
+        "file it, answer with what you know today, and say the gap is open. "
         "(2) Write lipsync prompts: call `write_lipsync_prompt`. It fills "
         "the engine's card from the owner's words and the corpus, and refuses "
         "with a question when a slot is unresolved. Do not answer the question "
@@ -417,6 +422,71 @@ def probe_model_limit(
     except ValueError:
         value = absurd_value
     return _json(probe.probe_limit(url, field, value, payload=payload, why_wanted=why_wanted))
+
+
+@server.tool()
+def propose_measurement(
+    model: str,
+    attribute: str,
+    task: str,
+    gap: str,
+    test: str,
+    cost_usd: float,
+    cost_basis: str,
+    decides: str,
+) -> str:
+    """Ask the operator to pay for a generation you cannot answer without.
+
+    Free sources run out. When the only way to settle a question is to run the
+    thing and look at it, that costs money on the operator's account, and the
+    ruling is that such a measurement happens per concrete task and with their
+    approval each time. So you file; a person decides.
+
+    This never runs anything and never writes a fact. The outcome is
+    `could not measure` with an id, because a filed proposal has measured
+    nothing. There is deliberately NO tool here to approve it: approval is a
+    command the operator runs. Do not wait in a loop for it — say what you have
+    filed, answer with what you know today, and mark the gap.
+
+    A proposal is refused if the base already answers this freshly and
+    uncontested. Contested or stale is exactly when measuring is worth paying
+    for.
+
+    :param task: the concrete job needing this. Approval is per task, not a
+        standing budget.
+    :param gap: what the base cannot answer today, and why free sources cannot
+        close it.
+    :param test: the exact request to send and what to look at afterwards —
+        enough that somebody else could run it and get your number.
+    :param cost_usd: what it will cost, in dollars. 0.0 is allowed and still
+        goes past the operator.
+    :param cost_basis: where that price came from — a published rate, an
+        invoice. A price with no basis is a guess.
+    :param decides: what each possible result would mean for the task. If both
+        answers lead to the same next step, the measurement buys nothing.
+    """
+    return _json(
+        proposal.propose(
+            model,
+            attribute,
+            task=task,
+            gap=gap,
+            test=test,
+            cost_usd=cost_usd,
+            cost_basis=cost_basis,
+            decides=decides,
+        )
+    )
+
+
+@server.tool()
+def measurement_proposals(state: str = "") -> str:
+    """What measurements have been filed, and what is waiting on the operator.
+
+    :param state: "proposed", "approved", "declined" or "recorded"; empty for
+        all of them.
+    """
+    return _json(proposal.proposals(state=state))
 
 
 def main() -> None:

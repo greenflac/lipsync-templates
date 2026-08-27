@@ -41,6 +41,15 @@ MUST_SAY: tuple[tuple[str, str], ...] = (
     ("CAPABILITY", "an API accepting the input is not the same claim as the result holding up"),
     ("APPLICABILITY", "the second claim comes from the corpus, not from a parameter list"),
     ("record_model_fact", "what the survey finds goes back into the base"),
+    (
+        "propose_measurement",
+        "a gap free sources cannot close is filed for the operator, not run and "
+        "not silently dropped",
+    ),
+    (
+        "cannot approve it yourself",
+        "an agent that approves its own spend was never asked for permission",
+    ),
 )
 
 
