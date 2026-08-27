@@ -17,20 +17,38 @@ it up in this project with no further setup. To check it by hand:
 python -m studio.mcp.server        # stdio; Ctrl-C to stop
 ```
 
-Five tools appear in the chat:
+Eleven tools appear in the chat. Three of them write; the rest only read.
 
 | tool | what it does |
 |---|---|
 | `model_advice` | everything known about a model, with every source and its date |
-| `record_model_fact` | write one web finding into the base — **the only tool that writes** |
+| `record_model_fact` | **writes.** One web finding into the base, with who said it and when |
+| `withdraw_model_fact` | **writes.** Takes back a claim its own page turns out not to make |
 | `stale_model_facts` | which claims are old enough to need re-checking |
 | `write_lipsync_prompt` | write a look prompt from your words plus the corpus |
 | `check_lipsync_prompt` | judge any prompt, from any source, against the contract |
 | `search_web` | **search the web — the research entry point** |
-| `fetch_url` | open one page or file, through the policy and never around it |
+| `fetch_url` | **writes** a refused host to the allowlist request. Opens one page, through the policy and never around it |
 | `blocked_hosts` | the allowlist request, built from refusals that really happened |
 | `reachable_hosts` | re-probe which hosts answer right now |
 | `probe_model_limit` | ask a vendor API for the impossible and read the real limit |
+
+### The fact file is a log, and the latest row about a claim wins
+
+Added 2026-08-27, when the vendor hosts opened and 25 second-hand facts became
+readable. Recording something already recorded is an UPDATE, not a second
+source agreeing: a claim is `(model, attribute, value, source_url)`, and a new
+row supersedes the old one's tier, date, note and reading flag. Without that,
+opening a page you already cite counted it twice — `checked` inflated, and the
+note reading "1 of 2 source(s) were NOT read" about one page that had been.
+
+`withdraw_model_fact` is for the other outcome of reading: the page does not
+say it. The withdrawal is appended with its reason rather than deleting the
+line, so why anybody believed it survives; the base simply stops asserting it.
+Withdrawing something nobody recorded is `could not measure`, never `pass`.
+
+Do not hand-edit a row to correct it. Append a corrected one, or withdraw it.
+`scripts/read_sources.py --check` is a step in `scripts/check` and will notice.
 
 Every tool returns `outcome` — `pass` / `fail` / `could not measure` — next to
 `checked`, `violations` and `unmeasured`. Zero violations out of zero checks is
