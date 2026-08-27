@@ -112,6 +112,103 @@ def _spread_by_attribute(facts: list[Fact]) -> list[Fact]:
     return out
 
 
+#: Card field -> the fact-base attribute that answers the same question. Only
+#: fields a harvested claim can actually contradict; a skeleton or a parameter
+#: map has no counterpart in the base and is not compared.
+CARD_MIRRORS: tuple[tuple[str, str], ...] = (
+    ("max_seconds", "max_seconds"),
+    ("fps", "fps"),
+    ("resolutions", "max_resolution"),
+    ("aspect_ratios", "aspect_ratio"),
+    ("audio", "audio"),
+)
+
+
+def _says_the_same(card_value: object, recorded: str) -> bool:
+    """Does a recorded claim carry what the card states?
+
+    Numbers first, because a card holds `8.0` and a harvest holds `"8"`, and a
+    substring test calls those two a contradiction — OBSERVED the moment this
+    check was first run, on veo-3.1.max_seconds, where card and base agree.
+    A boolean card field is matched the same way rather than by its repr.
+    """
+    text = str(recorded).strip().lower()
+    try:
+        return float(str(card_value)) == float(text)
+    except (TypeError, ValueError):
+        pass
+    if isinstance(card_value, bool):
+        return text in (("true", "yes") if card_value else ("false", "no"))
+    needle = str(card_value).strip().lower()
+    return bool(needle) and needle in text
+
+
+def _card_vs_base(card: object, store: FactStore, name: str) -> list[dict]:
+    """Where the registry card and the recorded claims tell different stories.
+
+    THE DEFECT THIS EXISTS FOR, found by a blind evaluation on 2026-08-27.
+    Asked whether sora-2 could be used as a reference arm, the card answered
+    that its "duration, resolution and fps limits could not be sourced at
+    all" — `max_seconds=None`, `resolutions=()` — while the claims layer of
+    the SAME answer held `max_seconds` 20 and `max_resolution` 1280x720 /
+    720x1280, both read off OpenAI's own page. A caller who reads the card
+    first, which is what a card is for, walks away believing nothing is known.
+
+    Two shapes are reported and they are not the same complaint:
+
+    * `card is silent`  — the card says unknown and the base knows. The card
+      is behind; nothing is wrong, but the caller must not be told "unknown".
+    * `card contradicts` — the card asserts a value and the base's sources say
+      another. That is a real disagreement and it is NEVER resolved here.
+
+    Reported, never merged. The card is one conservative answer for a prompt
+    assembler and the base is every answer anybody gave; making one overwrite
+    the other silently is how the assembler starts lying with confidence.
+    """
+    if card is None:
+        return []
+    out: list[dict] = []
+    for field_name, attribute in CARD_MIRRORS:
+        stated = getattr(card, field_name, None)
+        verdict = store.claims(name, attribute)
+        if verdict["outcome"] != PASS:
+            continue
+        values = verdict.get("values") or []
+        empty = stated is None or stated == () or stated == ""
+        if empty:
+            out.append(
+                {
+                    "field": field_name,
+                    "attribute": attribute,
+                    "shape": "card is silent",
+                    "card": stated,
+                    "base": values,
+                    "note": (
+                        f"the card leaves {field_name} unset while the base holds "
+                        f"{len(values)} recorded value(s). The card is behind the base."
+                    ),
+                }
+            )
+            continue
+        wanted = stated if isinstance(stated, tuple) else (stated,)
+        if any(_says_the_same(one, v) for one in wanted for v in values):
+            continue
+        out.append(
+            {
+                "field": field_name,
+                "attribute": attribute,
+                "shape": "card contradicts",
+                "card": stated,
+                "base": values,
+                "note": (
+                    f"the card states {field_name}={stated!r} and no recorded source says "
+                    "so. Neither is corrected here; both are shown."
+                ),
+            }
+        )
+    return out
+
+
 def advise(model: str, attribute: str = "", *, path: Path | None = None) -> dict:
     """What is known about one model, and how much of it is worth believing.
 
@@ -175,6 +272,24 @@ def advise(model: str, attribute: str = "", *, path: Path | None = None) -> dict
     # Separate rather than merged, because "said about the class" and
     # "measured on this model" are different claims and a reader has to be
     # able to tell them apart. They also never vote in a contradiction.
+    card_vs_base = _card_vs_base(live.get("card"), store, name)
+
+    # The registry's note names the seven models it holds cards for, and it
+    # reads as the whole of what is known. It is not: the fact base holds 205
+    # ids. A blind evaluation asked about `omnihuman-1.5` and came away
+    # reporting that "the fact base contains no dedicated lip-sync model",
+    # having been shown a list of seven (OBSERVED 2026-08-27). So when the
+    # registry misses, the base's own nearest ids go out beside it.
+    if live.get("card") is None:
+        near = store.near(name)
+        if near:
+            live = dict(live)
+            live["note"] = (
+                str(live.get("note", ""))
+                + f" The FACT BASE is a different and much larger set: it holds "
+                f"{store.model_count()} ids, among them {', '.join(near)}."
+            )
+
     every_class_fact = _spread_by_attribute(
         sorted(
             store.class_claims(name),
@@ -225,6 +340,7 @@ def advise(model: str, attribute: str = "", *, path: Path | None = None) -> dict
             "class_findings": class_findings,
             "class_findings_total": len(every_class_fact),
             "class_findings_note": class_findings_note,
+            "card_vs_base": card_vs_base,
             "contested": [],
         }
 
@@ -242,6 +358,7 @@ def advise(model: str, attribute: str = "", *, path: Path | None = None) -> dict
             "class_findings": class_findings,
             "class_findings_total": len(every_class_fact),
             "class_findings_note": class_findings_note,
+            "card_vs_base": card_vs_base,
             "contested": contested,
         }
 
@@ -262,6 +379,7 @@ def advise(model: str, attribute: str = "", *, path: Path | None = None) -> dict
             "class_findings": class_findings,
             "class_findings_total": len(every_class_fact),
             "class_findings_note": class_findings_note,
+            "card_vs_base": card_vs_base,
             "contested": contested,
         }
 
@@ -281,6 +399,7 @@ def advise(model: str, attribute: str = "", *, path: Path | None = None) -> dict
             "class_findings": class_findings,
             "class_findings_total": len(every_class_fact),
             "class_findings_note": class_findings_note,
+            "card_vs_base": card_vs_base,
             "contested": [],
         }
 
@@ -301,6 +420,7 @@ def advise(model: str, attribute: str = "", *, path: Path | None = None) -> dict
             "class_findings": class_findings,
             "class_findings_total": len(every_class_fact),
             "class_findings_note": class_findings_note,
+            "card_vs_base": card_vs_base,
             "contested": [],
         }
 
@@ -318,6 +438,7 @@ def advise(model: str, attribute: str = "", *, path: Path | None = None) -> dict
         "class_findings": class_findings,
         "class_findings_total": len(every_class_fact),
         "class_findings_note": class_findings_note,
+        "card_vs_base": card_vs_base,
         "contested": [],
     }
 

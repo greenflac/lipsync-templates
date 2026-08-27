@@ -16,6 +16,7 @@ from pathlib import Path
 
 from studio.mcp import advice
 from studio.selfrag import source_hosts
+from studio.selfrag.facts import FactStore
 
 # The fictional vendor these tests record against. Declared here rather than
 # leaned on: since 2026-08-27 the identity rungs are read off the URL, so a
@@ -641,6 +642,80 @@ class ClassFindingsRideAlong(unittest.TestCase):
         assert out["contested"] == []
         assert out["class_findings"][0]["value"] == "99"
         assert out["class_findings"][0]["scope"] == "*"
+
+
+class TheCardAndTheBaseAreCompared(unittest.TestCase):
+    """Found by a blind evaluation, 2026-08-27.
+
+    Asked whether sora-2 could serve as a reference arm, the card answered
+    that its duration and resolution "could not be sourced at all" — while the
+    claims layer of the same answer held 20 seconds and 1280x720, both read
+    off OpenAI's own page. Nothing compared the two, so the card could go on
+    saying "unknown" indefinitely.
+    """
+
+    def setUp(self) -> None:
+        self._dir = tempfile.TemporaryDirectory()
+        self.addCleanup(self._dir.cleanup)
+        self.tmp = Path(self._dir.name)
+        patcher = mock.patch.dict(source_hosts.VENDOR_SOURCES, TEST_VENDOR_SOURCES, clear=False)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    class _Card:
+        def __init__(self, **fields: object) -> None:
+            self.max_seconds = fields.get("max_seconds")
+            self.fps = fields.get("fps")
+            self.resolutions = fields.get("resolutions", ())
+            self.aspect_ratios = fields.get("aspect_ratios", ())
+            self.audio = fields.get("audio", False)
+
+    def _store(self, rows: list[dict]) -> FactStore:
+        path = self.tmp / "facts.jsonl"
+        _write(path, rows)
+        return advice.store_for(path)
+
+    def test_a_silent_card_beside_a_knowing_base_is_reported(self) -> None:
+        store = self._store([_fact(attribute="max_seconds", value="20")])
+        out = advice._card_vs_base(self._Card(), store, "test-model")
+        assert len(out) == 1, out
+        assert out[0]["shape"] == "card is silent"
+        assert out[0]["base"] == ["20"]
+
+    def test_a_card_that_agrees_with_the_base_says_nothing(self) -> None:
+        """The negative control. A check that fired on every model would be
+        indistinguishable in the output from one that works."""
+        store = self._store([_fact(attribute="max_seconds", value="20")])
+        out = advice._card_vs_base(self._Card(max_seconds=20.0), store, "test-model")
+        assert out == [], out
+
+    def test_eight_point_zero_and_the_string_eight_are_the_same_number(self) -> None:
+        """Found the first time this ran: a card holds 8.0 and a harvest holds
+        "8", and a substring test called veo-3.1 self-contradictory."""
+        store = self._store([_fact(attribute="max_seconds", value="8")])
+        assert advice._card_vs_base(self._Card(max_seconds=8.0), store, "test-model") == []
+
+    def test_a_real_disagreement_is_reported_and_never_resolved(self) -> None:
+        store = self._store([_fact(attribute="max_resolution", value="3840x2160")])
+        out = advice._card_vs_base(self._Card(resolutions=("720p", "1080p")), store, "test-model")
+        assert len(out) == 1, out
+        assert out[0]["shape"] == "card contradicts"
+        assert out[0]["card"] == ("720p", "1080p")
+        assert out[0]["base"] == ["3840x2160"]
+
+    def test_a_blog_only_claim_does_not_accuse_the_card(self) -> None:
+        """`claims` reports blog-only as `could not measure`, and something the
+        base cannot establish must not be used to contradict anybody."""
+        store = self._store(
+            [_fact(attribute="max_seconds", value="99", tier="blog", source_url="https://b.test/x")]
+        )
+        assert advice._card_vs_base(self._Card(max_seconds=8.0), store, "test-model") == []
+
+    def test_it_reaches_the_caller_through_advise(self) -> None:
+        path = self.tmp / "facts.jsonl"
+        _write(path, [_fact(attribute="max_seconds", value="20")])
+        out = advice.advise("test-model", path=path)
+        assert "card_vs_base" in out
 
 
 if __name__ == "__main__":

@@ -185,6 +185,38 @@ class Facts(unittest.TestCase):
         self.assertEqual(store.claims("veo-3.1", "max_seconds")["values"], ["8"])
         self.assertEqual(store.contested(), [])
 
+    def test_a_near_miss_id_points_at_what_the_base_actually_holds(self) -> None:
+        """Found by a blind evaluation, 2026-08-27. Asked about
+        `omnihuman-1.5`, a caller was shown the REGISTRY's list of seven
+        models and concluded in writing that "the fact base contains no
+        dedicated lip-sync model" — while the base held 214 ids, `omnihuman-1`
+        among them. A near-miss id is the commonest way to be told nothing is
+        known about something that is."""
+        store = FactStore(
+            [
+                fact("omnihuman-1", "max_seconds", "10"),
+                fact("kling-lipsync-audio-to-video", "max_seconds", "60"),
+                fact("veo-3.1", "max_seconds", "8"),
+            ]
+        )
+        assert store.near("omnihuman-1.5") == ["omnihuman-1"]
+        assert store.near("kling-avatar") == ["kling-lipsync-audio-to-video"]
+        assert store.model_count() == 3
+
+    def test_a_stranger_gets_no_suggestions_rather_than_a_bad_one(self) -> None:
+        """The negative control: four shared characters is the floor, so an id
+        with nothing in common comes back empty. A suggester that always
+        suggests sends the caller to the wrong model with confidence."""
+        store = FactStore([fact("omnihuman-1", "max_seconds", "10")])
+        assert store.near("flux-2") == []
+        assert store.near("") == []
+        # One shared letter is not a near miss. Without this the floor could
+        # be 1 and every test above would still pass, while a caller asking
+        # about `okapi-2` would be pointed at a human-video model.
+        assert store.near("okapi-2") == []
+        # Four is the floor and it is reached exactly here.
+        assert store.near("omni-thing") == ["omnihuman-1"]
+
     def test_an_unknown_attribute_is_unmeasured(self) -> None:
         store = FactStore([fact("k", "max_seconds", "9")])
         self.assertEqual(store.claims("k", "nothing_recorded")["outcome"], UNMEASURED)

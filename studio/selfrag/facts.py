@@ -485,6 +485,34 @@ class FactStore:
             for f in facts
         ]
 
+    def model_count(self) -> int:
+        """How many model ids the base holds. Not the registry's seven."""
+        return len({model for model, _attribute in self._index})
+
+    def near(self, model: str, *, limit: int = 8) -> list[str]:
+        """Ids in the base that share a prefix with this one, longest first.
+
+        For the caller who asked about `omnihuman-1.5` and was handed the
+        registry's list of seven — the base may well hold the model under a
+        neighbouring id, and pointing at it costs one line.
+        """
+        low = str(model or "").strip().lower()
+        if not low:
+            return []
+        every = sorted({m for m, _a in self._index})
+        hits: list[tuple[int, str]] = []
+        for candidate in every:
+            if candidate == low:
+                continue
+            shared = 0
+            for a, b in zip(low, candidate):
+                if a != b:
+                    break
+                shared += 1
+            if shared >= 4:
+                hits.append((-shared, candidate))
+        return [c for _s, c in sorted(hits)][:limit]
+
     def class_claims(self, model: str) -> list[Fact]:
         """Facts recorded about the CLASS this model belongs to.
 

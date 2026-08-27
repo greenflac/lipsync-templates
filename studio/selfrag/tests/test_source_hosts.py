@@ -123,7 +123,7 @@ class TheTableAgainstTheRealBase(unittest.TestCase):
         # lines would count corrections twice and count retracted claims as
         # standing — measuring the file's history rather than what it asserts.
         facts = load_facts(DEFAULT_FACTS_PATH)
-        assert len(facts) == 865, "the measured base; update the literals below with it"
+        assert len(facts) == 867, "the measured base; update the literals below with it"
 
         seen = {VENDOR: 0, PORTAL: 0, BLOG: 0}
         for fact in facts:
@@ -154,7 +154,7 @@ class TheTableAgainstTheRealBase(unittest.TestCase):
         # ladder, and this test asks a different question — whose page is the
         # URL — where arxiv.org belongs to nobody in particular. The two
         # ladders answering differently is the design, not a drift.
-        assert seen[VENDOR] == 399, seen
+        assert seen[VENDOR] == 401, seen
         assert seen[PORTAL] == 197, seen
         assert seen[BLOG] == 269, seen
 
