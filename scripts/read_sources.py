@@ -527,28 +527,58 @@ READINGS: tuple[dict[str, object], ...] = (
             "we otherwise authorize in writing.' So the CHANNEL is sanctioned and "
             "the USE is not: this repository is a commercial service. Separately, "
             "per-upload model licences (Anima, LTX-derived, Cosmos-derived) carry "
-            "their own commercial restrictions on top. Written authorisation is the "
-            "clause to ask under. NO COLLECTOR WAS WRITTEN — owner's decision."
+            "their own commercial restrictions on top. RESOLVED 2026-08-27: the "
+            "owner obtained legal clearance and confirmed there is no outstanding "
+            "legal risk; that is the basis stamped on every collected row. The ToS "
+            "text above is unchanged and kept deliberately, because it is what the "
+            "authorisation is an exception to. See studio/knowledge/PROVENANCE.md "
+            "and the collector at studio/mcp/civitai.py."
+        ),
+        "read_directly": True,
+    },
+    {
+        "model": "civitai-api",
+        "attribute": "images_endpoint_metadata",
+        "value": "stripped",
+        "source_url": "https://civitai.com/api/v1/images",
+        "tier": "probe",
+        "stated_on": READ_ON,
+        "note": (
+            "MEASURED, unauthenticated: 300 images across three pages, `meta` null "
+            "on 300 of 300; also null for ?postId=, ?sort=Newest and ?sort=Most "
+            "Reactions, and a bogus ?token= is accepted with 200 rather than "
+            "refused, so the route does not appear to gate this behind a key. Kept "
+            "as its own attribute because it is a true fact about THIS endpoint, "
+            "and it was the belief that sank two sessions' plans."
         ),
         "read_directly": True,
     },
     {
         "model": "civitai-api",
         "attribute": "prompt_metadata_exposed",
-        "value": "no",
-        "source_url": "https://civitai.com/api/v1/images",
+        "value": "only on /api/v1/model-versions/{id}, never on /api/v1/images",
+        "replaces": (
+            "no",
+            (
+                "measured only on /api/v1/images, and generalised from it. Walking "
+                "the rest of the API found the pairs on the model-version endpoint, "
+                "so 'the API does not expose prompts' was a claim about one route "
+                "reported as a claim about the API"
+            ),
+        ),
+        "source_url": "https://civitai.com/api/v1/model-versions/128713",
         "tier": "probe",
         "stated_on": READ_ON,
         "note": (
-            "MEASURED, unauthenticated: 300 images sampled across three pages of "
-            "/api/v1/images, and `meta` was null on 300 of 300 — no prompt, no "
-            "sampler, no seed. Also null for ?postId=, ?sort=Newest and "
-            "?sort=Most Reactions. The rows carry url, hash, dimensions, "
-            "modelVersionIds, stats and username, and nothing about how the image "
-            "was made. COULD NOT MEASURE with an API key: this environment holds no "
-            "Civitai credential, and the metadata may be gated behind one. So the "
-            "prompt-plus-result pairing this plan was built on is not there for an "
-            "anonymous caller, whatever the licence turns out to allow."
+            "MEASURED, unauthenticated, both ways. /api/v1/images: `meta` null on "
+            "300 of 300 across three pages, and null for ?postId=, ?sort=Newest and "
+            "?sort=Most Reactions. /api/v1/models: the nested images carry "
+            "`hasMeta` and `hasPositivePrompt` FLAGS while `meta` itself is null — "
+            "0 of 1754. /api/v1/model-versions/{id}: the same images WITH `meta`, "
+            "60 of 63 carrying a prompt, keys stable (prompt, negativePrompt, seed, "
+            "steps, sampler, cfgScale, Size, Model). So the pairing this project "
+            "has never had is obtainable, from the third route. No API key was "
+            "used or needed. Collector: studio/mcp/civitai.py."
         ),
         "read_directly": True,
     },
@@ -592,6 +622,22 @@ READINGS: tuple[dict[str, object], ...] = (
 #: Claims whose own page, once opened, does not make them. Each is
 #: `withdraw`'s arguments: the four fields that identify the claim, and why.
 WITHDRAWN: tuple[dict[str, str], ...] = (
+    {
+        "model": "civitai-api",
+        "attribute": "prompt_metadata_exposed",
+        "value": "no",
+        "source_url": "https://civitai.com/api/v1/images",
+        "reason": (
+            "measured on one route and stated about the whole API. /api/v1/images "
+            "really does return meta: null (300 of 300), but the pairs are on "
+            "/api/v1/model-versions/{id}, so the unqualified 'no' was false. "
+            "Replaced by a scoped claim at this same URL and by the finding at the "
+            "endpoint that has them. NOTE for the next reader: `replaces` in a "
+            "reading only withdraws at the SAME url, which is right — a claim is "
+            "identified by its source — so a correction that moves to a DIFFERENT "
+            "source needs an explicit withdrawal here, as this one did"
+        ),
+    },
     {
         "model": "veo-3.1",
         "attribute": "best_for",

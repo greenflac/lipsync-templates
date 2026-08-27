@@ -123,7 +123,7 @@ class TheTableAgainstTheRealBase(unittest.TestCase):
         # lines would count corrections twice and count retracted claims as
         # standing — measuring the file's history rather than what it asserts.
         facts = load_facts(DEFAULT_FACTS_PATH)
-        assert len(facts) == 49, "the measured base; update the literals below with it"
+        assert len(facts) == 50, "the measured base; update the literals below with it"
 
         seen = {VENDOR: 0, PORTAL: 0, BLOG: 0}
         for fact in facts:
@@ -134,7 +134,7 @@ class TheTableAgainstTheRealBase(unittest.TestCase):
         # api.klingai.com: the URL is the vendor's, while the rung the row
         # keeps is `probe`, which describes how the fact was obtained.
         assert seen[VENDOR] == 14, seen
-        assert seen[PORTAL] == 7, seen
+        assert seen[PORTAL] == 8, seen
         assert seen[BLOG] == 28, seen
 
     def test_no_rung_is_empty_which_is_what_a_useless_table_looks_like(self) -> None:

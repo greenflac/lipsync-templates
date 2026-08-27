@@ -19,3 +19,12 @@ corpus/
 # See studio/knowledge/PROVENANCE.md and NOTICE_replacement.md.
 studio/knowledge/gallery_prompts.jsonl
 work/
+
+# Prompt-and-result pairs collected from Civitai. NOT committed, for the same
+# reason as the line above: this repository is public, its LICENCE clause 2(d)
+# asserts rights over "the prompts ... contained here", and these prompts are
+# other people's work. The owner's authorisation covers collecting and using
+# them; republishing them under this repository's licence is a separate
+# decision and not one `git add -A` should be able to take.
+# See studio/mcp/civitai.py and studio/knowledge/PROVENANCE.md.
+studio/knowledge/civitai_prompts.jsonl
