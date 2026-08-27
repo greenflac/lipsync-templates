@@ -116,47 +116,56 @@ class TheTableAgainstTheRealBase(unittest.TestCase):
     """
 
     def test_the_real_base_lands_on_all_three_rungs(self) -> None:
-        # `load_facts` and not the raw lines: since 2026-08-27 the file is a
-        # log where a later row supersedes an earlier one about the same claim
-        # and a withdrawal removes it, so the file's lines outnumber its claims.
-        # Counting
-        # lines would count corrections twice and count retracted claims as
-        # standing — measuring the file's history rather than what it asserts.
+        """WHY THIS STOPPED PINNING AN EXACT COUNT, 2026-08-27.
+
+        It asserted `len(facts) == <today's number>` with the comment "update
+        the literals below with it". That worked while the base changed once a
+        session. It stopped working the moment a harvest ran: agents append to
+        the fact file continuously, so the assertion went red on every
+        legitimate write, and the fix was always to retype the number. Six
+        times in one afternoon — and a test whose only failure mode is "the
+        number moved again" teaches its reader to retype the number WITHOUT
+        LOOKING, which is worse than no test at all. Twice the count changed
+        between re-pinning it and running it.
+
+        What it was really guarding is still guarded, and now by properties
+        that survive an append:
+
+        * every rung is populated — a table edit that sweeps the base onto one
+          rung is the failure this exists to catch,
+        * `vendor` is the largest — if a change ever makes `blog` the biggest
+          rung of a base built from vendor documents, something is badly
+          wrong,
+        * the base does not SHRINK below a floor — the count may grow freely,
+          but a collapse means claims stopped loading.
+
+        MEASURED 2026-08-27 for the record, not asserted: 894 facts, 416
+        vendor, 203 portal, 275 blog. `blog` is mostly arxiv.org, which is
+        `paper` on the METHOD ladder and belongs to nobody in particular on
+        the WHOSE-PAGE ladder this test asks about. The two ladders answering
+        differently is the design.
+        """
+        # `load_facts` and not the raw lines: the file is a log where a later
+        # row supersedes an earlier one about the same claim and a withdrawal
+        # removes it, so its lines outnumber its claims. Counting lines would
+        # count corrections twice and count retracted claims as standing.
         facts = load_facts(DEFAULT_FACTS_PATH)
-        assert len(facts) == 882, "the measured base; update the literals below with it"
+
+        #: CHOSEN, well under the 894 measured, so ordinary growth never
+        #: touches it and a base that stopped loading always does.
+        FLOOR = 700
+        assert len(facts) >= FLOOR, f"the base collapsed to {len(facts)} claims"
 
         seen = {VENDOR: 0, PORTAL: 0, BLOG: 0}
         for fact in facts:
             seen[tier(fact.model, fact.source_url)] += 1
 
-        # MEASURED 2026-08-27 by running this classification over the base.
-        # `vendor` counts the one `probe` row too, because it cites
-        # api.klingai.com: the URL is the vendor's, while the rung the row
-        # keeps is `probe`, which describes how the fact was obtained.
-        #
-        # Two things moved these on 2026-08-27, and they are worth separating.
-        #
-        # The table caught up with the base: declaring the labs' own Hugging
-        # Face orgs moved three already-standing claims off `portal` onto
-        # `vendor` without any of them being re-recorded —
-        # `qwen3.8-2.4t-a95b.context_window_tokens` and two on
-        # `deepseek-v4-pro-0813`, all citing the lab's own model card.
-        #
-        # Then the applicability harvest added 277 rows, which is where the
-        # rest of the movement comes from — and where `blog` grew from 43 to
-        # 118. That growth is not a regression: 11 of those are ComfyUI custom
-        # -node READMEs the harvester had labelled `portal`, and a third
-        # party's node repository is not a platform running the model. They
-        # were relabelled visibly rather than promoted to make them fit.
-        #
-        # 865 rows after the class-finding verification pass added 155 more.
-        # `blog` at 269 is mostly arXiv: a paper is `paper` on the METHOD
-        # ladder, and this test asks a different question — whose page is the
-        # URL — where arxiv.org belongs to nobody in particular. The two
-        # ladders answering differently is the design, not a drift.
-        assert seen[VENDOR] == 409, seen
-        assert seen[PORTAL] == 203, seen
-        assert seen[BLOG] == 270, seen
+        for rung in (VENDOR, PORTAL, BLOG):
+            assert seen[rung] > 0, f"nothing lands on {rung}: {seen}"
+        assert seen[VENDOR] == max(seen.values()), (
+            f"`vendor` is no longer the largest rung: {seen}. A base built from "
+            "vendor documents whose biggest rung is `blog` has lost its ladder."
+        )
 
     def test_no_rung_is_empty_which_is_what_a_useless_table_looks_like(self) -> None:
         with mock.patch.dict(S.VENDOR_SOURCES, {}, clear=True):
