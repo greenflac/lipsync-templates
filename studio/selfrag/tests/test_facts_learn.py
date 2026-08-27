@@ -79,6 +79,64 @@ class Facts(unittest.TestCase):
         self.assertEqual(store.claims("k", "failure_mode")["outcome"], PASS)
         self.assertEqual(store.contested(), [])
 
+    def test_two_limitations_are_a_list_and_two_durations_are_a_dispute(self) -> None:
+        """The negative control on the list rule, and the reason it is narrow.
+
+        `limitation` and `degrades_when` joined `MULTI_VALUED` on 2026-08-27
+        after a harvest made the base report 38 contested pairs of which 24
+        were not disputes at all — a card that says both "faces may not be
+        generated properly" and "no text control" is listing two limitations.
+
+        The other half has to hold or the rule is just "never disagree":
+        `max_seconds` must STILL contradict, because a model has one maximum
+        duration and flattening two answers into a list is how a caller ends
+        up billing against a number nobody published.
+        """
+        listed = FactStore(
+            [
+                fact("k", "limitation", "faces may not render properly", TIER_PAPER),
+                fact("k", "limitation", "no text control", TIER_PAPER),
+                fact("k", "degrades_when", "the prompt runs long", TIER_PAPER),
+                fact("k", "degrades_when", "the take passes six seconds", TIER_PAPER),
+            ]
+        )
+        self.assertEqual(listed.claims("k", "limitation")["outcome"], PASS)
+        self.assertEqual(listed.claims("k", "degrades_when")["outcome"], PASS)
+        self.assertEqual(listed.contested(), [])
+
+        disputed = FactStore(
+            [
+                fact("k", "max_seconds", "5", TIER_PAPER),
+                fact("k", "max_seconds", "10", TIER_PAPER),
+            ]
+        )
+        self.assertEqual(disputed.claims("k", "max_seconds")["outcome"], FAIL)
+        self.assertEqual(disputed.contested(), [("k", "max_seconds")])
+
+    def test_what_breaks_is_answered_from_every_word_for_breaking(self) -> None:
+        """A caller asking what breaks does not know which word the vendor's
+        sentence earned. MEASURED 2026-08-27: reading only `failure_mode` hid
+        89 `limitation` and 41 `degrades_when` rows on the day a harvest wrote
+        them.
+
+        `metric_blind_spot` stays out, and that is the control: it says a
+        MEASUREMENT cannot see something, which is a claim about the benchmark
+        and not about the model breaking."""
+        store = FactStore(
+            [
+                fact("k", "failure_mode", "hands mangle", TIER_PAPER),
+                fact("k", "limitation", "faces may not render properly", TIER_PAPER),
+                fact("k", "degrades_when", "the take passes six seconds", TIER_PAPER),
+                fact("k", "metric_blind_spot", "consistency rewards a static video", TIER_PAPER),
+                fact("k", "max_seconds", "5", TIER_PAPER),
+            ]
+        )
+        values = {f.value for f in store.failure_modes("k")}
+        self.assertEqual(
+            values,
+            {"hands mangle", "faces may not render properly", "the take passes six seconds"},
+        )
+
     def test_an_unknown_attribute_is_unmeasured(self) -> None:
         store = FactStore([fact("k", "max_seconds", "9")])
         self.assertEqual(store.claims("k", "nothing_recorded")["outcome"], UNMEASURED)

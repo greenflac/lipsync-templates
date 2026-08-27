@@ -101,6 +101,7 @@ from lipsync.fork_identity import FAIL, PASS, UNMEASURED
 
 __all__ = [
     "DEFAULT_FACTS_PATH",
+    "BREAKAGE_ATTRIBUTES",
     "MULTI_VALUED",
     "STALE_AFTER_DAYS",
     "TIERS",
@@ -168,9 +169,24 @@ STALE_AFTER_DAYS = 90
 #: two the same made every failure-mode entry read as a contradiction between
 #: sources (OBSERVED 2026-08-26: 7 "contested" attributes, 4 of them merely
 #: lists). The distinction is about the attribute, not about the sources.
+#: The attribute names that all answer "where does this stop working". Kept as
+#: a named tuple rather than spelled out inside `failure_modes`, so a fourth
+#: word somebody starts harvesting is added in one visible place.
+BREAKAGE_ATTRIBUTES: tuple[str, ...] = ("failure_mode", "limitation", "degrades_when")
+
 MULTI_VALUED: frozenset[str] = frozenset(
     {
         "failure_mode",
+        # Added 2026-08-27 with the applicability harvest, and MEASURED before
+        # and after: the base reported 38 contested (model, attribute) pairs,
+        # 15 of them `limitation` and 9 `degrades_when`. None of the 24 was a
+        # disagreement. A model card that says both "faces may not be generated
+        # properly" and "no text control" is listing two limitations, exactly
+        # as a model lists two failure modes. Reporting them as a contradiction
+        # buries the 14 that are real — and three of those are `max_seconds`,
+        # which is the kind nobody may flatten.
+        "limitation",
+        "degrades_when",
         "metric_blind_spot",
         "best_for",
         "artifact_taxonomy",
@@ -425,12 +441,26 @@ class FactStore:
         }
 
     def failure_modes(self, model: str) -> list[Fact]:
-        """Known ways this model breaks, each with its fix and its source."""
+        """Known ways this model breaks, each with its fix and its source.
+
+        THREE ATTRIBUTE NAMES, ONE QUESTION. A caller asking what breaks does
+        not care whether the harvester wrote `failure_mode`, `limitation` or
+        `degrades_when` — those are three words for "here is where it stops
+        working", and which one a page earns depends on how its vendor phrased
+        the sentence. MEASURED 2026-08-27: reading only `failure_mode` hid 89
+        `limitation` and 41 `degrades_when` rows from every caller, on the day
+        a harvest put them there.
+
+        `metric_blind_spot` is deliberately NOT here. It says a MEASUREMENT
+        cannot see something — "subject consistency is maximised by a static
+        video" is a fact about the benchmark, not about a model breaking, and
+        folding it in would answer a question nobody asked.
+        """
         low = model.lower()
         return [
             f
             for (m, a), facts in self._index.items()
-            if m == low and a == "failure_mode"
+            if m == low and a in BREAKAGE_ATTRIBUTES
             for f in facts
         ]
 
