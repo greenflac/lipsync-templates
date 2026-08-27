@@ -172,36 +172,36 @@ covered; republishing it under this repository's licence is a separate decision
 and not one `git add -A` should be able to take.
 
 
-## `reddit_workflows.jsonl` — built, and not collecting
+## Reddit — DROPPED 2026-08-27, and this is the stop condition
 
-The owner asked about r/comfyui as a source: people post workflows there with
-the results they got. The collector exists at `studio/mcp/reddit.py` and its
-parsing is tested. It has collected nothing, and the reason is not the licence.
+The owner dropped it. Rule C9 asks for a stop condition to be written down
+rather than for an attempt to trail off, so here it is, with the measurement
+that made the decision easy.
 
-MEASURED 2026-08-27:
-
-| endpoint | answer |
+| endpoint | answer, MEASURED 2026-08-27 |
 |---|---|
 | `www.reddit.com/api/v1/access_token` | `401 {"message": "Unauthorized", "error": 401}` |
 | `www.reddit.com/r/comfyui/hot.json` | 403, a Reddit web page |
-| `oauth.reddit.com/r/comfyui/hot` | 403, Reddit's "Blocked" page — the same with and without an Authorization header |
+| `oauth.reddit.com/r/comfyui/hot` | 403, Reddit's **"Blocked"** page — identical with and without an `Authorization` header |
 
 The token host behaves like an API. `oauth.reddit.com`, where every
-authenticated read goes, serves the Blocked page regardless of what
-authorisation is presented — an edge block on this caller, decided before any
-credential is examined.
+authenticated read would go, serves the Blocked page regardless of what
+authorisation is presented: an edge block on this caller, decided before any
+credential is examined. So a registered app would probably not have helped from
+this container — strong evidence, not proof, since a valid token was never
+presented.
 
-**So a Reddit app id and secret would probably not make this work from this
-container.** That is strong evidence rather than proof: a valid token has never
-been presented, and only that settles it. It is recorded here so nobody
-registers an app on the strength of the 401 alone.
+The collector was written and is now deleted rather than left to rot as code
+nobody can run. What survives is the measurement, as
+`reddit-api.authenticated_read_reachable` in `model_facts.jsonl`, so the next
+agent meets it through `model_advice` before proposing this again.
 
-The egress policy is not the obstacle — it lets reddit.com through. This is
-Reddit's own decision about being read from a datacentre, and it is not routed
-around: no proxy, no residential exit, no scraping past the 403.
+**Reopen only if** the work moves somewhere Reddit does not block, or a valid
+token is presented to `oauth.reddit.com` and gets something other than the
+Blocked page. Reachability is the condition; the licence question is closed and
+was never the blocker.
 
-Still unread, and separate from all of the above: the Data API terms themselves
-live on `www.redditinc.com` and `support.reddithelp.com`, both refused by the
-egress policy. So no rate limit or condition in this package is quoted from a
-page anybody opened, and the collector picks its interval to sit under the
-figure that circulates rather than treating it as published.
+The two hosts carrying Reddit's Data API terms — `www.redditinc.com` and
+`support.reddithelp.com` — are withdrawn from the allowlist request for the
+same reason, as `state: "unwanted"` rather than as granted: they are still
+refused, and nobody needs them any more.

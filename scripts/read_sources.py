@@ -601,29 +601,13 @@ READINGS: tuple[dict[str, object], ...] = (
             "before any credential is examined. So an app id and secret would "
             "probably NOT make this work from here. Strong evidence, not proof: a "
             "VALID token has never been presented. The egress policy is not the "
-            "obstacle — it lets reddit.com through. Not routed around."
+            "obstacle — it lets reddit.com through. Not routed around. "
+            "DROPPED by the owner 2026-08-27: the collector is deleted and this "
+            "measurement is what survives it. Reopen only if the work moves somewhere "
+            "Reddit does not block, or a valid token gets something other than the "
+            "Blocked page. See studio/knowledge/PROVENANCE.md for the stop condition."
         ),
         "read_directly": True,
-    },
-    {
-        "model": "reddit-api",
-        "attribute": "licence",
-        "value": "unreadable from here",
-        "source_url": "https://www.reddit.com/api/v1/access_token",
-        "tier": "probe",
-        "stated_on": READ_ON,
-        "note": (
-            "The owner obtained legal clearance on 2026-08-27 and there is no "
-            "outstanding legal risk, so the licence question is closed as a "
-            "decision. What remains UNVERIFIED (rule C4) is the TEXT: the Data API "
-            "terms live on www.redditinc.com and support.reddithelp.com, both "
-            "refused by this environment's egress policy, so no rate limit or "
-            "condition in this package is quoted from a page anybody opened. The "
-            "figure of 100 queries per minute that circulates for the free tier is "
-            "relayed, not read, and studio/mcp/reddit.py picks its interval to sit "
-            "under it rather than treating it as published."
-        ),
-        "read_directly": False,
     },
     # -- opened, and the reading could NOT settle it: three outcomes --------
     {

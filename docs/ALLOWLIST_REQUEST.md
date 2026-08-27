@@ -5,7 +5,7 @@ Re-run it and a host that has since opened drops off by itself.
 
 Every host below was probed and refused by the egress proxy (`Tunnel connection failed: 403`). None was routed around: no mirror, no cache, no archive copy, no read-through proxy.
 
-**16 host(s) asked for.** 17 further host(s) were refused during bulk probes and are deliberately NOT part of this request.
+**14 host(s) asked for.** 17 further host(s) were refused during bulk probes and are deliberately NOT part of this request.
 
 ## The list, to paste — wildcards, if the whitelist supports them
 
@@ -32,10 +32,6 @@ gaga.art
 invideo.io
 *.piapi.ai
 piapi.ai
-*.reddithelp.com
-reddithelp.com
-*.redditinc.com
-redditinc.com
 *.seedance2-video.com
 seedance2-video.com
 *.skywork.ai
@@ -67,17 +63,15 @@ invideo.io
 piapi.ai
 seedance2-video.com
 skywork.ai
-support.reddithelp.com
 the-decoder.com
 www.atlascloud.ai
-www.redditinc.com
 ```
 
 Each one is justified below, grouped so the list can be cut at any group boundary and still make sense. The groups are ordered by how cheap they are to say yes to, not by how much we want them. This form is expected to need revisiting; the wildcard form is not.
 
 ## Already open — do not add these
 
-Re-measured when this file was generated: 55 of 56 still answer.
+Re-measured when this file was generated: 56 of 56 still answer.
 
 ```
 ai.google.dev
@@ -93,6 +87,7 @@ api.openai.com
 api.wavespeed.ai
 app.klingai.com
 arxiv.org
+bfl.ai
 byteplus.com
 cdn.openai.com
 civitai.com
@@ -187,10 +182,6 @@ read a page this fact base cites but nobody opened
 
 read a page this fact base cites but nobody opened
 
-### `support.reddithelp.com`
-
-Reddit's Data API Terms decide whether a collector may be written at all: the free tier reportedly bars commercial use and this is a commercial service. The claim is UNVERIFIED and cannot be read — reddit.com answers but the terms are not on it.
-
 ### `the-decoder.com`
 
 read a page this fact base cites but nobody opened
@@ -198,10 +189,6 @@ read a page this fact base cites but nobody opened
 ### `www.atlascloud.ai`
 
 settles a live contradiction: this page is the ONLY source for kling-3.0 max_seconds='10', against Kuaishou's own release saying 15, which has now been read first-hand. Until this page can be opened the contest cannot be closed either way.
-
-### `www.redditinc.com`
-
-Reddit's Data API Terms decide whether a collector may be written at all: the free tier reportedly bars commercial use and this is a commercial service. The claim is UNVERIFIED and cannot be read — reddit.com answers but the terms are not on it.
 
 ## Not part of this request
 

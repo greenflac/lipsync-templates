@@ -132,15 +132,16 @@ def note_denial(url: str, reason: str, why_wanted: str = "", *, incidental: bool
         for r in rows
         if str(r.get("state", STATE_REFUSED)) == STATE_REFUSED
     }
-    # A host recorded as open and refused again is a fresh refusal, not a
-    # restatement: the grant went away and that is worth a new row.
-    reopened = {r.get("host") for r in rows if str(r.get("state", STATE_REFUSED)) == STATE_OPEN}
-    for row_host in reopened:
-        latest_state = STATE_OPEN
-        for r in rows:
-            if r.get("host") == row_host:
-                latest_state = str(r.get("state", STATE_REFUSED))
-        if latest_state == STATE_OPEN:
+    # A host whose latest row is NOT a refusal, refused again, is a fresh
+    # refusal rather than a restatement: the grant went away, or the plan came
+    # back. Written against "not refused" and not against the list of other
+    # states, because this rule was first written when there were two states
+    # and it silently stopped covering the third the day `unwanted` was added
+    # — OBSERVED 2026-08-27, by a test that expected a withdrawn host to
+    # return to the ask when it was refused again, and it did not.
+    latest_state = _latest_states(rows)
+    for row_host, state in latest_state.items():
+        if state != STATE_REFUSED:
             known.pop(row_host, None)
     # The last reason we gave for ASKING. An `open` row carries no reason, so
     # letting it reset this made the restatement rule fire on a re-refusal and
@@ -167,6 +168,26 @@ def note_denial(url: str, reason: str, why_wanted: str = "", *, incidental: bool
 #: was a refusal, because that was the only thing this file recorded.
 STATE_REFUSED = "refused"
 STATE_OPEN = "open"
+#: Still refused, and no longer wanted. A third state because dropping a plan
+#: is not the same event as being granted access, and recording it as `open`
+#: would put a lie in the file — the host never answered.
+#:
+#: OBSERVED 2026-08-27: Reddit was dropped, and the two hosts carrying its
+#: terms stayed in the ask with the reason "decides whether a collector may be
+#: written at all". Nobody was going to write one. A request that asks for
+#: access nobody needs any more is the same defect as one that asks for access
+#: already granted, and this file had already been fixed once for the second.
+STATE_UNWANTED = "unwanted"
+
+
+def _latest_states(rows: list[dict]) -> dict[str, str]:
+    """The last state recorded for each host. Absent `state` means refused."""
+    latest: dict[str, str] = {}
+    for row in rows:
+        host = row.get("host", "")
+        if host:
+            latest[host] = str(row.get("state", STATE_REFUSED))
+    return latest
 
 
 def note_open(url: str) -> dict:
@@ -190,13 +211,15 @@ def note_open(url: str) -> dict:
     host = _host(url)
     if not host:
         return {"recorded": False, "host": ""}
-    latest = ""
-    for row in _read_denied():
-        if row.get("host") == host:
-            latest = str(row.get("state", STATE_REFUSED))
+    latest = _latest_states(_read_denied()).get(host, "")
     # Only a transition is written. Without this, every fetch of an open host
     # appends a row forever.
-    if latest != STATE_REFUSED:
+    #
+    # The test is "not already open", not "is refused": written the second way,
+    # a host withdrawn from the ask that LATER answered was never recorded as
+    # open, so the file lost the fact that access had arrived — OBSERVED
+    # 2026-08-27, the day `unwanted` was added, by the test that expected it.
+    if latest == "" or latest == STATE_OPEN:
         return {"recorded": False, "host": host}
     DENIED_PATH.parent.mkdir(parents=True, exist_ok=True)
     with DENIED_PATH.open("a", encoding="utf-8") as handle:
@@ -213,6 +236,75 @@ def note_open(url: str) -> dict:
             + "\n"
         )
     return {"recorded": True, "host": host}
+
+
+def note_unwanted(host: str, reason: str) -> dict:
+    """Withdraw a host from the ask without claiming it opened. Three outcomes.
+
+    For a plan that was abandoned. The host stays refused — that is the truth —
+    and stops being asked for, and the reason travels with it so the next
+    reader can see the ask shrank by a decision rather than by a grant.
+
+    A host nobody ever asked for is `could not measure`, not a success: a typo
+    would otherwise report that it had been withdrawn.
+    """
+    name = str(host or "").strip().lower()
+    why = str(reason or "").strip()
+    if not name or not why:
+        missing = [n for n, v in (("host", name), ("reason", why)) if not v]
+        return {
+            "outcome": FAIL,
+            "checked": 2,
+            "violations": len(missing),
+            "unmeasured": 0,
+            "note": ", ".join(missing)
+            + " is required; a withdrawal without a reason is a deletion",
+            "host": name,
+        }
+    latest = ""
+    for row in _read_denied():
+        if row.get("host") == name:
+            latest = str(row.get("state", STATE_REFUSED))
+    if latest == "":
+        return {
+            "outcome": UNMEASURED,
+            "checked": 1,
+            "violations": 0,
+            "unmeasured": 1,
+            "note": f"{name} has never been recorded as refused, so there was nothing to withdraw",
+            "host": name,
+        }
+    if latest == STATE_UNWANTED:
+        return {
+            "outcome": PASS,
+            "checked": 1,
+            "violations": 0,
+            "unmeasured": 0,
+            "note": f"{name} was already withdrawn from the ask",
+            "host": name,
+        }
+    DENIED_PATH.parent.mkdir(parents=True, exist_ok=True)
+    with DENIED_PATH.open("a", encoding="utf-8") as handle:
+        handle.write(
+            json.dumps(
+                {
+                    "host": name,
+                    "state": STATE_UNWANTED,
+                    "reason": why,
+                    "first_seen": date.today().isoformat(),
+                },
+                ensure_ascii=False,
+            )
+            + "\n"
+        )
+    return {
+        "outcome": PASS,
+        "checked": 1,
+        "violations": 0,
+        "unmeasured": 0,
+        "note": f"{name} withdrawn from the ask: {why}",
+        "host": name,
+    }
 
 
 def _read_denied() -> list[dict]:
@@ -450,6 +542,7 @@ def wanted() -> dict:
             "hosts": [],
             "also_refused": [],
             "granted": [],
+            "withdrawn": [],
         }
     # The latest row per host decides. A host recorded open has been granted
     # and is no longer asked for; the rows stay in the file so the history of
@@ -460,11 +553,12 @@ def wanted() -> dict:
         if host:
             state[host] = str(row.get("state", STATE_REFUSED))
     opened = sorted(h for h, s in state.items() if s == STATE_OPEN)
+    withdrawn = sorted(h for h, s in state.items() if s == STATE_UNWANTED)
 
     by_host: dict[str, dict] = {}
     for row in rows:
         host = row.get("host", "")
-        if not host or state.get(host) == STATE_OPEN:
+        if not host or state.get(host) in (STATE_OPEN, STATE_UNWANTED):
             continue
         kept = by_host.get(host)
         # Two rules, in this order. A host wanted for a real question outranks
@@ -508,6 +602,7 @@ def wanted() -> dict:
             "hosts": [],
             "also_refused": swept,
             "granted": opened,
+            "withdrawn": withdrawn,
         }
     return {
         "outcome": FAIL,
@@ -527,6 +622,7 @@ def wanted() -> dict:
         "hosts": asked,
         "also_refused": swept,
         "granted": opened,
+        "withdrawn": withdrawn,
     }
 
 

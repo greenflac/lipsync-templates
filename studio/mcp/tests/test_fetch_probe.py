@@ -271,6 +271,72 @@ class WebClient(unittest.TestCase):
         assert asked["also_refused"] == [], "a host is in one list or the other"
 
 
+class WithdrawingFromTheAsk(unittest.TestCase):
+    """A host still refused, and no longer wanted. Added when Reddit was dropped.
+
+    The ask had already been fixed once for carrying hosts that were granted.
+    This is the mirror: hosts nobody needs any more. Recording them as `open`
+    would have been the easy fix and it would have put a lie in the file — the
+    host never answered.
+    """
+
+    def setUp(self) -> None:
+        self._dir = TemporaryDirectory()
+        self.addCleanup(self._dir.cleanup)
+        self.denied = Path(self._dir.name) / "denied.jsonl"
+        patcher = mock.patch.object(fetch, "DENIED_PATH", self.denied)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def _refuse(self, host: str) -> None:
+        fetch.note_denial(f"https://{host}/x", "Tunnel connection failed", "a real question")
+
+    def test_a_withdrawn_host_leaves_the_ask_without_being_called_granted(self) -> None:
+        self._refuse("example.test")
+        assert [row["host"] for row in fetch.wanted()["hosts"]] == ["example.test"]
+        fetch.note_unwanted("example.test", "the plan it was for was dropped")
+        after = fetch.wanted()
+        assert after["hosts"] == []
+        assert after["granted"] == [], "it never answered, so it was never granted"
+        assert after["withdrawn"] == ["example.test"]
+
+    def test_the_reason_is_required(self) -> None:
+        self._refuse("example.test")
+        out = fetch.note_unwanted("example.test", "   ")
+        assert out["outcome"] == "fail"
+        assert [row["host"] for row in fetch.wanted()["hosts"]] == ["example.test"]
+
+    def test_withdrawing_a_host_nobody_asked_for_is_could_not_measure(self) -> None:
+        """Never `pass`: a typo would otherwise report a withdrawal that did
+        not happen."""
+        out = fetch.note_unwanted("never-seen.test", "dropped")
+        assert out["outcome"] == "could not measure"
+
+    def test_withdrawing_twice_writes_one_row(self) -> None:
+        self._refuse("example.test")
+        fetch.note_unwanted("example.test", "dropped")
+        size = self.denied.read_text(encoding="utf-8")
+        again = fetch.note_unwanted("example.test", "dropped again")
+        assert again["outcome"] == "pass"
+        assert self.denied.read_text(encoding="utf-8") == size, "only transitions"
+
+    def test_a_host_withdrawn_and_then_refused_again_returns_to_the_ask(self) -> None:
+        """A plan can come back. The latest row decides, as for every other
+        state in this file."""
+        self._refuse("example.test")
+        fetch.note_unwanted("example.test", "dropped")
+        self._refuse("example.test")
+        assert [row["host"] for row in fetch.wanted()["hosts"]] == ["example.test"]
+
+    def test_a_withdrawn_host_that_later_opens_is_reported_as_granted(self) -> None:
+        self._refuse("example.test")
+        fetch.note_unwanted("example.test", "dropped")
+        fetch.note_open("https://example.test/x")
+        out = fetch.wanted()
+        assert out["granted"] == ["example.test"]
+        assert out["withdrawn"] == []
+
+
 class Probe(unittest.TestCase):
     URL = "https://api.klingai.com/v1/videos/text2video"
 
