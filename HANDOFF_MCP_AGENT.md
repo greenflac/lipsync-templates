@@ -711,3 +711,207 @@ unreachable, so everything is second-hand" — **is no longer true.** As of now:
 - Reddit answers, but its licence question is untouched and unchanged: the free
   Data API tier reportedly bars commercial use. **Measured reachability does not
   settle a licence.**
+
+---
+
+# Session 2026-08-27 (later) — the reading pass, and what reading changed
+
+The grant held: `python scripts/allowlist_request.py` re-probed and the document
+read CLOSED at the start of this session. So the work the previous handoff
+listed as "next" was possible for the first time, and this session did it.
+
+## Start here next time
+
+```
+python3 -m pip install --ignore-installed PyJWT -r requirements-dev.txt
+bash scripts/check          # exits 0; blind control 54/0/0; 11 tools now
+```
+
+`scripts/check` gained a step: `python scripts/read_sources.py --check`. It
+reads the fact file only — no network — and fails if a claim the reading pass
+withdrew has come back or a recorded reading has been edited away. Verified by
+mutation in both directions.
+
+## The mechanism the reading needed, and the defect it prevented
+
+Re-recording a fact you have now READ is not a second source agreeing with the
+first. Before this session it was: `record` appended, nothing collapsed, and
+upgrading `kling-3.0.max_seconds` after opening the Kuaishou release would have
+made `claims()` report two sources for one page, with `checked` inflated and
+the note reading "1 of 2 source(s) were NOT read" about a page that had been.
+
+`model_facts.jsonl` is now a LOG. Latest row per
+`(model, attribute, value, source_url)` wins; a row with `"withdrawn": true`
+removes the claim and keeps the reason. Same shape as `denied_hosts.jsonl`.
+The value is in the key deliberately — `seedance2-video.com` states `12` in its
+headline and `4 to 15` from the report it cites, on one page, and keying
+without the value would have hidden a source contradicting itself.
+
+**Eleventh tool: `withdraw_model_fact`.** For the other thing reading finds —
+a claim whose page does not make it. It appends, it demands a reason, and
+withdrawing something nobody recorded is `could not measure`, never `pass`.
+
+15 mutations both ways, all red. **Three were green at first and all three were
+one shape: no test moved ONLY the field the reading pass moves.** Every
+supersession test also changed the note, so dropping `read_directly`, `tier` or
+`stated_on` from the compared fields broke nothing anybody checked. That is the
+fourth time in this package that a test passed through a path other than the
+one it named.
+
+## What the reading actually found
+
+`scripts/read_sources.py` is the pass, in the repository and re-runnable,
+because provenance living in a chat log cannot be checked. Of the 39 URLs the
+base cites, **18 opened**. Of the 24 claims behind them:
+
+- **8 confirmed word for word** — and those notes now quote the page.
+- **8 said something materially different.**
+- **6 rest on a page that does not make the claim at all**, now withdrawn with
+  the string that is missing.
+
+`read_directly` went from 1 True to 18. The base asserts 49 claims where it
+asserted 47, and six of the old ones were unsupported.
+
+### The bare-root question is answered by measurement
+
+The previous handoff left it for the owner: 7 facts cite a site root, 5 of them
+above `blog` on a link pointing at no statement. Of the roots that opened, **not
+one supports its claim**:
+
+- `wavespeed.ai/` is cited for what Veo 3.1 is best for and contains **0**
+  occurrences of "Veo"; **0** of "motion control"; **0** of "9 images".
+- `fal.ai/` is cited for how to write an image-to-video prompt and is a GPU
+  pricing page.
+- `docs.byteplus.com/en/docs/ModelArk/1587798` is cited twice for Seedance 2.0
+  and documents **seedance-1.0-pro**, 2~12 seconds, with `camera_fixed`
+  appearing nowhere on it.
+
+The one exception is the one that was predicted: `docs.bfl.ai/` carrying
+"no expander documented". A doc index is the right citation for a negative
+finding — you cannot cite the page that does not exist. No rule was invented;
+the evidence is now on the record for the owner to make one from.
+
+### The correction that matters most
+
+**arXiv 2407.14333 was revised to v7 on 2026-01-07 and retitled.** This base
+carried "automatic GPT-4 rewriting erased 58% of DALL-E 3's performance gain,
+N=1891" — the current abstract reports 3,750 participants and ~37,000 prompts
+and contains neither figure. The anti-expander finding survives in weaker form
+("automated rewriting cannot generally substitute for human adaptation; aligned
+it modestly helps, misaligned it actively undermines the gains").
+
+And v7 adds something that **qualifies this project's own thesis**, recorded
+and NOT acted on: *in an open-ended creative task, prompt adaptation plays a
+limited role and improvements are driven primarily by model capability.*
+Writing generation prompts is that task. The "roughly half the gain" figure
+this project leans on belongs to the fixed-criteria task, not to ours.
+
+Other corrections: VBench does not name the artifact taxonomy attributed to it
+(only "flicker" overlaps its 16 dimensions); oversaturation at high CFG is the
+component of the update term PARALLEL to the conditional prediction, not an
+off-manifold trajectory; Veo's prompt formula has five parts, not eight; Kling's
+keeps its last group optional, which the summary dropped; FLUX.2's 32B belongs
+to `[dev]`, the open-weight derivative, not to the base transformer.
+
+Two dates were wrong and are corrected from the pages: the Kling prompt guide
+is dated 2025-11-24 and describes **model 2.0 at 5 or 10 seconds** — a 3.0 fact
+was resting on a 2.0 page — and Google's Veo guide is 2025-10-16. **33 of the
+47 rows carried the harvest date instead of the source's**, which is exactly
+how a stale claim looks fresh.
+
+### A source nobody had used
+
+**Runway publishes an OpenAPI document at
+`https://docs.dev.runwayml.com/openapi.json`** with duration and ratio enums
+PER MODEL, for the models it resells as well as its own. A validated enum beats
+every prose page, and it carries its own negative control:
+
+| | duration | 4K ratios |
+|---|---|---|
+| `gen4.5` | 2..10 | none; largest is 1280:720 |
+| `veo3.1` | enum [4, 6, 8] | none |
+| `seedance2` | 4..15 | 3840:2160 and five more |
+| `seedance2_5` | 4..30 | none |
+
+So `runway-gen-4.5.max_resolution` is 720p **because the same schema offers 4K
+to another model and not to this one** — the absence is the schema saying no,
+not the schema being silent. `docs.dev.runwayml.com` is now on BOTH source
+tables: vendor for the `runway-gen` family, portal for the endpoints it merely
+runs. One host, two rungs, decided by which model the claim is about.
+
+The spec also names `kling3.0_pro`, `kling3.0_4k` and `kling3.0_standard` in
+its model list, but no request schema constrains them, so **`kling-3.0`
+max_seconds stays contested** — `'10'` (blog, host still refused) against
+`'15'` (vendor, now read first-hand).
+
+## Civitai: the collector died twice, and the licence was read
+
+Rule C5, first-hand this time rather than a grounded summary.
+
+- **Licence.** ToS 6.1 grants access "solely for your personal, non-commercial
+  use". ToS 11.4 permits automated access only through the public API with your
+  own credentials and within rate limits, "or as we otherwise authorize in
+  writing". So the CHANNEL is sanctioned and the USE is not — this repository
+  is a commercial service. Per-upload model licences (Anima, LTX-derived,
+  Cosmos-derived) stack their own restrictions on top.
+- **The data is not there anyway.** MEASURED, unauthenticated: 300 images across
+  three pages of `/api/v1/images`, `meta` null on **300 of 300**. No prompt, no
+  sampler, no seed. Also null for `?postId=`, `?sort=Newest`,
+  `?sort=Most Reactions`. Third outcome kept: this environment holds no Civitai
+  credential, so whether a key unlocks the metadata is NOT measured.
+
+Both are recorded as `civitai-api.licence` and
+`civitai-api.prompt_metadata_exposed`, so the next agent meets them through
+`model_advice` before proposing the collector for a third time. **No collector
+was written.**
+
+## Reddit: still the owner's call, and still unreadable
+
+`reddit.com`, `www.reddit.com`, `old.reddit.com` and `developers.reddit.com`
+all answer. **The terms do not live on any of them.** `www.redditinc.com` and
+`support.reddithelp.com` are both refused by the policy, so the claim that the
+free Data API tier bars commercial use stays UNVERIFIED (C4) and cannot be
+checked from here. Not routed around; both hosts are in the ask with that
+question as their reason.
+
+## The allowlist generator, third defect of the same shape
+
+The block a human pastes was built from `WANTED`, the seed list of hosts the
+generator probes — and a host stays in that list forever. So the day after the
+grant, the document offered fourteen already-granted domains under a header
+saying sixteen hosts. Fixed: the block is built from the measured ask. Two
+tests, five mutations, all red, including the negative control that a granted
+domain must be ABSENT.
+
+Two more staleness bugs in the same file: the wildcard argument was still being
+argued from examples that had since been granted (replaced by its outcome —
+21 asked over 14 domains, 41 answered), and "already open" was re-measured
+against a 15-host literal while the proxy answered 41.
+
+**The ask is 16 hosts now.** 14 are pages this base cites that nobody could
+open; two of those settle live contradictions and say so in their own reason
+(`www.atlascloud.ai` for Kling 10-vs-15, `gaga.art` for Gen-4.5 720p-vs-4K).
+The other two are the Reddit terms. The rest are blog-tier corroboration and
+the list can be cut at any group boundary.
+
+## Waiting on the owner
+
+1. **Reddit.** Its terms cannot be read from here. Open the two hosts, or
+   decide from outside, or drop Reddit — C9 says the stop condition is written
+   before the attempt, and there is not one yet.
+2. **Civitai.** Ask under the written-authorisation clause, or drop it. Note
+   that even with permission the anonymous API returns no prompts, so the
+   question is really "is a Civitai API key worth getting".
+3. **`huggingface.co/Wan-AI/`.** `huggingface.co` is on the portal rung. A
+   model card in the VENDOR'S OWN organisation is the vendor's page, and `wan`
+   already has exactly this shape for GitHub (`github.com/Wan-Video/`). One
+   line, not added without the owner saying so.
+4. Unchanged from before: `MAX_PER_PROVENANCE = 2` in another module's file;
+   Yandex as a third search backend (open, keyed, price unverified, and the key
+   is the owner's ad-work key); **no prompt in this package has been proven by
+   a generation.**
+5. New: `veo-3.1.max_seconds` now reads `'8'` against `'8, quantised to 4/6/8'`
+   and is reported as contested. Those are the same claim spelled twice. The
+   base has no notion of value normalisation and inventing one silently would
+   be worse than the contest — but it is the next thing that will annoy a
+   reader of `model_advice`.
