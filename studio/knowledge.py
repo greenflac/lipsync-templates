@@ -48,7 +48,11 @@ __all__ = [
     "KIND_STYLE_CARD",
     "MAX_PER_PROVENANCE",
     "PHRASE_MAX",
+    "PROVENANCE_COMMUNITY_CIVITAI",
+    "PROVENANCE_NAMESPACE",
     "PROVENANCE_WEIGHT",
+    "provenance_family",
+    "provenance_weight",
     "RECALL_FLOOR",
     "RRF_K",
     "KnowledgeIndex",
@@ -86,6 +90,12 @@ PROVENANCE_GALLERY = "gallery"
 # it: the row's own statement of where it came from is the evidence, and a
 # name we invent here would be a second, divergent story.
 PROVENANCE_THIRD_PARTY = "third_party_gallery"
+# A community platform is its OWN family, named after the platform, because
+# `civitai:Lykon` and some future `openart:someone` are different populations
+# with different norms and should be weighable apart. Rows arrive already
+# namespaced from `studio/mcp/civitai.py`; adding another platform is one line
+# here and one prefix there.
+PROVENANCE_COMMUNITY_CIVITAI = "civitai"
 
 # CHOSEN by us as starting values (not measured): core is the source of truth,
 # our own shipped prompts outrank harvested style cards, and anything scraped
@@ -96,7 +106,59 @@ PROVENANCE_WEIGHT: dict[str, float] = {
     PROVENANCE_REFERENCE_CARD: 0.8,
     PROVENANCE_GALLERY: 0.6,
     PROVENANCE_THIRD_PARTY: 0.6,
+    # CHOSEN, same rung as the gallery: it is third-party wording either way.
+    # Arguably it deserves more — these are prompts posted WITH the image they
+    # produced, by the person who ran them, which the gallery rows are not —
+    # but "arguably" is not a measurement, so it starts level and moves when
+    # something measures it.
+    PROVENANCE_COMMUNITY_CIVITAI: 0.6,
 }
+
+#: A provenance may be NAMESPACED: `"<family>:<who>"`, where the family is a
+#: key of `PROVENANCE_WEIGHT` and the part after the colon names the individual
+#: author. `civitai:Lykon` and `civitai:Merjic` weigh the same and count as two
+#: DIFFERENT sources against the per-answer quota.
+#:
+#: This exists because of a defect measured 2026-08-27. A community corpus was
+#: collected with one provenance per uploader — 1409 rows across 106 people —
+#: precisely so the quota would see many sources. The loader then collapsed
+#: every unrecognised provenance to `PROVENANCE_GALLERY`, so all 106 became one
+#: and the quota capped every answer at 2 again. The corpus had done the right
+#: thing and the reader undid it.
+#:
+#: The family is what carries the WEIGHT, because how much a source is trusted
+#: is a property of the kind of source, not of the person. The whole string is
+#: what carries IDENTITY, because "no single source fills the answer" is a
+#: statement about people, not about platforms.
+PROVENANCE_NAMESPACE = ":"
+
+
+def provenance_family(provenance: str) -> str:
+    """The part of a provenance that decides how much it is trusted.
+
+    `"civitai:Lykon"` -> `"civitai"`, `"ours"` -> `"ours"`. Splitting on the
+    FIRST separator only, so an author whose name contains a colon still lands
+    in the right family.
+    """
+    return str(provenance or "").split(PROVENANCE_NAMESPACE, 1)[0]
+
+
+def _known_provenance(provenance: str) -> bool:
+    """Is this a provenance the index recognises, plain or namespaced?"""
+    text = str(provenance or "")
+    return text in PROVENANCE_WEIGHT or provenance_family(text) in PROVENANCE_WEIGHT
+
+
+def provenance_weight(provenance: str) -> float:
+    """How much one provenance is trusted. A namespaced one inherits its family.
+
+    The fallback stays 0.5 — below every declared weight, so a provenance
+    nobody has classified cannot outrank one somebody has.
+    """
+    text = str(provenance or "")
+    if text in PROVENANCE_WEIGHT:
+        return PROVENANCE_WEIGHT[text]
+    return PROVENANCE_WEIGHT.get(provenance_family(text), 0.5)
 
 # The structural fields. Imported from studio.style, never re-declared: one
 # word list, one place. A word that is not on these lists cannot be a field
@@ -539,7 +601,7 @@ def load_gallery_prompts(path: Path = GALLERY_PROMPTS_PATH) -> list[dict]:
         if not isinstance(text, str) or not text.strip():
             continue
         declared = str(payload.get("provenance") or PROVENANCE_GALLERY)
-        provenance = declared if declared in PROVENANCE_WEIGHT else PROVENANCE_GALLERY
+        provenance = declared if _known_provenance(declared) else PROVENANCE_GALLERY
         rights = payload.get("rights")
         source = str(payload.get("id") or path.name)
         entries.append(
@@ -664,7 +726,7 @@ class KnowledgeIndex:
             texture = _first(structure["texture"])
             mood = _first(structure["mood"])
             provenance = str(record["provenance"])
-            weight = PROVENANCE_WEIGHT.get(provenance, 0.5)
+            weight = provenance_weight(provenance)
             with self.lock:
                 cur = self.conn.execute(
                     "INSERT INTO entries (kind, text, palette, light, texture, mood,"

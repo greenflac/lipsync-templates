@@ -362,6 +362,125 @@ class Building(unittest.TestCase):
         self.assertIn("below_floor", out)
         self.assertGreaterEqual(out["below_floor"], 0)
 
+    def test_a_namespaced_provenance_counts_as_its_own_source(self) -> None:
+        """MEASURED 2026-08-27. A community corpus was collected with one
+        provenance per uploader — 1409 rows across 106 people — precisely so
+        the per-answer quota would see many sources. The loader then collapsed
+        every provenance it did not recognise into PROVENANCE_GALLERY, so all
+        106 became one and the quota capped every answer at 2 again. The corpus
+        had done the right thing and the reader undid it.
+
+        The guard itself was never the problem and is NOT relaxed here: it
+        still admits at most MAX_PER_PROVENANCE per source. It just sees the
+        sources now.
+        """
+        conn = sqlite3.connect(":memory:", check_same_thread=False)
+        conn.executescript(K.SCHEMA)
+        index = KnowledgeIndex(conn)
+        index.add(
+            [
+                {
+                    "kind": KIND_GALLERY_PROMPT,
+                    "text": f"warm amber golden hour light soft film grain variant {n}",
+                    "provenance": f"civitai:author{n % 9}",
+                    "source": f"c-{n}",
+                }
+                for n in range(18)
+            ]
+        )
+        index.reload()
+        out = retrieve("warm amber golden hour light soft film grain", index=index, k=6)
+        self.assertEqual(len(out["examples"]), 6)
+        self.assertEqual(out["quota_blocked"], 0)
+        self.assertEqual(len({e["provenance"] for e in out["examples"]}), 6)
+
+    def test_the_LOADER_keeps_a_namespaced_provenance(self) -> None:
+        """The defect site itself, and the reason this test exists separately.
+
+        Found by mutation: restoring the old collapse left every test above
+        GREEN, because they all call `index.add()` directly and the flattening
+        lives in the JSONL loader. A test that does not go through the code
+        that broke is not a test of it.
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "community.jsonl"
+            path.write_text(
+                "\n".join(
+                    json.dumps(
+                        {
+                            "prompt": f"warm amber golden hour light variant {n}",
+                            "provenance": f"civitai:author{n}",
+                            "rights": "owner_authorisation_2026-08-27",
+                            "id": f"c-{n}",
+                        }
+                    )
+                    for n in range(4)
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            rows = K.load_gallery_prompts(path)
+        self.assertEqual(len(rows), 4)
+        self.assertEqual(
+            sorted(r["provenance"] for r in rows),
+            ["civitai:author0", "civitai:author1", "civitai:author2", "civitai:author3"],
+        )
+
+    def test_the_LOADER_still_collapses_a_family_nobody_declared(self) -> None:
+        """The negative control on the loader: namespacing is not a bypass."""
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "odd.jsonl"
+            path.write_text(
+                json.dumps({"prompt": "amber light", "provenance": "madeup:someone", "id": "x"})
+                + "\n",
+                encoding="utf-8",
+            )
+            rows = K.load_gallery_prompts(path)
+        self.assertEqual(rows[0]["provenance"], K.PROVENANCE_GALLERY)
+
+    def test_one_namespaced_author_is_still_capped(self) -> None:
+        """The negative control, and the whole reason the guard exists. Naming
+        a source more precisely must not become a way around the quota: 18 rows
+        from ONE uploader still yield MAX_PER_PROVENANCE."""
+        conn = sqlite3.connect(":memory:", check_same_thread=False)
+        conn.executescript(K.SCHEMA)
+        index = KnowledgeIndex(conn)
+        index.add(
+            [
+                {
+                    "kind": KIND_GALLERY_PROMPT,
+                    "text": f"warm amber golden hour light soft film grain variant {n}",
+                    "provenance": "civitai:one-prolific-person",
+                    "source": f"c-{n}",
+                }
+                for n in range(18)
+            ]
+        )
+        index.reload()
+        out = retrieve("warm amber golden hour light soft film grain", index=index, k=6)
+        self.assertEqual(len(out["examples"]), K.MAX_PER_PROVENANCE)
+        self.assertGreater(out["quota_blocked"], 0)
+
+    def test_the_family_carries_the_weight_and_the_whole_string_the_identity(self) -> None:
+        """Two halves of one rule, as literals. Trust is a property of the KIND
+        of source; "no single source fills the answer" is a statement about
+        people."""
+        self.assertEqual(K.provenance_family("civitai:Lykon"), "civitai")
+        self.assertEqual(K.provenance_family("ours"), "ours")
+        self.assertEqual(K.provenance_weight("civitai:Lykon"), 0.6)
+        self.assertEqual(K.provenance_weight("civitai:Merjic"), 0.6)
+        self.assertEqual(K.provenance_weight("ours"), 0.9)
+
+    def test_an_author_name_containing_the_separator_still_lands_in_its_family(self) -> None:
+        self.assertEqual(K.provenance_family("civitai:odd:name"), "civitai")
+        self.assertEqual(K.provenance_weight("civitai:odd:name"), 0.6)
+
+    def test_a_provenance_from_no_known_family_is_still_collapsed(self) -> None:
+        """The other negative control: namespacing is not a blank cheque. A
+        family nobody has classified does not get to invent itself a rung."""
+        self.assertFalse(K._known_provenance("madeup:someone"))
+        self.assertEqual(K.provenance_weight("madeup:someone"), 0.5)
+
     def test_a_single_source_index_says_the_quota_capped_the_answer(self) -> None:
         """MEASURED 2026-08-26 on a real 4601-row corpus: every row shared one
         provenance, so the quota capped every answer at MAX_PER_PROVENANCE

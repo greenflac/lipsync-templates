@@ -152,3 +152,4 @@
 {"host": "viggle.ai", "url": "https://viggle.ai/", "reason": "Tunnel connection failed: 403 Forbidden", "why_wanted": "checking whether a search hit is readable", "incidental": true, "state": "refused", "first_seen": "2026-08-27"}
 {"host": "higgsfield.ai", "url": "https://higgsfield.ai/", "reason": "Tunnel connection failed: 403 Forbidden", "why_wanted": "checking whether a search hit is readable", "incidental": true, "state": "refused", "first_seen": "2026-08-27"}
 {"host": "comfy.org", "url": "https://comfy.org/", "reason": "Tunnel connection failed: 403 Forbidden", "why_wanted": "checking whether a search hit is readable", "incidental": true, "state": "refused", "first_seen": "2026-08-27"}
+{"host": "fal.run", "url": "https://fal.run/openapi.json?endpoint_id=fal-ai/flux-pro/v1.1-ultra", "reason": "Tunnel connection failed: 403 Forbidden", "why_wanted": "", "incidental": true, "state": "refused", "first_seen": "2026-08-27"}
