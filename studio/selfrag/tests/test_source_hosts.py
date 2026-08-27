@@ -48,6 +48,20 @@ class WhoOwnsThePage(unittest.TestCase):
         assert tier("veo-3.1", "https://piapi.ai/blogs/veo-3-1-api-pricing") == BLOG
         assert tier("runway-gen-4.5", "https://gaga.art/blog/runway-gen-4-5-review/") == BLOG
 
+    def test_one_community_is_the_middle_rung_and_the_forum_around_it_is_not(self) -> None:
+        """The owner named these on 2026-08-27: Civitai and the ComfyUI subreddit.
+
+        A community where people post workflows WITH the results they got is
+        the middle rung by the owner's own description of it. Reddit as a whole
+        is a forum, so the rung is claimed by path and not by host — which is
+        what the path prefix exists for.
+        """
+        comfy = "https://www.reddit.com/r/comfyui/comments/a/wan_workflow/"
+        assert tier("wan-2.6-flash", comfy) == PORTAL
+        assert tier("wan-2.6-flash", "https://old.reddit.com/r/comfyui/comments/a/x/") == PORTAL
+        assert tier("wan-2.6-flash", "https://www.reddit.com/r/aww/comments/a/x/") == BLOG
+        assert tier("flux-2", "https://civitai.com/api/v1/images?modelId=1") == PORTAL
+
     def test_a_blog_shaped_word_inside_a_longer_segment_is_not_a_blog_path(self) -> None:
         assert tier("veo-3.1", "https://fal.ai/blogging-api/veo") == PORTAL
 

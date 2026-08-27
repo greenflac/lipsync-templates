@@ -135,6 +135,30 @@ class WebClient(unittest.TestCase):
         assert asked["hosts"] == []
         assert [row["host"] for row in asked["also_refused"]] == ["wavespeed.ai"]
 
+    def test_a_map_refresh_does_not_fill_the_ask_with_hosts_nobody_wanted(self) -> None:
+        """Second place this shape appeared, 2026-08-27.
+
+        `reachability()` sweeps a list of hosts to re-date the map. Recording
+        every refusal as an ask put hosts nobody wanted into the file a human
+        reads, under the reason "reachability probe", which says nothing.
+        """
+        error = urllib.error.URLError(DENIAL_TEXT)
+        with mock.patch.object(fetch.urllib.request, "urlopen", side_effect=error):
+            fetch.reachability(("arxiv.org", "docs.bfl.ai"))
+
+        asked = fetch.wanted()
+        assert asked["hosts"] == [], "a map refresh asks for nothing"
+        assert len(asked["also_refused"]) == 2, "and loses no refusal either"
+
+    def test_probing_hosts_you_actually_need_does_fill_the_ask(self) -> None:
+        error = urllib.error.URLError(DENIAL_TEXT)
+        with mock.patch.object(fetch.urllib.request, "urlopen", side_effect=error):
+            fetch.reachability(("civitai.com",), why_wanted="community prompt corpus")
+
+        asked = fetch.wanted()
+        assert [r["host"] for r in asked["hosts"]] == ["civitai.com"]
+        assert asked["hosts"][0]["why_wanted"] == "community prompt corpus"
+
     def test_a_swept_host_later_really_needed_is_promoted_into_the_ask(self) -> None:
         self._deny("https://kling.ai/", "a search hit", incidental=True)
         self._deny("https://kling.ai/docs", "max_seconds is contested", incidental=True)

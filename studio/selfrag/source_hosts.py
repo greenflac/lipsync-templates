@@ -96,6 +96,10 @@ VENDOR_SOURCES: dict[str, tuple[str, ...]] = {
 #: `huggingface.co`, `replicate.com` and `civitai.com` are listed although
 #: nothing cites them yet; they are the canonical shape of this rung, and a
 #: table that only lists what has already been seen teaches nobody what belongs.
+#: `reddit.com/r/comfyui/` and not `reddit.com`: a subreddit where people post
+#: workflows with the results they got is the middle rung; the rest of Reddit
+#: is a forum. This is what the path prefix is for. Add a sibling community the
+#: same way — one line, `reddit.com/r/<name>/`.
 PORTAL_SOURCES: tuple[str, ...] = (
     "apiframe.ai",
     "atlascloud.ai",
@@ -107,6 +111,8 @@ PORTAL_SOURCES: tuple[str, ...] = (
     "openart.ai",
     "piapi.ai",
     "prompthero.com",
+    "reddit.com/r/comfyui/",
+    "old.reddit.com/r/comfyui/",
     "replicate.com",
     "wavespeed.ai",
 )

@@ -244,18 +244,36 @@ def fetch(
         }
 
 
-def reachability(hosts: Any = None) -> dict:
+def reachability(hosts: Any = None, *, why_wanted: str = "") -> dict:
     """Probe hosts now rather than trusting the map in the docstring.
 
     A reachability map is a measurement with a date on it, and this is how the
     date gets refreshed. Cheap: one HEAD-shaped GET per host.
+
+    :param why_wanted: the question these hosts are being probed FOR. Given, the
+        refusals join the allowlist request under that reason. Left empty, this
+        is a map refresh — nobody asked for any particular host — and refusals
+        are recorded as incidental, out of the ask.
+
+        OBSERVED 2026-08-27, twice: a bulk sweep wrote every refused host into
+        the file a human reads to decide what access to grant. Search results
+        was the first place, this was the second, and the reason recorded here
+        was the literal string "reachability probe", which tells that human
+        nothing at all. A host really wanted is promoted into the ask by
+        `note_denial` the first time somebody probes it WITH a question, so
+        nothing is lost by defaulting to incidental.
     """
     targets = list(hosts) if hosts else _DEFAULT_HOSTS
+    asked_for = str(why_wanted or "").strip()
     open_hosts: list[str] = []
     closed: list[str] = []
     other: list[dict] = []
     for host in targets:
-        out = fetch(f"https://{host}/", why_wanted="reachability probe")
+        out = fetch(
+            f"https://{host}/",
+            why_wanted=asked_for or "refreshing the reachability map; nobody asked for this host",
+            incidental=not asked_for,
+        )
         if out["denied"]:
             closed.append(host)
         elif out["outcome"] in {PASS, FAIL}:

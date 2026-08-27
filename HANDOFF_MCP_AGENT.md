@@ -407,3 +407,74 @@ added: one of the seven is `docs.bfl.ai/` supporting
 statement" — for a negative finding a doc-root citation is legitimate. Telling
 the two apart is a judgement the owner did not ask for. Decide and it is a
 five-line change.
+
+---
+
+# Session 2026-08-27 — Civitai and the ComfyUI subreddit, asked about by the owner
+
+> «ComfyUI Subreddit и Civitai API очень большие и достоверные источники данных,
+> там комьюнити выкладывает свои воркфлоу, составляют описания и приводят
+> результаты. Это можно как-то собирать?»
+
+Measured before designing anything. **Both are refused by the egress policy —
+7 of 7 hosts, 0 open:** `civitai.com`, `api.civitai.com`, `image.civitai.com`,
+`reddit.com`, `www.reddit.com`, `oauth.reddit.com`, `old.reddit.com`. Not
+routed around (C3). They are now in `denied_hosts.jsonl` carrying the owner's
+own reason, so the ask is 13 hosts rather than 6.
+
+## A licence blocker that outranks the network one
+
+НЕПРОВЕРЕНО (C4) — from Gemini grounding, since both hosts are shut and no
+terms page was read by anyone:
+
+- **Reddit Data API**: free tier is 100 QPM per OAuth client, and **commercial
+  use is prohibited on it without Reddit's explicit approval**; new apps need
+  approval under a "Responsible Builder Policy". Commercial access is a
+  contract, reported around **$0.24 per 1,000 calls** and a tier starting near
+  **$12,000/month**. This repository is a commercial content-creator service,
+  so the free tier is very likely not available to it *whatever* the proxy
+  says. **This needs the owner's decision and possibly money before any
+  collector is worth writing** (C5: the licence is checked before the
+  integration, not after).
+- **Civitai**: a public REST API at `https://civitai.com/api/v1/`, with
+  `/images` returning user-submitted images and their generation metadata —
+  which is exactly the prompt-plus-result pairing this project has none of.
+  Per-upload licence terms were NOT established and are the open question.
+
+## What was done anyway, because it is testable now
+
+Both sources are in the tier table, so if access arrives their facts land on
+the right rung with no further thought:
+
+- `civitai.com` → `portal`
+- `reddit.com/r/comfyui/` and `old.reddit.com/r/comfyui/` → `portal`;
+  `reddit.com/r/aww/` → `blog`
+
+A subreddit where people post workflows with the results they got is the
+owner's middle rung by their own description; Reddit as a whole is a forum.
+The rung is claimed **by path**, which is what the path-prefix mechanism was
+built for. A sibling community is one line.
+
+## The same defect, found a second time in an hour (rule И7 earning its keep)
+
+`reachability()` — the other bulk sweep — recorded every refused host into the
+allowlist request under the reason `"reachability probe"`. Fixed the same way:
+a sweep with no question is incidental; `reachability(hosts, why_wanted=...)`
+and the `reachable_hosts` tool now take the question, and a host really wanted
+is promoted into the ask. The earlier fix to `search._fetchable` had not been
+grepped for its own shape — that is what И7 says to do and it was not done.
+
+Ask now: 13 hosts with real reasons; 8 incidental, listed apart.
+
+## Not built, and why
+
+No collector was written. It cannot be exercised against a live API from here,
+so it would be code nobody has run — and the Reddit licence question may make
+part of it moot. The shape is understood and it is a short job once the two
+answers exist:
+
+1. does the owner get the hosts opened, and
+2. is Reddit's commercial tier acceptable, or is Civitai alone the target?
+
+`bash scripts/check` exits 0; blind control set 54 checked, 0 violations,
+0 unmeasured.

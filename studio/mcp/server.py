@@ -256,13 +256,21 @@ def blocked_hosts() -> str:
 
 
 @server.tool()
-def reachable_hosts() -> str:
+def reachable_hosts(hosts: str = "", why_wanted: str = "") -> str:
     """Re-probe which documentation and API hosts answer right now.
 
     The reachability map is a measurement with a date on it; this refreshes the
     date instead of trusting a comment.
+
+    :param hosts: comma-separated hosts to probe instead of the default map.
+    :param why_wanted: the question you are probing these hosts FOR. Give it
+        when you are checking specific hosts you actually need — the refusals
+        then join the allowlist request under that reason, which is what makes
+        the request worth reading. Leave it empty for a plain map refresh:
+        nobody asked for those hosts, and their refusals stay out of the ask.
     """
-    return _json(fetch.reachability())
+    named = tuple(h.strip() for h in str(hosts or "").split(",") if h.strip())
+    return _json(fetch.reachability(named or None, why_wanted=why_wanted))
 
 
 @server.tool()
