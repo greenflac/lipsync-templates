@@ -56,6 +56,7 @@ from __future__ import annotations
 
 import json
 import time
+import urllib.parse
 from pathlib import Path
 from typing import Any, Callable, Iterable, Sequence
 
@@ -99,6 +100,18 @@ MIN_PROMPT_WORDS = 3
 #: never silently discarded, because "we collected 4000 rows" reads very
 #: differently from "we collected 4000 and threw 9000 away".
 MAX_NSFW_LEVEL = 2
+
+#: The image levels this collector will keep, as the bitmask Civitai uses for
+#: a MODEL. On a model, `nsfwLevel` is not a rating but a bitmask of every rung
+#: its published images span: 3 is 1|2, 31 is 1|2|4|8|16. So a model at 31
+#: publishes XXX material even though individual images of it may be rated PG.
+#:
+#: This exists because the image gate cannot see the checkpoint. MEASURED by
+#: looking at a collected row rather than at its metrics (house rule P3): a row
+#: passed the image ceiling at level 2 while its model was named "NSFW MASTER"
+#: and carried nsfwLevel 31. The model's own `nsfw` BOOLEAN said False for it,
+#: so the boolean is not the signal — the bitmask is.
+ALLOWED_MODEL_LEVELS = 3
 
 #: The generation parameters worth keeping, MEASURED over a real sample: each
 #: was present on 60 of the 60 images that had a prompt, except clipSkip (38).
@@ -170,6 +183,7 @@ def version_refs(models_payload: Any) -> list[dict]:
                     "model_name": str(model.get("name") or ""),
                     "creator": str(creator or ""),
                     "base_model": str(version.get("baseModel") or ""),
+                    "model_nsfw_level": model.get("nsfwLevel"),
                     "images_claiming_prompt": sum(
                         1 for im in images if im.get("hasPositivePrompt")
                     ),
@@ -283,6 +297,20 @@ def pairs_from_version(version_payload: Any, ref: dict, harvested: str, rights: 
     }
 
 
+def _publishes_above_ceiling(ref: dict) -> bool:
+    """Does this model publish anything above `MAX_NSFW_LEVEL`?
+
+    Reads the model's `nsfwLevel` BITMASK, not its `nsfw` boolean: MEASURED,
+    the boolean was False on a model named "NSFW MASTER" whose bitmask was 31.
+    An absent or non-integer level is treated as above the ceiling — an unrated
+    checkpoint is unrated, not safe.
+    """
+    level = ref.get("model_nsfw_level")
+    if not isinstance(level, int):
+        return True
+    return bool(level & ~ALLOWED_MODEL_LEVELS)
+
+
 def _one_model_at_a_time(refs: Sequence[dict]) -> list[dict]:
     """Reorder versions so a capped run touches many models, not one.
 
@@ -344,6 +372,8 @@ def collect(
     pages: int = 1,
     per_page: int = 20,
     sort: str = "Most Downloaded",
+    base_model: str = "",
+    safe_models_only: bool = False,
     max_versions: int | None = None,
     path: Path | None = None,
     delay_seconds: float = DEFAULT_DELAY_SECONDS,
@@ -356,6 +386,30 @@ def collect(
         the clock so a run is reproducible and a test is not date-dependent.
     :param rights: the basis this collection stands on, stamped per row. Passed
         in because it is the owner's to state and this module's to record.
+    :param base_model: one Civitai base-model family, e.g. "Flux.1 D",
+        "Flux.1 S", "Wan Video 14B t2v", "Qwen". Empty collects whatever the
+        sort surfaces, which MEASURED is the Stable Diffusion checkpoint
+        ecosystem: a 750-pair harvest by Most Downloaded produced 368 SD 1.5,
+        127 SDXL and **zero** rows on any family this project targets. Civitai
+        hosts weights, so the closed API models this project uses are barely
+        there; the open-weight ones — Flux, Wan, Qwen — are, and only a filter
+        reaches them.
+
+        MEASURED and worth knowing: the filter is CASE-SENSITIVE and a name it
+        does not recognise returns `200` with an empty list rather than an
+        error, so "Flux.1 D" works and "flux.1 d" silently collects nothing.
+        That is why an empty harvest under a filter says so in its note.
+
+        One family per run: repeated `baseModels` parameters are ignored by the
+        API and only the first is honoured (MEASURED). Loop in the caller.
+    :param safe_models_only: skip models whose own `nsfwLevel` bitmask reaches
+        above `MAX_NSFW_LEVEL`, not just images that do. Default False, and the
+        count is REPORTED either way — the knob has a counter beside it and the
+        counter is not optional (house rule P1). The image gate already keeps
+        every collected image at PG or PG-13; this is about whose checkpoint
+        the wording came from, which is a judgement about the product rather
+        than about the data, and therefore the owner's to make with the number
+        in front of them.
     :param max_versions: a hard ceiling on requests, so a mistyped page count
         cannot turn into a thousand calls against somebody else's API.
     :param fetcher: injected so the tests never reach the network (house rule
@@ -369,7 +423,9 @@ def collect(
     target = path or DEFAULT_OUTPUT_PATH
     already = _existing_urls(target)
 
-    url = f"{MODELS_URL}?limit={int(per_page)}&sort={sort.replace(' ', '%20')}"
+    url = f"{MODELS_URL}?limit={int(per_page)}&sort={urllib.parse.quote(sort)}"
+    if base_model:
+        url += "&baseModels=" + urllib.parse.quote(base_model)
     refs: list[dict] = []
     listings = 0
     for _ in range(max(0, int(pages))):
@@ -408,7 +464,11 @@ def collect(
         if url:
             sleeper(delay_seconds)
 
-    worth_it = _one_model_at_a_time([ref for ref in refs if ref["images_claiming_prompt"] > 0])
+    wanted = [ref for ref in refs if ref["images_claiming_prompt"] > 0]
+    from_explicit_models = [ref for ref in wanted if _publishes_above_ceiling(ref)]
+    if safe_models_only:
+        wanted = [ref for ref in wanted if not _publishes_above_ceiling(ref)]
+    worth_it = _one_model_at_a_time(wanted)
     skipped = len(refs) - len(worth_it)
     if max_versions is not None:
         worth_it = worth_it[: max(0, int(max_versions))]
@@ -473,9 +533,19 @@ def collect(
             for row in fresh:
                 handle.write(json.dumps(row, ensure_ascii=False) + "\n")
 
+    explicit_note = (
+        f"{len(from_explicit_models)} of them from models that publish above the "
+        f"ceiling themselves"
+        + (
+            " and were SKIPPED"
+            if safe_models_only
+            else " and were KEPT (--safe-models-only skips them)"
+        )
+    )
     detail = (
         f"{listings} listing page(s), {len(refs)} version(s) seen, {skipped} skipped as "
-        f"claiming no prompt, {len(worth_it)} fetched, {refused} refused; "
+        f"claiming no prompt or above the model ceiling, {len(worth_it)} fetched, "
+        f"{refused} refused; {explicit_note}; "
         f"{len(rows)} pair(s) parsed, {len(rows) - len(fresh)} already held, "
         f"{no_prompt} image(s) without wording, {too_explicit} above the nsfw ceiling"
     )
@@ -486,9 +556,18 @@ def collect(
             "violations": 0,
             "unmeasured": max(1, len(worth_it)),
             "note": (
-                "the API answered and produced no pairs at all. That is the shape the "
-                "/api/v1/images endpoint already has, so check whether this one has "
-                "been stripped too before assuming a bug here. " + detail
+                "the API answered and produced no pairs at all. "
+                + (
+                    f"The base-model filter {base_model!r} may simply match nothing: it "
+                    "is case-sensitive and an unrecognised name returns an empty list "
+                    "with 200 rather than an error (MEASURED). Check the spelling "
+                    "against a family Civitai actually lists. "
+                    if base_model
+                    else "That is the shape the /api/v1/images endpoint already has, so "
+                    "check whether this one has been stripped too before assuming a bug "
+                    "here. "
+                )
+                + detail
             ),
             "written": 0,
             "rows": [],

@@ -136,6 +136,33 @@ Every one of those is REPORTED in the run's note. "We collected 170" reads very
 differently from "we collected 170 and threw 40 away", and only the second is
 true.
 
+### Two things a run must be pointed at, both MEASURED
+
+**Unfiltered, this collects the wrong models.** Civitai hosts weights, so the
+closed API models this project uses are barely on it. A 750-pair harvest by
+Most Downloaded produced 368 SD 1.5, 127 SDXL 1.0, 71 Illustrious — and
+**zero** rows on any family this project targets. The open-weight families are
+reachable and only a filter reaches them: `--base-model "Flux.1 D"`,
+`"Flux.1 S"`, `"Wan Video 14B t2v"`, `"Qwen"`. One family per run, because the
+API honours only the first `baseModels` parameter.
+
+The filter is CASE-SENSITIVE and an unrecognised name returns `200` with an
+empty list rather than an error, so `"flux.1 d"` silently collects nothing.
+An empty harvest under a filter says so in its own note for that reason.
+
+**The image gate cannot see the checkpoint.** Every collected image is at
+Civitai's PG or PG-13 rung. That says nothing about the model it came from:
+found by looking at a collected row rather than at its metrics, a row passed
+at image level 2 while its checkpoint was named "NSFW MASTER". The model's own
+`nsfw` BOOLEAN reads False for it — the signal is `nsfwLevel`, which on a model
+is a BITMASK of every rung its images span (3 is 1|2, 31 is 1|2|4|8|16).
+
+So the count of rows drawn from checkpoints that publish above the ceiling is
+printed on every run, and `--safe-models-only` skips them. MEASURED on a
+Flux.1 D run: 90 of 100 candidate versions. That proportion is why this is a
+number the owner sees rather than a default somebody chose quietly — the image
+gate is about the data, this is about the product.
+
 ### Not committed
 
 `.gitignore` carries the file. This repository is public and its LICENCE clause

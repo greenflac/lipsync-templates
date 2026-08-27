@@ -48,8 +48,33 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--per-page", type=int, default=20, help="models per listing page")
     parser.add_argument("--versions", type=int, default=25, help="hard ceiling on version requests")
     parser.add_argument("--sort", default="Most Downloaded")
+    parser.add_argument(
+        "--base-model",
+        action="append",
+        default=[],
+        metavar="FAMILY",
+        help=(
+            "a Civitai base-model family to restrict the harvest to, e.g. 'Flux.1 D', "
+            "'Flux.1 S', 'Wan Video 14B t2v', 'Qwen'. Repeatable; one API call per "
+            "family, because the API honours only the first baseModels parameter. "
+            "CASE-SENSITIVE, and an unrecognised name collects nothing without "
+            "erroring. Omit it and the harvest is whatever the sort surfaces, which "
+            "MEASURED is the Stable Diffusion checkpoint ecosystem and nothing this "
+            "project targets."
+        ),
+    )
     parser.add_argument("--delay", type=float, default=civitai.DEFAULT_DELAY_SECONDS)
     parser.add_argument("--rights", default=DEFAULT_RIGHTS)
+    parser.add_argument(
+        "--safe-models-only",
+        action="store_true",
+        help=(
+            "skip checkpoints that publish above PG-13 themselves, not just images "
+            "that do. Every collected image is at PG or PG-13 either way; this is "
+            "about whose checkpoint the wording came from. The count is printed "
+            "whether or not this is set, so the decision can be made from a number."
+        ),
+    )
     parser.add_argument(
         "--summary", action="store_true", help="report what is held, collect nothing"
     )
@@ -70,16 +95,33 @@ def main(argv: list[str]) -> int:
             print(f"  {count:>5}  {provenance}")
         return 0 if held["outcome"] == PASS else 1
 
-    out = civitai.collect(
-        harvested=date.today().isoformat(),
-        rights=args.rights,
-        pages=args.pages,
-        per_page=args.per_page,
-        sort=args.sort,
-        max_versions=args.versions,
-        delay_seconds=args.delay,
-    )
-    print(f"{out['outcome']}: {out['note']}")
+    families: list[str] = args.base_model or [""]
+    outcomes = []
+    for family in families:
+        out = civitai.collect(
+            harvested=date.today().isoformat(),
+            rights=args.rights,
+            pages=args.pages,
+            per_page=args.per_page,
+            sort=args.sort,
+            base_model=family,
+            safe_models_only=args.safe_models_only,
+            max_versions=args.versions,
+            delay_seconds=args.delay,
+        )
+        label = family or "(unfiltered)"
+        print(f"{out['outcome']:<18} {label}: {out['note']}")
+        outcomes.append(out)
+
+    # One family collecting nothing does not make the run a success, and does
+    # not make it a failure either. The counts go out beside the verdict so a
+    # reader sees the denominator (house rule P2).
+    got = sum(int(o["written"]) for o in outcomes)
+    empty = [f for f, o in zip(families, outcomes) if o["outcome"] != PASS]
+    print(f"\nсемейств {len(families)}\nзаписей {got}\nбез результата {len(empty)}")
+    if empty:
+        print("  nothing from: " + ", ".join(f or "(unfiltered)" for f in empty))
+    out = {"outcome": PASS if got else "could not measure"}
     # Three outcomes reach the exit code as three states, not two: an API that
     # answered and gave nothing is not a success and is not a crash either, and
     # a caller in a pipeline needs to tell them apart.

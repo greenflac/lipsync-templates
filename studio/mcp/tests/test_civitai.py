@@ -56,23 +56,21 @@ def _version(images: list[dict] | None = None) -> dict:
     }
 
 
-def _listing(**over: object) -> dict:
+def _listing(model_over: dict | None = None, **over: object) -> dict:
     version: dict = {
         "id": 128713,
         "baseModel": "SD 1.5",
         "images": [{"hasPositivePrompt": True}, {"hasPositivePrompt": True}],
     }
     version.update(over)
-    return {
-        "items": [
-            {
-                "name": "DreamShaper",
-                "creator": {"username": "Lykon"},
-                "modelVersions": [version],
-            }
-        ],
-        "metadata": {},
+    model: dict = {
+        "name": "DreamShaper",
+        "creator": {"username": "Lykon"},
+        "nsfwLevel": 3,
+        "modelVersions": [version],
     }
+    model.update(model_over or {})
+    return {"items": [model], "metadata": {}}
 
 
 REF = {
@@ -318,6 +316,70 @@ class Collecting(unittest.TestCase):
         fetcher = _Fetcher({"/api/v1/models": listing, "/model-versions/": _version()})
         self._collect(fetcher, max_versions=1)
         assert sum(1 for c in fetcher.calls if "model-versions" in c) == 1
+
+    def test_a_model_that_publishes_above_the_ceiling_is_counted_and_kept(self) -> None:
+        """The image gate cannot see the checkpoint. MEASURED by looking at a
+        collected row: it passed at image level 2 while its model was named
+        "NSFW MASTER" with nsfwLevel 31. The count goes out by default; the
+        skipping does not, because that is a product judgement (rule P1)."""
+        listing = _listing(model_over={"nsfwLevel": 31})
+        fetcher = _Fetcher({"/api/v1/models": listing, "/model-versions/": _version()})
+        out = self._collect(fetcher)
+        assert out["outcome"] == "pass", "kept by default"
+        assert out["written"] == 1
+        assert "1 of them from models that publish above the ceiling" in out["note"]
+        assert "were KEPT" in out["note"]
+
+    def test_safe_models_only_actually_skips_them(self) -> None:
+        listing = _listing(model_over={"nsfwLevel": 31})
+        fetcher = _Fetcher({"/api/v1/models": listing, "/model-versions/": _version()})
+        out = self._collect(fetcher, safe_models_only=True)
+        assert out["written"] == 0
+        assert not any("model-versions" in c for c in fetcher.calls), "not even requested"
+        assert "were SKIPPED" in out["note"]
+
+    def test_the_bitmask_is_read_as_a_bitmask_not_a_rating(self) -> None:
+        """3 is 1|2 and passes; 7 is 1|2|4 and does not, even though a rating
+        of 7 would be 'above 2' either way — the point is that 31 contains 1,
+        so a comparison would have let the worst models through."""
+        for level, kept in ((3, 1), (7, 0), (31, 0), (1, 1)):
+            with self.subTest(level=level):
+                path = self.path.with_name(f"n{level}.jsonl")
+                listing = _listing(model_over={"nsfwLevel": level})
+                fetcher = _Fetcher({"/api/v1/models": listing, "/model-versions/": _version()})
+                out = self._collect(fetcher, safe_models_only=True, path=path)
+                assert out["written"] == kept, f"level {level}"
+
+    def test_a_model_with_no_level_is_treated_as_unsafe_not_as_safe(self) -> None:
+        """Absent is unrated, not PG."""
+        listing = _listing(model_over={"nsfwLevel": None})
+        fetcher = _Fetcher({"/api/v1/models": listing, "/model-versions/": _version()})
+        assert self._collect(fetcher, safe_models_only=True)["written"] == 0
+
+    def test_a_base_model_filter_reaches_the_request(self) -> None:
+        """Without it the harvest is the Stable Diffusion ecosystem: MEASURED,
+        750 pairs by Most Downloaded gave 368 SD 1.5 and zero rows on any
+        family this project targets."""
+        fetcher = _Fetcher({"/api/v1/models": _listing(), "/model-versions/": _version()})
+        self._collect(fetcher, base_model="Flux.1 D")
+        assert "baseModels=Flux.1%20D" in fetcher.calls[0]
+
+    def test_no_filter_asks_for_no_filter(self) -> None:
+        """The negative control: the parameter must not appear when unset."""
+        fetcher = _Fetcher({"/api/v1/models": _listing(), "/model-versions/": _version()})
+        self._collect(fetcher)
+        assert "baseModels" not in fetcher.calls[0]
+
+    def test_an_empty_harvest_under_a_filter_blames_the_filter(self) -> None:
+        """A name Civitai does not recognise returns 200 and an empty list, so
+        a typo is silent. The note is the only place that silence gets
+        explained."""
+        empty: dict = {"items": [], "metadata": {}}
+        fetcher = _Fetcher({"/api/v1/models": empty})
+        out = self._collect(fetcher, base_model="flux.1 d")
+        assert out["outcome"] == "could not measure"
+        assert "case-sensitive" in out["note"]
+        assert "flux.1 d" in out["note"]
 
     def test_a_refused_listing_is_fail_and_writes_nothing(self) -> None:
         fetcher = _Fetcher({"/api/v1/models": None})
