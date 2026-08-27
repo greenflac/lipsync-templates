@@ -96,6 +96,13 @@ VENDOR_SOURCES: dict[str, tuple[str, ...]] = {
 #: `huggingface.co`, `replicate.com` and `civitai.com` are listed although
 #: nothing cites them yet; they are the canonical shape of this rung, and a
 #: table that only lists what has already been seen teaches nobody what belongs.
+#: `docs.dev.runwayml.com` is on BOTH tables and that is the point: `vendor`
+#: is checked first and wins for the `runway-gen` family, so Runway's own API
+#: reference is the vendor's page for Gen-4.5 and a platform's page for the
+#: Veo, Seedance and Kling endpoints it resells. One host, two rungs, decided
+#: by which model the claim is about — which is what "whose page is it" means
+#: once a platform starts running other people's models.
+#:
 #: `reddit.com/r/comfyui/` and not `reddit.com`: a subreddit where people post
 #: workflows with the results they got is the middle rung; the rest of Reddit
 #: is a forum. This is what the path prefix is for. Add a sibling community the
@@ -104,6 +111,8 @@ PORTAL_SOURCES: tuple[str, ...] = (
     "apiframe.ai",
     "atlascloud.ai",
     "civitai.com",
+    "docs.dev.runwayml.com",
+    "api.dev.runwayml.com",
     "evolink.ai",
     "fal.ai",
     "gaga.art",

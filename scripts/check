@@ -118,6 +118,12 @@ python -m unittest discover -s studio/mcp/tests -t .
 echo "== blind control set (mcp)"
 python studio/mcp/fixtures/blind_control_set.py
 
+# The reading pass, asserted rather than trusted. Reads the fact file only --
+# no network, so this stays honest in CI: it fails if a claim scripts/read_sources.py
+# withdrew has come back, or if a reading it recorded has been edited away.
+echo "== reading pass still applied"
+python scripts/read_sources.py --check
+
 echo "== mcp server handshake"
 python - <<'PY'
 import asyncio, sys

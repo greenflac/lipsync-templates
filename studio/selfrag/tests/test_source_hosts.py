@@ -6,12 +6,11 @@ value that travels with the code it checks cannot disagree with it.
 
 from __future__ import annotations
 
-import json
 import unittest
 from unittest import mock
 
 from studio.selfrag import source_hosts as S
-from studio.selfrag.facts import DEFAULT_FACTS_PATH
+from studio.selfrag.facts import DEFAULT_FACTS_PATH, load_facts
 
 VENDOR, PORTAL, BLOG = "vendor", "portal", "blog"
 
@@ -117,24 +116,25 @@ class TheTableAgainstTheRealBase(unittest.TestCase):
     """
 
     def test_the_real_base_lands_on_all_three_rungs(self) -> None:
-        rows = [
-            json.loads(line)
-            for line in DEFAULT_FACTS_PATH.read_text(encoding="utf-8").splitlines()
-            if line.strip() and not line.startswith("//")
-        ]
-        assert len(rows) == 47, "the measured base; update the literals below with it"
+        # `load_facts` and not the raw lines: since 2026-08-27 the file is a
+        # log where a later row supersedes an earlier one about the same claim
+        # and a withdrawal removes it, so 85 lines carry 47 claims. Counting
+        # lines would count corrections twice and count retracted claims as
+        # standing — measuring the file's history rather than what it asserts.
+        facts = load_facts(DEFAULT_FACTS_PATH)
+        assert len(facts) == 47, "the measured base; update the literals below with it"
 
         seen = {VENDOR: 0, PORTAL: 0, BLOG: 0}
-        for row in rows:
-            seen[tier(str(row["model"]), str(row.get("source_url", "")))] += 1
+        for fact in facts:
+            seen[tier(fact.model, fact.source_url)] += 1
 
-        # MEASURED 2026-08-27 by running this classification over the file.
+        # MEASURED 2026-08-27 by running this classification over the base.
         # `vendor` is 14 and not 13 because the one `probe` row cites
         # api.klingai.com: the URL is the vendor's, while the rung the row
         # keeps is `probe`, which describes how the fact was obtained.
         assert seen[VENDOR] == 14, seen
-        assert seen[PORTAL] == 6, seen
-        assert seen[BLOG] == 27, seen
+        assert seen[PORTAL] == 5, seen
+        assert seen[BLOG] == 28, seen
 
     def test_no_rung_is_empty_which_is_what_a_useless_table_looks_like(self) -> None:
         with mock.patch.dict(S.VENDOR_SOURCES, {}, clear=True):
