@@ -1,4 +1,4 @@
-"""The MCP server the owner talks to in chat. Five tools, no side effects but one.
+"""The MCP server the owner talks to in chat. Nine tools, two of which write.
 
 RUN IT
 
@@ -7,10 +7,11 @@ RUN IT
 `.mcp.json` at the repo root registers it, so it appears in the chat with no
 further setup.
 
-THE ONE TOOL THAT WRITES
+THE TOOLS THAT WRITE
 
-`record_model_fact` appends to `studio/knowledge/model_facts.jsonl`. Everything
-else reads. That asymmetry is deliberate and worth stating in the tool list a
+`record_model_fact` appends to `studio/knowledge/model_facts.jsonl`, and
+`fetch_url` appends a refused host to `denied_hosts.jsonl` so the allowlist
+request assembles itself. Everything else reads. That asymmetry is deliberate and worth stating in the tool list a
 model sees: an assistant deciding on its own to "tidy" the knowledge base is a
 worse outcome than a stale one, because a stale claim announces its age and a
 rewritten one does not.
@@ -32,7 +33,7 @@ from typing import Any
 from mcp.server.mcpserver import MCPServer
 
 from studio import knowledge
-from studio.mcp import advice, contract
+from studio.mcp import advice, contract, fetch, probe
 from studio.mcp import lipsync_prompt as lp
 
 server = MCPServer(
@@ -43,8 +44,14 @@ server = MCPServer(
         "change monthly and this base records who said what and when. When it "
         "reports a gap or a stale claim, search the web yourself and call "
         "`record_model_fact` with the value, the source URL, the source tier and "
-        "the date the source stated it — this server cannot reach the web, you "
-        "can. (2) Write lipsync prompts: call `write_lipsync_prompt`. It fills "
+        "the date the source stated it. Prefer a VENDOR artefact over an article: "
+        "`fetch_url` reaches raw.githubusercontent.com, api.github.com, pypi.org, "
+        "huggingface.co and cloud.google.com, so an SDK source or an OpenAPI spec "
+        "is readable. For a numeric limit whose documentation host is blocked, use "
+        "`probe_model_limit` — the vendor API's own refusal is the measurement, and "
+        "it records at `probe` tier. A host the policy refuses is reported, never "
+        "routed around: no mirror, no cache, no read-through proxy. "
+        "(2) Write lipsync prompts: call `write_lipsync_prompt`. It fills "
         "the engine's card from the owner's words and the corpus, and refuses "
         "with a question when a slot is unresolved. Do not answer the question "
         "on the owner's behalf — ask them."
@@ -164,6 +171,86 @@ def check_lipsync_prompt(prompt: str) -> str:
     shape would report `pass` for text the owner never approved.
     """
     return _json({**contract.gate(prompt), "bands": contract.BANDS})
+
+
+@server.tool()
+def fetch_url(url: str, why_wanted: str = "") -> str:
+    """Fetch a page or a file from the web through this session's egress policy.
+
+    Use it to read a vendor's own artefact instead of somebody's article about
+    it. Measured 2026-08-27, these answer: raw.githubusercontent.com,
+    api.github.com, pypi.org, huggingface.co, cloud.google.com,
+    api.klingai.com, api.fal.ai. Vendor SDK source and OpenAPI specs on GitHub
+    are vendor-tier material and are reachable.
+
+    A host the policy refuses comes back `could not measure` with `denied:
+    true` and is recorded for the allowlist request. Do NOT look for a mirror,
+    a cache or a read-through proxy for it — report it instead.
+
+    :param why_wanted: what you were trying to learn. It is carried into the
+        denial record, so the allowlist request explains itself.
+    """
+    return _json(fetch.fetch(url, why_wanted=why_wanted))
+
+
+@server.tool()
+def blocked_hosts() -> str:
+    """The allowlist request, assembled from hosts the policy actually refused.
+
+    Hand this to whoever owns the egress policy. Every row is a host something
+    real needed, with the reason it was wanted.
+    """
+    return _json(fetch.wanted())
+
+
+@server.tool()
+def reachable_hosts() -> str:
+    """Re-probe which documentation and API hosts answer right now.
+
+    The reachability map is a measurement with a date on it; this refreshes the
+    date instead of trusting a comment.
+    """
+    return _json(fetch.reachability())
+
+
+@server.tool()
+def probe_model_limit(
+    url: str, field: str, absurd_value: str, payload_json: str = "{}", why_wanted: str = ""
+) -> str:
+    """Ask a vendor's API for an impossible value and read the real limit out of its refusal.
+
+    This is how a numeric limit gets a `probe`-tier source when the vendor's
+    documentation host is blocked. The refusal text IS the measurement.
+
+    The value must be absurd — a number at or above 1000000, or a string
+    containing "absurd-probe". Anything a vendor could plausibly honour is
+    refused before a request is built, because a honoured request is a billed
+    one. Do not lower that floor; raise the value.
+
+    Returns `suggested_fact` — a draft row for `record_model_fact`. Read the
+    response and write the real value into it yourself; do not record the
+    draft as it stands.
+
+    :param absurd_value: sent as a number when it parses as one, else as a string.
+    :param payload_json: the rest of the request body, as JSON.
+    """
+    try:
+        payload = json.loads(payload_json or "{}")
+    except ValueError as error:
+        return _json(
+            {
+                "outcome": "fail",
+                "checked": 0,
+                "violations": 1,
+                "unmeasured": 0,
+                "note": f"payload_json is not JSON: {error}",
+            }
+        )
+    try:
+        value: Any = float(absurd_value) if "." in absurd_value else int(absurd_value)
+    except ValueError:
+        value = absurd_value
+    return _json(probe.probe_limit(url, field, value, payload=payload, why_wanted=why_wanted))
 
 
 def main() -> None:

@@ -22,6 +22,10 @@ that wants the truth gets told that the truth is contested.
 TIERS, and why a blog can never promote a fact:
 
     vendor     the model's own documentation or the vendor's own release
+    probe      the vendor's own API, asked and refused: the running system
+               rather than a document about it. Below `vendor` because one
+               probe sees one account at one moment, and a limit it reports
+               may belong to a billing plan rather than to the model.
     benchmark  an independent leaderboard or evaluation with a method
     paper      arXiv or a venue, with a method somebody can check
     blog       everything else, including the well-written aggregators
@@ -51,7 +55,9 @@ __all__ = [
     "TIER_BLOG",
     "TIER_BENCHMARK",
     "TIER_PAPER",
+    "TIER_PROBE",
     "TIER_VENDOR",
+    "UNKNOWN_TIER_RANK",
     "Fact",
     "FactStore",
     "claims",
@@ -59,6 +65,7 @@ __all__ = [
 ]
 
 TIER_VENDOR = "vendor"
+TIER_PROBE = "probe"
 TIER_BENCHMARK = "benchmark"
 TIER_PAPER = "paper"
 TIER_BLOG = "blog"
@@ -66,7 +73,23 @@ TIER_BLOG = "blog"
 #: Strongest first. Order is the only ranking; there are deliberately no
 #: numeric weights, because a weight invites averaging and averaging a vendor
 #: doc with three blogs produces a number nobody published.
-TIERS: tuple[str, ...] = (TIER_VENDOR, TIER_PAPER, TIER_BENCHMARK, TIER_BLOG)
+#:
+#: `probe` is a fact obtained by asking the vendor's own API and reading its
+#: refusal — the running system rather than a document about it. It sits below
+#: `vendor` and above everything else, and the reason it is not first is a real
+#: confound: a probe observes ONE account, ONE region and ONE moment, so a
+#: limit it reports may belong to a billing plan rather than to the model. A
+#: vendor's general statement outranks a single observation of a special case;
+#: everything written from the outside does not.
+TIERS: tuple[str, ...] = (TIER_VENDOR, TIER_PROBE, TIER_PAPER, TIER_BENCHMARK, TIER_BLOG)
+
+#: Ranked below every named tier. A tier nobody declared cannot corroborate
+#: anything, and until 2026-08-27 it silently did: an unrecognised tier sorted
+#: to position 99 — worse than `blog` — but the "is this only blogs" check
+#: compared against `blog` by NAME, so a typo'd tier sailed past it and the
+#: claim was reported as `pass`. Ranking and judging must agree, so the check
+#: now asks whether the best tier is blog OR unknown.
+UNKNOWN_TIER_RANK = 99
 
 #: Past this, a fact is reported as stale rather than current. CHOSEN: the
 #: video field re-versioned roughly every two months through 2026.
@@ -210,12 +233,13 @@ class FactStore:
                         "note": f.note,
                     }
                     for f in sorted(
-                        facts, key=lambda f: TIERS.index(f.tier) if f.tier in TIERS else 99
+                        facts,
+                        key=lambda f: TIERS.index(f.tier) if f.tier in TIERS else UNKNOWN_TIER_RANK,
                     )
                 ],
                 "best_tier": min(
                     (f.tier for f in facts),
-                    key=lambda t: TIERS.index(t) if t in TIERS else 99,
+                    key=lambda t: TIERS.index(t) if t in TIERS else UNKNOWN_TIER_RANK,
                 ),
             }
             for value, facts in sorted(by_value.items())
@@ -241,9 +265,9 @@ class FactStore:
 
         best = min(
             (r["best_tier"] for r in rows),
-            key=lambda t: TIERS.index(t) if t in TIERS else 99,
+            key=lambda t: TIERS.index(t) if t in TIERS else UNKNOWN_TIER_RANK,
         )
-        if best == TIER_BLOG:
+        if best == TIER_BLOG or best not in TIERS:
             return {
                 "outcome": UNMEASURED,
                 "checked": len(found),

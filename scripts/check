@@ -104,6 +104,12 @@ python -m unittest discover -s studio/mcp/tests -t .
 # The server has to actually start and speak the protocol. Importing it proves
 # nothing: the tools are registered by decorator at import time, so an import
 # succeeds even when the transport is broken.
+# The fact tiers live in studio/selfrag/facts.py and are covered by the mcp
+# suite above (test_fetch_probe), which studio/mcp depends on: a `probe` tier
+# was added, and adding it surfaced an unrecognised tier reaching `pass` — it
+# sorted worse than `blog`, but the "is this only blogs" check compared by
+# name, so a typo'd tier sailed past.
+#
 # The blind control set: 54 cases written by an agent that was forbidden to read
 # the implementation and judged it from the contracts alone (house rule И1). It
 # found three real defects on 2026-08-27 — a corpus colour added to a palette the
@@ -120,8 +126,12 @@ from studio.mcp.server import server
 async def main() -> None:
     tools = sorted(tool.name for tool in await server.list_tools())
     expected = [
+        "blocked_hosts",
         "check_lipsync_prompt",
+        "fetch_url",
         "model_advice",
+        "probe_model_limit",
+        "reachable_hosts",
         "record_model_fact",
         "stale_model_facts",
         "write_lipsync_prompt",

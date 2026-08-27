@@ -267,3 +267,95 @@ again after restoring.
 * **Seven of the ten light words are placed by hand.** The engine's own table
   maps three; the other seven are a decision recorded in the source where it
   can be argued with.
+
+## The sourcing problem, and what was done about it
+
+**Measured 2026-08-27: 72% of the fact base was blog tier** — 33 of 46 claims,
+against 10 paper and 3 vendor. The owner spotted it and asked how it gets
+fixed.
+
+The reflex diagnosis was "the proxy blocks everything". Probing 28 hosts said
+otherwise:
+
+```
+open    raw.githubusercontent.com  api.github.com  github.com  pypi.org
+        files.pythonhosted.org  huggingface.co  cloud.google.com
+        storage.googleapis.com  api.klingai.com  api.fal.ai
+closed  docs.bfl.ai  arxiv.org  kling.ai  help.runwayml.com  elevenlabs.io
+        platform.openai.com  ai.google.dev  api.openai.com  unpkg.com  …18
+```
+
+Read the shape of that: **the API hosts of the two vendors this project holds
+keys for are open, and the documentation hosts are shut.** The vendor is
+reachable — as a running system rather than as prose. What was missing was not
+access. It was a client that used the access.
+
+### `fetch_url` — a client that tells three failures apart
+
+```
+could not measure   the policy refused the host (CONNECT 403/407)
+could not measure   the network failed or timed out
+fail                the host answered and said no — 404, 500, our bad URL
+```
+
+Collapsing those is how "we could not reach the vendor" becomes "the vendor
+has no such page", and that error is precisely what put 33 blog claims in.
+
+A blocked host stays blocked: no mirror, no cache, no archive copy, no
+read-through proxy, no second attempt at a refusal. The proxy README says do
+not route around policy denials, and the house rule says the decision belongs
+to whoever owns the policy. So refusals are **recorded** instead, and
+`blocked_hosts` renders them as an allowlist request assembled from attempts
+that really happened. Six hosts are in it, each with the question it blocked.
+
+### `probe_model_limit` and the `probe` tier
+
+When a documentation host is blocked but the vendor's API answers, ask the API
+for something impossible and read the refusal — `{"duration": 999999}` comes
+back naming the real ceiling, stated by the vendor's own code.
+
+`probe` was added to the tier ladder **below `vendor`**:
+
+```
+vendor  probe  paper  benchmark  blog
+```
+
+Not first, and the reason is a real confound: one probe sees one account, one
+region, one moment, so a limit it reports may belong to a billing plan rather
+than to the model. A vendor's general statement outranks a single observation
+of a special case; everything written from the outside does not.
+
+**The probe cannot quietly become a paid generation**, and that is guarded
+mechanically rather than promised. A probe value must be at or past
+`ABSURD_MIN` = 1000000 — no model renders a million seconds, so no vendor can
+bill for rendering one. A plausible value is refused before a request object
+exists. Verified: 1, 15, 999 and 999999 are all refused with `sent: None`;
+1000000 clears the guard and stops at "no API key" instead.
+
+The key is read from the environment inside the module, never passed as an
+argument, and never appears in what the tool returns — only which variable it
+came from. There is a test for that.
+
+### A defect found while adding the tier
+
+An unrecognised tier reached `pass`. It sorted to position 99 — below `blog` —
+but the "is this only blogs" check compared against `blog` **by name**, so a
+typo'd tier sailed past the guard and its claim was reported as corroborated.
+Measured both ways on 2026-08-27: with the old check, tier `twiter-typo`
+returned `pass`; with the fix, `could not measure`.
+
+### What still needs the owner
+
+The allowlist request. Six hosts, each blocking a specific question:
+
+| host | what it unblocks |
+|---|---|
+| `arxiv.org` | the Kling-Avatar paper — the only paper-tier source for the avatar route |
+| `kling.ai` | Kling lip-sync limits; `max_seconds` is **contested** in the base, 10 vs 15 |
+| `docs.bfl.ai` | Flux — every recorded claim about it is blog tier |
+| `help.runwayml.com` | Runway Gen-4.5 — `max_resolution` is **contested**, 720p vs 4K |
+| `elevenlabs.io` | the voice-clone consent gate and training minutes |
+| `docs.cloud.google.com` | Veo 3.1 — `cloud.google.com` is already allowed, only this subdomain is refused |
+
+That last row is worth leading with: the allowlist already contains the parent
+domain, so it is a narrowing, not a new grant.
