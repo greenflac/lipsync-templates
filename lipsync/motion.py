@@ -282,17 +282,3 @@ def trim_to_loop(mp4_path: str | Path, frames: list[str], out_mp4: str | Path, *
         capture_output=True,
     )
     return {**cut, "out": str(out_mp4), "duration": round(duration, 3)}
-
-
-PHYSICAL_MOTION = (
-    "The ball compresses under their weight and rebounds, driving the bounce. "
-    "Their feet stay in contact with the ball, knees absorb the landing, arms "
-    "counterbalance. Real weight and momentum, continuous single take, no cuts, "
-    "no camera move."
-)
-
-LOOP_MOTION = (
-    "One complete bounce cycle that ends exactly where it began, so the clip "
-    "repeats seamlessly. Keep moving through the final frame — do not slow to a "
-    "stop, freeze or fade."
-)

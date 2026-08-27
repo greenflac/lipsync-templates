@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-SIDE_MULTIPLE = 16
 LENGTH_STEP = 4
 LENGTH_BASE = 1
 

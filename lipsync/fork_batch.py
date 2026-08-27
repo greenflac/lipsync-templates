@@ -12,6 +12,10 @@ from .fork_video import EXIT_BY_OUTCOME
 from . import fork_e2e as E
 
 
+#: CHOSEN BY THE OWNER: "touch 5 drivings, 5 styles, 2 identities". It is not
+#: a limit — `cells` takes any axes — it is the origin of the numbers the
+#: batch is judged by, so the test fixtures are built from it rather than
+#: repeating 5, 5 and 2 as bare literals that could drift away from it.
 OWNER_MATRIX = (5, 5, 2)
 
 MODES = ("full", "cover")
