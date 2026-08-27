@@ -26,6 +26,11 @@ Five tools appear in the chat:
 | `stale_model_facts` | which claims are old enough to need re-checking |
 | `write_lipsync_prompt` | write a look prompt from your words plus the corpus |
 | `check_lipsync_prompt` | judge any prompt, from any source, against the contract |
+| `search_web` | **search the web — the research entry point** |
+| `fetch_url` | open one page or file, through the policy and never around it |
+| `blocked_hosts` | the allowlist request, built from refusals that really happened |
+| `reachable_hosts` | re-probe which hosts answer right now |
+| `probe_model_limit` | ask a vendor API for the impossible and read the real limit |
 
 Every tool returns `outcome` — `pass` / `fail` / `could not measure` — next to
 `checked`, `violations` and `unmeasured`. Zero violations out of zero checks is
@@ -359,3 +364,69 @@ The allowlist request. Six hosts, each blocking a specific question:
 
 That last row is worth leading with: the allowlist already contains the parent
 domain, so it is a narrowing, not a new grant.
+
+## `search_web` — the research entry point
+
+The owner's question was blunt and correct: every other assistant has a
+built-in search, so what is the problem here. The answer was nothing — nobody
+had looked for a backend this session is allowed to reach.
+
+**Measured 2026-08-27, 19 search endpoints probed:**
+
+```
+open    customsearch.googleapis.com   www.googleapis.com
+closed  api.search.brave.com  api.tavily.com  api.exa.ai  serpapi.com
+        google.serper.dev  duckduckgo.com (+ html/lite/api)
+        api.bing.microsoft.com  searx.be  api.perplexity.ai  api.you.com
+        api.openalex.org  api.semanticscholar.org  api.crossref.org
+```
+
+`api.github.com` answers but refuses its search paths — this session is bound
+to its configured repositories and returns *"Use repository-scoped
+endpoints"*. So GitHub is a fetch channel, not a search one.
+
+One backend is open, and one is enough. Google's Programmable Search JSON API
+came back with a proper API error rather than a tunnel refusal, and that is
+the whole difference: **it wants a key, not an allowlist change.**
+
+### Turning it on
+
+Two free values, into the environment:
+
+```
+GOOGLE_SEARCH_KEY   console.cloud.google.com → enable "Custom Search API" → create an API key
+GOOGLE_CSE_ID       programmablesearchengine.google.com → new engine →
+                    turn ON "Search the entire web" → copy the Search engine ID (cx)
+```
+
+Free tier is 100 queries a day. Unconfigured, the tool returns `could not
+measure` and prints exactly those two names and where to get them — it does not
+fail, because nothing was searched, and that differs from searching and
+finding nothing.
+
+### What search buys when half the web is still blocked
+
+Two separate things, and confusing them is how this gets over-promised:
+
+1. **A result carries information** — title, snippet, publisher, often a date.
+   That is a citable source by itself, and it is exactly the material this base
+   has been recording as `blog` tier all along.
+2. **A result points at a page**, and whether that page opens is a different
+   question per host. So every result comes back tagged `fetchable`, decided by
+   trying the host rather than guessing, and the note counts both:
+
+   > *8 result(s); 5 on hosts this session can open, 3 on hosts the policy
+   > refuses. A refused host still gives you its snippet and its URL to cite —
+   > it just cannot be read in full.*
+
+`site:` works even against a blocked domain: the snippets still come back.
+
+Searching does not widen the egress policy and this module does not pretend
+otherwise. It finds the door; `fetch_url` says whether it opens.
+
+### Verified
+
+13 tests, none touching the network. Mutation red in both directions: zero
+hits forced to `pass`, missing credentials ignored, the per-host probe cache
+removed, the page-size clamp removed — each turns the suite red, with a green
+control before and after.

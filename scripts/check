@@ -133,6 +133,7 @@ async def main() -> None:
         "probe_model_limit",
         "reachable_hosts",
         "record_model_fact",
+        "search_web",
         "stale_model_facts",
         "write_lipsync_prompt",
     ]

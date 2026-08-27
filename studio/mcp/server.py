@@ -33,7 +33,7 @@ from typing import Any
 from mcp.server.mcpserver import MCPServer
 
 from studio import knowledge
-from studio.mcp import advice, contract, fetch, probe
+from studio.mcp import advice, contract, fetch, probe, search
 from studio.mcp import lipsync_prompt as lp
 
 server = MCPServer(
@@ -171,6 +171,29 @@ def check_lipsync_prompt(prompt: str) -> str:
     shape would report `pass` for text the owner never approved.
     """
     return _json({**contract.gate(prompt), "bands": contract.BANDS})
+
+
+@server.tool()
+def search_web(query: str, site: str = "", count: int = 8) -> str:
+    """Search the web. This is the research entry point — start here.
+
+    Runs against Google's Programmable Search JSON API, the one search backend
+    this session's egress policy permits (measured 2026-08-27: Brave, Tavily,
+    Exa, SerpAPI, Serper, DuckDuckGo, Bing, SearxNG and Perplexity are all
+    refused; GitHub answers but blocks its search paths).
+
+    Every result says whether its host can also be OPENED. A host the policy
+    refuses still gives you a title, a snippet and a URL you can cite — you
+    just cannot read the page in full, and `fetch_url` will tell you the same.
+
+    Unconfigured, it returns `could not measure` with the two free credentials
+    it needs and where to get them. That is not a failure: nothing was
+    searched, which differs from searching and finding nothing.
+
+    :param site: restrict to one domain, e.g. "kling.ai" — useful even when
+        that domain is blocked, because the snippets still come back.
+    """
+    return _json(search.search(query, count=count, site=site))
 
 
 @server.tool()
