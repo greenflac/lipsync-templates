@@ -147,7 +147,7 @@ class Probe(unittest.TestCase):
         body = json.dumps({"code": 1201, "message": "duration must be 5 or 10"}).encode()
         error = urllib.error.HTTPError(self.URL, 400, "Bad Request", {}, None)  # type: ignore[arg-type]
         error.read = lambda n=-1: body  # type: ignore[method-assign]
-        with mock.patch.dict("os.environ", {"KLING_API_KEY": "test-key"}):
+        with mock.patch.dict("os.environ", {"KLING_KEY": "test-key"}, clear=True):
             with mock.patch.object(probe.urllib.request, "urlopen", side_effect=error):
                 out = probe.probe_limit(self.URL, "duration", 9_000_000)
         assert out["outcome"] == "pass", "a 400 carrying the limit is a success here"
@@ -158,17 +158,29 @@ class Probe(unittest.TestCase):
         body = json.dumps({"message": "nope"}).encode()
         error = urllib.error.HTTPError(self.URL, 400, "Bad Request", {}, None)  # type: ignore[arg-type]
         error.read = lambda n=-1: body  # type: ignore[method-assign]
-        with mock.patch.dict("os.environ", {"KLING_API_KEY": "SECRET-abc123"}):
+        with mock.patch.dict("os.environ", {"KLING_KEY": "SECRET-abc123"}, clear=True):
             with mock.patch.object(probe.urllib.request, "urlopen", side_effect=error):
                 out = probe.probe_limit(self.URL, "duration", 9_000_000)
         assert "SECRET-abc123" not in json.dumps(out, default=str)
-        assert out["key_from"] == "KLING_API_KEY", "which var, never the value"
+        assert out["key_from"] == "KLING_KEY", "which var, never the value"
+
+    def test_the_name_this_environment_actually_uses_is_searched_first(self) -> None:
+        # OBSERVED 2026-08-27: the table listed KLING_API_KEY and KLINGAI_API_KEY
+        # while the live variable was KLING_KEY, so the probe reported "no API
+        # key" with a working key beside it.
+        assert probe.KEY_ENV["api.klingai.com"][0] == "KLING_KEY"
+
+    def test_an_environment_with_no_key_at_all_is_could_not_measure(self) -> None:
+        with mock.patch.dict("os.environ", {}, clear=True):
+            out = probe.probe_limit(self.URL, "duration", 9_000_000)
+        assert out["outcome"] == "could not measure"
+        assert out["sent"] is None
 
     def test_a_denied_host_is_could_not_measure_and_is_recorded(self) -> None:
         with TemporaryDirectory() as tmp:
             denied = Path(tmp) / "denied.jsonl"
             with mock.patch.object(fetch, "DENIED_PATH", denied):
-                with mock.patch.dict("os.environ", {"KLING_API_KEY": "test-key"}):
+                with mock.patch.dict("os.environ", {"KLING_KEY": "test-key"}, clear=True):
                     error = urllib.error.URLError(DENIAL_TEXT)
                     with mock.patch.object(probe.urllib.request, "urlopen", side_effect=error):
                         out = probe.probe_limit(self.URL, "duration", 9_000_000)

@@ -47,17 +47,18 @@ from studio.selfrag import registry
 from studio.selfrag.facts import (
     DEFAULT_FACTS_PATH,
     STALE_AFTER_DAYS,
-    TIER_BENCHMARK,
-    TIER_BLOG,
-    TIER_PAPER,
-    TIER_VENDOR,
+    TIERS,
     FactStore,
     load_facts,
 )
 
 __all__ = ["advise", "record", "stale", "TIERS", "store_for"]
 
-TIERS = (TIER_VENDOR, TIER_BENCHMARK, TIER_PAPER, TIER_BLOG)
+# The ladder is IMPORTED, never restated. It was restated here until
+# 2026-08-27, and the copy went stale the moment `probe` was added to the real
+# one: `record` refused the tier its own module had just introduced, saying it
+# "is not one of vendor, benchmark, paper, blog". Two lists of the same thing
+# are one list and one bug waiting.
 
 
 def store_for(path: Path | None = None) -> FactStore:

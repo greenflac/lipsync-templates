@@ -63,8 +63,14 @@ __all__ = ["probe_limit", "ABSURD_MIN", "KEY_ENV"]
 ABSURD_MIN = 1_000_000
 
 #: Environment variables searched for a key, in order. Never an argument.
+#:
+#: `KLING_KEY` is first because that is what this environment actually sets.
+#: OBSERVED 2026-08-27: this table looked for `KLING_API_KEY` and `KLINGAI_API_KEY`
+#: only, while the live variable was `KLING_KEY` — so the probe reported "no API
+#: key" with a working key sitting beside it. A credential lookup that guesses
+#: names must list the names somebody used, not the names somebody expected.
 KEY_ENV: dict[str, tuple[str, ...]] = {
-    "api.klingai.com": ("KLING_API_KEY", "KLINGAI_API_KEY"),
+    "api.klingai.com": ("KLING_KEY", "KLING_API_KEY", "KLINGAI_API_KEY"),
     "api.fal.ai": ("FAL_KEY", "FAL_API_KEY"),
 }
 
