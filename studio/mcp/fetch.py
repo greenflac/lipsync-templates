@@ -231,19 +231,36 @@ def _read_denied() -> list[dict]:
 
 
 def fetch(
-    url: str, *, why_wanted: str = "", max_bytes: int = 400_000, incidental: bool = False
+    url: str,
+    *,
+    why_wanted: str = "",
+    max_bytes: int = 400_000,
+    incidental: bool = False,
+    headers: dict[str, str] | None = None,
+    data: bytes | None = None,
 ) -> dict:
-    """GET one URL through the configured proxy. Three outcomes, no fallbacks.
+    """Open one URL through the configured proxy. Three outcomes, no fallbacks.
 
     :param why_wanted: what this fetch was for. Carried into the denial record
         when the policy refuses, so the allowlist request explains itself.
     :param incidental: True when this host is being swept by a bulk probe
         rather than actually wanted; see `note_denial`. A refusal is recorded
         either way — this only keeps it out of the ask.
+    :param headers: extra request headers, merged over the User-Agent. For an
+        API that authenticates per request — an OAuth bearer token, an API key
+        header. The User-Agent stays unless a caller replaces it deliberately.
+    :param data: a request body. Its presence is what makes this a POST, which
+        is how an OAuth token endpoint is asked for a token.
     :returns: the house judging dict plus `host`, `status`, `text` and
         `denied` — True only when the refusal came from the egress policy.
 
     A denial is never retried and never re-routed. That is the whole contract.
+
+    `headers` and `data` exist so an authenticated API is reached THROUGH this
+    function rather than beside it. A second HTTP path would be a second place
+    where a policy refusal could be swallowed, retried or routed around, and a
+    second place where a refusal fails to reach the allowlist request — the
+    bookkeeping only works because there is one door.
     """
     target = str(url or "").strip()
     if not target.startswith(("http://", "https://")):
@@ -260,7 +277,9 @@ def fetch(
         }
 
     host = _host(target)
-    request = urllib.request.Request(target, headers={"User-Agent": _UA})
+    sent = {"User-Agent": _UA}
+    sent.update({str(k): str(v) for k, v in (headers or {}).items()})
+    request = urllib.request.Request(target, headers=sent, data=data)
     try:
         with urllib.request.urlopen(request, timeout=TIMEOUT_SECONDS) as response:
             body = response.read(max_bytes)
@@ -286,6 +305,16 @@ def fetch(
         # is reachable, which is what retires it from the ask — a 404 on a bare
         # root is a very common way for a granted host to greet us.
         note_open(target)
+        # The error BODY is kept. An API that refuses you usually says why in
+        # it, and throwing it away turns a diagnosable refusal into a bare
+        # number — MEASURED 2026-08-27, when oauth.reddit.com answered 403 and
+        # only the body distinguished "you are blocked" from "your token is
+        # wrong", which is the difference between a credential being worth
+        # obtaining and not.
+        try:
+            body = error.read(max_bytes).decode("utf-8", "replace")
+        except Exception:  # noqa: BLE001 - a body we cannot read is not a new failure
+            body = ""
         return {
             "outcome": FAIL,
             "checked": 1,
@@ -294,7 +323,7 @@ def fetch(
             "note": f"{host} answered {error.code} {error.reason}",
             "host": host,
             "status": error.code,
-            "text": "",
+            "text": body,
             "denied": False,
         }
     except urllib.error.URLError as error:

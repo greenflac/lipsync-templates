@@ -28,3 +28,4 @@ work/
 # decision and not one `git add -A` should be able to take.
 # See studio/mcp/civitai.py and studio/knowledge/PROVENANCE.md.
 studio/knowledge/civitai_prompts.jsonl
+studio/knowledge/reddit_workflows.jsonl

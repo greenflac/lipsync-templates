@@ -582,6 +582,49 @@ READINGS: tuple[dict[str, object], ...] = (
         ),
         "read_directly": True,
     },
+    # -- Reddit: reachable, authenticated-read blocked ----------------------
+    {
+        "model": "reddit-api",
+        "attribute": "authenticated_read_reachable",
+        "value": "no",
+        "source_url": "https://oauth.reddit.com/r/comfyui/hot",
+        "tier": "probe",
+        "stated_on": READ_ON,
+        "note": (
+            "MEASURED, and it is the fact that decides whether a Reddit app is worth "
+            "registering. The token endpoint at www.reddit.com/api/v1/access_token "
+            "behaves like an API: a wrong credential comes back "
+            '401 {"message": "Unauthorized", "error": 401}. But '
+            "oauth.reddit.com — the host every authenticated read goes to — answers "
+            "403 with Reddit's 'Blocked' page, IDENTICALLY with and without an "
+            "Authorization header. That is an edge block on this caller decided "
+            "before any credential is examined. So an app id and secret would "
+            "probably NOT make this work from here. Strong evidence, not proof: a "
+            "VALID token has never been presented. The egress policy is not the "
+            "obstacle — it lets reddit.com through. Not routed around."
+        ),
+        "read_directly": True,
+    },
+    {
+        "model": "reddit-api",
+        "attribute": "licence",
+        "value": "unreadable from here",
+        "source_url": "https://www.reddit.com/api/v1/access_token",
+        "tier": "probe",
+        "stated_on": READ_ON,
+        "note": (
+            "The owner obtained legal clearance on 2026-08-27 and there is no "
+            "outstanding legal risk, so the licence question is closed as a "
+            "decision. What remains UNVERIFIED (rule C4) is the TEXT: the Data API "
+            "terms live on www.redditinc.com and support.reddithelp.com, both "
+            "refused by this environment's egress policy, so no rate limit or "
+            "condition in this package is quoted from a page anybody opened. The "
+            "figure of 100 queries per minute that circulates for the free tier is "
+            "relayed, not read, and studio/mcp/reddit.py picks its interval to sit "
+            "under it rather than treating it as published."
+        ),
+        "read_directly": False,
+    },
     # -- opened, and the reading could NOT settle it: three outcomes --------
     {
         "model": "*",
