@@ -71,6 +71,12 @@ __all__ = [
 #: The rungs decided by whose page it is, and therefore never taken on trust
 #: from a caller. Everything else in `TIERS` describes how the fact was
 #: obtained, which the URL cannot know.
+#: CHOSEN. How many class-level findings ride along with a model's answer.
+#: 170 of them stand after the 2026-08-27 verification pass; a caller reading
+#: an answer needs the strongest few and the count of the rest, not all of
+#: them. Not measured — measure it when somebody reports the answer is thin.
+CLASS_FINDINGS_SHOWN = 12
+
 IDENTITY_TIERS: tuple[str, ...] = (TIER_VENDOR, TIER_PORTAL, TIER_BLOG)
 
 # The ladder is IMPORTED, never restated. It was restated here until
@@ -83,6 +89,27 @@ IDENTITY_TIERS: tuple[str, ...] = (TIER_VENDOR, TIER_PORTAL, TIER_BLOG)
 def store_for(path: Path | None = None) -> FactStore:
     """A fact store read fresh from disk, so a `record` is visible immediately."""
     return FactStore(load_facts(path or DEFAULT_FACTS_PATH))
+
+
+def _spread_by_attribute(facts: list[Fact]) -> list[Fact]:
+    """Round-robin across attributes, keeping each attribute's own order.
+
+    Sorting by tier alone hands the caller twelve `metric_blind_spot` rows and
+    no failure mode, every time, for every model — OBSERVED 2026-08-27: the
+    first twelve of 170 came back as one tier and two attributes, so the cap
+    was choosing by alphabet rather than by usefulness. Taking one of each in
+    turn means the twelve that are shown cover what there is.
+    """
+    buckets: dict[str, list[Fact]] = {}
+    for fact in facts:
+        buckets.setdefault(fact.attribute, []).append(fact)
+    out: list[Fact] = []
+    while buckets:
+        for attribute in list(buckets):
+            out.append(buckets[attribute].pop(0))
+            if not buckets[attribute]:
+                del buckets[attribute]
+    return out
 
 
 def advise(model: str, attribute: str = "", *, path: Path | None = None) -> dict:
@@ -148,6 +175,12 @@ def advise(model: str, attribute: str = "", *, path: Path | None = None) -> dict
     # Separate rather than merged, because "said about the class" and
     # "measured on this model" are different claims and a reader has to be
     # able to tell them apart. They also never vote in a contradiction.
+    every_class_fact = _spread_by_attribute(
+        sorted(
+            store.class_claims(name),
+            key=lambda f: (TIERS.index(f.tier) if f.tier in TIERS else len(TIERS), f.attribute),
+        )
+    )
     class_findings = [
         {
             "scope": fact.model,
@@ -158,8 +191,18 @@ def advise(model: str, attribute: str = "", *, path: Path | None = None) -> dict
             "tier": fact.tier,
             "stated_on": fact.stated_on,
         }
-        for fact in store.class_claims(name)
+        for fact in every_class_fact[:CLASS_FINDINGS_SHOWN]
     ]
+    # The denominator travels with the list (rule R2). 170 class facts stand
+    # for most models after the 2026-08-27 verification pass, and returning
+    # all of them would bury the model's own answer under statements about the
+    # field. Strongest tier first, and the count of what was left out — a
+    # silent truncation reads as "that is all there is".
+    class_findings_note = (
+        f"{len(class_findings)} of {len(every_class_fact)} findings about the class, "
+        "strongest tier first. These were said about the field or about a vendor's "
+        "line, NOT measured on this model."
+    )
 
     if live["card"] is None and not known_here:
         return {
@@ -180,6 +223,8 @@ def advise(model: str, attribute: str = "", *, path: Path | None = None) -> dict
             # `checked` at 0, so nothing reads as having been verified.
             "failure_modes": [],
             "class_findings": class_findings,
+            "class_findings_total": len(every_class_fact),
+            "class_findings_note": class_findings_note,
             "contested": [],
         }
 
@@ -195,6 +240,8 @@ def advise(model: str, attribute: str = "", *, path: Path | None = None) -> dict
             "claims": claims,
             "failure_modes": failures,
             "class_findings": class_findings,
+            "class_findings_total": len(every_class_fact),
+            "class_findings_note": class_findings_note,
             "contested": contested,
         }
 
@@ -213,6 +260,8 @@ def advise(model: str, attribute: str = "", *, path: Path | None = None) -> dict
             "claims": claims,
             "failure_modes": failures,
             "class_findings": class_findings,
+            "class_findings_total": len(every_class_fact),
+            "class_findings_note": class_findings_note,
             "contested": contested,
         }
 
@@ -230,6 +279,8 @@ def advise(model: str, attribute: str = "", *, path: Path | None = None) -> dict
             "claims": {},
             "failure_modes": failures,
             "class_findings": class_findings,
+            "class_findings_total": len(every_class_fact),
+            "class_findings_note": class_findings_note,
             "contested": [],
         }
 
@@ -248,6 +299,8 @@ def advise(model: str, attribute: str = "", *, path: Path | None = None) -> dict
             "claims": claims,
             "failure_modes": failures,
             "class_findings": class_findings,
+            "class_findings_total": len(every_class_fact),
+            "class_findings_note": class_findings_note,
             "contested": [],
         }
 
@@ -263,6 +316,8 @@ def advise(model: str, attribute: str = "", *, path: Path | None = None) -> dict
         "claims": claims,
         "failure_modes": failures,
         "class_findings": class_findings,
+        "class_findings_total": len(every_class_fact),
+        "class_findings_note": class_findings_note,
         "contested": [],
     }
 

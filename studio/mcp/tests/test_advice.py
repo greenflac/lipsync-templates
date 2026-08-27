@@ -565,5 +565,83 @@ class Consultant(unittest.TestCase):
         assert claims["claims"][0]["sources"][0]["read_directly"] is True
 
 
+class ClassFindingsRideAlong(unittest.TestCase):
+    """What is known about the field reaches a caller asking about a model."""
+
+    def setUp(self) -> None:
+        self._dir = tempfile.TemporaryDirectory()
+        self.addCleanup(self._dir.cleanup)
+        self.tmp = Path(self._dir.name)
+        patcher = mock.patch.dict(source_hosts.VENDOR_SOURCES, TEST_VENDOR_SOURCES, clear=False)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def _base(self, extra: list[dict]) -> Path:
+        path = self.tmp / "facts.jsonl"
+        _write(path, [_fact()] + extra)
+        return path
+
+    def test_the_cap_prints_its_denominator_and_never_hides_the_rest(self) -> None:
+        """A silent truncation reads as "that is all there is" (rule R2)."""
+        many = [
+            _fact(
+                model="*",
+                attribute="metric_blind_spot",
+                value=f"blind spot {n}",
+                source_url=f"https://arxiv.org/abs/{n}",
+                tier="paper",
+            )
+            for n in range(30)
+        ]
+        out = advice.advise("test-model", path=self._base(many))
+        assert len(out["class_findings"]) == advice.CLASS_FINDINGS_SHOWN
+        assert out["class_findings_total"] == 30
+        assert "12 of 30" in out["class_findings_note"]
+        assert "NOT measured on this model" in out["class_findings_note"]
+
+    def test_the_shown_ones_cover_the_attributes_rather_than_the_alphabet(self) -> None:
+        """Found by observation: sorting by tier alone returned twelve rows of
+        ONE attribute out of 170, so the cap was choosing by alphabet. A
+        caller who gets twelve metric caveats and no failure mode has been
+        told less than a caller who gets one of each."""
+        rows = []
+        for attribute in ("failure_mode", "metric_blind_spot", "degrades_when"):
+            rows += [
+                _fact(
+                    model="*",
+                    attribute=attribute,
+                    value=f"{attribute} {n}",
+                    source_url=f"https://arxiv.org/abs/{attribute}{n}",
+                    tier="paper",
+                )
+                for n in range(20)
+            ]
+        out = advice.advise("test-model", path=self._base(rows))
+        shown = {item["attribute"] for item in out["class_findings"]}
+        assert shown == {"failure_mode", "metric_blind_spot", "degrades_when"}, shown
+
+    def test_a_class_finding_is_not_folded_into_the_model_s_own_claims(self) -> None:
+        """The control. If it were merged, a statement about the field would
+        read as a measurement of this model and could make it contested."""
+        out = advice.advise(
+            "test-model",
+            path=self._base(
+                [
+                    _fact(
+                        model="*",
+                        attribute="max_seconds",
+                        value="99",
+                        source_url="https://arxiv.org/abs/x",
+                        tier="paper",
+                    )
+                ]
+            ),
+        )
+        assert out["claims"]["max_seconds"]["values"] == ["10"]
+        assert out["contested"] == []
+        assert out["class_findings"][0]["value"] == "99"
+        assert out["class_findings"][0]["scope"] == "*"
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -144,6 +144,10 @@ echo "== harvest still applied (applicability)"
 python scripts/ingest_harvest.py --check \
   --path studio/knowledge/harvest_2026-08-27_applicability.jsonl
 
+echo "== verified class findings still applied"
+python scripts/ingest_harvest.py --check \
+  --path studio/knowledge/class_findings_2026-08-27_verified.jsonl
+
 echo "== mcp server handshake"
 python - <<'PY'
 import asyncio, sys

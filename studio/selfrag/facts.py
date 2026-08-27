@@ -194,6 +194,20 @@ MULTI_VALUED: frozenset[str] = frozenset(
         # which is the kind nobody may flatten.
         "limitation",
         "degrades_when",
+        # Added 2026-08-27 in the same pass, and this is a CORRECTION of a
+        # judgement made an hour earlier in this same file. Both were kept out
+        # on the argument that "holds a face for six seconds" against "loses
+        # it at three" is a real disagreement. Then 155 verified rows landed
+        # and the data settled it: every one of the six contested
+        # `holds_identity` pairs is a list — hunyuanvideo carries two VBench-2.0
+        # readings that agree to the decimal, sora-2 two paraphrases of one
+        # finding — and every `benchmark_score` pair names a DIFFERENT
+        # benchmark. A model has one maximum duration and many scores.
+        #
+        # The argument was not wrong in principle; it was made about data
+        # nobody had looked at yet.
+        "holds_identity",
+        "benchmark_score",
         "metric_blind_spot",
         "best_for",
         "artifact_taxonomy",

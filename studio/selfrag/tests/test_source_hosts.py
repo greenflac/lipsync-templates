@@ -123,7 +123,7 @@ class TheTableAgainstTheRealBase(unittest.TestCase):
         # lines would count corrections twice and count retracted claims as
         # standing — measuring the file's history rather than what it asserts.
         facts = load_facts(DEFAULT_FACTS_PATH)
-        assert len(facts) == 710, "the measured base; update the literals below with it"
+        assert len(facts) == 865, "the measured base; update the literals below with it"
 
         seen = {VENDOR: 0, PORTAL: 0, BLOG: 0}
         for fact in facts:
@@ -148,9 +148,15 @@ class TheTableAgainstTheRealBase(unittest.TestCase):
         # -node READMEs the harvester had labelled `portal`, and a third
         # party's node repository is not a platform running the model. They
         # were relabelled visibly rather than promoted to make them fit.
-        assert seen[VENDOR] == 398, seen
-        assert seen[PORTAL] == 194, seen
-        assert seen[BLOG] == 118, seen
+        #
+        # 865 rows after the class-finding verification pass added 155 more.
+        # `blog` at 269 is mostly arXiv: a paper is `paper` on the METHOD
+        # ladder, and this test asks a different question — whose page is the
+        # URL — where arxiv.org belongs to nobody in particular. The two
+        # ladders answering differently is the design, not a drift.
+        assert seen[VENDOR] == 400, seen
+        assert seen[PORTAL] == 196, seen
+        assert seen[BLOG] == 269, seen
 
     def test_no_rung_is_empty_which_is_what_a_useless_table_looks_like(self) -> None:
         with mock.patch.dict(S.VENDOR_SOURCES, {}, clear=True):

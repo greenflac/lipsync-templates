@@ -98,10 +98,20 @@ class Facts(unittest.TestCase):
                 fact("k", "limitation", "no text control", TIER_PAPER),
                 fact("k", "degrades_when", "the prompt runs long", TIER_PAPER),
                 fact("k", "degrades_when", "the take passes six seconds", TIER_PAPER),
+                # These two joined the list an hour after the other two, and
+                # only because the data said so: every contested
+                # `holds_identity` pair turned out to be two readings that
+                # agree, and every `benchmark_score` pair names a DIFFERENT
+                # benchmark. A model has one maximum duration and many scores.
+                fact("k", "benchmark_score", "VBench-2.0 Human Identity 75.67%", TIER_PAPER),
+                fact("k", "benchmark_score", "GenEval Position 0.22", TIER_PAPER),
+                fact("k", "holds_identity", "the face survives a reworded edit", TIER_PAPER),
+                fact("k", "holds_identity", "voice identity does not persist", TIER_PAPER),
             ]
         )
-        self.assertEqual(listed.claims("k", "limitation")["outcome"], PASS)
-        self.assertEqual(listed.claims("k", "degrades_when")["outcome"], PASS)
+        for attribute in ("limitation", "degrades_when", "benchmark_score", "holds_identity"):
+            with self.subTest(attribute=attribute):
+                self.assertEqual(listed.claims("k", attribute)["outcome"], PASS)
         self.assertEqual(listed.contested(), [])
 
         disputed = FactStore(
