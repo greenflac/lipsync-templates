@@ -23,6 +23,7 @@ Run:  python scripts/allowlist_request.py            # probe and render
 from __future__ import annotations
 
 import sys
+from collections.abc import Sequence
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -248,15 +249,24 @@ WILDCARD_OVERRIDES: dict[str, tuple[tuple[str, ...], str]] = {
 }
 
 
-def wildcard_form() -> tuple[list[str], list[str]]:
+def wildcard_form(hosts: Sequence[str] | None = None) -> tuple[list[str], list[str]]:
     """The request as wildcards: (the lines to paste, the notes about them).
 
     Returned as two lists because the notes must NOT end up inside the code
     fence — OBSERVED 2026-08-27, they did, and a block that cannot be pasted
     without editing is a block nobody pastes correctly.
+
+    :param hosts: the hosts STILL refused, from `fetch.wanted()`. `WANTED` is
+        the seed list this generator probes, not the request: once the owner
+        grants a domain it stays in the seed list forever, so building the
+        paste block from it asked for fourteen already-granted domains beside
+        a header saying sixteen hosts — OBSERVED 2026-08-27, the day after the
+        grant landed, and the two halves of one document disagreed. Defaults to
+        `WANTED` only so a caller with nothing measured still gets the seed.
     """
+    seed = [host for _group, host, _why in WANTED] if hosts is None else list(hosts)
     by_domain: dict[str, list[str]] = {}
-    for _group, host, _why in WANTED:
+    for host in seed:
         by_domain.setdefault(registrable(host), []).append(host)
 
     lines: list[str] = []
@@ -290,11 +300,16 @@ def main() -> int:
     # Measured, not remembered: a request that lists a host which is already
     # open wastes the reader's time and makes the rest look unchecked.
     print("\nre-measuring what is already open")
-    live = fetch.reachability(ALREADY_OPEN)
+    # The union of the hosts this generator has always known to be open and
+    # every host recorded as granted since. ALREADY_OPEN alone went stale the
+    # moment 21 hosts were granted: the document then said "15 of 15 still
+    # answer" beside a proxy that was answering 41.
+    known_open = sorted(set(ALREADY_OPEN) | set(asked.get("granted", [])))
+    live = fetch.reachability(known_open)
     open_now = sorted(live.get("open", []))
     shut_now = sorted(live.get("closed", []))
 
-    wildcard_lines, wildcard_notes = wildcard_form()
+    wildcard_lines, wildcard_notes = wildcard_form(sorted(by_host))
 
     if not by_host:
         # The request was answered. Rendering the paste block anyway would ask
@@ -358,22 +373,24 @@ def main() -> int:
         ),
         *wildcard_notes,
         *([""] if wildcard_notes else []),
-        "**Prefer this form.** MEASURED 2026-08-27, and this is the argument:",
+        "**Prefer this form.** The argument for it was made on 2026-08-27, "
+        "the grant was given in that form, and it is now MEASURED rather than "
+        "argued:",
         "",
-        "- `cloud.google.com` is OPEN while `docs.cloud.google.com` is REFUSED. "
-        "A subdomain of an already-granted host was not covered by that grant, "
-        "so the whitelist is matching exact hosts today.",
-        "- Probing sibling subdomains of the SAME vendors already in this "
-        "request found **23 more, every one refused, none of them on the "
-        "exact-host list below** — `api.bfl.ai`, `app.klingai.com`, "
-        "`docs.elevenlabs.io`, `seed.bytedance.com`, `developers.reddit.com`, "
-        "`www.civitai.com` and so on. Each would be another round of this.",
-        "- The sharpest case: the exact list asks for `arxiv.org`, the "
-        "human-facing site. arXiv's API lives on `export.arxiv.org` and arXiv "
-        "asks programmatic users to go there instead. Granting the exact list "
-        "would give us the pages we should not be scraping and leave the "
-        "endpoint we should be using shut. (UNVERIFIED: the hostname is from a "
-        "grounded search; arxiv.org is refused, so nobody here read the manual.)",
+        "- 21 hosts were asked for as wildcards over 14 registrable domains. "
+        "**41 hosts answered afterwards** — the 21, plus 20 sibling subdomains "
+        "nobody had listed: `api.bfl.ai`, `app.klingai.com`, "
+        "`docs.elevenlabs.io`, `developers.reddit.com`, `www.civitai.com`, "
+        "`docs.dev.runwayml.com` and the rest. Every one of those would have "
+        "been another round of this document.",
+        "- The case that made the argument came true: the exact list asked for "
+        "`arxiv.org`, the human-facing site, while arXiv's API is on "
+        "`export.arxiv.org`. The wildcard opened both; the exact grant would "
+        "have left the endpoint we actually use shut. It is now read from.",
+        "- One thing the grant did NOT do: some apexes stayed shut while their "
+        "subdomains opened — `runwayml.com` is refused while "
+        "`docs.dev.runwayml.com` under it answers. So both lines per domain, "
+        "`*.domain` and the bare apex, are still the right ask.",
         "",
         "Vendors also spread across more than one registrable domain — Kling "
         "uses `kling.ai`, `klingai.com` and `kuaishou.com` — so a wildcard is "
@@ -393,7 +410,23 @@ def main() -> int:
         "## Already open — do not add these",
         "",
         f"Re-measured when this file was generated: {len(open_now)} of "
-        f"{len(ALREADY_OPEN)} still answer.",
+        f"{len(known_open)} still answer"
+        # Named, not counted, and NOT claimed to be back in the ask unless it
+        # is: a granted host can fail one probe transiently, and a sentence
+        # saying "back in the ask" beside a list that does not contain it is
+        # the prose-versus-list mismatch this file has already produced twice.
+        + (
+            "; "
+            + ", ".join(f"`{h}`" for h in shut_now)
+            + (" did not answer this run" if len(shut_now) == 1 else " did not answer this run")
+            + (
+                " and is in the ask above."
+                if set(shut_now) <= set(by_host)
+                else " — re-run to see whether that was transient."
+            )
+            if shut_now
+            else "."
+        ),
         "",
         "```",
         *open_now,

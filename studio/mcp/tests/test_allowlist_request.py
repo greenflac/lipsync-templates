@@ -74,6 +74,32 @@ class TheBlockAHumanPastes(unittest.TestCase):
             covered = host in exact or any(host.endswith(s) for s in suffixes)
             assert covered, f"{host} is asked for but nothing in the block covers it"
 
+    def test_the_block_is_built_from_the_hosts_still_refused_not_the_seed_list(self) -> None:
+        """OBSERVED 2026-08-27, the day after the grant landed.
+
+        `WANTED` is the seed list the generator probes and a host stays in it
+        forever. The block was built from it, so once 21 hosts were granted the
+        document offered fourteen already-granted domains under a header saying
+        sixteen hosts — the two halves of one page disagreeing, which is the
+        third time this generator has produced that shape.
+
+        The test above still checks the seed default. This one checks that a
+        measured ask REPLACES it, and the assertion runs both ways: what is
+        asked for is covered, and what is not asked for is absent.
+        """
+        lines, _ = gen.wildcard_form(["www.atlascloud.ai", "gaga.art"])
+        assert sorted(lines) == ["*.atlascloud.ai", "*.gaga.art", "atlascloud.ai", "gaga.art"]
+        assert "*.civitai.com" not in lines, "a granted domain leaked in from the seed list"
+        assert "*.arxiv.org" not in lines, "a granted domain leaked in from the seed list"
+
+    def test_an_empty_ask_renders_an_empty_block_rather_than_the_seed(self) -> None:
+        """Nothing left to ask for must not silently print the original request:
+        asking for access already granted is the failure this file exists to
+        avoid, and it is worse than saying nothing."""
+        lines, notes = gen.wildcard_form([])
+        assert lines == []
+        assert notes == []
+
     def test_the_block_would_not_cover_a_host_of_a_vendor_we_never_asked_about(self) -> None:
         """The negative control: a block that covers everything measures nothing."""
         lines, _ = gen.wildcard_form()
