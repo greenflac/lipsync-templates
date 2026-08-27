@@ -500,6 +500,58 @@ READINGS: tuple[dict[str, object], ...] = (
         ),
         "read_directly": True,
     },
+    # -- Civitai: the licence checked BEFORE the collector (rule C5) --------
+    #
+    # Two sessions carried the plan "civitai.com/api/v1/images returns prompts
+    # WITH the results they produced -- the pairing this project has never
+    # had". Both halves of that plan are now measured, and both fail.
+    {
+        "model": "civitai-api",
+        "attribute": "licence",
+        "value": (
+            "personal, non-commercial use only; automated access only through the "
+            "public API with your own credentials, or written authorisation"
+        ),
+        "source_url": "https://civitai.com/content/tos",
+        "tier": "portal",
+        "stated_on": READ_ON,
+        "note": (
+            "READ, first-hand, replacing the UNVERIFIED grounded summary the "
+            "previous session recorded. ToS 6.1: 'Civitai grants you, SOLELY FOR "
+            "YOUR PERSONAL, NON-COMMERCIAL USE, a limited, non-exclusive, "
+            "non-transferable, non-sublicensable, revocable license to ... access "
+            "and use the Service.' ToS 11.4 forbids spiders, robots, crawlers and "
+            "data mining tools 'except (a) through interfaces we expressly provide "
+            "for automated access, such as our public API ... accessed with your own "
+            "valid credentials and within any applicable rate limits ... or (c) as "
+            "we otherwise authorize in writing.' So the CHANNEL is sanctioned and "
+            "the USE is not: this repository is a commercial service. Separately, "
+            "per-upload model licences (Anima, LTX-derived, Cosmos-derived) carry "
+            "their own commercial restrictions on top. Written authorisation is the "
+            "clause to ask under. NO COLLECTOR WAS WRITTEN — owner's decision."
+        ),
+        "read_directly": True,
+    },
+    {
+        "model": "civitai-api",
+        "attribute": "prompt_metadata_exposed",
+        "value": "no",
+        "source_url": "https://civitai.com/api/v1/images",
+        "tier": "probe",
+        "stated_on": READ_ON,
+        "note": (
+            "MEASURED, unauthenticated: 300 images sampled across three pages of "
+            "/api/v1/images, and `meta` was null on 300 of 300 — no prompt, no "
+            "sampler, no seed. Also null for ?postId=, ?sort=Newest and "
+            "?sort=Most Reactions. The rows carry url, hash, dimensions, "
+            "modelVersionIds, stats and username, and nothing about how the image "
+            "was made. COULD NOT MEASURE with an API key: this environment holds no "
+            "Civitai credential, and the metadata may be gated behind one. So the "
+            "prompt-plus-result pairing this plan was built on is not there for an "
+            "anonymous caller, whatever the licence turns out to allow."
+        ),
+        "read_directly": True,
+    },
     # -- opened, and the reading could NOT settle it: three outcomes --------
     {
         "model": "*",
