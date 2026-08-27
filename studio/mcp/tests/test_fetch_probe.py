@@ -172,6 +172,66 @@ class WebClient(unittest.TestCase):
             "append-only: the request can be read back as it changed"
         )
 
+    def test_a_granted_host_retires_itself_from_the_ask(self) -> None:
+        """OBSERVED 2026-08-27, the moment the owner granted 21 hosts.
+
+        The request is assembled from refusals that happened, and a refusal
+        never expires — so the generated document went on asking for all 21.
+        A request that asks for access already granted is worse than none: it
+        is the reason the next one does not get read.
+        """
+        self._deny("https://arxiv.org/abs/1", "ten paper facts, none read", incidental=False)
+        assert [r["host"] for r in fetch.wanted()["hosts"]] == ["arxiv.org"]
+
+        with mock.patch.object(fetch.urllib.request, "urlopen", return_value=_Response(b"hello")):
+            fetch.fetch("https://arxiv.org/abs/1")
+
+        asked = fetch.wanted()
+        assert asked["hosts"] == [], "it answers now; it is not asked for"
+        assert asked["granted"] == ["arxiv.org"], "and the grant is reported, not silent"
+        assert asked["outcome"] == "pass"
+        assert "granted" in asked["note"]
+
+    def test_a_host_that_answers_with_an_http_error_still_counts_as_granted(self) -> None:
+        """A 404 on a bare root is a very common way for a granted host to greet us."""
+        self._deny("https://kling.ai/", "contested max_seconds", incidental=False)
+        error = urllib.error.HTTPError("https://kling.ai/", 404, "Not Found", {}, None)  # type: ignore[arg-type]
+        with mock.patch.object(fetch.urllib.request, "urlopen", side_effect=error):
+            fetch.fetch("https://kling.ai/")
+        assert fetch.wanted()["granted"] == ["kling.ai"]
+
+    def test_a_grant_taken_away_puts_the_host_back_in_the_ask(self) -> None:
+        self._deny("https://arxiv.org/", "ten paper facts", incidental=False)
+        with mock.patch.object(fetch.urllib.request, "urlopen", return_value=_Response(b"hi")):
+            fetch.fetch("https://arxiv.org/")
+        assert fetch.wanted()["hosts"] == []
+
+        # Deliberately the SAME reason as the first refusal. With a different
+        # one the restatement rule would write the row and this test would pass
+        # without the reopening rule existing at all — which is what an earlier
+        # version of it did.
+        self._deny("https://arxiv.org/", "ten paper facts", incidental=False)
+        asked = fetch.wanted()
+        assert [r["host"] for r in asked["hosts"]] == ["arxiv.org"], (
+            "a grant that went away is a fresh refusal, not a stale row"
+        )
+        assert asked["granted"] == []
+
+    def test_answering_repeatedly_writes_one_row_not_one_per_fetch(self) -> None:
+        self._deny("https://arxiv.org/", "a reason", incidental=False)
+        with mock.patch.object(fetch.urllib.request, "urlopen", return_value=_Response(b"hi")):
+            fetch.fetch("https://arxiv.org/")
+            size = fetch.DENIED_PATH.read_text(encoding="utf-8")
+            for _ in range(3):
+                fetch.fetch("https://arxiv.org/x")
+        assert fetch.DENIED_PATH.read_text(encoding="utf-8") == size, "only transitions"
+
+    def test_a_host_nobody_ever_asked_about_does_not_get_a_row_for_answering(self) -> None:
+        """The negative control: this file is the ask, not a traffic log."""
+        with mock.patch.object(fetch.urllib.request, "urlopen", return_value=_Response(b"hi")):
+            fetch.fetch("https://pypi.org/simple/")
+        assert not fetch.DENIED_PATH.exists() or fetch.DENIED_PATH.read_text() == ""
+
     def test_a_map_refresh_does_not_fill_the_ask_with_hosts_nobody_wanted(self) -> None:
         """Second place this shape appeared, 2026-08-27.
 

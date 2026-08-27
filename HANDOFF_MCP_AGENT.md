@@ -634,3 +634,80 @@ from the ask by itself; whatever is still listed is still shut. If the wildcard
 form was accepted, expect `export.arxiv.org`, `api.bfl.ai` and the other 21
 siblings to be open too — probe before assuming, `reachable_hosts` takes a
 comma-separated list now.
+
+---
+
+# Session 2026-08-27 — the grant landed, and the request closed itself
+
+The owner added the wildcard list to the environment's whitelist. **It took
+effect live, with no container restart** — unlike the Gemini key, which needed
+one.
+
+## Measured immediately
+
+**41 hosts now answer.** All 21 that were asked for, plus **20 sibling
+subdomains that were never asked for individually** — which is the wildcard
+argument coming true:
+
+```
+api.bfl.ai  api.dev.runwayml.com  api.elevenlabs.io  api.openai.com
+api.wavespeed.ai  app.klingai.com  bfl.ai  byteplus.com  cdn.openai.com
+console.byteplus.com  dashboard.bfl.ai  developers.reddit.com
+docs.dev.runwayml.com  docs.elevenlabs.io  docs.fal.ai  export.arxiv.org
+openai.com  orchestration.civitai.com  static.arxiv.org  www.civitai.com
+```
+
+`export.arxiv.org` — the arXiv API host, which the exact-host list would have
+missed — is open. So is every host named in the argument for wildcards.
+
+**Still refused, 15**, and only two are interesting: the apex `runwayml.com` is
+shut while `help.runwayml.com` and `docs.dev.runwayml.com` under it are open,
+so wildcards were granted and some apexes were not. `wan.video`,
+`seed.bytedance.com`, `tongyi.aliyun.com` and `deepmind.google` were never in
+the ask. The remaining ten are incidental sweep hosts nobody wanted.
+
+`docs/ALLOWLIST_REQUEST.md` now reads **CLOSED**.
+
+## The defect the grant exposed, within a minute of it landing
+
+The request is assembled from refusals that happened, and **a refusal never
+expired**. The moment 21 hosts were granted, the generator went on asking for
+all 21 — and the docstring I had written an hour earlier claimed "re-run it and
+a host that has since opened drops off by itself", which was simply false.
+
+A request that asks for access already granted is worse than no request: it is
+the reason the next one does not get read.
+
+Fixed: `denied_hosts.jsonl` is now a log of STATE CHANGES. Rows carry
+`state: "refused" | "open"` (absent means refused — every earlier row was one),
+`note_open()` writes one row the first time a refused host answers, and
+`wanted()` reads the latest row per host. `fetch()` calls it on any successful
+response INCLUDING an HTTPError, because a 404 on a bare root is a very common
+way for a granted host to greet us — so the ask retires itself through ordinary
+use, not only when somebody re-runs the generator. A grant withdrawn puts the
+host back. `wanted()` distinguishes three ways of having nothing to ask for:
+all granted (`pass`), granted plus incidental leftovers, and nobody ever asked.
+
+5 mutations both ways. Two rounds were needed and both misses were the same
+shape: **a test passing through a path other than the one it named.** The
+revocation test was satisfied by the restatement rule because the reasons
+differed; given identical reasons it was satisfied by the restatement rule
+again, because an `open` row carries no reason and reset "the latest reason",
+making the reopening rule dead code. `latest_reason` now considers refusal rows
+only, the reopening rule is load-bearing, and the mutation goes red.
+
+## Where the project actually stands now
+
+The premise that has shaped every session so far — "the vendors' docs are
+unreachable, so everything is second-hand" — **is no longer true.** As of now:
+
+- 25 of 47 facts are marked `read_directly=false` and 21 `None`. Nearly all of
+  those hosts are now open, so those facts can be replaced by ones somebody
+  actually read.
+- 10 paper-tier facts cite `arxiv.org` and none was read. `export.arxiv.org` is
+  the API and it answers.
+- `civitai.com/api/v1/images` answers. That is prompts WITH the results they
+  produced — the pairing this project has never had.
+- Reddit answers, but its licence question is untouched and unchanged: the free
+  Data API tier reportedly bars commercial use. **Measured reachability does not
+  settle a licence.**

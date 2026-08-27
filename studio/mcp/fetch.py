@@ -108,6 +108,7 @@ def note_denial(url: str, reason: str, why_wanted: str = "", *, incidental: bool
         "reason": reason,
         "why_wanted": why_wanted,
         "incidental": bool(incidental),
+        "state": STATE_REFUSED,
         "first_seen": date.today().isoformat(),
     }
     DENIED_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -126,10 +127,32 @@ def note_denial(url: str, reason: str, why_wanted: str = "", *, incidental: bool
     #            Keeping only the first reason freezes the request at whatever
     #            the base looked like the day the host was first refused.
     rows = _read_denied()
-    known = {r.get("host"): bool(r.get("incidental", False)) for r in rows}
+    known = {
+        r.get("host"): bool(r.get("incidental", False))
+        for r in rows
+        if str(r.get("state", STATE_REFUSED)) == STATE_REFUSED
+    }
+    # A host recorded as open and refused again is a fresh refusal, not a
+    # restatement: the grant went away and that is worth a new row.
+    reopened = {r.get("host") for r in rows if str(r.get("state", STATE_REFUSED)) == STATE_OPEN}
+    for row_host in reopened:
+        latest_state = STATE_OPEN
+        for r in rows:
+            if r.get("host") == row_host:
+                latest_state = str(r.get("state", STATE_REFUSED))
+        if latest_state == STATE_OPEN:
+            known.pop(row_host, None)
+    # The last reason we gave for ASKING. An `open` row carries no reason, so
+    # letting it reset this made the restatement rule fire on a re-refusal and
+    # quietly do the reopening rule's job — which left that rule dead code that
+    # no test could distinguish from a working one (OBSERVED 2026-08-27).
     latest_reason = ""
     for previous in rows:
-        if previous.get("host") == host and not previous.get("incidental", False):
+        if (
+            previous.get("host") == host
+            and not previous.get("incidental", False)
+            and str(previous.get("state", STATE_REFUSED)) == STATE_REFUSED
+        ):
             latest_reason = str(previous.get("why_wanted", ""))
     fresh = host not in known
     promoted = not fresh and known[host] and not incidental
@@ -138,6 +161,58 @@ def note_denial(url: str, reason: str, why_wanted: str = "", *, incidental: bool
         with DENIED_PATH.open("a", encoding="utf-8") as handle:
             handle.write(json.dumps(row, ensure_ascii=False) + "\n")
     return {"recorded": fresh or promoted or restated, "host": host}
+
+
+#: A row's state. Absent means `refused`: every row written before 2026-08-27
+#: was a refusal, because that was the only thing this file recorded.
+STATE_REFUSED = "refused"
+STATE_OPEN = "open"
+
+
+def note_open(url: str) -> dict:
+    """Record that a previously-refused host now answers, retiring it from the ask.
+
+    OBSERVED 2026-08-27: the allowlist request is assembled from refusals that
+    happened, and a refusal never expires. When the owner granted 21 hosts, the
+    generated request went on asking for all 21 — it had no way to learn it had
+    been answered. A request that asks for access you already granted is worse
+    than no request: it is the reason the next one is not read.
+
+    So this file is a log of STATE CHANGES, not of refusals. One row is written
+    the first time a refused host answers, and `wanted()` reads the latest row
+    per host. The history of "asked on this date, granted by that one" survives
+    in the file, which is the part worth keeping.
+
+    Called from `fetch()` on any successful response, so the ask retires itself
+    through ordinary use rather than only when somebody remembers to re-run the
+    request generator.
+    """
+    host = _host(url)
+    if not host:
+        return {"recorded": False, "host": ""}
+    latest = ""
+    for row in _read_denied():
+        if row.get("host") == host:
+            latest = str(row.get("state", STATE_REFUSED))
+    # Only a transition is written. Without this, every fetch of an open host
+    # appends a row forever.
+    if latest != STATE_REFUSED:
+        return {"recorded": False, "host": host}
+    DENIED_PATH.parent.mkdir(parents=True, exist_ok=True)
+    with DENIED_PATH.open("a", encoding="utf-8") as handle:
+        handle.write(
+            json.dumps(
+                {
+                    "host": host,
+                    "url": str(url),
+                    "state": STATE_OPEN,
+                    "first_seen": date.today().isoformat(),
+                },
+                ensure_ascii=False,
+            )
+            + "\n"
+        )
+    return {"recorded": True, "host": host}
 
 
 def _read_denied() -> list[dict]:
@@ -190,6 +265,10 @@ def fetch(
         with urllib.request.urlopen(request, timeout=TIMEOUT_SECONDS) as response:
             body = response.read(max_bytes)
             text = body.decode("utf-8", "replace")
+            # The host answered, so if it was in the ask it no longer belongs
+            # there. Retiring it here rather than in the request generator
+            # means ordinary use keeps the ask honest.
+            note_open(target)
             return {
                 "outcome": PASS,
                 "checked": 1,
@@ -203,7 +282,10 @@ def fetch(
             }
     except urllib.error.HTTPError as error:
         # The host answered and said no. That is OUR bad URL, not the policy's
-        # doing, and the two must not print the same.
+        # doing, and the two must not print the same. It is also proof the host
+        # is reachable, which is what retires it from the ask — a 404 on a bare
+        # root is a very common way for a granted host to greet us.
+        note_open(target)
         return {
             "outcome": FAIL,
             "checked": 1,
@@ -337,11 +419,23 @@ def wanted() -> dict:
             "unmeasured": 0,
             "note": "no host has been refused yet, so there is nothing to ask for",
             "hosts": [],
+            "also_refused": [],
+            "granted": [],
         }
+    # The latest row per host decides. A host recorded open has been granted
+    # and is no longer asked for; the rows stay in the file so the history of
+    # "asked on this date, granted on that one" can be read back.
+    state: dict[str, str] = {}
+    for row in rows:
+        host = row.get("host", "")
+        if host:
+            state[host] = str(row.get("state", STATE_REFUSED))
+    opened = sorted(h for h, s in state.items() if s == STATE_OPEN)
+
     by_host: dict[str, dict] = {}
     for row in rows:
         host = row.get("host", "")
-        if not host:
+        if not host or state.get(host) == STATE_OPEN:
             continue
         kept = by_host.get(host)
         # Two rules, in this order. A host wanted for a real question outranks
@@ -356,18 +450,35 @@ def wanted() -> dict:
     swept = [by_host[h] for h in sorted(by_host) if by_host[h].get("incidental", False)]
 
     if not asked:
-        return {
-            "outcome": UNMEASURED,
-            "checked": len(rows),
-            "violations": 0,
-            "unmeasured": len(swept),
-            "note": (
+        # Three ways to have nothing to ask for, and they are not the same
+        # thing. Printing one message for all three is how "they granted
+        # everything" becomes indistinguishable from "nobody ever asked".
+        if opened and not swept:
+            note = (
+                f"nothing to ask for: all {len(opened)} host(s) that were asked for "
+                "have since been granted and now answer. The request is closed."
+            )
+        elif opened:
+            note = (
+                f"nothing to ask for: {len(opened)} host(s) asked for have since "
+                f"been granted, and the remaining {len(swept)} refused host(s) were "
+                "swept up by bulk probes rather than needed for a question."
+            )
+        else:
+            note = (
                 f"nothing to ask for: every one of the {len(swept)} refused host(s) "
                 "was swept up by a bulk probe, not needed for a question. Listed "
                 "under `also_refused` so the refusals are not lost."
-            ),
+            )
+        return {
+            "outcome": PASS if opened and not swept else UNMEASURED,
+            "checked": len(rows),
+            "violations": 0,
+            "unmeasured": len(swept),
+            "note": note,
             "hosts": [],
             "also_refused": swept,
+            "granted": opened,
         }
     return {
         "outcome": FAIL,
@@ -386,6 +497,7 @@ def wanted() -> dict:
         ),
         "hosts": asked,
         "also_refused": swept,
+        "granted": opened,
     }
 
 

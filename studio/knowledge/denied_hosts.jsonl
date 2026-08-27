@@ -75,3 +75,44 @@
 {"host": "docs.fal.ai", "url": "https://docs.fal.ai/", "reason": "Tunnel connection failed: 403 Forbidden", "why_wanted": "refreshing the reachability map; nobody asked for this host", "incidental": true, "first_seen": "2026-08-27"}
 {"host": "cdn.openai.com", "url": "https://cdn.openai.com/", "reason": "Tunnel connection failed: 403 Forbidden", "why_wanted": "refreshing the reachability map; nobody asked for this host", "incidental": true, "first_seen": "2026-08-27"}
 {"host": "klingai.com", "url": "https://klingai.com/", "reason": "Tunnel connection failed: 403 Forbidden", "why_wanted": "Kling's other registrable domain. `api.klingai.com` under it is ALREADY OPEN and is the API this project calls, while the domain itself and `app.klingai.com` are refused — so the vendor whose API we can call is one whose site we cannot read. Same contested max_seconds question.", "incidental": false, "first_seen": "2026-08-27"}
+{"host": "docs.cloud.google.com", "url": "https://docs.cloud.google.com/", "state": "open", "first_seen": "2026-08-27"}
+{"host": "kling.ai", "url": "https://kling.ai/", "state": "open", "first_seen": "2026-08-27"}
+{"host": "help.runwayml.com", "url": "https://help.runwayml.com/", "state": "open", "first_seen": "2026-08-27"}
+{"host": "klingai.com", "url": "https://klingai.com/", "state": "open", "first_seen": "2026-08-27"}
+{"host": "ir.kuaishou.com", "url": "https://ir.kuaishou.com/", "state": "open", "first_seen": "2026-08-27"}
+{"host": "docs.bfl.ai", "url": "https://docs.bfl.ai/", "state": "open", "first_seen": "2026-08-27"}
+{"host": "docs.byteplus.com", "url": "https://docs.byteplus.com/", "state": "open", "first_seen": "2026-08-27"}
+{"host": "elevenlabs.io", "url": "https://elevenlabs.io/", "state": "open", "first_seen": "2026-08-27"}
+{"host": "help.elevenlabs.io", "url": "https://help.elevenlabs.io/", "state": "open", "first_seen": "2026-08-27"}
+{"host": "ai.google.dev", "url": "https://ai.google.dev/", "state": "open", "first_seen": "2026-08-27"}
+{"host": "platform.openai.com", "url": "https://platform.openai.com/", "state": "open", "first_seen": "2026-08-27"}
+{"host": "arxiv.org", "url": "https://arxiv.org/", "state": "open", "first_seen": "2026-08-27"}
+{"host": "civitai.com", "url": "https://civitai.com/", "state": "open", "first_seen": "2026-08-27"}
+{"host": "api.civitai.com", "url": "https://api.civitai.com/", "state": "open", "first_seen": "2026-08-27"}
+{"host": "image.civitai.com", "url": "https://image.civitai.com/", "state": "open", "first_seen": "2026-08-27"}
+{"host": "www.reddit.com", "url": "https://www.reddit.com/", "state": "open", "first_seen": "2026-08-27"}
+{"host": "reddit.com", "url": "https://reddit.com/", "state": "open", "first_seen": "2026-08-27"}
+{"host": "oauth.reddit.com", "url": "https://oauth.reddit.com/", "state": "open", "first_seen": "2026-08-27"}
+{"host": "old.reddit.com", "url": "https://old.reddit.com/", "state": "open", "first_seen": "2026-08-27"}
+{"host": "fal.ai", "url": "https://fal.ai/", "state": "open", "first_seen": "2026-08-27"}
+{"host": "wavespeed.ai", "url": "https://wavespeed.ai/", "state": "open", "first_seen": "2026-08-27"}
+{"host": "api.bfl.ai", "url": "https://api.bfl.ai/", "state": "open", "first_seen": "2026-08-27"}
+{"host": "api.dev.runwayml.com", "url": "https://api.dev.runwayml.com/", "state": "open", "first_seen": "2026-08-27"}
+{"host": "api.elevenlabs.io", "url": "https://api.elevenlabs.io/", "state": "open", "first_seen": "2026-08-27"}
+{"host": "api.openai.com", "url": "https://api.openai.com/", "state": "open", "first_seen": "2026-08-27"}
+{"host": "api.wavespeed.ai", "url": "https://api.wavespeed.ai/", "state": "open", "first_seen": "2026-08-27"}
+{"host": "app.klingai.com", "url": "https://app.klingai.com/", "state": "open", "first_seen": "2026-08-27"}
+{"host": "bfl.ai", "url": "https://bfl.ai/", "state": "open", "first_seen": "2026-08-27"}
+{"host": "byteplus.com", "url": "https://byteplus.com/", "state": "open", "first_seen": "2026-08-27"}
+{"host": "cdn.openai.com", "url": "https://cdn.openai.com/", "state": "open", "first_seen": "2026-08-27"}
+{"host": "console.byteplus.com", "url": "https://console.byteplus.com/", "state": "open", "first_seen": "2026-08-27"}
+{"host": "dashboard.bfl.ai", "url": "https://dashboard.bfl.ai/", "state": "open", "first_seen": "2026-08-27"}
+{"host": "developers.reddit.com", "url": "https://developers.reddit.com/", "state": "open", "first_seen": "2026-08-27"}
+{"host": "docs.dev.runwayml.com", "url": "https://docs.dev.runwayml.com/", "state": "open", "first_seen": "2026-08-27"}
+{"host": "docs.elevenlabs.io", "url": "https://docs.elevenlabs.io/", "state": "open", "first_seen": "2026-08-27"}
+{"host": "docs.fal.ai", "url": "https://docs.fal.ai/", "state": "open", "first_seen": "2026-08-27"}
+{"host": "export.arxiv.org", "url": "https://export.arxiv.org/", "state": "open", "first_seen": "2026-08-27"}
+{"host": "openai.com", "url": "https://openai.com/", "state": "open", "first_seen": "2026-08-27"}
+{"host": "orchestration.civitai.com", "url": "https://orchestration.civitai.com/", "state": "open", "first_seen": "2026-08-27"}
+{"host": "static.arxiv.org", "url": "https://static.arxiv.org/", "state": "open", "first_seen": "2026-08-27"}
+{"host": "www.civitai.com", "url": "https://www.civitai.com/", "state": "open", "first_seen": "2026-08-27"}
