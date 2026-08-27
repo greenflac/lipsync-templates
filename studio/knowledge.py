@@ -1028,10 +1028,20 @@ def _channel_phrase(
         hit: set[int] = set()
         for variant in variants:
             try:
-                rows = index.conn.execute(
-                    "SELECT rowid FROM entries_fts WHERE entries_fts MATCH ?",
-                    (f'"{variant}"',),
-                ).fetchall()
+                # Under the index lock, like every other query in this file.
+                # It was the one execute that was not, and CI caught it on
+                # 2026-08-27: `ValueError: not enough values to unpack
+                # (expected 1, got 0)` from the `(rowid,)` below, on Python
+                # 3.12, in the threaded retrieval test. It never fires on a
+                # machine whose sqlite3 reports `threadsafety == 3`
+                # (serialized) — MEASURED 3 here — because that build
+                # serialises the shared connection for us. Relying on the
+                # runner's compile-time flag is not a guarantee; the lock is.
+                with index.lock:
+                    rows = index.conn.execute(
+                        "SELECT rowid FROM entries_fts WHERE entries_fts MATCH ?",
+                        (f'"{variant}"',),
+                    ).fetchall()
             except sqlite3.OperationalError:
                 continue
             hit.update(int(rowid) for (rowid,) in rows)

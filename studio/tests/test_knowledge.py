@@ -337,6 +337,63 @@ class Building(unittest.TestCase):
             thread.join()
         self.assertEqual(errors, [], f"threaded retrieval raised {errors[:1]}")
 
+    def test_every_query_touches_the_connection_under_the_lock(self) -> None:
+        """The test that would have caught it, and does not need a race to.
+
+        CI went red on 2026-08-27 with `ValueError: not enough values to
+        unpack (expected 1, got 0)` inside `_channel_phrase`, on Python 3.12,
+        in the threaded test above. It cannot be reproduced on this machine:
+        MEASURED here, `sqlite3.threadsafety == 3`, which is the SERIALIZED
+        build — it locks the shared connection for us, so one missing lock in
+        our own code is invisible. The runner's build evidently does not, and
+        a guarantee that depends on how somebody compiled sqlite is not one.
+
+        So this asserts the property directly, by reading the source: every
+        `conn.execute` in the module is either inside a `with ... lock` block
+        or in `build_index`, which runs before any thread exists. It is
+        deterministic — it was red on the unlocked line and green after — and
+        it covers the NEXT query somebody adds, which a timing test never
+        reliably would.
+        """
+        import ast
+
+        source = Path(K.__file__).read_text(encoding="utf-8")
+        tree = ast.parse(source)
+
+        def executes(node: ast.AST, *, locked: bool) -> list[tuple[int, bool]]:
+            found: list[tuple[int, bool]] = []
+            for child in ast.iter_child_nodes(node):
+                here = locked
+                if isinstance(child, ast.With):
+                    here = locked or any(
+                        "lock" in ast.dump(item.context_expr) for item in child.items
+                    )
+                if (
+                    isinstance(child, ast.Call)
+                    and isinstance(child.func, ast.Attribute)
+                    and child.func.attr in ("execute", "executemany")
+                ):
+                    found.append((child.lineno, here))
+                found.extend(executes(child, locked=here))
+            return found
+
+        unlocked: list[int] = []
+        for node in ast.walk(tree):
+            if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                continue
+            # `build_index` runs before the index is shared with anybody.
+            if node.name == "build_index":
+                continue
+            unlocked += [line for line, locked in executes(node, locked=False) if not locked]
+
+        self.assertEqual(
+            unlocked,
+            [],
+            "these lines run a statement on the shared connection without the "
+            f"index lock: {unlocked}. On a serialized sqlite build that is "
+            "invisible; on the CI runner's it corrupts a row.",
+        )
+
     def test_the_thread_guard_would_notice_the_old_connection(self) -> None:
         """The mutation: a connection opened the old way must fail from another
         thread, or the test above proves nothing."""
