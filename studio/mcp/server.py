@@ -104,18 +104,32 @@ def record_model_fact(
     stated_on: str,
     note: str = "",
     fix: str = "",
+    read_directly: bool | None = None,
 ) -> str:
     """Write one thing you found on the web into the knowledge base.
 
     This is the only tool that writes. Use it after searching, when
     `model_advice` showed a gap, a contradiction or a stale claim.
 
-    :param tier: "vendor" (the vendor's own doc or release), "paper" (arXiv or
-        a venue), "benchmark" (an evaluation with a published method) or "blog"
+    :param tier: the ladder is, strongest first — "vendor" (the model vendor's
+        own page), "probe" (their API answered), "paper" (arXiv or a venue),
+        "benchmark" (an evaluation with a published method), "portal" (a
+        platform that runs the model or hosts what people made with it), "blog"
         (everything else). Ten blogs repeating each other stay one blog.
+
+        "vendor", "portal" and "blog" are decided by the URL, not by you: pass
+        the one you believe and you will be refused, with the host named, if it
+        disagrees. "probe", "paper" and "benchmark" describe how you got the
+        fact, so those are yours to state.
     :param stated_on: the ISO date THE SOURCE stated it (YYYY-MM-DD), not
         today. Dating an old article as today is how a stale claim looks fresh.
     :param fix: for a failure mode, what to do about it.
+    :param read_directly: True if you opened the page yourself, False if you
+        only saw it quoted or summarised. Leave it unset if you did not record
+        which — that is a third answer, not a False. Most vendor hosts are
+        refused by this environment, so False is the honest answer more often
+        than it looks, and it is what stops a summary reading as a vendor
+        statement.
     """
     return _json(
         advice.record(
@@ -127,6 +141,7 @@ def record_model_fact(
             stated_on,
             note=note,
             fix=fix,
+            read_directly=read_directly,
         )
     )
 

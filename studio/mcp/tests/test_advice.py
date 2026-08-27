@@ -10,10 +10,18 @@ from __future__ import annotations
 import json
 import tempfile
 import unittest
+from unittest import mock
 from datetime import date, timedelta
 from pathlib import Path
 
 from studio.mcp import advice
+from studio.selfrag import source_hosts
+
+# The fictional vendor these tests record against. Declared here rather than
+# leaned on: since 2026-08-27 the identity rungs are read off the URL, so a
+# model whose vendor hosts nobody has declared cannot be recorded at `vendor`
+# tier at all — which is the point of the rule and is covered below.
+TEST_VENDOR_SOURCES = {"test-model": ("vendor.test", "example.test")}
 
 
 def _write(path: Path, rows: list[dict]) -> None:
@@ -43,6 +51,99 @@ class Consultant(unittest.TestCase):
         self._dir = tempfile.TemporaryDirectory()
         self.addCleanup(self._dir.cleanup)
         self.tmp = Path(self._dir.name)
+        patcher = mock.patch.dict(source_hosts.VENDOR_SOURCES, TEST_VENDOR_SOURCES, clear=False)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def test_a_vendor_tier_on_a_url_the_vendor_does_not_own_is_refused(self) -> None:
+        """The rule that keeps the ladder honest, added 2026-08-27.
+
+        Before the identity rungs were read off the URL, `blog` held nine
+        vendor pages and eleven platform pages, because the tier was whatever
+        the recorder typed.
+        """
+        path = self.tmp / "facts.jsonl"
+        out = advice.record(
+            "test-model",
+            "resolution",
+            "1080p",
+            "https://some-magazine.test/review",
+            "vendor",
+            "2026-08-01",
+            path=path,
+        )
+        assert out["outcome"] == "fail"
+        assert out["written"] is None
+        assert "some-magazine.test" in out["note"], "name the host that was judged"
+        assert not path.exists() or path.read_text(encoding="utf-8") == ""
+
+    def test_the_same_claim_at_the_tier_the_url_earns_is_written(self) -> None:
+        path = self.tmp / "facts.jsonl"
+        out = advice.record(
+            "test-model",
+            "resolution",
+            "1080p",
+            "https://some-magazine.test/review",
+            "blog",
+            "2026-08-01",
+            path=path,
+        )
+        assert out["outcome"] == "pass", "the finding is kept; only the rung was wrong"
+
+    def test_a_model_with_no_declared_vendor_cannot_claim_one(self) -> None:
+        path = self.tmp / "facts.jsonl"
+        out = advice.record(
+            "model-nobody-has-tabled",
+            "resolution",
+            "1080p",
+            "https://vendor.test/docs",
+            "vendor",
+            "2026-08-01",
+            path=path,
+        )
+        assert out["outcome"] == "fail"
+        assert "source_hosts.py" in out["note"], "say where the table is"
+
+    def test_a_method_tier_survives_a_url_that_says_vendor(self) -> None:
+        """`probe` on the vendor's own API is the case this protects.
+
+        The API host classifies as `vendor` — it IS the vendor's — but the rung
+        the row earns is `probe`, because what makes it a probe is that
+        somebody asked it, and no URL can say whether anybody did. Reading the
+        rung off the URL here would erase the distinction between the vendor's
+        documentation and the vendor's API answering.
+        """
+        path = self.tmp / "facts.jsonl"
+        out = advice.record(
+            "test-model",
+            "duration",
+            "10",
+            "https://vendor.test/v1/videos",
+            "probe",
+            "2026-08-01",
+            read_directly=True,
+            path=path,
+        )
+        assert out["outcome"] == "pass"
+        assert out["written"]["tier"] == "probe", "not rewritten to what the host is"
+
+    def test_reading_is_recorded_in_three_states_not_two(self) -> None:
+        path = self.tmp / "facts.jsonl"
+        for flag in (True, False, None):
+            advice.record(
+                "test-model",
+                f"attr_{flag}",
+                "v",
+                "https://vendor.test/docs",
+                "vendor",
+                "2026-08-01",
+                read_directly=flag,
+                path=path,
+            )
+        rows = [json.loads(line) for line in path.read_text().splitlines() if line.strip()]
+        assert [r["read_directly"] for r in rows] == [True, False, None], (
+            "None means nobody recorded it; folding it into False invents evidence"
+        )
 
     def test_an_unknown_model_is_could_not_measure_never_fail(self) -> None:
         path = self.tmp / "facts.jsonl"

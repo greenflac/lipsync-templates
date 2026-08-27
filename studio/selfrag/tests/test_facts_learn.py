@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 import tempfile
 import unittest
+from dataclasses import replace
+from datetime import date
 from pathlib import Path
 
 from lipsync.fork_identity import FAIL, PASS, UNMEASURED
@@ -272,3 +274,64 @@ class TrainingPairsAreRecorded(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ReadingIsNotOwnership(unittest.TestCase):
+    """Whose page it is, and whether anybody opened it, are two questions.
+
+    Added 2026-08-27 with the owner's ladder. Most vendor hosts are refused by
+    this environment, so a `vendor` row is often a summary of a page nobody
+    could open — and a note that does not say so lets the summary read as the
+    vendor speaking.
+    """
+
+    def _store(self, **over: object) -> FactStore:
+        row = Fact(
+            model="m",
+            attribute="a",
+            value="v",
+            source_url="https://vendor.test/docs",
+            tier=TIER_VENDOR,
+            stated_on=date.today().isoformat(),
+        )
+        return FactStore([replace(row, **over)])  # type: ignore[arg-type]
+
+    def test_an_unread_source_is_counted_and_said_out_loud(self) -> None:
+        out = self._store(read_directly=False).claims("m", "a")
+        assert out["outcome"] == "pass"
+        assert out["sources_not_read"] == 1
+        assert "NOT read" in out["note"], "a caller reading only the note must see it"
+
+    def test_a_read_source_says_nothing_about_not_being_read(self) -> None:
+        out = self._store(read_directly=True).claims("m", "a")
+        assert out["sources_not_read"] == 0
+        assert "NOT read" not in out["note"]
+
+    def test_no_record_is_a_third_state_and_not_a_no(self) -> None:
+        out = self._store(read_directly=None).claims("m", "a")
+        assert out["sources_not_read"] == 0, "nobody recorded it is not nobody read it"
+        assert out["sources_reading_unrecorded"] == 1
+        assert "no reading recorded" in out["note"]
+
+    def test_the_flag_reaches_the_caller_per_source_not_only_as_a_count(self) -> None:
+        out = self._store(read_directly=False).claims("m", "a")
+        assert out["claims"][0]["sources"][0]["read_directly"] is False
+
+    def test_a_row_written_before_the_field_existed_reads_as_unrecorded(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "facts.jsonl"
+            path.write_text(
+                json.dumps(
+                    {
+                        "model": "m",
+                        "attribute": "a",
+                        "value": "v",
+                        "source_url": "https://vendor.test/d",
+                        "tier": TIER_VENDOR,
+                    }
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            loaded = load_facts(path)
+        assert loaded[0].read_directly is None, "absent is unrecorded, never False"

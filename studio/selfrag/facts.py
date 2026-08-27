@@ -21,19 +21,43 @@ that wants the truth gets told that the truth is contested.
 
 TIERS, and why a blog can never promote a fact:
 
-    vendor     the model's own documentation or the vendor's own release
+    vendor     the model vendor's own page: documentation, release, or repo
     probe      the vendor's own API, asked and refused: the running system
                rather than a document about it. Below `vendor` because one
                probe sees one account at one moment, and a limit it reports
                may belong to a billing plan rather than to the model.
-    benchmark  an independent leaderboard or evaluation with a method
     paper      arXiv or a venue, with a method somebody can check
+    benchmark  an independent leaderboard or evaluation with a method
+    portal     a platform that RUNS the model or hosts what people made with
+               it — what its own API accepts, or the prompts and results
+               themselves. A statement about a running system, so above a
+               blog; below the vendor, because a platform exposes its own
+               configuration and its ceiling may be its plan.
     blog       everything else, including the well-written aggregators
+
+The first, sixth and fifth rungs are decided by WHOSE PAGE IT IS, from the
+table in `source_hosts.py`, not by how the page reads. `probe`, `paper` and
+`benchmark` are decided by HOW THE FACT WAS OBTAINED, which no URL can tell
+you — those are declared by whoever records the fact.
 
 A fact carried only by `blog` sources stays weak however many blogs repeat it,
 because ten blogs quoting each other is one source. This is not snobbery about
 writing quality: it is that a blog states a number without stating how it was
 obtained, so a reader cannot tell a measurement from a guess.
+
+BEING THE VENDOR'S PAGE AND HAVING BEEN READ ARE DIFFERENT QUESTIONS
+
+Most vendor hosts are refused by this environment's egress policy, so a fact
+citing `kling.ai` may be known only through somebody else's summary of it.
+The tier says whose page it is; `read_directly` says whether anyone opened it.
+Three states, because "nobody recorded it" is not "nobody read it":
+
+    True   somebody opened the page or the API answered us
+    False  it was not opened — the host is refused, or the note says summary
+    None   not recorded
+
+Collapsing None into False would invent evidence; collapsing it into True
+would launder a summary into a reading. Neither is allowed.
 """
 
 from __future__ import annotations
@@ -54,6 +78,7 @@ __all__ = [
     "TIERS",
     "TIER_BLOG",
     "TIER_BENCHMARK",
+    "TIER_PORTAL",
     "TIER_PAPER",
     "TIER_PROBE",
     "TIER_VENDOR",
@@ -67,8 +92,9 @@ __all__ = [
 TIER_VENDOR = "vendor"
 TIER_PROBE = "probe"
 TIER_BENCHMARK = "benchmark"
-TIER_PAPER = "paper"
+TIER_PORTAL = "portal"
 TIER_BLOG = "blog"
+TIER_PAPER = "paper"
 
 #: Strongest first. Order is the only ranking; there are deliberately no
 #: numeric weights, because a weight invites averaging and averaging a vendor
@@ -81,7 +107,20 @@ TIER_BLOG = "blog"
 #: limit it reports may belong to a billing plan rather than to the model. A
 #: vendor's general statement outranks a single observation of a special case;
 #: everything written from the outside does not.
-TIERS: tuple[str, ...] = (TIER_VENDOR, TIER_PROBE, TIER_PAPER, TIER_BENCHMARK, TIER_BLOG)
+#:
+#: `portal` was inserted directly above `blog` on 2026-08-27, on the owner's
+#: ladder: vendor page, then specialised platforms, then everything else. It
+#: goes above `blog` because a platform documents an endpoint that answers, and
+#: below `benchmark` because it documents its OWN endpoint and has no published
+#: method. Nothing else moved.
+TIERS: tuple[str, ...] = (
+    TIER_VENDOR,
+    TIER_PROBE,
+    TIER_PAPER,
+    TIER_BENCHMARK,
+    TIER_PORTAL,
+    TIER_BLOG,
+)
 
 #: Ranked below every named tier. A tier nobody declared cannot corroborate
 #: anything, and until 2026-08-27 it silently did: an unrecognised tier sorted
@@ -136,6 +175,10 @@ class Fact:
     note: str = ""
     fix: str = ""
 
+    #: Did anybody open this page? See the module docstring: three states, and
+    #: None means nobody recorded it rather than nobody read it.
+    read_directly: bool | None = None
+
     @property
     def age_days(self) -> int | None:
         """Days since the source stated it; None when the source gave no date."""
@@ -172,6 +215,11 @@ def load_facts(path: Path = DEFAULT_FACTS_PATH) -> list[Fact]:
                 stated_on=str(row.get("stated_on", "")),
                 note=str(row.get("note", "")),
                 fix=str(row.get("fix", "")),
+                # Absent stays None. A row written before the field existed
+                # recorded nothing about reading, and that is what it says.
+                read_directly=(
+                    None if row.get("read_directly") is None else bool(row["read_directly"])
+                ),
             )
         )
     return facts
@@ -231,6 +279,8 @@ class FactStore:
                         "stated_on": f.stated_on,
                         "age_days": f.age_days,
                         "note": f.note,
+                        # None means nobody recorded it, and prints as such.
+                        "read_directly": f.read_directly,
                     }
                     for f in sorted(
                         facts,
@@ -285,12 +335,29 @@ class FactStore:
         note = f"{model}.{attribute}: {shape}, from {len(found)} source(s), best tier {best}"
         if stale:
             note += f"; {len(stale)} source(s) older than {STALE_AFTER_DAYS} days"
+        # Counted and printed, never folded into the verdict: the ladder says
+        # whose page it is and the owner set that ladder. But a `vendor` line
+        # with nobody behind it reads as "the vendor says so", and 10 of the
+        # 47 facts here cite a vendor page this environment cannot open. The
+        # count goes out so a caller can gate on it; the policy is not
+        # invented here.
+        unread = [f for f in found if f.read_directly is False]
+        unrecorded = [f for f in found if f.read_directly is None]
+        if unread:
+            note += (
+                f"; {len(unread)} of {len(found)} source(s) were NOT read — known "
+                "through somebody else's summary, not the page itself"
+            )
+        if unrecorded:
+            note += f"; {len(unrecorded)} source(s) have no reading recorded either way"
         return {
             "outcome": PASS,
             "checked": len(found),
             "violations": 0,
             "unmeasured": len(stale),
             "note": note,
+            "sources_not_read": len(unread),
+            "sources_reading_unrecorded": len(unrecorded),
             "claims": rows,
             "values": sorted(by_value),
         }

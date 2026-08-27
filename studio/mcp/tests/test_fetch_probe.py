@@ -236,7 +236,7 @@ class Probe(unittest.TestCase):
 class FactTiers(unittest.TestCase):
     """The tier ladder studio/mcp records into. Literals, not imports of the ladder."""
 
-    LADDER = ("vendor", "probe", "paper", "benchmark", "blog")
+    LADDER = ("vendor", "probe", "paper", "benchmark", "portal", "blog")
 
     def test_the_ladder_is_what_it_says_it_is(self) -> None:
         from studio.selfrag.facts import TIERS
@@ -247,8 +247,19 @@ class FactTiers(unittest.TestCase):
         from studio.selfrag.facts import TIERS
 
         assert TIERS.index("probe") > TIERS.index("vendor")
-        for weaker in ("paper", "benchmark", "blog"):
+        for weaker in ("paper", "benchmark", "portal", "blog"):
             assert TIERS.index("probe") < TIERS.index(weaker)
+
+    def test_a_portal_outranks_a_blog_and_nothing_else(self) -> None:
+        """The owner's middle rung, 2026-08-27: vendor page, then platforms,
+        then everything else. A platform documents an endpoint that answers, so
+        it beats an article; it documents its OWN endpoint with no published
+        method, so it beats nothing above it."""
+        from studio.selfrag.facts import TIERS
+
+        assert TIERS.index("portal") < TIERS.index("blog")
+        for stronger in ("vendor", "probe", "paper", "benchmark"):
+            assert TIERS.index("portal") > TIERS.index(stronger)
 
     def test_a_probe_source_can_carry_a_claim_to_pass(self) -> None:
         from studio.selfrag.facts import Fact, FactStore

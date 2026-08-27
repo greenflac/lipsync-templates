@@ -46,17 +46,58 @@ the attribute, the value, the **source URL**, the **tier** and the **date the
 source stated it**. `studio/selfrag/facts.py` owns the schema and the rules;
 this package joins it to `registry.py` and opens the write door.
 
-Tiers, and why a blog can never be promoted by repetition:
+Tiers, and why a blog can never be promoted by repetition. The owner's ladder,
+2026-08-27 — the vendor's own URL, then specialised platforms, then everything
+else — with the two rungs that describe a METHOD kept in place:
 
-| tier | means |
-|---|---|
-| `vendor` | the vendor's own document or release |
-| `benchmark` | an independent evaluation with a published method |
-| `paper` | arXiv or a venue, with a method somebody can check |
-| `blog` | everything else, including the good aggregators |
+| tier | means | decided by |
+|---|---|---|
+| `vendor` | the model vendor's own page: docs, release, or repo | the URL |
+| `probe` | the vendor's API was asked and refused | the recorder |
+| `paper` | arXiv or a venue, with a method somebody can check | the recorder |
+| `benchmark` | an independent evaluation with a published method | the recorder |
+| `portal` | a platform that RUNS the model or hosts what people made with it | the URL |
+| `blog` | everything else, including the good aggregators | the URL |
 
 A claim carried only by blogs stays `could not measure` however many blogs
 repeat it. Ten blogs quoting each other are one source.
+
+**Three rungs are read off the URL and are not the recorder's to choose.**
+`studio/selfrag/source_hosts.py` holds the table, keyed by model FAMILY so a
+new version is not locked out of the first rung. `record_model_fact` refuses a
+`vendor`/`portal`/`blog` tier the URL contradicts, and names the host it
+judged. The other three say how the fact was obtained, which no URL can know.
+
+Why the middle rung exists: measured over the 47 recorded facts, `blog` held
+**9 vendor pages** and **11 platform pages** alongside real press. One rung was
+doing three jobs. A platform documents an endpoint that answers, which is a
+different kind of claim from an article — but it documents its OWN endpoint,
+so its ceiling may be its plan rather than the model's, and it stays below the
+vendor. A platform's own blog post is a blog post: 5 of those 11 URLs were
+articles that happened to sit on a platform, and the path decides.
+
+### Whose page it is, and whether anybody read it
+
+Two questions, two fields. Most vendor hosts are refused by this environment's
+egress policy, so a `vendor` row is often a summary of a page nobody could
+open. `read_directly` records that, in three states:
+
+| value | means |
+|---|---|
+| `true` | somebody opened the page, or the API answered us |
+| `false` | not opened — the host is refused, or the note says summary |
+| `null` | not recorded |
+
+`null` is not `false`: collapsing them would invent evidence. `claims()` counts
+the unread sources, names them in its note and returns
+`sources_not_read` / `sources_reading_unrecorded` beside the verdict.
+
+**Measured 2026-08-27, migrating the 47 facts** (`scripts/retier_facts.py`,
+re-runnable and idempotent): 16 rows changed tier — 10 to `vendor`, 6 to
+`portal` — and 15 attributes went from `could not measure` to `pass`, because
+they were no longer blog-only. Of the sources behind them, **25 of 47 were not
+read** and 21 have no reading recorded. The verdict is not demoted for that;
+the count is printed so a caller can decide.
 
 ### How it refreshes from the web, and why it works that way
 

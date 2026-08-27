@@ -43,16 +43,24 @@ from pathlib import Path
 
 from lipsync.fork_identity import FAIL, PASS, UNMEASURED
 
-from studio.selfrag import registry
+from studio.selfrag import registry, source_hosts
 from studio.selfrag.facts import (
     DEFAULT_FACTS_PATH,
     STALE_AFTER_DAYS,
     TIERS,
+    TIER_BLOG,
+    TIER_PORTAL,
+    TIER_VENDOR,
     FactStore,
     load_facts,
 )
 
-__all__ = ["advise", "record", "stale", "TIERS", "store_for"]
+__all__ = ["advise", "record", "stale", "TIERS", "IDENTITY_TIERS", "store_for"]
+
+#: The rungs decided by whose page it is, and therefore never taken on trust
+#: from a caller. Everything else in `TIERS` describes how the fact was
+#: obtained, which the URL cannot know.
+IDENTITY_TIERS: tuple[str, ...] = (TIER_VENDOR, TIER_PORTAL, TIER_BLOG)
 
 # The ladder is IMPORTED, never restated. It was restated here until
 # 2026-08-27, and the copy went stale the moment `probe` was added to the real
@@ -224,6 +232,7 @@ def record(
     *,
     note: str = "",
     fix: str = "",
+    read_directly: bool | None = None,
     path: Path | None = None,
 ) -> dict:
     """Write one web finding into the fact base, with who said it and when.
@@ -232,9 +241,23 @@ def record(
     without a URL cannot be re-checked; a claim without a date cannot go stale;
     a claim without a tier would let a blog outrank a vendor document.
 
-    :param tier: one of `TIERS`. `vendor` means the vendor's own document or
-        release, `paper` a venue or arXiv, `benchmark` an evaluation with a
-        published method, `blog` everything else including good aggregators.
+    :param tier: one of `TIERS`, but only three of them are yours to choose.
+
+        `probe`, `paper` and `benchmark` say HOW the fact was obtained — the
+        API was asked, a venue published a method — and no URL can tell anyone
+        that, so you state them and they are taken as stated.
+
+        `vendor`, `portal` and `blog` say WHOSE PAGE IT IS, and that is decided
+        from the URL by `source_hosts.classify`, not by you. Passing one that
+        the URL contradicts is refused rather than quietly corrected: a caller
+        who believes `docs.example.com` is the vendor for this model and is
+        wrong needs to find out, and a caller who is right needs the table
+        updated. Silently overriding either would put the ladder back where it
+        was on 2026-08-27, when `blog` held nine vendor pages.
+    :param read_directly: True if you opened the page (or the API answered
+        you), False if you know it only through somebody else's summary. Leave
+        it None when you did not record it — that is a third state and it is
+        not the same as False.
     :param stated_on: ISO date the SOURCE stated it, not today's date. Writing
         today's date for an old article is how a stale claim looks fresh.
 
@@ -282,6 +305,31 @@ def record(
             "written": None,
         }
 
+    # Who owns the page is read off the URL; how the fact was obtained is not.
+    if fields["tier"] in IDENTITY_TIERS:
+        owner = source_hosts.classify(
+            fields["model"],
+            fields["source_url"],
+            vendor_tier=TIER_VENDOR,
+            portal_tier=TIER_PORTAL,
+            blog_tier=TIER_BLOG,
+        )
+        if owner != fields["tier"]:
+            return {
+                "outcome": FAIL,
+                "checked": len(fields),
+                "violations": 1,
+                "unmeasured": 0,
+                "note": (
+                    f"tier {fields['tier']!r} does not match the URL: "
+                    f"{source_hosts.host_of(fields['source_url']) or 'that host'} is "
+                    f"{owner!r} for {fields['model']}. The URL decides the rung. If "
+                    f"this host really is {fields['tier']} for this model, add it to "
+                    "studio/selfrag/source_hosts.py and record again."
+                ),
+                "written": None,
+            }
+
     try:
         stated = date.fromisoformat(fields["stated_on"])
     except ValueError:
@@ -303,13 +351,20 @@ def record(
             "written": None,
         }
 
-    row = {**fields, "note": str(note or ""), "fix": str(fix or "")}
+    # Annotated because `read_directly` is the one non-string value in the row;
+    # without it the whole dict widens and `row["model"]` stops being a str.
+    row: dict[str, str | bool | None] = {
+        **fields,
+        "note": str(note or ""),
+        "fix": str(fix or ""),
+        "read_directly": None if read_directly is None else bool(read_directly),
+    }
     target = path or DEFAULT_FACTS_PATH
     target.parent.mkdir(parents=True, exist_ok=True)
     with target.open("a", encoding="utf-8") as handle:
         handle.write(json.dumps(row, ensure_ascii=False) + "\n")
 
-    after = store_for(target).claims(row["model"], row["attribute"])
+    after = store_for(target).claims(fields["model"], fields["attribute"])
     return {
         "outcome": PASS,
         "checked": len(fields),

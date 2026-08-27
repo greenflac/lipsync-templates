@@ -291,3 +291,119 @@ The four items in the previous section stand: the six-host allowlist request
 **price unverified and the key is the owner's ad-work key**), the
 `MAX_PER_PROVENANCE = 2` quota in another module's file, and the fact that no
 prompt in this package has been proven by a generation.
+
+---
+
+# Session 2026-08-27 (later still) — the owner's tier ladder
+
+Appended. Owner's decision, given in chat:
+
+> 1. url вендора модели
+> 2. специализированные порталы обмена артефактами, промтами и пр
+> 3. блоги и прочее
+
+Two follow-up questions were put to the owner before any code moved, because
+either answer changed the work materially:
+
+- **probe and paper, which the list does not name** → *insert the portal rung,
+  keep the others*. So `TIERS` is now
+  `(vendor, probe, paper, benchmark, portal, blog)`; nothing was removed and
+  nothing else moved.
+- **a vendor URL nobody could open** (the host is refused, the fact is known
+  only through somebody's summary) → *tier by the URL, plus a flag for whether
+  it was read*. Not tier by what was actually read.
+
+## What the ladder was measuring before, and what it is now
+
+The old `tier` recorded HOW a fact was obtained. The owner's ladder records
+WHOSE PAGE IT IS. Those are different axes, and the old single rung was doing
+three jobs at once. Measured over the 47 facts, `blog` held:
+
+- **9 vendor pages** — kling.ai, docs.bfl.ai, help.runwayml.com,
+  docs.byteplus.com, cloud.google.com, bfl.ai
+- **11 platform pages** — wavespeed.ai ×4, piapi.ai ×2, evolink.ai,
+  apiframe.ai, fal.ai, gaga.art, atlascloud.ai
+- the actual press
+
+Both axes are now kept. `vendor`, `portal` and `blog` are read off the URL by
+`studio/selfrag/source_hosts.py`; `probe`, `paper` and `benchmark` describe how
+the fact was obtained and stay the recorder's to state, because no URL can say
+whether an API was asked.
+
+`advice.record()` **refuses** an identity tier the URL contradicts, naming the
+host, rather than quietly correcting it — a caller who is wrong needs to find
+out, and a caller who is right needs the table updated.
+
+## Consequences, measured
+
+`scripts/retier_facts.py` (in the repo, re-runnable, idempotent — a second run
+reports 0 changes):
+
+```
+rows 47, tier changed 16      blog -> vendor 10,  blog -> portal 6
+read_directly: False 25, None 21, True 1
+claims() over every (model, attribute):
+    before   pass  9   fail 3   could not measure 23
+    after    pass 24   fail 3   could not measure  8
+```
+
+**15 attributes went from `could not measure` to `pass`** — they were no longer
+blog-only. Ten of those rest on vendor pages nobody opened, which is exactly
+what the owner's flag is for, so `claims()` now counts unread sources, says so
+in its note ("N of M source(s) were NOT read"), and returns
+`sources_not_read` / `sources_reading_unrecorded`. The verdict is NOT demoted
+for it: the owner set the ladder, and a counter was added rather than a policy
+invented (house rule П1).
+
+A visible improvement straight away: `kling-3.0.max_seconds` now reads
+`'10' (blog)` against `'15' (vendor)` — the 15 comes from Kuaishou's own
+investor release. Still `fail`/contested, correctly; but the sides are now
+distinguishable, which they were not when both read `blog`.
+
+`read_directly` is three states and `None` is not `False`. It was filled from
+evidence only: the note saying "read via summary", or the host being recorded
+in `denied_hosts.jsonl` as policy-refused, plus the one probe row (the API
+answered us). Everything else stayed `None`.
+
+## Defect found by the blind control set, again
+
+Case A8 (positive control for `record()`) went red: it records a
+`deepmind.google` claim about **`veo-3`** while the table listed `veo-3.1`, so
+the fact was refused. The table was keyed by model id — meaning **every
+unreleased version is locked out of the first rung until somebody edits the
+table**, and a rule needing an edit per release will be wrong by the next one.
+
+Now keyed by model FAMILY, matched exactly or up to a `-`/`.` separator, so
+`wan` claims `wan-2.6-flash` and not `wandering-model`, and longest match wins
+so a family can be split later. That is the third defect this control set has
+found, and the second one that no test of mine would have caught.
+
+## Mutations (T1), `python -B`, caches cleared — 12, all red
+
+Ladder: portal below blog; portal above vendor. Table: a platform's blog post
+counts as the platform; vendor not bound to the model; path ignored; prefix
+without a separator; first family wins instead of longest. Flag: `None` folded
+into `False`; unread not named in the note; absent read as `False`. Record:
+tier taken on trust; method tiers rewritten from the URL.
+
+Two were green at first and needed a test written: **method tiers surviving a
+vendor URL** (a `probe` on the vendor's own API classifies as `vendor` by host
+— erasing that would lose the difference between the vendor's docs and the
+vendor's API answering), and the family-longest-match rule.
+
+`bash scripts/check` exits 0; blind control set 54 checked, 0 violations,
+0 unmeasured.
+
+## Found, NOT fixed — the owner's call
+
+**Seven facts cite a bare site root** with no path: `wavespeed.ai/` ×3,
+`skywork.ai/` ×2, `fal.ai/`, `docs.bfl.ai/`. Five of them now sit above `blog`
+on the strength of a link that points at no statement — you cannot go and check
+`best_for = "motion control and camera work"` against `https://wavespeed.ai/`.
+
+A rule suggests itself (a root URL earns no rung above `blog`) but it was NOT
+added: one of the seven is `docs.bfl.ai/` supporting
+`flux-2.expands_internally = unknown`, i.e. "we looked at the docs and found no
+statement" — for a negative finding a doc-root citation is legitimate. Telling
+the two apart is a judgement the owner did not ask for. Decide and it is a
+five-line change.
