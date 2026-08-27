@@ -48,6 +48,7 @@ import re
 
 __all__ = [
     "BLOG_PATH_SEGMENTS",
+    "FAMILY_SEPARATORS",
     "PORTAL_SOURCES",
     "VENDOR_SOURCES",
     "classify",
@@ -67,9 +68,17 @@ __all__ = [
 #: and was refused because only `veo-3.1` was listed. A rule that needs an edit
 #: per version is a rule that will be wrong by the next release.
 #:
-#: A family matches a model id exactly, or up to a `-` or `.` separator, so
+#: A family matches a model id exactly, or up to one of `FAMILY_SEPARATORS`, so
 #: `wan` claims `wan-2.6-flash` and not `wandering-model`. Longest match wins,
 #: so a family can be split later if two versions really do change hands.
+#: What may separate a family from the rest of a model id. `_` joined `-` and
+#: `.` on 2026-08-27: a harvest of 144 models returned vendor-native ids, and
+#: vendors write them with underscores — `gen4_turbo`, `act_two`,
+#: `gemini_omni_flash`, `seedance2_5`. Without it, Runway's own `gen4_turbo`
+#: could not match the `gen4` family and its documentation host classified as
+#: `portal` on the vendor's own page.
+FAMILY_SEPARATORS: tuple[str, ...] = ("-", ".", "_")
+
 VENDOR_SOURCES: dict[str, tuple[str, ...]] = {
     "kling": (
         "kling.ai",
@@ -78,19 +87,55 @@ VENDOR_SOURCES: dict[str, tuple[str, ...]] = {
         "app.klingai.com",
         "ir.kuaishou.com",
     ),
-    "flux": ("bfl.ai", "docs.bfl.ai", "api.bfl.ai", "blackforestlabs.ai"),
+    "flux": (
+        "bfl.ai",
+        "docs.bfl.ai",
+        "api.bfl.ai",
+        "blackforestlabs.ai",
+        "huggingface.co/black-forest-labs/",
+    ),
     # Two keys, and the longer one wins by the longest-match rule: `runway-gen`
     # keeps its own entry so a later split stays possible, while `runway` covers
     # the models that are not Gen-N at all — `aleph2` edits a video, `act_two`
     # transfers a performance, and neither is named gen-anything. Without this
     # they classified as `blog` on Runway's own documentation host.
     "runway": ("runwayml.com", "help.runwayml.com", "docs.dev.runwayml.com"),
+    # Runway's own models as its API names them, which is not "runway-anything".
+    "gen4": ("runwayml.com", "help.runwayml.com", "docs.dev.runwayml.com"),
+    "gen3": ("runwayml.com", "help.runwayml.com", "docs.dev.runwayml.com"),
+    "gwm1": ("runwayml.com", "help.runwayml.com", "docs.dev.runwayml.com"),
+    "aleph": ("runwayml.com", "help.runwayml.com", "docs.dev.runwayml.com"),
+    "act": ("runwayml.com", "help.runwayml.com", "docs.dev.runwayml.com"),
+    "ruby": ("runwayml.com", "help.runwayml.com", "docs.dev.runwayml.com"),
     "runway-gen": ("runwayml.com", "help.runwayml.com", "docs.dev.runwayml.com"),
     "seedance": ("docs.byteplus.com", "byteplus.com", "seed.bytedance.com"),
     "omnihuman": ("docs.byteplus.com", "byteplus.com", "seed.bytedance.com"),
     "veo": ("cloud.google.com", "docs.cloud.google.com", "ai.google.dev", "deepmind.google"),
     "sora": ("openai.com", "platform.openai.com", "help.openai.com"),
-    "wan": ("github.com/Wan-Video/", "wan.video", "tongyi.aliyun.com"),
+    # OpenAI's other families, added 2026-08-27 when a harvest produced 16 facts
+    # from platform.openai.com that the ladder could only call `blog` because
+    # nothing declared OpenAI the vendor of anything but Sora.
+    "gpt": ("openai.com", "platform.openai.com", "help.openai.com", "cdn.openai.com"),
+    "imagen": ("cloud.google.com", "ai.google.dev", "deepmind.google"),
+    "gemini": ("ai.google.dev", "cloud.google.com", "deepmind.google"),
+    # `elevenlabs-*` was declared; their own model ids are `eleven-*`.
+    "eleven": ("elevenlabs.io", "help.elevenlabs.io", "docs.elevenlabs.io"),
+    # A model card in the AUTHOR'S OWN Hugging Face organisation is the vendor's
+    # page, not a platform's. Declared per org and per model family, by path
+    # prefix, exactly as `github.com/Wan-Video/` already was — MEASURED: 18
+    # facts in the 2026-08-27 harvest were refused because an open-weight
+    # model's own card classified as `portal`.
+    "hunyuan": ("huggingface.co/tencent/", "huggingface.co/Tencent-Hunyuan/"),
+    "ltx": ("huggingface.co/Lightricks/",),
+    "mochi": ("huggingface.co/genmo/",),
+    "stable-diffusion": ("huggingface.co/stabilityai/", "stability.ai"),
+    "qwen": ("huggingface.co/Qwen/", "qwen.ai"),
+    "wan": (
+        "github.com/Wan-Video/",
+        "huggingface.co/Wan-AI/",
+        "wan.video",
+        "tongyi.aliyun.com",
+    ),
     "elevenlabs": ("elevenlabs.io", "help.elevenlabs.io", "docs.elevenlabs.io"),
 }
 
@@ -184,7 +229,7 @@ def vendor_sources_for(model: str) -> tuple[str, ...]:
     best = ""
     for family in VENDOR_SOURCES:
         low = family.lower()
-        if name == low or name.startswith(low + "-") or name.startswith(low + "."):
+        if name == low or any(name.startswith(low + sep) for sep in FAMILY_SEPARATORS):
             if len(low) > len(best):
                 best = low
     return VENDOR_SOURCES[best] if best else ()

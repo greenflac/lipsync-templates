@@ -131,6 +131,12 @@ python studio/mcp/fixtures/blind_control_set.py
 echo "== reading pass still applied"
 python scripts/read_sources.py --check
 
+# The harvest, asserted rather than trusted. Reads the fact file and the
+# harvest file only -- no network -- and fails if a row is malformed or if the
+# harvest has drifted out of the base.
+echo "== harvest still applied"
+python scripts/ingest_harvest.py --check
+
 echo "== mcp server handshake"
 python - <<'PY'
 import asyncio, sys
