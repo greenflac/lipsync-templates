@@ -291,6 +291,279 @@ class Consultant(unittest.TestCase):
         assert out["outcome"] == "could not measure"
         assert out["checked"] == 0
 
+    # -- reading a page you already cite is an update, not a second source ----
+    #
+    # Added 2026-08-27, the day the vendor hosts were unblocked and 25 facts
+    # marked "not read" became readable. Without these, replacing a summary
+    # with a reading DOUBLES the source count for a single page.
+
+    def test_re_recording_the_same_claim_supersedes_instead_of_adding_a_source(self) -> None:
+        path = self.tmp / "facts.jsonl"
+        advice.record(
+            "test-model",
+            "max_seconds",
+            "10",
+            "https://vendor.test/spec",
+            "vendor",
+            "2026-01-05",
+            note="via summary",
+            read_directly=False,
+            path=path,
+        )
+        out = advice.record(
+            "test-model",
+            "max_seconds",
+            "10",
+            "https://vendor.test/spec",
+            "vendor",
+            "2026-01-05",
+            note="opened it",
+            read_directly=True,
+            path=path,
+        )
+        assert out["outcome"] == "pass"
+        claims = advice.store_for(path).claims("test-model", "max_seconds")
+        assert claims["checked"] == 1, "one page is one source however often it is read"
+        assert claims["sources_not_read"] == 0
+        assert out["superseded"]["read_directly"] is False, "what it replaced is returned"
+
+    def test_the_superseded_row_stays_in_the_file(self) -> None:
+        """The history of how a claim was argued survives the correction."""
+        path = self.tmp / "facts.jsonl"
+        advice.record(
+            "test-model",
+            "max_seconds",
+            "10",
+            "https://vendor.test/spec",
+            "vendor",
+            "2026-01-05",
+            note="via summary",
+            read_directly=False,
+            path=path,
+        )
+        advice.record(
+            "test-model",
+            "max_seconds",
+            "10",
+            "https://vendor.test/spec",
+            "vendor",
+            "2026-01-05",
+            note="opened it",
+            read_directly=True,
+            path=path,
+        )
+        assert len(path.read_text(encoding="utf-8").strip().splitlines()) == 2
+
+    def test_recording_a_row_that_changes_nothing_appends_nothing(self) -> None:
+        """So a script that replays a reading pass can be re-run."""
+        path = self.tmp / "facts.jsonl"
+        for _ in range(3):
+            out = advice.record(
+                "test-model",
+                "max_seconds",
+                "10",
+                "https://vendor.test/spec",
+                "vendor",
+                "2026-01-05",
+                note="opened it",
+                read_directly=True,
+                path=path,
+            )
+            assert out["outcome"] == "pass"
+        assert len(path.read_text(encoding="utf-8").strip().splitlines()) == 1
+        assert out["written"] is None, "nothing was written, and it says so"
+
+    def test_a_reading_flag_is_the_only_change_and_it_still_gets_written(self) -> None:
+        """The mutation that caught this: dropping `read_directly` from the
+        compared fields stayed GREEN, because every other supersession test
+        also changed the note. Upgrading a summary to a reading changes ONLY
+        this flag, and that is the whole job the reading pass does."""
+        path = self.tmp / "facts.jsonl"
+        advice.record(
+            "test-model",
+            "max_seconds",
+            "10",
+            "https://vendor.test/spec",
+            "vendor",
+            "2026-01-05",
+            note="",
+            read_directly=False,
+            path=path,
+        )
+        out = advice.record(
+            "test-model",
+            "max_seconds",
+            "10",
+            "https://vendor.test/spec",
+            "vendor",
+            "2026-01-05",
+            note="",
+            read_directly=True,
+            path=path,
+        )
+        assert out["written"] is not None, "the upgrade was not recorded at all"
+        sources = advice.store_for(path).claims("test-model", "max_seconds")["claims"][0]["sources"]
+        assert [s["read_directly"] for s in sources] == [True]
+
+    def test_every_field_a_correction_can_move_is_actually_written(self) -> None:
+        """Each of the five is a correction this session's reading pass made:
+        `read_directly` when a summary became a reading, `stated_on` when a
+        page turned out to be dated November 2025 and not the day it was
+        harvested, `note` when the reading said something the summary did not,
+        `tier` when a URL's rung changed, `fix` when a failure mode gained one.
+
+        The names are LITERAL (house rule Т2) and compared against the module's
+        list, so dropping one there breaks this rather than sliding past it."""
+        assert advice.MUTABLE_FIELDS == ("tier", "stated_on", "note", "fix", "read_directly")
+        moved: dict[str, tuple[str, str, str, str, bool]] = {
+            # tier, stated_on, note, fix, read_directly
+            "tier": ("probe", "2026-01-05", "", "", False),
+            "stated_on": ("vendor", "2025-11-24", "", "", False),
+            "note": ("vendor", "2026-01-05", "read it", "", False),
+            "fix": ("vendor", "2026-01-05", "", "use 5s", False),
+            "read_directly": ("vendor", "2026-01-05", "", "", True),
+        }
+        for field, (tier, stated_on, note, fix, read) in moved.items():
+            with self.subTest(field=field):
+                path = self.tmp / f"facts-{field}.jsonl"
+                advice.record(
+                    "test-model",
+                    "max_seconds",
+                    "10",
+                    "https://vendor.test/spec",
+                    "vendor",
+                    "2026-01-05",
+                    note="",
+                    fix="",
+                    read_directly=False,
+                    path=path,
+                )
+                out = advice.record(
+                    "test-model",
+                    "max_seconds",
+                    "10",
+                    "https://vendor.test/spec",
+                    tier,
+                    stated_on,
+                    note=note,
+                    fix=fix,
+                    read_directly=read,
+                    path=path,
+                )
+                assert out["written"] is not None, f"a changed {field} was not written"
+                assert field in out["note"], f"the caller is not told {field} moved"
+
+    def test_two_values_from_one_page_stay_two_claims(self) -> None:
+        """MEASURED in the real base: seedance2-video.com states 12 and 4-to-15
+        on the same page. Keying supersession without the value would have
+        dropped one and hidden a source contradicting itself."""
+        path = self.tmp / "facts.jsonl"
+        for value in ("12", "4 to 15"):
+            advice.record(
+                "test-model",
+                "max_seconds",
+                value,
+                "https://vendor.test/spec",
+                "vendor",
+                "2026-01-05",
+                path=path,
+            )
+        claims = advice.store_for(path).claims("test-model", "max_seconds")
+        assert claims["outcome"] == "fail", "one page disagreeing with itself is contested"
+        assert sorted(claims["values"]) == ["12", "4 to 15"]
+
+    # -- withdrawal: the page does not say what the summary said --------------
+
+    def test_withdrawing_a_claim_removes_it_and_keeps_the_reason(self) -> None:
+        path = self.tmp / "facts.jsonl"
+        advice.record(
+            "test-model",
+            "max_seconds",
+            "10",
+            "https://vendor.test/spec",
+            "vendor",
+            "2026-01-05",
+            path=path,
+        )
+        out = advice.withdraw(
+            "test-model",
+            "max_seconds",
+            "10",
+            "https://vendor.test/spec",
+            "the page does not mention a duration at all",
+            path=path,
+        )
+        assert out["outcome"] == "pass"
+        assert advice.store_for(path).claims("test-model", "max_seconds")["checked"] == 0
+        assert "does not mention a duration" in path.read_text(encoding="utf-8")
+
+    def test_withdrawing_something_nobody_recorded_is_could_not_measure(self) -> None:
+        """Never `pass`: a caller who misspelled the model would be told it worked."""
+        path = self.tmp / "facts.jsonl"
+        advice.record(
+            "test-model",
+            "max_seconds",
+            "10",
+            "https://vendor.test/spec",
+            "vendor",
+            "2026-01-05",
+            path=path,
+        )
+        out = advice.withdraw(
+            "test-model", "max_seconds", "11", "https://vendor.test/spec", "typo", path=path
+        )
+        assert out["outcome"] == "could not measure"
+        assert out["withdrawn"] is None
+        assert advice.store_for(path).claims("test-model", "max_seconds")["checked"] == 1
+
+    def test_a_withdrawal_without_a_reason_is_refused(self) -> None:
+        """A withdrawal nobody explained is a deletion with extra steps."""
+        path = self.tmp / "facts.jsonl"
+        advice.record(
+            "test-model",
+            "max_seconds",
+            "10",
+            "https://vendor.test/spec",
+            "vendor",
+            "2026-01-05",
+            path=path,
+        )
+        out = advice.withdraw(
+            "test-model", "max_seconds", "10", "https://vendor.test/spec", "   ", path=path
+        )
+        assert out["outcome"] == "fail"
+        assert advice.store_for(path).claims("test-model", "max_seconds")["checked"] == 1
+
+    def test_a_withdrawn_claim_can_be_recorded_again(self) -> None:
+        """A page that was misread once is not banned; the latest row wins."""
+        path = self.tmp / "facts.jsonl"
+        advice.record(
+            "test-model",
+            "max_seconds",
+            "10",
+            "https://vendor.test/spec",
+            "vendor",
+            "2026-01-05",
+            path=path,
+        )
+        advice.withdraw(
+            "test-model", "max_seconds", "10", "https://vendor.test/spec", "misread", path=path
+        )
+        advice.record(
+            "test-model",
+            "max_seconds",
+            "10",
+            "https://vendor.test/spec",
+            "vendor",
+            "2026-01-05",
+            note="it does say 10",
+            read_directly=True,
+            path=path,
+        )
+        claims = advice.store_for(path).claims("test-model", "max_seconds")
+        assert claims["checked"] == 1
+        assert claims["claims"][0]["sources"][0]["read_directly"] is True
+
 
 if __name__ == "__main__":
     unittest.main()

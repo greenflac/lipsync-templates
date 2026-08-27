@@ -51,11 +51,22 @@ from studio.selfrag.facts import (
     TIER_BLOG,
     TIER_PORTAL,
     TIER_VENDOR,
+    Fact,
     FactStore,
+    claim_key,
     load_facts,
 )
 
-__all__ = ["advise", "record", "stale", "TIERS", "IDENTITY_TIERS", "store_for"]
+__all__ = [
+    "advise",
+    "record",
+    "withdraw",
+    "stale",
+    "TIERS",
+    "IDENTITY_TIERS",
+    "MUTABLE_FIELDS",
+    "store_for",
+]
 
 #: The rungs decided by whose page it is, and therefore never taken on trust
 #: from a caller. Everything else in `TIERS` describes how the fact was
@@ -262,6 +273,16 @@ def record(
         today's date for an old article is how a stale claim looks fresh.
 
     :returns: three outcomes. A rejected claim is `fail` and is not written.
+
+    RECORDING SOMETHING ALREADY RECORDED IS AN UPDATE, NOT A SECOND SOURCE.
+    A claim is `(model, attribute, value, source_url)`, and this appends a row
+    that supersedes any earlier one with that key — which is how a fact known
+    through a summary becomes one somebody opened, without the page counting
+    twice. An append that would change nothing is skipped, so a script that
+    replays a reading pass can be re-run without growing the file.
+
+    If the page turns out not to say what was recorded, this is the wrong
+    door: `withdraw` is, and it takes a reason.
     """
     fields = {
         "model": str(model or "").strip(),
@@ -360,6 +381,148 @@ def record(
         "read_directly": None if read_directly is None else bool(read_directly),
     }
     target = path or DEFAULT_FACTS_PATH
+    key = claim_key(fields["model"], fields["attribute"], fields["value"], fields["source_url"])
+    before = {claim_key(f.model, f.attribute, f.value, f.source_url): f for f in load_facts(target)}
+    standing = before.get(key)
+    unchanged = standing is not None and _same_claim(standing, row)
+
+    if not unchanged:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        with target.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(row, ensure_ascii=False) + "\n")
+
+    after = store_for(target).claims(fields["model"], fields["attribute"])
+    if unchanged:
+        what = "already stood exactly like this, so nothing was appended"
+    elif standing is None:
+        what = "written as a new claim"
+    else:
+        what = f"supersedes the row that stood before it ({_diff(standing, row)})"
+    return {
+        "outcome": PASS,
+        "checked": len(fields),
+        "violations": 0,
+        "unmeasured": 0,
+        "note": (
+            f"{what}. {row['model']}.{row['attribute']} now stands at "
+            f"{after['outcome']!r} across {after.get('checked', 0)} source(s)."
+        ),
+        "written": None if unchanged else row,
+        "superseded": None if standing is None else _as_row(standing),
+        "claims_now": after,
+    }
+
+
+def _as_row(fact: Fact) -> dict:
+    """A stored fact in the shape `record` writes, so the two can be compared."""
+    return {
+        "model": fact.model,
+        "attribute": fact.attribute,
+        "value": fact.value,
+        "source_url": fact.source_url,
+        "tier": fact.tier,
+        "stated_on": fact.stated_on,
+        "note": fact.note,
+        "fix": fact.fix,
+        "read_directly": fact.read_directly,
+    }
+
+
+#: What `record` may change about a standing claim. Model, attribute, value and
+#: URL are excluded because changing one of those makes it a different claim.
+MUTABLE_FIELDS: tuple[str, ...] = ("tier", "stated_on", "note", "fix", "read_directly")
+
+
+def _same_claim(standing: Fact, row: dict) -> bool:
+    """True when appending `row` would tell a reader nothing new."""
+    return all(_as_row(standing)[name] == row.get(name) for name in MUTABLE_FIELDS)
+
+
+def _diff(standing: Fact, row: dict) -> str:
+    """Name the fields the new row changes, so the caller sees what moved."""
+    was = _as_row(standing)
+    moved = [f"{n}: {was[n]!r} -> {row.get(n)!r}" for n in MUTABLE_FIELDS if was[n] != row.get(n)]
+    return "; ".join(moved) if moved else "nothing"
+
+
+def withdraw(
+    model: str,
+    attribute: str,
+    value: str,
+    source_url: str,
+    reason: str,
+    *,
+    path: Path | None = None,
+) -> dict:
+    """Take back a claim its own source does not make, and say why.
+
+    The door for the thing this base was built wrong around: a claim recorded
+    from somebody's summary, whose page, once opened, says nothing of the sort.
+    MEASURED 2026-08-27, the day the vendor hosts were unblocked: `wavespeed.ai/`
+    was cited for what Veo 3.1 is best for and the page does not contain the
+    string "Veo" at all.
+
+    Deleting the line would be the obvious move and it is the wrong one — it
+    loses the fact that anybody believed this, and the next research pass
+    re-derives it from the same summary. So the withdrawal is APPENDED, carries
+    its reason, and `load_facts` drops the claim from what the base asserts
+    while the file keeps the argument.
+
+    :param reason: required, and not decorative. "wrong" tells the next reader
+        nothing; "the page does not mention Veo" tells them what was checked.
+    :returns: three outcomes. Withdrawing a claim nobody recorded is
+        `could not measure`, never `pass` — a caller who misspelled the model
+        would otherwise be told their withdrawal worked.
+    """
+    fields = {
+        "model": str(model or "").strip(),
+        "attribute": str(attribute or "").strip(),
+        "value": str(value or "").strip(),
+        "source_url": str(source_url or "").strip(),
+        "reason": str(reason or "").strip(),
+    }
+    missing = [name for name, text in fields.items() if not text]
+    if missing:
+        return {
+            "outcome": FAIL,
+            "checked": len(fields),
+            "violations": len(missing),
+            "unmeasured": 0,
+            "note": (
+                "nothing was withdrawn: " + ", ".join(missing) + " is required. "
+                "A withdrawal names the exact claim it takes back and says why."
+            ),
+            "withdrawn": None,
+        }
+
+    target = path or DEFAULT_FACTS_PATH
+    key = claim_key(fields["model"], fields["attribute"], fields["value"], fields["source_url"])
+    standing = {
+        claim_key(f.model, f.attribute, f.value, f.source_url): f for f in load_facts(target)
+    }
+    if key not in standing:
+        return {
+            "outcome": UNMEASURED,
+            "checked": 1,
+            "violations": 0,
+            "unmeasured": 1,
+            "note": (
+                f"no claim {fields['model']}.{fields['attribute']} = {fields['value']!r} "
+                f"from {fields['source_url']} stands in the base, so nothing was "
+                "withdrawn. Check the model, the attribute, the exact value and the "
+                "exact URL: all four identify a claim."
+            ),
+            "withdrawn": None,
+        }
+
+    row: dict[str, str | bool] = {
+        "model": fields["model"],
+        "attribute": fields["attribute"],
+        "value": fields["value"],
+        "source_url": fields["source_url"],
+        "withdrawn": True,
+        "note": fields["reason"],
+    }
     target.parent.mkdir(parents=True, exist_ok=True)
     with target.open("a", encoding="utf-8") as handle:
         handle.write(json.dumps(row, ensure_ascii=False) + "\n")
@@ -367,14 +530,14 @@ def record(
     after = store_for(target).claims(fields["model"], fields["attribute"])
     return {
         "outcome": PASS,
-        "checked": len(fields),
+        "checked": 1,
         "violations": 0,
         "unmeasured": 0,
         "note": (
-            f"written. {row['model']}.{row['attribute']} now stands at "
-            f"{after['outcome']!r} across {after.get('checked', 0)} source(s)."
+            f"withdrawn: {fields['reason']} — {fields['model']}.{fields['attribute']} "
+            f"now stands at {after['outcome']!r} across {after.get('checked', 0)} source(s)."
         ),
-        "written": row,
+        "withdrawn": row,
         "claims_now": after,
     }
 

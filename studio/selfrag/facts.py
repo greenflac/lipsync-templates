@@ -58,6 +58,34 @@ Three states, because "nobody recorded it" is not "nobody read it":
 
 Collapsing None into False would invent evidence; collapsing it into True
 would launder a summary into a reading. Neither is allowed.
+
+THE FILE IS A LOG, AND THE LATEST ROW ABOUT A CLAIM WINS
+
+Reading a page you already cite is not a second source saying the same thing.
+Until 2026-08-27 it was: `record` appends, nothing collapsed, and re-recording
+`kling-3.0.max_seconds = 15` after finally opening the Kuaishou release would
+have made `claims()` report two sources where one page exists — with
+`checked` inflated and the note reading "1 of 2 source(s) were NOT read"
+about a single page that HAD been read. The upgrade in evidence would have
+printed as corroboration.
+
+So a claim is identified by `(model, attribute, value, source_url)` and the
+LAST row carrying that key is the one that counts. An appended row supersedes
+its predecessor's tier, date, note and reading flag, and the file keeps the
+history of how the claim was argued — the same shape `denied_hosts.jsonl`
+uses for refusals.
+
+The key includes the VALUE deliberately. One page can state two values for one
+attribute and that is not always a mistake to collapse: MEASURED in this file,
+`seedance2-video.com/seedance-2-0-specs` gives `12` in its headline and `4 to
+15` from the technical report it cites, on the same page. Keying without the
+value would silently drop one of them and hide a source contradicting itself.
+
+A row with `"withdrawn": true` REMOVES the claim instead of restating it. That
+is for a page which, once opened, does not say what a summary of it said —
+MEASURED the same day: `wavespeed.ai/` was cited for what Veo 3.1 is best for
+and the page does not contain the word "Veo". Deleting the line would lose why
+anybody believed it, so the withdrawal is appended and carries its reason.
 """
 
 from __future__ import annotations
@@ -84,6 +112,7 @@ __all__ = [
     "TIER_VENDOR",
     "UNKNOWN_TIER_RANK",
     "Fact",
+    "claim_key",
     "FactStore",
     "claims",
     "load_facts",
@@ -190,11 +219,41 @@ class Fact:
             return None
 
 
+def claim_key(model: str, attribute: str, value: str, source_url: str) -> tuple[str, str, str, str]:
+    """What identifies one claim, so a later row about it supersedes an earlier.
+
+    Model and attribute are matched case-insensitively because that is how
+    every lookup in this module matches them. Value and URL are matched as
+    written: a page that states two values states two claims, and two URLs are
+    two pages even when one redirects to the other.
+    """
+    return (model.strip().lower(), attribute.strip().lower(), value.strip(), source_url.strip())
+
+
 def load_facts(path: Path = DEFAULT_FACTS_PATH) -> list[Fact]:
-    """Read the fact file. A missing file returns nothing, and says nothing."""
+    """Read the fact file, latest row per claim winning. See the module docstring.
+
+    A missing file returns nothing, and says nothing. A row with
+    `"withdrawn": true` removes the claim it names rather than restating it,
+    and a withdrawal of something never recorded is simply nothing — it is not
+    an error here, because this function reports no outcomes; `advice.withdraw`
+    is where a caller finds out.
+    """
     if not path.is_file():
         return []
-    facts: list[Fact] = []
+    # Insertion-ordered: a claim keeps the position of its FIRST appearance
+    # while carrying the content of its LAST, so re-reading a page does not
+    # shuffle the file's reading order.
+    latest: dict[tuple[str, str, str, str], Fact | None] = {}
+    for fact, withdrawn in _rows(path):
+        key = claim_key(fact.model, fact.attribute, fact.value, fact.source_url)
+        latest[key] = None if withdrawn else fact
+    return [fact for fact in latest.values() if fact is not None]
+
+
+def _rows(path: Path) -> list[tuple[Fact, bool]]:
+    """Every row in the file, in file order, with whether it is a withdrawal."""
+    facts: list[tuple[Fact, bool]] = []
     for line in path.read_text(encoding="utf-8").splitlines():
         line = line.strip()
         if not line or line.startswith("//"):
@@ -206,20 +265,23 @@ def load_facts(path: Path = DEFAULT_FACTS_PATH) -> list[Fact]:
         if not row.get("model") or not row.get("attribute"):
             continue
         facts.append(
-            Fact(
-                model=str(row["model"]),
-                attribute=str(row["attribute"]),
-                value=str(row.get("value", "")),
-                source_url=str(row.get("source_url", "")),
-                tier=str(row.get("tier", TIER_BLOG)),
-                stated_on=str(row.get("stated_on", "")),
-                note=str(row.get("note", "")),
-                fix=str(row.get("fix", "")),
-                # Absent stays None. A row written before the field existed
-                # recorded nothing about reading, and that is what it says.
-                read_directly=(
-                    None if row.get("read_directly") is None else bool(row["read_directly"])
+            (
+                Fact(
+                    model=str(row["model"]),
+                    attribute=str(row["attribute"]),
+                    value=str(row.get("value", "")),
+                    source_url=str(row.get("source_url", "")),
+                    tier=str(row.get("tier", TIER_BLOG)),
+                    stated_on=str(row.get("stated_on", "")),
+                    note=str(row.get("note", "")),
+                    fix=str(row.get("fix", "")),
+                    # Absent stays None. A row written before the field existed
+                    # recorded nothing about reading, and that is what it says.
+                    read_directly=(
+                        None if row.get("read_directly") is None else bool(row["read_directly"])
+                    ),
                 ),
+                bool(row.get("withdrawn")),
             )
         )
     return facts

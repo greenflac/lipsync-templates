@@ -1,4 +1,4 @@
-"""The MCP server the owner talks to in chat. Ten tools, two of which write.
+"""The MCP server the owner talks to in chat. Eleven tools, three of which write.
 
 RUN IT
 
@@ -9,9 +9,11 @@ further setup.
 
 THE TOOLS THAT WRITE
 
-`record_model_fact` appends to `studio/knowledge/model_facts.jsonl`, and
-`fetch_url` appends a refused host to `denied_hosts.jsonl` so the allowlist
-request assembles itself. Everything else reads.
+`record_model_fact` and `withdraw_model_fact` append to
+`studio/knowledge/model_facts.jsonl`, and `fetch_url` appends a refused host to
+`denied_hosts.jsonl` so the allowlist request assembles itself. Everything else
+reads. Neither writer deletes: the fact file is a log where the latest row
+about a claim wins, so how a claim was argued stays readable after it changes.
 
 That asymmetry is deliberate and worth stating in the tool list a model sees: an assistant deciding on its own to "tidy" the knowledge base is a
 worse outcome than a stale one, because a stale claim announces its age and a
@@ -108,8 +110,15 @@ def record_model_fact(
 ) -> str:
     """Write one thing you found on the web into the knowledge base.
 
-    This is the only tool that writes. Use it after searching, when
-    `model_advice` showed a gap, a contradiction or a stale claim.
+    Use it after searching, when `model_advice` showed a gap, a contradiction
+    or a stale claim.
+
+    Recording something already recorded is an UPDATE, not a second source
+    agreeing: a claim is identified by model, attribute, value and URL, and a
+    new row supersedes the old one's tier, date, note and reading flag. That is
+    how a fact known through a summary becomes one you opened, without the page
+    being counted twice. If the page does NOT say what was recorded, use
+    `withdraw_model_fact` instead.
 
     :param tier: the ladder is, strongest first — "vendor" (the model vendor's
         own page), "probe" (their API answered), "paper" (arXiv or a venue),
@@ -144,6 +153,34 @@ def record_model_fact(
             read_directly=read_directly,
         )
     )
+
+
+@server.tool()
+def withdraw_model_fact(
+    model: str,
+    attribute: str,
+    value: str,
+    source_url: str,
+    reason: str,
+) -> str:
+    """Take back a recorded claim whose own source does not make it.
+
+    Use this and not `record_model_fact` when you opened a page that was cited
+    from somebody's summary and found it says nothing of the sort. Re-recording
+    a corrected value leaves the wrong one standing beside it and the base
+    reports the page as contradicting itself.
+
+    All four of model, attribute, value and URL must match the standing claim
+    exactly — together they identify it. Withdrawing something that is not
+    there is reported as "could not measure", not as done.
+
+    The row is APPENDED, not deleted: the base stops asserting the claim while
+    the file keeps the record that somebody believed it and why it went.
+
+    :param reason: what you checked and what you found. "wrong" tells the next
+        reader nothing; "the page does not contain the word Veo" does.
+    """
+    return _json(advice.withdraw(model, attribute, value, source_url, reason))
 
 
 @server.tool()
