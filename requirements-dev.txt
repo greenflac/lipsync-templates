@@ -10,3 +10,5 @@ types-requests==2.33.0.20260712
 fastapi==0.141.1
 uvicorn==0.52.4
 python-multipart==0.0.32
+# The chat agent (studio/mcp) — pinned to what was installed and measured on 2026-08-27.
+mcp==2.1.1

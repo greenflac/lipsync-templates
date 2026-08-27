@@ -81,3 +81,69 @@ python -m unittest studio.tests.test_template_lint studio.tests.test_lint_contra
 # red build here on purpose: a corpus that vanished must not read as green.
 echo "== selfrag retrieval eval"
 python -m studio.selfrag --state :memory: eval
+
+# The chat agent: the MCP server the owner talks to, its contract gate, its
+# prompt writer and its knowledge consultant.
+#
+# The tests are unittest.TestCase and not pytest functions on purpose: this
+# script is the gate, it runs `unittest discover`, and pytest is not pinned in
+# requirements-dev.txt. Test functions the runner cannot collect are tests that
+# do not exist, and this repository has already paid for that once.
+echo "== ruff check (mcp)"
+ruff check studio/mcp/
+
+echo "== ruff format (mcp)"
+ruff format --check studio/mcp/
+
+echo "== mypy (mcp)"
+MYPYPATH=. python -m mypy --explicit-package-bases studio/mcp/ --ignore-missing-imports
+
+echo "== tests (mcp)"
+python -m unittest discover -s studio/mcp/tests -t .
+
+# The server has to actually start and speak the protocol. Importing it proves
+# nothing: the tools are registered by decorator at import time, so an import
+# succeeds even when the transport is broken.
+echo "== mcp server handshake"
+python - <<'PY'
+import asyncio, sys
+from studio.mcp.server import server
+
+async def main() -> None:
+    tools = sorted(tool.name for tool in await server.list_tools())
+    expected = [
+        "check_lipsync_prompt",
+        "model_advice",
+        "record_model_fact",
+        "stale_model_facts",
+        "write_lipsync_prompt",
+    ]
+    if tools != expected:
+        print(f"FAIL: tools are {tools}, expected {expected}")
+        sys.exit(1)
+    import json
+
+    # The negative control is deliberately INSIDE both bands, so the only rule
+    # that can reject it is the subject guard. An earlier version used a short
+    # phrase, which the word band rejected on its own — it stayed green with
+    # the subject guard disabled and was therefore measuring nothing.
+    dirty = (
+        "a woman in a matte ivory coat, low-key shadowed lighting, "
+        "desaturated restrained colour, film grain, photographic look"
+    )
+    clean = (
+        "a palette of ivory and slate, low-key shadowed lighting, "
+        "desaturated restrained colour, matte, photographic look"
+    )
+    refused = json.loads((await server.call_tool("check_lipsync_prompt", {"prompt": dirty})).content[0].text)
+    allowed = json.loads((await server.call_tool("check_lipsync_prompt", {"prompt": clean})).content[0].text)
+    if refused["outcome"] != "fail" or refused["broke"] != ["subject_zone"]:
+        print(f"FAIL: the subject guard did not fire alone: {refused['outcome']} {refused['broke']}")
+        sys.exit(1)
+    if allowed["outcome"] != "pass":
+        print(f"FAIL: the gate refused a clean prompt: {allowed['note']}")
+        sys.exit(1)
+    print(f"ok: {len(tools)} tools; subject guard refused one prompt and passed its twin")
+
+asyncio.run(main())
+PY
