@@ -123,7 +123,7 @@ class TheTableAgainstTheRealBase(unittest.TestCase):
         # lines would count corrections twice and count retracted claims as
         # standing — measuring the file's history rather than what it asserts.
         facts = load_facts(DEFAULT_FACTS_PATH)
-        assert len(facts) == 433, "the measured base; update the literals below with it"
+        assert len(facts) == 710, "the measured base; update the literals below with it"
 
         seen = {VENDOR: 0, PORTAL: 0, BLOG: 0}
         for fact in facts:
@@ -133,9 +133,24 @@ class TheTableAgainstTheRealBase(unittest.TestCase):
         # `vendor` counts the one `probe` row too, because it cites
         # api.klingai.com: the URL is the vendor's, while the rung the row
         # keeps is `probe`, which describes how the fact was obtained.
-        assert seen[VENDOR] == 206, seen
-        assert seen[PORTAL] == 184, seen
-        assert seen[BLOG] == 43, seen
+        #
+        # Two things moved these on 2026-08-27, and they are worth separating.
+        #
+        # The table caught up with the base: declaring the labs' own Hugging
+        # Face orgs moved three already-standing claims off `portal` onto
+        # `vendor` without any of them being re-recorded —
+        # `qwen3.8-2.4t-a95b.context_window_tokens` and two on
+        # `deepseek-v4-pro-0813`, all citing the lab's own model card.
+        #
+        # Then the applicability harvest added 277 rows, which is where the
+        # rest of the movement comes from — and where `blog` grew from 43 to
+        # 118. That growth is not a regression: 11 of those are ComfyUI custom
+        # -node READMEs the harvester had labelled `portal`, and a third
+        # party's node repository is not a platform running the model. They
+        # were relabelled visibly rather than promoted to make them fit.
+        assert seen[VENDOR] == 398, seen
+        assert seen[PORTAL] == 194, seen
+        assert seen[BLOG] == 118, seen
 
     def test_no_rung_is_empty_which_is_what_a_useless_table_looks_like(self) -> None:
         with mock.patch.dict(S.VENDOR_SOURCES, {}, clear=True):

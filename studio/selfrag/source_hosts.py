@@ -111,11 +111,18 @@ VENDOR_SOURCES: dict[str, tuple[str, ...]] = {
     "seedance": ("docs.byteplus.com", "byteplus.com", "seed.bytedance.com"),
     "omnihuman": ("docs.byteplus.com", "byteplus.com", "seed.bytedance.com"),
     "veo": ("cloud.google.com", "docs.cloud.google.com", "ai.google.dev", "deepmind.google"),
-    "sora": ("openai.com", "platform.openai.com", "help.openai.com"),
+    "sora": ("openai.com", "platform.openai.com", "help.openai.com", "cookbook.openai.com"),
     # OpenAI's other families, added 2026-08-27 when a harvest produced 16 facts
     # from platform.openai.com that the ladder could only call `blog` because
     # nothing declared OpenAI the vendor of anything but Sora.
-    "gpt": ("openai.com", "platform.openai.com", "help.openai.com", "cdn.openai.com"),
+    "gpt": (
+        "openai.com",
+        "platform.openai.com",
+        "help.openai.com",
+        "cdn.openai.com",
+        "cookbook.openai.com",
+        "huggingface.co/openai/",
+    ),
     "imagen": ("cloud.google.com", "ai.google.dev", "deepmind.google"),
     "gemini": ("ai.google.dev", "cloud.google.com", "deepmind.google"),
     # `elevenlabs-*` was declared; their own model ids are `eleven-*`.
@@ -137,6 +144,62 @@ VENDOR_SOURCES: dict[str, tuple[str, ...]] = {
         "tongyi.aliyun.com",
     ),
     "elevenlabs": ("elevenlabs.io", "help.elevenlabs.io", "docs.elevenlabs.io"),
+    # ---- added 2026-08-27 by the applicability harvest, 44 refusals ---------
+    #
+    # Two kinds of entry, and the difference matters.
+    #
+    # (a) A SPELLING the family key could not reach. `vendor_sources_for`
+    #     matches a key exactly or followed by a separator, so the key
+    #     `hunyuan` never matched the model id `hunyuanvideo`, and `wan` never
+    #     matched `wan2.1-t2v-1.3b`. Same pages, same vendor, one more key.
+    "hunyuanvideo": (
+        "huggingface.co/tencent/",
+        "huggingface.co/Tencent-Hunyuan/",
+        "github.com/Tencent-Hunyuan/",
+        "raw.githubusercontent.com/Tencent-Hunyuan/",
+    ),
+    "hunyuanimage": (
+        "huggingface.co/tencent/",
+        "huggingface.co/Tencent-Hunyuan/",
+        "github.com/Tencent-Hunyuan/",
+        "raw.githubusercontent.com/Tencent-Hunyuan/",
+    ),
+    "wan2": ("github.com/Wan-Video/", "huggingface.co/Wan-AI/", "wan.video"),
+    "qwen3": ("huggingface.co/Qwen/", "github.com/QwenLM/", "qwen.ai"),
+    "stable-video": ("huggingface.co/stabilityai/", "stability.ai"),
+    #
+    # (b) A vendor whose own page is a REPOSITORY. An open-weight model
+    #     released by a lab has no docs site; its README in the lab's own org
+    #     is the vendor's page in exactly the sense `huggingface.co/Wan-AI/`
+    #     already was. Declared per org, by path prefix, never as the bare
+    #     host: `raw.githubusercontent.com` as a whole is anybody's writing.
+    "cogvideox": ("huggingface.co/THUDM/", "huggingface.co/zai-org/", "github.com/THUDM/"),
+    "latentsync": (
+        "huggingface.co/ByteDance/",
+        "github.com/bytedance/",
+        "raw.githubusercontent.com/bytedance/",
+    ),
+    "wav2lip": ("github.com/Rudrabha/", "raw.githubusercontent.com/Rudrabha/"),
+    "musetalk": ("github.com/TMElyralab/", "raw.githubusercontent.com/TMElyralab/"),
+    "hallo": (
+        "github.com/fudan-generative-vision/",
+        "raw.githubusercontent.com/fudan-generative-vision/",
+    ),
+    "float": (
+        "github.com/deepbrainai-research/",
+        "raw.githubusercontent.com/deepbrainai-research/",
+    ),
+    "multitalk": ("github.com/MeiGen-AI/", "raw.githubusercontent.com/MeiGen-AI/"),
+    "infinitetalk": ("github.com/MeiGen-AI/", "raw.githubusercontent.com/MeiGen-AI/"),
+    "qwen-image": (
+        "huggingface.co/Qwen/",
+        "github.com/QwenLM/",
+        "raw.githubusercontent.com/QwenLM/",
+        "qwen.ai",
+    ),
+    "deepseek": ("huggingface.co/deepseek-ai/", "api-docs.deepseek.com", "deepseek.com"),
+    "kimi": ("huggingface.co/moonshotai/", "moonshot.ai", "platform.moonshot.ai"),
+    "minimax": ("huggingface.co/MiniMaxAI/", "minimax.io", "platform.minimaxi.com"),
 }
 
 #: CHOSEN the same way. A portal here is a platform that RUNS models or hosts

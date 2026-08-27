@@ -134,8 +134,12 @@ python scripts/read_sources.py --check
 # The harvest, asserted rather than trusted. Reads the fact file and the
 # harvest file only -- no network -- and fails if a row is malformed or if the
 # harvest has drifted out of the base.
-echo "== harvest still applied"
+echo "== harvest still applied (capability)"
 python scripts/ingest_harvest.py --check
+
+echo "== harvest still applied (applicability)"
+python scripts/ingest_harvest.py --check \
+  --path studio/knowledge/harvest_2026-08-27_applicability.jsonl
 
 echo "== mcp server handshake"
 python - <<'PY'
