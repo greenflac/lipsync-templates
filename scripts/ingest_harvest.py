@@ -95,7 +95,7 @@ ALIASES: dict[str, str] = {
 MIN_EVIDENCE_CHARS = 12
 
 
-def _reading_pass_keys() -> set[tuple[str, str, str, str]]:
+def _reading_pass_keys() -> set[tuple[str, str, str]]:
     """Claims `scripts/read_sources.py` states, which this must not overwrite.
 
     Both files write to the same log and the latest row wins, so a claim
@@ -109,17 +109,33 @@ def _reading_pass_keys() -> set[tuple[str, str, str, str]]:
     carries a quoted enum. Where both describe the same claim the reasoning is
     strictly more, and a bulk pass should never be able to erase it.
     """
-    keys: set[tuple[str, str, str, str]] = set()
+    keys: set[tuple[str, str, str]] = set()
     for entry in READINGS:
-        keys.add(
-            claim_key(
-                str(entry["model"]),
-                str(entry["attribute"]),
-                str(entry["value"]),
-                str(entry["source_url"]),
-            )
+        model, attribute, _value, url = claim_key(
+            str(entry["model"]),
+            str(entry["attribute"]),
+            str(entry["value"]),
+            str(entry["source_url"]),
         )
+        keys.add((model, attribute, url))
     return keys
+
+
+def _yield_key(model: str, attribute: str, value: str, url: str) -> tuple[str, str, str]:
+    """The key the yield is decided on: model, attribute, PAGE — not value.
+
+    It used to include the value, and that hole cost something on 2026-08-27.
+    The harvest wrote `runway-act-two.architecture` from the same OpenAPI
+    document the reading pass had already reasoned about, in different words.
+    Different value, different key, no yield — so the base carried the reasoned
+    entry AND a paraphrase of it, and reported the two as a DISPUTE between
+    sources where there is one source and one reading.
+
+    If the reading pass has reasoned about this attribute from this page, a
+    bulk row about the same attribute from the same page has nothing to add.
+    """
+    model_l, attribute_l, _value, url_l = claim_key(model, attribute, value, url)
+    return (model_l, attribute_l, url_l)
 
 
 def _canonical(model: str) -> str:
@@ -191,15 +207,28 @@ def _check(path: Path) -> int:
     checked = 0
     for row in _rows(path):
         model = _canonical(str(row.get("model", "")))
+        # Two keys, two questions. The yield is decided on model+attribute+page;
+        # whether the row STANDS is decided on the full claim, value included,
+        # because that is what the base is keyed on. Using the yield key for
+        # both reported every row as missing — OBSERVED while widening the
+        # yield, 804 of 804.
+        if (
+            _yield_key(
+                model,
+                str(row.get("attribute", "")),
+                str(row.get("value", "")),
+                str(row.get("source_url", "")),
+            )
+            in reserved
+        ):
+            yielded += 1
+            continue
         key = claim_key(
             model,
             str(row.get("attribute", "")),
             str(row.get("value", "")),
             str(row.get("source_url", "")),
         )
-        if key in reserved:
-            yielded += 1
-            continue
         checked += 1
         if key not in standing:
             missing.append(f"{model}.{row.get('attribute')} <- {row.get('source_url')}")
@@ -232,7 +261,7 @@ def main(argv: list[str]) -> int:
     for row in rows:
         row = dict(row)
         row["model"] = _canonical(str(row.get("model", "")))
-        key = claim_key(
+        key = _yield_key(
             str(row.get("model", "")),
             str(row.get("attribute", "")),
             str(row.get("value", "")),

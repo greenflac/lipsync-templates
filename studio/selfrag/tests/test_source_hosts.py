@@ -154,8 +154,8 @@ class TheTableAgainstTheRealBase(unittest.TestCase):
         # ladder, and this test asks a different question — whose page is the
         # URL — where arxiv.org belongs to nobody in particular. The two
         # ladders answering differently is the design, not a drift.
-        assert seen[VENDOR] == 400, seen
-        assert seen[PORTAL] == 196, seen
+        assert seen[VENDOR] == 399, seen
+        assert seen[PORTAL] == 197, seen
         assert seen[BLOG] == 269, seen
 
     def test_no_rung_is_empty_which_is_what_a_useless_table_looks_like(self) -> None:
