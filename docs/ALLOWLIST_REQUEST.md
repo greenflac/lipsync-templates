@@ -5,9 +5,55 @@ Re-run it and a host that has since opened drops off by itself.
 
 Every host below was probed and refused by the egress proxy (`Tunnel connection failed: 403`). None was routed around: no mirror, no cache, no archive copy, no read-through proxy.
 
-**20 host(s) asked for.** 23 further host(s) were refused during bulk probes and are deliberately NOT part of this request.
+**21 host(s) asked for.** 35 further host(s) were refused during bulk probes and are deliberately NOT part of this request.
 
-## The list, to paste
+## The list, to paste — wildcards, if the whitelist supports them
+
+```
+*.arxiv.org
+arxiv.org
+*.bfl.ai
+bfl.ai
+*.byteplus.com
+byteplus.com
+*.civitai.com
+civitai.com
+*.elevenlabs.io
+elevenlabs.io
+*.fal.ai
+fal.ai
+*.cloud.google.com
+ai.google.dev
+*.kling.ai
+kling.ai
+*.klingai.com
+klingai.com
+*.kuaishou.com
+kuaishou.com
+*.openai.com
+openai.com
+*.reddit.com
+reddit.com
+*.runwayml.com
+runwayml.com
+*.wavespeed.ai
+wavespeed.ai
+```
+
+Two of these are deliberately narrower than the domain suggests:
+
+- `google.com` — NOT `*.google.com` — that is Search, Mail, Drive and everything else Google runs. `cloud.google.com` is already permitted and open, so this is a wildcard UNDER a host you have already allowed.
+- `google.dev` — NOT `*.google.dev` — `ai.google.dev` is the only host under it this project needs, and it is the host itself rather than a subdomain of one, so a wildcard buys nothing here and grants Google's other developer sites for free.
+
+**Prefer this form.** MEASURED 2026-08-27, and this is the argument:
+
+- `cloud.google.com` is OPEN while `docs.cloud.google.com` is REFUSED. A subdomain of an already-granted host was not covered by that grant, so the whitelist is matching exact hosts today.
+- Probing sibling subdomains of the SAME vendors already in this request found **23 more, every one refused, none of them on the exact-host list below** — `api.bfl.ai`, `app.klingai.com`, `docs.elevenlabs.io`, `seed.bytedance.com`, `developers.reddit.com`, `www.civitai.com` and so on. Each would be another round of this.
+- The sharpest case: the exact list asks for `arxiv.org`, the human-facing site. arXiv's API lives on `export.arxiv.org` and arXiv asks programmatic users to go there instead. Granting the exact list would give us the pages we should not be scraping and leave the endpoint we should be using shut. (UNVERIFIED: the hostname is from a grounded search; arxiv.org is refused, so nobody here read the manual.)
+
+Vendors also spread across more than one registrable domain — Kling uses `kling.ai`, `klingai.com` and `kuaishou.com` — so a wildcard is per domain, not per vendor, and several vendors need two lines.
+
+## The same list as exact hosts, if wildcards are not available
 
 ```
 ai.google.dev
@@ -24,6 +70,7 @@ help.runwayml.com
 image.civitai.com
 ir.kuaishou.com
 kling.ai
+klingai.com
 oauth.reddit.com
 old.reddit.com
 platform.openai.com
@@ -32,7 +79,7 @@ wavespeed.ai
 www.reddit.com
 ```
 
-Each one is justified below, grouped so the list can be cut at any group boundary and still make sense. The groups are ordered by how cheap they are to say yes to, not by how much we want them.
+Each one is justified below, grouped so the list can be cut at any group boundary and still make sense. The groups are ordered by how cheap they are to say yes to, not by how much we want them. This form is expected to need revisiting; the wildcard form is not.
 
 ## Already open — do not add these
 
@@ -71,6 +118,10 @@ kling-3.0.max_seconds is CONTESTED in the fact base: 15 (Kuaishou's own investor
 ### `help.runwayml.com`
 
 runway-gen-4.5.max_resolution is CONTESTED: 720p against 4K, and the 4K claim comes from a review whose own credit table implies 4K is a paid tier. Billing a customer against the wrong one is a real cost.
+
+### `klingai.com`
+
+Kling's other registrable domain. `api.klingai.com` under it is ALREADY OPEN and is the API this project calls, while the domain itself and `app.klingai.com` are refused — so the vendor whose API we can call is one whose site we cannot read. Same contested max_seconds question.
 
 ### `ir.kuaishou.com`
 
@@ -152,4 +203,4 @@ Four recorded facts cite it — best_for for Kling, Veo and Seedance, and wan-2.
 
 Hosts refused while a bulk probe swept past them — search results being tagged with whether they open, or the reachability map being re-dated. Nobody asked for these; they are listed so no refusal is lost.
 
-`aifreeapi.com`, `api.bfl.ai`, `api.openai.com`, `api.replicate.com`, `app.klingai.com`, `atlascloud.ai`, `bfl.ai`, `byteplus.com`, `deepmind.google`, `docs.dev.runwayml.com`, `docs.elevenlabs.io`, `google.com`, `invideo.io`, `klingai.com`, `mindstudio.ai`, `nanophoto.ai`, `openai.com`, `replicate.com`, `runwayml.com`, `seed.bytedance.com`, `skywork.ai`, `tongyi.aliyun.com`, `wan.video`
+`aifreeapi.com`, `api.bfl.ai`, `api.dev.runwayml.com`, `api.elevenlabs.io`, `api.openai.com`, `api.replicate.com`, `api.wavespeed.ai`, `app.klingai.com`, `atlascloud.ai`, `bfl.ai`, `byteplus.com`, `cdn.openai.com`, `console.byteplus.com`, `dashboard.bfl.ai`, `deepmind.google`, `developers.reddit.com`, `docs.dev.runwayml.com`, `docs.elevenlabs.io`, `docs.fal.ai`, `export.arxiv.org`, `google.com`, `invideo.io`, `mindstudio.ai`, `nanophoto.ai`, `openai.com`, `orchestration.civitai.com`, `replicate.com`, `runwayml.com`, `seed.bytedance.com`, `skywork.ai`, `static.arxiv.org`, `support.reddithelp.com`, `tongyi.aliyun.com`, `wan.video`, `www.civitai.com`

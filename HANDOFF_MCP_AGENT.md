@@ -568,3 +568,69 @@ first-reason-wins rule and was updated rather than deleted.
 backend (open and keyed, price unverified, owner's ad-work key); no prompt in
 this package has been proven by a generation; the 7 facts citing a bare site
 root, 5 of which now sit above `blog` on a link pointing at no statement.
+
+---
+
+# Session 2026-08-27 — wildcards, because the owner was right
+
+> «а разве не лучше wildcard использовать в вайтлисте, полетит ведь опять
+> доступность по субдоменам»
+
+Yes. Measured, rather than agreed with:
+
+- **`cloud.google.com` is OPEN and `docs.cloud.google.com` is REFUSED.** A
+  subdomain of an already-granted host was not covered by that grant, so the
+  whitelist matches exact hosts today. The failure the owner predicted has
+  already happened once.
+- Probing sibling subdomains of the SAME vendors already in the request found
+  **23 more, every one refused, and not one of them on the 20-host list** —
+  `api.bfl.ai`, `app.klingai.com`, `docs.elevenlabs.io`, `seed.bytedance.com`,
+  `developers.reddit.com`, `www.civitai.com`, `export.arxiv.org` and the rest.
+  Each would have been another round of asking.
+- **The sharpest case: `export.arxiv.org`.** The exact list asked for
+  `arxiv.org`, the human-facing site. arXiv's API is on `export.arxiv.org` and
+  arXiv asks programmatic users to go there instead (UNVERIFIED — grounded
+  search, since arxiv.org is refused and nobody read the manual). The exact
+  grant would have handed us the pages we should not be scraping and left the
+  endpoint we should be using shut.
+
+`docs/ALLOWLIST_REQUEST.md` now leads with the wildcard form: 14 registrable
+domains, each as `*.domain` plus the bare apex, since a wildcard does not
+always cover the apex and for several of these the apex is itself a host we
+want.
+
+## Where a wildcard is the WRONG ask, and why that is in the table
+
+- `google.com` → **not** `*.google.com`, which is Search, Mail, Drive and
+  everything else Google runs, for the sake of one documentation subdomain.
+  Asked as `*.cloud.google.com` — a wildcard UNDER a host already permitted.
+- `google.dev` → **not** `*.google.dev`. `ai.google.dev` is the only host under
+  it this project needs and it is the host itself, so a wildcard buys nothing
+  and grants Google's other developer sites for free.
+
+Vendors spread across several registrable domains — Kling uses `kling.ai`,
+`klingai.com` AND `kuaishou.com` — so a wildcard is per domain, not per vendor.
+`klingai.com` was added to the request while writing this: `api.klingai.com`
+under it is already open and is the API this project calls, while the domain
+itself and `app.klingai.com` are refused. 21 hosts asked for now, 14 domains.
+
+## Two defects found by reading the rendered file (rule П3, again)
+
+1. The exceptions were rendered **inside the code fence**. A block that has to
+   be edited before it is pasted is a block that gets pasted wrong.
+2. The prose claimed Kling uses `klingai.com` while the generated list did not
+   contain it — the text promised what the list did not deliver.
+
+Both are now gated: `studio/mcp/tests/test_allowlist_request.py` asserts that
+nothing but hostnames reaches the paste block, that every host in `WANTED` is
+covered by something in the block, and — the negative control — that
+`mail.google.com` and other strangers are NOT covered. 4 mutations both ways,
+all red.
+
+## For the next session
+
+Run `python scripts/allowlist_request.py`. Whatever the owner granted vanishes
+from the ask by itself; whatever is still listed is still shut. If the wildcard
+form was accepted, expect `export.arxiv.org`, `api.bfl.ai` and the other 21
+siblings to be open too — probe before assuming, `reachable_hosts` takes a
+comma-separated list now.

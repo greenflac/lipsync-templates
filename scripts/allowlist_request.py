@@ -87,6 +87,14 @@ WANTED: tuple[tuple[str, str, str], ...] = (
     ),
     (
         "2. settles a contradiction",
+        "klingai.com",
+        "Kling's other registrable domain. `api.klingai.com` under it is ALREADY "
+        "OPEN and is the API this project calls, while the domain itself and "
+        "`app.klingai.com` are refused — so the vendor whose API we can call is "
+        "one whose site we cannot read. Same contested max_seconds question.",
+    ),
+    (
+        "2. settles a contradiction",
         "ir.kuaishou.com",
         "Kuaishou investor relations — the source of the '15 seconds' side of the "
         "Kling contradiction above. Currently vendor tier and NOT read.",
@@ -201,6 +209,71 @@ WANTED: tuple[tuple[str, str, str], ...] = (
 )
 
 
+#: Suffixes where the registrable domain is three labels, not two. Kept as a
+#: table because no public-suffix list ships offline and none of our hosts
+#: needs one yet — add to it rather than guessing if a `.co.uk` ever appears.
+MULTI_LABEL_SUFFIXES: tuple[str, ...] = ()
+
+
+def registrable(host: str) -> str:
+    """The domain a wildcard would be written against, e.g. `docs.bfl.ai` -> `bfl.ai`."""
+    parts = str(host or "").strip().lower().strip(".").split(".")
+    for suffix in MULTI_LABEL_SUFFIXES:
+        if host.endswith("." + suffix):
+            return ".".join(parts[-(suffix.count(".") + 2) :])
+    return ".".join(parts[-2:]) if len(parts) >= 2 else host
+
+
+#: Where `*.<registrable domain>` is the WRONG ask, and what to ask instead.
+#:
+#: A wildcard is only reasonable where the domain belongs to the vendor we are
+#: asking about. `google.com` does not: it carries Search, Mail, Drive and
+#: everything else Google runs, and we want one documentation subdomain of one
+#: product. Asking for all of it would be asking for far more than the question
+#: needs, which is how a request stops being granted at all.
+WILDCARD_OVERRIDES: dict[str, tuple[tuple[str, ...], str]] = {
+    "google.dev": (
+        ("ai.google.dev",),
+        "NOT `*.google.dev` — `ai.google.dev` is the only host under it this "
+        "project needs, and it is the host itself rather than a subdomain of "
+        "one, so a wildcard buys nothing here and grants Google's other "
+        "developer sites for free.",
+    ),
+    "google.com": (
+        ("*.cloud.google.com",),
+        "NOT `*.google.com` — that is Search, Mail, Drive and everything else "
+        "Google runs. `cloud.google.com` is already permitted and open, so this "
+        "is a wildcard UNDER a host you have already allowed.",
+    ),
+}
+
+
+def wildcard_form() -> tuple[list[str], list[str]]:
+    """The request as wildcards: (the lines to paste, the notes about them).
+
+    Returned as two lists because the notes must NOT end up inside the code
+    fence — OBSERVED 2026-08-27, they did, and a block that cannot be pasted
+    without editing is a block nobody pastes correctly.
+    """
+    by_domain: dict[str, list[str]] = {}
+    for _group, host, _why in WANTED:
+        by_domain.setdefault(registrable(host), []).append(host)
+
+    lines: list[str] = []
+    notes: list[str] = []
+    for domain in sorted(by_domain):
+        override = WILDCARD_OVERRIDES.get(domain)
+        if override:
+            lines.extend(override[0])
+            notes.append(f"- `{domain}` — {override[1]}")
+            continue
+        # Both forms: a wildcard does not always cover the apex, and for several
+        # of these the apex is itself one of the hosts we asked for.
+        lines.append(f"*.{domain}")
+        lines.append(domain)
+    return lines, notes
+
+
 def main() -> int:
     render_only = "--render" in sys.argv[1:]
 
@@ -221,6 +294,8 @@ def main() -> int:
     open_now = sorted(live.get("open", []))
     shut_now = sorted(live.get("closed", []))
 
+    wildcard_lines, wildcard_notes = wildcard_form()
+
     lines = [
         "# Allowlist request",
         "",
@@ -235,7 +310,41 @@ def main() -> int:
         f"{len(asked.get('also_refused', []))} further host(s) were refused during "
         "bulk probes and are deliberately NOT part of this request.",
         "",
-        "## The list, to paste",
+        "## The list, to paste — wildcards, if the whitelist supports them",
+        "",
+        "```",
+        *wildcard_lines,
+        "```",
+        "",
+        *(
+            ["Two of these are deliberately narrower than the domain suggests:", ""]
+            if wildcard_notes
+            else []
+        ),
+        *wildcard_notes,
+        *([""] if wildcard_notes else []),
+        "**Prefer this form.** MEASURED 2026-08-27, and this is the argument:",
+        "",
+        "- `cloud.google.com` is OPEN while `docs.cloud.google.com` is REFUSED. "
+        "A subdomain of an already-granted host was not covered by that grant, "
+        "so the whitelist is matching exact hosts today.",
+        "- Probing sibling subdomains of the SAME vendors already in this "
+        "request found **23 more, every one refused, none of them on the "
+        "exact-host list below** — `api.bfl.ai`, `app.klingai.com`, "
+        "`docs.elevenlabs.io`, `seed.bytedance.com`, `developers.reddit.com`, "
+        "`www.civitai.com` and so on. Each would be another round of this.",
+        "- The sharpest case: the exact list asks for `arxiv.org`, the "
+        "human-facing site. arXiv's API lives on `export.arxiv.org` and arXiv "
+        "asks programmatic users to go there instead. Granting the exact list "
+        "would give us the pages we should not be scraping and leave the "
+        "endpoint we should be using shut. (UNVERIFIED: the hostname is from a "
+        "grounded search; arxiv.org is refused, so nobody here read the manual.)",
+        "",
+        "Vendors also spread across more than one registrable domain — Kling "
+        "uses `kling.ai`, `klingai.com` and `kuaishou.com` — so a wildcard is "
+        "per domain, not per vendor, and several vendors need two lines.",
+        "",
+        "## The same list as exact hosts, if wildcards are not available",
         "",
         "```",
         *sorted(by_host),
@@ -243,7 +352,8 @@ def main() -> int:
         "",
         "Each one is justified below, grouped so the list can be cut at any "
         "group boundary and still make sense. The groups are ordered by how "
-        "cheap they are to say yes to, not by how much we want them.",
+        "cheap they are to say yes to, not by how much we want them. This form "
+        "is expected to need revisiting; the wildcard form is not.",
         "",
         "## Already open — do not add these",
         "",
