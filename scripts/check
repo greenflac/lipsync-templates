@@ -132,6 +132,7 @@ from studio.mcp.server import server
 async def main() -> None:
     tools = sorted(tool.name for tool in await server.list_tools())
     expected = [
+        "analyse_creative",
         "blocked_hosts",
         "check_lipsync_prompt",
         "fetch_url",

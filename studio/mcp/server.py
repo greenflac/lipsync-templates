@@ -1,4 +1,4 @@
-"""The MCP server the owner talks to in chat. Eleven tools, three of which write.
+"""The MCP server the owner talks to in chat. Twelve tools, three of which write.
 
 RUN IT
 
@@ -31,12 +31,13 @@ denominator.
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from typing import Any
 
 from mcp.server.mcpserver import MCPServer
 
 from studio import knowledge
-from studio.mcp import advice, contract, fetch, probe, search
+from studio.mcp import advice, contract, creative, fetch, probe, search
 from studio.mcp import lipsync_prompt as lp
 
 server = MCPServer(
@@ -181,6 +182,36 @@ def withdraw_model_fact(
         reader nothing; "the page does not contain the word Veo" does.
     """
     return _json(advice.withdraw(model, attribute, value, source_url, reason))
+
+
+@server.tool()
+def analyse_creative(path: str, frames_dir: str = "") -> str:
+    """Measure a creative you dropped in: what it looks like, what moves in it.
+
+    Point it at an image — a reference you liked, a frame you generated, a
+    competitor's still. It answers in the SAME vocabulary `write_lipsync_prompt`
+    takes, so the palette and lighting words come back ready to use.
+
+    :param path: the image file. An mp4 cannot be decoded here (no ffmpeg), so
+        for a clip pass its extracted frames instead.
+    :param frames_dir: a directory of frames, in filename order, for the loop
+        and motion instruments. Omit it for a still.
+
+    Read the `could_not_run` list before trusting a clean answer. Several
+    instruments need packages this environment does not have — every face and
+    pose axis among them — and they come back named rather than skipped,
+    because no violations out of no checks is not a clean creative.
+
+    Two things it will NOT do. It never names a mood: nothing in a histogram
+    says "melancholic", and a guess would be indistinguishable in the output
+    from a measurement. And it never names a lighting word for an image whose
+    histogram supports neither high-key nor low-key — it returns none.
+    """
+    frames: list[str] | None = None
+    if frames_dir.strip():
+        directory = Path(frames_dir.strip())
+        frames = [str(p) for p in sorted(directory.glob("*")) if p.is_file()]
+    return _json(creative.analyse(path, frames=frames))
 
 
 @server.tool()

@@ -17,7 +17,7 @@ it up in this project with no further setup. To check it by hand:
 python -m studio.mcp.server        # stdio; Ctrl-C to stop
 ```
 
-Eleven tools appear in the chat. Three of them write; the rest only read.
+Twelve tools appear in the chat. Three of them write; the rest only read.
 
 | tool | what it does |
 |---|---|
@@ -25,6 +25,7 @@ Eleven tools appear in the chat. Three of them write; the rest only read.
 | `record_model_fact` | **writes.** One web finding into the base, with who said it and when |
 | `withdraw_model_fact` | **writes.** Takes back a claim its own page turns out not to make |
 | `stale_model_facts` | which claims are old enough to need re-checking |
+| `analyse_creative` | measure a creative you dropped in: palette, lighting, saturation, motion |
 | `write_lipsync_prompt` | write a look prompt from your words plus the corpus |
 | `check_lipsync_prompt` | judge any prompt, from any source, against the contract |
 | `search_web` | **search the web — the research entry point** |
@@ -32,6 +33,33 @@ Eleven tools appear in the chat. Three of them write; the rest only read.
 | `blocked_hosts` | the allowlist request, built from refusals that really happened |
 | `reachable_hosts` | re-probe which hosts answer right now |
 | `probe_model_limit` | ask a vendor API for the impossible and read the real limit |
+
+### Analysing a creative you uploaded by hand
+
+`analyse_creative` takes an image — a reference you liked, a frame you
+generated, a competitor's still — and answers in the SAME vocabulary
+`write_lipsync_prompt` takes, so its words go straight back in. For a clip,
+pass a directory of extracted frames as well and the engine's own loop and
+motion instruments run over them. An mp4 cannot be decoded here: there is no
+ffmpeg (MEASURED 2026-08-27).
+
+Three of the prompt card's four slots come off the pixels honestly:
+
+| slot | how |
+|---|---|
+| `palette` | the dominant colours, named against `style.PALETTE_WORDS` |
+| `saturation` | mean chroma, against the card's own three buckets |
+| `light` | `high-key` / `low-key` from the luminance histogram — **or neither** |
+| `mood` | never. Nothing in a histogram says "melancholic" |
+
+Measured end to end: a creative analysed, its own words fed back, and
+`write_lipsync_prompt` fills 3 of 4 slots and ASKS for texture rather than
+guessing it. That refusal is the design working, not a gap.
+
+**Read `could_not_run` before trusting a clean answer.** Every face and pose
+axis needs `insightface` or `mediapipe`, and neither is installed here, so they
+come back named rather than skipped. No violations out of no checks is not a
+clean creative, and the counts say which it was.
 
 ### The fact file is a log, and the latest row about a claim wins
 
