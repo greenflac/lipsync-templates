@@ -228,8 +228,14 @@ def fetch_url(url: str, why_wanted: str = "") -> str:
 def blocked_hosts() -> str:
     """The allowlist request, assembled from hosts the policy actually refused.
 
-    Hand this to whoever owns the egress policy. Every row is a host something
-    real needed, with the reason it was wanted.
+    Hand this to whoever owns the egress policy. Every row under `hosts` is a
+    host something real needed, with the reason it was wanted.
+
+    `also_refused` is the other pile: hosts that were refused while a bulk
+    probe swept past them — search results being tagged with whether they
+    open, say. Nobody asked for those, so they are NOT part of the ask, and
+    passing them off as one is how a request a human has to justify turns into
+    noise. They are still listed, because a refusal is never swallowed.
     """
     return _json(fetch.wanted())
 

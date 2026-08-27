@@ -80,12 +80,24 @@ def _host(url: str) -> str:
     return match.group(1).lower() if match else ""
 
 
-def note_denial(url: str, reason: str, why_wanted: str = "") -> dict:
+def note_denial(url: str, reason: str, why_wanted: str = "", *, incidental: bool = False) -> dict:
     """Record that the policy refused a host, so the request for it writes itself.
 
     :param why_wanted: what the caller was trying to learn. An allowlist request
         that says "we need arxiv.org" is weaker than one that says which claim
         is stuck on blog tier without it.
+    :param incidental: True when nobody asked for this host — it was swept up by
+        a bulk probe, such as tagging search hits with whether they open.
+
+        OBSERVED 2026-08-27, on the first live Gemini search: one query added
+        five hosts nobody had ever wanted (atlascloud.ai, magnific.com, kie.ai,
+        evolink.ai, wavespeed.ai) to a file holding six hosts that a real
+        question was stuck behind. `wanted()` presents that file to a human who
+        then goes and asks for the hosts in it, and its own note claimed each
+        one "was needed for a real question". A few more searches and the ask
+        the owner has to justify is mostly noise. Refusals are still all
+        recorded — routing around them is what is forbidden, not counting them —
+        but an incidental one is reported apart from the ask.
     """
     host = _host(url)
     if not host:
@@ -95,14 +107,21 @@ def note_denial(url: str, reason: str, why_wanted: str = "") -> dict:
         "url": str(url),
         "reason": reason,
         "why_wanted": why_wanted,
+        "incidental": bool(incidental),
         "first_seen": date.today().isoformat(),
     }
     DENIED_PATH.parent.mkdir(parents=True, exist_ok=True)
-    seen = {r.get("host") for r in _read_denied()}
-    if host not in seen:
+    # A host first met by a bulk probe and later actually needed gets a second
+    # row, so it can be promoted into the ask. Without this, the order two
+    # calls happened in would decide whether a host the owner needs is ever
+    # asked for.
+    known = {r.get("host"): bool(r.get("incidental", False)) for r in _read_denied()}
+    fresh = host not in known
+    promoted = not fresh and known[host] and not incidental
+    if fresh or promoted:
         with DENIED_PATH.open("a", encoding="utf-8") as handle:
             handle.write(json.dumps(row, ensure_ascii=False) + "\n")
-    return {"recorded": host not in seen, "host": host}
+    return {"recorded": fresh or promoted, "host": host}
 
 
 def _read_denied() -> list[dict]:
@@ -120,11 +139,16 @@ def _read_denied() -> list[dict]:
     return rows
 
 
-def fetch(url: str, *, why_wanted: str = "", max_bytes: int = 400_000) -> dict:
+def fetch(
+    url: str, *, why_wanted: str = "", max_bytes: int = 400_000, incidental: bool = False
+) -> dict:
     """GET one URL through the configured proxy. Three outcomes, no fallbacks.
 
     :param why_wanted: what this fetch was for. Carried into the denial record
         when the policy refuses, so the allowlist request explains itself.
+    :param incidental: True when this host is being swept by a bulk probe
+        rather than actually wanted; see `note_denial`. A refusal is recorded
+        either way — this only keeps it out of the ask.
     :returns: the house judging dict plus `host`, `status`, `text` and
         `denied` — True only when the refusal came from the egress policy.
 
@@ -178,7 +202,7 @@ def fetch(url: str, *, why_wanted: str = "", max_bytes: int = 400_000) -> dict:
     except urllib.error.URLError as error:
         reason = str(getattr(error, "reason", error))
         if _DENIAL.search(reason):
-            note_denial(target, reason, why_wanted)
+            note_denial(target, reason, why_wanted, incidental=incidental)
             return {
                 "outcome": UNMEASURED,
                 "checked": 0,
@@ -283,18 +307,50 @@ def wanted() -> dict:
     by_host: dict[str, dict] = {}
     for row in rows:
         host = row.get("host", "")
-        if host and host not in by_host:
+        if not host:
+            continue
+        kept = by_host.get(host)
+        # A host wanted for a real question outranks the same host met by a
+        # bulk probe, whichever row was written first.
+        if kept is None or (
+            bool(kept.get("incidental", False)) and not row.get("incidental", False)
+        ):
             by_host[host] = row
+
+    asked = [by_host[h] for h in sorted(by_host) if not by_host[h].get("incidental", False)]
+    swept = [by_host[h] for h in sorted(by_host) if by_host[h].get("incidental", False)]
+
+    if not asked:
+        return {
+            "outcome": UNMEASURED,
+            "checked": len(rows),
+            "violations": 0,
+            "unmeasured": len(swept),
+            "note": (
+                f"nothing to ask for: every one of the {len(swept)} refused host(s) "
+                "was swept up by a bulk probe, not needed for a question. Listed "
+                "under `also_refused` so the refusals are not lost."
+            ),
+            "hosts": [],
+            "also_refused": swept,
+        }
     return {
         "outcome": FAIL,
         "checked": len(rows),
-        "violations": len(by_host),
-        "unmeasured": 0,
+        "violations": len(asked),
+        "unmeasured": len(swept),
         "note": (
-            f"{len(by_host)} host(s) refused by egress policy. Each was needed for "
-            "a real question; ask the policy owner rather than routing around them."
+            f"{len(asked)} host(s) refused by egress policy while answering a real "
+            "question; ask the policy owner rather than routing around them."
+            + (
+                f" A further {len(swept)} host(s) were refused during bulk probes "
+                "and are under `also_refused` — they are NOT part of the ask."
+                if swept
+                else ""
+            )
         ),
-        "hosts": [by_host[h] for h in sorted(by_host)],
+        "hosts": asked,
+        "also_refused": swept,
     }
 
 

@@ -104,6 +104,51 @@ class WebClient(unittest.TestCase):
         assert out["hosts"] == []
         assert out["checked"] == 0
 
+    # The allowlist request is read by a human who then goes and asks for the
+    # hosts in it. A host swept up by a bulk probe is still recorded — routing
+    # around a refusal is what is forbidden — but it is not part of the ask.
+    # OBSERVED 2026-08-27: one live search put five such hosts into a file that
+    # held six real ones.
+    def _deny(self, url: str, why: str, *, incidental: bool) -> None:
+        error = urllib.error.URLError(DENIAL_TEXT)
+        with mock.patch.object(fetch.urllib.request, "urlopen", side_effect=error):
+            fetch.fetch(url, why_wanted=why, incidental=incidental)
+
+    def test_a_host_swept_by_a_bulk_probe_is_not_part_of_the_ask(self) -> None:
+        self._deny("https://arxiv.org/abs/1", "a paper", incidental=False)
+        self._deny("https://wavespeed.ai/", "a search hit", incidental=True)
+
+        asked = fetch.wanted()
+        assert [row["host"] for row in asked["hosts"]] == ["arxiv.org"]
+        assert [row["host"] for row in asked["also_refused"]] == ["wavespeed.ai"]
+        assert asked["violations"] == 1, "the ask is one host, not two"
+        assert asked["unmeasured"] == 1, "the swept host is still counted somewhere"
+
+    def test_only_swept_hosts_is_could_not_measure_and_asks_for_nothing(self) -> None:
+        self._deny("https://wavespeed.ai/", "a search hit", incidental=True)
+
+        asked = fetch.wanted()
+        assert asked["outcome"] == "could not measure", (
+            "refusals nobody asked for are not an allowlist request, and they "
+            "are not a clean bill of health either"
+        )
+        assert asked["hosts"] == []
+        assert [row["host"] for row in asked["also_refused"]] == ["wavespeed.ai"]
+
+    def test_a_swept_host_later_really_needed_is_promoted_into_the_ask(self) -> None:
+        self._deny("https://kling.ai/", "a search hit", incidental=True)
+        self._deny("https://kling.ai/docs", "max_seconds is contested", incidental=True)
+        asked = fetch.wanted()
+        assert asked["hosts"] == [], "still nobody has asked for it"
+
+        self._deny("https://kling.ai/docs", "max_seconds is contested", incidental=False)
+        asked = fetch.wanted()
+        assert [row["host"] for row in asked["hosts"]] == ["kling.ai"]
+        assert asked["hosts"][0]["why_wanted"] == "max_seconds is contested", (
+            "the reason that promoted it is the reason the owner needs to read"
+        )
+        assert asked["also_refused"] == [], "a host is in one list or the other"
+
 
 class Probe(unittest.TestCase):
     URL = "https://api.klingai.com/v1/videos/text2video"

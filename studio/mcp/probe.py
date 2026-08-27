@@ -44,7 +44,6 @@ parameter ends up in a call log, a transcript and a traceback; a key read from
 from __future__ import annotations
 
 import json
-import os
 import urllib.error
 import urllib.request
 from datetime import date
@@ -52,6 +51,7 @@ from typing import Any
 
 from lipsync.fork_identity import FAIL, PASS, UNMEASURED
 
+from studio.mcp import credentials
 from studio.mcp.fetch import TIMEOUT_SECONDS, _DENIAL, _host, note_denial
 
 __all__ = ["probe_limit", "ABSURD_MIN", "KEY_ENV"]
@@ -76,12 +76,13 @@ KEY_ENV: dict[str, tuple[str, ...]] = {
 
 
 def _key_for(host: str) -> tuple[str, str]:
-    """(key, which env var it came from). Empty strings when nothing is set."""
-    for name in KEY_ENV.get(host, ()):
-        value = os.environ.get(name, "").strip()
-        if value:
-            return value, name
-    return "", ""
+    """(key, which env var it came from). Empty strings when nothing is set.
+
+    The search is `credentials.find`, shared with `search.py`: this is where
+    the `KLING_API_KEY`/`KLING_KEY` defect lived, and it recurred once more
+    before the lookup was moved to one place.
+    """
+    return credentials.find(KEY_ENV.get(host, ()))
 
 
 def probe_limit(

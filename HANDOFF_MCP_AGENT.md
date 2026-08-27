@@ -182,3 +182,112 @@ forbidden to read the implementation, which found defects 1–3 above.
 `C3` never route around a policy-closed host.
 `C11`/`C12` (added this session) measure before concluding "no access", and an
 API error means a missing key rather than a missing permission.
+
+---
+
+# Session 2026-08-27 (later) — the key had arrived; two defects it uncovered
+
+Appended, nothing above rewritten.
+
+## 1. The Gemini key was there all along, spelled `Gemini_API_KEY`
+
+The previous session concluded the key had not arrived. It had. `os.environ`
+is case-sensitive on Linux, the package listed `GEMINI_API_KEY`, and so it
+reported "no key" beside a working 53-character one — and a session was spent
+believing the credential was missing.
+
+This is the **second** time in this package: `probe.py` looked for
+`KLING_API_KEY` while the environment set `KLING_KEY`. One shape —
+**a lookup that guesses at a name will meet a name somebody else chose.**
+
+Fixed in one place, `studio/mcp/credentials.py`, imported by both `search.py`
+and `probe.py`; neither reads `os.environ` for a credential any more. Exact
+names still win where they exist; only when nothing matches exactly does a
+case-folded pass run, over `sorted(os.environ)` so two spellings resolve the
+same way on every run. The name reported back is **the spelling that was
+found**, not the one that was expected — that difference is the thing the
+owner needs to see.
+
+Grep shape for the next one: any `os.environ.get(<a credential name>)`.
+
+## 2. The live Gemini call: the parsing was right, the bookkeeping was not
+
+`search("Kling 3.0 max duration seconds API")` → `pass`, backend `gemini`,
+7 grounded sources, answer body present. The documented shape held exactly:
+`candidates[0].groundingMetadata` with `groundingChunks[].web.{uri,title}`
+and `webSearchQueries`. `title` really is the publisher domain, `uri` really
+is a `vertexaisearch.cloud.google.com` redirect. **`_gemini()` needed no
+change**, and its UNVERIFIED paragraph is now a MEASURED one.
+
+What the live call *did* expose: that one query wrote **five hosts nobody had
+ever wanted** (atlascloud.ai, magnific.com, kie.ai, evolink.ai, wavespeed.ai)
+into `denied_hosts.jsonl` — the file a human reads to decide what access to
+grant, which until then held six hosts a real question was stuck behind. The
+per-host `fetchable` probe records a refusal like any other, and `wanted()`
+was announcing all of them as "needed for a real question". A few more
+searches and the ask the owner has to justify is mostly noise.
+
+Fix: `note_denial(..., incidental=True)`, threaded through `fetch()` and set
+by `search._fetchable`. Refusals are **still all recorded** — routing around
+one is what is forbidden, counting it is not — but `wanted()` now returns
+`hosts` (the ask) and `also_refused` (swept up), and only-swept is
+`could not measure`, never `pass`. A host first met by a probe and later
+actually needed is promoted into the ask, so the order two calls happened in
+no longer decides whether the owner ever hears about a host they need.
+
+Measured after the fix, on a second live search: ask still the same 6 hosts,
+8 swept hosts filed apart.
+
+## Mutation runs (T1), `python -B` with caches cleared
+
+Eight decision points, mutated both ways; all red, with two rounds needed:
+
+| mutation | result |
+|---|---|
+| credentials: exact name only | red |
+| credentials: exact match not preferred | red **(green at first — see below)** |
+| credentials: non-deterministic order | red |
+| credentials: whitespace counts as a value (both passes) | red (green at first) |
+| `wanted`: swept hosts enter the ask | red |
+| `wanted`: only-swept returns `pass` | red |
+| `wanted`: a real question does not outrank a probe | red |
+| `search`: the reachability probe is recorded as an ask | red **(green at first)** |
+
+Two tests were measuring nothing and were rewritten (house rule И5):
+
+- `test_an_exact_name_beats_a_case_folded_one` used
+  `GEMINI_API_KEY`/`gemini_api_key`, where ASCII sort order happens to agree
+  with the rule — it stayed green with the exact-match pass deleted. Now
+  `GEMINI_Api_Key`/`GOOGLE_API_KEY`, where sort order disagrees.
+- the whitespace test only exercised one of the two lookup passes.
+
+And the defect site itself — `search._fetchable` marking its probes
+incidental — had no test at all until the mutation said so.
+
+`bash scripts/check` exits 0; blind control set 54 checked, 0 violations,
+0 unmeasured.
+
+Note: `mypy` and `mcp` are not preinstalled in a fresh container, so
+`scripts/check` fails at its third step until
+`python3 -m pip install --ignore-installed PyJWT -r requirements-dev.txt`
+runs. `--ignore-installed PyJWT` is needed because a debian-owned PyJWT has
+no RECORD file and pip refuses to uninstall it.
+
+## What the two live searches said, NOT recorded as facts
+
+Search-tier, and the source URLs are Google redirects that do not open, so
+nobody has read the publisher. Left for the owner to decide the tier:
+
+- Kling 3.0: "a single generation is typically capped at 10 seconds, 5 the
+  default". Bears on the CONTESTED `max_seconds` 10-vs-15 but does not settle
+  it — this is a grounded summary, not a vendor page.
+- Veo 3.1: "8 seconds native single-pass, 4/6/8 at 720p and 1080p, 4K locked
+  at 8", extendable beyond that.
+
+## Still waiting on the owner, unchanged
+
+The four items in the previous section stand: the six-host allowlist request
+(lead with `docs.cloud.google.com`), Yandex as a third backend (open, keyed,
+**price unverified and the key is the owner's ad-work key**), the
+`MAX_PER_PROVENANCE = 2` quota in another module's file, and the fact that no
+prompt in this package has been proven by a generation.

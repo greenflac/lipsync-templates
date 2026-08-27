@@ -65,13 +65,13 @@ otherwise. It finds the door; `fetch_url` says whether it opens.
 from __future__ import annotations
 
 import json
-import os
 import urllib.error
 import urllib.parse
 import urllib.request
 
 from lipsync.fork_identity import FAIL, PASS, UNMEASURED
 
+from studio.mcp import credentials
 from studio.mcp.fetch import TIMEOUT_SECONDS, _DENIAL, note_denial
 
 __all__ = [
@@ -128,12 +128,9 @@ SETUP = (
 )
 
 
-def _first_env(names: tuple[str, ...]) -> tuple[str, str]:
-    for name in names:
-        value = os.environ.get(name, "").strip()
-        if value:
-            return value, name
-    return "", ""
+#: Credential lookup lives in one module for the whole package; see
+#: `credentials.find` for why it is not `os.environ.get`.
+_first_env = credentials.find
 
 
 def _fetchable(host: str) -> bool | None:
@@ -143,7 +140,13 @@ def _fetchable(host: str) -> bool | None:
     """
     from studio.mcp.fetch import fetch as _fetch
 
-    out = _fetch(f"https://{host}/", why_wanted="checking whether a search hit is readable")
+    # incidental: nobody asked for this host, it merely turned up in a result
+    # list. Its refusal is recorded but stays out of the allowlist request.
+    out = _fetch(
+        f"https://{host}/",
+        why_wanted="checking whether a search hit is readable",
+        incidental=True,
+    )
     if out["denied"]:
         return False
     if out["outcome"] in {PASS, FAIL}:
@@ -159,11 +162,14 @@ def _gemini(text: str, site: str, count: int) -> dict:
     No domain list and no 50-site cap: this is the whole index, which is what
     Programmable Search stopped offering to new engines in March 2026.
 
-    UNVERIFIED against a live response — no key has been available on this
-    machine, so the parsing below follows the documented `groundingMetadata`
-    shape and is written to survive a shape it does not recognise rather than
-    to assume one. The first real call is the test, and it is the owner's to
-    run.
+    MEASURED 2026-08-27 against a live response, which is what this paragraph
+    used to say was missing. `search("Kling 3.0 max duration seconds API")`
+    returned `pass` on `gemini` with 7 grounded sources and an answer body;
+    the documented shape held exactly — `candidates[0].groundingMetadata`
+    carrying `groundingChunks[].web.{uri,title}` and `webSearchQueries`. The
+    parsing needed no change. The `title` really is the publisher domain
+    (atlascloud.ai, magnific.com, kie.ai, evolink.ai, wavespeed.ai) and the
+    `uri` really is a `vertexaisearch.cloud.google.com` redirect.
 
     One documented wrinkle worth knowing before it surprises somebody: the URLs
     in `groundingChunks` are Google redirect links, not the publisher's own
