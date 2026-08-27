@@ -19,6 +19,21 @@ The shape of that is worth reading: the API hosts of the two vendors this
 project holds keys for are open, and the documentation hosts are shut. So the
 vendor is reachable — as a running system, not as prose.
 
+A HOST IS NOT THE UNIT. MEASURED 2026-08-27, twice each way:
+
+    https://docs.qingque.cn/                     tunnel 403, refused
+    https://docs.qingque.cn/d/home/eZQD6Ovt...    200, 16 KB
+
+Same host, same minute, reproducible. The proxy terminates TLS, so it can and
+does match on the PATH. Everything in this module and in the allowlist request
+is keyed by host, because that is the unit a human grants — but "the host is
+open" must not be concluded from one URL answering, and "the host is refused"
+must not be concluded from one URL failing. Probe the URL you actually need.
+
+The state machine already survives this: the doc path answering wrote an `open`
+row that retired the apex's refusal, so the ask did not end up asking for
+access we have. That is the latest-row rule doing its job, not luck.
+
 WHAT THIS WILL NOT DO, AND WHY IT IS NOT A LIMITATION TO ENGINEER AROUND
 
 A blocked host stays blocked. No mirror, no read-through proxy, no cache, no
