@@ -87,11 +87,48 @@ class PromptWriter(unittest.TestCase):
         assert out["outcome"] == "could not measure"
         assert [row["slot"] for row in out["unresolved"]] == ["saturation"]
 
-    def test_an_empty_intent_is_could_not_measure(self) -> None:
-        out = lp.write("   ", AGREEING)
+    def test_an_empty_intent_still_asks_all_four_questions(self) -> None:
+        # Somebody who said nothing needs the questions MOST. An earlier version
+        # short-circuited the empty case and handed back an empty `unresolved`.
+        out = lp.write("   ", [])
         assert out["outcome"] == "could not measure"
-        assert out["checked"] == 0
         assert out["prompt"] is None
+        assert [row["slot"] for row in out["unresolved"]] == [
+            "palette",
+            "value_key",
+            "texture",
+            "saturation",
+        ]
+        assert out["checked"] == 4, "four slots were examined, and none was filled"
+
+    def test_a_named_colour_is_never_topped_up_from_the_corpus(self) -> None:
+        # Substitution only: the owner named two colours, so the palette is two
+        # colours. Adding a third from precedent is an addition, not a fill.
+        shouting = [
+            _row("crimson and gold walls, low-key light, matte", f"rec-{n}") for n in (1, 2, 3)
+        ]
+        out = lp.write("muted teal and slate, low-key light, matte", shouting)
+        assert out["card"]["colours"] == ["slate", "teal"]
+        assert out["chosen"]["palette"]["from"] == "owner"
+        assert out["chosen"]["palette"]["record_ids"] == [], (
+            "a slot the owner filled must not carry corpus ids: the label would lie"
+        )
+
+    def test_saturation_is_corroborated_from_the_corpus_like_every_other_slot(self) -> None:
+        two = [
+            _row("muted desaturated restrained colour, soft light, matte", "a"),
+            _row("muted desaturated restrained colour, soft light, matte", "b"),
+        ]
+        out = lp.write("ivory", two)
+        assert out["outcome"] == "pass"
+        assert out["card"]["saturation"] == "muted"
+        assert out["chosen"]["saturation"]["record_ids"] == ["a", "b"]
+
+    def test_one_record_cannot_fill_saturation_either(self) -> None:
+        lonely = [_row("muted desaturated colour, soft light, matte", "a")]
+        out = lp.write("ivory", lonely)
+        assert out["outcome"] == "could not measure"
+        assert "saturation" in [row["slot"] for row in out["unresolved"]]
 
     def test_a_written_prompt_never_names_the_subject(self) -> None:
         out = lp.write("muted ivory and slate, low-key light, matte", [])

@@ -203,42 +203,42 @@ def write(intent: str, examples: Sequence[Any]) -> dict:
     Three outcomes. `could not measure` when a required slot is unresolved: the
     engine could be handed a guess instead, and a guess is what this refuses.
     """
+    # An empty intent is NOT short-circuited. It used to be, and a blind control
+    # set caught what that cost on 2026-08-27: `write("", [])` returned "could
+    # not measure" with an empty `unresolved`, so the one caller most in need of
+    # the four questions — somebody who said nothing at all — got none of them.
+    # Falling through means every unfilled slot produces its question by the
+    # same path, whatever the intent was.
     said = str(intent or "").strip()
-    if not said:
-        return {
-            "outcome": UNMEASURED,
-            "checked": 0,
-            "violations": 0,
-            "unmeasured": 1,
-            "note": "no intent was given, so nothing was retrieved and nothing written",
-            "prompt": None,
-            "card": None,
-            "chosen": {},
-            "unresolved": [],
-            "gate": gate(""),
-        }
 
     named = read_intent(said)
     votes = vote(examples)
 
     chosen: dict[str, dict] = {}
 
-    # Palette: the owner's colours first, topped up from the corpus to the
-    # engine's width. Their own colours are never displaced by a vote.
+    # Palette. If the owner named ANY colour, that is the palette — the corpus
+    # does not top it up to the engine's width.
+    #
+    # It used to. A blind control set caught it on 2026-08-27: asked for "muted
+    # teal and slate", with three precedents shouting crimson, the tool built
+    # "a palette of slate, teal and crimson". Nothing the owner said was
+    # overruled, so every override test stayed green — a colour was simply
+    # ADDED, which the product rule forbids outright. Two named colours mean a
+    # two-colour palette, not a vacancy.
     colours = list(named["palette"])
     palette_sources: list[str] = []
-    for row in _supported(votes["palette"], limit=PALETTE_WIDTH):
-        if len(colours) >= PALETTE_WIDTH:
-            break
-        if row["value"] not in colours:
+    if colours:
+        chosen["palette"] = {"value": colours, "from": "owner", "record_ids": []}
+    else:
+        for row in _supported(votes["palette"], limit=PALETTE_WIDTH):
             colours.append(row["value"])
             palette_sources.extend(row["record_ids"])
-    if colours:
-        chosen["palette"] = {
-            "value": colours,
-            "from": "owner" if named["palette"] else "corpus",
-            "record_ids": sorted(set(palette_sources)),
-        }
+        if colours:
+            chosen["palette"] = {
+                "value": colours,
+                "from": "corpus",
+                "record_ids": sorted(set(palette_sources)),
+            }
 
     # Light -> the engine's three-way value key.
     light_word = named["light"][0] if named["light"] else ""
@@ -272,11 +272,40 @@ def write(intent: str, examples: Sequence[Any]) -> dict:
             "record_ids": texture_sources,
         }
 
-    # Saturation. No corpus field carries it, so it is the owner's word or it
-    # is unresolved. Defaulting it would be the tool choosing the look.
+    # Saturation. No corpus FIELD carries it, but corpus PROMPTS say "muted",
+    # "desaturated", "vivid" in plain words, and `read_intent` already knows how
+    # to read them. So it is corroborated the same way as light and texture:
+    # two distinct records or nothing.
+    #
+    # This module used to refuse saturation from the corpus outright, on the
+    # grounds that no field carried it. A blind control set caught the
+    # inconsistency on 2026-08-27: two independent records both saying
+    # "muted desaturated restrained colour" filled light and texture and left
+    # saturation unresolved, so a request fully covered by evidence still came
+    # back as "could not measure". Refusing evidence is not conservatism, it is
+    # a different rule for one slot.
     saturation = named["saturation"]
+    saturation_sources: list[str] = []
     if saturation:
         chosen["saturation"] = {"value": saturation, "from": "owner", "record_ids": []}
+    else:
+        cues: dict[str, list[str]] = defaultdict(list)
+        for item in examples:
+            text, source = _entry_fields(item)
+            seen = read_intent(text)["saturation"]
+            if seen:
+                cues[seen].append(source)
+        ranked = sorted(
+            ((value, sorted(set(ids))) for value, ids in cues.items()),
+            key=lambda pair: (-len(pair[1]), pair[0]),
+        )
+        if ranked and len(ranked[0][1]) >= MIN_SUPPORT:
+            saturation, saturation_sources = ranked[0][0], ranked[0][1]
+            chosen["saturation"] = {
+                "value": saturation,
+                "from": "corpus",
+                "record_ids": saturation_sources,
+            }
 
     unresolved: list[dict] = []
     if len(named["palette"]) > PALETTE_WIDTH:

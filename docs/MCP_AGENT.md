@@ -145,19 +145,25 @@ sentence at all.
 
 ```
 "muted ivory and slate, low-key light, matte"
-    -> card {colours: [ivory, slate, charcoal], value_key: dark,
+    -> card {colours: [ivory, slate], value_key: dark,
              saturation: muted, texture: matte}
-    -> "a palette of ivory, slate and charcoal, low-key shadowed lighting,
+    -> "a palette of ivory and slate, low-key shadowed lighting,
         desaturated restrained colour, matte, photographic look"
-    -> gate: pass — 16 words (band 9..67), 6 clauses (band 1..13), 0 forbidden
+    -> gate: pass — 15 words (band 9..67), 5 clauses (band 1..13), 0 forbidden
 ```
 
 ### Who wins, and when it refuses
 
-**The owner wins.** A value you name is taken as given; the corpus only fills
-what you left silent, and every filled slot comes back with the record ids that
-voted for it. A corpus value is accepted only with support from **two distinct
-records** — one precedent saying "teal" is a coincidence, not evidence.
+**The owner wins, and is never topped up.** A value you name is taken as given
+and the corpus does not add to it: name two colours and you get a two-colour
+palette, because adding a third is an addition and the product rule allows only
+substitution. The corpus fills what you left **silent**, and every slot it fills
+comes back with the record ids that voted for it — a slot you filled carries
+none, so the label can never disagree with the evidence beside it.
+
+A corpus value is accepted only with support from **two distinct records** — one
+precedent saying "teal" is a coincidence, not evidence. That floor is the same
+for every slot, `saturation` included.
 
 Where you said nothing and the corpus does not agree either, the slot is
 reported unresolved and the run returns `could not measure` **with a question**:
@@ -169,8 +175,9 @@ reported unresolved and the run returns `could not measure` **with a question**:
     ask: How much colour — muted, moderate, saturated?
 ```
 
-It does not pick. `saturation` in particular is never defaulted, because no
-corpus field carries it: it is your word or it is a question.
+It does not pick, and it never defaults `saturation` — no corpus *field*
+carries it, so it comes from your words or from two corpus prompts that both
+say "muted" in plain words, and otherwise it is a question.
 
 Naming more colours than the engine takes is also a question, not a trim. The
 engine truncates a wider palette silently, so a colour you named would vanish
@@ -178,8 +185,38 @@ from the prompt with nobody told.
 
 ## What is checked, and how it was verified
 
-`bash scripts/check` gates ruff, ruff format, mypy, 32 tests and a live server
-handshake for this package. Exit 0 as of 2026-08-27.
+`bash scripts/check` gates ruff, ruff format, mypy, 35 tests, a 54-case blind
+control set and a live server handshake for this package. Exit 0 as of
+2026-08-27.
+
+### The blind control set, and the three defects it found
+
+`studio/mcp/fixtures/blind_control_set.py` was written by an agent forbidden to
+read any of `contract.py`, `lipsync_prompt.py`, `advice.py` or the tests. It
+judged the modules from the contracts alone, by importing them and reading what
+they returned — the verdict cast by somebody who did not build the thing. It
+reported 51 of 54 green, and all three failures were real:
+
+1. **A corpus colour was added to a palette the owner had already filled.**
+   Asked for "muted teal and slate" with three precedents shouting crimson, the
+   tool built `a palette of slate, teal and crimson`. Nothing the owner said was
+   *overruled*, so every override test stayed green — a colour was simply
+   *added*, which the product rule forbids. Worse, `chosen["palette"]` was
+   stamped `from: "owner"` while carrying the corpus record ids: the label
+   contradicted the evidence beside it. Fixed — a named palette is now taken
+   exactly as named.
+2. **Saturation could never be filled from the corpus.** Two independent records
+   both saying "muted desaturated restrained colour" filled light and texture
+   and left saturation unresolved, so a request fully covered by evidence still
+   came back `could not measure`. The stated rule is two distinct records for
+   any slot; one slot had a different rule. Fixed — saturation is corroborated
+   like everything else, and one record is still not enough.
+3. **An empty intent asked no questions.** `write("", [])` returned `could not
+   measure` with an empty `unresolved`, so the caller most in need of the four
+   questions got none. Fixed — the empty case is no longer short-circuited.
+
+The control set is itself checked: restoring defect 1 turns it red (`нарушений
+1`) and removing it turns it green again.
 
 The handshake is not an import check: the tools register by decorator at import
 time, so an import succeeds even when the transport is broken. It starts the
@@ -191,8 +228,8 @@ off — see the caveat below):
 | mutation | result |
 |---|---|
 | control, before any mutation | OK |
-| `MIN_SUPPORT` 2 → 1 (weaker) | 2 failures |
-| `MIN_SUPPORT` 2 → 3 (stricter) | 2 failures, 1 error |
+| `MIN_SUPPORT` 2 → 1 (weaker) | 3 failures |
+| `MIN_SUPPORT` 2 → 3 (stricter) | 3 failures, 1 error |
 | subject guard disabled | 3 failures |
 | word band removed | 2 failures |
 | tier validation removed | 1 failure |
@@ -223,8 +260,10 @@ again after restoring.
   the other way, so the imports here carry an `attr-defined` ignore. The
   collision predates this package and belongs to whoever owns those two paths.
 * **The saturation cue list is CHOSEN, not measured.** Six words for "muted",
-  six for "saturated", four for "moderate". An owner who writes "chalky" gets a
-  question rather than a guess, which is the safe direction to be wrong in.
+  six for "saturated", four for "moderate". The same list reads your words and
+  the corpus prompts, so a look the corpus describes with a word outside it goes
+  unnoticed. An owner who writes "chalky" gets a question rather than a guess,
+  which is the safe direction to be wrong in.
 * **Seven of the ten light words are placed by hand.** The engine's own table
   maps three; the other seven are a decision recorded in the source where it
   can be argued with.

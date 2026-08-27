@@ -104,6 +104,14 @@ python -m unittest discover -s studio/mcp/tests -t .
 # The server has to actually start and speak the protocol. Importing it proves
 # nothing: the tools are registered by decorator at import time, so an import
 # succeeds even when the transport is broken.
+# The blind control set: 54 cases written by an agent that was forbidden to read
+# the implementation and judged it from the contracts alone (house rule И1). It
+# found three real defects on 2026-08-27 — a corpus colour added to a palette the
+# owner had already filled, saturation refused even when corroborated, and an
+# empty intent that asked no questions at all. Exit 1 on any case.
+echo "== blind control set (mcp)"
+python studio/mcp/fixtures/blind_control_set.py
+
 echo "== mcp server handshake"
 python - <<'PY'
 import asyncio, sys
