@@ -34,6 +34,17 @@ Read this first, then `docs/MCP_AGENT.md` for the detail.
    the UNVERIFIED paragraph from its docstring. Do not delete the paragraph
    without a live call behind it.
 
+## One thing that does NOT migrate
+
+The PR watch. `subscribe_pr_activity` binds to the session that called it, so
+the previous session receives CI and review events for #1 and this one does
+not. If you want them here, subscribe again:
+
+    subscribe_pr_activity(owner="greenflac", repo="lipsync-templates", pullNumber=1)
+
+Scheduled check-ins are the same — they fire into the session that scheduled
+them.
+
 ## What exists
 
 `studio/mcp/` — an MCP server, registered in `.mcp.json`, ten tools:
