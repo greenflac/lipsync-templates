@@ -315,6 +315,17 @@ def main() -> int:
     print(f"\nproduced {len(done) - len(failed)} of {len(done)}; {len(failed)} failed")
     for s in failed:
         print(f"  {s['id']}: {s['error']}")
+    # The same three-outcome hole that was OBSERVED in `scripts/ingest_harvest.py`
+    # and fixed there on 2026-08-28: `1 if failed else 0` reads an empty run as a
+    # clean one. Here it is worse than a green light on nothing — this is the
+    # script that spends money, so "produced 0 of 0; 0 failed" exiting 0 would
+    # report a successful A/B that never called anything.
+    if not done:
+        print(
+            "\nCOULD NOT MEASURE: the plan ran zero calls, so nothing was produced "
+            "and nothing failed. That is not a successful run."
+        )
+        return 2
     return 1 if failed else 0
 
 

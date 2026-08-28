@@ -234,7 +234,23 @@ def _check(path: Path) -> int:
             missing.append(f"{model}.{row.get('attribute')} <- {row.get('source_url')}")
     for line in missing[:10]:
         print(f"  не в базе: {line}")
-    print(f"\nпроверено {checked}\nрасхождений {len(missing)}\nуступлено разбору {yielded}")
+    # THREE OUTCOMES, and the third one is why this branch exists (rule R2).
+    # OBSERVED 2026-08-28 before the fix: an existing but empty harvest file
+    # printed `проверено 0 / расхождений 0` and exited 0. Three steps of
+    # `scripts/check` run this, so a green light there could mean "every claim
+    # is applied" or "not one row was read", and nothing distinguished them.
+    # Zero violations out of zero checks is not a pass.
+    unmeasured = 1 if checked == 0 else 0
+    print(
+        f"\nпроверено {checked}\nрасхождений {len(missing)}\n"
+        f"уступлено разбору {yielded}\nне смогли {unmeasured}"
+    )
+    if unmeasured:
+        print(
+            f"\nНЕ СМОГЛИ: {path} не дал ни одной читаемой строки для проверки. "
+            "Это не успех: проверять было нечего."
+        )
+        return 2
     return 1 if missing else 0
 
 
