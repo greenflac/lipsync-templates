@@ -289,18 +289,85 @@ def _pre_fork_hits(text: str, label: str) -> list[str]:
 PROVENANCE_MARKS = ("MEASURED", "DERIVED", "CHOSEN")
 
 
-def _compared_names(tree: ast.Module) -> set[str]:
-    """Every name some comparison in the module tests against."""
-    names: set[str] = set()
-    for node in ast.walk(tree):
-        if not isinstance(node, ast.Compare):
+def _deciding_params(tree: ast.Module) -> dict[str, tuple[set[int], set[str]]]:
+    """Per function: which parameters a branch inside it compares against."""
+    out: dict[str, tuple[set[int], set[str]]] = {}
+    for fn in ast.walk(tree):
+        if not isinstance(fn, (ast.FunctionDef, ast.AsyncFunctionDef)):
             continue
-        for side in [node.left, *node.comparators]:
-            for inner in ast.walk(side):
-                if isinstance(inner, ast.Name):
-                    names.add(inner.id)
-                elif isinstance(inner, ast.Attribute):
-                    names.add(inner.attr)
+        compared: set[str] = set()
+        for node in ast.walk(fn):
+            if not isinstance(node, ast.Compare):
+                continue
+            for side in [node.left, *node.comparators]:
+                for inner in ast.walk(side):
+                    if isinstance(inner, ast.Name):
+                        compared.add(inner.id)
+        a = fn.args
+        positional = a.posonlyargs + a.args
+        out[fn.name] = (
+            {i for i, arg in enumerate(positional) if arg.arg in compared},
+            {arg.arg for arg in positional + a.kwonlyargs if arg.arg in compared},
+        )
+    return out
+
+
+def _deciding_names(tree: ast.Module) -> set[str]:
+    """Names a branch depends on — directly, or through where they are passed.
+
+    Rule I4 asks provenance of a DECISION constant: a value some branch
+    depends on. Two cruder readings were measured on this tree and both are
+    the wrong instrument. Demanding it of every top-level constant reports 160
+    violations, mostly word lists and endpoint names where "where did this
+    value come from" has no answer. Counting only DIRECT comparisons misses
+    every threshold handed to the helper that compares it — 45 constants sit
+    in that blind spot, and `UPSCALE_DRIFT_MAX` and `RESTORE_PULL_MAX`, the
+    two bars the identity instrument judges itself by, were among them.
+
+    Following the argument into the parameter it binds gives 51 constants,
+    which is the set the rule names.
+    """
+    params = _deciding_params(tree)
+    names: set[str] = set()
+
+    def collect(node: ast.AST) -> None:
+        for inner in ast.walk(node):
+            if isinstance(inner, ast.Name):
+                names.add(inner.id)
+            elif isinstance(inner, ast.Attribute):
+                names.add(inner.attr)
+
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Compare):
+            for side in [node.left, *node.comparators]:
+                collect(side)
+        elif isinstance(node, ast.Call):
+            called = None
+            if isinstance(node.func, ast.Name):
+                called = node.func.id
+            elif isinstance(node.func, ast.Attribute):
+                called = node.func.attr
+            positions, keywords = params.get(called or "", (set(), set()))
+            for i, arg in enumerate(node.args):
+                if i in positions:
+                    collect(arg)
+            for kw in node.keywords:
+                if kw.arg in keywords:
+                    collect(kw.value)
+        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            # A default is the value the branch sees when the caller says
+            # nothing, so it decides exactly as an argument does.
+            positions, keywords = params.get(node.name, (set(), set()))
+            a = node.args
+            positional = a.posonlyargs + a.args
+            offset = len(positional) - len(a.defaults)
+            for i, default in enumerate(a.defaults):
+                idx = offset + i
+                if idx in positions or positional[idx].arg in keywords:
+                    collect(default)
+            for arg, default in zip(a.kwonlyargs, a.kw_defaults):
+                if default is not None and arg.arg in keywords:
+                    collect(default)
     return names
 
 
@@ -339,7 +406,7 @@ def _unmarked_decisions(text: str, label: str) -> list[str]:
     """Decision constants in one module that do not say where they came from."""
     lines = text.splitlines()
     tree = ast.parse(text)
-    compared = _compared_names(tree)
+    compared = _deciding_names(tree)
     unmarked = []
     for node in tree.body:
         if not isinstance(node, ast.Assign):
@@ -375,7 +442,7 @@ class EveryDecisionConstantSaysWhereItCameFrom(unittest.TestCase):
         for path in _sources():
             text = path.read_text(encoding="utf-8")
             tree = ast.parse(text)
-            compared = _compared_names(tree)
+            compared = _deciding_names(tree)
             for node in tree.body:
                 if isinstance(node, ast.Assign) and any(
                     isinstance(t, ast.Name) and t.id in compared for t in node.targets
@@ -406,6 +473,31 @@ class EveryDecisionConstantSaysWhereItCameFrom(unittest.TestCase):
         """The window is the comments touching the assignment, not N lines."""
         text = "#: CHOSEN: a bar.\nBAR = 3\nBAZ = 4\n\n\ndef f(x):\n    return x > BAZ\n"
         self.assertEqual(_unmarked_decisions(text, "planted"), ["planted:3 BAZ"])
+
+    def test_a_constant_handed_to_a_helper_that_branches_is_demanded(self) -> None:
+        """The blind spot this definition closes, planted and checked.
+
+        A threshold passed into the helper that compares it decides exactly as
+        one compared in place. Counting only direct comparisons left 45
+        constants unwatched, `UPSCALE_DRIFT_MAX` and `RESTORE_PULL_MAX` among
+        them — the two bars the identity instrument judges itself by.
+        """
+        text = (
+            "BAR = 3\n\n\n"
+            "def judge(value, limit):\n    return value > limit\n\n\n"
+            "def run(v):\n    return judge(v, BAR)\n"
+        )
+        self.assertIn("BAR", _deciding_names(ast.parse(text)))
+        self.assertEqual(_unmarked_decisions(text, "planted"), ["planted:1 BAR"])
+
+    def test_a_constant_handed_to_a_helper_that_never_branches_is_not(self) -> None:
+        """Clamps the widening from above: not every argument is a decision."""
+        text = (
+            "SEP = '|'\n\n\n"
+            "def join(parts, sep):\n    return sep.join(parts)\n\n\n"
+            "def run(p):\n    return join(p, SEP)\n"
+        )
+        self.assertNotIn("SEP", _deciding_names(ast.parse(text)))
 
     def test_a_constant_no_branch_compares_is_not_demanded(self) -> None:
         """Clamps the definition from above: not every constant is a decision."""
