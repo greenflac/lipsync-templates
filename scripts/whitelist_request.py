@@ -167,9 +167,21 @@ EXCLUDED_REASONS: dict[str, str] = {
     "reseller-of-reseller": "wraps another API; documents nothing first-hand",
     "media": "social, news or blog platform; blog tier at best",
     "tool-directory": "aggregated listings with no primary source",
+    "not-needed": (
+        "the refusal is real, and a MEASUREMENT showed nothing depends on it. "
+        "Asking anyway spends the owner's attention on access we would not use"
+    ),
 }
 
 EXCLUDED: dict[str, str] = {
+    # MEASURED 2026-08-28: `docker pull qdrant/qdrant` resolves the manifest and
+    # is then refused on the blob CDN (production.cloudfront.docker.com,
+    # Forbidden), so Qdrant cannot run as a container here. It does not need to:
+    # `QdrantClient(path=...)` — local mode, no server — created a collection,
+    # upserted 500 points and answered a query in 0.79 s, and 1000 x 1024-dim
+    # vectors persist across a reopen in 9.6 MB. An access request for a
+    # dependency we measured away would be a request nobody can act on.
+    "docker.com": "not-needed",
     # domains squatting on model names — none of these is the vendor
     "kling3.ai": "seo-clone",
     "kling3.io": "seo-clone",
