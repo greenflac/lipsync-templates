@@ -39,6 +39,10 @@ BRIDGE_MAX_FRAMES = 8
 
 TOP_LOOPS = 5
 
+#: CHOSEN: the share of frames the pose has to be captured on for the
+#: analysis to mean anything at all. Under it the outcome is "could not
+#: measure" and not "no loops": on a driving where the person is missing from
+#: a quarter of the frames, finding no loops says nothing about the material.
 MIN_POSE_COVERAGE = 0.8
 
 GIF_MAX_FRAMES = 24
@@ -51,6 +55,11 @@ CUT_SIDE = 96
 
 PRESENCE_GAP_MIN = 15
 
+#: CHOSEN from a wait a person tolerates: 900 frames is 30 s at 30 fps, about
+#: half a minute of CPU for pose capture at the per-frame cost recorded in
+#: 61e49b9 (0.031 s/frame here, 0.058 s/frame by the template author). Half a
+#: minute is waited for; the seventeen minutes the full scan would cost on
+#: long material is not.
 COARSE_ABOVE_FRAMES = 900
 
 COARSE_STRIDE = 5
@@ -67,8 +76,13 @@ SCAN_TOO_LONG = "too long"
 
 EXIT_BY_OUTCOME = {PASS: 0, FAIL: 1, UNMEASURED: 2}
 
+#: CHOSEN: what counts as a frame in a directory. The list is closed on
+#: purpose — anything else sitting there is not silently taken for a frame.
 FRAME_SUFFIXES = (".png", ".jpg", ".jpeg")
 
+#: CHOSEN: first version of the pose cache format. It moves with the shape of
+#: the record, so a cache written by an older shape is rejected instead of
+#: being read as if it were the new one.
 CACHE_VERSION = 1
 
 
@@ -77,7 +91,7 @@ def read_pose(path) -> dict:
     try:
         return {"points": pose.landmarks(path), "why": "", "people": None}
     except Exception as exc:  # noqa: BLE001 — deliberately broad: any failure means we could not ask
-        return {"points": None, "why": f"{type(exc).__name__}: {str(exc)[:200]}"}
+        return {"points": None, "why": f"{type(exc).__name__}: {exc}"}
 
 
 def read_gray(path):
@@ -107,7 +121,7 @@ def read_head(path) -> dict:
         x1, x2, y1, y2 = box
         return {"head": ((x1 + x2) / 2.0, (y1 + y2) / 2.0), "why": ""}
     except Exception as exc:  # noqa: BLE001 — see `read_pose`: deliberately broad for the same reason
-        return {"head": None, "why": f"{type(exc).__name__}: {str(exc)[:200]}"}
+        return {"head": None, "why": f"{type(exc).__name__}: {exc}"}
 
 
 def _head_at(paths, k, *, reader, cache) -> dict:
@@ -234,6 +248,9 @@ def cuts(paths, *, gray=None, jump=None) -> dict:
         }
     found = [k for k, v in enumerate(steps) if v / med > jump]
     worst = max(steps) / med
+    # A sample, not the list: the note says how many of how many it shows.
+    # CHOSEN: ten frame numbers keep the note to one line; "cuts" carries all.
+    shown = found[:10]
     return {
         "outcome": PASS,
         "cuts": found,
@@ -244,7 +261,8 @@ def cuts(paths, *, gray=None, jump=None) -> dict:
         "note": (
             f"cuts found {len(found)} across {len(steps)} transitions "
             f"(bar {jump}x the typical jump, sharpest transition "
-            f"{worst:.2f}x)" + (f"; seam frames: {found[:10]}" if found else "")
+            f"{worst:.2f}x)"
+            + (f"; seam frames, first {len(shown)} of {len(found)}: {shown}" if found else "")
         ),
     }
 
@@ -470,13 +488,6 @@ def length_is_admissible(length, *, fps=None, min_frames=None) -> bool:
     return (length - framemath.LENGTH_BASE) % framemath.LENGTH_STEP == 0
 
 
-def admissible_lengths(n_frames, *, fps=None, min_frames=None) -> list:
-    """List loop lengths the wrapper will NOT snap and the product will accept."""
-    return [
-        L for L in range(1, n_frames + 1) if length_is_admissible(L, fps=fps, min_frames=min_frames)
-    ]
-
-
 def admissible_pairs(index, *, fps=None, min_frames=None) -> list:
     """List pairs of POSITIONS whose length in SOURCE frames is admissible."""
     top = None if fps is None else int(framemath.SECONDS_MAX * fps)
@@ -690,22 +701,6 @@ def overlap(a, b) -> float:
     return inter / min(a["frames"], b["frames"])
 
 
-def select(cands, *, overlap_max=None, top=None) -> dict:
-    """Accept several DIFFERENT loops, not a dozen shifted by one frame."""
-    overlap_max = OVERLAP_MAX if overlap_max is None else overlap_max
-    top = TOP_LOOPS if top is None else top
-    kept: list = []
-    dropped = 0
-    for c in cands:
-        if len(kept) >= top:
-            break
-        if any(overlap(c, k) > overlap_max for k in kept):
-            dropped += 1
-            continue
-        kept.append(c)
-    return {"kept": kept, "dropped_overlap": dropped, "considered": len(cands)}
-
-
 def loop_signature(state_at, i, j, *, phases=None) -> list | None:
     """Describe a loop for the 'is this the same movement' comparison."""
     phases = DUP_PHASES if phases is None else phases
@@ -818,6 +813,9 @@ def make_gif(paths, i, j, out_path, *, fps=None, max_frames=None, max_side=None)
     return {
         "path": str(out_path),
         "frames": len(idx),
+        # E3: "frames 24" alone reads as the whole loop. The loop's own length
+        # sits beside it, so a thinned GIF cannot be mistaken for a full one.
+        "of_frames": max(0, j - i),
         "bytes": out_path.stat().st_size,
         "stride": stride,
         "size": frames_img[0].size,
@@ -1285,9 +1283,9 @@ def find_loops(
     if who["crowd"]:
         note = (
             f"several people in the frame (up to {max(who['crowd'])}). Whom to "
-            f"follow is decided by the `fork_props` markup (role "
-            f"{'protagonist'!r}); a second way of choosing the protagonist "
-            f"does not exist here and never will. Until one is named, the "
+            f"follow is a decision this pipeline never makes: there is no "
+            f"protagonist markup anywhere in this product, and a second way "
+            f"of choosing one does not belong in a loop finder. So the "
             f"detector takes the first bounding box it finds on each frame, "
             f"and the skeleton jumps from person to person mid-clip"
         )

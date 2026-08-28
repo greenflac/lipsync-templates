@@ -9,11 +9,30 @@ from .fork_identity import FAIL, PASS, UNMEASURED
 
 WORDS_TARGET = 24
 
+#: MEASURED 22.08.2026: the 5th percentile of prompt length over the 522 cards
+#: of `references/` in the owner's vertical-creative-eval repository, counted as
+#: `skeleton.words` on every file there. A band rather than a point, because the
+#: aim is to look like that corpus's working prompts, not to hit its median word
+#: for word. That corpus is not shipped here, so the number cannot be
+#: re-measured in this repository; the test guards it by literal value.
 WORDS_MIN = 9
+#: MEASURED in the same pass over the same 522 cards: the 95th percentile, where
+#: the distribution's outright extremes were 5 and 189. The tails are cut on
+#: purpose: a 189-word prompt is that corpus's outlier, not its shape.
 WORDS_MAX = 67
 
 CLAUSES_TARGET = 5
+#: MEASURED in the same pass over the same 522 cards: the 5th percentile of
+#: `skeleton.clauses`.
 CLAUSES_MIN = 1
+#: MEASURED in the same pass: the top of the clause band, recorded alongside the
+#: corpus's own longest card at 16 clauses. There is a band here because the
+#: first version of this module asserted it built exactly CLAUSES_TARGET clauses and the test
+#: showed 7 — the commas sit inside the palette and inside the texture phrase,
+#: and that phrase comes from the dictionary rather than from us. Tuning the
+#: text to our own figure would have been fixing the hypothesis, so the
+#: distribution was taken instead, and 7 turned out to be the corpus's most
+#: common value (86 cards of the 522).
 CLAUSES_MAX = 13
 CLAUSES_MOST_COMMON = 7
 
@@ -36,12 +55,17 @@ SUBJECT_WORDS = (
 )
 
 
+#: CHOSEN: our own wording for how a card's tone reads in the prompt — the
+#: gallery's prompt texts are deliberately not copied, only its shape. The three
+#: keys are exactly the values `style_card` emits, so a fourth one is a mistake
+#: worth failing on rather than a case to substitute a default for.
 VALUE_WORDS = {
     "light": "bright high-key lighting",
     "mid": "even balanced lighting",
     "dark": "low-key shadowed lighting",
 }
 
+#: CHOSEN on the same footing as `VALUE_WORDS`, for the card's saturation.
 SATURATION_WORDS = {
     "muted": "desaturated restrained colour",
     "moderate": "natural colour balance",
@@ -213,9 +237,13 @@ def differ(left: dict, right: dict) -> dict:
     }
 
 
-def report_text(out: dict) -> str:
-    """Render the human report: verdict, numbers, prompt. The numbers sit next to the verdict."""
-    head = f"[{out['outcome']:<18}] style prompt"
-    body = f"  {out['note']}"
-    tail = f"  prompt: {out['prompt']}" if out.get("prompt") else "  no prompt"
-    return "\n".join([head, body, tail])
+# A measuring device, exercised by the tests and never by the paid path.
+#
+# `compose` is the whole product of this module, and its failure mode is silent:
+# an adapter that has stopped reading the card still returns a fluent, plausible
+# prompt — the same one for every reference. Nothing downstream can tell, because
+# a prompt is judged by the picture it produces and the picture always arrives.
+# `differ` is the control that separates the two: it feeds two cards that must
+# not agree and reports FAIL when they do. It measures the adapter rather than
+# any one prompt, so no production call site exists or should.
+INSTRUMENTS = ("differ",)

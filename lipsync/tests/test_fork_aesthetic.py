@@ -11,6 +11,19 @@ from lipsync.fork_identity import FAIL, PASS, UNMEASURED
 
 DEMO = "assets/fork_plan_woman_fullbody.png"
 
+# C2: evidence is not truncated. Markers sit at BOTH ends because `[:N]` cuts
+# the tail and `[-N:]` cuts the head — a test with one marker passes on half
+# the defects.
+EVIDENCE_HEAD = "HEADMARK_e3f1"
+EVIDENCE_TAIL = "TAILMARK_9b27"
+LONG_EVIDENCE = EVIDENCE_HEAD + " " + ("filler " * 90) + EVIDENCE_TAIL
+SHORT_EVIDENCE = "no such file"
+
+
+def ends_kept(text: str) -> bool:
+    """Return True when both ends of `LONG_EVIDENCE` survived into `text`."""
+    return EVIDENCE_HEAD in str(text) and EVIDENCE_TAIL in str(text)
+
 
 def base_with(*aesthetics):
     return {"aesthetics": list(aesthetics)}
@@ -538,3 +551,43 @@ class TheBrandBanWasNarrowedByTheOwner(unittest.TestCase):
         for aid in A.ids():
             with self.subTest(aid=aid):
                 self.assertIn("no logo", A.compose(aid)["prompt"])
+
+
+class EvidenceMarkers(unittest.TestCase):
+    """Negative control for the instrument the whole-evidence tests use."""
+
+    def test_the_marker_check_notices_a_cut_at_either_end(self):
+        self.assertGreater(len(LONG_EVIDENCE), 200)
+        self.assertTrue(ends_kept(LONG_EVIDENCE))
+        self.assertFalse(ends_kept(LONG_EVIDENCE[:200]), "a cut tail must be seen")
+        self.assertFalse(ends_kept(LONG_EVIDENCE[-120:]), "a cut head must be seen")
+
+    def test_a_short_reason_carries_neither_marker_and_the_check_stays_silent(self):
+        self.assertFalse(ends_kept(SHORT_EVIDENCE))
+
+
+class WholeEvidence(unittest.TestCase):
+    """C2: why the identity axis could not be measured arrives whole."""
+
+    @staticmethod
+    def _unmeasured(note):
+        def distances(frames, anchor, **kw):
+            return {
+                "outcome": UNMEASURED,
+                "median": None,
+                "inside": 0,
+                "judged": 0,
+                "note": note,
+            }
+
+        return distances
+
+    def test_an_unmeasured_identity_carries_the_whole_instrument_note(self):
+        got = A.accept(made="aes.png", demo=DEMO, distances=self._unmeasured(LONG_EVIDENCE))
+        self.assertEqual(got["outcome"], UNMEASURED)
+        self.assertTrue(ends_kept(got["note"]), got["note"])
+
+    def test_a_short_instrument_note_arrives_unchanged(self):
+        got = A.accept(made="aes.png", demo=DEMO, distances=self._unmeasured(SHORT_EVIDENCE))
+        self.assertEqual(got["outcome"], UNMEASURED)
+        self.assertTrue(got["note"].endswith(SHORT_EVIDENCE), got["note"])

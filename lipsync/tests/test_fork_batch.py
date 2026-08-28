@@ -5,6 +5,7 @@ from __future__ import annotations
 import socket
 import unittest
 from pathlib import Path
+from string import ascii_lowercase
 from tempfile import TemporaryDirectory
 from unittest import mock
 
@@ -26,9 +27,24 @@ def _no_network():
 
 _NOREPLY = object()
 
-DRIVINGS = [f"work/dr_{i}.mp4" for i in range(1, 6)]
-STYLES = [f"work/st_{i}.png" for i in range(1, 6)]
-PERSONS = ["work/person_a.png", "work/person_b.png"]
+
+def _owner_axes(matrix=None):
+    """Build the three axes at the sizes the owner's matrix names.
+
+    Takes `fork_batch.OWNER_MATRIX` rather than repeating its numbers: the
+    fixtures below ARE the owner's matrix, and a matrix that moved in the
+    module while the fixtures stayed would leave these tests measuring a
+    matrix nobody ordered.
+    """
+    drivings, styles, persons = B.OWNER_MATRIX if matrix is None else matrix
+    return (
+        [f"work/dr_{i}.mp4" for i in range(1, drivings + 1)],
+        [f"work/st_{i}.png" for i in range(1, styles + 1)],
+        [f"work/person_{c}.png" for c in ascii_lowercase[:persons]],
+    )
+
+
+DRIVINGS, STYLES, PERSONS = _owner_axes()
 
 
 class _Runner:
@@ -103,6 +119,21 @@ def _batch(tmp, **kw):
     kw.setdefault("out_dir", tmp)
     kw.setdefault("log", _Log())
     return B.run_batch(**kw)
+
+
+class TheFixturesAreTheOwnersMatrixAndNotACopyOfIt(unittest.TestCase):
+    """`OWNER_MATRIX` must reach the fixtures, or naming it changes nothing."""
+
+    def test_the_axes_come_out_at_the_sizes_the_owner_ordered(self):
+        self.assertEqual([len(DRIVINGS), len(STYLES), len(PERSONS)], [5, 5, 2])
+
+    def test_moving_the_owner_matrix_moves_the_axes_and_the_cell_count(self):
+        """Negative control for the wiring: a different matrix must give different numbers."""
+        with mock.patch.object(B, "OWNER_MATRIX", (2, 3, 4)):
+            drivings, styles, persons = _owner_axes()
+        self.assertEqual([len(drivings), len(styles), len(persons)], [2, 3, 4])
+        self.assertEqual(len(B.cells(drivings, styles, persons, mode="full")), 24)
+        self.assertEqual(len(B.cells(drivings, styles, persons, mode="cover")), 4)
 
 
 class TheCoverageModesGiveTheNumbersTheyPromise(unittest.TestCase):

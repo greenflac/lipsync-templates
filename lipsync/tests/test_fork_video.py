@@ -6,9 +6,24 @@ import ast
 import base64
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from lipsync import fork_video as fv
 from lipsync.fork_identity import FAIL, PASS, UNMEASURED
+
+# C2: evidence is not truncated. Markers sit at BOTH ends because `[:N]` cuts
+# the tail and `[-N:]` cuts the head — a test with one marker passes on half
+# the defects.
+EVIDENCE_HEAD = "HEADMARK_e3f1"
+EVIDENCE_TAIL = "TAILMARK_9b27"
+LONG_EVIDENCE = EVIDENCE_HEAD + " " + ("filler " * 90) + EVIDENCE_TAIL
+SHORT_EVIDENCE = "no such file"
+
+
+def ends_kept(text: str) -> bool:
+    """Return True when both ends of `LONG_EVIDENCE` survived into `text`."""
+    return EVIDENCE_HEAD in str(text) and EVIDENCE_TAIL in str(text)
+
 
 ONE_PIXEL_PNG = base64.b64decode(
     b"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAAAAAA6fptVAAAACklEQVR4nGNgAAAAAgABc3UBGAAAAABJRU5ErkJggg=="
@@ -110,7 +125,7 @@ class _Decoder:
         out = Path(argv[-1]).parent
         out.mkdir(parents=True, exist_ok=True)
         for i in range(self.n):
-            (out / fv.frame_name(i)).write_bytes(self.payload)
+            (out / f"{i:05d}.png").write_bytes(self.payload)
         return dict(self.answer)
 
 
@@ -257,48 +272,6 @@ class ExpectedFrames(unittest.TestCase):
         self.assertIsNone(fv.expected_frames(None, source_fps=30.0))
 
 
-class FrameNames(unittest.TestCase):
-    def test_the_first_frame_is_zero_padded_to_five(self):
-        self.assertEqual(fv.frame_name(0), "00000.png")
-        self.assertEqual(fv.frame_name(12), "00012.png")
-        self.assertEqual(fv.frame_name(99999), "99999.png")
-
-    def test_string_order_equals_number_order_over_our_whole_range(self):
-        """The field width is clamped by our ceiling from above and by sorting from below."""
-        names = [fv.frame_name(i) for i in range(0, 306)]
-        self.assertEqual(names, sorted(names))
-        self.assertEqual(len(set(len(n) for n in names)), 1)
-
-    def test_a_negative_index_is_refused(self):
-        with self.assertRaises(ValueError):
-            fv.frame_name(-1)
-
-    def test_frame_name_has_no_start_of_its_own(self):
-        """The caller chooses where numbering starts, not this function."""
-        self.assertEqual(fv.frame_name(0), "00000.png")
-        self.assertEqual(fv.frame_name(1), "00001.png")
-        self.assertEqual(fv.frame_name(361), "00361.png")
-        self.assertEqual(fv.frame_name(362), "00362.png")
-
-    def test_both_starts_sort_into_the_same_order(self):
-        """A measurement lifted into a guard: layouts from zero and from one sort the same."""
-        for n in (9, 10, 99, 100, 362, 999, 1000):
-            with self.subTest(n=n):
-                zero = sorted(fv.frame_name(k) for k in range(n))
-                one = sorted(fv.frame_name(k + 1) for k in range(n))
-                self.assertEqual([int(x[:-4]) for x in zero], list(range(n)))
-                self.assertEqual([int(x[:-4]) - 1 for x in one], list(range(n)))
-                self.assertEqual(len(set(len(x) for x in zero + one)), 1)
-
-    def test_the_order_would_break_without_the_padding(self):
-        """Run the negative control for the previous test: without zero padding."""
-        for n in (100, 1000):
-            for start in (0, 1):
-                with self.subTest(n=n, start=start):
-                    bad = sorted(f"{k + start}.png" for k in range(n))
-                    self.assertNotEqual([int(x[:-4]) - start for x in bad], list(range(n)))
-
-
 class DecodeCommand(unittest.TestCase):
     """The command makeup is also a decision, and it turns red in a test, not in a run."""
 
@@ -397,36 +370,6 @@ class Probe(unittest.TestCase):
         self.assertEqual(got["outcome"], UNMEASURED)
 
 
-class FpsProberDropIn(unittest.TestCase):
-    """A drop-in replacement for `fork_template._ffprobe_fps`: `path -> float|None`."""
-
-    def setUp(self):
-        import tempfile
-
-        self.tmp = Path(tempfile.mkdtemp(prefix="fork_video_drop_"))
-
-    def tearDown(self):
-        import shutil
-
-        shutil.rmtree(self.tmp, ignore_errors=True)
-
-    def test_it_returns_a_number_on_a_good_file(self):
-        real = fv.read_probe
-        fv.read_probe = _Prober(out=_probe_json(fps="24/1"))
-        try:
-            self.assertEqual(fv.fps_prober(_video(self.tmp)), 24.0)
-        finally:
-            fv.read_probe = real
-
-    def test_it_returns_none_when_there_is_nothing_to_ask(self):
-        real = fv.read_probe
-        fv.read_probe = _Prober(ran=False, why="no ffprobe")
-        try:
-            self.assertIsNone(fv.fps_prober(_video(self.tmp)))
-        finally:
-            fv.read_probe = real
-
-
 class Frames(unittest.TestCase):
     """Decoding end to end: numbers, three outcomes, order, idempotence."""
 
@@ -471,7 +414,7 @@ class Frames(unittest.TestCase):
         self.assertEqual(names, sorted(names))
         self.assertEqual(names[0], "00000.png")
         self.assertEqual(names[-1], "00319.png")
-        self.assertEqual(names, [fv.frame_name(i) for i in range(320)])
+        self.assertEqual(names, [f"{i:05d}.png" for i in range(320)])
 
     def test_zero_written_frames_is_a_failure_not_an_empty_success(self):
         rep, _, _ = self._run(n=0)
@@ -640,20 +583,6 @@ class DirectoryFact(unittest.TestCase):
         self.assertIn("189567", fv._dir_fact(60, 189567))
 
 
-class PlanForSeconds(unittest.TestCase):
-    """The length is computed by the wrapper, not here."""
-
-    def test_it_forwards_to_fork_comfy_and_does_not_recompute(self):
-        got = fv.plan_for_seconds(5)
-        self.assertEqual(got["frames_requested"], 150)
-        self.assertEqual(got["frames"], 149)
-        self.assertEqual(got["snapped_away"], 1)
-
-    def test_a_length_outside_the_owners_band_is_refused(self):
-        with self.assertRaises(ValueError):
-            fv.plan_for_seconds(2)
-
-
 class Wiring(unittest.TestCase):
     """Guard the module's construction, not its behavior."""
 
@@ -698,14 +627,25 @@ class Wiring(unittest.TestCase):
     def test_the_verdict_words_are_not_reinvented(self):
         self.assertEqual((fv.PASS, fv.FAIL, fv.UNMEASURED), ("pass", "fail", "could not measure"))
 
-    def test_the_output_rate_is_not_copied_from_fork_comfy(self):
-        src = Path(fv.__file__).read_text(encoding="utf-8")
-        for line in src.splitlines():
-            if line.strip().startswith("#") or '"""' in line:
-                continue
-            with self.subTest(line=line[:60]):
-                self.assertNotIn("FPS_OUT = 30", line)
-                self.assertNotIn("WRAP_FPS = 30", line)
+    def test_no_output_rate_is_invented_when_nothing_says_what_it_is(self):
+        """The rate comes from the source or the operator, never a default.
+
+        The engine this was forked from carried a fixed output rate, and a
+        fork that keeps one silently re-times every clip. Checked as
+        behaviour rather than as text in the source: with nothing to go on
+        the plan must refuse and the decode command must carry no rate.
+        """
+        plan = fv.fps_plan(None)
+        self.assertEqual(plan["outcome"], fv.UNMEASURED)
+        self.assertIsNone(plan["fps"])
+        argv = fv.decode_argv(Path("in.mp4"), Path("out"))
+        self.assertNotIn("-vf", argv)
+
+    def test_an_asked_for_rate_does_reach_the_decode_command(self):
+        """Negative control: the check above must be able to see a rate."""
+        argv = fv.decode_argv(Path("in.mp4"), Path("out"), out_fps=24)
+        self.assertIn("-vf", argv)
+        self.assertIn("fps=24", argv)
 
     def test_the_mode_words_are_the_ones_the_operator_will_read(self):
         self.assertEqual((fv.AS_IS, fv.DROP, fv.REFUSE), ("as is", "drop", "refuse"))
@@ -725,6 +665,96 @@ class EntryPoint(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as d:
             self.assertEqual(fv.main(["frames", "/no/such/file.mp4", f"{d}/frames"]), 1)
+
+
+class EvidenceMarkers(unittest.TestCase):
+    """Negative control for the instrument the whole-evidence tests use."""
+
+    def test_the_marker_check_notices_a_cut_at_either_end(self):
+        self.assertGreater(len(LONG_EVIDENCE), 200)
+        self.assertTrue(ends_kept(LONG_EVIDENCE))
+        self.assertFalse(ends_kept(LONG_EVIDENCE[:200]), "a cut tail must be seen")
+        self.assertFalse(ends_kept(LONG_EVIDENCE[-120:]), "a cut head must be seen")
+
+    def test_a_short_reason_carries_neither_marker_and_the_check_stays_silent(self):
+        self.assertFalse(ends_kept(SHORT_EVIDENCE))
+
+
+class WholeEvidence(unittest.TestCase):
+    """C2: what ffprobe and ffmpeg said reaches the report head and tail."""
+
+    def setUp(self):
+        import tempfile
+
+        self.tmp = Path(tempfile.mkdtemp(prefix="fork_video_evidence_"))
+        self.src = _video(self.tmp)
+        self.out = self.tmp / "frames"
+
+    def tearDown(self):
+        import shutil
+
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def _launch_failure(self, fn, text, arg):
+        with (
+            mock.patch.object(fv.shutil, "which", return_value="/usr/bin/ff"),
+            mock.patch.object(fv.subprocess, "run", side_effect=OSError(text)),
+        ):
+            return fn(arg)
+
+    def test_a_ffprobe_launch_failure_carries_the_whole_reason(self):
+        got = self._launch_failure(fv.read_probe, LONG_EVIDENCE, self.src)
+        self.assertFalse(got["ran"])
+        self.assertTrue(ends_kept(got["why"]), got["why"])
+
+    def test_a_short_ffprobe_launch_failure_arrives_unchanged(self):
+        got = self._launch_failure(fv.read_probe, SHORT_EVIDENCE, self.src)
+        self.assertTrue(got["why"].endswith(SHORT_EVIDENCE), got["why"])
+
+    def test_a_ffmpeg_launch_failure_carries_the_whole_reason(self):
+        got = self._launch_failure(fv.run_decode, LONG_EVIDENCE, ["ffmpeg"])
+        self.assertFalse(got["ran"])
+        self.assertTrue(ends_kept(got["why"]), got["why"])
+
+    def test_a_short_ffmpeg_launch_failure_arrives_unchanged(self):
+        got = self._launch_failure(fv.run_decode, SHORT_EVIDENCE, ["ffmpeg"])
+        self.assertTrue(got["why"].endswith(SHORT_EVIDENCE), got["why"])
+
+    def test_an_unparsable_ffprobe_answer_is_quoted_whole(self):
+        got = fv.parse_probe(LONG_EVIDENCE)
+        self.assertFalse(got["ok"])
+        self.assertTrue(ends_kept(got["why"]), got["why"])
+
+    def test_a_short_unparsable_ffprobe_answer_is_quoted_whole(self):
+        self.assertIn(SHORT_EVIDENCE, fv.parse_probe(SHORT_EVIDENCE)["why"])
+
+    def test_a_failing_ffprobe_carries_its_whole_stderr_into_the_probe_note(self):
+        got = fv.probe(self.src, prober=_Prober(code=1, out="{}", err=LONG_EVIDENCE))
+        self.assertEqual(got["outcome"], FAIL)
+        self.assertTrue(ends_kept(got["note"]), got["note"])
+
+    def test_a_short_ffprobe_stderr_reaches_the_probe_note_unchanged(self):
+        got = fv.probe(self.src, prober=_Prober(code=1, out="{}", err=SHORT_EVIDENCE))
+        self.assertIn(SHORT_EVIDENCE, got["note"])
+
+    def test_a_failing_ffmpeg_carries_its_whole_stderr_into_the_frames_note(self):
+        rep = fv.frames(
+            self.src,
+            self.out,
+            prober=_Prober(out=_probe_json()),
+            decoder=_Decoder(0, code=DECODE_RC_BROKEN, err=LONG_EVIDENCE),
+        )
+        self.assertEqual(rep["outcome"], FAIL)
+        self.assertTrue(ends_kept(rep["note"]), rep["note"])
+
+    def test_a_short_ffmpeg_stderr_reaches_the_frames_note_unchanged(self):
+        rep = fv.frames(
+            self.src,
+            self.out,
+            prober=_Prober(out=_probe_json()),
+            decoder=_Decoder(0, code=DECODE_RC_BROKEN, err=SHORT_EVIDENCE),
+        )
+        self.assertIn(SHORT_EVIDENCE, rep["note"])
 
 
 if __name__ == "__main__":  # pragma: no cover

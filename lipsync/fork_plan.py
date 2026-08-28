@@ -8,24 +8,67 @@ from pathlib import Path
 from .fork_identity import FAIL, PASS, UNMEASURED
 
 
+#: CHOSEN (by the product, out of the vertical feed's own standard): 9:16 is
+#: what the feed shows. It is stated as the exact 0.5625 and not as "roughly
+#: vertical" because only an exact number makes the final crop nothing at all.
+#: Half the pipeline hangs off this one line — `fork_finish` reduces it to whole
+#: sides, `fit_to_plan` and `exact_plan_box` reshape against it — so a second
+#: copy of the ratio anywhere would be a second thing to keep in step.
 PLAN_RATIO = 0.5625
+
+#: MEASURED 2026-08-23 on the six shipped clips: Kling returned exactly this
+#: size on every one of them, and all six final videos are this size too. It is
+#: therefore the frame the product actually delivers, not a frame we would like
+#: it to have. It is declared here, once, and every other size in the pipeline
+#: is derived from it: the 3:4 default outlived its removal on `compose` alone
+#: precisely because the two neighbouring routes held their own copies.
+FRAME = (720, 1280)
+
+#: CHOSEN. One pixel of rounding at our working heights (768..2752 px) moves the
+#: ratio by under 0.0005, so this bound admits an exact crop and nothing else.
+#: The measured route drift is 0.0044 — nine times this — and must not pass.
+PLAN_TOLERANCE = 0.001
+
+#: CHOSEN. The largest share of one side `fit_to_plan` may cut to reach the plan.
+#: The measured drift costs 0.8% of the height; the 3:4 fossil the styliser used
+#: to return would cost 24.7% of the width, which is a face and not a rounding.
+#: 2% stands an order of magnitude away from both.
+TRIM_MAX_SHARE = 0.02
 
 SHOULDERS_BAND = (0.20, 0.42)
 
 ANKLES_BAND = (0.86, 0.99)
 
+#: CHOSEN 0.08 (by this module, out of how the generator behaves, not out of a
+#: distribution): Kling scales the character onto the driving skeleton, so a
+#: subject standing off-centre in the photo travels off-centre into the video.
+#: Nothing in this tree measured where the bar belongs, only that it is needed.
 CENTRE_TOL = 0.08
 
+#: CHOSEN 0.72 (by this module, out of one observed failure): a subject already
+#: filling the width loses the arms when they swing out, which is exactly what
+#: spoiled run b4 on 88.1% of its frames. The run says "too wide"; it does not
+#: say 0.72, so the share itself is a choice and not a measurement.
 WIDTH_MAX = 0.72
 
 from .fork_intake import MIN_FACE_PX  # noqa: E402
 
 MIN_VISIBILITY = 0.5
 
+#: MEASURED, and a record of a defect rather than of a requirement: this is what
+#: the styliser returned back when the call asked for 768x1024. It is 3:4, not
+#: the plan — see `FRAME` for the size we ask for now.
 STYLED_SIZE_MEASURED = (896, 1200)
 
 SHOULDER_POINTS = ("l_shoulder", "r_shoulder")
 ANKLE_POINTS = ("l_ankle", "r_ankle")
+
+#: CHOSEN, from the axes `plan_verdict` returns: these four read the pose, the
+#: rest read the canvas and the face. The axes of `plan_verdict` that judge the
+#: PERSON rather than the canvas or the face. A caller holding an image but no face measurement reads these four
+#: and leaves the other two alone; naming them here keeps that subset from being
+#: retyped at the call site, where it would drift silently.
+PERSON_AXES = ("shoulders", "ankles", "centre", "width")
 
 
 def tally(checked: int, violations: int, unmeasured: int) -> dict:
@@ -105,12 +148,13 @@ def ratio_axis(width, height) -> dict:
     if not width or not height:
         return _axis("canvas", None, f"sizes not taken: {width}x{height}")
     got = width / height
-    ok = abs(got - PLAN_RATIO) <= 0.015
+    ok = abs(got - PLAN_RATIO) <= PLAN_TOLERANCE
     return _axis(
         "canvas",
         ok,
         f"{width}x{height} = {got:.4f} against the plan {PLAN_RATIO} "
-        f"(tolerance 0.015 covers rounding to whole pixels)",
+        f"(tolerance {PLAN_TOLERANCE} covers rounding to whole pixels and "
+        f"nothing else)",
     )
 
 
@@ -128,7 +172,7 @@ def plan_verdict(*, width=None, height=None, points=None, face_px=None) -> dict:
 
     box = person_box(points or {})
     if box["outcome"] != PASS:
-        axes += [_axis(n, None, box["note"]) for n in ("shoulders", "ankles", "centre", "width")]
+        axes += [_axis(n, None, box["note"]) for n in PERSON_AXES]
     else:
         axes.append(_band_axis("shoulders", box["shoulders"], SHOULDERS_BAND, "shoulders"))
         axes.append(_band_axis("ankles", box["ankles"], ANKLES_BAND, "ankles"))
@@ -179,10 +223,7 @@ def plan_verdict(*, width=None, height=None, points=None, face_px=None) -> dict:
 
 def canvas_for(width: int, height: int) -> dict:
     """Return the 9:16 canvas the image fits into whole. Padding, not cropping."""
-    if not isinstance(width, int) or not isinstance(height, int):
-        raise TypeError(f"sizes {width!r}x{height!r}: expected integers")
-    if width <= 0 or height <= 0:
-        raise ValueError(f"sizes {width}x{height}: expected above zero")
+    _sizes_or_raise(width, height)
     if width / height > PLAN_RATIO:
         out_w, out_h = width, round(width / PLAN_RATIO)
     else:
@@ -199,6 +240,122 @@ def canvas_for(width: int, height: int) -> dict:
             f"{width}x{height} -> {out_w}x{out_h}: padded, "
             f"not cropped; margins {(out_w - width) // 2} at the sides and "
             f"{(out_h - height) // 2} at the top and bottom"
+        ),
+    }
+
+
+def _even_down(value: float) -> int:
+    """Round down to a whole even number: h264 refuses odd sides, and a crop may only shrink."""
+    whole = int(value)
+    return whole - whole % 2
+
+
+def _sizes_or_raise(width, height) -> None:
+    if not isinstance(width, int) or not isinstance(height, int):
+        raise TypeError(f"sizes {width!r}x{height!r}: expected integers")
+    if width <= 0 or height <= 0:
+        raise ValueError(f"sizes {width}x{height}: expected above zero")
+
+
+def fit_to_plan(width: int, height: int) -> dict:
+    """Decide how a frame reaches the plan: leave it, trim it, or refuse it.
+
+    Three outcomes, because "off the plan" is two different states. A frame
+    within `PLAN_TOLERANCE` is already the plan ("none"). A frame off the plan
+    by no more than `TRIM_MAX_SHARE` of one side lost the plan to the model's
+    size grid, and that margin is cut off ("crop"). Anything further away is a
+    different framing rather than a rounding, and it is reported as "pad" with
+    one violation: the padded canvas is 9:16 by arithmetic and blurred bars by
+    eye, which the acceptance criterion of 2026-08-26 forbids in every case.
+    The padded geometry is still returned, so the caller can outpaint those
+    bands into scene and measure the result — but it is a refusal to ship, not
+    a repair, and the numbers say so.
+
+    :param width: frame width in whole pixels, above zero.
+    :param height: frame height in whole pixels, above zero.
+    :returns: `action` ("none" | "crop" | "pad"), the resulting `width` and
+        `height`, `left` and `top` offsets, `trimmed_share`, and the
+        three-outcome numbers, where "pad" carries `violations` 1.
+
+    >>> fit_to_plan(768, 1376)["action"]
+    'crop'
+    >>> fit_to_plan(896, 1200)["violations"]
+    1
+    """
+    _sizes_or_raise(width, height)
+    got = width / height
+    if abs(got - PLAN_RATIO) <= PLAN_TOLERANCE:
+        return {
+            **tally(1, 0, 0),
+            "action": "none",
+            "width": width,
+            "height": height,
+            "left": 0,
+            "top": 0,
+            "trimmed_share": 0.0,
+            "note": (
+                f"{width}x{height} = {got:.4f} is the plan {PLAN_RATIO} "
+                f"within {PLAN_TOLERANCE}: nothing to do"
+            ),
+        }
+
+    if got > PLAN_RATIO:
+        out_w, out_h = _even_down(height * PLAN_RATIO), height
+        trimmed = 1 - out_w / width
+        side = "width"
+    else:
+        out_w, out_h = width, _even_down(width / PLAN_RATIO)
+        trimmed = 1 - out_h / height
+        side = "height"
+
+    # The crop is offered only when it actually lands on the plan: even-ing the
+    # side down moves the ratio too, and on a small frame that move can be
+    # bigger than the tolerance the crop is supposed to satisfy.
+    exact = out_w > 0 and out_h > 0 and abs(out_w / out_h - PLAN_RATIO) <= PLAN_TOLERANCE
+    if exact and trimmed <= TRIM_MAX_SHARE:
+        return {
+            **tally(1, 0, 0),
+            "action": "crop",
+            "width": out_w,
+            "height": out_h,
+            "left": (width - out_w) // 2,
+            "top": (height - out_h) // 2,
+            "trimmed_share": round(trimmed, 4),
+            "note": (
+                f"{width}x{height} = {got:.4f} -> {out_w}x{out_h} = "
+                f"{out_w / out_h:.4f}: {trimmed:.4f} of the {side} trimmed "
+                f"against the budget {TRIM_MAX_SHARE}"
+            ),
+        }
+
+    plan = canvas_for(width, height)
+    why = (
+        f"the trim would cost {trimmed:.4f} of the {side} against the budget {TRIM_MAX_SHARE}"
+        if trimmed > TRIM_MAX_SHARE
+        else (
+            f"the deepest legal trim, {out_w}x{out_h}, still misses the plan "
+            f"by more than {PLAN_TOLERANCE}"
+        )
+    )
+    # One violation, not zero: the owner's criterion of 2026-08-26 is 9:16 with
+    # no padding in 100% of cases, so a frame that only arithmetic can call the
+    # plan is a defect. Reporting it clean is how 0.5581 reached the shipped
+    # templates and was then fed back into the same pipeline as an input.
+    return {
+        **tally(1, 1, 0),
+        "action": "pad",
+        "width": plan["width"],
+        "height": plan["height"],
+        "left": plan["left"],
+        "top": plan["top"],
+        "trimmed_share": 0.0,
+        "canvas": plan,
+        "note": (
+            f"{width}x{height} = {got:.4f} was NOT brought to the plan: "
+            f"{why}, and a cut that deep takes the subject and not a margin. "
+            f"The {plan['width']}x{plan['height']} padding is a refusal and "
+            f"not a repair: blurred bands are 9:16 only by arithmetic, and "
+            f"nothing padded may ship"
         ),
     }
 
@@ -233,7 +390,15 @@ def to_plan(src, dst, *, opener=None, filler=None) -> dict:
     out.paste(im, (plan["left"], plan["top"]))
     Path(dst).parent.mkdir(parents=True, exist_ok=True)
     out.save(str(dst))
-    return {**tally(1, 0, 0), "path": str(dst), "plan": plan, "note": plan["note"]}
+    return {
+        **tally(1, 0, 0),
+        "path": str(dst),
+        "plan": plan,
+        # What came IN, so the caller can judge the styliser without decoding the
+        # file a second time. `plan` describes the canvas we made, not the source.
+        "source": {"width": int(w), "height": int(h)},
+        "note": plan["note"],
+    }
 
 
 CARD_TOL_MIN = 0.05
@@ -343,7 +508,7 @@ def in_card(points, card, *, min_visibility: float = MIN_VISIBILITY) -> dict:
         return {**tally(0, 0, 1), "note": "no composition card: nothing to compare against"}
     box = person_box(points, min_visibility=min_visibility)
     if box["outcome"] != PASS:
-        return {**tally(0, 0, 1), "note": str(box.get("note"))[:200]}
+        return {**tally(0, 0, 1), "note": str(box.get("note"))}
     bad, seen = [], 0
     for key, label in (("centre", "centre"), ("width", "width")):
         want, tol, got = card.get(key), card.get(f"tol_{key}"), box.get(key)
@@ -390,14 +555,32 @@ def extend_prompt(*, extra: str = "") -> str:
     return ". ".join(parts)
 
 
-def extend_to_plan(src, dst, *, extender=None, sizer=None) -> dict:
+#: The size the outpainter is asked for: `FRAME`, not a size of its own. The
+#: outpaint feeds the same delivery frame as everything else, so a second point
+#: here would only be a second thing to keep in step. The canvas asked for is
+#: smaller than the 1152x2048 this used to name; the outpainter is asked to
+#: continue the scene into the margins, and the margins are a share of the
+#: frame, not a pixel count. The route may still answer with another size; that
+#: is what the ratio axis above is for.
+EXTEND_SIZE = FRAME
+
+
+def extend_to_plan(src, dst, *, extender=None, sizer=None, size=EXTEND_SIZE) -> dict:
     """Turn the plan margins into a continuation of the scene."""
+    want_w, want_h = int(size[0]), int(size[1])
     if extender is None:
 
         def extender(prompt, source, out_path):
             from . import pollinations  # noqa: PLC0415
 
-            return pollinations.images_edit(prompt, source, out_path, model="nanobanana-2")
+            return pollinations.images_edit(
+                prompt,
+                source,
+                out_path,
+                model="nanobanana-2",
+                width=want_w,
+                height=want_h,
+            )
 
     prompt = extend_prompt()
     try:
@@ -436,20 +619,9 @@ def extend_to_plan(src, dst, *, extender=None, sizer=None) -> dict:
         "extended": True,
         "width": w,
         "height": h,
-        "note": f"outpainted to {w}x{h}; {got['note']}",
+        "asked": (want_w, want_h),
+        "note": f"asked for {want_w}x{want_h}, outpainted to {w}x{h}; {got['note']}",
     }
-
-
-FULL_BODY_CLAUSE = (
-    "show the SAME person from the first image at FULL HEIGHT, head to feet, "
-    "standing upright and facing the camera, the whole body inside the frame "
-    "with clear margin above the head and below the feet, centred horizontally"
-)
-
-KEEP_IDENTITY_CLAUSE = (
-    "keep the face, hair, skin tone and body type unchanged — this must read "
-    "as the same person, not a lookalike"
-)
 
 
 def no_brands_clause() -> str:
@@ -457,22 +629,3 @@ def no_brands_clause() -> str:
     from .fork_e2e import NO_BRANDS_CLAUSE  # noqa: PLC0415
 
     return NO_BRANDS_CLAUSE
-
-
-def full_body_prompt(*, extra: str = "") -> str:
-    """Build the full-height prompt, assembled separately from the call."""
-    parts = [FULL_BODY_CLAUSE, KEEP_IDENTITY_CLAUSE, no_brands_clause()]
-    if extra:
-        parts.append(extra.strip())
-    return "; ".join(parts)
-
-
-def render(report: dict) -> str:
-    """Render for a human: the verdict, the numbers, then each axis on its own line."""
-    head = (
-        f"PLAN: {report['outcome']}  (checked {report['checked']}, "
-        f"violations {report['violations']}, unmeasured "
-        f"{report['unmeasured']})"
-    )
-    rows = [f"  {a['name']}: {a['outcome']} — {a['note']}" for a in report.get("axes", [])]
-    return "\n".join([head, *rows])

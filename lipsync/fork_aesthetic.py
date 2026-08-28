@@ -147,6 +147,13 @@ def strip_anthropometry(prompt: str) -> dict:
     }
 
 
+#: CHOSEN (owner's decision, 22.08): the project's two demo identities, one per
+#: declared gender, both already framed to the universal 9:16 plan. Gender is
+#: declared and not classified — a classifier is one more instrument to measure
+#: and guard, and it would be wrong on live clients — so these keys double as
+#: the gender vocabulary `pair_check` holds the pairs to. Paid for by eye: a
+#: male client built with the female y2k aesthetic came back in a mini skirt
+#: while identity, leak, lettering and plan were all green.
 DEMOS = {
     "m": "assets/fork_plan_man_fullbody.png",
     "f": "assets/fork_plan_woman_fullbody.png",
@@ -246,6 +253,19 @@ def assemble_prompt(*, legacy: bool = False, card=None) -> str:
     framing = framing_clause(card)
     tail = f" {framing}." if framing else ""
     return f"{AESTHETIC_ROLE_CLAUSE}. {NEVER_THE_FACE_CLAUSE}.{tail} {no_brands_clause()}"
+
+
+# A measuring device, exercised by the tests and never by the paid path.
+#
+# `accept` — the axis the pipeline does run — asks one question: is the demo
+# identity still on the aesthetic? One distance cannot answer the question that
+# actually costs money. A similarity measure can say "close", it cannot say
+# "close to THIS person rather than THAT one", so a reference carrying the
+# DEMO's face instead of the client's reads as a pass on that axis. Measuring
+# both distances and looking at their difference is the only way to see it, and
+# a stranger in the client's clip is the most expensive defect this repository
+# can ship.
+INSTRUMENTS = ("leak_verdict",)
 
 
 def leak_verdict(*, made, client, demo, distances=None) -> dict:
@@ -453,7 +473,7 @@ def accept(*, made, demo, distances=None) -> dict:
             **tally(0, 0, 1),
             "median": med,
             "seconds": round(time.perf_counter() - t0, 3),
-            "note": f"identity NOT MEASURED: {str(d.get('note'))[:200]}",
+            "note": f"identity NOT MEASURED: {d.get('note')}",
         }
     if med <= SAME_PERSON_MAX:
         return {
@@ -489,12 +509,3 @@ def accept(*, made, demo, distances=None) -> dict:
             f"identity ({tail})"
         ),
     }
-
-
-def render(report: dict) -> str:
-    """Render the report for a human."""
-    return (
-        f"AESTHETIC: {report['outcome']}  (checked {report['checked']}, "
-        f"violations {report['violations']}, unmeasured "
-        f"{report['unmeasured']})\n  {report.get('note', '')}"
-    )

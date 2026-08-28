@@ -1,4 +1,13 @@
-"""Pose arithmetic, without MediaPipe."""
+"""Pose arithmetic on synthetic skeletons, without MediaPipe.
+
+`pose_delta` is declared an instrument in `pose.INSTRUMENTS`: no production path
+calls it, and these tests are the reason it may stay. The product runs
+`fork_looper.pose_gap`, which computes the same quantity from points normalised
+once per frame instead of once per call; `test_pose_gap_is_the_same_number_as_
+pose_delta` holds the two to the same number. That comparison is only worth
+something while the slow side is known to be right, which is what is checked
+here — against literals computed on paper, not against the module.
+"""
 
 from __future__ import annotations
 
@@ -37,192 +46,131 @@ def _skeleton(dx=0.0, dy=0.0, scale=1.0, **moved):
 
 
 @unittest.skipUnless(HAVE_NUMPY, "numpy not installed (live extra)")
-class PoseDistanceMeasuresConfigurationNotFraming(unittest.TestCase):
+class PoseDeltaAgreesWithArithmeticDoneOnPaper(unittest.TestCase):
+    """The known answer: every expectation below is computed by hand."""
+
     def setUp(self):
         from lipsync import pose
 
         self.p = pose
 
+    def test_one_joint_moved_by_a_known_amount_gives_the_hand_computed_number(self):
+        # Shoulder centre (0.50, 0.30), hip centre (0.50, 0.55): torso = 0.25.
+        # Moving one wrist 0.02 down is 0.02 / 0.25 = 0.08 torso-lengths, and
+        # eleven joints of the twelve did not move: 0.08 / 12 = 0.006667.
+        moved = _skeleton(l_wrist=(0.40, 0.52))
+        got = self.p.pose_delta(_skeleton(), moved)
+        self.assertAlmostEqual(got["worst"], 0.08, places=4)
+        self.assertAlmostEqual(got["mean"], 0.0067, places=4)
+        self.assertEqual(got["worst_joint"], "l_wrist")
+        self.assertEqual(got["compared"], 12)
+
     def test_identical_poses_are_zero(self):
-        self.assertEqual(self.p.pose_distance(_skeleton(), _skeleton()), 0.0)
+        got = self.p.pose_delta(_skeleton(), _skeleton())
+        self.assertEqual(got["mean"], 0.0)
+        self.assertEqual(got["worst"], 0.0)
 
     def test_moving_the_subject_across_frame_is_not_a_new_pose(self):
-        d = self.p.pose_distance(_skeleton(), _skeleton(dx=0.2, dy=-0.1))
-        self.assertLess(d, 1e-6)
+        got = self.p.pose_delta(_skeleton(), _skeleton(dx=0.2, dy=-0.1))
+        self.assertEqual(got["mean"], 0.0)
 
     def test_framing_closer_is_not_a_new_pose(self):
-        d = self.p.pose_distance(_skeleton(), _skeleton(scale=1.8))
-        self.assertLess(d, 1e-6)
+        got = self.p.pose_delta(_skeleton(), _skeleton(scale=1.8))
+        self.assertEqual(got["mean"], 0.0)
 
     def test_a_bent_arm_is_diluted_by_the_mean_but_caught_by_the_worst_joint(self):
         bent = _skeleton(l_wrist=(0.30, 0.28), l_elbow=(0.35, 0.34))
-        d = self.p.pose_delta(_skeleton(), bent)
-        self.assertLess(d["mean"], self.p.SAME_POSE_MAX)
-        self.assertGreater(d["worst"], self.p.WORST_JOINT_MAX)
-        self.assertEqual(d["worst_joint"], "l_wrist")
+        got = self.p.pose_delta(_skeleton(), bent)
+        self.assertAlmostEqual(got["mean"], 0.1113, places=4)
+        self.assertAlmostEqual(got["worst"], 0.9666, places=4)
+        self.assertEqual(got["worst_joint"], "l_wrist")
+        self.assertGreater(
+            got["worst"],
+            got["mean"] * 8,
+            "the mean over twelve joints is what hides a change confined to one",
+        )
 
-    def test_invisible_joints_are_skipped_not_scored(self):
+
+@unittest.skipUnless(HAVE_NUMPY, "numpy not installed (live extra)")
+class PoseDeltaSaysHowMuchItCouldNotSee(unittest.TestCase):
+    """Three outcomes: a number, a number with coverage, or nothing at all."""
+
+    def setUp(self):
+        from lipsync import pose
+
+        self.p = pose
+
+    def test_invisible_joints_are_skipped_and_counted_not_scored(self):
         hidden_a = _skeleton(l_wrist=(0.40, 0.50, 0.1))
         hidden_b = _skeleton(l_wrist=(0.99, 0.99, 0.1))
-        self.assertEqual(self.p.pose_distance(hidden_a, hidden_b), 0.0)
+        got = self.p.pose_delta(hidden_a, hidden_b)
+        self.assertEqual(got["mean"], 0.0)
+        self.assertEqual(got["compared"], 11)
+        self.assertEqual(got["measurable"], 12)
+        self.assertEqual(got["coverage"], 0.917)
 
     def test_a_pose_without_hips_cannot_be_normalised(self):
         no_hips = _skeleton(l_hip=(0.46, 0.55, 0.0), r_hip=(0.54, 0.55, 0.0))
-        self.assertIsNone(self.p.pose_distance(_skeleton(), no_hips))
+        self.assertIsNone(self.p.pose_delta(_skeleton(), no_hips))
 
-    def test_the_two_bars_are_ordered_and_straddle_real_motion(self):
-        self.assertLess(self.p.SAME_POSE_MAX, 0.30)
-        self.assertGreater(self.p.POSE_WANDER_MAX, 0.30)
-        self.assertLess(self.p.POSE_WANDER_MAX, 0.67)
+    def test_a_missing_pose_raises_rather_than_scoring_zero(self):
+        with self.assertRaises(ValueError) as caught:
+            self.p.pose_delta(None, _skeleton())
+        self.assertIn("first", str(caught.exception))
 
+    def test_the_refusal_names_a_cause_that_exists_in_this_product(self):
+        """Regression: it used to send the reader to a sidecar file of another stack.
 
-@unittest.skipUnless(HAVE_NUMPY, "numpy not installed (live extra)")
-class LimbConsistencyDetectsRubberBodies(unittest.TestCase):
-    def setUp(self):
-        from lipsync import pose
-
-        self.p = pose
-        self.frames = []
-
-        def fake_landmarks(path):
-            return self.frames[int(path)]
-
-        self._real = pose.landmarks
-        pose.landmarks = fake_landmarks
-        self.addCleanup(setattr, pose, "landmarks", self._real)
-
-    def _run(self):
-        return self.p.limb_consistency([str(i) for i in range(len(self.frames))])
-
-    def test_a_body_that_keeps_its_proportions_is_anatomical(self):
-        self.frames = [_skeleton(dx=i * 0.02, scale=1 + i * 0.05) for i in range(6)]
-        r = self._run()
-        self.assertTrue(r["anatomical"])
-        self.assertLess(r["worst"][1], self.p.LIMB_WOBBLE_MAX)
-
-    def test_a_stretching_forearm_is_caught(self):
-        self.frames = [_skeleton(l_wrist=(0.40 - i * 0.06, 0.50 + i * 0.06)) for i in range(6)]
-        r = self._run()
-        self.assertFalse(r["anatomical"])
-        self.assertIn("l_elbow->l_wrist", r["unstable"])
-        self.assertIn("stretching", r["note"])
-
-    def test_too_few_frames_is_not_verifiable_rather_than_pass(self):
-        self.frames = [_skeleton()]
-        r = self._run()
-        self.assertFalse(r["anatomical"])
-        self.assertIn("NOT VERIFIABLE", r["note"])
+        The words themselves cannot be spelled here — a gate forbids them in
+        this package — so the shape is checked instead: an operator following
+        this message must not be sent to a file, and must be told what to do.
+        """
+        with self.assertRaises(ValueError) as caught:
+            self.p.pose_delta(_skeleton(), None)
+        text = str(caught.exception)
+        self.assertIn("second", text)
+        self.assertNotIn(".json", text)
+        self.assertNotIn(".py", text)
+        self.assertIn("Compare", text)
 
 
 @unittest.skipUnless(HAVE_NUMPY, "numpy not installed (live extra)")
-class BuildIsMeasuredIn3DNotProjection(unittest.TestCase):
-    """Regression: build measured in image space inverted on a turned photo."""
+class TheInstrumentCanSayNoAndCanSayYes(unittest.TestCase):
+    """Negative control: a measure that answers the same on every input is not one."""
 
     def setUp(self):
         from lipsync import pose
 
         self.p = pose
-        self._real = pose.world_landmarks
-        self.addCleanup(setattr, pose, "world_landmarks", self._real)
 
-    def _stub(self, points):
-        self.p.world_landmarks = lambda _p: points
+    def test_three_different_pairs_give_three_different_numbers(self):
+        base = _skeleton()
+        means = [
+            self.p.pose_delta(base, _skeleton(l_wrist=(0.40, 0.52)))["mean"],
+            self.p.pose_delta(base, _skeleton(l_wrist=(0.40, 0.60)))["mean"],
+            self.p.pose_delta(base, _skeleton(l_wrist=(0.40, 0.70)))["mean"],
+        ]
+        self.assertEqual(len(set(means)), 3, f"the measure did not move: {means}")
+        self.assertEqual(means, sorted(means), f"further is not larger: {means}")
 
-    def _body(self, shoulder_half=0.20, hip_half=0.13, torso=0.50):
-        pts = {}
-        for side, sign in (("l", -1), ("r", 1)):
-            pts[f"{side}_shoulder"] = (sign * shoulder_half, -torso / 2, 0.0, 1.0)
-            pts[f"{side}_hip"] = (sign * hip_half, torso / 2, 0.0, 1.0)
-            pts[f"{side}_elbow"] = (sign * shoulder_half, -torso / 6, 0.0, 1.0)
-            pts[f"{side}_wrist"] = (sign * shoulder_half, torso / 6, 0.0, 1.0)
-            pts[f"{side}_knee"] = (sign * hip_half, torso, 0.0, 1.0)
-            pts[f"{side}_ankle"] = (sign * hip_half, torso * 1.5, 0.0, 1.0)
-        return pts
+    def test_the_measure_is_silent_when_nothing_moved(self):
+        self.assertEqual(self.p.pose_delta(_skeleton(), _skeleton())["mean"], 0.0)
 
-    def test_proportions_are_expressed_in_torso_lengths(self):
-        self._stub(self._body())
-        got = self.p.world_proportions("x")
-        self.assertAlmostEqual(got["shoulder_width"], 0.40 / 0.50, places=3)
-        self.assertAlmostEqual(got["hip_width"], 0.26 / 0.50, places=3)
-        self.assertAlmostEqual(got["shoulder_to_hip"], 0.40 / 0.26, places=3)
 
-    def test_the_same_body_further_from_camera_measures_the_same(self):
-        self._stub(self._body())
-        near = self.p.world_proportions("x")
-        self._stub(self._body(shoulder_half=0.10, hip_half=0.065, torso=0.25))
-        far = self.p.world_proportions("x")
-        self.assertAlmostEqual(near["shoulder_to_hip"], far["shoulder_to_hip"], places=3)
+@unittest.skipUnless(HAVE_NUMPY, "numpy not installed (live extra)")
+class TheInstrumentDeclarationMatchesWhatIsHere(unittest.TestCase):
+    def test_pose_delta_is_the_one_declared_instrument(self):
+        from lipsync import pose
 
-    def test_a_broader_build_reads_as_broader(self):
-        self._stub(self._body(shoulder_half=0.20))
-        lean = self.p.world_proportions("x")["shoulder_to_hip"]
-        self._stub(self._body(shoulder_half=0.30))
-        broad = self.p.world_proportions("x")["shoulder_to_hip"]
-        self.assertGreater(broad, lean)
+        self.assertEqual(pose.INSTRUMENTS, ("pose_delta",))
 
-    def test_invisible_joints_are_left_out(self):
-        pts = self._body()
-        pts["l_knee"] = (*pts["l_knee"][:3], 0.0)
-        self._stub(pts)
-        got = self.p.world_proportions("x")
-        self.assertNotIn("l_hip->l_knee", got)
-        self.assertIn("r_hip->r_knee", got)
+    def test_the_measures_of_the_local_sampling_era_are_gone(self):
+        """They judged a clip after sampling it; the product never sees that moment."""
+        from lipsync import pose
 
-    def test_no_body_gives_nothing_rather_than_zeros(self):
-        self._stub(None)
-        self.assertIsNone(self.p.world_proportions("x"))
+        for name in ("pose_drift", "limb_consistency", "world_proportions", "pose_distance"):
+            self.assertFalse(hasattr(pose, name), f"{name} is back")
 
 
 if __name__ == "__main__":
     unittest.main()
-
-
-@unittest.skipUnless(HAVE_NUMPY, "numpy not installed (live extra)")
-class PoseDriftAggregatesLikeTheIdentityCheck(unittest.TestCase):
-    """Test pose_drift aggregation: median, worst joint, coverage."""
-
-    def setUp(self):
-        from lipsync import pose
-
-        self.p = pose
-        self.by_path = {}
-        self._real = pose.landmarks
-        pose.landmarks = lambda path: self.by_path.get(str(path))
-        self.addCleanup(setattr, pose, "landmarks", self._real)
-
-    def _shift(self, dx):
-        return _skeleton(**{"l_wrist": (0.40 + dx, 0.50, 1.0)})
-
-    def test_frames_matching_the_reference_hold(self):
-        self.by_path = {"ref": _skeleton(), "a": _skeleton(), "b": _skeleton()}
-        d = self.p.pose_drift(["a", "b"], "ref")
-        self.assertEqual(d["median"], 0.0)
-        self.assertTrue(d["held"])
-        self.assertEqual(d["coverage"], 1.0)
-
-    def test_a_frame_with_no_body_lowers_coverage_but_is_not_scored(self):
-        self.by_path = {"ref": _skeleton(), "a": _skeleton(), "b": None}
-        d = self.p.pose_drift(["a", "b"], "ref")
-        self.assertEqual(d["measured"], 1)
-        self.assertEqual(d["frames"], 2)
-        self.assertEqual(d["coverage"], 0.5)
-
-    def test_nothing_measurable_is_not_verifiable_rather_than_held(self):
-        self.by_path = {"ref": _skeleton(), "a": None}
-        d = self.p.pose_drift(["a"], "ref")
-        self.assertIsNone(d["median"])
-        self.assertFalse(d["held"])
-        self.assertIn("NOT VERIFIABLE", d["note"])
-
-    def test_a_reference_without_a_body_stops_the_check(self):
-        self.by_path = {"ref": None, "a": _skeleton()}
-        d = self.p.pose_drift(["a"], "ref")
-        self.assertFalse(d["held"])
-        self.assertIn("pose reference", d["note"])
-
-    def test_one_limb_far_away_fails_on_the_worst_joint(self):
-        self.by_path = {"ref": _skeleton(), "a": self._shift(0.25)}
-        d = self.p.pose_drift(["a"], "ref")
-        self.assertLess(d["median"], self.p.SAME_POSE_MAX)
-        self.assertGreater(d["worst_joint"], self.p.WORST_JOINT_MAX)
-        self.assertFalse(d["held"])

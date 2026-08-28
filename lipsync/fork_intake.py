@@ -5,7 +5,6 @@ from __future__ import annotations
 import shutil
 import subprocess
 import time
-from pathlib import Path
 
 from . import fork_looper, fork_video
 from .fork_identity import FAIL, PASS, UNMEASURED
@@ -21,12 +20,28 @@ from .identity_arcface import MIN_FACE_PX  # noqa: E402
 
 MIN_SCENE_SECONDS = 3.0
 
+#: CHOSEN 0.10 (at the intake handover 22.08, out of exactly two measured
+#: points: 21% orphan wrists gave ArcFace 0.2960 at 81/99 inside the band, 0%
+#: gave 0.2430 at 98/99 — about 0.05 of identity per 21%). Read linearly, 10% is
+#: some 0.024, half the instrument's own noise (`fork_identity.
+#: UPSCALE_DRIFT_MAX` = 0.05); below that a warning would be about noise. NOT
+#: measured at 10% itself — nothing was measured between 0% and 21%, and the
+#: linearity between two points is an assumption, not an observation.
 ORPHAN_WRIST_WARN = 0.10
 
-WINDOW_FPS_PROVEN = 30.0
-
+#: MEASURED at the 22.08 intake run: on `driving_selfie.mp4` ffprobe
+#: -count_frames gave 305, ffmpeg without flags 307, ffmpeg with `-vsync 0`
+#: exactly 305; on `driving_arms.mp4` and `driving_yogaball.mp4` all three
+#: agreed (373 and 362). A healthy file disagrees by exactly zero, so there is
+#: no tolerance to spend: one frame of slack would hide the very defect this
+#: instrument exists to catch. Those clips are not shipped in this repository,
+#: so the numbers stand as a record and cannot be re-run here.
 FRAME_COUNT_EXACT = 0
 
+#: CHOSEN 1 (by the product, out of how identity is measured): the identity axis
+#: reads the LARGEST face, because `identity_arcface.face_detail` sorts by area.
+#: With two people in the photo it is the instrument, not the operator, that
+#: picks whose face the whole axis is about.
 PHOTO_PEOPLE_EXPECTED = 1
 
 VSYNC_ADVICE = (
@@ -76,7 +91,7 @@ def read_count_frames(path) -> dict:
             "code": None,
             "out": "",
             "err": "",
-            "why": f"{fork_video.FFPROBE_BIN} did not run to completion: {str(exc)[:120]}",
+            "why": f"{fork_video.FFPROBE_BIN} did not run to completion: {exc}",
         }
     return {
         "ran": True,
@@ -137,7 +152,7 @@ def read_decoded_frames(path, *, vsync0: bool) -> dict:
             "code": None,
             "out": "",
             "err": "",
-            "why": f"{fork_video.FFMPEG_BIN} did not run to completion: {str(exc)[:120]}",
+            "why": f"{fork_video.FFMPEG_BIN} did not run to completion: {exc}",
         }
     return {
         "ran": True,
@@ -163,7 +178,7 @@ def read_faces(path) -> dict:
         out.sort(key=lambda d: d["face_px"], reverse=True)
         return {"faces": out, "why": ""}
     except Exception as exc:  # noqa: BLE001 — many ways for "nothing to ask with" to happen
-        return {"faces": None, "why": f"{type(exc).__name__}: {str(exc)[:200]}"}
+        return {"faces": None, "why": f"{type(exc).__name__}: {exc}"}
 
 
 def read_style_card(path) -> dict:
@@ -173,7 +188,7 @@ def read_style_card(path) -> dict:
 
         return {"card": style_card(str(path)), "why": ""}
     except Exception as exc:  # noqa: BLE001
-        return {"card": None, "why": f"{type(exc).__name__}: {str(exc)[:200]}"}
+        return {"card": None, "why": f"{type(exc).__name__}: {exc}"}
 
 
 def tally(checked: int, violations: int, unmeasured: int) -> dict:
@@ -206,7 +221,7 @@ def parse_count_frames(text: str) -> dict:
             "frames": None,
             "fps": None,
             "seconds": None,
-            "why": (f"the ffprobe answer did not parse as JSON: {(text or '')[:120]!r}"),
+            "why": (f"the ffprobe answer did not parse as JSON: {(text or '')!r}"),
         }
     streams = (data or {}).get("streams") or []
     if not streams:
@@ -259,8 +274,8 @@ def parse_decoded_frames(text: str) -> dict:
             "frames": None,
             "why": (
                 f"not a single `frame=` in the ffmpeg answer: how many "
-                f"frames came out is unknown. Tail: "
-                f"{(text or '')[-120:]!r}"
+                f"frames came out is unknown. The answer: "
+                f"{(text or '')!r}"
             ),
         }
     return {"ok": True, "frames": int(hits[-1]), "why": ""}
@@ -366,6 +381,10 @@ def scene_length_verdict(
         }
     secs = [round(s["frames"] / fps, 3) for s in scene_list]
     short = [i for i, v in enumerate(secs) if v < bar]
+    # A sample, not the list: the note says how many of how many it shows, so
+    # a run with 300 short scenes cannot read as a run with 10. CHOSEN: ten
+    # indices keep the note to one line; the full list is in "short".
+    shown = short[:10]
     return {
         **tally(len(scene_list), len(short), 0),
         "bar_seconds": bar,
@@ -375,7 +394,8 @@ def scene_length_verdict(
             f"scenes {len(scene_list)}, bar {bar} s, below the bar "
             f"{len(short)}"
             + (
-                f": indices {short[:10]}, lengths {[secs[i] for i in short[:10]]}"
+                f": first {len(shown)} of {len(short)} — "
+                f"indices {shown}, lengths {[secs[i] for i in shown]}"
                 if short
                 else f"; shortest {min(secs)} s, longest {max(secs)} s"
             )
@@ -556,29 +576,6 @@ def window(scene_list, product_seconds: float, fps: float | None) -> dict:
     }
 
 
-def window_argv(video_path, out_path, start: int, end: int, *, fps: float | None = None) -> list:
-    """Build the window-cut command apart from running it: its makeup is a decision."""
-    if not isinstance(start, int) or not isinstance(end, int) or start < 0:
-        raise ValueError(f"window bounds {start!r}..{end!r}: expected integers from zero")
-    if end < start:
-        raise ValueError(f"window bounds {start}..{end}: the end comes before the start")
-    rate = WINDOW_FPS_PROVEN if fps is None else float(fps)
-    if rate <= 0:
-        raise ValueError(f"rate {fps!r}: expected a positive number")
-    return [
-        fork_video.FFMPEG_BIN,
-        "-v",
-        "error",
-        "-y",
-        "-i",
-        str(video_path),
-        "-vf",
-        f"select='between(n\\,{start}\\,{end})',setpts=N/{rate:g}/TB",
-        "-an",
-        str(out_path),
-    ]
-
-
 def driving_intake(
     video_path,
     frame_paths=None,
@@ -590,7 +587,7 @@ def driving_intake(
     pose_reader=None,
     face_prober=None,
 ) -> dict:
-    """Run the driving intake: five axes, four hard and one soft."""
+    """Run the driving intake: six axes, four hard and two soft."""
     t0 = time.perf_counter()
     prober = read_count_frames if prober is None else prober
     decoder = read_decoded_frames if decoder is None else decoder
@@ -847,27 +844,3 @@ def _report(
         "elapsed": round(time.perf_counter() - t0, 3),
         **(extra or {}),
     }
-
-
-def render(report: dict) -> str:
-    """Render the report for human eyes. Numbers sit beside the verdict on every line."""
-    lines = [
-        f"INTAKE: {report['kind']} — {Path(report['source']).name}",
-        f"  VERDICT: {report['outcome']}  "
-        f"(checked {report['checked']}, violations "
-        f"{report['violations']}, unmeasured {report['unmeasured']})",
-    ]
-    for name, ax in report["axes"].items():
-        mark = " [soft]" if name in report.get("soft", []) else ""
-        lines.append(
-            f"  {name}{mark}: {ax.get('outcome')} "
-            f"(checked {ax.get('checked')}, violations "
-            f"{ax.get('violations')}, unmeasured {ax.get('unmeasured')})"
-        )
-        if ax.get("note"):
-            lines.append(f"      {ax['note']}")
-    if report.get("warnings"):
-        lines.append(f"  warnings: {report['warnings']}")
-    if report.get("steps"):
-        lines.append(f"  step durations, s: {report['steps']}")
-    return "\n".join(lines)

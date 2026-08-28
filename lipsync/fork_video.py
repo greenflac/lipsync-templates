@@ -12,7 +12,13 @@ from pathlib import Path
 from . import framemath
 from .fork_identity import FAIL, PASS, UNMEASURED
 
+#: CHOSEN: the bare tool name, so PATH decides which build runs. It is a
+#: constant and not a literal inside argv because a test points it at a name
+#: that does not exist to reach the "nothing to ask with" branch, and doing
+#: that by uninstalling ffmpeg is not a test.
 FFPROBE_BIN = "ffprobe"
+
+#: CHOSEN for the same reason as FFPROBE_BIN: the decoder is reached by name.
 FFMPEG_BIN = "ffmpeg"
 
 PROBE_TIMEOUT_S = 20
@@ -23,10 +29,21 @@ NAME_DIGITS = 5
 
 FRAME_SUFFIX = ".png"
 
+#: DERIVED from how the expectation is computed: a container without
+#: `nb_frames` has its count taken as duration x rate, and rounding that to a
+#: whole frame misses by exactly one. Two cannot be blamed on rounding, so
+#: such a run answers "completeness not confirmed" rather than "pass".
 FRAME_COUNT_TOLERANCE = 1
 
+#: DERIVED from NTSC: 30000/1001 = 29.97003 lies 0.02997 away from 30, so the
+#: tolerance has to stay under three hundredths or 29.97 passes for 30 and an
+#: upward conform slips by in silence. Zero is out too: the rate arrives as a
+#: division of integers and does not always land on the same double.
 FPS_TOLERANCE = 0.01
 
+#: CHOSEN by this module out of what the operator has to be able to tell
+#: apart: the three rate modes are printed into the report, so they are words
+#: and not flags — "drop" and "refuse" must not both read as "not as is".
 AS_IS, DROP, REFUSE = "as is", "drop", "refuse"
 
 EXIT_BY_OUTCOME = {PASS: 0, FAIL: 1, UNMEASURED: 2}
@@ -67,7 +84,7 @@ def read_probe(path) -> dict:
             "code": None,
             "out": "",
             "err": "",
-            "why": f"{FFPROBE_BIN} did not run to completion: {str(exc)[:120]}",
+            "why": f"{FFPROBE_BIN} did not run to completion: {exc}",
         }
     return {
         "ran": True,
@@ -107,7 +124,7 @@ def run_decode(argv) -> dict:
             "code": None,
             "out": "",
             "err": "",
-            "why": f"{FFMPEG_BIN} did not run to completion: {str(exc)[:120]}",
+            "why": f"{FFMPEG_BIN} did not run to completion: {exc}",
         }
     return {
         "ran": True,
@@ -116,13 +133,6 @@ def run_decode(argv) -> dict:
         "err": raw.stderr or "",
         "why": "",
     }
-
-
-def frame_name(index: int) -> str:
-    """Name a frame. The field width is a constant, not a literal in two places."""
-    if not isinstance(index, int) or isinstance(index, bool) or index < 0:
-        raise ValueError(f"frame number {index!r}: expected an integer from zero")
-    return f"{index:0{NAME_DIGITS}d}{FRAME_SUFFIX}"
 
 
 def _ratio(raw) -> float | None:
@@ -144,7 +154,7 @@ def parse_probe(text: str) -> dict:
     except (ValueError, TypeError):
         return {
             "ok": False,
-            "why": f"the ffprobe answer did not parse as JSON: {(text or '')[:120]!r}",
+            "why": f"the ffprobe answer did not parse as JSON: {(text or '')!r}",
         }
     if not isinstance(data, dict):
         return {"ok": False, "why": f"expected an object, got {type(data).__name__}"}
@@ -353,7 +363,7 @@ def probe(video_path, *, prober=None) -> dict:
         return _probe_report(
             FAIL,
             f"{FFPROBE_BIN} returned {raw['code']}: "
-            f"{(raw.get('err') or '').strip()[:200] or 'no explanation'}",
+            f"{(raw.get('err') or '').strip() or 'no explanation'}",
             t,
         )
     parsed = parse_probe(raw.get("out") or "")
@@ -415,17 +425,6 @@ def _probe_report(outcome: str, note: str, t0: float, **extra) -> dict:
     }
     rep.update(extra)
     return rep
-
-
-def fps_prober(path):
-    """Return the source rate as one number. Drop-in replacement for `_ffprobe_fps`."""
-    rep = probe(path)
-    return rep["fps"] if rep["outcome"] == PASS else None
-
-
-def plan_for_seconds(seconds, *, fps=None) -> dict:
-    """Compute how many driving frames a clip of this length needs."""
-    return framemath.frames_for_seconds(seconds, fps=fps)
 
 
 def frames(
@@ -520,7 +519,7 @@ def frames(
     if got.get("code"):
         note = (
             f"{FFMPEG_BIN} returned {got['code']}: "
-            f"{(got.get('err') or '').strip()[:200] or 'no explanation'}. "
+            f"{(got.get('err') or '').strip() or 'no explanation'}. "
             f"Frames written {written}, expected {expected}"
         )
         steps.append(("decode", FAIL, note, dec_elapsed))

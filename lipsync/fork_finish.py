@@ -3,13 +3,29 @@
 from __future__ import annotations
 
 import time
+from fractions import Fraction
 
-from . import fork_video
+from . import fork_plan, fork_video
 from .fork_identity import FAIL, PASS, UNMEASURED
 
 
-#: CHOSEN (by the template author, from the platforms' vertical formats): 9:16 is the feed frame.
-TARGET_RATIO_W, TARGET_RATIO_H = 9, 16
+_PLAN_FRACTION = Fraction(fork_plan.PLAN_RATIO).limit_denominator(10_000)
+
+#: DERIVED from `fork_plan.PLAN_RATIO`, never declared here. The crop needs the
+#: ratio as two whole numbers and the plan states it as one float; that is a
+#: difference of format, not a second thing to know, so the pair is computed
+#: from the plan and moves whenever the plan moves. Declaring `9, 16` here
+#: again would let the two drift apart with nothing to notice it.
+TARGET_RATIO_W, TARGET_RATIO_H = _PLAN_FRACTION.numerator, _PLAN_FRACTION.denominator
+
+# A float that no small fraction reproduces would silently hand the crop a
+# ratio that is not the plan; fail at import instead, where it is one line.
+if abs(TARGET_RATIO_W / TARGET_RATIO_H - fork_plan.PLAN_RATIO) > fork_plan.PLAN_TOLERANCE:
+    raise ValueError(
+        f"fork_plan.PLAN_RATIO={fork_plan.PLAN_RATIO} does not reduce to whole "
+        f"sides within {fork_plan.PLAN_TOLERANCE}: got "
+        f"{TARGET_RATIO_W}:{TARGET_RATIO_H}"
+    )
 
 #: DERIVED (from how yuv420p works): chroma is halved, so both sides must be even.
 DIM_MULTIPLE = 2
@@ -17,7 +33,10 @@ DIM_MULTIPLE = 2
 #: DERIVED (not our measurement: ITU-R BT.1359-1): audio ahead of the picture is noticeable from 45 ms; the narrow side is taken because the sign of the shift is unknown by construction.
 LIPSYNC_AUDIO_AHEAD_MS = 45
 
-#: CHOSEN from what was MEASURED: the best window on live material scores 1.0024 of the central one — that is noise; the bar must not go lower.
+#: CHOSEN, above what was MEASURED: on the 48-column fixture `REAL_COLUMNS`
+#: in the tests the best window beats the central one by 1.0009x, which is
+#: the instrument's own noise. The bar sits well above it because a bar at
+#: the noise floor would read that noise as a person standing aside.
 BIAS_GAIN_MIN = 1.05
 
 #: CHOSEN: the window bias is a fraction from -1 to +1, not pixels (the output resolution has already changed once).
@@ -453,6 +472,79 @@ def audio_plan(driving_path, window, kling_path, *, prober=None) -> dict:
     }
 
 
+#: DECLARED AS DATA on purpose: the gate asks the report what it carries, and a
+#: test that greps the source for a word proves nothing about what runs.
+#: `report` below is built from this tuple, so a key dropped here disappears
+#: from the report and a key added here fails loudly until it is filled in.
+FINISH_REPORT_KEYS = (
+    "outcome",
+    "note",
+    "steps",
+    "out",
+    "written",
+    "audio",
+    "crop",
+    "audio_plan",
+    "argv",
+    "shipped_ratio",
+    "checked",
+    "violations",
+    "unmeasured",
+    "elapsed",
+)
+
+
+def shipped_ratio_axis(width, height) -> dict:
+    """Measure the aspect ratio of the clip that ships, against the plan itself.
+
+    The bound is `fork_plan.PLAN_TOLERANCE` and not a band of this module's
+    own: a finisher grading its own output by a looser rule than the plan is
+    how 0.5581 passed acceptance on six templates.
+
+    :param width: width of the written file in whole pixels, as probed.
+    :param height: height of the written file in whole pixels, as probed.
+    :returns: `outcome` (pass / fail / could not measure), the measured
+        `ratio`, the `plan` and `tolerance` it was judged by, and the
+        `checked` / `violations` / `unmeasured` counts beside the verdict.
+
+    >>> shipped_ratio_axis(540, 960)["outcome"]
+    'pass'
+    >>> shipped_ratio_axis(960, 960)["outcome"]
+    'fail'
+    """
+    plan, tol = fork_plan.PLAN_RATIO, fork_plan.PLAN_TOLERANCE
+    blank = {"width": width, "height": height, "ratio": None, "plan": plan, "tolerance": tol}
+    if width is None or height is None:
+        return {
+            **blank,
+            **fork_plan.tally(0, 0, 1),
+            "note": (
+                f"the shipped file was not measured (width {width}, height "
+                f"{height}): its ratio is unknown, which is neither good nor bad"
+            ),
+        }
+    for name, value in (("width", width), ("height", height)):
+        if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
+            return {
+                **blank,
+                **fork_plan.tally(1, 1, 0),
+                "note": f"the shipped {name} is meaningless: {value!r}",
+            }
+    got = width / height
+    off = abs(got - plan)
+    ok = off <= tol
+    return {
+        **blank,
+        "ratio": round(got, 4),
+        **fork_plan.tally(1, 0 if ok else 1, 0),
+        "note": (
+            f"what shipped is {width}x{height} = {got:.4f} against the plan "
+            f"{plan}, off by {off:.4f} "
+            f"{'within' if ok else 'over'} the tolerance {tol}"
+        ),
+    }
+
+
 def finish(
     driving_path,
     kling_path,
@@ -471,7 +563,13 @@ def finish(
     steps: list = []
 
     def report(outcome, note, **extra):
-        return {
+        unknown = set(extra) - set(FINISH_REPORT_KEYS)
+        if unknown:
+            raise KeyError(
+                f"finish() tried to report {sorted(unknown)}, which "
+                f"FINISH_REPORT_KEYS does not declare"
+            )
+        values = {
             "outcome": outcome,
             "note": note,
             "steps": steps,
@@ -481,9 +579,15 @@ def finish(
             "crop": None,
             "audio_plan": None,
             "argv": None,
+            # Nothing probed yet means the ratio is unknown, not acceptable.
+            "shipped_ratio": shipped_ratio_axis(None, None),
+            "checked": len(steps),
+            "violations": sum(1 for _, o, _ in steps if o == FAIL),
+            "unmeasured": sum(1 for _, o, _ in steps if o == UNMEASURED),
             "elapsed": round(time.perf_counter() - t, 4),
             **extra,
         }
+        return {key: values[key] for key in FINISH_REPORT_KEYS}
 
     kln = fork_video.probe(kling_path, prober=prober)
     steps.append(("probing the Kling output", kln["outcome"], kln["note"]))
@@ -520,7 +624,7 @@ def finish(
             else (UNMEASURED if not ran.get("ran") else FAIL),
             (
                 ran.get("why")
-                or f"ffmpeg returned {ran.get('code')}: {(ran.get('err') or '').strip()[:200]}"
+                or f"ffmpeg returned {ran.get('code')}: {(ran.get('err') or '').strip()}"
             )
             if (not ran.get("ran") or ran.get("code"))
             else f"ffmpeg ran to completion, a command of {len(argv)} words",
@@ -537,7 +641,7 @@ def finish(
     if ran.get("code"):
         return report(
             FAIL,
-            f"ffmpeg returned {ran['code']}: {(ran.get('err') or '').strip()[:200]}",
+            f"ffmpeg returned {ran['code']}: {(ran.get('err') or '').strip()}",
             crop=geom,
             audio_plan=plan,
             argv=argv,
@@ -545,6 +649,10 @@ def finish(
 
     got = fork_video.probe(out_path, prober=prober)
     steps.append(("probing the result", got["outcome"], got["note"]))
+    # The measurement is taken from the file we wrote, not from the plan we
+    # made for it: the plan is what we intended, the file is what ships.
+    shipped = shipped_ratio_axis(got.get("width"), got.get("height"))
+    steps.append(("shipped ratio", shipped["outcome"], shipped["note"]))
     if got["outcome"] != PASS:
         return report(
             got["outcome"] if got["outcome"] == UNMEASURED else FAIL,
@@ -553,8 +661,11 @@ def finish(
             audio_plan=plan,
             argv=argv,
             written=True,
+            shipped_ratio=shipped,
         )
     mismatch = []
+    if shipped["outcome"] == FAIL:
+        mismatch.append(shipped["note"])
     if (got["width"], got["height"]) != (geom["w"], geom["h"]):
         mismatch.append(
             f"size {got['width']}x{got['height']} against the planned {geom['w']}x{geom['h']}"
@@ -573,6 +684,18 @@ def finish(
             argv=argv,
             written=True,
             audio=bool(got.get("audio")),
+            shipped_ratio=shipped,
+        )
+    if shipped["outcome"] == UNMEASURED:
+        return report(
+            UNMEASURED,
+            f"the file was written, but what ships was not measured: {shipped['note']}",
+            crop=geom,
+            audio_plan=plan,
+            argv=argv,
+            written=True,
+            audio=bool(got.get("audio")),
+            shipped_ratio=shipped,
         )
     outcome = PASS if plan["outcome"] == PASS else FAIL
     tail = "audio returned" if plan["glue"] else "without audio: " + plan["note"]
@@ -580,6 +703,7 @@ def finish(
         outcome,
         (
             f"{out_path}: {got['width']}x{got['height']}, "
+            f"ratio {shipped['ratio']:.4f} against the plan {shipped['plan']}, "
             f"{got['frames']} frames, {got['seconds']:g} s; "
             f"{geom['lost_percent']:g}% of the frame area lost; {tail}"
         ),
@@ -588,6 +712,7 @@ def finish(
         argv=argv,
         written=True,
         audio=bool(got.get("audio")),
+        shipped_ratio=shipped,
     )
 
 
@@ -622,8 +747,27 @@ def main(argv=None) -> int:
     for name, outcome, note in rep["steps"]:
         print(f"  [{outcome}] {name}: {note}")
     print(f"[{rep['outcome']}] {rep['note']}")
-    print(f"{len(rep['steps'])} steps, in {rep['elapsed']:g} s")
+    print(
+        f"{rep['checked']} checked, {rep['violations']} violations, "
+        f"{rep['unmeasured']} could not be measured, in {rep['elapsed']:g} s"
+    )
     return EXIT_BY_OUTCOME[rep["outcome"]]
+
+
+# A measuring device, exercised by the tests and by an operator, never by the
+# paid path.
+#
+# `finish` takes the crop bias as a number and `main` exposes it as `--bias`,
+# because the person who is looking at the clip is the one who knows where the
+# subject stands. `bias_from_columns` is the device that turns a per-column
+# motion map into that number, or refuses to: it compares the best window
+# against the central one and says "could not measure" below BIAS_GAIN_MIN
+# rather than reading a bias out of noise. Nothing in the product produces a
+# motion map — the movement decisions all live on the driving side — so wiring
+# this into `finish` would mean inventing a producer whose output nobody has
+# measured. It stays what it is: the instrument the operator reads before
+# choosing `--bias`.
+INSTRUMENTS = ("bias_from_columns",)
 
 
 if __name__ == "__main__":

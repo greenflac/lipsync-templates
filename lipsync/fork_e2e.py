@@ -10,12 +10,18 @@ from pathlib import Path
 
 from .fork_identity import FAIL, PASS, UNMEASURED, SAME_PERSON_MAX
 from .fork_video import EXIT_BY_OUTCOME
+from . import fork_plan
 
 
 KLING_ENDPOINT = "fal-ai/kling-video/v2.6/standard/motion-control"
 
 KLING_FIELDS = ("video_url", "image_url", "character_orientation")
 
+#: MEASURED by probing the endpoint with a negative control: the probe sent
+#: `character_orientation: 0` and the API answered "Input should be 'image' or
+#: 'video'", so the admitted pair is the vendor's own list rather than our
+#: reading of a document. The probe reply was kept as `work/bake_kling26_o0.json`,
+#: which no longer survives in the tree — this line is now the only record of it.
 KLING_ORIENTATIONS = ("image", "video")
 
 CHARACTER_ORIENTATION = "video"
@@ -26,7 +32,6 @@ PRODUCT_SECONDS = 5.0
 
 KLING_PRICE_USD = round(KLING_PRICE_PER_SECOND_USD * PRODUCT_SECONDS, 4)
 
-KLING_PRO_PRICE_USD = 2.6880
 KLING_PRO_PRICE_3S_USD = 2.6880
 KLING_PRICE_3S_USD = 0.21
 
@@ -44,30 +49,113 @@ KLING_LATENCY_S = (107.4, 190.0)
 
 KLING_WAIT_S = 1520
 
+#: MEASURED by ffprobe over every Kling output still on disk, 2026-08-28.
+#: The model has NO fixed output size — it follows the geometry of what it is
+#: given, and this pair is a record of what we were feeding it, not a property
+#: of the service:
+#:
+#:     2026-08-22   960x960    x4     (square references)
+#:     2026-08-22   816x1104   x3     (a 768x1024 photo went in)
+#:     2026-08-22   576x1024   x1
+#:     2026-08-23   720x1280   x7     (after the pipeline was made vertical)
+#:
+#: On the seven clips of 2026-08-23, `kling_out.mp4` and `final.mp4` are the
+#: same size: the crop had nothing to cut. That is why `fork_plan.FRAME`
+#: reads (720, 1280) and this reads (960, 960) without either being wrong —
+#: they are two different days of input. The two were carried as
+#: contradicting MEASURED claims about the same fact until the artefacts were
+#: measured; the artefacts had been sitting in the retired engine's tree the
+#: whole time, which is the reason a retired repository is still evidence.
+#:
+#: Nothing branches on this pair. It only lets the note say whether the
+#: geometry is one we have seen before; the gate is `OUT_RATIO_MAX`.
 KLING_OUT_SIZE = (960, 960)
+#: MEASURED on those same eight orders, and unlike the size this one IS a gate:
+#: the audio assembly counts frames at 30, so any other rate leaves the output
+#: unjudgeable rather than bad.
 KLING_OUT_FPS = 30.0
 
+#: CHOSEN: the still-image suffixes our own frame dumps write, so that a frames
+#: directory can be read without picking up the report and the manifest lying
+#: beside them. No measurement stands behind the set.
 FRAME_SUFFIXES = {".png", ".jpg", ".jpeg"}
 
+#: CHOSEN 1.0 as a CEILING ("not landscape"), deliberately not the plan ratio.
+#: The first edition compared the output with `KLING_OUT_SIZE` and failed a live
+#: run that came back 816x1104 — the vertical we had been chasing all day. The
+#: instrument was right by the letter and wrong on the substance, which is why
+#: the bar guards the PROPERTY and not the numbers. A square is admitted because
+#: eight orders delivered one and it crops to 9:16, only at a higher loss.
+#: Clamped on one side only, and knowingly so: a floor is a second decision and
+#: is not taken here.
 OUT_RATIO_MAX = 1.0
 
+#: MEASURED against Kling's own gate, which refuses with "Video duration can
+#: not less than 3s" — the message is quoted in the check so the reason travels
+#: with the verdict. All three ways round it were tried and failed: rate
+#: stretching returned 88 frames instead of 15, freeze padding was animated by
+#: the model, and per-scene rendering meets the same gate. So this is an
+#: acceptance criterion for the window, not a preference.
 MIN_SCENE_S = 3.0
 
+#: CHOSEN by the owner: the `pro` tier is excluded for good, and the exclusion
+#: has to be machine-made — a line in a document does not stop an order that is
+#: already paid. The price is the reason: $0.8960 per second against $0.0700.
 FORBIDDEN_TIERS = ("pro",)
 
+#: CHOSEN by the owner with his eyes on 2026-08-22, AGAINST the number. The
+#: style-hit measure scored `gpt-image-2` 0.8801 against 0.8156 here — and it
+#: won precisely by copying what it had no business copying: an olive belted
+#: dress over the client's grey top, a hip-hand lean over a straight stance.
+#: The measure is built on colour and texture, and clothing and pose are colour
+#: and texture too, so it REWARDS repainting. A one-sided measure cannot say
+#: "alike on these axes while differing on those", and that is the thing wanted.
 STYLE_MODEL = "nanobanana-2"
 STYLE_ROUTE = "pollinations.compose"
+#: CHOSEN with the model above: `compose` is called with two pictures, the
+#: first carrying the person and the second only the look. The count is a
+#: decision because the roles are positional — a third image has no role to
+#: hold, and one image cannot keep the two apart.
 STYLE_IMAGES = 2
+
+#: The size we ASK the styliser for: `fork_plan.FRAME`, taken rather than
+#: restated. The reference and the clip must share one frame or the reference is
+#: padded on its way into the video model, and the frame the video model returns
+#: is what the plan measured. Both sides being multiples of 16 also matters —
+#: that is the grid the model MEASURABLY snaps to (asked 768x1024, it returned
+#: 896x1200 = 56x16 by 75x16) — but that is a property of the frame, checked
+#: where the frame is declared, not a second reason to write the number again.
+STYLED_SIZE = fork_plan.FRAME
 
 STYLE_HIT_REFERENCE = 0.8156
 STYLE_HIT_REJECTED = 0.8801
 STYLE_FLOOR_REFERENCE = 0.6409
 STYLE_TEXT_ROUTE_REFERENCE = 0.6773
 
+#: CHOSEN 0.05: above the instrument's own noise and well below its signal. On
+#: the styliser comparison the REJECTED text route scored 0.6773 against a floor
+#: of 0.6409, so the noise here is +0.0364, while the accepted route stood
+#: +0.2392 clear. A bar at the noise floor would pass noise as style; a bar near
+#: the winner would pass nothing. What this number does not know: it was taken
+#: on one instrument's scale, which is why the floor is recomputed on the spot
+#: by the same instrument and compared only with itself.
+#: DEBT(2026-08-22): the margin is stated in fractions, not in sigmas.
 STYLE_MARGIN_MIN = 0.05
 
+#: CHOSEN by the owner: an editing cut inside a single scene is a defect of the
+#: generation and not a style, so the allowance is none. The detector's own
+#: threshold is `fork_looper.CUT_JUMP` and is read from there, never copied here.
 MAX_CUTS_OUT = 0
 
+#: CHOSEN by the owner and revised on 2026-08-22: ban the DRAWN mark and the
+#: lettering, not the brand word. The earlier wording opened with "no brand
+#: names" and so fought the owner's own prompts, which name "Adidas sneakers"
+#: and a "Balenciaga trench". A ban that argues with the prompt does not win,
+#: and that was MEASURED: on `y2k_f` no logo appeared, on `y2k_m` a readable
+#: "adidas" did — the outcome was settled by chance. Stage 2 checks the clause
+#: is present in the prompt, which is why the decision lives as a constant and
+#: not as a sentence in a document. No instrument here reads lettering off an
+#: image: that axis is judged by the owner's eye, and the acceptance says so.
 NO_BRANDS_CLAUSE = (
     "no logo, no logos, no brand marks, no lettering or text anywhere in the frame or on clothing"
 )
@@ -79,7 +167,16 @@ ROLE_CLAUSE = (
     "photographic look from the SECOND image"
 )
 
+#: MEASURED with ArcFace on our own material in one run, as three rungs: the
+#: same face after stylisation, the reference the owner rejected, and a known
+#: stranger (the driving actor against the client photo). One ladder, one place.
 LADDER_SAME = 0.0652
+#: MEASURED on that run as the distance to the REJECTED reference — by then a
+#: different person. Both identity checks branch on this rung and on no other:
+#: between the pass bar and here the face is merely occluded, which is a "could
+#: not measure" for the operator's eye rather than a swap. Eyewear carried over
+#: from a style reference put ArcFace at 0.3928 on the same person, and that is
+#: what the middle band exists to hold.
 LADDER_REJECTED = 0.7137
 LADDER_STRANGER = 1.0217
 
@@ -188,7 +285,7 @@ def _call(fn, kwargs: dict, positional: tuple):
 def outcome_of(reply, *, what: str) -> tuple:
     """Extract the verdict from a neighbour reply. No verdict means "could not measure", not "pass"."""
     if isinstance(reply, dict) and reply.get("outcome") in (PASS, FAIL, UNMEASURED):
-        return reply["outcome"], str(reply.get("note") or "")[:400]
+        return reply["outcome"], str(reply.get("note") or "")
     return UNMEASURED, (
         f"{what} replied {type(reply).__name__} without an outcome field: "
         f"no verdict, nothing to judge by"
@@ -214,26 +311,66 @@ PALETTE_BINS = 8
 PALETTE_SIDE = 256
 
 
-def shipped_similarity(left, right) -> float | None:
-    """Measure the style hit with the one instrument for the whole pipeline. `None` means could not measure."""
+EXTERNAL_INSTRUMENT = "creative_eval.style.similarity (external, shipped)"
+FALLBACK_ABSENT = "palette_similarity (fallback: the external package is missing)"
+FALLBACK_BROKEN = (
+    "palette_similarity (fallback: the external package imported but failed: {reason})"
+)
+
+
+def shipped_similarity(left, right) -> tuple[float | None, str]:
+    """Measure the style hit and name the instrument that produced the number.
+
+    Returns `(value, instrument)`; `value is None` means could not measure. The
+    name is returned together with the number rather than resolved by a second
+    call, because two independent decisions about one fact drift apart: the run
+    that prompted this reported the external device while the number had come
+    from the fallback. Whoever answered is the only thing that can name itself.
+
+    Three outcomes, kept apart on purpose: the external answered, the external
+    is not installed, the external is installed and broke. The last one carries
+    the exception text whole — the reason a device dropped out is the half of
+    the report that says what to fix, and a truncated reason has already sent
+    one diagnosis the wrong way.
+
+    >>> value, instrument = shipped_similarity("a.png", "b.png")
+    >>> instrument.startswith("creative_eval") or "fallback" in instrument
+    True
+    """
     try:
         from creative_eval.style import similarity as _external  # noqa: PLC0415
-    except Exception:  # noqa: BLE001
-        return palette_similarity(left, right)
+    except ImportError:
+        return palette_similarity(left, right), FALLBACK_ABSENT
+    except Exception as exc:  # noqa: BLE001
+        # Importable-but-throwing is a breakage, not an absence: the two get
+        # different names so a broken install cannot read as a bare machine.
+        return palette_similarity(left, right), FALLBACK_BROKEN.format(
+            reason=f"import raised {type(exc).__name__}: {exc}"
+        )
     try:
-        return float(_external(str(left), str(right)))
-    except Exception:  # noqa: BLE001
-        return palette_similarity(left, right)
+        return float(_external(str(left), str(right))), EXTERNAL_INSTRUMENT
+    except Exception as exc:  # noqa: BLE001
+        return palette_similarity(left, right), FALLBACK_BROKEN.format(
+            reason=f"{type(exc).__name__}: {exc}"
+        )
 
 
-def similarity_source() -> str:
-    """Return which instrument measures right now. Printed into the report."""
-    try:
-        from creative_eval.style import similarity  # noqa: F401,PLC0415
+def measured_by(similarity, left, right) -> tuple[float | None, str]:
+    """Run one measurement and report the device that actually answered.
 
-        return "creative_eval.style.similarity (external, shipped)"
-    except Exception:  # noqa: BLE001
-        return "palette_similarity (fallback: the external package is missing)"
+    An injected device returns a bare number and is named after itself; the
+    shipped one returns its own name alongside the number. Either way the name
+    comes off the call that ran, never off which callable was expected.
+
+    >>> measured_by(lambda a, b: 0.5, "a.png", "b.png")
+    (0.5, 'injected: <lambda>')
+    """
+    outcome = similarity(left, right)
+    if isinstance(outcome, tuple):
+        value, name = outcome
+        return (None if value is None else float(value)), str(name)
+    injected = getattr(similarity, "__name__", type(similarity).__name__)
+    return outcome, f"injected: {injected}"
 
 
 def palette_similarity(left, right) -> float | None:
@@ -310,21 +447,26 @@ def live_kling(
     res = _req(f"https://queue.fal.run/{app}/requests/{rid}")
     url = (res.get("video") or {}).get("url")
     if not url:
-        raise RuntimeError(f"the reply has no video link: {str(res)[:300]}")
+        raise RuntimeError(f"the reply has no video link: {str(res)}")
     Path(out_path).parent.mkdir(parents=True, exist_ok=True)
     with urllib.request.urlopen(url, timeout=600) as fh:
         Path(out_path).write_bytes(fh.read())
     return str(out_path)
 
 
-def live_stylize(*, person, style, prompt: str, out_path, model: str = STYLE_MODEL) -> str:
+def live_stylize(
+    *, person, style, prompt: str, out_path, model: str = STYLE_MODEL, size=STYLED_SIZE
+) -> str:
     """Stylize with two images through the measured winner. Goes to the network."""
     from . import pollinations  # noqa: PLC0415
 
     urls = [pollinations.upload(person), pollinations.upload(style)]
     if len(urls) != STYLE_IMAGES:
         raise RuntimeError(f"expected exactly {STYLE_IMAGES} links, got {len(urls)}")
-    return pollinations.compose(prompt, urls, out_path, model=model)
+    width, height = size
+    return pollinations.compose(
+        prompt, urls, out_path, model=model, width=int(width), height=int(height)
+    )
 
 
 def file_fact(path, what: str) -> tuple:
@@ -446,14 +588,338 @@ def _default_plan():
     return fork_plan
 
 
+def _size_pair(value):
+    """Return `(width, height)` of whole positive pixels, or `None` when the value is not a size."""
+    if isinstance(value, dict):
+        value = (value.get("width"), value.get("height"))
+    if not isinstance(value, (tuple, list)) or len(value) != 2:
+        return None
+    try:
+        width, height = int(value[0]), int(value[1])
+    except (TypeError, ValueError):
+        return None
+    if width <= 0 or height <= 0:
+        return None
+    return (width, height)
+
+
+def frame_size(path, *, sizer=None) -> tuple:
+    """Read the pixel size of an image file.
+
+    :param path: the image to measure.
+    :param sizer: injection point returning `(width, height)`; PIL is used
+        when it is omitted, so a test never needs a real decodable file.
+    :returns: `((width, height) or None, note)` — the note says why the size
+        is missing, because "not measured" has to be told apart from "wrong".
+
+    >>> frame_size("x.png", sizer=lambda p: (720, 1280))[0]
+    (720, 1280)
+    """
+    if sizer is None:
+
+        def sizer(image_path):
+            from PIL import Image  # noqa: PLC0415
+
+            with Image.open(image_path) as im:
+                return im.size
+
+    try:
+        raw = sizer(str(path))
+    except Exception as exc:  # noqa: BLE001 - any reader failure is "not measured"
+        return (None, f"the size of {path} was not taken: {type(exc).__name__}: {exc}")
+    got = _size_pair(raw)
+    if got is None:
+        return (None, f"the size reader answered {raw!r}, which is not a pixel size")
+    return (got, f"{got[0]}x{got[1]}")
+
+
+def styliser_kept_the_plan(*, asked, got) -> dict:
+    """Judge the styliser's answer against the size that was asked for.
+
+    The name of this check promises a comparison with the request, so the
+    request is compared — not the ratio band. A frame that is vertical, or
+    even exactly 9:16, but is not the size that was ordered is still a route
+    that ignored the order, and that fact must survive into the report on its
+    own line.
+
+    :param asked: the ordered size, `(width, height)` or a `{"width", "height"}` mapping.
+    :param got: the returned size, in the same shapes; `None` when it was never measured.
+    :returns: `outcome` plus `checked` / `violations` / `unmeasured`, the
+        `asked` and `got` sizes as data, and a note carrying both numbers.
+
+    >>> styliser_kept_the_plan(asked=(720, 1280), got=(768, 1376))["outcome"]
+    'fail'
+    """
+    want = _size_pair(asked)
+    have = _size_pair(got)
+    if want is None:
+        return {
+            "outcome": UNMEASURED,
+            "checked": 0,
+            "violations": 0,
+            "unmeasured": 1,
+            "asked": None,
+            "got": have,
+            "note": f"the asked size is not a size: {asked!r}; nothing to compare against",
+        }
+    if have is None:
+        return {
+            "outcome": UNMEASURED,
+            "checked": 0,
+            "violations": 0,
+            "unmeasured": 1,
+            "asked": want,
+            "got": None,
+            "note": (
+                f"asked for {want[0]}x{want[1]}, and the returned size was "
+                f"never measured ({got!r}): NOT MEASURED, which is not a pass"
+            ),
+        }
+    same = have == want
+    return {
+        "outcome": PASS if same else FAIL,
+        "checked": 1,
+        "violations": 0 if same else 1,
+        "unmeasured": 0,
+        "asked": want,
+        "got": have,
+        "note": (
+            f"asked for {want[0]}x{want[1]} = {want[0] / want[1]:.4f}, "
+            f"returned {have[0]}x{have[1]} = {have[0] / have[1]:.4f}"
+            + (
+                ""
+                if same
+                else "; the route answered with a size nobody ordered, so the "
+                "frame is not the plan by construction"
+            )
+        ),
+    }
+
+
+def _default_cropper(source, out_path, box) -> None:
+    """Cut the box out of the image and write it. Kept separate so a test never needs PIL."""
+    from PIL import Image  # noqa: PLC0415
+
+    Path(out_path).parent.mkdir(parents=True, exist_ok=True)
+    with Image.open(source) as im:
+        rgb = im.convert("RGB")
+    left, top = int(box["left"]), int(box["top"])
+    rgb.crop((left, top, left + int(box["width"]), top + int(box["height"]))).save(str(out_path))
+
+
+def fit_frame_to_plan(src, dst, *, plan, sizer=None, cropper=None) -> dict:
+    """Bring one frame onto the plan on disk, and say in numbers what that cost.
+
+    The decision is the plan neighbour's (`fit_to_plan`); this only carries it
+    out and reports it. Three outcomes: the frame is on the plan, the frame
+    could not be brought there, or nothing could be measured at all.
+
+    :param src: the frame as it arrived from the route.
+    :param dst: where a trimmed or padded frame is written; an untouched frame stays at `src`.
+    :param plan: the plan neighbour, injected so the stage can be tested without it.
+    :param sizer: size reader, see `frame_size`.
+    :param cropper: `(source, out_path, box)` writer; PIL is used when omitted.
+    :returns: `action`, `path`, `arrived`, `shipped`, `trimmed_share` and the
+        three-outcome numbers.
+
+    >>> fit_frame_to_plan("a.png", "b.png", plan=None, sizer=lambda p: None)["outcome"]
+    'unmeasured'
+    """
+    arrived, why = frame_size(src, sizer=sizer)
+    base = {
+        "action": "none",
+        "path": str(src),
+        "arrived": arrived,
+        "shipped": None,
+        "trimmed_share": 0.0,
+    }
+    if arrived is None:
+        return {
+            **base,
+            "outcome": UNMEASURED,
+            "checked": 0,
+            "violations": 0,
+            "unmeasured": 1,
+            "note": f"{why}; the frame was neither judged nor repaired",
+        }
+
+    try:
+        fit = plan.fit_to_plan(*arrived)
+    except Exception as exc:  # noqa: BLE001
+        return {
+            **base,
+            "outcome": UNMEASURED,
+            "checked": 0,
+            "violations": 0,
+            "unmeasured": 1,
+            "note": (
+                f"arrived {arrived[0]}x{arrived[1]}; the plan neighbour could not "
+                f"decide: {type(exc).__name__}: {exc}"
+            ),
+        }
+
+    action = fit.get("action")
+    shipped = _size_pair(fit)
+    head = f"arrived {arrived[0]}x{arrived[1]} = {arrived[0] / arrived[1]:.4f}"
+
+    if action == "none":
+        return {
+            **base,
+            "outcome": PASS,
+            "checked": 1,
+            "violations": 0,
+            "unmeasured": 0,
+            "shipped": arrived,
+            "note": f"{head}; trimmed 0 px; leaving {arrived[0]}x{arrived[1]} untouched",
+        }
+
+    if action == "crop":
+        cut = _default_cropper if cropper is None else cropper
+        try:
+            cut(str(src), str(dst), fit)
+        except Exception as exc:  # noqa: BLE001
+            return {
+                **base,
+                "outcome": UNMEASURED,
+                "checked": 0,
+                "violations": 0,
+                "unmeasured": 1,
+                "note": (
+                    f"{head}; the trim to {shipped} was decided but not carried out: "
+                    f"{type(exc).__name__}: {exc}"
+                ),
+            }
+        return {
+            "outcome": PASS,
+            "checked": 1,
+            "violations": 0,
+            "unmeasured": 0,
+            "action": "crop",
+            "path": str(dst),
+            "arrived": arrived,
+            "shipped": shipped,
+            "trimmed_share": fit.get("trimmed_share", 0.0),
+            "note": (
+                f"{head}; trimmed {fit.get('trimmed_share')} of one side; "
+                f"leaving {shipped[0]}x{shipped[1]} = {shipped[0] / shipped[1]:.4f}"
+            ),
+        }
+
+    # Too far from the plan to trim: `fit_to_plan` chose padding, which the plan
+    # neighbour already knows how to write, bands and all.
+    try:
+        laid = plan.to_plan(str(src), str(dst))
+    except Exception as exc:  # noqa: BLE001
+        return {
+            **base,
+            "outcome": UNMEASURED,
+            "checked": 0,
+            "violations": 0,
+            "unmeasured": 1,
+            "note": f"{head}; the padding was not written: {type(exc).__name__}: {exc}",
+        }
+    padded = _size_pair(laid.get("plan") or {}) or shipped
+    written = laid.get("outcome") == PASS
+    return {
+        # A padded frame is 9:16 by arithmetic and blurred bars by eye. The
+        # owner's criterion, 2026-08-26, is 9:16 with no padding in 100% of
+        # cases, so this is a violation and not a repair — it is written all
+        # the same, because the outpaint downstream is what may still save it.
+        "outcome": FAIL if written else laid.get("outcome", UNMEASURED),
+        "checked": 1 if written else int(laid.get("checked", 0)),
+        "violations": 1 if written else int(laid.get("violations", 0)),
+        "unmeasured": 0 if written else int(laid.get("unmeasured", 1)),
+        "action": "pad",
+        "path": str(laid.get("path") or dst),
+        "arrived": arrived,
+        "shipped": padded,
+        "trimmed_share": 0.0,
+        "added_share": (laid.get("plan") or {}).get("added_share"),
+        "note": (
+            f"{head}; trimmed 0 px because a cut this deep would take the "
+            f"subject; padded to {padded[0]}x{padded[1]} instead, "
+            f"{(laid.get('plan') or {}).get('added_share')} of the area added "
+            f"as bands — and a padded frame is a VIOLATION, not a repair: it "
+            f"only reaches the plan if the outpaint below turns the bands into scene"
+        ),
+    }
+
+
+#: CHOSEN, and chosen rather than measured: the cost of reading 24 poses has
+#: never been timed, so this number is a judgement and may be moved. How many
+#: driving frames the composition card is measured over. The card is a set of
+#: medians with a measured spread, so it needs enough frames to have a middle,
+#: and few enough that reading poses stays cheap next to the one paid call.
+#: The frames are taken evenly across the whole directory rather than
+#: from the front, which would describe the opening pose and call it the clip.
+CARD_SAMPLE_FRAMES = 24
+
+
+def _read_pose(path) -> dict:
+    """Read the pose points of one image. The one reader every card and check uses."""
+    from . import fork_looper  # noqa: PLC0415
+
+    return (fork_looper.read_pose(str(path)) or {}).get("points") or {}
+
+
+def driving_card(frames, *, pose=None, plan=None) -> dict:
+    """Measure where the person stands on the driving, as a composition card.
+
+    `frames` are the unpacked driving frames in order. Returns the reply of
+    `fork_plan.composition_card`: medians and tolerances when the pose reads,
+    "could not measure" when it does not — never a guessed card.
+
+    Example:
+        >>> card = driving_card(["000.png", "001.png"], pose=lambda p: {})
+        >>> card["outcome"]
+        'could not measure'
+    """
+    P = fork_plan if plan is None else plan
+    if not frames:
+        return {
+            **P.tally(0, 0, 1),
+            "note": (
+                "the driving was not unpacked into frames: the composition "
+                "card is NOT MEASURED and the framing is left to the template"
+            ),
+        }
+    reader = _read_pose if pose is None else pose
+    picked = list(frames)
+    available = len(picked)
+    step = max(1, available // CARD_SAMPLE_FRAMES)
+    picked = picked[::step][:CARD_SAMPLE_FRAMES]
+    poses, broke = [], []
+    for frame in picked:
+        try:
+            poses.append(reader(str(frame)))
+        except Exception as exc:  # noqa: BLE001
+            broke.append(f"{type(exc).__name__}: {exc}")
+    if not poses:
+        return {
+            **P.tally(0, 0, 1),
+            "note": (
+                f"the pose reader answered on none of the {len(picked)} "
+                f"frames sampled from {available}: "
+                # Every reason, not the first: the frames fail for different
+                # causes, and the one that explains the run may be any of them.
+                f"{'; '.join(broke) if broke else 'no reply'}"
+            ),
+        }
+    got = P.composition_card(poses)
+    if len(picked) < available:
+        # `composition_card` counts the frames it was handed, and that is the
+        # sample. Without both numbers a card read off 24 frames of 300 reads
+        # as a card read off the clip.
+        got = dict(got, note=f"{got['note']}; sampled {len(picked)} of {available} frames")
+    if broke:
+        got = dict(got, note=f"{got['note']}; {len(broke)} frames threw: {'; '.join(broke)}")
+    return got
+
+
 def _person_in_plan(image, *, plan, pose=None, card=None) -> tuple:
     """Check whether the person in the image fits the plan bands. Three outcomes."""
     if pose is None:
-
-        def pose(path):
-            from . import fork_looper  # noqa: PLC0415
-
-            return (fork_looper.read_pose(str(path)) or {}).get("points") or {}
+        pose = _read_pose
 
     try:
         points = pose(str(image))
@@ -463,34 +929,36 @@ def _person_in_plan(image, *, plan, pose=None, card=None) -> tuple:
             UNMEASURED,
             f"the pose was not captured: {type(exc).__name__}: {exc}",
         )
-    if card is not None:
+    # A card OBJECT is not a card: `driving_card` always answers, and its answer
+    # is "could not measure" whenever the driving poses did not read. Branching
+    # on existence would swap the plan bands for a check that can only say
+    # "no card", which is how a run loses its person check without going red.
+    if card and card.get("outcome") == PASS:
         got = plan.in_card(points, card)
-        return ("person in the driving card", got["outcome"], str(got.get("note"))[:250])
-    box = plan.person_box(points)
-    if box["outcome"] != PASS:
-        return ("person in plan", UNMEASURED, str(box.get("note"))[:200])
-    bad = []
-    lo, hi = plan.SHOULDERS_BAND
-    if not lo <= (box["shoulders"] or -1) <= hi:
-        bad.append(f"shoulders {box['shoulders']} outside {lo}..{hi}")
-    lo, hi = plan.ANKLES_BAND
-    if not lo <= (box["ankles"] or -1) <= hi:
-        bad.append(f"ankles {box['ankles']} outside {lo}..{hi}")
-    if abs(box["centre"] - 0.5) > plan.CENTRE_TOL:
-        bad.append(f"centre {box['centre']} farther than {plan.CENTRE_TOL} from the middle")
-    if box["width"] > plan.WIDTH_MAX:
-        bad.append(f"width {box['width']} above {plan.WIDTH_MAX}")
-    tail = (
-        f"shoulders {box['shoulders']}, ankles {box['ankles']}, centre "
-        f"{box['centre']}, width {box['width']}"
-    )
+        return ("person in the driving card", got["outcome"], str(got.get("note")))
+    # The four bands are the plan's decision and `plan_verdict` is where it is
+    # made. This function used to compare against `SHOULDERS_BAND` and its three
+    # neighbours itself, which meant one plan judged in two implementations:
+    # moving a band in `fork_plan` left this copy agreeing by coincidence, and
+    # nothing would have gone red the day the coincidence ended. Only the person
+    # axes are read — the canvas is checked by the caller and the face is not
+    # measured on this image at all.
+    axes = [a for a in plan.plan_verdict(points=points)["axes"] if a["name"] in plan.PERSON_AXES]
+    unread = [str(a["note"]) for a in axes if a["unmeasured"]]
+    if unread:
+        # `axes[0]` is not the axis that failed to read: under a "could not
+        # measure" verdict it handed back a note from an axis that had in fact
+        # read, naming the wrong axis as the reason and hiding the others.
+        return ("person in plan", UNMEASURED, "; ".join(unread))
+    bad = [a["note"] for a in axes if a["violations"]]
+    tail = "; ".join(a["note"] for a in axes)
     if bad:
         return (
             "person in plan",
             FAIL,
-            "; ".join(bad) + f" ({tail}). Kling scales the character to the "
-            f"driving skeleton: a reference outside the plan will drift "
-            f"past the frame edge",
+            "; ".join(bad) + ". Kling scales the character to the driving "
+            "skeleton: a reference outside the plan will drift past the "
+            "frame edge",
         )
     return ("person in plan", PASS, tail)
 
@@ -510,17 +978,33 @@ def stage_stylize(
     extend=None,
     pose=None,
     card=None,
+    sizer=None,
+    cropper=None,
+    operator_ok_styliser_size: bool = False,
 ) -> dict:
-    """Turn the client photo and the style reference into a styled photo."""
+    """Turn the client photo and the style reference into a styled photo on the plan."""
     A = _default_aesthetic() if aesthetic_mod is None else aesthetic_mod
     checks_pre = []
+    # The card decides the framing clause in the prompt and which question the
+    # person check asks, so the stage carries it as a fact rather than implying
+    # it: a run framed by the driving and a run framed by the template produce
+    # the same-looking output and are not the same run. It is reported and not
+    # counted as an axis — the absence of a card is a narrower run, not a
+    # defect of the stylization this stage is about.
+    card_fact = {
+        "outcome": (card or {}).get("outcome", UNMEASURED),
+        "note": str((card or {}).get("note", "no composition card was built for this run")),
+    }
     if aesthetic is not None:
         gender = A.gender_of(aesthetic)
         pair = A.pair_check(client_gender=client_gender, aesthetic_gender=gender)
         checks_pre.append(("client and template gender", pair["outcome"], pair["note"]))
         if pair["outcome"] != PASS:
             return _result(
-                STAGES[1], checks_pre, note="gender mismatch: generation was not started"
+                STAGES[1],
+                checks_pre,
+                driving_card=card_fact,
+                note="gender mismatch: generation was not started",
             )
         style_ref = str(A.aesthetic_file(aesthetic))
         prompt = f"{A.compose(aesthetic, card=card)['prompt']}. {A.assemble_prompt(card=card)}"
@@ -549,7 +1033,11 @@ def stage_stylize(
     except Exception as exc:  # noqa: BLE001
         checks.append(("stylization", UNMEASURED, f"{type(exc).__name__}: {exc}"))
         return _result(
-            STAGES[1], checks, prompt=prompt, note="the styliser did not answer: nothing to measure"
+            STAGES[1],
+            checks,
+            prompt=prompt,
+            driving_card=card_fact,
+            note="the styliser did not answer: nothing to measure",
         )
     checks.append(
         (
@@ -564,27 +1052,96 @@ def stage_stylize(
 
     P = _default_plan() if plan is None else plan
     planned = Path(str(out_path)).with_name(Path(str(out_path)).stem + "_9x16.png")
-    try:
-        laid = P.to_plan(made, planned)
-    except Exception as exc:  # noqa: BLE001
-        checks.append(("9:16 plan", UNMEASURED, f"{type(exc).__name__}: {exc}"))
-        return _result(
-            STAGES[1], checks, styled=made, prompt=prompt, note=str(built["card_note"] or "")[:160]
-        )
-    checks.append(("9:16 plan", laid["outcome"], str(laid.get("note"))[:200]))
-    if laid["outcome"] == PASS:
-        made = laid["path"]
 
-        grown = Path(made).with_name(Path(made).stem + "_full.png")
-        ext = P.extend_to_plan(made, grown, extender=extend)
-        checks.append(("margin outpaint", ext["outcome"], str(ext.get("note"))[:200]))
-        if ext["outcome"] == PASS:
-            made = ext["path"]
+    fitted = fit_frame_to_plan(made, planned, plan=P, sizer=sizer, cropper=cropper)
+
+    # Two separate facts about the same frame, and they are never merged: what
+    # the route was ordered to return, and what the frame is after the repair.
+    # Folding the first into the second is exactly how 0.5581 shipped as "pass".
+    kept = styliser_kept_the_plan(asked=STYLED_SIZE, got=fitted.get("arrived"))
+    kept_outcome, kept_note = kept["outcome"], kept["note"]
+    # The admission is offered ONLY on a frame that reached the plan cleanly,
+    # which — since `fit_frame_to_plan` counts padding as a violation — means a
+    # trimmed one. A frame padded with blurred bands is 9:16 by arithmetic and
+    # a different photograph by eye: the 3:4 fossil goes down that branch and
+    # stays red whatever the operator says.
+    if kept_outcome == FAIL and fitted["outcome"] == PASS:
+        repair = (
+            f"; repaired by {fitted['action']} to {fitted['shipped'][0]}x{fitted['shipped'][1]}"
+        )
+        if operator_ok_styliser_size:
+            kept_outcome = PASS
+            kept_note += repair + ", and the OPERATOR ADMITTED that repaired frame by eye"
+        else:
+            kept_note += repair + (
+                ", which is the plan — but the route still ignored the order, "
+                "so the run stops here; pass --operator-ok-styliser-size once "
+                "the repaired frame has been looked at"
+            )
+    checks.append(("styliser returned the plan", kept_outcome, kept_note))
+    checks.append(("9:16 frame", fitted["outcome"], str(fitted.get("note"))))
+
+    if fitted["outcome"] != UNMEASURED:
+        # A padded frame is a violation and still a file: the outpaint below is
+        # the only thing that can turn it back into the plan, so it runs.
+        made = fitted["path"]
+
+        if fitted["action"] != "pad":
+            checks.append(
+                (
+                    "margin outpaint",
+                    PASS,
+                    f"not called: the frame reached the plan by '{fitted['action']}' "
+                    f"({fitted['trimmed_share']} of one side trimmed), so nothing "
+                    f"was padded. A call here would cost a generation and could "
+                    f"repaint the person for no gain",
+                )
+            )
+        else:
+            added = fitted.get("added_share")
+            grown = Path(made).with_name(Path(made).stem + "_full.png")
+            ext = P.extend_to_plan(made, grown, extender=extend)
+            checks.append(
+                (
+                    "margin outpaint",
+                    ext["outcome"],
+                    f"repairing a padded reference ({added} of the area added "
+                    f"as bands); {str(ext.get('note'))}",
+                )
+            )
+            if ext["outcome"] == PASS:
+                # The outpainter answers on its own size grid too, so its own
+                # answer goes through the same trim before anything is paid for.
+                exact = Path(ext["path"]).with_name(Path(ext["path"]).stem + "_exact.png")
+                refit = fit_frame_to_plan(ext["path"], exact, plan=P, sizer=sizer, cropper=cropper)
+                checks.append(
+                    ("9:16 frame after the outpaint", refit["outcome"], str(refit["note"]))
+                )
+                if refit["outcome"] == PASS:
+                    made = refit["path"]
+
+        shipped, why = frame_size(made, sizer=sizer)
+        if shipped is None:
+            checks.append(("frame going to the paid call", UNMEASURED, why))
+        else:
+            axis = P.ratio_axis(*shipped)
+            checks.append(
+                (
+                    "frame going to the paid call",
+                    axis["outcome"],
+                    f"{Path(made).name} is {shipped[0]}x{shipped[1]}; {axis['note']}",
+                )
+            )
 
         checks.append(_person_in_plan(made, plan=P, pose=pose, card=card))
 
     return _result(
-        STAGES[1], checks, styled=made, prompt=prompt, note=str(built["card_note"] or "")[:160]
+        STAGES[1],
+        checks,
+        styled=made,
+        prompt=prompt,
+        driving_card=card_fact,
+        note=str(built["card_note"] or ""),
     )
 
 
@@ -595,8 +1152,14 @@ def stage_style_acceptance(
     similarity = shipped_similarity if similarity is None else similarity
     checks, numbers = [], {}  # type: list, dict
 
-    floor = similarity(style_ref, client_photo)
-    hit = similarity(style_ref, styled)
+    # A style verdict that does not name the device that produced it cannot be
+    # compared with yesterday's, so the name is taken from each measurement that
+    # ran. The two calls are named separately because a device can answer one
+    # and drop out on the other, and averaging that away would hide a breakage.
+    floor, floor_by = measured_by(similarity, style_ref, client_photo)
+    hit, hit_by = measured_by(similarity, style_ref, styled)
+    instrument = floor_by if floor_by == hit_by else f"floor by {floor_by}; hit by {hit_by}"
+    numbers["style_instrument"] = instrument
     numbers["floor"] = floor
     numbers["hit"] = hit
     if floor is None or hit is None:
@@ -604,7 +1167,8 @@ def stage_style_acceptance(
             (
                 "style hit",
                 UNMEASURED,
-                f"the style instrument gave no number: floor={floor}, hit={hit}",
+                f"the style instrument gave no number: floor={floor}, "
+                f"hit={hit}; measured by {instrument}",
             )
         )
     else:
@@ -617,7 +1181,7 @@ def stage_style_acceptance(
                 PASS if ok else FAIL,
                 f"hit {hit} with floor {floor} (floor = style against the "
                 f"unstyled photo), margin {margin} with bar "
-                f"{STYLE_MARGIN_MIN}",
+                f"{STYLE_MARGIN_MIN}; measured by {instrument}",
             )
         )
 
@@ -630,7 +1194,7 @@ def stage_style_acceptance(
     numbers["identity_median"] = d.get("median")
     numbers["identity_bar"] = SAME_PERSON_MAX
     if d.get("outcome") == UNMEASURED:
-        checks.append(("identity on the styled photo", UNMEASURED, str(d.get("note"))[:300]))
+        checks.append(("identity on the styled photo", UNMEASURED, str(d.get("note"))))
     else:
         med = d.get("median")
         if med is None:
@@ -740,9 +1304,9 @@ def stage_window(*, driving, first: int, last: int, out_path, probe=None, cutter
     numbers["fps"] = fps
     numbers["source_frames"] = total
     if not fps or not total:
-        checks.append(("driving probe", UNMEASURED, str(info.get("note"))[:200]))
+        checks.append(("driving probe", UNMEASURED, str(info.get("note"))))
         return _result(STAGES[3], checks, numbers=numbers)
-    checks.append(("driving probe", PASS, str(info.get("note"))[:200]))
+    checks.append(("driving probe", PASS, str(info.get("note"))))
 
     want = last - first + 1
     numbers["want_frames"] = want
@@ -783,7 +1347,10 @@ def stage_window(*, driving, first: int, last: int, out_path, probe=None, cutter
                 text=True,
             )
             if run.returncode != 0:
-                raise RuntimeError(f"ffmpeg returned {run.returncode}: {run.stderr[-300:]}")
+                # Whole, not a tail: ffmpeg names the offending option in the
+                # banner at the front and the failure near the end, and a cut
+                # that did not happen leaves no other account of why.
+                raise RuntimeError(f"ffmpeg returned {run.returncode}: {run.stderr}")
             return {"path": str(dst), "frames": _decoded_frames(dst, exe)}
 
     try:
@@ -948,7 +1515,7 @@ def stage_output_acceptance(
     numbers["fps"] = info.get("fps")
     numbers["frames"] = info.get("frames")
     if not info.get("width"):
-        checks.append(("output geometry", UNMEASURED, str(info.get("note"))[:200]))
+        checks.append(("output geometry", UNMEASURED, str(info.get("note"))))
     else:
         w, h = info.get("width"), info.get("height")
         ratio = w / h
@@ -1001,9 +1568,7 @@ def stage_output_acceptance(
     paths = list(got.get("paths") or [])
     numbers["decoded"] = len(paths)
     if not paths:
-        checks.append(
-            ("frame layout", UNMEASURED, f"no frames came out: {str(got.get('note'))[:200]}")
-        )
+        checks.append(("frame layout", UNMEASURED, f"no frames came out: {str(got.get('note'))}"))
         return _result(STAGES[5], checks, numbers=numbers)
     checks.append(("frame layout", PASS, f"frames {len(paths)}"))
 
@@ -1016,7 +1581,7 @@ def stage_output_acceptance(
     numbers["identity_inside"] = d.get("inside")
     numbers["identity_judged"] = d.get("judged")
     if d.get("outcome") == UNMEASURED:
-        checks.append(("identity on the output", UNMEASURED, str(d.get("note"))[:300]))
+        checks.append(("identity on the output", UNMEASURED, str(d.get("note"))))
     else:
         med = d.get("median")
         tail = (
@@ -1069,14 +1634,14 @@ def stage_output_acceptance(
         c = {"outcome": UNMEASURED, "note": f"{type(exc).__name__}: {exc}"}
     numbers["cuts"] = None if c.get("outcome") == UNMEASURED else len(c.get("cuts") or [])
     if c.get("outcome") == UNMEASURED:
-        checks.append(("editorial cuts", UNMEASURED, str(c.get("note"))[:300]))
+        checks.append(("editorial cuts", UNMEASURED, str(c.get("note"))))
     else:
         found = len(c.get("cuts") or [])
         checks.append(
             (
                 "editorial cuts",
                 PASS if found <= MAX_CUTS_OUT else FAIL,
-                f"cuts {found} with allowance {MAX_CUTS_OUT}; {str(c.get('note'))[:160]}",
+                f"cuts {found} with allowance {MAX_CUTS_OUT}; {str(c.get('note'))}",
             )
         )
     return _result(STAGES[5], checks, numbers=numbers)
@@ -1201,9 +1766,12 @@ def run(
     card_reader=None,
     driving_frames=None,
     operator_ok_identity: bool = False,
+    operator_ok_styliser_size: bool = False,
     aesthetic=None,
     client_gender=None,
     plan=None,
+    sizer=None,
+    cropper=None,
     aesthetic_mod=None,
     extend=None,
     pose=None,
@@ -1253,6 +1821,14 @@ def run(
         )
     )
     if r1["outcome"] == PASS:
+        # Nothing in the shipped run used to produce this card, so `framing_clause`
+        # and `in_card` — both already wired to consume it — were dead in every
+        # run that did not hand one in by hand. The driving is the only thing that
+        # knows where the person stands, and it is on disk by now, so the card is
+        # measured from it rather than left for an operator to remember.
+        if card is None:
+            card = driving_card(driving_frames, pose=pose, plan=plan)
+            say(f"      · driving card: {card['outcome']} — {card['note']}", log=log)
         r2 = step(
             lambda: stage_stylize(
                 client_photo=client_photo,
@@ -1267,6 +1843,9 @@ def run(
                 extend=extend,
                 pose=pose,
                 card=card,
+                sizer=sizer,
+                cropper=cropper,
+                operator_ok_styliser_size=operator_ok_styliser_size,
             )
         )
         if r2["outcome"] == PASS:
@@ -1406,6 +1985,14 @@ def main(argv=None) -> int:
         action="store_true",
         help="the operator looked by eye and admitted the identity",
     )
+    ap.add_argument(
+        "--operator-ok-styliser-size",
+        action="store_true",
+        help=(
+            "the operator looked by eye and admitted the frame the route "
+            "returned off the asked size and we trimmed back onto the plan"
+        ),
+    )
     a = ap.parse_args(argv)
     if a.aesthetic is None and a.style is None:
         ap.error("either --style or --aesthetic is required")
@@ -1423,6 +2010,7 @@ def main(argv=None) -> int:
         aesthetic=a.aesthetic,
         client_gender=a.client_gender,
         operator_ok_identity=a.operator_ok_identity,
+        operator_ok_styliser_size=a.operator_ok_styliser_size,
     )
     return got["exit_code"]
 

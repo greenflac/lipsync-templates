@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import io
+import json
 import socket
 import unittest
+import urllib.request
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest import mock
@@ -106,24 +108,77 @@ def _pose_ok(path):
     }
 
 
-class _PlanOk:
-    """Stub plan neighbour: it does not touch the disk and does not pull in PIL."""
+# MEASURED 2026-08-26, written as literals rather than imported so that a change
+# in the module cannot quietly move the expectation with it: what the styliser
+# returns on a 9:16 request, what the outpainter returns, the 3:4 fossil, and an
+# exact frame kept as the negative control.
+STYLISER_RETURNS = (768, 1376)
+OUTPAINT_RETURNS = (1536, 2752)
+THREE_BY_FOUR = (896, 1200)
+EXACT_RETURN = (720, 1280)
+LANDSCAPE = (1920, 1080)
 
-    @staticmethod
-    def to_plan(src, dst, **kw):
+
+class _PlanOk:
+    """Stub plan neighbour with a fake image filesystem: paths mapped to sizes.
+
+    `fit_to_plan`, `ratio_axis` and `person_box` are the REAL functions on
+    purpose — the geometry under test is the product's, not the stub's. The
+    previous version of this stub answered with a hardcoded `source` of
+    720x1280 and `added_share` 0.0, a size the route has not returned since it
+    was measured, so every stage test that used it was green on a frame that
+    does not exist. Now the arriving size is stated by the test, and each
+    written file remembers the size it was written at.
+    """
+
+    ANKLES_BAND = fork_plan.ANKLES_BAND
+    CENTRE_TOL = fork_plan.CENTRE_TOL
+    SHOULDERS_BAND = fork_plan.SHOULDERS_BAND
+    WIDTH_MAX = fork_plan.WIDTH_MAX
+    PERSON_AXES = fork_plan.PERSON_AXES
+    composition_card = staticmethod(fork_plan.composition_card)
+    in_card = staticmethod(fork_plan.in_card)
+    person_box = staticmethod(fork_plan.person_box)
+    tally = staticmethod(fork_plan.tally)
+    plan_verdict = staticmethod(fork_plan.plan_verdict)
+    ratio_axis = staticmethod(fork_plan.ratio_axis)
+    fit_to_plan = staticmethod(fork_plan.fit_to_plan)
+
+    def __init__(self, arrived=STYLISER_RETURNS, outpainted=OUTPAINT_RETURNS):
+        self.arrived = arrived
+        self.outpainted = outpainted
+        self.sizes: dict = {}
+        self.extends: list = []
+
+    def sizer(self, path):
+        """Size reader injected into the stage: unwritten files are the arriving frame."""
+        return self.sizes.get(str(path), self.arrived)
+
+    def cropper(self, src, dst, box):
+        """Crop stub: writes a file and remembers the size the box asked for."""
         Path(dst).write_bytes(b"\x00" * 64)
+        self.sizes[str(dst)] = (int(box["width"]), int(box["height"]))
+
+    def to_plan(self, src, dst, **kw):
+        plan = fork_plan.canvas_for(*self.sizer(src))
+        Path(dst).write_bytes(b"\x00" * 64)
+        self.sizes[str(dst)] = (plan["width"], plan["height"])
         return {
             "outcome": PASS,
             "checked": 1,
             "violations": 0,
             "unmeasured": 0,
             "path": str(dst),
-            "note": "stub 9:16 plan",
+            "plan": plan,
+            "note": "stub 9:16 padding",
         }
 
-    @staticmethod
-    def extend_to_plan(src, dst, **kw):
+    def extend_to_plan(self, src, dst, **kw):
+        self.extends.append((str(src), str(dst)))
         Path(dst).write_bytes(b"\x00" * 64)
+        # MEASURED: the outpainter answers on its own grid, 1536x2752, whatever
+        # size it was asked for. The stage has to trim that too.
+        self.sizes[str(dst)] = self.outpainted
         return {
             "outcome": PASS,
             "checked": 1,
@@ -134,16 +189,39 @@ class _PlanOk:
             "note": "stub margin outpaint",
         }
 
-    ANKLES_BAND = fork_plan.ANKLES_BAND
-    CENTRE_TOL = fork_plan.CENTRE_TOL
-    SHOULDERS_BAND = fork_plan.SHOULDERS_BAND
-    WIDTH_MAX = fork_plan.WIDTH_MAX
-    person_box = staticmethod(fork_plan.person_box)
+
+def _stylize_stage(out_path, *, plan=None, **over):
+    """Call the stylise stage on stubs, with the plan neighbour's own fake filesystem wired in."""
+    neighbour = _PlanOk() if plan is None else plan
+    kw = dict(
+        client_photo="c.png",
+        style_ref="s.png",
+        out_path=out_path,
+        stylize=_stylize_ok,
+        plan=neighbour,
+        pose=_pose_ok,
+        prompt="a look, " + E.NO_BRANDS_CLAUSE,
+        sizer=getattr(neighbour, "sizer", None),
+        cropper=getattr(neighbour, "cropper", None),
+        operator_ok_styliser_size=True,
+    )
+    kw.update(over)
+    return E.stage_stylize(**kw)
 
 
 def _run(root: Path, log, **over):
+    """Drive the whole path on stubs. The default frame is the MEASURED 768x1376.
+
+    That size is not what the styliser was asked for, so the run only reaches
+    the paid call with the operator's admission — which is the point of the
+    check and is asserted on its own below.
+    """
     f = _files(root)
+    p = over.pop("plan", None) or _PlanOk()
     kw = dict(
+        sizer=getattr(p, "sizer", None),
+        cropper=getattr(p, "cropper", None),
+        operator_ok_styliser_size=True,
         client_photo=f["client"],
         style_ref=f["style"],
         driving=f["driving"],
@@ -161,7 +239,7 @@ def _run(root: Path, log, **over):
         upload=_upload_ok,
         kling=_kling_ok,
         finish=_finish_ok,
-        plan=_PlanOk,
+        plan=p,
         pose=_pose_ok,
         log=log,
     )
@@ -359,6 +437,111 @@ class StyleFloorIsTheNegativeControl(unittest.TestCase):
         )
         self.assertEqual(got["checks"][0]["outcome"], "could not measure")
         self.assertEqual(got["outcome"], "could not measure")
+
+
+class TheStyleVerdictNamesTheDeviceThatProducedIt(unittest.TestCase):
+    """`shipped_similarity` repairs a missing external package by falling back.
+
+    A repair that hides the breakage is how a defect ships: two runs measured by
+    two different devices report the same-looking number. The stage must say
+    which one answered. Both controls are run here, so the test does not depend
+    on whether `creative_eval` happens to be installed on the machine.
+    """
+
+    def _hidden_external(self):
+        """Make the lazy import fail the way a machine without the package would."""
+        import sys
+
+        return mock.patch.dict(sys.modules, {"creative_eval.style": None})
+
+    def _present_external(self):
+        """Put a working `creative_eval.style` where the lazy import will find it."""
+        import sys
+        import types
+
+        pkg = types.ModuleType("creative_eval")
+        style = types.ModuleType("creative_eval.style")
+        style.similarity = lambda a, b: 0.9
+        pkg.style = style
+        return mock.patch.dict(sys.modules, {"creative_eval": pkg, "creative_eval.style": style})
+
+    def _acceptance(self, **kw):
+        return E.stage_style_acceptance(
+            styled="styled.png",
+            style_ref="s.png",
+            client_photo="c.png",
+            distances=_distances_ok,
+            **kw,
+        )
+
+    def test_the_fallback_device_is_named_in_the_numbers_and_in_the_note(self):
+        with self._hidden_external():
+            got = self._acceptance()
+        self.assertIn("fallback", got["numbers"]["style_instrument"])
+        self.assertIn("palette_similarity", got["numbers"]["style_instrument"])
+        self.assertIn(
+            got["numbers"]["style_instrument"],
+            " ".join(c["note"] for c in got["checks"]),
+        )
+
+    def test_the_shipped_device_is_named_when_the_package_is_there(self):
+        """Negative control: the same call, the only difference being the package."""
+        with self._present_external():
+            got = self._acceptance()
+        self.assertEqual(
+            got["numbers"]["style_instrument"],
+            "creative_eval.style.similarity (external, shipped)",
+        )
+        self.assertNotIn("fallback", got["numbers"]["style_instrument"])
+
+    def test_the_two_devices_do_not_report_the_same_name(self):
+        with self._hidden_external():
+            without = self._acceptance()["numbers"]["style_instrument"]
+        with self._present_external():
+            within = self._acceptance()["numbers"]["style_instrument"]
+        self.assertNotEqual(without, within)
+
+    def _broken_external(self):
+        """The case that ships: the package imports and then throws on the call."""
+        import sys
+        import types
+
+        def _throws(a, b):
+            raise RuntimeError(self.BOOM)
+
+        pkg = types.ModuleType("creative_eval")
+        style = types.ModuleType("creative_eval.style")
+        style.similarity = _throws
+        pkg.style = style
+        return mock.patch.dict(sys.modules, {"creative_eval": pkg, "creative_eval.style": style})
+
+    BOOM = "model weights corrupt: checksum mismatch on style.bin"
+
+    def test_a_broken_external_is_named_as_the_fallback_and_says_why(self):
+        """Breakage and repair are two facts, and the stage must carry both."""
+        with self._broken_external():
+            got = self._acceptance()
+        instrument = got["numbers"]["style_instrument"]
+        self.assertIn("palette_similarity", instrument)
+        self.assertNotIn("creative_eval", instrument)
+        self.assertIn(self.BOOM, instrument)
+        self.assertIn(instrument, " ".join(c["note"] for c in got["checks"]))
+
+    def test_a_broken_external_does_not_read_as_an_absent_one(self):
+        """Three outcomes, not two: broken and missing are different repairs."""
+        with self._broken_external():
+            broken = self._acceptance()["numbers"]["style_instrument"]
+        with self._hidden_external():
+            absent = self._acceptance()["numbers"]["style_instrument"]
+        self.assertNotEqual(broken, absent)
+        self.assertNotIn(self.BOOM, absent)
+
+    def test_an_injected_device_is_never_reported_as_the_shipped_one(self):
+        """The name comes from what will run, not from what the default would be."""
+        got = self._acceptance(similarity=_similarity_ok)
+        self.assertIn("injected", got["numbers"]["style_instrument"])
+        self.assertIn("_similarity_ok", got["numbers"]["style_instrument"])
+        self.assertNotIn("palette_similarity", got["numbers"]["style_instrument"])
 
 
 class PaletteInstrumentHasBothControls(unittest.TestCase):
@@ -847,39 +1030,17 @@ class BrandBanIsInThePrompt(unittest.TestCase):
     def test_a_prompt_without_the_ban_reddens_the_stage(self):
         """Negative control of the guard: without it the check is always green."""
         with TemporaryDirectory() as td:
-            got = E.stage_stylize(
-                client_photo="c.png",
-                style_ref="s.png",
-                out_path=Path(td) / "styled.png",
-                stylize=_stylize_ok,
-                plan=_PlanOk,
-                pose=_pose_ok,
-                prompt="just make it look nice",
-            )
+            got = _stylize_stage(Path(td) / "styled.png", prompt="just make it look nice")
             self.assertEqual(got["outcome"], "fail")
             self.assertEqual(got["checks"][0]["outcome"], "fail")
-            ok = E.stage_stylize(
-                client_photo="c.png",
-                style_ref="s.png",
-                out_path=Path(td) / "styled.png",
-                stylize=_stylize_ok,
-                plan=_PlanOk,
-                pose=_pose_ok,
-                prompt="a look, " + E.NO_BRANDS_CLAUSE,
-            )
+            ok = _stylize_stage(Path(td) / "styled.png")
             self.assertEqual(ok["outcome"], "pass")
 
     def test_the_ban_text_itself_is_a_decision_constant(self):
         with mock.patch.object(E, "NO_BRANDS_CLAUSE", "no logos whatsoever"):
             with TemporaryDirectory() as td:
-                got = E.stage_stylize(
-                    client_photo="c.png",
-                    style_ref="s.png",
-                    out_path=Path(td) / "styled.png",
-                    stylize=_stylize_ok,
-                    plan=_PlanOk,
-                    pose=_pose_ok,
-                    prompt="a look, no brand names, no logos",
+                got = _stylize_stage(
+                    Path(td) / "styled.png", prompt="a look, no brand names, no logos"
                 )
         self.assertEqual(got["outcome"], "fail")
 
@@ -920,6 +1081,58 @@ class ReportIsAlwaysWritten(unittest.TestCase):
         self.assertEqual(len(data["stages"]), 5)
         self.assertEqual(data["unmeasured"], 1)
         self.assertEqual(data["violations"], 0)
+
+
+class TheStyliserIsAskedForThePlanNotForWhateverTheRouteDefaultsTo(unittest.TestCase):
+    """MEASURED defect: `pollinations.compose` alone defaulted to 768x1024 while its
+    two sibling routes defaulted to 1080x1920, and `live_stylize` passed no size at
+    all. So the styliser was asked for 3:4 and honestly returned 3:4 (896x1200) —
+    and every padded band downstream was our own request coming back."""
+
+    def test_the_asked_size_is_exactly_9_16(self):
+        w, h = E.STYLED_SIZE
+        self.assertEqual(w * 16, h * 9, f"{w}x{h} is not 9:16")
+
+    def test_both_sides_sit_on_the_grid_the_model_snaps_to(self):
+        """MEASURED: asked 768x1024, the model returned 896x1200 = 56x16 by 75x16.
+        An off-grid 9:16 such as 1080x1920 would be snapped sideways and stop
+        being 9:16 — which is the whole defect, re-entered through the fix."""
+        for side in E.STYLED_SIZE:
+            self.assertEqual(side % 16, 0, f"{side} is not a multiple of 16")
+
+    def test_the_asked_size_reaches_the_gateway_call(self):
+        from lipsync import pollinations
+
+        seen = {}
+
+        def compose(prompt, urls, out_path, **kw):
+            seen.update(kw)
+            seen["urls"] = list(urls)
+            return str(out_path)
+
+        with (
+            mock.patch.object(pollinations, "upload", lambda p: f"u://{p}"),
+            mock.patch.object(pollinations, "compose", compose),
+        ):
+            E.live_stylize(person="c.png", style="s.png", prompt="p", out_path="o.png")
+        self.assertEqual((seen.get("width"), seen.get("height")), E.STYLED_SIZE)
+        self.assertEqual(seen.get("model"), E.STYLE_MODEL)
+        self.assertEqual(len(seen["urls"]), E.STYLE_IMAGES)
+
+    def test_the_gateway_default_no_longer_disagrees_with_its_siblings(self):
+        """The trap was that one route out of three defaulted to 3:4. A caller that
+        forgets the size must now land on the plan, not on a letterbox."""
+        import inspect
+
+        from lipsync import pollinations
+
+        sizes = {}
+        for name in ("image", "images_edit", "compose"):
+            params = inspect.signature(getattr(pollinations, name)).parameters
+            sizes[name] = (params["width"].default, params["height"].default)
+        self.assertEqual(len(set(sizes.values())), 1, sizes)
+        w, h = sizes["compose"]
+        self.assertEqual(w * 16, h * 9, f"the gateway default {w}x{h} is not 9:16")
 
 
 if __name__ == "__main__":
@@ -1267,32 +1480,31 @@ class TheStandActuallyCallsItsNeighbours(unittest.TestCase):
 
     def test_the_plan_step_changes_which_file_goes_on(self):
         with TemporaryDirectory() as td:
-            got = E.stage_stylize(
-                client_photo="c.png",
-                style_ref="s.png",
-                out_path=Path(td) / "styled.png",
-                stylize=_stylize_ok,
-                plan=_PlanOk,
-                pose=_pose_ok,
-                prompt="a look, " + E.NO_BRANDS_CLAUSE,
+            got = _stylize_stage(Path(td) / "styled.png")
+        self.assertTrue(got["styled"].endswith("_9x16.png"), got["styled"])
+        names = [c["name"] for c in got["checks"]]
+        self.assertIn("styliser returned the plan", names)
+
+    def test_the_outpaint_is_NOT_called_when_nothing_was_padded(self):
+        """A no-op outpaint is a paid generation that can repaint the person."""
+        with TemporaryDirectory() as td:
+            got = _stylize_stage(
+                Path(td) / "styled.png",
+                extend=lambda *a, **k: self.fail("the outpainter must not be called"),
             )
-        self.assertTrue(got["styled"].endswith("_9x16_full.png"), got["styled"])
+        outpaint = [c for c in got["checks"] if c["name"] == "margin outpaint"]
+        self.assertEqual([c["outcome"] for c in outpaint], [PASS])
+        self.assertIn("not called", outpaint[0]["note"])
+        self.assertTrue(got["styled"].endswith("_9x16.png"), got["styled"])
 
     def test_a_plan_that_could_not_be_laid_is_UNMEASURED_not_a_defect(self):
         class Broken:
             @staticmethod
-            def to_plan(src, dst, **kw):
+            def fit_to_plan(width, height):
                 raise OSError("the image did not open")
 
         with TemporaryDirectory() as td:
-            got = E.stage_stylize(
-                client_photo="c.png",
-                style_ref="s.png",
-                out_path=Path(td) / "styled.png",
-                stylize=_stylize_ok,
-                plan=Broken,
-                prompt="a look, " + E.NO_BRANDS_CLAUSE,
-            )
+            got = _stylize_stage(Path(td) / "styled.png", plan=Broken, pose=_pose_ok)
         self.assertEqual(got["outcome"], UNMEASURED)
         self.assertTrue(got["styled"].endswith("styled.png"))
 
@@ -1340,13 +1552,9 @@ class TheGenderGateStopsTheRunBeforeAnyGeneration(unittest.TestCase):
             return kw["out_path"]
 
         with TemporaryDirectory() as td:
-            got = E.stage_stylize(
-                client_photo="c.png",
-                style_ref="s.png",
-                out_path=Path(td) / "styled.png",
+            got = _stylize_stage(
+                Path(td) / "styled.png",
                 stylize=counting,
-                plan=_PlanOk,
-                pose=_pose_ok,
                 aesthetic="y2k",
                 client_gender="m",
                 aesthetic_mod=self._A,
@@ -1364,13 +1572,10 @@ class TheGenderGateStopsTheRunBeforeAnyGeneration(unittest.TestCase):
             return kw["out_path"]
 
         with TemporaryDirectory() as td:
-            got = E.stage_stylize(
-                client_photo="c.png",
+            got = _stylize_stage(
+                Path(td) / "styled.png",
                 style_ref="foreign.png",
-                out_path=Path(td) / "styled.png",
                 stylize=counting,
-                plan=_PlanOk,
-                pose=_pose_ok,
                 aesthetic="y2k",
                 client_gender="f",
                 aesthetic_mod=self._A,
@@ -1443,27 +1648,20 @@ class TheTemplateFlagsReachRunFromTheCommandLine(unittest.TestCase):
 class TheOutpaintFixesTheLetterboxWithoutLosingTheRun(unittest.TestCase):
     """The plan margins show as bands. The instrument says "pass": it checks the canvas."""
 
-    class _PlanNoExtend:
-        ANKLES_BAND = fork_plan.ANKLES_BAND
-        CENTRE_TOL = fork_plan.CENTRE_TOL
-        SHOULDERS_BAND = fork_plan.SHOULDERS_BAND
-        WIDTH_MAX = fork_plan.WIDTH_MAX
-        person_box = staticmethod(fork_plan.person_box)
+    class _PlanNoExtend(_PlanOk):
+        """The 3:4 fossil arriving, and an outpainter that does not answer.
 
-        @staticmethod
-        def to_plan(src, dst, **kw):
-            Path(dst).write_bytes(b"\x00" * 64)
-            return {
-                "outcome": PASS,
-                "checked": 1,
-                "violations": 0,
-                "unmeasured": 0,
-                "path": str(dst),
-                "note": "plan",
-            }
+        The hardcoded `source: {896, 1200}` and `added_share: 0.2469` of the
+        previous version are gone: 896x1200 is now the size the fake filesystem
+        reports for the arriving frame, so the padding decision is made by the
+        real `fit_to_plan` rather than asserted by the stub.
+        """
 
-        @staticmethod
-        def extend_to_plan(src, dst, *, extender=None, **kw):
+        def __init__(self):
+            super().__init__(arrived=THREE_BY_FOUR)
+
+        def extend_to_plan(self, src, dst, *, extender=None, **kw):
+            self.extends.append((str(src), str(dst)))
             return {
                 "outcome": UNMEASURED,
                 "checked": 0,
@@ -1474,18 +1672,29 @@ class TheOutpaintFixesTheLetterboxWithoutLosingTheRun(unittest.TestCase):
                 "note": "the outpainter did not answer",
             }
 
-    def test_a_failed_outpaint_does_NOT_sink_the_stage(self):
+    def _padded(self, **over):
         with TemporaryDirectory() as td:
-            got = E.stage_stylize(
-                client_photo="c.png",
-                style_ref="s.png",
-                out_path=Path(td) / "styled.png",
-                stylize=_stylize_ok,
-                plan=self._PlanNoExtend,
-                pose=_pose_ok,
-                prompt="a look, " + E.NO_BRANDS_CLAUSE,
-            )
-        self.assertEqual(got["outcome"], UNMEASURED)
+            return _stylize_stage(Path(td) / "styled.png", plan=self._PlanNoExtend(), **over)
+
+    def test_a_styliser_that_ignored_the_asked_size_reddens_the_stage(self):
+        """MEASURED defect: nobody asked this route for a vertical frame, and the
+        reference arrived 896x1200. Now the size is asked for explicitly, so a 3:4
+        answer is a violation of the request — and it stops the run BEFORE the
+        one paid call, not after it."""
+        got = self._padded()
+        self.assertEqual(got["outcome"], FAIL)
+        named = {c["name"]: c for c in got["checks"]}
+        self.assertEqual(named["styliser returned the plan"]["outcome"], FAIL)
+        self.assertIn("720x1280", named["styliser returned the plan"]["note"])
+        self.assertIn("896x1200", named["styliser returned the plan"]["note"])
+
+    def test_the_repair_still_runs_so_a_padded_reference_is_never_shipped_as_is(self):
+        """The outpaint is not deleted, it is demoted: it only runs on the repair
+        path, and its refusal is visible on its own line."""
+        got = self._padded()
+        named = {c["name"]: c for c in got["checks"]}
+        self.assertEqual(named["margin outpaint"]["outcome"], UNMEASURED)
+        self.assertIn("repairing a padded reference", named["margin outpaint"]["note"])
         self.assertTrue(got["styled"].endswith("_9x16.png"), got["styled"])
 
     def test_the_extend_prompt_forbids_redrawing_the_person(self):
@@ -1558,6 +1767,153 @@ class ThePrintedPriceFollowsTheWindowLength(unittest.TestCase):
         self.assertEqual(got["numbers"]["price_usd"], E.KLING_PRICE_USD)
 
 
+class TheDrivingCardIsMeasuredAndNotWaitedFor(unittest.TestCase):
+    """`framing_clause` and `in_card` were wired to a card nothing ever produced.
+
+    The stand accepted `card=` from a caller and `main` never passed one, so
+    every shipped run framed the reference by the template's own words and
+    checked the person against the global bands instead of against the driving.
+    The card is now measured from the driving frames.
+    """
+
+    _P = fork_plan
+    FRAMES = [f"{i:05d}.png" for i in range(96)]
+
+    def test_a_readable_driving_gives_a_measured_card(self):
+        card = E.driving_card(self.FRAMES, pose=_pose_ok)
+        self.assertEqual(card["outcome"], PASS)
+        self.assertEqual(card["centre"], 0.5)
+        self.assertEqual(card["ankles"], 0.92)
+
+    def test_an_unreadable_driving_gives_no_card_and_says_so(self):
+        """Negative control: the card is never guessed when the pose does not read."""
+        card = E.driving_card(self.FRAMES, pose=lambda p: {})
+        self.assertEqual(card["outcome"], UNMEASURED)
+        self.assertNotIn("centre", card)
+
+    def test_no_frames_at_all_is_could_not_measure_and_not_an_empty_card(self):
+        card = E.driving_card(None, pose=_pose_ok)
+        self.assertEqual(card["outcome"], UNMEASURED)
+        self.assertIn("NOT MEASURED", card["note"])
+
+    def test_a_thrown_reader_is_reported_and_does_not_sink_the_run(self):
+        def broken(_):
+            raise RuntimeError("mediapipe did not load")
+
+        card = E.driving_card(self.FRAMES, pose=broken)
+        self.assertEqual(card["outcome"], UNMEASURED)
+        self.assertIn("mediapipe did not load", card["note"])
+
+    def test_the_sample_is_spread_over_the_clip_and_bounded(self):
+        seen = []
+
+        def watching(path):
+            seen.append(path)
+            return _pose_ok(path)
+
+        E.driving_card(self.FRAMES, pose=watching)
+        # The sample size as a LITERAL: imported it would travel with a change
+        # to the module and the change would go unseen.
+        self.assertEqual(len(seen), 24)
+        self.assertEqual(seen[0], self.FRAMES[0])
+        self.assertGreater(seen[-1], self.FRAMES[len(self.FRAMES) // 2])
+
+    def test_the_sample_size_moved_both_ways_moves_the_reading(self):
+        seen = []
+
+        def watching(path):
+            seen.append(path)
+            return _pose_ok(path)
+
+        with mock.patch.object(E, "CARD_SAMPLE_FRAMES", 4):
+            E.driving_card(self.FRAMES, pose=watching)
+        self.assertEqual(len(seen), 4)
+        seen.clear()
+        with mock.patch.object(E, "CARD_SAMPLE_FRAMES", 96):
+            E.driving_card(self.FRAMES, pose=watching)
+        self.assertEqual(len(seen), 96)
+
+
+class TheCardBuiltFromTheDrivingReachesThePromptAndTheCheck(unittest.TestCase):
+    def _stylize(self, **over):
+        with TemporaryDirectory() as td:
+            return _stylize_stage(Path(td) / "styled.png", **over)
+
+    def _card(self):
+        return E.driving_card([f"{i:05d}.png" for i in range(48)], pose=_pose_ok)
+
+    def test_the_run_builds_a_card_when_the_caller_hands_none_in(self):
+        log = io.StringIO()
+        with TemporaryDirectory() as td, _no_network():
+            got = _run(Path(td), log, driving_frames=[f"{i:05d}.png" for i in range(48)])
+        stage = got["stages"][1]
+        self.assertEqual(stage["driving_card"]["outcome"], PASS)
+        self.assertIn("driving card: pass", log.getvalue())
+
+    def test_without_frames_the_card_is_could_not_measure_and_the_run_still_passes(self):
+        """Negative control: the wiring must not turn a narrower run into a defect."""
+        log = io.StringIO()
+        with TemporaryDirectory() as td, _no_network():
+            got = _run(Path(td), log)
+        self.assertEqual(got["outcome"], "pass")
+        self.assertEqual(got["stages"][1]["driving_card"]["outcome"], UNMEASURED)
+
+    def test_the_measured_card_is_what_the_prompt_builders_are_handed(self):
+        """Link one: the stage passes the card on instead of dropping it."""
+        seen = {}
+
+        class _A:
+            @staticmethod
+            def gender_of(aid):
+                return "f"
+
+            @staticmethod
+            def pair_check(*, client_gender, aesthetic_gender):
+                return {"outcome": PASS, "note": "stub gate"}
+
+            @staticmethod
+            def aesthetic_file(aid):
+                return f"assets/aesthetics/{aid}_f.png"
+
+            @staticmethod
+            def compose(aid, *, card=None):
+                seen["compose"] = card
+                return {"prompt": "aesthetic in words"}
+
+            @staticmethod
+            def assemble_prompt(*, card=None):
+                seen["assemble"] = card
+                return "roles, " + E.NO_BRANDS_CLAUSE
+
+        card = self._card()
+        self._stylize(prompt=None, aesthetic="y2k", client_gender="f", aesthetic_mod=_A, card=card)
+        self.assertEqual(seen["compose"], card)
+        self.assertEqual(seen["assemble"], card)
+
+    def test_the_real_prompt_builder_turns_that_card_into_a_framing_clause(self):
+        """Link two: and an unmeasured card is the negative control, giving no clause."""
+        from lipsync import fork_aesthetic
+
+        measured = fork_aesthetic.assemble_prompt(card=self._card())
+        blank = fork_aesthetic.assemble_prompt(card=E.driving_card(None, pose=_pose_ok))
+        self.assertIn("FRAMING, this outranks", measured)
+        self.assertNotIn("FRAMING, this outranks", blank)
+
+    def test_a_measured_card_changes_which_question_the_person_check_asks(self):
+        without = self._stylize(card=None)
+        withcard = self._stylize(card=self._card())
+        names = lambda r: [c["name"] for c in r["checks"]]  # noqa: E731
+        self.assertIn("person in plan", names(without))
+        self.assertIn("person in the driving card", names(withcard))
+
+    def test_an_unmeasured_card_leaves_the_plan_bands_in_charge(self):
+        """Negative control: an object that is not a measurement must not take over."""
+        blank = E.driving_card(None, pose=_pose_ok)
+        got = self._stylize(card=blank)
+        self.assertIn("person in plan", [c["name"] for c in got["checks"]])
+        self.assertNotIn("person in the driving card", [c["name"] for c in got["checks"]])
+
+
 class ThePersonMustBeInPlanNotJustTheCanvas(unittest.TestCase):
     """The canvas was checked, but the pose on the reference never was, and it cost money."""
 
@@ -1571,6 +1927,19 @@ class ThePersonMustBeInPlanNotJustTheCanvas(unittest.TestCase):
         "l_ankle": (0.55, 0.92, 0.96),
         "r_ankle": (0.45, 0.92, 0.96),
     }
+
+    def test_every_named_axis_is_one_the_judge_actually_returns(self):
+        """Clamps PERSON_AXES from above; the per-axis tests clamp it below.
+
+        An auditor showed the list was guarded on one side only: removing an
+        axis reddened, but adding `elbows` — an axis no judge produces — left
+        all 956 tests green, and the filter would then have selected nothing
+        under that name while still reading as a checked axis.
+        """
+        produced = {a["name"] for a in self._P.plan_verdict(points=self.GOOD)["axes"]}
+        self.assertTrue(produced, "the judge returned no axes at all")
+        unknown = [n for n in self._P.PERSON_AXES if n not in produced]
+        self.assertEqual(unknown, [], f"PERSON_AXES names axes no judge produces: {unknown}")
 
     def _check(self, points):
         return E._person_in_plan("k.png", plan=self._P, pose=lambda p: points)
@@ -1608,3 +1977,714 @@ class ThePersonMustBeInPlanNotJustTheCanvas(unittest.TestCase):
     def test_the_note_says_WHY_it_matters_not_just_that_it_failed(self):
         bad = dict(self.GOOD, l_ankle=(0.55, 0.70, 0.96), r_ankle=(0.45, 0.70, 0.96))
         self.assertIn("past the frame edge", self._check(bad)[2])
+
+    @staticmethod
+    def _axis(name, violations, note):
+        return {
+            "name": name,
+            "checked": 1,
+            "violations": violations,
+            "unmeasured": 0,
+            "note": note,
+        }
+
+    def _with_verdict(self, axes, points):
+        """Run the check with `plan_verdict` replaced by a stub that returns `axes`."""
+        seen = {}
+
+        def fake(**kw):
+            seen.update(kw)
+            return {"axes": axes}
+
+        with mock.patch.object(self._P, "plan_verdict", fake):
+            got = E._person_in_plan("k.png", plan=self._P, pose=lambda p: points)
+        return got, seen
+
+    def test_the_pose_reaches_plan_verdict_and_its_answer_is_the_answer(self):
+        """Negative control on the wiring: silence the judge and the check goes silent.
+
+        A second copy of the bands here would ignore the stub and keep
+        answering on its own — which is exactly the defect this replaced.
+        """
+        got, seen = self._with_verdict([self._axis("centre", 1, "SENTINEL-OFF-CENTRE")], self.GOOD)
+        self.assertEqual(seen, {"points": self.GOOD})
+        self.assertEqual(got[1], FAIL)
+        self.assertIn("SENTINEL-OFF-CENTRE", got[2])
+
+    def test_a_pose_the_bands_would_refuse_passes_when_the_judge_says_pass(self):
+        """The other direction: nothing here re-judges what the judge admitted."""
+        refused = dict(self.GOOD, l_ankle=(0.55, 0.10, 0.96), r_ankle=(0.45, 0.10, 0.96))
+        self.assertEqual(self._check(refused)[1], FAIL)
+        got, _ = self._with_verdict(
+            [self._axis(name, 0, f"{name} SENTINEL-OK") for name in self._P.PERSON_AXES],
+            refused,
+        )
+        self.assertEqual(got[1], PASS)
+        self.assertIn("SENTINEL-OK", got[2])
+
+    def test_each_of_the_four_axes_can_sink_the_check_on_its_own(self):
+        """Without this the axis list is clamped from one side only.
+
+        Widening it goes red at once; dropping an axis went unnoticed, because
+        no case made that axis the only violation. The axis names are written
+        out as literals so the tuple cannot move the expectation with it.
+        """
+        cases = {
+            "shoulders": dict(
+                self.GOOD, l_shoulder=(0.58, 0.50, 0.99), r_shoulder=(0.42, 0.50, 0.99)
+            ),
+            "ankles": dict(self.GOOD, l_ankle=(0.55, 0.60, 0.96), r_ankle=(0.45, 0.60, 0.96)),
+            "centre": {k: (v[0] + 0.20, v[1], v[2]) for k, v in self.GOOD.items()},
+            "width": dict(self.GOOD, l_shoulder=(0.90, 0.32, 0.99), r_shoulder=(0.10, 0.32, 0.99)),
+        }
+        for axis, points in cases.items():
+            with self.subTest(axis=axis):
+                name, outcome, note = self._check(points)
+                self.assertEqual(outcome, FAIL, f"{axis} alone did not sink the check")
+                self.assertIn(axis, note)
+
+    def test_the_good_pose_is_the_negative_control_for_all_four(self):
+        """Each case above must differ from this one on its own axis and nothing else."""
+        self.assertEqual(self._check(self.GOOD)[1], PASS)
+
+    def test_only_the_person_axes_are_read_and_the_canvas_is_left_to_the_caller(self):
+        """The real verdict cannot measure the canvas here, and that must not sink the check."""
+        canvas = [
+            a for a in self._P.plan_verdict(points=self.GOOD)["axes"] if a["name"] == "canvas"
+        ]
+        self.assertEqual([a["unmeasured"] for a in canvas], [1])
+        self.assertEqual(self._check(self.GOOD)[1], PASS)
+
+
+# The plan, and the bound around it, as LITERALS. Imported from the module they
+# would travel with a mutation and the mutation would stay invisible.
+PLAN = 0.5625
+EXACT_BOUND = 0.001
+TRIM_BUDGET = 0.02
+
+
+def _is_exact(size) -> bool:
+    return abs(size[0] / size[1] - PLAN) <= EXACT_BOUND
+
+
+class TheStyliserIsJudgedAgainstWhatWasAsked(unittest.TestCase):
+    """Д2: the check named for the request compared against a tolerance band.
+
+    MEASURED 2026-08-26: on 768x1376 the old check said `pass`, the stage said
+    `pass`, and the run went on to the one paid call. Vertical is not the same
+    question as "the size we ordered", and one number was answering both.
+    """
+
+    def test_the_asked_size_is_itself_the_plan(self):
+        self.assertTrue(_is_exact(E.STYLED_SIZE), E.STYLED_SIZE)
+        self.assertEqual(tuple(E.STYLED_SIZE), (720, 1280))
+
+    def test_the_measured_return_is_not_a_pass(self):
+        got = E.styliser_kept_the_plan(asked=(720, 1280), got=STYLISER_RETURNS)
+        self.assertEqual(got["outcome"], FAIL)
+        self.assertEqual(got["violations"], 1)
+        self.assertEqual(got["checked"], 1)
+        self.assertEqual(got["unmeasured"], 0)
+
+    def test_the_two_sizes_are_carried_as_data_not_only_as_prose(self):
+        got = E.styliser_kept_the_plan(asked=(720, 1280), got=(768, 1376))
+        self.assertEqual(tuple(got["asked"]), (720, 1280))
+        self.assertEqual(tuple(got["got"]), (768, 1376))
+
+    def test_a_frame_that_is_exactly_9x16_but_NOT_what_was_asked_still_fails(self):
+        """The heart of the defect: the old check would have passed this one.
+
+        1440x2560 is exactly the plan, so a ratio band says yes. It is still
+        not the size that was ordered, and a route that answers with a size
+        nobody ordered is a route whose next answer cannot be predicted.
+        """
+        other = (1440, 2560)
+        self.assertTrue(_is_exact(other), "the fixture must be exactly 9:16")
+        got = E.styliser_kept_the_plan(asked=(720, 1280), got=other)
+        self.assertEqual(got["outcome"], FAIL)
+
+    def test_the_asked_size_returned_unchanged_passes(self):
+        got = E.styliser_kept_the_plan(asked=(720, 1280), got=(720, 1280))
+        self.assertEqual(got["outcome"], PASS)
+        self.assertEqual((got["checked"], got["violations"], got["unmeasured"]), (1, 0, 0))
+
+    def test_a_size_that_was_never_measured_is_the_third_outcome(self):
+        for missing in (None, (), (0, 1280), ("wide", 1280), {"width": None, "height": 1280}):
+            with self.subTest(missing=missing):
+                got = E.styliser_kept_the_plan(asked=(720, 1280), got=missing)
+                self.assertEqual(got["outcome"], UNMEASURED)
+                self.assertEqual((got["checked"], got["violations"], got["unmeasured"]), (0, 0, 1))
+                self.assertIsNone(got["got"])
+
+    def test_a_nonsense_request_is_also_the_third_outcome_not_a_pass(self):
+        got = E.styliser_kept_the_plan(asked=None, got=(720, 1280))
+        self.assertEqual(got["outcome"], UNMEASURED)
+
+    def test_a_size_may_arrive_as_a_mapping(self):
+        got = E.styliser_kept_the_plan(
+            asked={"width": 720, "height": 1280}, got={"width": 720, "height": 1280}
+        )
+        self.assertEqual(got["outcome"], PASS)
+
+    def test_both_numbers_are_in_the_note_a_human_reads(self):
+        note = E.styliser_kept_the_plan(asked=(720, 1280), got=(896, 1200))["note"]
+        self.assertIn("720x1280", note)
+        self.assertIn("896x1200", note)
+
+
+class TheFrameIsBroughtOntoThePlanOnDisk(unittest.TestCase):
+    """Both edges of the range and the middle, plus two frames that must NOT be trimmed."""
+
+    def _fit(self, arrived, **over):
+        plan = _PlanOk(arrived=arrived)
+        with TemporaryDirectory() as td:
+            src, dst = Path(td) / "in.png", Path(td) / "out.png"
+            src.write_bytes(b"\x00" * 64)
+            kw = dict(plan=fork_plan, sizer=plan.sizer, cropper=plan.cropper)
+            kw.update(over)
+            got = E.fit_frame_to_plan(src, dst, **kw)
+            got["wrote"] = Path(got["path"]).exists()
+        return got
+
+    def test_the_measured_styliser_return_is_trimmed_to_exact(self):
+        got = self._fit(STYLISER_RETURNS)
+        self.assertEqual(got["action"], "crop")
+        self.assertEqual(got["outcome"], PASS)
+        self.assertTrue(_is_exact(got["shipped"]), got["shipped"])
+        self.assertTrue(0.0 < got["trimmed_share"] <= TRIM_BUDGET, got["trimmed_share"])
+        self.assertTrue(got["wrote"])
+
+    def test_the_measured_outpaint_return_is_trimmed_to_exact(self):
+        got = self._fit(OUTPAINT_RETURNS)
+        self.assertEqual(got["action"], "crop")
+        self.assertTrue(_is_exact(got["shipped"]), got["shipped"])
+
+    def test_an_exact_frame_is_left_where_it_is(self):
+        """Negative control: nothing is rewritten when there is nothing to do."""
+        got = self._fit(EXACT_RETURN)
+        self.assertEqual(got["action"], "none")
+        self.assertEqual(tuple(got["shipped"]), (720, 1280))
+        self.assertTrue(got["path"].endswith("in.png"), got["path"])
+
+    def test_the_three_by_four_fossil_is_padded_and_NOT_trimmed(self):
+        """Negative control: trimming 3:4 to 9:16 cuts a quarter of the width off a person."""
+        got = self._fit(THREE_BY_FOUR, plan=_PlanOk(arrived=THREE_BY_FOUR))
+        self.assertEqual(got["action"], "pad")
+        self.assertEqual(got["trimmed_share"], 0.0)
+
+    def test_padding_is_counted_as_a_violation_and_not_as_a_repair(self):
+        """The owner's criterion, 2026-08-26: 9:16 with no padding in 100% of cases."""
+        got = self._fit(THREE_BY_FOUR, plan=_PlanOk(arrived=THREE_BY_FOUR))
+        self.assertEqual(got["outcome"], FAIL)
+        self.assertEqual((got["checked"], got["violations"], got["unmeasured"]), (1, 1, 0))
+
+    def test_a_trimmed_frame_is_NOT_counted_as_a_violation(self):
+        """Negative control of the rule above: it must not condemn every frame."""
+        got = self._fit(STYLISER_RETURNS)
+        self.assertEqual((got["checked"], got["violations"], got["unmeasured"]), (1, 0, 0))
+
+    def test_a_landscape_frame_is_padded_and_NOT_trimmed(self):
+        got = self._fit(LANDSCAPE, plan=_PlanOk(arrived=LANDSCAPE))
+        self.assertEqual(got["action"], "pad")
+
+    def test_a_size_that_could_not_be_read_is_UNMEASURED_not_a_defect(self):
+        got = self._fit(STYLISER_RETURNS, sizer=lambda p: None)
+        self.assertEqual(got["outcome"], UNMEASURED)
+        self.assertEqual((got["checked"], got["violations"], got["unmeasured"]), (0, 0, 1))
+        self.assertIsNone(got["arrived"])
+
+    def test_a_crop_that_could_not_be_carried_out_is_UNMEASURED_not_a_pass(self):
+        def broken(src, dst, box):
+            raise OSError("no space left on device")
+
+        got = self._fit(STYLISER_RETURNS, cropper=broken)
+        self.assertEqual(got["outcome"], UNMEASURED)
+        self.assertTrue(got["path"].endswith("in.png"), "a frame that was not cut must not be sold")
+
+    def test_a_plan_neighbour_that_throws_is_UNMEASURED(self):
+        class Broken:
+            @staticmethod
+            def fit_to_plan(width, height):
+                raise RuntimeError("the decision blew up")
+
+        got = self._fit(STYLISER_RETURNS, plan=Broken)
+        self.assertEqual(got["outcome"], UNMEASURED)
+
+
+class TheStageTellsBothFactsAboutTheFrame(unittest.TestCase):
+    """ "The route ignored the order" and "we trimmed it back" are two facts."""
+
+    def _named(self, got):
+        return {c["name"]: c for c in got["checks"]}
+
+    def _stage(self, arrived=STYLISER_RETURNS, **over):
+        plan = _PlanOk(arrived=arrived)
+        with TemporaryDirectory() as td:
+            got = _stylize_stage(Path(td) / "styled.png", plan=plan, **over)
+            got["shipped"] = plan.sizer(got["styled"])
+            got["extends"] = list(plan.extends)
+        return got
+
+    def test_the_mismatch_stops_the_stage_when_nobody_has_looked(self):
+        got = self._stage(operator_ok_styliser_size=False)
+        self.assertEqual(got["outcome"], FAIL)
+        named = self._named(got)
+        self.assertEqual(named["styliser returned the plan"]["outcome"], FAIL)
+        self.assertIn("768x1376", named["styliser returned the plan"]["note"])
+
+    def test_the_repair_is_reported_even_while_the_mismatch_is_red(self):
+        """Neither fact is allowed to swallow the other."""
+        got = self._stage(operator_ok_styliser_size=False)
+        named = self._named(got)
+        self.assertEqual(named["9:16 frame"]["outcome"], PASS)
+        note = named["9:16 frame"]["note"]
+        self.assertIn("arrived 768x1376", note)
+        self.assertIn("trimmed", note)
+        self.assertIn("leaving", note)
+
+    def test_the_operators_admission_does_not_erase_the_mismatch_from_the_report(self):
+        got = self._stage(operator_ok_styliser_size=True)
+        self.assertEqual(got["outcome"], PASS)
+        note = self._named(got)["styliser returned the plan"]["note"]
+        self.assertIn("768x1376", note)
+        self.assertIn("720x1280", note)
+        self.assertIn("OPERATOR", note)
+
+    def test_the_file_that_goes_to_the_paid_call_is_exactly_the_plan(self):
+        got = self._stage()
+        self.assertTrue(_is_exact(got["shipped"]), got["shipped"])
+        self.assertEqual(self._named(got)["frame going to the paid call"]["outcome"], PASS)
+
+    def test_an_exact_return_needs_no_admission_at_all(self):
+        got = self._stage(arrived=EXACT_RETURN, operator_ok_styliser_size=False)
+        self.assertEqual(got["outcome"], PASS)
+        self.assertEqual(self._named(got)["styliser returned the plan"]["outcome"], PASS)
+        self.assertEqual(got["extends"], [], "nothing was padded, so nothing was outpainted")
+
+    def test_the_admission_does_NOT_cover_a_frame_that_was_padded(self):
+        """Negative control: 3:4 padded with bands is a different photograph."""
+        got = self._stage(arrived=THREE_BY_FOUR, operator_ok_styliser_size=True)
+        self.assertEqual(got["outcome"], FAIL)
+        named = self._named(got)
+        self.assertEqual(named["styliser returned the plan"]["outcome"], FAIL)
+        self.assertEqual(named["9:16 frame"]["outcome"], FAIL, "padding reported as a clean repair")
+
+    def test_the_outpainters_own_answer_is_trimmed_before_anything_is_paid_for(self):
+        """MEASURED: the outpainter answers 1536x2752 whatever it is asked for."""
+        got = self._stage(arrived=THREE_BY_FOUR, operator_ok_styliser_size=True)
+        named = self._named(got)
+        self.assertEqual(len(got["extends"]), 1, "the padded frame was not sent to the outpainter")
+        self.assertEqual(named["9:16 frame after the outpaint"]["outcome"], PASS)
+        self.assertIn("arrived 1536x2752", named["9:16 frame after the outpaint"]["note"])
+        self.assertTrue(_is_exact(got["shipped"]), got["shipped"])
+
+    def test_a_frame_whose_size_cannot_be_read_is_UNMEASURED_not_a_pass(self):
+        got = self._stage(sizer=lambda p: None)
+        self.assertEqual(got["outcome"], UNMEASURED)
+        named = self._named(got)
+        self.assertEqual(named["styliser returned the plan"]["outcome"], UNMEASURED)
+        self.assertEqual(named["9:16 frame"]["outcome"], UNMEASURED)
+
+
+class TheRunDoesNotReachThePaidCallOnAnUnadmittedFrame(unittest.TestCase):
+    """The whole point of the defect: 0.5581 sailed through to the one paid call."""
+
+    def test_the_run_stops_at_stage_two_and_kling_is_never_called(self):
+        called = []
+
+        def kling_must_not_run(**kw):
+            called.append(kw)
+            raise AssertionError("the paid call was made on an unadmitted frame")
+
+        log = io.StringIO()
+        with TemporaryDirectory() as td, _no_network():
+            got = _run(
+                Path(td),
+                log,
+                operator_ok_styliser_size=False,
+                kling=kling_must_not_run,
+            )
+        self.assertEqual(called, [])
+        self.assertNotEqual(got["exit_code"], 0)
+        self.assertEqual([s["stage"] for s in got["stages"]][:2], list(E.STAGES[:2]))
+        self.assertEqual(got["stages"][1]["outcome"], FAIL)
+
+    def test_with_the_admission_the_run_completes_on_an_exact_frame(self):
+        log = io.StringIO()
+        with TemporaryDirectory() as td, _no_network():
+            got = _run(Path(td), log)
+        self.assertEqual(got["outcome"], "pass")
+        self.assertEqual(got["exit_code"], 0)
+
+    def test_the_flag_travels_from_the_command_line_into_the_run(self):
+        """A flag parsed and dropped looks functional until a paid run."""
+        seen = {}
+
+        def fake_run(**kw):
+            seen.update(kw)
+            return {"exit_code": 0}
+
+        with mock.patch.object(E, "run", fake_run):
+            E.main(
+                [
+                    "--client",
+                    "c.png",
+                    "--style",
+                    "s.png",
+                    "--driving",
+                    "d.mp4",
+                    "--window",
+                    "100:199",
+                    "--operator-ok-styliser-size",
+                ]
+            )
+        self.assertIs(seen["operator_ok_styliser_size"], True)
+
+    def test_without_the_flag_the_run_is_told_so(self):
+        seen = {}
+
+        def fake_run(**kw):
+            seen.update(kw)
+            return {"exit_code": 0}
+
+        with mock.patch.object(E, "run", fake_run):
+            E.main(
+                ["--client", "c.png", "--style", "s.png", "--driving", "d.mp4", "--window", "1:9"]
+            )
+        self.assertIs(seen["operator_ok_styliser_size"], False)
+
+
+class EvidenceReachesTheReaderWhole(unittest.TestCase):
+    """A truncated reason produced a wrong diagnosis and a spent balance once.
+
+    Every note in this module is the reason behind a verdict, and the cause of
+    a failure sits at the end of the text at least as often as at the front:
+    an ffmpeg or an API answer opens with a banner and closes with the line
+    that says what went wrong. Each test below carries a sentinel past the
+    limit the code used to cut at, and each is paired with a short input on
+    which it must stay silent — otherwise it would pass on any note at all.
+    """
+
+    from lipsync import fork_plan as _P
+
+    GOOD = ThePersonMustBeInPlanNotJustTheCanvas.GOOD
+
+    @staticmethod
+    def _long(sentinel: str, width: int = 500) -> str:
+        """A note whose only distinguishing word sits past `width` characters."""
+        return "banner " * (width // 7) + sentinel
+
+    def test_a_neighbours_reason_is_not_cut_at_four_hundred(self):
+        note = self._long("CAUSE-AT-THE-END")
+        self.assertGreater(len(note), 400)
+        self.assertIn(
+            "CAUSE-AT-THE-END", E.outcome_of({"outcome": FAIL, "note": note}, what="x")[1]
+        )
+
+    def test_a_short_reason_is_handed_over_unchanged(self):
+        """Negative control: nothing is appended or reworded, so a short note stays itself."""
+        self.assertEqual(E.outcome_of({"outcome": FAIL, "note": "short"}, what="x")[1], "short")
+
+    def _with_verdict(self, axes):
+        def fake(**kw):
+            return {"axes": axes}
+
+        with mock.patch.object(self._P, "plan_verdict", fake):
+            return E._person_in_plan("k.png", plan=self._P, pose=lambda p: self.GOOD)
+
+    @staticmethod
+    def _axis(name, *, violations=0, unmeasured=0, note=""):
+        return {
+            "name": name,
+            "checked": 0 if unmeasured else 1,
+            "violations": violations,
+            "unmeasured": unmeasured,
+            "note": note,
+        }
+
+    def test_an_unmeasured_axis_keeps_the_tail_of_its_reason(self):
+        note = self._long("WHY-IT-DID-NOT-READ")
+        got = self._with_verdict([self._axis("centre", unmeasured=1, note=note)])
+        self.assertEqual(got[1], UNMEASURED)
+        self.assertIn("WHY-IT-DID-NOT-READ", got[2])
+
+    def test_an_unmeasured_axis_with_a_short_reason_says_exactly_it(self):
+        """Negative control: the short path is a pass-through, not a formatting stage."""
+        got = self._with_verdict([self._axis("centre", unmeasured=1, note="no pose")])
+        self.assertEqual(got[2], "no pose")
+
+    def test_the_passing_axes_keep_the_tail_of_their_joined_reasons(self):
+        axes = [
+            self._axis(n, note=self._long(f"AXIS-{n.upper()}", 200)) for n in ("centre", "width")
+        ]
+        got = self._with_verdict(axes)
+        self.assertEqual(got[1], PASS)
+        self.assertIn("AXIS-CENTRE", got[2])
+        self.assertIn("AXIS-WIDTH", got[2])
+
+    def test_two_short_passing_axes_are_joined_and_nothing_else(self):
+        """Negative control: the join is the whole transformation on the short path."""
+        axes = [self._axis("centre", note="a"), self._axis("width", note="b")]
+        self.assertEqual(self._with_verdict(axes)[2], "a; b")
+
+    def test_the_driving_card_verdict_keeps_the_tail_of_its_reason(self):
+        note = self._long("CARD-SAID-THIS")
+
+        def in_card(points, card):
+            return {"outcome": FAIL, "note": note}
+
+        with mock.patch.object(self._P, "in_card", in_card):
+            got = E._person_in_plan(
+                "k.png", plan=self._P, pose=lambda p: self.GOOD, card={"outcome": PASS}
+            )
+        self.assertEqual(got[1], FAIL)
+        self.assertIn("CARD-SAID-THIS", got[2])
+
+    def test_a_short_card_verdict_is_reported_as_it_stands(self):
+        """Negative control."""
+
+        def in_card(points, card):
+            return {"outcome": PASS, "note": "inside"}
+
+        with mock.patch.object(self._P, "in_card", in_card):
+            got = E._person_in_plan(
+                "k.png", plan=self._P, pose=lambda p: self.GOOD, card={"outcome": PASS}
+            )
+        self.assertEqual(got[2], "inside")
+
+    def _window(self, note):
+        return E.stage_window(
+            driving="d.mp4", out_path="w.mp4", first=0, last=9, probe=lambda p: {"note": note}
+        )
+
+    def test_a_probe_that_could_not_measure_keeps_the_tail_of_its_reason(self):
+        got = self._window(self._long("FFPROBE-TAIL"))
+        self.assertEqual(got["checks"][0]["outcome"], UNMEASURED)
+        self.assertIn("FFPROBE-TAIL", got["checks"][0]["note"])
+
+    def test_a_short_probe_reason_is_reported_as_it_stands(self):
+        """Negative control."""
+        self.assertEqual(self._window("no such file")["checks"][0]["note"], "no such file")
+
+    def test_the_paid_orders_reply_is_quoted_whole_when_it_carries_no_video(self):
+        """The fal answer is the only evidence of a call that was already paid for."""
+        reply = {"detail": self._long("REASON-FAL-REFUSED")}
+        answers = [{"request_id": "r1"}, {"status": "COMPLETED"}, reply]
+
+        class _Fh:
+            def __init__(self, payload):
+                self._payload = payload
+
+            def read(self):
+                return json.dumps(self._payload).encode()
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                return False
+
+        def urlopen(req, timeout=None):
+            return _Fh(answers.pop(0))
+
+        with (
+            mock.patch.dict("os.environ", {"FAL_KEY": "k"}),
+            mock.patch.object(urllib.request, "urlopen", urlopen),
+            mock.patch.object(E.time, "sleep", lambda s: None),
+        ):
+            with self.assertRaises(RuntimeError) as caught:
+                E.live_kling(
+                    video_url="v",
+                    image_url="i",
+                    character_orientation="portrait",
+                    out_path="o.mp4",
+                    poll_s=0,
+                )
+        self.assertIn("REASON-FAL-REFUSED", str(caught.exception))
+
+    # -- the reason a cut did not happen ------------------------------------
+
+    def _cut_failing_with(self, stderr: str) -> dict:
+        """Run the real ffmpeg branch of `stage_window` with a failing cut."""
+
+        class _Run:
+            returncode = 1
+            # Declared on the class, not stuck on the instance afterwards:
+            # the typechecker is part of `scripts/check`, and an attribute
+            # that only exists at runtime fails it.
+            stderr = ""
+
+        run = _Run()
+        run.stderr = stderr
+        with (
+            mock.patch("shutil.which", lambda name: "/usr/bin/ffmpeg"),
+            mock.patch.object(E.subprocess, "run", lambda *a, **kw: run),
+        ):
+            return E.stage_window(
+                driving="d.mp4",
+                out_path="w.mp4",
+                first=0,
+                last=149,
+                probe=lambda p: {"fps": 30.0, "frames": 1000, "note": "probed"},
+            )
+
+    def test_the_opening_of_a_long_ffmpeg_reason_is_not_dropped(self):
+        """This cut kept the LAST 300 characters, so the half it lost was the opening.
+
+        ffmpeg names the option it would not accept in its first lines and
+        reports the failure near the end; a tail-only note reads as if the
+        command had been fine up to the moment it stopped.
+        """
+        stderr = "OPENING-OPTION-NAMED " + "filler " * 200 + "and then it stopped"
+        cut = [c for c in self._cut_failing_with(stderr)["checks"] if c["name"] == "cut"][0]
+        self.assertEqual(cut["outcome"], UNMEASURED)
+        self.assertIn("OPENING-OPTION-NAMED", cut["note"])
+
+    def test_the_closing_of_a_long_ffmpeg_reason_is_kept_too(self):
+        """The end was never the side this call dropped: this holds it so it cannot become one."""
+        cut = [
+            c
+            for c in self._cut_failing_with(self._long("FILTER-REJECTED-HERE"))["checks"]
+            if c["name"] == "cut"
+        ][0]
+        self.assertIn("FILTER-REJECTED-HERE", cut["note"])
+
+    def test_a_short_ffmpeg_reason_is_reported_as_it_stands(self):
+        """Negative control: a device that always finds its sentinel measures nothing."""
+        cut = [c for c in self._cut_failing_with("no such file")["checks"] if c["name"] == "cut"][0]
+        self.assertEqual(cut["note"], "RuntimeError: ffmpeg returned 1: no such file")
+
+    # -- the axis that did not read, not the first one ----------------------
+
+    def test_the_unmeasured_axis_is_the_one_quoted(self):
+        """`axes[0]` quoted an axis that had read, under a "could not measure" verdict."""
+        got = self._with_verdict(
+            [
+                self._axis("centre", note="CENTRE-READ-FINE"),
+                self._axis("width", unmeasured=1, note="WIDTH-HAD-NO-POINTS"),
+            ]
+        )
+        self.assertEqual(got[1], UNMEASURED)
+        self.assertIn("WIDTH-HAD-NO-POINTS", got[2])
+        self.assertNotIn("CENTRE-READ-FINE", got[2])
+
+    def test_every_axis_that_did_not_read_is_quoted(self):
+        got = self._with_verdict(
+            [
+                self._axis("centre", unmeasured=1, note="CENTRE-BLIND"),
+                self._axis("width", unmeasured=1, note="WIDTH-BLIND"),
+            ]
+        )
+        self.assertIn("CENTRE-BLIND", got[2])
+        self.assertIn("WIDTH-BLIND", got[2])
+
+    def test_axes_that_all_read_do_not_reach_the_unmeasured_branch(self):
+        """Negative control: the branch must stay shut when every axis answered."""
+        got = self._with_verdict([self._axis("centre", note="a"), self._axis("width", note="b")])
+        self.assertEqual(got[1], PASS)
+
+    # -- every reason the pose reader gave, and the sample against the whole -
+
+    FRAMES = [f"{i:05d}.png" for i in range(300)]
+
+    def _card_with_breakages(self, how_many: int) -> dict:
+        seen = []
+
+        def reader(path):
+            seen.append(path)
+            if len(seen) <= how_many:
+                raise RuntimeError(f"FRAME-{len(seen)}-BROKE")
+            return _pose_ok(path)
+
+        return E.driving_card(self.FRAMES, pose=reader)
+
+    def test_every_frame_that_threw_is_named_not_only_the_first(self):
+        note = self._card_with_breakages(3)["note"]
+        for n in (1, 2, 3):
+            self.assertIn(f"FRAME-{n}-BROKE", note)
+
+    def test_a_card_read_without_breakage_says_nothing_about_throwing(self):
+        """Negative control: the tail is added only when there is something to add."""
+        self.assertNotIn("threw", self._card_with_breakages(0)["note"])
+
+    def test_a_reader_that_threw_on_every_frame_names_every_reason(self):
+        note = E.driving_card(self.FRAMES, pose=self._always_throwing())["note"]
+        self.assertIn("FRAME-1-BROKE", note)
+        self.assertIn("FRAME-24-BROKE", note)
+        self.assertIn("frames sampled from 300", note)
+
+    @staticmethod
+    def _always_throwing():
+        seen = []
+
+        def reader(path):
+            seen.append(path)
+            raise RuntimeError(f"FRAME-{len(seen)}-BROKE")
+
+        return reader
+
+    def test_a_card_measured_on_a_sample_says_the_sample_and_the_whole(self):
+        """A partial result printed as numbers, so 24 frames cannot read as the clip."""
+        self.assertIn(
+            "sampled 24 of 300 frames", E.driving_card(self.FRAMES, pose=_pose_ok)["note"]
+        )
+
+    def test_a_card_measured_on_every_frame_claims_no_sampling(self):
+        """Negative control: with nothing skipped there is no sample to declare."""
+        note = E.driving_card(self.FRAMES[:10], pose=_pose_ok)["note"]
+        self.assertNotIn("sampled", note)
+        self.assertIn("over 10 frames of 10", note)
+
+
+class TwoDecisionConstantsNobodyWasWatching(unittest.TestCase):
+    """Both survived every mutation of their value with the suite still green.
+
+    A constant no test moves with is a decision nobody guards: `FRAME_SUFFIXES`
+    could be cut to `.png` alone and every jpeg driving would have gone
+    unreadable in silence, and `KLING_OUT_SIZE` could be set to any pair at all
+    without the note it exists to phrase saying anything different.
+    """
+
+    def test_a_jpeg_frame_directory_is_read_as_frames(self):
+        with TemporaryDirectory() as td:
+            for name in ("a.jpg", "b.JPEG", "c.png"):
+                (Path(td) / name).write_bytes(b"")
+            got = E.frame_paths(td)
+        self.assertEqual([Path(p).name for p in got], ["a.jpg", "b.JPEG", "c.png"])
+
+    def test_a_directory_of_something_else_is_refused_by_name(self):
+        """Negative control, and the other side of the bar.
+
+        The wanted list is matched with its opening words attached, so that a
+        FOURTH suffix moves this too: a set clamped only against shrinking is
+        not clamped.
+        """
+        with TemporaryDirectory() as td:
+            (Path(td) / "report.json").write_bytes(b"{}")
+            with self.assertRaises(ValueError) as caught:
+                E.frame_paths(td)
+        self.assertIn("expected files .jpeg, .jpg, .png", str(caught.exception))
+
+    @staticmethod
+    def _geometry_note(w, h):
+        res = E.stage_output_acceptance(
+            produced="p.mp4",
+            client_photo="c.png",
+            frames_dir="d",
+            probe=lambda p: {"width": w, "height": h, "fps": 30.0, "frames": 99},
+            decode=_decode_ok,
+            distances=lambda fr, an: {"outcome": PASS, "median": 0.20, "inside": 99, "judged": 99},
+            cuts=lambda p: {"outcome": PASS, "cuts": [], "note": ""},
+        )
+        return [c for c in res["checks"] if c["name"] == "output geometry"][0]
+
+    def test_the_recorded_geometry_is_recognised_as_the_familiar_one(self):
+        self.assertEqual(self._geometry_note(960, 960)["outcome"], PASS)
+        self.assertIn("as on previous orders", self._geometry_note(960, 960)["note"])
+
+    def test_an_unfamiliar_vertical_geometry_still_passes_but_is_named_as_new(self):
+        """The record is a record, not a bar: 816x1104 passed and had to keep passing."""
+        note = self._geometry_note(816, 1104)
+        self.assertEqual(note["outcome"], PASS)
+        self.assertIn("new geometry", note["note"])
+        self.assertIn("960x960", note["note"])

@@ -1,12 +1,50 @@
-"""Pollinations — ONE gateway (gen.pollinations.ai) for the whole pipeline."""
+"""Pollinations — the one gateway (gen.pollinations.ai) for every picture.
+
+Three routes out and one upload, and that is the whole door: `upload` puts a
+local file where the gateway can fetch it, `images_edit` redraws one reference,
+`compose` redraws two or more. Video does not come through here — Kling Motion
+Control through fal.ai makes it — and neither does frame extraction, judging or
+speech.
+"""
 
 from __future__ import annotations
 
 import base64
-import json
 import os
 from pathlib import Path
 from urllib.parse import quote
+
+from . import cure, fork_plan
+
+
+#: The one default frame every image route asks for: `fork_plan.FRAME`, taken
+#: rather than restated. A size that is 9:16 only in arithmetic is not enough —
+#: the model MEASURABLY snaps each side to a 16px grid (asked 768x1024, it
+#: returned 896x1200), so an off-grid request comes back moved sideways and no
+#: longer 9:16, and a frame that is not 9:16 is padded with blurred bands on its
+#: way to the client. The delivery frame satisfies both, and taking it from the
+#: plan means no route can drift away from it one route at a time, which is how
+#: the 3:4 default outlived its removal on `compose` alone.
+#:
+#: This gateway imports the domain module for it, which points the wrong way
+#: across the layers. It is deliberate: the frame is one product fact and it is
+#: measured on what the pipeline delivers, so the plan owns it and this module
+#: reads it. Hiding it in a neutral leaf module would satisfy the layering and
+#: cost the pipeline the single place to look. The edge is safe in practice —
+#: `fork_plan` reaches this module only from inside a function, so there is no
+#: import cycle, and it pulls in no third-party import at module level.
+PLAN_SIZE = fork_plan.FRAME
+
+
+#: `image` — text to picture, with no reference — has no caller on the paid
+#: path: every product picture starts from a photo, so it goes through
+#: `images_edit` or `compose`. It is kept and declared because two gates measure
+#: it: `test_route_defaults` and `test_fork_e2e` read the default size of all
+#: three routes and fail when they disagree. That check is the reason the 3:4
+#: default was found on `compose` alone, and it needs a third route to compare
+#: against — a route with no caller is exactly what makes the disagreement
+#: visible. Delete it and the comparison has two samples instead of three.
+INSTRUMENTS = ("image",)
 
 
 def _base() -> str:
@@ -18,9 +56,18 @@ def _media() -> str:
 
 
 def _key() -> str:
+    """Return the gateway key, or say how to set it in the shell that is reading.
+
+    The remedy is built by `cure.set_env` rather than written out here: the
+    command differs between shells, and a POSIX `export` line printed on
+    Windows is a remedy the reader cannot run.
+    """
     k = os.environ.get("POLLINATIONS_API_KEY")
     if not k:
-        raise RuntimeError("POLLINATIONS_API_KEY not set (sk_ key from enter.pollinations.ai).")
+        raise RuntimeError(
+            "POLLINATIONS_API_KEY not set (sk_ key from enter.pollinations.ai). "
+            f"Set it with: {cure.set_env('POLLINATIONS_API_KEY', 'sk_...')}"
+        )
     return k
 
 
@@ -48,8 +95,8 @@ def image(
     *,
     model: str = "flux",
     seed: int = 0,
-    width: int = 1080,
-    height: int = 1920,
+    width: int = PLAN_SIZE[0],
+    height: int = PLAN_SIZE[1],
     image_url: str | None = None,
 ) -> str:
     """Generate a still (text->image). Returns image bytes synchronously."""
@@ -78,8 +125,8 @@ def images_edit(
     out_path: str | Path,
     *,
     model: str = "kontext",
-    width: int = 1080,
-    height: int = 1920,
+    width: int = PLAN_SIZE[0],
+    height: int = PLAN_SIZE[1],
 ) -> str:
     """Image-to-image from a LOCAL reference, no media host needed. [verified live]"""
     import requests
@@ -113,11 +160,20 @@ def compose(
     out_path: str | Path,
     *,
     model: str = "nanobanana",
-    width: int = 768,
-    height: int = 1024,
+    width: int = PLAN_SIZE[0],
+    height: int = PLAN_SIZE[1],
     seed: int = 0,
 ) -> str:
-    """Generate from SEVERAL reference images at once. [verified live]"""
+    """Generate from SEVERAL reference images at once. [verified live]
+
+    The default is `PLAN_SIZE`, shared with `image` and `images_edit`. It used
+    to be 768x1024 here alone, and that 3:4 was the real reason the styled
+    reference arrived letterboxed: two references route here while one routes to
+    `images_edit`, so the route choice — not the prompt — decided whether the
+    frame came back vertical. The size now lives in one place so a route cannot
+    drift away from its siblings again. Callers wanting another frame pass their
+    own size; the pipeline's own routes do not — they all ask for one frame.
+    """
     import requests
 
     if len(image_urls) < 2:
@@ -136,173 +192,12 @@ def compose(
         timeout=600,
     )
     if not r.ok:
-        raise RuntimeError(f"compose: HTTP {r.status_code} {r.text[:300]}")
+        raise RuntimeError(f"compose: HTTP {r.status_code} {r.text}")
     if "image" not in r.headers.get("content-type", ""):
         raise RuntimeError(
-            f"compose: expected image bytes, got {r.headers.get('content-type')}: {r.text[:200]!r}"
+            f"compose: expected image bytes, got {r.headers.get('content-type')}: {r.text!r}"
         )
     out_path = Path(out_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_bytes(r.content)
     return str(out_path)
-
-
-def video(
-    prompt: str,
-    out_mp4: str | Path,
-    *,
-    model: str = "seedance-2.0",
-    image_url: str | list[str] | None = None,
-    duration: int = 4,
-    aspect_ratio: str = "9:16",
-    audio: bool = False,
-    resolution: str | None = None,
-    seed: int | None = None,
-) -> str:
-    """Image-to-video: the start frame drives the motion."""
-    import requests
-
-    url = f"{_base()}/video/" + quote(prompt, safe="")
-    params: dict[str, str | int] = {
-        "model": model,
-        "duration": duration,
-        "aspectRatio": aspect_ratio,
-        "audio": str(audio).lower(),
-    }
-    if image_url:
-        params["image"] = image_url if isinstance(image_url, str) else "|".join(image_url)
-    if resolution:
-        params["resolution"] = resolution
-    if seed is not None:
-        params["seed"] = seed
-    r = requests.get(url, params=params, headers=_auth(), timeout=900)
-    if not r.ok:
-        raise RuntimeError(f"video: HTTP {r.status_code} {r.text[:300]}")
-    ct = r.headers.get("content-type", "")
-    if "video" not in ct and "octet-stream" not in ct:
-        raise RuntimeError(
-            f"video: expected mp4 bytes, got {ct}: {r.text[:200]!r}. "
-            f"If this is a job/URL JSON, add a poll+download branch here."
-        )
-    out_mp4 = Path(out_mp4)
-    out_mp4.parent.mkdir(parents=True, exist_ok=True)
-    out_mp4.write_bytes(r.content)
-    LAST_VIDEO_USAGE.clear()
-    LAST_VIDEO_USAGE.update(_usage_of(r))
-    return str(out_mp4)
-
-
-LAST_VIDEO_USAGE: dict = {}
-
-
-def _usage_of(r) -> dict:
-    """Pull the metering headers off a generation response, for the run report."""
-    keep = (
-        "x-usage-completion-video-seconds",
-        "x-model-used",
-        "x-request-id",
-        "x-usage-completion-audio-seconds",
-        "x-cache",
-    )
-    out = {k: v for k, v in ((k, r.headers.get(k)) for k in keep) if v}
-    secs = out.get("x-usage-completion-video-seconds")
-    if secs:
-        try:
-            out["video_seconds"] = float(secs)
-        except ValueError:
-            pass
-    return out
-
-
-def video_loop(prompt: str, out_mp4: str | Path, start_url: str, **kwargs) -> str:
-    """A clip that ends where it began, so it loops without a visible cut."""
-    return video(prompt, out_mp4, image_url=[start_url, start_url], **kwargs)
-
-
-FRAME_PATTERN = "%04d.png"
-
-
-def frame_names_sort_correctly(count: int, pattern: str = FRAME_PATTERN) -> bool:
-    """Tell whether the lexicographic order of names matches the frame order."""
-    names = [pattern % i for i in range(1, count + 1)]
-    return sorted(names) == names
-
-
-def extract_frames(mp4_path: str | Path, out_dir: str | Path, *, fps: int = 6) -> list[str]:
-    """mp4 -> NNNN.png sequence via ffmpeg, so identity/motion can be measured."""
-    import subprocess
-
-    out_dir = Path(out_dir)
-    out_dir.mkdir(parents=True, exist_ok=True)
-    subprocess.run(
-        ["ffmpeg", "-y", "-i", str(mp4_path), "-vf", f"fps={fps}", str(out_dir / FRAME_PATTERN)],
-        check=True,
-        capture_output=True,
-    )
-    return sorted(str(p) for p in out_dir.glob("*.png"))
-
-
-def chat(messages: list[dict], *, model: str = "openai", temperature: float = 0.0) -> str:
-    import requests
-
-    r = requests.post(
-        f"{_base()}/v1/chat/completions",
-        headers=_auth(),
-        json={"model": model, "temperature": temperature, "messages": messages},
-        timeout=300,
-    )
-    r.raise_for_status()
-    return r.json()["choices"][0]["message"]["content"]
-
-
-JUDGE_SYSTEM = (
-    "You score one vertical 9:16 ad frame. Return STRICT JSON only with keys: "
-    '"first_frame_hook","trend_fit","composition","brand_safety" (0-1), '
-    '"transcribed_text" (verbatim on-image words or empty), "opinion" (0-1).'
-)
-
-
-def judge_frame(frame_path: str | Path, *, model: str = "claude") -> dict:
-    b64 = base64.b64encode(Path(frame_path).read_bytes()).decode("ascii")
-    content = chat(
-        [
-            {"role": "system", "content": JUDGE_SYSTEM},
-            {
-                "role": "user",
-                "content": [
-                    {"type": "text", "text": "Score this frame. JSON only."},
-                    {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{b64}"}},
-                ],
-            },
-        ],
-        model=model,
-    )
-    return _parse_json(content)
-
-
-def opinion_of(frame_path: str | Path, *, model: str = "claude") -> float:
-    return float(judge_frame(frame_path, model=model).get("opinion", 0.0))
-
-
-def tts(
-    text: str, out_path: str | Path, *, voice: str = "nova", model: str = "eleven-multilingual-v2"
-) -> str:
-    """Russian TTS -> mp3. Language lives here; a lipsync model consumes the wav."""
-    import requests
-
-    url = f"{_base()}/audio/" + quote(text, safe="")
-    r = requests.get(url, params={"voice": voice, "model": model}, headers=_auth(), timeout=300)
-    r.raise_for_status()
-    out_path = Path(out_path)
-    out_path.write_bytes(r.content)
-    return str(out_path)
-
-
-def _parse_json(text: str) -> dict:
-    text = text.strip()
-    if text.startswith("```"):
-        text = text.strip("`")
-    s, e = text.find("{"), text.rfind("}")
-    if s == -1 or e == -1:
-        raise ValueError(f"model returned no JSON: {text[:120]!r}")
-    return json.loads(text[s : e + 1])

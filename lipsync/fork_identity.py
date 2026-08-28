@@ -7,6 +7,9 @@ from pathlib import Path
 
 from .identity_arcface import HARD_DRIFT_MAX, SAME_PERSON_MAX
 
+#: CHOSEN: the instrument is a parameter, not a wired-in dependency. Swapping
+#: it voids every number taken before it, so the swap has to be a visible
+#: decision by the caller and not the side effect of editing an import.
 DEFAULT_INSTRUMENT = "identity_arcface"
 
 INSTRUMENT_LICENCE = {
@@ -17,6 +20,10 @@ INSTRUMENT_LICENCE = {
     ),
 }
 
+#: CHOSEN: three outcomes instead of two, because "could not measure" folds
+#: into neither of the other two. Words rather than flags — they are printed
+#: into reports — and the whole package imports them from here, so the three
+#: cannot drift into two spellings of the same verdict.
 PASS, FAIL, UNMEASURED = "pass", "fail", "could not measure"
 
 from .identity_arcface import MIN_COVERAGE  # noqa: E402
@@ -26,6 +33,24 @@ FOREIGN_FACE_FIXTURE = Path(__file__).resolve().parent / "fixtures" / "foreign_f
 UPSCALE_DRIFT_MAX = 0.05
 
 RESTORE_PULL_MAX = 0.05
+
+# Measuring devices, exercised by the tests and never by the paid path.
+#
+# `restore_negative_control` is the control the identity axis cannot do
+# without: every generator in this pipeline is handed the client photo, so
+# every one of them has a trivial way to make `d_raw` look perfect — paint the
+# reference face over whatever it produced. A "before → after" pair on the
+# CLIENT's own frames reads the same whether the generator did the work or
+# copied the answer. Only an input where the generator must FAIL separates
+# them: push a known stranger through it and demand the instrument still say
+# "different person".
+#
+# `acceptance_report` is what refuses to call the axis accepted. Of the three
+# calibration rows behind the bar this module ships, one reproduces; it totals
+# them as "1 of 3" instead of an aggregate flag, and the main row — against the
+# client's raw photo — has never been measured at all.
+
+INSTRUMENTS = ("restore_negative_control", "acceptance_report")
 
 ACCEPTANCE_ROWS: dict[str, dict] = {
     "against the raw photo": {
@@ -324,72 +349,6 @@ def actor_leak_verdict(d_raw: dict, d_drv: dict) -> str:
     )
 
 
-def before_after_restore(
-    before_frames,
-    after_frames,
-    *,
-    raw_photo: str | Path,
-    instrument: str = DEFAULT_INSTRUMENT,
-    min_face_px: int | None = None,
-) -> dict:
-    """Measure identity BEFORE and AFTER the face restore, under ONE bar, as a pair."""
-    common: dict = {"instrument": instrument, "min_face_px": min_face_px}
-    before = distances(before_frames, raw_photo, **common)
-    after = distances(after_frames, raw_photo, **common)
-
-    if (before["bar"], before["min_face_px"]) != (after["bar"], after["min_face_px"]):
-        raise RuntimeError(
-            f"the two halves of the pair were measured under DIFFERENT conditions: "
-            f"before — bar {before['bar']}, filter {before['min_face_px']}; after — bar "
-            f"{after['bar']}, filter {after['min_face_px']}. Two such numbers are "
-            f'incomparable, and "it got better" based on them means nothing.'
-        )
-
-    judged_gain = after["judged"] - before["judged"]
-    delta = (
-        None
-        if before["median"] is None or after["median"] is None
-        else round(after["median"] - before["median"], 4)
-    )
-
-    if after["median"] is None:
-        outcome = UNMEASURED
-    elif before["median"] is None:
-        outcome = PASS if after["outcome"] == PASS else after["outcome"]
-    else:
-        outcome = after["outcome"]
-
-    return {
-        "outcome": outcome,
-        "bar": SAME_PERSON_MAX,
-        "before": before,
-        "after": after,
-        "delta": delta,
-        "judged_gain": judged_gain,
-        "note": (
-            f"identity under ONE bar {SAME_PERSON_MAX}. "
-            f"BEFORE the restore: median {before['median']}, judged "
-            f"{before['judged']} of {before['total']}. "
-            f"AFTER: median {after['median']}, judged {after['judged']} of "
-            f"{after['total']}. "
-            + (
-                f"The median moved by {delta}. "
-                if delta is not None
-                else "There is nothing to compare the medians with — before the "
-                "restore there was nothing to judge, and this is NOT a regression "
-                "but a first measurement. "
-            )
-            + (
-                f"Judged frames increased by {judged_gain}."
-                if judged_gain > 0
-                else f"Judged frames did not increase ({judged_gain})."
-                if judged_gain <= 0
-                else ""
-            )
-        ),
-    }
-
-
 def restore_negative_control(
     restored_foreign_frames=None,
     *,
@@ -399,7 +358,7 @@ def restore_negative_control(
     min_face_px: int | None = None,
     pull_max: float = RESTORE_PULL_MAX,
 ) -> dict:
-    """Run the negative control for the face restore. The gap that §7 did not cover."""
+    """Run the negative control: push a known stranger through the generator, expect a refusal."""
     common: dict = {"instrument": instrument, "min_face_px": min_face_px}
     out: dict = {
         "bar": SAME_PERSON_MAX,
@@ -441,7 +400,7 @@ def restore_negative_control(
                 f"restore landed inside the bar {SAME_PERSON_MAX} to the client on "
                 f"{after['inside']} frame(s) of {after['judged']}, "
                 f"median {after['median']}. So d_raw after the "
-                f"restore measures the restorer, not Wan-Animate, and all "
+                f"restore measures the restorer, not the generator under test, and all "
                 f"axis numbers after the restore are INVALID."
             ),
         }
@@ -494,13 +453,13 @@ def restore_negative_control(
             f"the pull {pull} does not exceed {pull_max}, zero frames of "
             f"{after['judged']} inside the bar {SAME_PERSON_MAX} — "
             f"the restorer does not print the reference, and d_raw after the "
-            f"restore measures Wan-Animate"
+            f"restore measures the generator under test"
         ),
     }
 
 
 def acceptance_report() -> dict:
-    """Report what of the §6 A acceptance is ACTUALLY reproduced. In numbers, not a flag."""
+    """Report how many calibration rows are ACTUALLY reproduced. In numbers, not a flag."""
     rows = ACCEPTANCE_ROWS
     done = [n for n, r in rows.items() if r["outcome"] == PASS]
     unmeasured = [n for n, r in rows.items() if r["outcome"] == UNMEASURED]
@@ -514,50 +473,17 @@ def acceptance_report() -> dict:
         "failed": failed,
         "rows": rows,
         "note": (
-            f"acceptance §6 A: reproduced {len(done)} row(s) of "
+            f"identity acceptance: reproduced {len(done)} row(s) of "
             f"{len(rows)}, unmeasured {len(unmeasured)}, failed "
             f"{len(failed)}. Reproduced: {', '.join(done) or '—'}. "
             f"UNMEASURED: {', '.join(unmeasured) or '—'}. "
             + (
-                "The HANDOFF requires ALL THREE, and all three are reproduced: the flow acceptance is CLOSED."
+                "All three rows are required, and all three are reproduced: the identity acceptance is CLOSED."
                 if outcome == PASS
-                else f"The HANDOFF requires ALL THREE, so the flow acceptance is NOT "
+                else f"All three rows are required, so the identity acceptance is NOT "
                 f'CLOSED — and "{len(done)} of {len(rows)}" here is not "almost" '
                 f'but "the main row was never measured".'
             )
-        ),
-    }
-
-
-def lora_regression(without: dict, with_lora: dict, *, worse_by: float = 0.02) -> dict:
-    """Say whether `d_raw` degrades with the LoRA ENABLED. Acceptance of the template-LoRA hypothesis."""
-    a, b = without.get("median"), with_lora.get("median")
-    if a is None or b is None:
-        return {
-            "outcome": UNMEASURED,
-            "delta": None,
-            "note": (
-                f"one of the two medians is missing (without LoRA {a}, with LoRA "
-                f'{b}): nothing to compare. This is NOT "the LoRA is harmless".'
-            ),
-        }
-    delta = round(b - a, 4)
-    if delta > worse_by:
-        return {
-            "outcome": FAIL,
-            "delta": delta,
-            "note": (
-                f"with LoRA {b} against {a} without it — worse by {delta} "
-                f"against the discriminability threshold {worse_by}. The LoRA "
-                f"pulls the face toward the category average."
-            ),
-        }
-    return {
-        "outcome": PASS,
-        "delta": delta,
-        "note": (
-            f"with LoRA {b} against {a} without it — the difference {delta} does "
-            f"not exceed the discriminability threshold {worse_by}"
         ),
     }
 
