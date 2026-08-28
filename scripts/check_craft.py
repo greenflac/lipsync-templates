@@ -62,30 +62,42 @@ def _fragments(record: dict) -> list[tuple[str, str]]:
     return out
 
 
-def _checkable(item: dict) -> bool:
-    """Can somebody go and see this for themselves?
+#: What one piece of evidence turns out to be. Three answers, because the two-
+#: answer version of this function turned CI red the hour it was written.
+CITED = "cited"  # an http URL, or a file:// pointer that resolves here
+ABSENT = "absent"  # a file:// pointer whose target is not on THIS machine
+NOT_EVIDENCE = "not evidence"  # neither shape
 
-    Two shapes qualify, and the second was nearly rejected by the first version
-    of this gate. An `http` URL is the common case. A `file://` pointer into this
-    repository is the OTHER case, and it is stronger evidence rather than weaker:
-    the harvest's best record counts which lighting terms actually occur in our
-    own 5074 prompts — `soft light` 171, `beauty dish` 0 — a measurement anybody
-    can re-run, unlike a page that can be edited or go dark. Rejecting it for
-    lacking a URL would have discarded the one record in the set whose numbers
-    are marked ИЗМЕРЕНО from first-hand counting.
 
-    The pointer still has to resolve: a `file://` naming something that is not
-    here is not evidence, it is a claim about a file.
+def _checkable(item: dict) -> str:
+    """Can somebody go and see this for themselves — and if not, why not?
+
+    An `http` URL is the common case. A `file://` pointer into this repository is
+    the other one, and it is stronger evidence rather than weaker: the harvest's
+    best record counts which lighting terms actually occur in our own 5074
+    prompts — `soft light` 171, `beauty dish` 0 — a measurement anybody can
+    re-run, unlike a page that can be edited or go dark.
+
+    THE DEFECT THIS FUNCTION WAS WRITTEN TWICE FOR. The first version answered
+    yes/no and called an unresolved pointer a violation. It went green here and
+    RED IN CI within the hour, because the corpora those pointers name are
+    deliberately not committed — the owner's decision of 2026-08-28, this
+    repository being public. The pointer was fine and the file was absent on
+    purpose, which is neither "verified" nor "wrong". It is the third outcome,
+    and collapsing it into the second is the exact mistake this package has a
+    rule against (R1). So: absent is reported, counted, and never a violation.
     """
     url = str(item.get("url", ""))
     if url.startswith("http"):
-        return True
+        return CITED
     if not url.startswith("file://"):
-        return False
+        return NOT_EVIDENCE
     root = Path(__file__).resolve().parents[1]
     # One pointer may name several files joined by '+', as the corpus count does.
     names = [n.strip() for n in url[len("file://") :].split("+") if n.strip()]
-    return bool(names) and all((root / name).exists() for name in names)
+    if not names:
+        return NOT_EVIDENCE
+    return CITED if all((root / name).exists() for name in names) else ABSENT
 
 
 def audit(directory: Path | None = None) -> dict:
@@ -105,8 +117,9 @@ def audit(directory: Path | None = None) -> dict:
             ),
         }
 
-    checked = unreadable = 0
+    checked = unreadable = unverifiable = 0
     problems: list[str] = []
+    notes: list[str] = []
     for path in files:
         for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
             line = line.strip()
@@ -122,8 +135,18 @@ def audit(directory: Path | None = None) -> dict:
             where = f"{path.name}:{number} {record.get('id', '?')}"
 
             evidence = record.get("evidence") or []
-            if not any(_checkable(e) for e in evidence if isinstance(e, dict)):
-                problems.append(f"{where}: нет ни одного проверяемого источника")
+            answers = [_checkable(e) for e in evidence if isinstance(e, dict)]
+            if not any(a == CITED for a in answers):
+                if ABSENT in answers:
+                    # The evidence may be perfectly good; this machine simply
+                    # cannot see the file. Counted, printed, not a violation.
+                    unverifiable += 1
+                    notes.append(
+                        f"{where}: источник — файл, которого нет на этой машине "
+                        "(корпус намеренно не коммитится); проверить не смогли"
+                    )
+                else:
+                    problems.append(f"{where}: нет ни одного проверяемого источника")
             for item in evidence:
                 if isinstance(item, dict) and item.get("tier") not in TIERS:
                     problems.append(f"{where}: тир {item.get('tier')!r} не из лестницы")
@@ -145,17 +168,26 @@ def audit(directory: Path | None = None) -> dict:
             "problems": problems,
             "note": "ни одной читаемой записи: судить было не о чем",
         }
+    # A record whose pointer could not be resolved is NOT a reason to fail the
+    # build — but it is a reason to print a number, so that "everything checks
+    # out" can never be read over the top of "we could not look" (rule E3).
     return {
         "outcome": FAIL if problems else PASS,
         "checked": checked,
         "violations": len(problems),
-        "unmeasured": unreadable,
-        "problems": problems,
+        "unmeasured": unreadable + unverifiable,
+        "problems": problems + notes,
         "note": (
             f"{len(problems)} нарушений в {checked} записях"
             if problems
             else f"{checked} записей: у каждой источник, тир из лестницы и ни одного "
             f"дословного фрагмента длиннее {VERBATIM_MAX_WORDS} слов"
+            + (
+                f"; {unverifiable} из них ссылаются на файл, которого нет на этой "
+                "машине — эти не проверены"
+                if unverifiable
+                else ""
+            )
         ),
     }
 
