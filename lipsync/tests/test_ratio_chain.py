@@ -345,3 +345,38 @@ class TheAssetsThemselvesAreThePlan(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TheOutputCeilingHasAFloor(unittest.TestCase):
+    """A ceiling on one side is not a clamp: the other side lets anything through.
+
+    `OUT_RATIO_MAX = 1.0` refuses landscape, and nothing refused a frame
+    narrower than the product's own plan. A 1:3 clip would have passed a gate
+    written for vertical video, and the crop that follows would have taken 41%
+    of its height — which is a head or a pair of feet, not a rounding.
+
+    The floor is CHOSEN, and what it costs is derivable, which is why 0.5:
+    cropping a 0.5 output to the plan's 0.5625 removes 11.1% of the height.
+    Measured against every Kling output still on disk — 1.0000 x4, 0.7391 x3,
+    0.5625 x8 — this floor refuses nothing that has ever arrived, so it is a
+    guard against a shape we have not seen rather than a change of behaviour.
+    """
+
+    def test_the_floor_exists_and_sits_below_the_plan(self) -> None:
+        self.assertTrue(hasattr(E, "OUT_RATIO_MIN"), "no floor is declared")
+        self.assertLess(E.OUT_RATIO_MIN, P.PLAN_RATIO)
+        self.assertLess(E.OUT_RATIO_MIN, E.OUT_RATIO_MAX)
+
+    def test_a_frame_narrower_than_the_floor_is_a_defect(self) -> None:
+        """The case nothing watched: too tall is as wrong as too wide."""
+        self.assertLess(360 / 1280, E.OUT_RATIO_MIN)
+
+    def test_every_ratio_ever_delivered_clears_the_floor(self) -> None:
+        """The other side: a floor that refuses real deliveries is not a floor.
+
+        MEASURED by ffprobe over every Kling output on disk, 2026-08-28.
+        """
+        for w, h in ((960, 960), (816, 1104), (576, 1024), (720, 1280)):
+            with self.subTest(size=(w, h)):
+                self.assertGreaterEqual(w / h, E.OUT_RATIO_MIN)
+                self.assertLessEqual(w / h, E.OUT_RATIO_MAX)
