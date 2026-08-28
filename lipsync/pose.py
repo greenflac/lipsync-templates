@@ -41,6 +41,14 @@ MIN_VISIBILITY = 0.5
 #: has nothing to be wrong against.
 INSTRUMENTS = ("pose_delta",)
 
+# Licence, checked on 2026-08-28 from the installed distribution's own
+# metadata, not from a web page: mediapipe 1.0.0 declares Apache-2.0 and ships
+# LICENSE and NOTICE in its dist-info. Two things that are NOT settled by that:
+# the NOTICE is a privacy notice about the input data the tasks process, which
+# is a product question for a service that receives clients' photographs; and
+# the model weights below are a separate artefact fetched from Google's
+# storage, whose terms are not established here. Treat the weights as
+# UNVERIFIED until someone reads their model card.
 MODEL_ENV = "LIPSYNC_POSE_MODEL"
 DEFAULT_MODEL = "~/.mediapipe/pose_landmarker_lite.task"
 

@@ -25,11 +25,6 @@ prompt, feed in a stock demo person, and get back a style reference (an
 "aesthetic") that is ready to sell as a template. Building a new template
 takes one run.
 
-![Six templates of the family](docs/img/family.png)
-
-<sub>The first six templates. One demo person, six aesthetics, four different
-driving videos.</sub>
-
 **Presentation:** [English (PDF)](docs/deck/lipsync_en.pdf) ·
 [по-русски (PDF)](docs/deck/lipsync_ru.pdf)
 
@@ -178,11 +173,6 @@ and recalibrate the thresholds.
 **Сборщик шаблонов** — для того, кто шаблоны придумывает: он пишет промт,
 подаёт стоковую демо-личность и получает стилевой референс («эстетику»),
 готовый к продаже как шаблон. Новый шаблон собирается за один прогон.
-
-![Шесть шаблонов семейства](docs/img/family.png)
-
-<sub>Первые шесть шаблонов. Одна демо-личность, шесть эстетик, четыре разных
-драйвинга.</sub>
 
 **Презентация:** [по-русски (PDF)](docs/deck/lipsync_ru.pdf) ·
 [English (PDF)](docs/deck/lipsync_en.pdf)

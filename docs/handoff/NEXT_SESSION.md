@@ -190,3 +190,36 @@ Note on where the evidence was: all of it sat in `ball-reel`, the engine
 declared retired. It was excluded from an evidence search once before and that
 cost a wrong correction; this time it held the artefacts that settled the
 `KLING_OUT_SIZE` / `FRAME` contradiction as well.
+
+## 8. Decisions taken 2026-08-28, with what settled them
+
+**The live run stays a debt, by the owner's decision.** Until it happens, "9:16
+with no bands through the whole pipeline" is written and not verified, and it
+must be said that way. Two questions remain open, not three: whether the image
+route honours a requested size, and whether the frame is band-free by eye at
+full resolution. What Kling returns is answered — see §7 and the mark on
+`KLING_OUT_SIZE`.
+
+**`family.png` no longer appears in the README.** It is pre-fix material and
+about four of its six panels carry the blurred band. The file stays in the
+repository as evidence of the defect, but the front page no longer shows a bug
+as a showcase. One clean showcase remains, `showcase_icecream`. Restoring a
+six-template strip needs the live run, not a retouch.
+
+**MediaPipe: the library's licence is settled, the weights' is not.** Read from
+the installed distribution's own metadata on this machine, not from a web page:
+mediapipe 1.0.0 declares **Apache-2.0**, OSI-approved, and ships LICENSE and
+NOTICE in its dist-info. Two things that metadata does not settle, both now
+written next to the code in `pose.py`: the NOTICE is a privacy notice about the
+input data the tasks process, which is a product question for a service that
+receives clients' photographs; and `pose_landmarker_lite.task` is a separate
+artefact fetched from Google's storage whose terms nobody has read. The weights
+stay UNVERIFIED.
+
+And the guess that prompted the check — that pose is a leftover from the engine
+before the fork, called "just because" — does not hold. It is on the paid path:
+`fork_e2e._read_pose` → `fork_looper.read_pose` → `pose.landmarks`, feeding the
+driving card and the person-in-plan check, both of which run BEFORE the money
+is spent. It is an optional extra (`pose = ["mediapipe"]`), so without it those
+two checks answer "could not measure" rather than failing — which is the
+correct degradation, and also the reason nobody noticed it was load-bearing.
