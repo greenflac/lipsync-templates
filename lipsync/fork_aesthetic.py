@@ -473,7 +473,7 @@ def accept(*, made, demo, distances=None) -> dict:
             **tally(0, 0, 1),
             "median": med,
             "seconds": round(time.perf_counter() - t0, 3),
-            "note": f"identity NOT MEASURED: {str(d.get('note'))[:200]}",
+            "note": f"identity NOT MEASURED: {d.get('note')}",
         }
     if med <= SAME_PERSON_MAX:
         return {

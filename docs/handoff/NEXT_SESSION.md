@@ -89,9 +89,10 @@ secret in any of the 630 objects in the repository's history.
 Four findings are new. They are listed first because nothing else in this
 handoff is unknown.
 
-### 6.1 A repair that hides a breakage — fix this first
+### 6.1 A repair that hides a breakage — CLOSED, see the note at the end
 
-`fork_e2e.similarity_source()` names the instrument by whether it *imports*,
+`fork_e2e.similarity_source()` — since removed — named the instrument by
+whether it *imported*,
 not by which branch actually ran. The auditor planted a `creative_eval` that
 imports and then throws: the report named
 `creative_eval.style.similarity (external, shipped)` while the number came
@@ -155,3 +156,37 @@ on 39 constants across 12 modules. The reason is written down in this file, so
 the drift is explained rather than silent — but a branch named for a frame
 format now carries 463 lines about where constants came from. Worth splitting
 if it ever goes to review as a unit.
+
+## 7. The showcase in the README is pre-fix material — do not ship it
+
+Measured on 2026-08-28 by opening the files, not by a metric.
+
+`docs/img/family.png` is the six-template strip the README shows on every
+branch including main. Enlarged 2x and looked at: roughly four of its six
+panels carry the blurred band at top and bottom — the same defect this branch
+exists to remove, and the same "four out of six" the owner reported when the
+investigation started. The README's own showcase advertises the bug.
+
+The source is worse than the strip. The six shipped clips live in the retired
+engine's tree, `ball-reel/work/six/<name>/final.mp4`, six files, 720x1280, 300
+frames, made 2026-08-23 — before the fix. Cropping 150px off the top and the
+bottom of `midcentury`, `fisheye` and `country` at original resolution and
+looking at the result: every one of the six strips is a blurred smear, not
+image content. A contact sheet built from their first frames shows the same
+thing at a glance.
+
+So there is no clean demo material anywhere. The fix is in the code and has
+never been run against the service, which means the live run in §1 is not only
+how the three questions get answered — it is also the only way to produce a
+showcase that does not display the defect.
+
+Until then: `family.png` stays as it is rather than being cropped or retouched
+(a retouched showcase of a fixed bug is a different kind of lie), and no new
+demo media goes into the repository. The six clips are 26 MB in total and exist
+in exactly one copy, on an ephemeral container; they were handed to the owner
+as files.
+
+Note on where the evidence was: all of it sat in `ball-reel`, the engine
+declared retired. It was excluded from an evidence search once before and that
+cost a wrong correction; this time it held the artefacts that settled the
+`KLING_OUT_SIZE` / `FRAME` contradiction as well.

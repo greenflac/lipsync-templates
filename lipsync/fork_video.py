@@ -84,7 +84,7 @@ def read_probe(path) -> dict:
             "code": None,
             "out": "",
             "err": "",
-            "why": f"{FFPROBE_BIN} did not run to completion: {str(exc)[:120]}",
+            "why": f"{FFPROBE_BIN} did not run to completion: {exc}",
         }
     return {
         "ran": True,
@@ -124,7 +124,7 @@ def run_decode(argv) -> dict:
             "code": None,
             "out": "",
             "err": "",
-            "why": f"{FFMPEG_BIN} did not run to completion: {str(exc)[:120]}",
+            "why": f"{FFMPEG_BIN} did not run to completion: {exc}",
         }
     return {
         "ran": True,
@@ -154,7 +154,7 @@ def parse_probe(text: str) -> dict:
     except (ValueError, TypeError):
         return {
             "ok": False,
-            "why": f"the ffprobe answer did not parse as JSON: {(text or '')[:120]!r}",
+            "why": f"the ffprobe answer did not parse as JSON: {(text or '')!r}",
         }
     if not isinstance(data, dict):
         return {"ok": False, "why": f"expected an object, got {type(data).__name__}"}
@@ -363,7 +363,7 @@ def probe(video_path, *, prober=None) -> dict:
         return _probe_report(
             FAIL,
             f"{FFPROBE_BIN} returned {raw['code']}: "
-            f"{(raw.get('err') or '').strip()[:200] or 'no explanation'}",
+            f"{(raw.get('err') or '').strip() or 'no explanation'}",
             t,
         )
     parsed = parse_probe(raw.get("out") or "")
@@ -519,7 +519,7 @@ def frames(
     if got.get("code"):
         note = (
             f"{FFMPEG_BIN} returned {got['code']}: "
-            f"{(got.get('err') or '').strip()[:200] or 'no explanation'}. "
+            f"{(got.get('err') or '').strip() or 'no explanation'}. "
             f"Frames written {written}, expected {expected}"
         )
         steps.append(("decode", FAIL, note, dec_elapsed))

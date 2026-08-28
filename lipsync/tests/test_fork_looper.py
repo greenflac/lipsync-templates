@@ -4,14 +4,31 @@ from __future__ import annotations
 
 import json
 import math
+import sys
 import tempfile
+import types
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from .. import framemath
 from .. import pose
 from .. import fork_looper as fl
 from ..fork_identity import FAIL, PASS, UNMEASURED
+
+# C2: evidence is not truncated. Markers sit at BOTH ends because `[:N]` cuts
+# the tail and `[-N:]` cuts the head — a test with one marker passes on half
+# the defects.
+EVIDENCE_HEAD = "HEADMARK_e3f1"
+EVIDENCE_TAIL = "TAILMARK_9b27"
+LONG_EVIDENCE = EVIDENCE_HEAD + " " + ("filler " * 90) + EVIDENCE_TAIL
+SHORT_EVIDENCE = "no such file"
+
+
+def ends_kept(text: str) -> bool:
+    """Return True when both ends of `LONG_EVIDENCE` survived into `text`."""
+    return EVIDENCE_HEAD in str(text) and EVIDENCE_TAIL in str(text)
+
 
 PERIOD = 44
 NFRAMES = 96
@@ -1610,6 +1627,111 @@ class TwoQueues(unittest.TestCase):
             got["dropped_head"],
             "it was the head that made these bridges long",
         )
+
+
+class EvidenceMarkers(unittest.TestCase):
+    """Negative control for the instrument the whole-evidence tests use."""
+
+    def test_the_marker_check_notices_a_cut_at_either_end(self):
+        self.assertGreater(len(LONG_EVIDENCE), 200)
+        self.assertTrue(ends_kept(LONG_EVIDENCE))
+        self.assertFalse(ends_kept(LONG_EVIDENCE[:200]), "a cut tail must be seen")
+        self.assertFalse(ends_kept(LONG_EVIDENCE[-120:]), "a cut head must be seen")
+
+    def test_a_short_reason_carries_neither_marker_and_the_check_stays_silent(self):
+        self.assertFalse(ends_kept(SHORT_EVIDENCE))
+
+
+def _fake_channels(text):
+    """Return a sys.modules entry whose `wholebody_points` raises `text`."""
+
+    def wholebody_points(path):
+        raise RuntimeError(text)
+
+    mod = types.ModuleType("lipsync.fork_channels")
+    mod.wholebody_points = wholebody_points
+    return {"lipsync.fork_channels": mod}
+
+
+class WholeEvidence(unittest.TestCase):
+    """C2: what the pose and head readers said reaches the report whole."""
+
+    def test_a_pose_reader_crash_carries_the_whole_reason(self):
+        with mock.patch.object(fl.pose, "landmarks", side_effect=RuntimeError(LONG_EVIDENCE)):
+            got = fl.read_pose("frame.png")
+        self.assertIsNone(got["points"])
+        self.assertTrue(ends_kept(got["why"]), got["why"])
+
+    def test_a_short_pose_reader_crash_arrives_unchanged(self):
+        with mock.patch.object(fl.pose, "landmarks", side_effect=RuntimeError(SHORT_EVIDENCE)):
+            got = fl.read_pose("frame.png")
+        self.assertTrue(got["why"].endswith(SHORT_EVIDENCE), got["why"])
+
+    def test_a_head_reader_crash_carries_the_whole_reason(self):
+        with mock.patch.dict(sys.modules, _fake_channels(LONG_EVIDENCE)):
+            got = fl.read_head("frame.png")
+        self.assertIsNone(got["head"])
+        self.assertTrue(ends_kept(got["why"]), got["why"])
+
+    def test_a_short_head_reader_crash_arrives_unchanged(self):
+        with mock.patch.dict(sys.modules, _fake_channels(SHORT_EVIDENCE)):
+            got = fl.read_head("frame.png")
+        self.assertTrue(got["why"].endswith(SHORT_EVIDENCE), got["why"])
+
+
+class SeamFrameSample(unittest.TestCase):
+    """E3: the cut note lists a sample and says how big the sample is."""
+
+    def _cuts(self, n_cuts):
+        import numpy as np
+
+        # One quiet step, then a jump, repeated: the median stays at the quiet
+        # step, so every jump clears the bar and is counted as a cut.
+        steps = [1.0, 1.0, 100.0] * n_cuts
+        values, acc = [0.0], 0.0
+        for d in steps:
+            acc += d
+            values.append(acc)
+
+        def gray(path):
+            return np.full((2, 2), values[int(path)], dtype=float)
+
+        return fl.cuts([str(i) for i in range(len(values))], gray=gray)
+
+    def test_a_clipped_list_of_seam_frames_says_how_many_of_how_many(self):
+        got = self._cuts(15)
+        self.assertEqual(len(got["cuts"]), 15)
+        self.assertIn("first 10 of 15", got["note"])
+
+    def test_a_list_that_fits_is_not_announced_as_a_sample_of_something_bigger(self):
+        got = self._cuts(3)
+        self.assertEqual(len(got["cuts"]), 3)
+        self.assertIn("first 3 of 3", got["note"])
+
+    def test_a_clip_without_cuts_says_nothing_about_seam_frames(self):
+        import numpy as np
+
+        got = fl.cuts([str(i) for i in range(6)], gray=lambda p: np.full((2, 2), float(p)))
+        self.assertEqual(got["cuts"], [])
+        self.assertNotIn("seam frames", got["note"])
+
+
+class GifSampleSize(unittest.TestCase):
+    """E3: a thinned GIF says how many frames of how many it holds."""
+
+    def test_a_thinned_gif_names_the_loop_it_was_thinned_from(self):
+        m = Material(loop_sequence(46), size=(800, 600))
+        out = Path(tempfile.mkdtemp(prefix="looper_gif_of_")) / "loop.gif"
+        got = fl.make_gif(m.paths(), 0, 44, out)
+        self.assertEqual(got["frames"], 22)
+        self.assertEqual(got["of_frames"], 44)
+
+    def test_a_gif_that_was_not_thinned_reports_the_same_two_numbers(self):
+        m = Material(loop_sequence(46), size=(800, 600))
+        out = Path(tempfile.mkdtemp(prefix="looper_gif_of_")) / "short.gif"
+        got = fl.make_gif(m.paths(), 10, 22, out)
+        self.assertEqual(got["frames"], 12)
+        self.assertEqual(got["of_frames"], 12)
 
 
 if __name__ == "__main__":

@@ -91,7 +91,7 @@ def read_pose(path) -> dict:
     try:
         return {"points": pose.landmarks(path), "why": "", "people": None}
     except Exception as exc:  # noqa: BLE001 — deliberately broad: any failure means we could not ask
-        return {"points": None, "why": f"{type(exc).__name__}: {str(exc)[:200]}"}
+        return {"points": None, "why": f"{type(exc).__name__}: {exc}"}
 
 
 def read_gray(path):
@@ -121,7 +121,7 @@ def read_head(path) -> dict:
         x1, x2, y1, y2 = box
         return {"head": ((x1 + x2) / 2.0, (y1 + y2) / 2.0), "why": ""}
     except Exception as exc:  # noqa: BLE001 — see `read_pose`: deliberately broad for the same reason
-        return {"head": None, "why": f"{type(exc).__name__}: {str(exc)[:200]}"}
+        return {"head": None, "why": f"{type(exc).__name__}: {exc}"}
 
 
 def _head_at(paths, k, *, reader, cache) -> dict:
@@ -248,6 +248,9 @@ def cuts(paths, *, gray=None, jump=None) -> dict:
         }
     found = [k for k, v in enumerate(steps) if v / med > jump]
     worst = max(steps) / med
+    # A sample, not the list: the note says how many of how many it shows.
+    # CHOSEN: ten frame numbers keep the note to one line; "cuts" carries all.
+    shown = found[:10]
     return {
         "outcome": PASS,
         "cuts": found,
@@ -258,7 +261,8 @@ def cuts(paths, *, gray=None, jump=None) -> dict:
         "note": (
             f"cuts found {len(found)} across {len(steps)} transitions "
             f"(bar {jump}x the typical jump, sharpest transition "
-            f"{worst:.2f}x)" + (f"; seam frames: {found[:10]}" if found else "")
+            f"{worst:.2f}x)"
+            + (f"; seam frames, first {len(shown)} of {len(found)}: {shown}" if found else "")
         ),
     }
 
@@ -809,6 +813,9 @@ def make_gif(paths, i, j, out_path, *, fps=None, max_frames=None, max_side=None)
     return {
         "path": str(out_path),
         "frames": len(idx),
+        # E3: "frames 24" alone reads as the whole loop. The loop's own length
+        # sits beside it, so a thinned GIF cannot be mistaken for a full one.
+        "of_frames": max(0, j - i),
         "bytes": out_path.stat().st_size,
         "stride": stride,
         "size": frames_img[0].size,

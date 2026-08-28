@@ -501,6 +501,41 @@ class TheStyleVerdictNamesTheDeviceThatProducedIt(unittest.TestCase):
             within = self._acceptance()["numbers"]["style_instrument"]
         self.assertNotEqual(without, within)
 
+    def _broken_external(self):
+        """The case that ships: the package imports and then throws on the call."""
+        import sys
+        import types
+
+        def _throws(a, b):
+            raise RuntimeError(self.BOOM)
+
+        pkg = types.ModuleType("creative_eval")
+        style = types.ModuleType("creative_eval.style")
+        style.similarity = _throws
+        pkg.style = style
+        return mock.patch.dict(sys.modules, {"creative_eval": pkg, "creative_eval.style": style})
+
+    BOOM = "model weights corrupt: checksum mismatch on style.bin"
+
+    def test_a_broken_external_is_named_as_the_fallback_and_says_why(self):
+        """Breakage and repair are two facts, and the stage must carry both."""
+        with self._broken_external():
+            got = self._acceptance()
+        instrument = got["numbers"]["style_instrument"]
+        self.assertIn("palette_similarity", instrument)
+        self.assertNotIn("creative_eval", instrument)
+        self.assertIn(self.BOOM, instrument)
+        self.assertIn(instrument, " ".join(c["note"] for c in got["checks"]))
+
+    def test_a_broken_external_does_not_read_as_an_absent_one(self):
+        """Three outcomes, not two: broken and missing are different repairs."""
+        with self._broken_external():
+            broken = self._acceptance()["numbers"]["style_instrument"]
+        with self._hidden_external():
+            absent = self._acceptance()["numbers"]["style_instrument"]
+        self.assertNotEqual(broken, absent)
+        self.assertNotIn(self.BOOM, absent)
+
     def test_an_injected_device_is_never_reported_as_the_shipped_one(self):
         """The name comes from what will run, not from what the default would be."""
         got = self._acceptance(similarity=_similarity_ok)

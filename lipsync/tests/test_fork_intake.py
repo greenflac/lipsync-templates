@@ -2,10 +2,26 @@
 
 from __future__ import annotations
 
+import sys
+import types
 import unittest
+from unittest import mock
 
 from lipsync import fork_intake as fi
 from lipsync.fork_identity import FAIL, PASS, UNMEASURED
+
+# C2: evidence is not truncated. Markers sit at BOTH ends because `[:N]` cuts
+# the tail and `[-N:]` cuts the head — a test with one marker passes on half
+# the defects, which is how the last cut here survived a green suite.
+EVIDENCE_HEAD = "HEADMARK_e3f1"
+EVIDENCE_TAIL = "TAILMARK_9b27"
+LONG_EVIDENCE = EVIDENCE_HEAD + " " + ("filler " * 90) + EVIDENCE_TAIL
+SHORT_EVIDENCE = "no such file"
+
+
+def ends_kept(text: str) -> bool:
+    """Return True when both ends of `LONG_EVIDENCE` survived into `text`."""
+    return EVIDENCE_HEAD in str(text) and EVIDENCE_TAIL in str(text)
 
 
 PROBE_JSON = (
@@ -684,3 +700,126 @@ class EveryInjectionPointIsAParameter(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class EvidenceMarkers(unittest.TestCase):
+    """Negative control for the instrument the whole-evidence tests use."""
+
+    def test_the_marker_check_notices_a_cut_at_either_end(self):
+        self.assertGreater(len(LONG_EVIDENCE), 200)
+        self.assertTrue(ends_kept(LONG_EVIDENCE))
+        self.assertFalse(ends_kept(LONG_EVIDENCE[:200]), "a cut tail must be seen")
+        self.assertFalse(ends_kept(LONG_EVIDENCE[-120:]), "a cut head must be seen")
+
+    def test_a_short_reason_carries_neither_marker_and_the_check_stays_silent(self):
+        self.assertFalse(ends_kept(SHORT_EVIDENCE))
+
+
+def _fake_style_module(text):
+    """Return sys.modules entries whose `style_card` raises `text`."""
+
+    def style_card(path):
+        raise RuntimeError(text)
+
+    mod = types.ModuleType("creative_eval.style")
+    mod.style_card = style_card
+    pkg = types.ModuleType("creative_eval")
+    pkg.style = mod
+    return {"creative_eval": pkg, "creative_eval.style": mod}
+
+
+class WholeEvidence(unittest.TestCase):
+    """C2: what the outside world said reaches the report head and tail."""
+
+    def _launch_failure(self, fn, text, **kw):
+        with (
+            mock.patch.object(fi.shutil, "which", return_value="/usr/bin/ff"),
+            mock.patch.object(fi.subprocess, "run", side_effect=OSError(text)),
+        ):
+            return fn("driving.mp4", **kw)
+
+    def test_a_ffprobe_launch_failure_carries_the_whole_reason(self):
+        got = self._launch_failure(fi.read_count_frames, LONG_EVIDENCE)
+        self.assertFalse(got["ran"])
+        self.assertTrue(ends_kept(got["why"]), got["why"])
+
+    def test_a_short_ffprobe_launch_failure_arrives_unchanged(self):
+        got = self._launch_failure(fi.read_count_frames, SHORT_EVIDENCE)
+        self.assertTrue(got["why"].endswith(SHORT_EVIDENCE), got["why"])
+
+    def test_a_ffmpeg_launch_failure_carries_the_whole_reason(self):
+        got = self._launch_failure(fi.read_decoded_frames, LONG_EVIDENCE, vsync0=True)
+        self.assertFalse(got["ran"])
+        self.assertTrue(ends_kept(got["why"]), got["why"])
+
+    def test_a_short_ffmpeg_launch_failure_arrives_unchanged(self):
+        got = self._launch_failure(fi.read_decoded_frames, SHORT_EVIDENCE, vsync0=True)
+        self.assertTrue(got["why"].endswith(SHORT_EVIDENCE), got["why"])
+
+    def test_a_face_reader_crash_carries_the_whole_reason(self):
+        from lipsync import identity_arcface
+
+        with mock.patch.object(
+            identity_arcface, "_analyzer", side_effect=RuntimeError(LONG_EVIDENCE)
+        ):
+            got = fi.read_faces("photo.png")
+        self.assertIsNone(got["faces"])
+        self.assertTrue(ends_kept(got["why"]), got["why"])
+
+    def test_a_short_face_reader_crash_arrives_unchanged(self):
+        from lipsync import identity_arcface
+
+        with mock.patch.object(
+            identity_arcface, "_analyzer", side_effect=RuntimeError(SHORT_EVIDENCE)
+        ):
+            got = fi.read_faces("photo.png")
+        self.assertTrue(got["why"].endswith(SHORT_EVIDENCE), got["why"])
+
+    def test_a_style_card_crash_carries_the_whole_reason(self):
+        with mock.patch.dict(sys.modules, _fake_style_module(LONG_EVIDENCE)):
+            got = fi.read_style_card("ref.png")
+        self.assertIsNone(got["card"])
+        self.assertTrue(ends_kept(got["why"]), got["why"])
+
+    def test_a_short_style_card_crash_arrives_unchanged(self):
+        with mock.patch.dict(sys.modules, _fake_style_module(SHORT_EVIDENCE)):
+            got = fi.read_style_card("ref.png")
+        self.assertTrue(got["why"].endswith(SHORT_EVIDENCE), got["why"])
+
+    def test_an_unparsable_ffprobe_answer_is_quoted_whole(self):
+        got = fi.parse_count_frames(LONG_EVIDENCE)
+        self.assertFalse(got["ok"])
+        self.assertTrue(ends_kept(got["why"]), got["why"])
+
+    def test_a_short_unparsable_ffprobe_answer_is_quoted_whole(self):
+        got = fi.parse_count_frames(SHORT_EVIDENCE)
+        self.assertIn(SHORT_EVIDENCE, got["why"])
+
+    def test_a_ffmpeg_answer_without_a_frame_line_is_quoted_from_its_head(self):
+        # This one was cut with `[-120:]`: the HEAD was the missing end, and a
+        # test that plants its marker in the tail passes on the defect.
+        got = fi.parse_decoded_frames(LONG_EVIDENCE)
+        self.assertFalse(got["ok"])
+        self.assertTrue(ends_kept(got["why"]), got["why"])
+
+    def test_a_short_ffmpeg_answer_without_a_frame_line_is_quoted_whole(self):
+        got = fi.parse_decoded_frames(SHORT_EVIDENCE)
+        self.assertIn(SHORT_EVIDENCE, got["why"])
+
+
+class ShortSceneSample(unittest.TestCase):
+    """E3: the note lists a sample and says how big the sample is."""
+
+    def _verdict(self, n_short):
+        scene_list = [{"frames": 1} for _ in range(n_short)] + [{"frames": 300}]
+        return fi.scene_length_verdict(scene_list, 30.0)
+
+    def test_a_clipped_list_of_short_scenes_says_how_many_of_how_many(self):
+        got = self._verdict(25)
+        self.assertEqual(got["violations"], 25)
+        self.assertIn("first 10 of 25", got["note"])
+        self.assertEqual(len(got["short"]), 25)
+
+    def test_a_list_that_fits_is_not_announced_as_a_sample_of_something_bigger(self):
+        got = self._verdict(3)
+        self.assertIn("first 3 of 3", got["note"])

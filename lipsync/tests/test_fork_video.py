@@ -6,9 +6,24 @@ import ast
 import base64
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from lipsync import fork_video as fv
 from lipsync.fork_identity import FAIL, PASS, UNMEASURED
+
+# C2: evidence is not truncated. Markers sit at BOTH ends because `[:N]` cuts
+# the tail and `[-N:]` cuts the head — a test with one marker passes on half
+# the defects.
+EVIDENCE_HEAD = "HEADMARK_e3f1"
+EVIDENCE_TAIL = "TAILMARK_9b27"
+LONG_EVIDENCE = EVIDENCE_HEAD + " " + ("filler " * 90) + EVIDENCE_TAIL
+SHORT_EVIDENCE = "no such file"
+
+
+def ends_kept(text: str) -> bool:
+    """Return True when both ends of `LONG_EVIDENCE` survived into `text`."""
+    return EVIDENCE_HEAD in str(text) and EVIDENCE_TAIL in str(text)
+
 
 ONE_PIXEL_PNG = base64.b64decode(
     b"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAAAAAA6fptVAAAACklEQVR4nGNgAAAAAgABc3UBGAAAAABJRU5ErkJggg=="
@@ -650,6 +665,96 @@ class EntryPoint(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as d:
             self.assertEqual(fv.main(["frames", "/no/such/file.mp4", f"{d}/frames"]), 1)
+
+
+class EvidenceMarkers(unittest.TestCase):
+    """Negative control for the instrument the whole-evidence tests use."""
+
+    def test_the_marker_check_notices_a_cut_at_either_end(self):
+        self.assertGreater(len(LONG_EVIDENCE), 200)
+        self.assertTrue(ends_kept(LONG_EVIDENCE))
+        self.assertFalse(ends_kept(LONG_EVIDENCE[:200]), "a cut tail must be seen")
+        self.assertFalse(ends_kept(LONG_EVIDENCE[-120:]), "a cut head must be seen")
+
+    def test_a_short_reason_carries_neither_marker_and_the_check_stays_silent(self):
+        self.assertFalse(ends_kept(SHORT_EVIDENCE))
+
+
+class WholeEvidence(unittest.TestCase):
+    """C2: what ffprobe and ffmpeg said reaches the report head and tail."""
+
+    def setUp(self):
+        import tempfile
+
+        self.tmp = Path(tempfile.mkdtemp(prefix="fork_video_evidence_"))
+        self.src = _video(self.tmp)
+        self.out = self.tmp / "frames"
+
+    def tearDown(self):
+        import shutil
+
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def _launch_failure(self, fn, text, arg):
+        with (
+            mock.patch.object(fv.shutil, "which", return_value="/usr/bin/ff"),
+            mock.patch.object(fv.subprocess, "run", side_effect=OSError(text)),
+        ):
+            return fn(arg)
+
+    def test_a_ffprobe_launch_failure_carries_the_whole_reason(self):
+        got = self._launch_failure(fv.read_probe, LONG_EVIDENCE, self.src)
+        self.assertFalse(got["ran"])
+        self.assertTrue(ends_kept(got["why"]), got["why"])
+
+    def test_a_short_ffprobe_launch_failure_arrives_unchanged(self):
+        got = self._launch_failure(fv.read_probe, SHORT_EVIDENCE, self.src)
+        self.assertTrue(got["why"].endswith(SHORT_EVIDENCE), got["why"])
+
+    def test_a_ffmpeg_launch_failure_carries_the_whole_reason(self):
+        got = self._launch_failure(fv.run_decode, LONG_EVIDENCE, ["ffmpeg"])
+        self.assertFalse(got["ran"])
+        self.assertTrue(ends_kept(got["why"]), got["why"])
+
+    def test_a_short_ffmpeg_launch_failure_arrives_unchanged(self):
+        got = self._launch_failure(fv.run_decode, SHORT_EVIDENCE, ["ffmpeg"])
+        self.assertTrue(got["why"].endswith(SHORT_EVIDENCE), got["why"])
+
+    def test_an_unparsable_ffprobe_answer_is_quoted_whole(self):
+        got = fv.parse_probe(LONG_EVIDENCE)
+        self.assertFalse(got["ok"])
+        self.assertTrue(ends_kept(got["why"]), got["why"])
+
+    def test_a_short_unparsable_ffprobe_answer_is_quoted_whole(self):
+        self.assertIn(SHORT_EVIDENCE, fv.parse_probe(SHORT_EVIDENCE)["why"])
+
+    def test_a_failing_ffprobe_carries_its_whole_stderr_into_the_probe_note(self):
+        got = fv.probe(self.src, prober=_Prober(code=1, out="{}", err=LONG_EVIDENCE))
+        self.assertEqual(got["outcome"], FAIL)
+        self.assertTrue(ends_kept(got["note"]), got["note"])
+
+    def test_a_short_ffprobe_stderr_reaches_the_probe_note_unchanged(self):
+        got = fv.probe(self.src, prober=_Prober(code=1, out="{}", err=SHORT_EVIDENCE))
+        self.assertIn(SHORT_EVIDENCE, got["note"])
+
+    def test_a_failing_ffmpeg_carries_its_whole_stderr_into_the_frames_note(self):
+        rep = fv.frames(
+            self.src,
+            self.out,
+            prober=_Prober(out=_probe_json()),
+            decoder=_Decoder(0, code=DECODE_RC_BROKEN, err=LONG_EVIDENCE),
+        )
+        self.assertEqual(rep["outcome"], FAIL)
+        self.assertTrue(ends_kept(rep["note"]), rep["note"])
+
+    def test_a_short_ffmpeg_stderr_reaches_the_frames_note_unchanged(self):
+        rep = fv.frames(
+            self.src,
+            self.out,
+            prober=_Prober(out=_probe_json()),
+            decoder=_Decoder(0, code=DECODE_RC_BROKEN, err=SHORT_EVIDENCE),
+        )
+        self.assertIn(SHORT_EVIDENCE, rep["note"])
 
 
 if __name__ == "__main__":  # pragma: no cover

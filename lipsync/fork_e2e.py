@@ -49,14 +49,26 @@ KLING_LATENCY_S = (107.4, 190.0)
 
 KLING_WAIT_S = 1520
 
-#: MEASURED by ffprobe on the eight live orders placed up to 2026-08-22: every
-#: one came back 960x960. Kept as a RECORD OF WHAT ARRIVED and not as a
-#: requirement — a later live order returned 816x1104 once the input photo was
-#: vertical, and the geometry check gates on `OUT_RATIO_MAX` for that reason.
-#: Nothing branches on this pair; it only lets the note say whether the
-#: geometry is the familiar one. The reading is corroborated where the crop
-#: lives: `test_fork_finish` carries the ffprobe answer for a 960x960 clip and
-#: expects it cropped to 540x960.
+#: MEASURED by ffprobe over every Kling output still on disk, 2026-08-28.
+#: The model has NO fixed output size — it follows the geometry of what it is
+#: given, and this pair is a record of what we were feeding it, not a property
+#: of the service:
+#:
+#:     2026-08-22   960x960    x4     (square references)
+#:     2026-08-22   816x1104   x3     (a 768x1024 photo went in)
+#:     2026-08-22   576x1024   x1
+#:     2026-08-23   720x1280   x7     (after the pipeline was made vertical)
+#:
+#: On the seven clips of 2026-08-23, `kling_out.mp4` and `final.mp4` are the
+#: same size: the crop had nothing to cut. That is why `fork_plan.FRAME`
+#: reads (720, 1280) and this reads (960, 960) without either being wrong —
+#: they are two different days of input. The two were carried as
+#: contradicting MEASURED claims about the same fact until the artefacts were
+#: measured; the artefacts had been sitting in the retired engine's tree the
+#: whole time, which is the reason a retired repository is still evidence.
+#:
+#: Nothing branches on this pair. It only lets the note say whether the
+#: geometry is one we have seen before; the gate is `OUT_RATIO_MAX`.
 KLING_OUT_SIZE = (960, 960)
 #: MEASURED on those same eight orders, and unlike the size this one IS a gate:
 #: the audio assembly counts frames at 30, so any other rate leaves the output

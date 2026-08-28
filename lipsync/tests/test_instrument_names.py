@@ -43,7 +43,7 @@ class _Planted:
 
     def __init__(self, behaviour) -> None:
         self.behaviour = behaviour
-        self.saved: dict[str, object] = {}
+        self.saved: dict[str, types.ModuleType | None] = {}
 
     def __enter__(self):
         pkg = types.ModuleType("creative_eval")
@@ -119,7 +119,8 @@ class TheNameFollowsWhatRan(unittest.TestCase):
             value, name = self._report(self.left, self.right)
         self.assertIn(EXTERNAL, name, f"the working external is not named: {name!r}")
         self.assertNotIn(BOOM, name)
-        self.assertAlmostEqual(float(value), 0.9123, places=4)
+        self.assertIsNotNone(value)
+        self.assertAlmostEqual(float(value or 0.0), 0.9123, places=4)
 
     def test_an_absent_external_still_reads_as_the_fallback(self) -> None:
         """The other side: absence and breakage are both fallbacks, and the

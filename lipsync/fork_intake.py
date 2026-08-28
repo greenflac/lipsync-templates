@@ -91,7 +91,7 @@ def read_count_frames(path) -> dict:
             "code": None,
             "out": "",
             "err": "",
-            "why": f"{fork_video.FFPROBE_BIN} did not run to completion: {str(exc)[:120]}",
+            "why": f"{fork_video.FFPROBE_BIN} did not run to completion: {exc}",
         }
     return {
         "ran": True,
@@ -152,7 +152,7 @@ def read_decoded_frames(path, *, vsync0: bool) -> dict:
             "code": None,
             "out": "",
             "err": "",
-            "why": f"{fork_video.FFMPEG_BIN} did not run to completion: {str(exc)[:120]}",
+            "why": f"{fork_video.FFMPEG_BIN} did not run to completion: {exc}",
         }
     return {
         "ran": True,
@@ -178,7 +178,7 @@ def read_faces(path) -> dict:
         out.sort(key=lambda d: d["face_px"], reverse=True)
         return {"faces": out, "why": ""}
     except Exception as exc:  # noqa: BLE001 — many ways for "nothing to ask with" to happen
-        return {"faces": None, "why": f"{type(exc).__name__}: {str(exc)[:200]}"}
+        return {"faces": None, "why": f"{type(exc).__name__}: {exc}"}
 
 
 def read_style_card(path) -> dict:
@@ -188,7 +188,7 @@ def read_style_card(path) -> dict:
 
         return {"card": style_card(str(path)), "why": ""}
     except Exception as exc:  # noqa: BLE001
-        return {"card": None, "why": f"{type(exc).__name__}: {str(exc)[:200]}"}
+        return {"card": None, "why": f"{type(exc).__name__}: {exc}"}
 
 
 def tally(checked: int, violations: int, unmeasured: int) -> dict:
@@ -221,7 +221,7 @@ def parse_count_frames(text: str) -> dict:
             "frames": None,
             "fps": None,
             "seconds": None,
-            "why": (f"the ffprobe answer did not parse as JSON: {(text or '')[:120]!r}"),
+            "why": (f"the ffprobe answer did not parse as JSON: {(text or '')!r}"),
         }
     streams = (data or {}).get("streams") or []
     if not streams:
@@ -274,8 +274,8 @@ def parse_decoded_frames(text: str) -> dict:
             "frames": None,
             "why": (
                 f"not a single `frame=` in the ffmpeg answer: how many "
-                f"frames came out is unknown. Tail: "
-                f"{(text or '')[-120:]!r}"
+                f"frames came out is unknown. The answer: "
+                f"{(text or '')!r}"
             ),
         }
     return {"ok": True, "frames": int(hits[-1]), "why": ""}
@@ -381,6 +381,10 @@ def scene_length_verdict(
         }
     secs = [round(s["frames"] / fps, 3) for s in scene_list]
     short = [i for i, v in enumerate(secs) if v < bar]
+    # A sample, not the list: the note says how many of how many it shows, so
+    # a run with 300 short scenes cannot read as a run with 10. CHOSEN: ten
+    # indices keep the note to one line; the full list is in "short".
+    shown = short[:10]
     return {
         **tally(len(scene_list), len(short), 0),
         "bar_seconds": bar,
@@ -390,7 +394,8 @@ def scene_length_verdict(
             f"scenes {len(scene_list)}, bar {bar} s, below the bar "
             f"{len(short)}"
             + (
-                f": indices {short[:10]}, lengths {[secs[i] for i in short[:10]]}"
+                f": first {len(shown)} of {len(short)} — "
+                f"indices {shown}, lengths {[secs[i] for i in shown]}"
                 if short
                 else f"; shortest {min(secs)} s, longest {max(secs)} s"
             )
