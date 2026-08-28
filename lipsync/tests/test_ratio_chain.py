@@ -248,10 +248,10 @@ class TheOutpaintAsksForWhatItWants(unittest.TestCase):
             seen.update(kwargs)
             return "/dev/null/out.png"
 
-        with (
-            mock.patch.object(P, "pollinations", create=True),
-            mock.patch("lipsync.pollinations.images_edit", side_effect=fake_edit),
-        ):
+        # `fork_plan` now imports the gateway at module level, so the patch
+        # goes on the gateway itself; a second patch of the plan's own
+        # attribute would replace the module and swallow the call.
+        with mock.patch("lipsync.pollinations.images_edit", side_effect=fake_edit):
             try:
                 P.extend_to_plan("in.png", "out.png", sizer=lambda _: (1152, 2048))
             except Exception:  # noqa: BLE001 - the call is what is under test

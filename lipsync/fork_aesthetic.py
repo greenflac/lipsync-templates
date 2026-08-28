@@ -8,6 +8,7 @@ import time
 from pathlib import Path
 
 from .fork_identity import FAIL, PASS, SAME_PERSON_MAX, UNMEASURED
+from . import clauses, fork_plan
 
 BASE_PATH = Path(__file__).resolve().parent.parent / "assets" / "fork_aesthetics.json"
 
@@ -244,12 +245,7 @@ NEVER_THE_FACE_CLAUSE = (
 def assemble_prompt(*, legacy: bool = False, card=None) -> str:
     """Build the reference-assembly prompt. `legacy=True` gives the old stand lines."""
     if legacy:
-        from .fork_e2e import (
-            NO_LOOK_TRANSFER_CLAUSE,  # noqa: PLC0415
-            ROLE_CLAUSE,
-        )
-
-        return f"{ROLE_CLAUSE}. {NO_LOOK_TRANSFER_CLAUSE}. {no_brands_clause()}"
+        return f"{clauses.ROLE_CLAUSE}. {clauses.NO_LOOK_TRANSFER_CLAUSE}. {no_brands_clause()}"
     framing = framing_clause(card)
     tail = f" {framing}." if framing else ""
     return f"{AESTHETIC_ROLE_CLAUSE}. {NEVER_THE_FACE_CLAUSE}.{tail} {no_brands_clause()}"
@@ -392,16 +388,12 @@ def brand_conflict(aesthetic: dict) -> dict:
 
 
 def no_brands_clause() -> str:
-    """Return the lettering ban from its single source per project. The import is lazy."""
-    from .fork_e2e import NO_BRANDS_CLAUSE  # noqa: PLC0415
-
-    return NO_BRANDS_CLAUSE
+    """Return the lettering ban from its single source per project."""
+    return clauses.NO_BRANDS_CLAUSE
 
 
 def framing_clause(card) -> str:
     """Return the framing line built from the driving card."""
-    from . import fork_plan  # noqa: PLC0415
-
     return fork_plan.framing_clause(card)
 
 

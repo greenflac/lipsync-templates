@@ -8,9 +8,12 @@ import sys
 import time
 from pathlib import Path
 
+from .clauses import NO_BRANDS_CLAUSE, NO_LOOK_TRANSFER_CLAUSE, ROLE_CLAUSE
+from .frame import FRAME
 from .fork_identity import FAIL, PASS, UNMEASURED, SAME_PERSON_MAX
+from .fork_looper import FRAME_SUFFIXES
 from .fork_video import EXIT_BY_OUTCOME
-from . import fork_plan
+from . import fork_aesthetic, fork_plan, pollinations
 
 
 KLING_ENDPOINT = "fal-ai/kling-video/v2.6/standard/motion-control"
@@ -60,7 +63,7 @@ KLING_WAIT_S = 1520
 #:     2026-08-23   720x1280   x7     (after the pipeline was made vertical)
 #:
 #: On the seven clips of 2026-08-23, `kling_out.mp4` and `final.mp4` are the
-#: same size: the crop had nothing to cut. That is why `fork_plan.FRAME`
+#: same size: the crop had nothing to cut. That is why `frame.FRAME`
 #: reads (720, 1280) and this reads (960, 960) without either being wrong —
 #: they are two different days of input. The two were carried as
 #: contradicting MEASURED claims about the same fact until the artefacts were
@@ -74,11 +77,6 @@ KLING_OUT_SIZE = (960, 960)
 #: the audio assembly counts frames at 30, so any other rate leaves the output
 #: unjudgeable rather than bad.
 KLING_OUT_FPS = 30.0
-
-#: CHOSEN: the still-image suffixes our own frame dumps write, so that a frames
-#: directory can be read without picking up the report and the manifest lying
-#: beside them. No measurement stands behind the set.
-FRAME_SUFFIXES = {".png", ".jpg", ".jpeg"}
 
 #: CHOSEN 1.0 as a CEILING ("not landscape"), deliberately not the plan ratio.
 #: The first edition compared the output with `KLING_OUT_SIZE` and failed a live
@@ -118,14 +116,14 @@ STYLE_ROUTE = "pollinations.compose"
 #: hold, and one image cannot keep the two apart.
 STYLE_IMAGES = 2
 
-#: The size we ASK the styliser for: `fork_plan.FRAME`, taken rather than
+#: The size we ASK the styliser for: `frame.FRAME`, taken rather than
 #: restated. The reference and the clip must share one frame or the reference is
 #: padded on its way into the video model, and the frame the video model returns
 #: is what the plan measured. Both sides being multiples of 16 also matters —
 #: that is the grid the model MEASURABLY snaps to (asked 768x1024, it returned
 #: 896x1200 = 56x16 by 75x16) — but that is a property of the frame, checked
 #: where the frame is declared, not a second reason to write the number again.
-STYLED_SIZE = fork_plan.FRAME
+STYLED_SIZE = FRAME
 
 STYLE_HIT_REFERENCE = 0.8156
 STYLE_HIT_REJECTED = 0.8801
@@ -147,26 +145,6 @@ STYLE_MARGIN_MIN = 0.05
 #: threshold is `fork_looper.CUT_JUMP` and is read from there, never copied here.
 MAX_CUTS_OUT = 0
 
-#: CHOSEN by the owner and revised on 2026-08-22: ban the DRAWN mark and the
-#: lettering, not the brand word. The earlier wording opened with "no brand
-#: names" and so fought the owner's own prompts, which name "Adidas sneakers"
-#: and a "Balenciaga trench". A ban that argues with the prompt does not win,
-#: and that was MEASURED: on `y2k_f` no logo appeared, on `y2k_m` a readable
-#: "adidas" did — the outcome was settled by chance. Stage 2 checks the clause
-#: is present in the prompt, which is why the decision lives as a constant and
-#: not as a sentence in a document. No instrument here reads lettering off an
-#: image: that axis is judged by the owner's eye, and the acceptance says so.
-NO_BRANDS_CLAUSE = (
-    "no logo, no logos, no brand marks, no lettering or text anywhere in the frame or on clothing"
-)
-
-ROLE_CLAUSE = (
-    "keep the person from the FIRST image unchanged — same face, "
-    "same identity, same clothing, same pose, same accessories; "
-    "take ONLY the lighting, colour grade, background and "
-    "photographic look from the SECOND image"
-)
-
 #: MEASURED with ArcFace on our own material in one run, as three rungs: the
 #: same face after stylisation, the reference the owner rejected, and a known
 #: stranger (the driving actor against the client photo). One ladder, one place.
@@ -179,14 +157,6 @@ LADDER_SAME = 0.0652
 #: what the middle band exists to hold.
 LADDER_REJECTED = 0.7137
 LADDER_STRANGER = 1.0217
-
-
-NO_LOOK_TRANSFER_CLAUSE = (
-    "do not copy any garment, accessory, eyewear, "
-    "headwear, hairstyle or pose from the second "
-    "image; the second image is a colour and lighting "
-    "reference only"
-)
 
 STAGES = (
     "1 intake of three inputs",
@@ -458,8 +428,6 @@ def live_stylize(
     *, person, style, prompt: str, out_path, model: str = STYLE_MODEL, size=STYLED_SIZE
 ) -> str:
     """Stylize with two images through the measured winner. Goes to the network."""
-    from . import pollinations  # noqa: PLC0415
-
     urls = [pollinations.upload(person), pollinations.upload(style)]
     if len(urls) != STYLE_IMAGES:
         raise RuntimeError(f"expected exactly {STYLE_IMAGES} links, got {len(urls)}")
@@ -575,16 +543,12 @@ def style_prompt(style_ref, *, card_reader=None) -> dict:
 
 
 def _default_aesthetic():
-    """Return the aesthetic neighbour. The import is real, not by string: the module is called."""
-    from . import fork_aesthetic  # noqa: PLC0415
-
+    """Return the aesthetic neighbour, the one this stand calls when none is injected."""
     return fork_aesthetic
 
 
 def _default_plan():
     """Return the plan neighbour. Same reasoning as above."""
-    from . import fork_plan  # noqa: PLC0415
-
     return fork_plan
 
 

@@ -5,7 +5,11 @@ from __future__ import annotations
 import time
 from pathlib import Path
 
+# The frame is read, not declared: the gateway needs the same number, and a
+# gateway importing this module for it closed an import cycle.
+from .frame import FRAME
 from .fork_identity import FAIL, PASS, UNMEASURED
+from . import clauses, pollinations
 
 
 #: CHOSEN (by the product, out of the vertical feed's own standard): 9:16 is
@@ -15,14 +19,6 @@ from .fork_identity import FAIL, PASS, UNMEASURED
 #: sides, `fit_to_plan` and `exact_plan_box` reshape against it — so a second
 #: copy of the ratio anywhere would be a second thing to keep in step.
 PLAN_RATIO = 0.5625
-
-#: MEASURED 2026-08-23 on the six shipped clips: Kling returned exactly this
-#: size on every one of them, and all six final videos are this size too. It is
-#: therefore the frame the product actually delivers, not a frame we would like
-#: it to have. It is declared here, once, and every other size in the pipeline
-#: is derived from it: the 3:4 default outlived its removal on `compose` alone
-#: precisely because the two neighbouring routes held their own copies.
-FRAME = (720, 1280)
 
 #: CHOSEN. One pixel of rounding at our working heights (768..2752 px) moves the
 #: ratio by under 0.0005, so this bound admits an exact crop and nothing else.
@@ -53,7 +49,9 @@ WIDTH_MAX = 0.72
 
 from .fork_intake import MIN_FACE_PX  # noqa: E402
 
-MIN_VISIBILITY = 0.5
+# Borrowed, in the place the second copy used to stand: the bar belongs to
+# whoever reads a skeleton, and that is `pose`.
+from .pose import MIN_VISIBILITY  # noqa: E402
 
 #: MEASURED, and a record of a defect rather than of a requirement: this is what
 #: the styliser returned back when the call asked for 768x1024. It is 3:4, not
@@ -571,8 +569,6 @@ def extend_to_plan(src, dst, *, extender=None, sizer=None, size=EXTEND_SIZE) -> 
     if extender is None:
 
         def extender(prompt, source, out_path):
-            from . import pollinations  # noqa: PLC0415
-
             return pollinations.images_edit(
                 prompt,
                 source,
@@ -625,7 +621,5 @@ def extend_to_plan(src, dst, *, extender=None, sizer=None, size=EXTEND_SIZE) -> 
 
 
 def no_brands_clause() -> str:
-    """Return the brand ban from its single source per project: it lives in the stand."""
-    from .fork_e2e import NO_BRANDS_CLAUSE  # noqa: PLC0415
-
-    return NO_BRANDS_CLAUSE
+    """Return the brand ban from its single source per project."""
+    return clauses.NO_BRANDS_CLAUSE

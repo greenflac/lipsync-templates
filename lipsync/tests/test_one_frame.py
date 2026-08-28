@@ -23,6 +23,7 @@ import unittest
 
 from lipsync import fork_e2e as E
 from lipsync import fork_plan as P
+from lipsync import frame as FR
 from lipsync import pollinations as PO
 
 # MEASURED 2026-08-23: six shipped clips, six kling_out.mp4 and six final.mp4,
@@ -33,11 +34,14 @@ GRID = 16
 
 class ThereIsOneFrame(unittest.TestCase):
     def test_the_frame_is_declared_once_and_importable(self) -> None:
-        self.assertTrue(hasattr(P, "FRAME"), "the one frame must be named FRAME")
+        self.assertTrue(hasattr(FR, "FRAME"), "the one frame must be named FRAME")
+        self.assertEqual(tuple(FR.FRAME), DELIVERED)
+        self.assertTrue(hasattr(P, "FRAME"), "the plan must keep offering the name")
         self.assertEqual(tuple(P.FRAME), DELIVERED)
 
     def test_every_name_for_a_frame_is_the_same_frame(self) -> None:
         sizes = {
+            "frame.FRAME": tuple(FR.FRAME),
             "fork_plan.FRAME": tuple(P.FRAME),
             "pollinations.PLAN_SIZE": tuple(PO.PLAN_SIZE),
             "fork_e2e.STYLED_SIZE": tuple(E.STYLED_SIZE),
@@ -50,20 +54,29 @@ class ThereIsOneFrame(unittest.TestCase):
         )
 
     def test_moving_the_frame_moves_every_user_of_it(self) -> None:
-        """Imported, not copied: one edit must move them all."""
+        """Imported, not copied: one edit must move them all.
+
+        The declaration moved out of `fork_plan` into `frame` when the gateway
+        stopped reaching up into the plan for it, so the edit is made where the
+        frame is now declared. `fork_plan.FRAME` is one of the readers here and
+        no longer the source: a re-export that did not follow would be a second
+        frame under an old name, which is the very defect this class watches.
+        """
         import importlib
         from unittest import mock
 
-        with mock.patch.object(P, "FRAME", (1152, 2048)):
+        with mock.patch.object(FR, "FRAME", (1152, 2048)):
             moved = (
+                tuple(importlib.reload(P).FRAME),
                 tuple(importlib.reload(PO).PLAN_SIZE),
                 tuple(importlib.reload(E).STYLED_SIZE),
             )
+        importlib.reload(P)
         importlib.reload(PO)
         importlib.reload(E)
         self.assertEqual(
             moved,
-            ((1152, 2048), (1152, 2048)),
+            ((1152, 2048), (1152, 2048), (1152, 2048)),
             f"the frame was moved and these did not follow: {moved}",
         )
 

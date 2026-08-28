@@ -76,8 +76,11 @@ SCAN_TOO_LONG = "too long"
 
 EXIT_BY_OUTCOME = {PASS: 0, FAIL: 1, UNMEASURED: 2}
 
-#: CHOSEN: what counts as a frame in a directory. The list is closed on
-#: purpose — anything else sitting there is not silently taken for a frame.
+#: CHOSEN: what counts as a frame in a directory — the still-image suffixes
+#: our own frame dumps write. The list is closed on purpose: the report and the
+#: manifest lying beside the frames are not silently taken for frames. No
+#: measurement stands behind it. The stand reads this one rather than keeping
+#: its own, which it did until the two spellings disagreed by container.
 FRAME_SUFFIXES = (".png", ".jpg", ".jpeg")
 
 #: CHOSEN: first version of the pose cache format. It moves with the shape of
