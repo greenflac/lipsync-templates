@@ -134,6 +134,12 @@ python scripts/read_sources.py --check
 # The harvest, asserted rather than trusted. Reads the fact file and the
 # harvest file only -- no network -- and fails if a row is malformed or if the
 # harvest has drifted out of the base.
+# The access request must not silently drop a domain. A refused host in
+# neither a tier nor the exclusions would just vanish from the generated
+# request -- which is exactly how a needed vendor fails to get whitelisted.
+echo "== whitelist request classifies every refusal"
+python scripts/whitelist_request.py --check > /dev/null
+
 echo "== model ids still merged"
 python scripts/merge_model_ids.py --check
 
