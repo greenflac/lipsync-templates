@@ -1,8 +1,11 @@
 name: CI
 
+# Every branch, not just main. A branch whose checks have only ever run on
+# one developer's machine has no second opinion: this repository's own rule
+# is that the local check and CI are one source of truth, and that is not
+# observable until CI has actually run on the branch being reviewed.
 on:
   push:
-    branches: [main]
   pull_request:
 
 jobs:
