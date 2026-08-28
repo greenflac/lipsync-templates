@@ -11,6 +11,7 @@ from unittest import mock
 
 from lipsync import fork_finish as ff
 from lipsync.fork_identity import FAIL, PASS, UNMEASURED
+from lipsync.tests.test_product_shape import PROVENANCE_MARKS, provenance_block
 
 
 DRIVING_JSON = """{
@@ -132,33 +133,6 @@ REAL_COLUMNS = [
     2.88,
     1.45,
 ]
-
-
-PROVENANCE_MARKS = ("MEASURED", "DERIVED", "CHOSEN")
-
-
-def provenance_block(text: str, name: str) -> str:
-    """Return the comment block written directly above `name`, and nothing else.
-
-    An auditor showed a fixed window of lines above the assignment is not a
-    window at all: with the marks spaced two constants apart, stripping the
-    mark off one of them left the test green on the neighbour's mark. Only the
-    contiguous comment lines touching the assignment are that constant's own.
-    """
-    lines = text.splitlines()
-    # `TARGET_RATIO_W, TARGET_RATIO_H = ...` is one assignment binding two
-    # names, so the line does not start with the name and a space; matching on
-    # the separator covers plain, tuple and annotated assignments alike.
-    head = re.compile(rf"^{re.escape(name)}\s*[,:=]")
-    i = next((k for k, ln in enumerate(lines) if head.match(ln)), None)
-    if i is None:
-        # Not "no mark found": the constant was not found at all, which is a
-        # different answer and must not be reported as the first one.
-        raise LookupError(f"{name}: no assignment found in the source")
-    start = i
-    while start > 0 and lines[start - 1].lstrip().startswith("#"):
-        start -= 1
-    return "\n".join(lines[start:i])
 
 
 def prober_of(mapping):

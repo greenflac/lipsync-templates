@@ -310,6 +310,24 @@ def _provenance_block(lines: list[str], lineno: int) -> str:
     return "\n".join(lines[start:i])
 
 
+def provenance_block(text: str, name: str) -> str:
+    """The comment block above `name`, for checks that ask by name.
+
+    One definition, three callers. The marks and the extractor were declared
+    in three places at once — this gate and two test modules — while the work
+    that introduced them was enforcing the rule against exactly that. Add a
+    fourth mark to one copy and the others go blind.
+    """
+    lines = text.splitlines()
+    head = re.compile(rf"^{re.escape(name)}\s*[,:=]")
+    i = next((k for k, ln in enumerate(lines) if head.match(ln)), None)
+    if i is None:
+        # Not "no mark found": the constant was not found at all, which is a
+        # different answer and must not be reported as the first one.
+        raise LookupError(f"{name}: no assignment found in the source")
+    return _provenance_block(lines, i + 1)
+
+
 def _unmarked_decisions(text: str, label: str) -> list[str]:
     """Decision constants in one module that do not say where they came from."""
     lines = text.splitlines()

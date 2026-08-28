@@ -299,26 +299,66 @@ PALETTE_BINS = 8
 PALETTE_SIDE = 256
 
 
-def shipped_similarity(left, right) -> float | None:
-    """Measure the style hit with the one instrument for the whole pipeline. `None` means could not measure."""
+EXTERNAL_INSTRUMENT = "creative_eval.style.similarity (external, shipped)"
+FALLBACK_ABSENT = "palette_similarity (fallback: the external package is missing)"
+FALLBACK_BROKEN = (
+    "palette_similarity (fallback: the external package imported but failed: {reason})"
+)
+
+
+def shipped_similarity(left, right) -> tuple[float | None, str]:
+    """Measure the style hit and name the instrument that produced the number.
+
+    Returns `(value, instrument)`; `value is None` means could not measure. The
+    name is returned together with the number rather than resolved by a second
+    call, because two independent decisions about one fact drift apart: the run
+    that prompted this reported the external device while the number had come
+    from the fallback. Whoever answered is the only thing that can name itself.
+
+    Three outcomes, kept apart on purpose: the external answered, the external
+    is not installed, the external is installed and broke. The last one carries
+    the exception text whole — the reason a device dropped out is the half of
+    the report that says what to fix, and a truncated reason has already sent
+    one diagnosis the wrong way.
+
+    >>> value, instrument = shipped_similarity("a.png", "b.png")
+    >>> instrument.startswith("creative_eval") or "fallback" in instrument
+    True
+    """
     try:
         from creative_eval.style import similarity as _external  # noqa: PLC0415
-    except Exception:  # noqa: BLE001
-        return palette_similarity(left, right)
+    except ImportError:
+        return palette_similarity(left, right), FALLBACK_ABSENT
+    except Exception as exc:  # noqa: BLE001
+        # Importable-but-throwing is a breakage, not an absence: the two get
+        # different names so a broken install cannot read as a bare machine.
+        return palette_similarity(left, right), FALLBACK_BROKEN.format(
+            reason=f"import raised {type(exc).__name__}: {exc}"
+        )
     try:
-        return float(_external(str(left), str(right)))
-    except Exception:  # noqa: BLE001
-        return palette_similarity(left, right)
+        return float(_external(str(left), str(right))), EXTERNAL_INSTRUMENT
+    except Exception as exc:  # noqa: BLE001
+        return palette_similarity(left, right), FALLBACK_BROKEN.format(
+            reason=f"{type(exc).__name__}: {exc}"
+        )
 
 
-def similarity_source() -> str:
-    """Return which instrument measures right now. Printed into the report."""
-    try:
-        from creative_eval.style import similarity  # noqa: F401,PLC0415
+def measured_by(similarity, left, right) -> tuple[float | None, str]:
+    """Run one measurement and report the device that actually answered.
 
-        return "creative_eval.style.similarity (external, shipped)"
-    except Exception:  # noqa: BLE001
-        return "palette_similarity (fallback: the external package is missing)"
+    An injected device returns a bare number and is named after itself; the
+    shipped one returns its own name alongside the number. Either way the name
+    comes off the call that ran, never off which callable was expected.
+
+    >>> measured_by(lambda a, b: 0.5, "a.png", "b.png")
+    (0.5, 'injected: <lambda>')
+    """
+    outcome = similarity(left, right)
+    if isinstance(outcome, tuple):
+        value, name = outcome
+        return (None if value is None else float(value)), str(name)
+    injected = getattr(similarity, "__name__", type(similarity).__name__)
+    return outcome, f"injected: {injected}"
 
 
 def palette_similarity(left, right) -> float | None:
@@ -1100,20 +1140,14 @@ def stage_style_acceptance(
     similarity = shipped_similarity if similarity is None else similarity
     checks, numbers = [], {}  # type: list, dict
 
-    # `shipped_similarity` falls back to the palette measure whenever the
-    # external package is absent or throws, and the number it returns looks the
-    # same either way. A style verdict that does not name the device that
-    # produced it cannot be compared with yesterday's, so the source is read off
-    # what is actually about to run rather than off what was intended.
-    instrument = (
-        similarity_source()
-        if similarity is shipped_similarity
-        else f"injected: {getattr(similarity, '__name__', type(similarity).__name__)}"
-    )
+    # A style verdict that does not name the device that produced it cannot be
+    # compared with yesterday's, so the name is taken from each measurement that
+    # ran. The two calls are named separately because a device can answer one
+    # and drop out on the other, and averaging that away would hide a breakage.
+    floor, floor_by = measured_by(similarity, style_ref, client_photo)
+    hit, hit_by = measured_by(similarity, style_ref, styled)
+    instrument = floor_by if floor_by == hit_by else f"floor by {floor_by}; hit by {hit_by}"
     numbers["style_instrument"] = instrument
-
-    floor = similarity(style_ref, client_photo)
-    hit = similarity(style_ref, styled)
     numbers["floor"] = floor
     numbers["hit"] = hit
     if floor is None or hit is None:

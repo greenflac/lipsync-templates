@@ -200,7 +200,7 @@ class EveryDecisionConstantDeclaresWhereItCameFrom(unittest.TestCase):
 
         from lipsync import device as dv
 
-        from lipsync.tests.test_fork_finish import PROVENANCE_MARKS, provenance_block
+        from lipsync.tests.test_product_shape import PROVENANCE_MARKS, provenance_block
 
         src = Path(dv.__file__).read_text(encoding="utf-8")
         for name in ("DEVICE_ORDER", "CUDA_PROVIDER", "INSIGHTFACE_GPU_DEVICES"):
