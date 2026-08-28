@@ -23,6 +23,18 @@ OWNER_MATRIX = (5, 5, 2)
 #: picked by eye would sell an arbitrary subset of the matrix as a measurement.
 MODES = ("full", "cover")
 
+#: CHOSEN 3 (by the batch stream, out of what a run of failures burns before
+#: anyone sees it). NOT 1: a single failed cell is normal product behaviour — a
+#: given style on a given identity may legitimately miss the identity bar
+#: (ArcFace has returned 0.3928 against the bar 0.35 on glasses) — and stopping
+#: there would throw away a paid matrix over one bad pair. NOT 2: two in a row
+#: is exactly what one bad style reference standing next to its neighbour
+#: produces, a likely and innocent coincidence. NOT 5 or more: a systematic
+#: breakage (dead key, moved endpoint, empty balance) shows up as an unbroken
+#: run of failures, and every cell of it can spend before the run stops — five
+#: cells were $1.05 at the then price of $0.21, more than the whole account
+#: balance at the time ($0.8490). Reaching it stops the batch mid-matrix and
+#: every remaining cell is reported as not launched, not as failed.
 MAX_STREAK = 3
 
 NAME_SEP = "__"

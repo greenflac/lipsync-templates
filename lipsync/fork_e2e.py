@@ -27,6 +27,12 @@ KLING_FIELDS = ("video_url", "image_url", "character_orientation")
 #: which no longer survives in the tree — this line is now the only record of it.
 KLING_ORIENTATIONS = ("image", "video")
 
+#: CHOSEN by the owner out of the two values the probe admitted (see
+#: `KLING_ORIENTATIONS` above, which is where the choice is bounded): the
+#: motion comes from the driving and the identity from the photo, so the
+#: character is oriented by the video and not by the still. Every route sends
+#: it as the default, and `kling_payload` refuses anything outside the measured
+#: pair, so a taste change here cannot quietly become an unknown field value.
 CHARACTER_ORIENTATION = "video"
 
 KLING_PRICE_PER_SECOND_USD = 0.07
@@ -50,6 +56,12 @@ def kling_price(seconds: float) -> float:
 
 KLING_LATENCY_S = (107.4, 190.0)
 
+#: DERIVED from `KLING_LATENCY_S`: the top of the measured band, 190 s, times
+#: eight. Not from a timing run of its own, and coarse on purpose — the fal
+#: queue has been seen at a quarter of an hour — because the two mistakes do
+#: not cost the same: waiting too long costs time, whereas giving up early
+#: costs MONEY, the order having already been paid for. It bounds the poll loop
+#: in `live_kling`, so lowering it abandons paid orders that were still coming.
 KLING_WAIT_S = 1520
 
 #: MEASURED by ffprobe over every Kling output still on disk, 2026-08-28.

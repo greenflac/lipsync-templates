@@ -365,9 +365,12 @@ def _deciding_names(tree: ast.Module) -> set[str]:
                 idx = offset + i
                 if idx in positions or positional[idx].arg in keywords:
                     collect(default)
-            for arg, default in zip(a.kwonlyargs, a.kw_defaults):
-                if default is not None and arg.arg in keywords:
-                    collect(default)
+            # Distinct names: `arg` and `default` are already bound above as
+            # expressions, and rebinding them to an `arg` node fails the
+            # typechecker, which is part of `scripts/check`.
+            for kwarg, kwdefault in zip(a.kwonlyargs, a.kw_defaults):
+                if kwdefault is not None and kwarg.arg in keywords:
+                    collect(kwdefault)
     return names
 
 
