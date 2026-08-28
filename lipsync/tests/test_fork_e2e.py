@@ -728,6 +728,37 @@ class OutputAcceptance(unittest.TestCase):
         }
         self.assertEqual(self._accept(probe=landscape)["outcome"], "fail")
 
+    def test_a_frame_narrower_than_the_floor_is_a_defect(self):
+        """The branch, not the constant: removing the check must be seen.
+
+        Mutating OUT_RATIO_MIN alone reddened only the constant's own tests;
+        deleting the branch that reads it left the suite green, so the wiring
+        had no guard. This drives the stage and reads its verdict.
+        """
+        too_tall = lambda p: {
+            "outcome": PASS,
+            "fps": 30.0,
+            "frames": 99,
+            "width": 360,
+            "height": 1280,
+            "note": "",
+        }
+        got = self._accept(probe=too_tall)
+        self.assertEqual(got["outcome"], "fail")
+        self.assertIn(str(E.OUT_RATIO_MIN), str(got))
+
+    def test_the_plan_ratio_itself_is_not_refused_by_the_floor(self):
+        """The other side: the floor must not reject what the product delivers."""
+        on_plan = lambda p: {
+            "outcome": PASS,
+            "fps": 30.0,
+            "frames": 99,
+            "width": 720,
+            "height": 1280,
+            "note": "",
+        }
+        self.assertEqual(self._accept(probe=on_plan)["outcome"], "pass")
+
     def test_the_ratio_ceiling_moved_flips_the_verdict_both_ways(self):
         square = lambda p: {
             "outcome": PASS,

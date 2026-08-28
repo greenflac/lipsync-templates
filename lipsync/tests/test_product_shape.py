@@ -29,7 +29,14 @@ Three rules, and each is a question a reviewer asks in the first ten minutes.
    --ignore-missing-imports. Three guards, three different reasons to be
    silent, one undeclared dependency.
 
-Written before the implementation. Never edited by the agent implementing it.
+History note, because the claim is checkable and was overstated. The rules
+here were written before their fixes, and the provenance class was committed
+red in `cbb9ffd` naming its 39 violations before `0a997e6` closed them. But
+this FILE first appears in `a41fd91` together with fixes of its own, so "the
+whole gate predates its implementation" is not something `git log` can confirm
+for it. `test_route_defaults.py` is the clean example: one commit, before its
+fix, never edited. An external audit flagged this and it is left stated rather
+than quietly rephrased.
 """
 
 from __future__ import annotations

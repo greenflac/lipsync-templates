@@ -88,6 +88,16 @@ KLING_OUT_FPS = 30.0
 #: is not taken here.
 OUT_RATIO_MAX = 1.0
 
+#: CHOSEN 0.5, and chosen with its cost stated rather than picked round: the
+#: crop that follows takes 11.1% of the height off a 0.5 output to reach the
+#: plan's 0.5625, which is the most this product will silently discard. A
+#: ceiling alone is not a clamp — nothing refused a frame NARROWER than the
+#: plan, so a 1:3 clip would have passed a gate written for vertical video and
+#: then lost 41% of its height to the crop. MEASURED against every Kling output
+#: still on disk on 2026-08-28 (1.0000 x4, 0.7391 x3, 0.5625 x8): this floor
+#: refuses nothing that has ever arrived.
+OUT_RATIO_MIN = 0.5
+
 #: MEASURED against Kling's own gate, which refuses with "Video duration can
 #: not less than 3s" — the message is quoted in the check so the reason travels
 #: with the verdict. All three ways round it were tried and failed: rate
@@ -1496,6 +1506,16 @@ def stage_output_acceptance(
                     f"product",
                 )
             )
+        elif ratio < OUT_RATIO_MIN:
+            checks.append(
+                (
+                    "output geometry",
+                    FAIL,
+                    f"{w}x{h}, ratio {ratio:.4f} < "
+                    f"{OUT_RATIO_MIN}: narrower than the plan by more than the "
+                    f"crop may take, a defect for a vertical product",
+                )
+            )
         elif not fps_ok:
             checks.append(
                 (
@@ -1518,8 +1538,8 @@ def stage_output_acceptance(
                 (
                     "output geometry",
                     PASS,
-                    f"{w}x{h}, ratio {ratio:.4f} under the ceiling "
-                    f"{OUT_RATIO_MAX} — vertical or square; {was}",
+                    f"{w}x{h}, ratio {ratio:.4f} inside the band "
+                    f"[{OUT_RATIO_MIN}; {OUT_RATIO_MAX}] — vertical or square; {was}",
                 )
             )
 
