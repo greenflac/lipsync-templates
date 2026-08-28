@@ -48,6 +48,7 @@ import re
 
 __all__ = [
     "BLOG_PATH_SEGMENTS",
+    "USER_WRITTEN_SEGMENTS",
     "FAMILY_SEPARATORS",
     "PORTAL_SOURCES",
     "VENDOR_SOURCES",
@@ -250,6 +251,26 @@ BLOG_PATH_SEGMENTS: frozenset[str] = frozenset(
     {"blog", "blogs", "news", "press", "review", "reviews"}
 )
 
+#: Path segments where SOMEBODY ELSE wrote the page, on whoever's host.
+#:
+#: This is a different question from `BLOG_PATH_SEGMENTS` and the distinction
+#: is the whole point. A `/blog/` page on a vendor's host was written BY THE
+#: VENDOR — it is their word, just a marketing shape of it. A `/discussions/`
+#: page on the same host was written by a USER, and the vendor merely hosts it.
+#: The ladder asks "whose page is this", and on these paths the answer is not
+#: the host's owner however the domain is declared.
+#:
+#: Found on 2026-08-28 by an independent review of a plan to harvest Hugging
+#: Face discussion threads as community evidence. VERIFIED on the shipped code
+#: before this existed: `classify("ltx-2.5",
+#: "https://huggingface.co/Lightricks/LTX-2.5/discussions/12")` returned
+#: `vendor`, because `huggingface.co/Lightricks/` is declared as the vendor's
+#: org for the `ltx` family. A user's complaint would have entered the base on
+#: the ladder's strongest rung and outranked the vendor's own model card.
+USER_WRITTEN_SEGMENTS: frozenset[str] = frozenset(
+    {"discussions", "issues", "community", "forum", "comments", "pull"}
+)
+
 _HOST = re.compile(r"https?://([^/:?#]+)", re.I)
 
 
@@ -310,11 +331,25 @@ def classify(model: str, url: str, *, vendor_tier: str, portal_tier: str, blog_t
     """
     if not host_of(url):
         return blog_tier
+    segments = {s for s in _path_of(url).lower().split("/") if s}
     for entry in vendor_sources_for(model):
         if _matches(url, entry):
+            # The vendor's HOST, but not the vendor's WORD: on these paths
+            # somebody else wrote the page and the vendor merely hosts it.
+            #
+            # Applied only here, inside the vendor branch, and that limit was
+            # taught by a test rather than chosen: checking it first demoted
+            # `reddit.com/r/comfyui/`, which the OWNER declared a portal on
+            # 2026-08-27 precisely because people post workflows with the
+            # results they got. For a declared community portal, user-written
+            # is what it IS and the middle rung was granted knowingly. The
+            # question this rule answers is narrower than "who typed it" — it
+            # is "is the vendor speaking here", and only the top rung claims
+            # that.
+            if segments & USER_WRITTEN_SEGMENTS:
+                return blog_tier
             return vendor_tier
     for entry in PORTAL_SOURCES:
         if _matches(url, entry):
-            segments = {s for s in _path_of(url).lower().split("/") if s}
             return blog_tier if segments & BLOG_PATH_SEGMENTS else portal_tier
     return blog_tier

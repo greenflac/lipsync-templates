@@ -173,5 +173,44 @@ class TheTableAgainstTheRealBase(unittest.TestCase):
                 assert tier("kling-3.0", "https://kling.ai/docs") == BLOG
 
 
+class TheHostIsNotAlwaysTheAuthor(unittest.TestCase):
+    """Found 2026-08-28 by an independent review, and verified on the shipped
+    code before the fix existed: a Hugging Face DISCUSSION thread under a
+    vendor's own org classified as `vendor`, because the org prefix is declared
+    for the tier ladder. A user's complaint would have entered the base on the
+    strongest rung and outranked the vendor's own model card.
+
+    The distinction the fix rests on: a `/blog/` page on a vendor's host was
+    written BY the vendor — their word in a marketing shape. A `/discussions/`
+    page was written by somebody else and merely hosted. The ladder asks whose
+    page it is; on these paths the answer is not the host's owner.
+    """
+
+    def test_a_user_thread_on_the_vendors_own_host_is_not_the_vendor(self) -> None:
+        assert tier("ltx-2.5", "https://huggingface.co/Lightricks/LTX-2.5/discussions/12") == BLOG
+        assert tier("wav2lip", "https://github.com/Rudrabha/Wav2Lip/issues/512") == BLOG
+
+    def test_the_vendors_own_document_on_the_same_host_is_still_the_vendor(self) -> None:
+        """The negative control. A rule that demoted the whole host would take
+        the model card down with the thread, and the card is the single most
+        load-bearing source in this base."""
+        assert (
+            tier("ltx-2.5", "https://huggingface.co/Lightricks/LTX-2.5/raw/main/README.md")
+            == VENDOR
+        )
+        assert (
+            tier("wav2lip", "https://raw.githubusercontent.com/Rudrabha/Wav2Lip/master/README.md")
+            == VENDOR
+        )
+
+    def test_a_segment_that_merely_contains_the_word_is_not_a_match(self) -> None:
+        """Whole segments only, like the blog rule beside it: a repository
+        actually named `discussions-api` is not a discussion thread."""
+        assert (
+            tier("ltx-2.5", "https://huggingface.co/Lightricks/LTX-2.5-discussions/raw/main/R.md")
+            == VENDOR
+        )
+
+
 if __name__ == "__main__":
     unittest.main()
