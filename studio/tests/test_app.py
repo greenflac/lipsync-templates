@@ -230,7 +230,7 @@ class StudioCase(unittest.TestCase):
 
     def make_frame(self, session_id: str) -> str:
         reply = self.client.post(
-            "/api/frame", json={"session_id": session_id, "template_id": "walk_city"}
+            "/api/frame", json={"session_id": session_id, "template_id": "dance_hallway"}
         )
         self.assertEqual(reply.status_code, 200, reply.text)
         job_id = str(reply.json()["job_id"])
@@ -261,7 +261,7 @@ class HappyPath(StudioCase):
         self.upload_selfie(session_id)
         self.set_style(session_id)
         frame = self.client.post(
-            "/api/frame", json={"session_id": session_id, "template_id": "walk_city"}
+            "/api/frame", json={"session_id": session_id, "template_id": "dance_hallway"}
         )
         self.assertEqual(frame.json()["charged"], 1)
         jobs.wait(str(frame.json()["job_id"]))
@@ -274,11 +274,11 @@ class HappyPath(StudioCase):
         self.upload_selfie(session_id)
         self.set_style(session_id)
         first = self.client.post(
-            "/api/frame", json={"session_id": session_id, "template_id": "walk_city"}
+            "/api/frame", json={"session_id": session_id, "template_id": "dance_hallway"}
         ).json()
         jobs.wait(str(first["job_id"]))
         second = self.client.post(
-            "/api/frame", json={"session_id": session_id, "template_id": "walk_city"}
+            "/api/frame", json={"session_id": session_id, "template_id": "dance_hallway"}
         ).json()
         self.assertEqual(first["idempotency_key"], f"{session_id}:frame:1")
         self.assertEqual(second["idempotency_key"], f"{session_id}:frame:2")
@@ -344,7 +344,7 @@ class MoneyGuard(StudioCase):
         before = self.ledger.balance("u1")
 
         reply = self.client.post(
-            "/api/frame", json={"session_id": session_id, "template_id": "walk_city"}
+            "/api/frame", json={"session_id": session_id, "template_id": "dance_hallway"}
         )
         state = jobs.wait(str(reply.json()["job_id"]))
 
@@ -362,7 +362,7 @@ class MoneyGuard(StudioCase):
         before = self.ledger.balance("u1")
 
         reply = self.client.post(
-            "/api/frame", json={"session_id": session_id, "template_id": "walk_city"}
+            "/api/frame", json={"session_id": session_id, "template_id": "dance_hallway"}
         )
         job_id = str(reply.json()["job_id"])
         state = jobs.wait(job_id)
@@ -382,7 +382,7 @@ class MoneyGuard(StudioCase):
         jobs.wait(
             str(
                 self.client.post(
-                    "/api/frame", json={"session_id": session_id, "template_id": "walk_city"}
+                    "/api/frame", json={"session_id": session_id, "template_id": "dance_hallway"}
                 ).json()["job_id"]
             )
         )
@@ -467,7 +467,7 @@ class Refusals(StudioCase):
         session_id = self.open_session()
         self.set_style(session_id)
         reply = self.client.post(
-            "/api/frame", json={"session_id": session_id, "template_id": "walk_city"}
+            "/api/frame", json={"session_id": session_id, "template_id": "dance_hallway"}
         )
         self.assertEqual(reply.status_code, 409)
 
@@ -475,7 +475,7 @@ class Refusals(StudioCase):
         session_id = self.open_session()
         self.upload_selfie(session_id)
         reply = self.client.post(
-            "/api/frame", json={"session_id": session_id, "template_id": "walk_city"}
+            "/api/frame", json={"session_id": session_id, "template_id": "dance_hallway"}
         )
         self.assertEqual(reply.status_code, 409)
 
@@ -491,7 +491,7 @@ class Refusals(StudioCase):
     def test_unknown_session_is_refused_by_every_endpoint_that_takes_one(self) -> None:
         for path, body in (
             ("/api/style", {"session_id": "ghost", "text": "warm"}),
-            ("/api/frame", {"session_id": "ghost", "template_id": "walk_city"}),
+            ("/api/frame", {"session_id": "ghost", "template_id": "dance_hallway"}),
             ("/api/consent", {"session_id": "ghost"}),
             ("/api/video", {"session_id": "ghost"}),
         ):

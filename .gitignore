@@ -28,3 +28,10 @@ work/
 # decision and not one `git add -A` should be able to take.
 # See studio/mcp/civitai.py and studio/knowledge/PROVENANCE.md.
 studio/knowledge/civitai_prompts.jsonl
+
+# Driving clips. NOT committed, by the owner's decision 2026-08-28, taken with
+# the repository's PUBLIC visibility in view (verified: private=false). These
+# are videos of identifiable people; publishing them cannot be undone, and the
+# legal clearance on record covers collecting and using the material, not
+# republishing it under this repository's licence.
+assets/drivings/
