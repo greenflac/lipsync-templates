@@ -166,6 +166,13 @@ echo "== verified class findings still applied"
 python scripts/ingest_harvest.py --check \
   --path studio/knowledge/class_findings_2026-08-27_verified.jsonl
 
+# The knowledge lane. Collected 2026-08-28 under the owner's rule that this
+# repository stores a RETELLING WITH A LINK, never a third party's prose. The
+# rule held on the first harvest because four agents each remembered it — which
+# is precisely why it is a gate now (rule C7).
+echo "== knowledge lane: source, tier, and no copied prose"
+python scripts/check_craft.py --check
+
 echo "== mcp server handshake"
 python - <<'PY'
 import asyncio, sys
