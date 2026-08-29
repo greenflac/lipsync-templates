@@ -229,6 +229,7 @@ class Building(unittest.TestCase):
             reference_cards=Path("/nowhere/refs"),
             gallery_prompts=Path("/nowhere/gallery.jsonl"),
             community_prompts=Path("/nowhere/community.jsonl"),
+            craft_records=Path("/nowhere/craft"),
         )
         self.assertEqual(index.build_report["outcome"], UNMEASURED)
         self.assertEqual(index.build_report["checked"], 0)
@@ -266,11 +267,15 @@ class Building(unittest.TestCase):
             reference_cards=Path("/nowhere/refs"),
             gallery_prompts=Path("/nowhere/gallery.jsonl"),
             community_prompts=Path("/nowhere/community.jsonl"),
+            craft_records=Path("/nowhere/craft"),
         )
         self.assertEqual(index.build_report["outcome"], UNMEASURED)
         self.assertIn("0 examples", index.build_report["note"])
         self.assertGreaterEqual(index.build_report["per_source"]["core"], 10)
-        self.assertEqual(index.build_report["unmeasured"], 4)
+        # Five sources absent, not four: the knowledge lane joined them on
+        # 2026-08-28. This number moves only when a SOURCE is added, which is a
+        # deliberate act, so it is worth pinning.
+        self.assertEqual(index.build_report["unmeasured"], 5)
 
     def test_one_example_is_enough_to_make_it_a_built_index(self) -> None:
         """The other side of the mutation above: add a single example and the
@@ -662,6 +667,7 @@ class Building(unittest.TestCase):
             reference_cards=Path("/nowhere/refs"),
             gallery_prompts=Path("/nowhere/gallery.jsonl"),
             community_prompts=Path("/nowhere/community.jsonl"),
+            craft_records=Path("/nowhere/craft"),
         )
         self.assertIn("gallery", index.build_report["note"])
 
@@ -672,6 +678,7 @@ class Building(unittest.TestCase):
             reference_cards=Path("/nowhere/refs"),
             gallery_prompts=Path("/nowhere/gallery.jsonl"),
             community_prompts=Path("/nowhere/community.jsonl"),
+            craft_records=Path("/nowhere/craft"),
         )
         self.assertEqual(index.dense_report["outcome"], UNMEASURED)
         self.assertEqual(index.dense_report["error_code"], "OFF")

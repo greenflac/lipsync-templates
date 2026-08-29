@@ -71,12 +71,20 @@ KIND_CORE = "core"
 KIND_OUR_PROMPT = "our_prompt"
 KIND_GALLERY_PROMPT = "gallery_prompt"
 KIND_STYLE_CARD = "style_card"
+# Knowledge, not an example. A `craft_*.jsonl` record explains a MECHANISM — why
+# CFG burns skin, what a Rembrandt key is, which parameter a vendor says to
+# change — where every other kind here is a prompt somebody wrote. The two
+# answer different questions ("why did this happen" against "how do I phrase
+# it") and mixing them in one answer serves neither: ask for a golden-hour
+# prompt and get a paragraph on schedulers.
+KIND_KNOWLEDGE = "knowledge"
 
 KINDS: tuple[str, ...] = (
     KIND_CORE,
     KIND_OUR_PROMPT,
     KIND_GALLERY_PROMPT,
     KIND_STYLE_CARD,
+    KIND_KNOWLEDGE,
 )
 
 # Where an entry came from. Retrieval quotas count these, not `kind`, because
@@ -96,6 +104,12 @@ PROVENANCE_THIRD_PARTY = "third_party_gallery"
 # namespaced from `studio/mcp/civitai.py`; adding another platform is one line
 # here and one prefix there.
 PROVENANCE_COMMUNITY_CIVITAI = "civitai"
+# The knowledge lane's own family. It needs one for the same reason `civitai`
+# has one: `provenance_weight` falls back to 0.5 for a family it does not know,
+# and the critic measured that `vendor:comfyui` therefore weighed LESS than the
+# third-party gallery it is supposed to outrank. A record read out of a vendor's
+# own documentation is not less trustworthy than a stranger's prompt.
+PROVENANCE_KNOWLEDGE = "knowledge"
 
 # CHOSEN by us as starting values (not measured): core is the source of truth,
 # our own shipped prompts outrank harvested style cards, and anything scraped
@@ -112,6 +126,14 @@ PROVENANCE_WEIGHT: dict[str, float] = {
     # but "arguably" is not a measurement, so it starts level and moves when
     # something measures it.
     PROVENANCE_COMMUNITY_CIVITAI: 0.6,
+    # ВЫБРАНО, above the gallery and below our own prompts: these records are
+    # read out of vendor documentation and papers and carry a tier and a URL,
+    # which no gallery row does — but nobody has measured that they answer
+    # better, so they do not outrank what this project wrote for itself.
+    PROVENANCE_KNOWLEDGE: 0.75,
+    "vendor": 0.75,
+    "probe": 0.75,
+    "blog": 0.55,
 }
 
 #: A provenance may be NAMESPACED: `"<family>:<who>"`, where the family is a
@@ -331,6 +353,19 @@ DENSE_FLOOR = 0.35  # cosine; CHOSEN, then checked: both negative controls
 # fuse against an answer filling up with a single kind of source.
 MAX_PER_PROVENANCE = 2
 
+#: The same fuse, for the knowledge lane, and a different number because the
+#: risk it guards is different. MEASURED by the record-design critic 2026-08-28:
+#: with 300 knowledge records under one provenance, `retrieve(k=8)` returned 2
+#: and turned away 298. That cap is right for prompt examples — 4601 of ours
+#: come from a single gallery, and without it one gallery fills every answer —
+#: but knowledge records are not interchangeable: six records from
+#: huggingface.co/docs are six different mechanisms, and returning two of them
+#: is not diversity, it is amnesia. Near-duplicates are already stopped by the
+#: prefix dedup below, which is the guard that actually fits this lane.
+#: ВЫБРАНО, not measured: 6 is the number of distinct mechanisms that still fit
+#: in an answer a person will read. Nothing has measured what a reader can use.
+MAX_PER_PROVENANCE_KNOWLEDGE = 6
+
 # Near-duplicate suppression inside one answer. Our own prompt corpus is
 # template-generated, so the top of a ranking is often the same paragraph
 # twice; two identical demonstrations teach the writer nothing and cost a slot.
@@ -340,7 +375,18 @@ DEDUP_PREFIX = 120
 RECALL_FLOOR = 0.60
 
 DEFAULT_DB_PATH = Path(__file__).with_name("knowledge") / "index.sqlite3"
-CORE_RULES_PATH = Path(__file__).with_name("knowledge") / "core_rules.md"
+#: The data directory. Named once, because the module and the directory share a
+#: name and re-deriving that path per constant is how the two drift apart.
+KNOWLEDGE_DIR = Path(__file__).with_name("knowledge")
+
+CORE_RULES_PATH = KNOWLEDGE_DIR / "core_rules.md"
+#: Where the knowledge lane lives. A named default rather than `None`, because
+#: a source that cannot be pointed somewhere else cannot be switched OFF — and
+#: two tests that disable every source caught exactly that: the craft records
+#: leaked into an index the test had emptied on purpose, and "no sources" quietly
+#: became "one source". A test that depends on what happens to be on the machine
+#: is the bug this package has already paid for once.
+CRAFT_RECORDS_DIR = KNOWLEDGE_DIR
 EVAL_SET_PATH = Path(__file__).with_name("knowledge") / "eval_set.jsonl"
 GALLERY_PROMPTS_PATH = Path(__file__).with_name("knowledge") / "gallery_prompts.jsonl"
 
@@ -447,7 +493,16 @@ def _result(
 # ------------------------------------------------------------- text helpers
 
 
-_WORD = re.compile(r"[a-z0-9][a-z0-9'-]*")
+# Latin AND Cyrillic. The Cyrillic half was missing until 2026-08-28, and the
+# consequence was not a missing feature — it was a LIE. `query_terms` on a
+# Russian question returned [], the fusion admitted nothing, and `retrieve`
+# answered `fail` with the note "nothing in the index clears the relevance
+# floor": the system reporting that it had searched 5074 entries and found
+# nothing relevant, when in truth it had not been able to read the question.
+# Our operators write in Russian. OBSERVED before the fix:
+#   query_terms('покажи промт для золотого часа') -> []
+#   retrieve(...) -> fail, examples 0, checked 5074
+_WORD = re.compile(r"[a-z0-9\u0430-\u044f\u0451][a-z0-9\u0430-\u044f\u0451'-]*")
 
 
 def _words(text: str) -> list[str]:
@@ -630,6 +685,65 @@ def load_gallery_prompts(path: Path = GALLERY_PROMPTS_PATH) -> list[dict]:
                 "source": f"{source} (rights={rights})" if rights else source,
             }
         )
+    return entries
+
+
+def load_craft_records(directory: Path = CRAFT_RECORDS_DIR) -> list[dict]:
+    """Read the knowledge lane: `craft_*.jsonl`, harvested 2026-08-28.
+
+    A record is rendered into ONE searchable text made of the fields a person
+    would actually query by — the title, the questions the record says it
+    answers, and the claim itself. The mechanism and the numbers are carried in
+    the text too, because "why is the skin plastic" has to reach a record whose
+    title never says "plastic".
+
+    The records are written in RUSSIAN, which is why this loader arrives in the
+    same commit as the Cyrillic tokenizer: without that fix every one of them
+    would be indexed and none of them findable by the people they are for.
+    """
+    entries: list[dict] = []
+    if not directory.is_dir():
+        return entries
+    for path in sorted(directory.glob("craft_*.jsonl")):
+        for line in path.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                record = json.loads(line)
+            except ValueError:
+                continue
+            title = str(record.get("title") or "").strip()
+            claim = str(record.get("claim") or "").strip()
+            if not title and not claim:
+                continue
+            asks = record.get("question")
+            asks = [asks] if isinstance(asks, str) else list(asks or [])
+            parts = [
+                title,
+                " ".join(str(a) for a in asks),
+                claim,
+                str(record.get("mechanism") or ""),
+            ]
+            for knob in record.get("knob") or []:
+                if isinstance(knob, dict):
+                    parts.append(f"{knob.get('param', '')} {knob.get('where', '')}")
+            evidence = record.get("evidence") or []
+            source = ""
+            for item in evidence:
+                if isinstance(item, dict) and item.get("url"):
+                    source = str(item["url"])
+                    break
+            declared = str(record.get("provenance") or "")
+            provenance = declared if _known_provenance(declared) else PROVENANCE_KNOWLEDGE
+            entries.append(
+                {
+                    "kind": KIND_KNOWLEDGE,
+                    "text": " ".join(p for p in parts if p).strip(),
+                    "provenance": provenance,
+                    "source": source or f"{path.name}#{record.get('id', '?')}",
+                }
+            )
     return entries
 
 
@@ -915,6 +1029,7 @@ def build_index(
     reference_cards: Path = REFERENCE_CARDS_DIR,
     gallery_prompts: Path = GALLERY_PROMPTS_PATH,
     community_prompts: Path = COMMUNITY_PROMPTS_PATH,
+    craft_records: Path = CRAFT_RECORDS_DIR,
     dense: bool | None = None,
 ) -> KnowledgeIndex:
     """Build the index from every source that is present.
@@ -956,6 +1071,7 @@ def build_index(
         ("reference_card", load_style_cards(reference_cards), reference_cards),
         ("gallery", load_gallery_prompts(gallery_prompts), gallery_prompts),
         ("community", load_gallery_prompts(community_prompts), community_prompts),
+        ("knowledge", load_craft_records(craft_records), craft_records),
     ):
         loaded[name] = index.add(records)
         if not records:
@@ -1188,6 +1304,28 @@ def retrieve(
         )
 
     terms = query_terms(text)
+    # THE THIRD OUTCOME, applied to the question rather than to the corpus.
+    # A query that yields no searchable term and commits to no structural field
+    # gives the channels nothing to work with. Every one of them then admits
+    # nothing, and the old code read that as `fail` — "I searched and found
+    # nothing relevant" — which is a claim about the index made on the strength
+    # of never having read the query. An empty string got the same confident
+    # answer as a real question. "I could not search this" is a different thing
+    # from "there is nothing here", and the caller has to be able to tell them
+    # apart (rule R1).
+    if not terms and not any(structure.values()):
+        return _result(
+            UNMEASURED,
+            "the query carries no searchable term and no style field, so nothing "
+            "was searched — this is not the same as finding nothing",
+            checked=0,
+            unmeasured=1,
+            core_rules=core,
+            examples=[],
+            k=k,
+            terms=terms,
+        )
+
     rankings: dict[str, list[int]] = {}
     admitted: set[int] = set()
     channels_off = 0
@@ -1241,7 +1379,18 @@ def retrieve(
     # which made that field unreadable next to every other module's use of it.
     below_floor = len(fused) - len(ordered)
 
+    # TWO LANES, RETURNED SEPARATELY, and this is a deliberate refusal to guess.
+    # OBSERVED the moment knowledge was indexed: "покажи промт для золотого часа"
+    # came back with three explanatory records and no prompt, because knowledge
+    # outweighs the gallery. The tempting fix is a router that reads the query's
+    # intent — and the critic of the record design said exactly why not: a
+    # router without a mechanism is a wish, and this one would have to decide
+    # from a handful of marker words in two languages. So nothing decides.
+    # `examples` stays what it always was — prompts somebody wrote — and
+    # `knowledge` is a second, labelled list. The caller can see both and use
+    # what fits, which is strictly more information than a guess would leave it.
     picked: list[dict] = []
+    knowledge: list[dict] = []
     per_provenance: dict[str, int] = defaultdict(int)
     seen_prefixes: set[str] = set()
     # How many entries the quota turned away. MEASURED 2026-08-26: with a
@@ -1252,15 +1401,22 @@ def retrieve(
     quota_blocked = 0
     for entry_id in ordered:
         entry = index.by_id[entry_id]
-        if per_provenance[entry.provenance] >= MAX_PER_PROVENANCE:
+        cap = MAX_PER_PROVENANCE_KNOWLEDGE if entry.kind == KIND_KNOWLEDGE else MAX_PER_PROVENANCE
+        if per_provenance[entry.provenance] >= cap:
             quota_blocked += 1
             continue
         prefix = " ".join(entry.text.lower().split())[:DEDUP_PREFIX]
         if prefix in seen_prefixes:
             continue
+        lane = knowledge if entry.kind == KIND_KNOWLEDGE else picked
+        # Each lane fills to k on its own. Without this the loop ran until BOTH
+        # were full and one overshot badly — OBSERVED: 43 examples returned for
+        # k=5, because the knowledge lane had not filled yet.
+        if len(lane) >= k:
+            continue
         seen_prefixes.add(prefix)
         per_provenance[entry.provenance] += 1
-        picked.append(
+        lane.append(
             {
                 "id": entry.entry_id,
                 "kind": entry.kind,
@@ -1274,11 +1430,17 @@ def retrieve(
                 "score": round(fused[entry_id], 6),
             }
         )
-        if len(picked) >= k:
+        if len(picked) >= k and len(knowledge) >= k:
             break
 
-    if picked:
-        outcome, note = PASS, f"{len(picked)} examples above the floor"
+    if picked or knowledge:
+        outcome = PASS
+        note = f"{len(picked)} examples and {len(knowledge)} knowledge records above the floor"
+        if not picked and knowledge:
+            # Worth saying out loud rather than leaving a caller to notice an
+            # empty list: a Russian question reaches the knowledge lane and
+            # nothing else, because every prompt in this corpus is in English.
+            note += "; no prompt example matched — the prompt corpus is English"
         if len(picked) < k and quota_blocked:
             note = (
                 f"{note}; {k} were asked for and the per-provenance quota of "
@@ -1295,6 +1457,7 @@ def retrieve(
         unmeasured=channels_off,
         core_rules=core,
         examples=picked,
+        knowledge=knowledge,
         k=k,
         terms=terms,
         channels=sorted(rankings),
