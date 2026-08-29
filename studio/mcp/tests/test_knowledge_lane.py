@@ -49,6 +49,27 @@ from studio.knowledge import (  # type: ignore[attr-defined]
 
 NOWHERE = Path("/nowhere/craft")
 
+#: A prompt corpus of our own, written here rather than borrowed from the
+#: repository. THE REASON, and it is the second time in two days: the shipped
+#: gallery and civitai corpora are deliberately NOT committed, so a test that
+#: builds the real index passes on this machine and fails in CI with "index
+#: holds no examples". These tests are the ones documenting that exact bug; they
+#: do not get to have it.
+PROMPTS = [
+    {"prompt": "warm golden hour light, amber palette, soft film grain, nostalgic portrait"},
+    {"prompt": "matte paper texture, split scene columns, muted navy and cream"},
+    {"prompt": "studio portrait, key light from camera left, shallow depth of field"},
+]
+
+
+def _corpus(directory: Path) -> Path:
+    """Write the prompt corpus this test owns and return its path."""
+    path = directory / "gallery_prompts.jsonl"
+    path.write_text(
+        "\n".join(json.dumps(r, ensure_ascii=False) for r in PROMPTS) + "\n", encoding="utf-8"
+    )
+    return path
+
 
 def _record(rid: str, title: str, claim: str, provenance: str = "vendor:test") -> dict:
     return {
@@ -79,7 +100,13 @@ class TheTokenizerReadsRussian(unittest.TestCase):
 
 class AnUnsearchableQueryIsNotAFailure(unittest.TestCase):
     def setUp(self) -> None:
-        self.index = build_index(craft_records=NOWHERE)
+        self._dir = tempfile.TemporaryDirectory()
+        self.addCleanup(self._dir.cleanup)
+        self.index = build_index(
+            gallery_prompts=_corpus(Path(self._dir.name)),
+            community_prompts=NOWHERE,
+            craft_records=NOWHERE,
+        )
 
     def test_the_empty_string_is_COULD_NOT_MEASURE(self) -> None:
         """Before the fix this was `fail`: the index reporting a verdict on a
@@ -116,11 +143,17 @@ class TwoLanes(unittest.TestCase):
         (self.craft / "craft_t.jsonl").write_text(
             "\n".join(json.dumps(r, ensure_ascii=False) for r in rows) + "\n", encoding="utf-8"
         )
+        self.prompts = _corpus(self.craft)
+
+    def _index(self, craft: Path) -> object:
+        return build_index(
+            gallery_prompts=self.prompts, community_prompts=NOWHERE, craft_records=craft
+        )
 
     def test_knowledge_comes_back_in_its_own_list(self) -> None:
         """The whole point of not guessing intent: a caller sees both lanes and
         picks, instead of a router deciding for it from marker words."""
-        index = build_index(craft_records=self.craft)
+        index = self._index(self.craft)
         out = retrieve("почему кожа пластиковая", index=index)
         assert out["outcome"] == PASS, out["note"]
         assert out["knowledge"], "полоса знания пуста"
@@ -130,14 +163,14 @@ class TwoLanes(unittest.TestCase):
     def test_THE_NEGATIVE_CONTROL_without_the_lane_the_same_question_fails(self) -> None:
         """Without this, the test above would pass on any index that happened to
         answer, and would prove nothing about the lane."""
-        index = build_index(craft_records=NOWHERE)
+        index = self._index(NOWHERE)
         out = retrieve("почему кожа пластиковая", index=index)
         assert out["outcome"] == FAIL, out["note"]
         assert out["knowledge"] == []
 
     def test_an_english_prompt_query_still_returns_prompts(self) -> None:
         """No regression: adding a lane must not cost the one that worked."""
-        index = build_index(craft_records=self.craft)
+        index = self._index(self.craft)
         out = retrieve("warm golden hour amber palette film grain", index=index)
         assert out["outcome"] == PASS
         assert out["examples"], "промты пропали из выдачи"
@@ -145,7 +178,7 @@ class TwoLanes(unittest.TestCase):
     def test_neither_lane_exceeds_k(self) -> None:
         """OBSERVED while writing this: the first version ran until BOTH lanes
         were full and returned 43 examples for k=5."""
-        index = build_index(craft_records=self.craft)
+        index = self._index(self.craft)
         out = retrieve("warm golden hour amber palette", index=index, k=3)
         assert len(out["examples"]) <= 3
         assert len(out["knowledge"]) <= 3
