@@ -22,6 +22,17 @@ from lipsync.fork_identity import PASS, UNMEASURED  # noqa: E402
 
 BANK = Path(__file__).resolve().parents[1] / "work" / "casebank"
 
+#: How much of the bottom of every frame to cut away before the reader sees it.
+#: ИЗМЕРЕНО 2026-08-30 and it is not a nicety: Kling burns "KLING AI 1.6" into
+#: the bottom-right of every frame — the model AND the version, in words. The
+#: blind readers found it within ten minutes and answered from it, which makes
+#: the whole Kling half of a bank answerable by reading a caption rather than
+#: the picture. Cropping the strip removes the caption at the cost of a tenth of
+#: the frame; leaving it in would have produced a flattering number about
+#: nothing. ВЫБРАНО 0.12 — measured to clear the mark with room, and small
+#: enough that composition survives.
+WATERMARK_STRIP = 0.12
+
 #: What a JPEG may keep. Anything else is a carrier, whatever it says.
 ALLOWED = frozenset({"jfif", "jfif_version", "jfif_unit", "jfif_density", "dpi"})
 
@@ -57,7 +68,11 @@ def sheet(clip: Path) -> Path | None:
             "-i",
             str(clip),
             "-vf",
-            f"fps=1/{step:.3f},scale=380:-1,tile={FRAMES}x1",
+            (
+                f"fps=1/{step:.3f},"
+                f"crop=iw:ih*{1 - WATERMARK_STRIP:.3f}:0:0,"
+                f"scale=380:-1,tile={FRAMES}x1"
+            ),
             "-frames:v",
             "1",
             "-fflags",
