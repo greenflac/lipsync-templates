@@ -131,6 +131,30 @@ def kling_batch_url(filename: str) -> str:
     return KLING_BATCH.format(batch=f"batch_{number // 1000:03d}", name=filename)
 
 
+def _pixels_only(image):
+    """A copy carrying pixels and nothing else.
+
+    MEASURED 2026-08-30, and it contradicts what the first version assumed:
+    neither `convert("RGB")` nor `.copy()` drops a JPEG comment — both carry
+    `info` through to the saved file. PNG text chunks DO fall away, which is why
+    the first strip looked sound: it was tested on the carrier that happens to
+    be fragile. Only a genuinely new Image is clean.
+
+    Found by a control on the contact sheets, where ffmpeg writes `Lavc61.3.100`
+    into a comment. It names our own tool, not the source, so it read as
+    harmless — until the same control noticed the OpenFake images carry no
+    comment at all. Its mere PRESENCE separated a video case from an image one
+    without the reader looking at a pixel. A leak need not spell out the answer;
+    it only has to correlate with it.
+    """
+    from PIL import Image
+
+    source = image.convert("RGB")
+    blank = Image.new("RGB", source.size)
+    blank.paste(source)
+    return blank
+
+
 def strip_image(raw: bytes, out: Path) -> dict:
     """Re-encode an image so its provenance does not travel with it."""
     from PIL import Image
@@ -138,7 +162,7 @@ def strip_image(raw: bytes, out: Path) -> dict:
     original = Image.open(io.BytesIO(raw))
     carried = sorted(str(k) for k in (original.info or {}) if k not in ALLOWED_INFO_KEYS)
     buffer = io.BytesIO()
-    original.convert("RGB").save(buffer, "JPEG", quality=88)
+    _pixels_only(original).save(buffer, "JPEG", quality=88)
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_bytes(buffer.getvalue())
     left = sorted(str(k) for k in (Image.open(out).info or {}) if k not in ALLOWED_INFO_KEYS)

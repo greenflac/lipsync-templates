@@ -44,6 +44,7 @@ from lipsync.fork_identity import FAIL, PASS, UNMEASURED  # noqa: E402
 
 BANK = Path(__file__).resolve().parents[1] / "work" / "casebank"
 TRUTH = BANK / "TRUTH.json"
+BLIND_MAP = BANK / "BLIND_MAP.json"
 
 #: Below this the score is a rumour. ВЫБРАНО: with twelve candidates and a 1/12
 #: baseline, fewer than twenty answered cases cannot separate a real signal from
@@ -75,9 +76,25 @@ def family_of(name: str) -> str:
     return text.split("-")[0] if text else "?"
 
 
-def score(cases: list[dict], answers: list[dict]) -> dict:
+def score(cases: list[dict], answers: list[dict], blind: dict[str, str] | None = None) -> dict:
+    """Join answers to truth through the blinding map.
+
+    The readers never saw a real case id — the first version of the bank named
+    its files `kv-…` for Kling and `of-…` for OpenFake, which handed over the
+    source before a reader opened anything. The files are `case-001.jpg` now, in
+    shuffled order, and this is where the two halves are put back together.
+    """
+    blind = blind or {}
     by_id = {c["case_id"]: c for c in cases}
-    seen: dict[str, dict] = {a["case_id"]: a for a in answers if a.get("case_id") in by_id}
+    seen: dict[str, dict] = {}
+    unmatched: list[str] = []
+    for answer in answers:
+        said_id = str(answer.get("case_id") or "")
+        real = blind.get(said_id, said_id)
+        if real in by_id:
+            seen[real] = answer
+        else:
+            unmatched.append(said_id)
 
     rows: list[dict] = []
     for cid, answer in seen.items():
@@ -140,6 +157,7 @@ def score(cases: list[dict], answers: list[dict]) -> dict:
         "outcome": outcome,
         "checked": len(rows),
         "violations": 0,
+        "не_сошлись_идентификаторы": unmatched,
         "unmeasured": overall["could_not"],
         "baseline_random": baseline,
         "families_in_bank": sorted(families),
@@ -168,7 +186,8 @@ def main(argv: list[str]) -> int:
         return 2
     cases = json.loads(TRUTH.read_text(encoding="utf-8"))
     answers = json.loads(Path(args.answers).read_text(encoding="utf-8"))
-    out = score(cases, answers)
+    blind = json.loads(BLIND_MAP.read_text(encoding="utf-8")) if BLIND_MAP.is_file() else {}
+    out = score(cases, answers, blind)
 
     restricted = out["ограниченные_non_commercial"]
     if restricted["cases"]:

@@ -22,6 +22,9 @@ from lipsync.fork_identity import PASS, UNMEASURED  # noqa: E402
 
 BANK = Path(__file__).resolve().parents[1] / "work" / "casebank"
 
+#: What a JPEG may keep. Anything else is a carrier, whatever it says.
+ALLOWED = frozenset({"jfif", "jfif_version", "jfif_unit", "jfif_density", "dpi"})
+
 #: Frames per sheet. ВЫБРАНО: six across the clip shows motion and still leaves
 #: each frame large enough to judge texture at a glance.
 FRAMES = 6
@@ -64,7 +67,25 @@ def sheet(clip: Path) -> Path | None:
         capture_output=True,
         check=False,
     )
-    return out if out.is_file() and out.stat().st_size > 5000 else None
+    if not (out.is_file() and out.stat().st_size > 5000):
+        return None
+    # ffmpeg's mjpeg encoder writes its own version into a JPEG comment —
+    # `Lavc61.3.100`, identical on every sheet. It does not name the SOURCE, so
+    # it looked harmless. It is not: the OpenFake image cases are written by
+    # PIL and carry no comment at all, so its mere PRESENCE separates a video
+    # case from an image one without the reader looking at a single pixel. A
+    # leak does not have to spell out the answer to spoil the measurement; it
+    # only has to correlate with it. Re-saving through PIL drops it and makes
+    # every case in the bank metadata-identical.
+    from PIL import Image
+
+    from studio.mcp.casebank import _pixels_only
+
+    _pixels_only(Image.open(out)).save(out, "JPEG", quality=88)
+    left = sorted(str(k) for k in (Image.open(out).info or {}) if k not in ALLOWED)
+    if left:
+        return None
+    return out
 
 
 def main() -> int:
