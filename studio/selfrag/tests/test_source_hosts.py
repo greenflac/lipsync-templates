@@ -214,3 +214,50 @@ class TheHostIsNotAlwaysTheAuthor(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ComfyOrgIsAPlatformNotARepository(unittest.TestCase):
+    """A path prefix, added 2026-08-30, and why it is not the whole host.
+
+    ComfyUI's official template registry publishes EXECUTABLE graphs, and a
+    closed model appears in one as the node type that calls it — MEASURED that
+    day: `api_google_nano_banana2_image_edit.json` is three nodes,
+    LoadImage -> GeminiNanoBanana2V2 -> SaveImage. A graph that runs is a
+    statement about a running system, which is what `portal` is for.
+
+    The negative control is the reason the prefix exists at all: the rest of
+    `raw.githubusercontent.com` is anybody's repository, and promoting the whole
+    host would launder every README on GitHub onto the middle rung.
+    """
+
+    def test_the_comfy_registry_is_a_portal(self) -> None:
+        got = S.classify(
+            "nano-banana-edit",
+            "https://raw.githubusercontent.com/Comfy-Org/workflow_templates/main/templates/x.json",
+            vendor_tier="vendor",
+            portal_tier="portal",
+            blog_tier="blog",
+        )
+        assert got == "portal", got
+
+    def test_THE_NEGATIVE_CONTROL_the_rest_of_the_host_stays_a_blog(self) -> None:
+        got = S.classify(
+            "nano-banana-edit",
+            "https://raw.githubusercontent.com/somebody/notes/main/README.md",
+            vendor_tier="vendor",
+            portal_tier="portal",
+            blog_tier="blog",
+        )
+        assert got == "blog", got
+
+    def test_a_lookalike_owner_does_not_inherit_the_rung(self) -> None:
+        """`Comfy-Org-Fake` must not match `Comfy-Org/`: the prefix ends with a
+        slash for exactly this reason."""
+        got = S.classify(
+            "nano-banana-edit",
+            "https://raw.githubusercontent.com/Comfy-Org-Fake/x/main/a.json",
+            vendor_tier="vendor",
+            portal_tier="portal",
+            blog_tier="blog",
+        )
+        assert got == "blog", got

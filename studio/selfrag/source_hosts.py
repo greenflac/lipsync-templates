@@ -222,8 +222,22 @@ VENDOR_SOURCES: dict[str, tuple[str, ...]] = {
 #: workflows with the results they got is the middle rung; the rest of Reddit
 #: is a forum. This is what the path prefix is for. Add a sibling community the
 #: same way — one line, `reddit.com/r/<name>/`.
+#:
+#: `raw.githubusercontent.com/Comfy-Org/` on the same principle, added
+#: 2026-08-30. ComfyUI's official template registry is a platform that RUNS
+#: models: its templates are EXECUTABLE graphs, and a closed model appears in
+#: them as the node type that calls it, not as a description of one. MEASURED
+#: that day — `templates/api_google_nano_banana2_image_edit.json` is three
+#: nodes, `LoadImage -> GeminiNanoBanana2V2 -> SaveImage`; the index lists 8
+#: nano_banana templates and 84 mentions of Kling. A graph that runs is a
+#: statement about a running system, which is what this rung is for.
+#:
+#: The prefix is the whole point: the rest of `raw.githubusercontent.com` is
+#: anybody's repository and stays `blog`. Comfy-Org's own repositories are the
+#: platform speaking.
 PORTAL_SOURCES: tuple[str, ...] = (
     "apiframe.ai",
+    "raw.githubusercontent.com/Comfy-Org/",
     "atlascloud.ai",
     "civitai.com",
     "docs.dev.runwayml.com",
