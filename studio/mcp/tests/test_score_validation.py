@@ -1,6 +1,6 @@
 """The scorer: can the number it prints be trusted, and can it be red?
 
-Four ways a validation score lies, and a test for each. Every fixture is written
+Five ways a validation score lies, and a test for each. Every fixture is written
 here, so nothing needs the case bank — which is gitignored, and a test that
 needs it passes on this machine and fails in CI.
 """
@@ -26,8 +26,13 @@ def _case(cid: str, model: str, *, source: str = "openfake", ok: bool = False) -
         "case_id": cid,
         "source": source,
         "commercial_ok": ok,
-        "truth": {"model": model} if source == "openfake" else {"kling_version": model},
+        "truth": {"kling_version": model} if source == "kling" else {"model": model},
     }
+
+
+#: Enough distinct right answers that a source is a real choice. Written here as
+#: literals rather than imported from the scorer (rule T2).
+_MODELS = ("veo-3", "sora-2", "midjourney-7", "flux.2-klein-9b")
 
 
 def _answer(cid: str, said: str | None, *, recognised: bool = False) -> dict:
@@ -58,10 +63,10 @@ class GuessingCannotInflateTheNumber(unittest.TestCase):
         assert out["unmeasured"] == 2
 
     def test_a_small_bank_returns_COULD_NOT_MEASURE_not_a_percentage(self) -> None:
-        """A rate over three cases is a rumour. The instrument says so itself
+        """A rate over five cases is a rumour. The instrument says so itself
         rather than printing a number somebody will quote."""
-        cases = [_case(str(i), "veo-3") for i in range(5)]
-        answers = [_answer(str(i), "veo-3") for i in range(5)]
+        cases = [_case(str(i), _MODELS[i % len(_MODELS)]) for i in range(5)]
+        answers = [_answer(str(i), _MODELS[i % len(_MODELS)]) for i in range(5)]
         out = scorer.score(cases, answers)
         assert out["outcome"] == UNMEASURED, out["note"]
         assert "слух" in out["note"]
@@ -69,8 +74,9 @@ class GuessingCannotInflateTheNumber(unittest.TestCase):
     def test_enough_answers_make_it_measurable(self) -> None:
         """The other edge: the floor must let a real run through, or it is not a
         floor, it is a wall."""
-        cases = [_case(str(i), "veo-3") for i in range(scorer.MIN_ANSWERED)]
-        answers = [_answer(str(i), "veo-3") for i in range(scorer.MIN_ANSWERED)]
+        n = scorer.MIN_ANSWERED
+        cases = [_case(str(i), _MODELS[i % len(_MODELS)]) for i in range(n)]
+        answers = [_answer(str(i), _MODELS[i % len(_MODELS)]) for i in range(n)]
         out = scorer.score(cases, answers)
         assert out["outcome"] == PASS, out["note"]
 
@@ -106,6 +112,63 @@ class TheLicenceChangesTheShapeOfTheReport(unittest.TestCase):
         cases = [_case("b", "1.5", source="kling", ok=True)]
         out = scorer.score(cases, [_answer("b", "kling-1.5")])
         assert out["ограниченные_non_commercial"]["cases"] == 0
+
+
+class ASourceWithOneRightAnswerIsNotAMeasurement(unittest.TestCase):
+    """The fifth way a score lies, found on a real run 2026-08-30.
+
+    Every video in the bank was Kling, so a reader that recognised "this is a
+    video" and then said "kling" scored 16 out of 16 without discriminating
+    anything. The scorer must refuse to headline that number.
+    """
+
+    def test_a_single_family_source_is_marked_and_kept_out_of_the_verdict(self) -> None:
+        n = scorer.MIN_ANSWERED
+        # A source offering a genuine choice, answered correctly half the time.
+        cases = [_case(f"o{i}", _MODELS[i % len(_MODELS)]) for i in range(n)]
+        answers = [
+            _answer(f"o{i}", _MODELS[i % len(_MODELS)] if i % 2 == 0 else "recraft-v3")
+            for i in range(n)
+        ]
+        # A source where the only right answer is always the same word.
+        cases += [_case(f"k{i}", "1.6", source="kling", ok=True) for i in range(10)]
+        answers += [_answer(f"k{i}", "kling-1.6") for i in range(10)]
+
+        out = scorer.score(cases, answers)
+        assert out["источники_без_выбора"] == ["kling"]
+        assert out["по_источнику"]["kling"]["различимо"] is False
+        assert out["по_источнику"]["kling"]["семейств_в_источнике"] == 1
+        assert out["по_источнику"]["openfake"]["различимо"] is True
+        # The flattered number and the honest one, side by side.
+        assert out["overall"]["family_rate"] == 0.6667
+        assert out["различающая_часть"]["family_rate"] == 0.5
+        assert out["outcome"] == PASS
+        assert "kling" in out["note"]
+
+    def test_two_versions_of_one_vendor_are_still_one_family(self) -> None:
+        """Kling 1.5 beside Kling 1.6 does NOT rescue the source: the question
+        scored here is the family, and both answers are the same word. This is
+        why the real bank needs video from a SECOND vendor, not a second
+        version — recorded so nobody 'fixes' it the cheap way."""
+        cases = [_case("k0", "1.5", source="kling", ok=True)]
+        cases += [_case("k1", "1.6", source="kling", ok=True)]
+        answers = [_answer("k0", "kling-1.5"), _answer("k1", "kling-1.6")]
+        out = scorer.score(cases, answers)
+        assert out["источники_без_выбора"] == ["kling"]
+
+    def test_a_bank_where_every_source_discriminates_names_none(self) -> None:
+        """The negative control (rule I5). Without an input on which the flag
+        must stay DOWN, a flag that is always up would pass this suite."""
+        n = scorer.MIN_ANSWERED
+        cases = [_case(f"o{i}", _MODELS[i % len(_MODELS)]) for i in range(n)]
+        cases += [_case("v0", "veo-3", source="video", ok=True)]
+        cases += [_case("v1", "sora-2", source="video", ok=True)]
+        answers = [_answer(f"o{i}", _MODELS[i % len(_MODELS)]) for i in range(n)]
+        answers += [_answer("v0", "veo-3"), _answer("v1", "sora-2")]
+        out = scorer.score(cases, answers)
+        assert out["источники_без_выбора"] == []
+        assert out["различающая_часть"]["cases"] == n + 2
+        assert "единственным семейством" not in out["note"]
 
 
 class TheBlindingMapIsHowTheHalvesMeet(unittest.TestCase):

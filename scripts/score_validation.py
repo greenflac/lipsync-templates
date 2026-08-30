@@ -8,7 +8,7 @@ WHAT IS BEING MEASURED
 Whether this agent can tell, from the picture alone, which generator made it.
 Nobody has that number; until now it was established by the owner correcting me.
 
-FOUR WAYS THE NUMBER COULD LIE, AND WHAT IS DONE ABOUT EACH
+FIVE WAYS THE NUMBER COULD LIE, AND WHAT IS DONE ABOUT EACH
 
 1. GUESSING. A reader pushed to answer will answer, and a corpus of twelve
    candidates rewards a coin-flip 8% of the time. So `не смогли` is a first-class
@@ -29,6 +29,18 @@ FOUR WAYS THE NUMBER COULD LIE, AND WHAT IS DONE ABOUT EACH
    would carry the average on its own. Family accuracy and exact-model accuracy
    are reported apart, and per source, so a good number cannot hide behind an
    easy split.
+
+5. A SOURCE WITH ONLY ONE RIGHT ANSWER. Found 2026-08-30 by looking at a result
+   that was too good: with the Kling watermark cropped away the readers still
+   scored 16/16 on family, at confidence 0.3, saying in their own words "a strip
+   of six frames means video, and among the video candidates I take kling". They
+   were right every time because every video in the bank IS kling — the format
+   of the sheet announced the source, and no input existed where the correct
+   answer was "not kling". That is a missing negative control (rule I5), and a
+   rate measured without one is not a measurement of discrimination. So a source
+   whose truth carries a single family is marked `различимо: false`, its rate is
+   printed but never headlined, and the verdict is computed over the
+   discriminating part alone.
 """
 
 from __future__ import annotations
@@ -140,19 +152,37 @@ def score(cases: list[dict], answers: list[dict], blind: dict[str, str] | None =
     families = {family_of(str(c["truth"].get("model") or "kling")) for c in cases}
     baseline = round(1 / max(len(families), 1), 4)
 
+    # How many DIFFERENT right answers a source offers. One is not a choice:
+    # a reader that always says the same word scores 100% there (rule I5).
+    families_per_source: dict[str, set[str]] = {}
+    for case in cases:
+        real = str(case["truth"].get("model") or "")
+        if case["source"] == "kling":
+            real = f"kling-{case['truth'].get('kling_version')}"
+        families_per_source.setdefault(case["source"], set()).add(family_of(real))
+    blind_sources = sorted(s for s, f in families_per_source.items() if len(f) < 2)
+    discriminating = [r for r in rows if r["source"] not in blind_sources]
+
     restricted = [r for r in rows if not r["commercial_ok"]]
     clean = [r for r in rows if r["commercial_ok"]]
     recognised = [r for r in rows if r["recognised"]]
     without_memory = [r for r in rows if not r["recognised"]]
 
     overall = tally(rows)
-    outcome = UNMEASURED if overall["answered"] < MIN_ANSWERED else PASS
-    note = (
-        f"отвечено {overall['answered']} < {MIN_ANSWERED}: числа печатаются, но "
-        "процент по такой выборке — слух, а не измерение"
-        if outcome is UNMEASURED
-        else f"семейство {overall['family_rate']} против случайного {baseline}"
-    )
+    honest = tally(discriminating)
+    outcome = UNMEASURED if honest["answered"] < MIN_ANSWERED else PASS
+    if outcome is UNMEASURED:
+        note = (
+            f"различающих ответов {honest['answered']} < {MIN_ANSWERED}: числа "
+            "печатаются, но процент по такой выборке — слух, а не измерение"
+        )
+    else:
+        note = f"семейство {honest['family_rate']} против случайного {baseline}"
+        if blind_sources:
+            note += (
+                f"; считано без источников с единственным семейством "
+                f"({', '.join(blind_sources)}) — там отличать не от чего"
+            )
     return {
         "outcome": outcome,
         "checked": len(rows),
@@ -163,9 +193,15 @@ def score(cases: list[dict], answers: list[dict], blind: dict[str, str] | None =
         "families_in_bank": sorted(families),
         "overall": overall,
         "по_источнику": {
-            src: tally([r for r in rows if r["source"] == src])
+            src: dict(
+                tally([r for r in rows if r["source"] == src]),
+                семейств_в_источнике=len(families_per_source.get(src, set())),
+                различимо=src not in blind_sources,
+            )
             for src in sorted({r["source"] for r in rows})
         },
+        "источники_без_выбора": blind_sources,
+        "различающая_часть": honest,
         "коммерчески_чистые": tally(clean),
         "ограниченные_non_commercial": tally(restricted),
         "узнал_по_памяти": len(recognised),
@@ -197,16 +233,30 @@ def main(argv: list[str]) -> int:
         print("cc-by-nc-4.0). Любой вывод отсюда несёт эту пометку дальше.")
         print("=" * 68)
 
+    if out["источники_без_выбора"]:
+        print("=" * 68)
+        print("ЕДИНСТВЕННОЕ СЕМЕЙСТВО В ИСТОЧНИКЕ: " + ", ".join(out["источники_без_выбора"]))
+        print("Там правильный ответ всегда один и тот же, поэтому его процент не")
+        print("измеряет различение. Итог считается по остальным (правило И5).")
+        print("=" * 68)
+
     o = out["overall"]
+    h = out["различающая_часть"]
     print(f"\nразборов {o['cases']} | отвечено {o['answered']} | не смогли {o['could_not']}")
-    print(f"семейство угадано  {o['family_hits']}/{o['answered']}  = {o['family_rate']}")
-    print(f"модель угадана     {o['exact_hits']}/{o['answered']}  = {o['exact_rate']}")
+    print(f"ИТОГ (различающая часть): семейство {h['family_hits']}/{h['answered']} = "
+          f"{h['family_rate']}, модель {h['exact_hits']}/{h['answered']} = {h['exact_rate']}")
+    print(f"всё вместе, для справки:  семейство {o['family_hits']}/{o['answered']} = "
+          f"{o['family_rate']}, модель {o['exact_hits']}/{o['answered']} = {o['exact_rate']}")
     print(
         f"случайное угадывание при {len(out['families_in_bank'])} семействах = {out['baseline_random']}"
     )
     print("\nпо источнику:")
     for src, t in out["по_источнику"].items():
-        print(f"  {src:10} отвечено {t['answered']:3}/{t['cases']:3}  семейство {t['family_rate']}")
+        mark = "" if t["различимо"] else "  ← одно семейство, не измерение"
+        print(
+            f"  {src:10} отвечено {t['answered']:3}/{t['cases']:3}  "
+            f"семейство {t['family_rate']}{mark}"
+        )
     print(f"\nузнал по памяти, а не прочитал: {out['узнал_по_памяти']}")
     bm = out["без_узнавания"]
     print(f"без них: отвечено {bm['answered']}, семейство {bm['family_rate']}")
