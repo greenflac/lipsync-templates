@@ -173,6 +173,14 @@ python scripts/ingest_harvest.py --check \
 echo "== knowledge lane: source, tier, and no copied prose"
 python scripts/check_craft.py --check
 
+# The validator bench hands a creative to a reader with its origin cut away.
+# MEASURED 2026-08-30: the files carry the whole ComfyUI graph, the checkpoint
+# name and the prompt. If the strip stops stripping, every number the bench
+# produces afterwards is a lie about the agent's ability and nothing downstream
+# would notice — so it is re-proved here on every build (rule C7).
+echo "== validator bench: the answer is cut off the picture"
+python scripts/validator.py check
+
 echo "== mcp server handshake"
 python - <<'PY'
 import asyncio, sys
