@@ -1544,6 +1544,36 @@ def evaluate(
         relevant = sum(1 for hay in haystacks if any(phrase in hay for phrase in must))
         precision = relevant / len(examples) if examples else (1.0 if not must else 0.0)
 
+        # НЕ СМОГЛИ — не то же самое, что НЕ НАШЛИ (правило Р1). Найдено
+        # разбором 2026-08-31: `unmeasured` объявлялся нулём и не двигался
+        # НИКОГДА, а строка, на которой сам ретривер ответил «не смогли»
+        # (запрос без поискового термина, например), получала recall 0.0 и
+        # уезжала в нарушения. То есть прибор превращал «нечего было искать» в
+        # «искали и провалились», занижая собственное число и печатая при этом
+        # честный на вид «не смогли 0».
+        #
+        # # DEBT(2026-08-31): владелец `studio/knowledge.py` — другой агент
+        # (HANDOFF_studio-mvp.md), и по Ц2 чужой модуль не правится. Правка
+        # сделана всё равно и намеренно узко: дефект искажает публикуемое
+        # число качества поиска, а владельца в этой ветке нет. Отступление
+        # записано здесь, чтобы оно грепалось и не стало нормой.
+        if answer["outcome"] == UNMEASURED:
+            unmeasured += 1
+            per_record.append(
+                {
+                    "query": query,
+                    "control": control,
+                    "returned": len(examples),
+                    "recall": None,
+                    "precision": None,
+                    "found": [],
+                    "leaked": [],
+                    "ok": None,
+                    "outcome": answer["outcome"],
+                }
+            )
+            continue
+
         ok = True
         if control == "negative":
             controls["negative"]["checked"] += 1
