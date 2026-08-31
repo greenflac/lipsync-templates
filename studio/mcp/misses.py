@@ -42,19 +42,40 @@ from lipsync.fork_identity import FAIL, PASS, UNMEASURED
 STORE = Path(__file__).resolve().parents[1] / "knowledge" / "misses.jsonl"
 
 #: Исход одного вопроса, теми же тремя значениями, что и везде (правило Р1).
-#: `PASS` — база ответила; `FAIL` — источники спорят, но модель известна;
-#: `UNMEASURED` — о модели не записано ничего. Промах — только третий.
+#: Это исход КОНСУЛЬТАЦИИ, как его назвал `advise`. Промах считается не по
+#: нему, а по полю `known` ниже: см. Е2 и пойманное расхождение.
 OUTCOMES = (PASS, FAIL, UNMEASURED)
 
 #: Без этих полей строка не кладётся: вопрос без даты не отличить от вопроса
 #: прошлого года, а вопрос без исхода не считается ни в один знаменатель.
 REQUIRED = ("model", "asked_on", "outcome")
 
+#: Сколько атрибутов о модели у базы НА САМОМ ДЕЛЕ нашлось. Промах считается
+#: по этому числу, а не по исходу консультации, — правило Е2, «при расхождении
+#: флага и свидетельства верь свидетельству».
+#:
+#: Расхождение не гипотетическое, оно поймано первым же живым прогоном
+#: 2026-08-31: `advise("wan-2.2")` вернул `не смогли`, потому что модели нет в
+#: РЕЕСТРЕ ДОСТУПНОСТИ, — и одновременно `checked 3`, то есть три атрибута о
+#: ней записаны. Считать это промахом значит мерить полноту реестра и называть
+#: результат покрытием базы.
+KNOWN_FIELD = "known"
+
 #: ВЫБРАНО 2026-08-31: столько промахов подряд об ОДНОЙ модели считается
 #: сигналом, что её пора дочитывать, а не случайным вопросом. Меньше — и в
 #: очередь попадёт каждая опечатка в имени; больше — и настоящий пробел
 #: простоит неделю. Порог сторожится тестом в обе стороны (правило Т1).
 REPEAT_BEFORE_QUEUE = 2
+
+
+def covered(row: dict[str, Any]) -> bool:
+    """Нашлось ли у базы хоть что-нибудь по этому вопросу.
+
+    Вынесено функцией (правило Т5), потому что от неё зависит и знаменатель
+    покрытия, и попадание модели в очередь дочитывания — а развилка, повторённая
+    в двух местах, разъедется.
+    """
+    return int(row.get(KNOWN_FIELD, 0) or 0) > 0
 
 
 @dataclass(frozen=True)
@@ -91,6 +112,7 @@ def note_question(
     attribute: str,
     outcome: str,
     *,
+    known: int = 0,
     asked_on: str = "",
     note: str = "",
     path: Path | None = None,
@@ -106,6 +128,7 @@ def note_question(
         "model": str(model or "").strip(),
         "attribute": str(attribute or "").strip(),
         "outcome": str(outcome or "").strip(),
+        KNOWN_FIELD: int(known),
         "asked_on": asked_on or date.today().isoformat(),
         "note": note,
     }
@@ -149,9 +172,10 @@ def coverage(rows: Iterable[dict[str, Any]]) -> Coverage:
     """
     seen = [r for r in rows if not problems(r)]
     asked = len(seen)
-    answered = sum(1 for r in seen if r.get("outcome") == PASS)
-    contested = sum(1 for r in seen if r.get("outcome") == FAIL)
-    missed = sum(1 for r in seen if r.get("outcome") == UNMEASURED)
+    known = [r for r in seen if covered(r)]
+    answered = sum(1 for r in known if r.get("outcome") != FAIL)
+    contested = sum(1 for r in known if r.get("outcome") == FAIL)
+    missed = asked - len(known)
     if asked == 0:
         return Coverage(0, 0, 0, 0, UNMEASURED, None, "вопросов не задавали — мерить нечего")
     rate = (answered + contested) / asked
@@ -178,7 +202,7 @@ def queue(
     attributes: dict[str, set[str]] = {}
     last: dict[str, str] = {}
     for row in rows:
-        if problems(row) or row.get("outcome") != UNMEASURED:
+        if problems(row) or covered(row):
             continue
         name = str(row["model"]).lower()
         counts[name] = counts.get(name, 0) + 1

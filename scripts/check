@@ -208,6 +208,13 @@ python scripts/check_skips.py --check
 echo "== измеренные числа: схема и потолок на хэндоф"
 python scripts/check_measured.py --check
 
+# Покрытие мерится не запасом («сколько моделей в базе»), а долей РЕАЛЬНО
+# заданных вопросов, которые база закрыла. Знаменатель живёт в журнале, и
+# битая строка в нём — это молча съехавший знаменатель, то есть ровно тот
+# класс дефекта, который на этом проекте стоил больше всего. Сети здесь нет.
+echo "== журнал вопросов: схема строк и знаменатель покрытия"
+python scripts/refill_queue.py --check
+
 echo "== validator bench: does the shape of the file give away the source"
 set +e
 python scripts/check_sheet_shape.py --check

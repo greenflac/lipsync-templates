@@ -14,8 +14,27 @@ from pathlib import Path
 from studio.mcp import misses
 
 
-def row(model: str, outcome: str, attribute: str = "max_seconds", asked_on: str = "2026-08-31"):
-    return {"model": model, "attribute": attribute, "outcome": outcome, "asked_on": asked_on}
+def row(
+    model: str,
+    outcome: str,
+    attribute: str = "max_seconds",
+    asked_on: str = "2026-08-31",
+    known: int | None = None,
+):
+    """Строка журнала. `known` — сколько атрибутов база реально нашла.
+
+    По умолчанию согласовано с исходом: ответить, ничего не зная, нельзя. Но
+    рассогласовать их можно явно — на этом держатся два теста про Е2.
+    """
+    if known is None:
+        known = 0 if outcome == "could not measure" else 1
+    return {
+        "model": model,
+        "attribute": attribute,
+        "outcome": outcome,
+        "asked_on": asked_on,
+        "known": known,
+    }
 
 
 class CoverageCounts(unittest.TestCase):
@@ -39,6 +58,22 @@ class CoverageCounts(unittest.TestCase):
         self.assertEqual(got.missed, 1)
         self.assertAlmostEqual(got.rate, 2 / 3)
         self.assertEqual(got.outcome, "fail")
+
+    def test_the_evidence_beats_the_flag(self):
+        """Е2: `advise` сказал «не смогли» по реестру, а факты о модели есть.
+
+        Поймано на живом прогоне 2026-08-31: `wan-2.2` отсутствует в реестре
+        доступности и при этом имеет записанные атрибуты. Считать это промахом
+        значит мерить полноту реестра и называть результат покрытием базы.
+        """
+        got = misses.coverage([row("wan-2.2", "could not measure", known=3)])
+        self.assertEqual(got.missed, 0)
+        self.assertEqual(got.rate, 1.0)
+
+    def test_a_model_the_base_knows_nothing_about_never_reaches_the_queue_by_flag(self):
+        """И обратно: исход `pass` при пустой базе промахом быть не перестаёт."""
+        rows = [row("выдумка", "pass", known=0), row("выдумка", "pass", known=0)]
+        self.assertEqual([r["model"] for r in misses.queue(rows)], ["выдумка"])
 
     def test_contested_counts_as_known_not_as_a_miss(self):
         """Спорящие источники — это знание о модели, а не пробел в базе."""
