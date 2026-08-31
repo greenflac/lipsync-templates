@@ -60,6 +60,7 @@ report prints the observed margins next to them so the choice stays arguable.
 from __future__ import annotations
 
 import argparse
+import os
 import random
 import re
 import sys
@@ -238,7 +239,15 @@ def report(*, index: K.KnowledgeIndex | None = None) -> dict:
     absent-corpus branch below is reachable from a test (rule T5). A fork that
     lives only inside an entry point degrades unwatched.
     """
-    index = index if index is not None else K.build_index()
+    # Плотный канал включается тем же флагом, что и везде, и это НЕ мелочь:
+    # без этой строки прогон «с плотным каналом» строил ровно тот же индекс,
+    # что и без него, и сравнение до/после показало бы одинаковые числа,
+    # выглядящие как честный замер. Поймано 2026-08-31 до того, как такое
+    # сравнение было напечатано (правило П1: у ручки обязан быть счётчик, и
+    # счётчик обязан мерить именно эту ручку).
+    if index is None:
+        dense = os.environ.get(K.DENSE_ENV_FLAG, "") == "1"
+        index = K.build_index(dense=dense)
     per_source = index.build_report["per_source"]
     if per_source.get("gallery", 0) == 0:
         return {
