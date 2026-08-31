@@ -104,15 +104,39 @@ FOREIGN_TEXT_SHARE = 0.2
 #: оговорку — и прибор объявлял это РАСХОЖДЕНИЕМ между весами, хотя это одна
 #: лицензия на двух языках. Отсутствие свидетельства выдавалось за
 #: свидетельство отсутствия, а сверху ещё и за ложную находку.
-CANNOT_READ = "НЕ СМОГЛИ ПРОЧИТАТЬ: язык не тот, оговорки не проверены"
+CANNOT_READ = "НЕ СМОГЛИ ПРОЧИТАТЬ"
 
 
-def unreadable(text: str) -> bool:
-    """Написан ли текст не на том языке, который здесь умеют читать."""
-    if not text:
-        return True
+#: Так выглядит НЕ файл, а указатель на него: HuggingFace хранит большие файлы
+#: в git-lfs, и `raw/` отдаёт вместо содержимого три строки метаданных.
+#: ПОЙМАНО на Comfy-Org/Krea-2 2026-08-31: `LICENSE.pdf` пришёл в 131 символ,
+#: детектор не нашёл в них оговорок и объявил лицензию чистой — при том что за
+#: указателем лежит PDF на 137 711 байт, которого мы не видели.
+LFS_POINTER = "git-lfs.github.com/spec"
+
+#: Короче этого текст лицензией не бывает — это обрывок, шапка или указатель.
+#: ВЫБРАНО 400 символов: самая короткая настоящая лицензия из прочитанных
+#: (MIT, ~1000 символов) вдвое длиннее, а LFS-указатель втрое короче.
+LICENCE_MIN_CHARS = 400
+
+
+def unreadable(text: str) -> str:
+    """ПОЧЕМУ по этому тексту нельзя судить об оговорках. Пусто — можно.
+
+    Три причины, и они разные: пусто/обрывок, указатель git-lfs вместо файла,
+    чужой язык. Все три обязаны печататься как «не смогли», а не как «оговорок
+    не нашли» (правило Р1) — и называть себя, а не прикрываться одной общей
+    фразой: первая редакция говорила «язык не тот» про LFS-указатель, то есть
+    третий исход отдавала с неверной причиной.
+    """
+    if LFS_POINTER in text[:200]:
+        return "это указатель git-lfs, а не сам файл"
+    if not text or len(text) < LICENCE_MIN_CHARS:
+        return f"текст короче {LICENCE_MIN_CHARS} символов — обрывок, не лицензия"
     чужих = sum(1 for ch in text if ord(ch) > 127)
-    return чужих / len(text) > FOREIGN_TEXT_SHARE
+    if чужих / len(text) > FOREIGN_TEXT_SHARE:
+        return "язык не тот, оговорки не проверены"
+    return ""
 
 
 def license_flags(text: str) -> list[str]:
@@ -125,8 +149,9 @@ def license_flags(text: str) -> list[str]:
     Текст не на английском возвращает НЕ пустой список, а `CANNOT_READ`:
     молчащий детектор и чистая лицензия обязаны выглядеть по-разному.
     """
-    if unreadable(text):
-        return [CANNOT_READ]
+    почему = unreadable(text)
+    if почему:
+        return [f"{CANNOT_READ}: {почему}"]
     found: list[str] = []
     low = text.lower()
     if "excluded territor" in low or "applicable territory" in low:
@@ -233,7 +258,11 @@ def licences_disagree(licences: list[dict[str, Any]]) -> bool:
     # Файл, который мы не смогли прочитать, в сравнении НЕ участвует: иначе
     # непрочитанная китайская версия «расходится» с прочитанной английской, и
     # прибор поднимает тревогу там, где просто не хватило языка.
-    наборы = {frozenset(lic["flags"]) for lic in licences if CANNOT_READ not in lic["flags"]}
+    наборы = {
+        frozenset(lic["flags"])
+        for lic in licences
+        if not any(str(f).startswith(CANNOT_READ) for f in lic["flags"])
+    }
     return len(наборы) > 1
 
 
@@ -250,10 +279,13 @@ def already_known(model_id: str, store: FactStore | None = None) -> dict[str, An
     """
     склад = store or FactStore()
     короткое = model_id.rsplit("/", 1)[-1].lower()
-    соседи = склад.near(короткое)
     свои = [m for m in склад.models() if m == короткое]
-    атрибуты = sorted({a for m in свои + соседи for a in склад.attributes(m)})
-    return {"ids": свои + соседи, "attributes": атрибуты}
+    соседи = склад.near(короткое)
+    return {
+        "exact": свои,
+        "neighbours": соседи,
+        "attributes": sorted({a for m in свои for a in склад.attributes(m)}),
+    }
 
 
 def report(rows: list[dict[str, Any]], store: FactStore | None = None) -> int:
@@ -282,15 +314,21 @@ def report(rows: list[dict[str, Any]], store: FactStore | None = None) -> int:
             )
         print(f"    карточка:   {row['card_chars']} символов, задача {row['pipeline'] or '—'}")
         знание = already_known(row["model_id"], store)
-        if знание["ids"]:
-            print(f"    В БАЗЕ УЖЕ: {', '.join(знание['ids'][:5])}")
+        if знание["exact"]:
+            print(f"    В БАЗЕ УЖЕ ЭТА: {', '.join(знание['exact'])}")
             print(
                 f"       атрибутов записано {len(знание['attributes'])}: "
                 f"{', '.join(знание['attributes'][:8])}"
             )
             print("       новым записывать только то, чего здесь НЕТ")
         else:
-            print("    в базе о ней ничего — всё найденное будет новым")
+            print("    в базе этой модели нет")
+        if знание["neighbours"]:
+            # ПОХОЖИЕ, а не «уже есть». `omnigen2` и `omnihuman-1` делят четыре
+            # первые буквы и не имеют друг к другу отношения — разные вендоры,
+            # разные задачи. Печатать их как «уже в базе» значит подсказывать
+            # неверно (поймано на живой выдаче 2026-08-31).
+            print(f"    похожие имена (могут быть ЧУЖИЕ): {', '.join(знание['neighbours'][:5])}")
         print(
             f"    обсуждений: {row['discussions_total']},"
             f" похожих на отчёт о дефекте {len(row['troubles'])}"

@@ -18,21 +18,35 @@ hf = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(hf)
 
 
+#: Настоящая лицензия — это тысячи символов. Фикстуры добиваются до
+#: правдоподобной длины нейтральным текстом: короче порога прибор обязан
+#: говорить «обрывок», и он прав.
+ОБВЯЗКА = (
+    " This Agreement sets out the terms under which the Licensor grants rights"
+    " to the Licensee, including definitions, scope, and termination clauses."
+) * 4
+
+
 class LicenceReading(unittest.TestCase):
     def test_a_territorial_carve_out_is_flagged(self):
-        текст = "Excluded Territories means the European Union and the United States."
+        текст = "Excluded Territories means the European Union and the United States." + ОБВЯЗКА
         self.assertIn("территориальное ограничение: права даны не везде", hf.license_flags(текст))
 
     def test_research_only_is_flagged(self):
-        self.assertIn("только для исследований", hf.license_flags("For research purposes only."))
+        self.assertIn(
+            "только для исследований", hf.license_flags("For research purposes only." + ОБВЯЗКА)
+        )
 
     def test_a_permissive_licence_raises_nothing(self):
         """Негативный контроль: прибор обязан уметь молчать."""
-        apache = "Licensed under the Apache License, Version 2.0. You may obtain a copy."
+        apache = "Licensed under the Apache License, Version 2.0. You may obtain a copy." + ОБВЯЗКА
         self.assertEqual(hf.license_flags(apache), [])
 
     def test_a_ban_on_training_other_models_is_flagged(self):
-        текст = "You may not use the Outputs to improve any other artificial intelligence model."
+        текст = (
+            "You may not use the Outputs to improve any other artificial intelligence model."
+            + ОБВЯЗКА
+        )
         self.assertIn("запрет учить другие модели на выходах", hf.license_flags(текст))
 
 
@@ -47,17 +61,19 @@ class ForeignLicence(unittest.TestCase):
     """
 
     def test_a_chinese_licence_is_not_reported_as_clean(self):
-        китайская = "本许可协议规定了模型的使用条款和条件，包括商业使用的限制条款。" * 6
-        self.assertEqual(hf.license_flags(китайская), [hf.CANNOT_READ])
+        китайская = "本许可协议规定了模型的使用条款和条件，包括商业使用的限制条款。" * 20
+        self.assertEqual(
+            hf.license_flags(китайская), [hf.CANNOT_READ + ": язык не тот, оговорки не проверены"]
+        )
 
     def test_an_english_licence_with_a_few_dashes_is_still_readable(self):
-        английская = "This licence — see § 3 — is for research purposes only. " * 6
+        английская = "This licence — see § 3 — is for research purposes only. " * 12
         self.assertIn("только для исследований", hf.license_flags(английская))
 
     def test_an_unread_file_does_not_create_a_disagreement(self):
         licences = [
             {"file": "LICENSE.txt", "flags": ["некоммерческая оговорка"], "chars": 1},
-            {"file": "LICENSE_ZH.txt", "flags": [hf.CANNOT_READ], "chars": 1},
+            {"file": "LICENSE_ZH.txt", "flags": [hf.CANNOT_READ + ": язык"], "chars": 1},
         ]
         self.assertFalse(hf.licences_disagree(licences))
 
@@ -66,7 +82,7 @@ class ForeignLicence(unittest.TestCase):
         licences = [
             {"file": "a", "flags": ["только для исследований"], "chars": 1},
             {"file": "b", "flags": [], "chars": 1},
-            {"file": "zh", "flags": [hf.CANNOT_READ], "chars": 1},
+            {"file": "zh", "flags": [hf.CANNOT_READ + ": язык"], "chars": 1},
         ]
         self.assertTrue(hf.licences_disagree(licences))
 
@@ -80,10 +96,36 @@ class ForeignLicence(unittest.TestCase):
         доля = sum(1 for ch in смесь if ord(ch) > 127) / len(смесь)
         self.assertGreater(доля, 0.2)
         self.assertLess(доля, 0.9)
-        self.assertEqual(hf.license_flags(смесь), [hf.CANNOT_READ])
+        self.assertTrue(hf.license_flags(смесь)[0].startswith(hf.CANNOT_READ))
 
     def test_an_empty_file_is_unreadable_not_clean(self):
-        self.assertEqual(hf.license_flags(""), [hf.CANNOT_READ])
+        self.assertTrue(hf.license_flags("")[0].startswith(hf.CANNOT_READ))
+
+    def test_a_git_lfs_pointer_is_not_a_clean_licence(self):
+        """131 символ метаданных вместо PDF на 137 КБ, который мы не видели."""
+        указатель = (
+            "version https://git-lfs.github.com/spec/v1\n"
+            "oid sha256:b82a2805162bde714a4eb27b9063c4fc\nsize 137711\n"
+        )
+        метки = hf.license_flags(указатель)
+        self.assertTrue(метки[0].startswith(hf.CANNOT_READ))
+        self.assertIn("git-lfs", метки[0])
+
+    def test_a_short_snippet_is_a_fragment_not_a_licence(self):
+        """Обрывок без всяких LFS: сто символов лицензией не бывают."""
+        обрывок = "Copyright 2026. Some rights reserved. See website for terms."
+        метки = hf.license_flags(обрывок)
+        self.assertTrue(метки[0].startswith(hf.CANNOT_READ))
+        self.assertIn("обрывок", метки[0])
+
+    def test_a_short_permissive_snippet_is_not_reported_as_clean(self):
+        """Самая опасная форма: короткий текст без оговорок читается как «чисто»."""
+        self.assertNotEqual(hf.license_flags("MIT License. Permission is granted."), [])
+
+    def test_the_reason_is_named_and_not_borrowed_from_another_cause(self):
+        """Указатель — это не «язык не тот»: третий исход обязан быть честным."""
+        указатель = "version https://git-lfs.github.com/spec/v1\noid sha256:aa\nsize 1\n"
+        self.assertNotIn("язык", hf.license_flags(указатель)[0])
 
 
 class LicenceFiles(unittest.TestCase):
@@ -123,6 +165,46 @@ class DisagreeingLicences(unittest.TestCase):
 
     def test_a_single_file_never_disagrees_with_itself(self):
         self.assertFalse(hf.licences_disagree([{"file": "a", "flags": ["x"], "chars": 1}]))
+
+
+class WhatTheBaseAlreadyHas(unittest.TestCase):
+    """Точное совпадение и просто похожее имя — РАЗНОЕ.
+
+    `omnigen2` и `omnihuman-1` делят четыре первые буквы и не имеют друг к
+    другу отношения: разные вендоры, разные задачи. Печатать их как «уже в
+    базе» значит подсказывать неверно (поймано на живой выдаче 2026-08-31).
+    """
+
+    def store(self, *models):
+        from studio.selfrag.facts import Fact, FactStore
+
+        return FactStore(
+            [
+                Fact(
+                    model=m,
+                    attribute="max_seconds",
+                    value="5",
+                    source_url="https://example.test/x",
+                    tier="vendor",
+                    stated_on="2026-08-31",
+                )
+                for m in models
+            ]
+        )
+
+    def test_a_neighbour_is_not_reported_as_the_same_model(self):
+        got = hf.already_known("OmniGen2/OmniGen2", self.store("omnihuman-1", "omniweaving"))
+        self.assertEqual(got["exact"], [])
+        self.assertEqual(got["neighbours"], ["omnihuman-1", "omniweaving"])
+
+    def test_an_exact_match_is_reported_as_one(self):
+        got = hf.already_known("krea/Krea-2", self.store("krea-2"))
+        self.assertEqual(got["exact"], ["krea-2"])
+
+    def test_attributes_come_from_the_exact_match_only(self):
+        """Иначе свойства чужой модели выглядят как уже записанные про эту."""
+        got = hf.already_known("OmniGen2/OmniGen2", self.store("omnihuman-1"))
+        self.assertEqual(got["attributes"], [])
 
 
 class TroubleFilter(unittest.TestCase):
