@@ -165,6 +165,20 @@ REQUIRED_ROW_FIELDS: tuple[str, ...] = (
     "rights",
 )
 
+#: A model listing is far bigger than it looks, because every model carries its
+#: full HTML `description`. ИЗМЕРЕНО 2026-08-31, sort=Most Downloaded:
+#:
+#:     limit=20    1 364 916 байт
+#:     limit=50    3 502 039 байт
+#:     limit=100   6 516 550 байт
+#:
+#: The old ceiling here was 3 MB, which fits limit=20 and nothing else. A run at
+#: limit=100 was cut at char 2 972 334 and reported as "not JSON" — true, and
+#: the wrong thing to blame (rule E2). ВЫБРАНО 12 MB: comfortably over the
+#: largest listing measured, and still a ceiling rather than an invitation to
+#: read whatever a host decides to send.
+LISTING_MAX_BYTES = 12_000_000
+
 #: Politeness, not a limit Civitai publishes. Civitai's terms bind automated
 #: access to "any applicable rate limits" without naming one, so this is a
 #: CHOSEN floor on the interval between requests rather than a measured
@@ -459,7 +473,9 @@ def collect(
         if not url:
             break
         answer = get(
-            url, why_wanted="collect prompt-and-result pairs from Civitai", max_bytes=3_000_000
+            url,
+            why_wanted="collect prompt-and-result pairs from Civitai",
+            max_bytes=LISTING_MAX_BYTES,
         )
         if answer.get("outcome") != PASS:
             if not refs:
@@ -481,7 +497,23 @@ def collect(
                 "checked": listings,
                 "violations": 1,
                 "unmeasured": 0,
-                "note": "the model listing answered with something that is not JSON",
+                # Say WHY, when the answer knows. A body cut at the ceiling is
+                # not JSON either, and reporting only the format sends the
+                # reader after the wrong thing — MEASURED 2026-08-31, exactly
+                # that killed a whole collection run at `limit=100`, where the
+                # listing is ~1.8 MB against a 400 kB default (rule E2).
+                # Say WHY, when the answer knows. A body cut at the ceiling is
+                # not JSON either, and reporting only the format sends the
+                # reader after the wrong thing — MEASURED 2026-08-31, exactly
+                # that killed a collection run at limit=100, where the listing
+                # is 6.5 MB against a 3 MB ceiling (rule E2).
+                "note": (
+                    f"the model listing was CUT at {answer.get('max_bytes')} bytes — "
+                    "the body is longer, so the JSON is incomplete. Ask for fewer "
+                    "models per page, or raise LISTING_MAX_BYTES"
+                    if answer.get("truncated")
+                    else "the model listing answered with something that is not JSON"
+                ),
                 "written": 0,
                 "rows": [],
             }

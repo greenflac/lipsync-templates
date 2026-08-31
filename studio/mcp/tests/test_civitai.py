@@ -14,6 +14,7 @@ from __future__ import annotations
 import json
 import tempfile
 import unittest
+from collections.abc import Callable
 from pathlib import Path
 
 from studio.mcp import civitai
@@ -251,7 +252,7 @@ class Collecting(unittest.TestCase):
         self.path = Path(self._dir.name) / "civitai.jsonl"
         self.slept: list[float] = []
 
-    def _collect(self, fetcher: _Fetcher, **over: object) -> dict:
+    def _collect(self, fetcher: Callable[..., dict], **over: object) -> dict:
         kwargs: dict = {
             "harvested": HARVESTED,
             "rights": RIGHTS,
@@ -360,6 +361,49 @@ class Collecting(unittest.TestCase):
         assert out["written"] == 0
         assert not any("model-versions" in c for c in fetcher.calls), "not even requested"
         assert "were SKIPPED" in out["note"]
+
+    def test_a_CUT_listing_is_reported_as_cut_and_not_as_bad_json(self) -> None:
+        """The defect that killed a real run 2026-08-31. A body cut at the
+        ceiling is not JSON either, and blaming the format sends the reader
+        after the wrong thing (rule E2)."""
+
+        def cut(url: str, **_: object) -> dict:
+            return {
+                "outcome": "pass",
+                "status": 200,
+                "text": '{"items":[{"id":1,"name":"cut here',
+                "truncated": True,
+                "max_bytes": 3_000_000,
+            }
+
+        out = self._collect(cut)
+        assert out["outcome"] == "fail"
+        assert "CUT at 3000000" in out["note"], out["note"]
+        assert "fewer models per page" in out["note"]
+
+    def test_JUNK_that_is_not_cut_is_still_reported_as_bad_json(self) -> None:
+        """The negative control (rule I5). If everything unparseable were
+        called truncation, the message would be as misleading as the one it
+        replaced, just in the other direction."""
+
+        def junk(url: str, **_: object) -> dict:
+            return {
+                "outcome": "pass",
+                "status": 200,
+                "text": "<html>rate limited</html>",
+                "truncated": False,
+                "max_bytes": 3_000_000,
+            }
+
+        out = self._collect(junk)
+        assert out["outcome"] == "fail"
+        assert "not JSON" in out["note"], out["note"]
+        assert "CUT" not in out["note"]
+
+    def test_the_listing_ceiling_clears_the_largest_measured_listing(self) -> None:
+        """Literals, not an import of the thing being checked (rule T2).
+        ИЗМЕРЕНО 2026-08-31: limit=100 is 6 516 550 bytes."""
+        assert civitai.LISTING_MAX_BYTES > 6_516_550
 
     def test_the_bitmask_is_read_as_a_bitmask_not_a_rating(self) -> None:
         """The discriminator, and it flipped when the owner raised the ceiling

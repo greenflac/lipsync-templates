@@ -337,6 +337,26 @@ def _read_denied() -> list[dict]:
     return rows
 
 
+def read_capped(reader: Any, max_bytes: int) -> tuple[bytes, bool]:
+    """Read at most `max_bytes`, and say whether there was more.
+
+    Kept out of `fetch` on purpose (rule T5): the fork that decides whether a
+    body is whole has to be reachable from a test, and a fork inside a function
+    that opens a socket is not.
+
+    THE DEFECT THIS EXISTS FOR, reproduced 2026-08-31 before the fix: a Civitai
+    listing at limit=100 is ~1.8 MB, a plain `read(max_bytes)` cut it
+    mid-object, and the caller reported "the listing answered with something
+    that is not JSON". True, and blaming the wrong thing — the evidence for
+    truncation was in the length and nobody looked (rule E2). A whole collection
+    run died on a message that sent the reader after the format.
+    """
+    body = reader.read(max_bytes + 1)
+    if len(body) > max_bytes:
+        return body[:max_bytes], True
+    return body, False
+
+
 def fetch(
     url: str,
     *,
@@ -389,7 +409,7 @@ def fetch(
     request = urllib.request.Request(target, headers=sent, data=data)
     try:
         with urllib.request.urlopen(request, timeout=TIMEOUT_SECONDS) as response:
-            body = response.read(max_bytes)
+            body, truncated = read_capped(response, max_bytes)
             text = body.decode("utf-8", "replace")
             # The host answered, so if it was in the ask it no longer belongs
             # there. Retiring it here rather than in the request generator
@@ -400,7 +420,17 @@ def fetch(
                 "checked": 1,
                 "violations": 0,
                 "unmeasured": 0,
-                "note": f"{host} answered {response.status}, {len(body)} bytes read",
+                "truncated": truncated,
+                "max_bytes": max_bytes,
+                "note": (
+                    f"{host} answered {response.status}, {len(body)} bytes read"
+                    + (
+                        f" И ОБРЕЗАНО на потолке {max_bytes}: тело длиннее, "
+                        "остаток не прочитан — если это JSON, он неполный"
+                        if truncated
+                        else ""
+                    )
+                ),
                 "host": host,
                 "status": response.status,
                 "text": text,
@@ -419,9 +449,9 @@ def fetch(
         # wrong", which is the difference between a credential being worth
         # obtaining and not.
         try:
-            body = error.read(max_bytes).decode("utf-8", "replace")
+            error_text = error.read(max_bytes).decode("utf-8", "replace")
         except Exception:  # noqa: BLE001 - a body we cannot read is not a new failure
-            body = ""
+            error_text = ""
         return {
             "outcome": FAIL,
             "checked": 1,
@@ -430,7 +460,7 @@ def fetch(
             "note": f"{host} answered {error.code} {error.reason}",
             "host": host,
             "status": error.code,
-            "text": body,
+            "text": error_text,
             "denied": False,
         }
     except urllib.error.URLError as error:
