@@ -1,5 +1,28 @@
 # Where the knowledge corpora go
 
+## Куда класть числа, а не корпуса
+
+| Что | Файл |
+|---|---|
+| числа про НАС: приборы, корпус, конвейер | `measured.jsonl` |
+| что известно про ЧУЖИЕ модели, с тиром и ссылкой | `model_facts.jsonl` |
+| заявки на платный замер | `measurements.jsonl` — имя похоже, смысл другой |
+| откуда взят каждый корпус и на каком основании | `PROVENANCE.md` |
+
+`measured.jsonl` появился 2026-08-31, когда хэндоф ветки дорос до 2330 строк и
+~39 000 токенов: каждая сессия читала их целиком ради трёх чисел, платя
+контекстом и дрейфом. Правило «факты не в хэндоф» было и раньше — словами, и не
+соблюдалось. Теперь потолок на хэндоф стоит в гейте (`scripts/check_measured.py`).
+
+```bash
+python scripts/check_measured.py --find civitai   # три записи вместо 39k токенов
+python scripts/check_measured.py --check          # схема + потолок
+```
+
+Отрицательный результат здесь полноправен: `outcome` из трёх значений, и
+`не годно` с числом и условиями — это измеренная граница, а не пустая строка.
+
+
 `studio/knowledge.py` builds its index from four sources. Two of them ship in
 this directory; two are data you supply.
 

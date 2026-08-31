@@ -187,6 +187,13 @@ python scripts/validator.py check
 # no longer share a house format. Red only on a REAL leak; with no bank on disk
 # (it is gitignored, so CI has none) the answer is "не смогли", which is honest
 # and is not a build failure.
+# Адрес для измеренных чисел, и потолок на хэндоф, который он заменил.
+# Правило «факты не в хэндоф» существовало абзацем и не соблюдалось: один
+# хэндоф дорос до 2330 строк и ~39 000 токенов, которые каждая сессия читала
+# целиком ради трёх чисел. То, что обязано выполняться всегда, — это гейт (Ц7).
+echo "== измеренные числа: схема и потолок на хэндоф"
+python scripts/check_measured.py --check
+
 echo "== validator bench: does the shape of the file give away the source"
 set +e
 python scripts/check_sheet_shape.py --check
