@@ -61,6 +61,8 @@ denominator.
 from __future__ import annotations
 
 import json
+import os
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
@@ -122,15 +124,52 @@ server = MCPServer(
 _INDEX: Any = None
 
 
+#: Плотный канал включён на сервере по умолчанию — решение владельца
+#: 2026-08-31, принятое по замеру, а не по ощущению:
+#:
+#:     recall@5 без канала   0.5333
+#:     recall@5 с каналом    0.6833      (+0.15, тот же корпус и тот же набор)
+#:     сборка индекса        1.2 с → 171.4 с на 13 438 записях
+#:
+#: Три минуты платятся ОДИН РАЗ на процесс, а не на запрос: индекс строится
+#: здесь однажды и живёт в памяти. Кэш эмбеддингов сегодня сработать не может
+#: (см. DEBT у `DELETE FROM vectors` в studio/knowledge.py), и когда его
+#: починят, эти три минуты станут секундами без правок здесь.
+#:
+#: Значение по умолчанию НЕ трогается в самой библиотеке нарочно: `build_index`
+#: без аргумента обязан остаться быстрым и офлайновым, иначе каждый тест полезет
+#: за весами в сеть (правило Т4).
+#:
+#: Выключается переменной окружения на случай, когда важнее скорость старта:
+#:     STUDIO_MCP_DENSE=0
+DENSE_ON_SERVER_ENV = "STUDIO_MCP_DENSE"
+
+
+def dense_wanted(environ: Mapping[str, str] | None = None) -> bool:
+    """Просить ли плотный канал при сборке индекса.
+
+    Вынесено из `_index` (Т5): развилка внутри функции, которая строит индекс
+    три минуты, тестом недостижима — а тест, который повторяет её у себя,
+    проверяет копию и молчит при подмене оригинала. Поймано на себе
+    2026-08-31: первая редакция теста делала именно так, и обе мутации прошли
+    мимо.
+
+    Выключает только ЯВНЫЙ ноль: опечатка в переменной не должна тихо ронять
+    качество поиска на 0.15.
+    """
+    source = os.environ if environ is None else environ
+    return source.get(DENSE_ON_SERVER_ENV, "1") != "0"
+
+
 def _index() -> Any:
-    """The corpus index, built once per process. 4601 rows is not a per-call cost.
+    """The corpus index, built once per process. 13 438 rows is not a per-call cost.
 
     Typed `Any` because `studio/knowledge.py` is shadowed for a type checker by
     the same-named directory beside it; see the note in `lipsync_prompt.py`.
     """
     global _INDEX
     if _INDEX is None:
-        _INDEX = knowledge.build_index()  # type: ignore[attr-defined]
+        _INDEX = knowledge.build_index(dense=dense_wanted())  # type: ignore[attr-defined]
     return _INDEX
 
 
