@@ -129,10 +129,10 @@ class TheIdentityClauseResolvesTheConflictExplicitly(unittest.TestCase):
         with mock.patch.object(A, "IDENTITY_CLAUSE", ""):
             self.assertNotIn("wins on identity", A.compose(PLAIN)["prompt"])
 
-    def test_the_lettering_ban_comes_from_the_stand_not_a_local_copy(self):
-        from lipsync import fork_e2e
+    def test_the_lettering_ban_comes_from_the_shared_clause_not_a_local_copy(self):
+        from lipsync import clauses
 
-        with mock.patch.object(fork_e2e, "NO_BRANDS_CLAUSE", "SWAPPED-BAN"):
+        with mock.patch.object(clauses, "NO_BRANDS_CLAUSE", "SWAPPED-BAN"):
             self.assertIn("SWAPPED-BAN", A.compose(PLAIN)["prompt"])
 
     def test_turning_the_ban_off_is_LOUD_in_the_note(self):
@@ -369,12 +369,12 @@ class TheAssembledReferenceTakesTheLookButNeverTheFace(unittest.TestCase):
         self.assertIn("never copy the face", A.assemble_prompt())
         self.assertIn("same face", A.assemble_prompt(legacy=True))
 
-    def test_the_legacy_clause_is_the_stand_one_and_not_a_copy(self):
-        from lipsync import fork_e2e
+    def test_the_legacy_clause_is_the_shared_one_and_not_a_copy(self):
+        from lipsync import clauses
 
         legacy = A.assemble_prompt(legacy=True)
-        self.assertIn(fork_e2e.ROLE_CLAUSE, legacy)
-        self.assertIn(fork_e2e.NO_LOOK_TRANSFER_CLAUSE, legacy)
+        self.assertIn(clauses.ROLE_CLAUSE, legacy)
+        self.assertIn(clauses.NO_LOOK_TRANSFER_CLAUSE, legacy)
 
     def test_the_two_editions_really_differ(self):
         self.assertNotEqual(A.assemble_prompt(), A.assemble_prompt(legacy=True))
@@ -535,9 +535,9 @@ class TheBrandBanWasNarrowedByTheOwner(unittest.TestCase):
     """Let the brands stay, just add no logo to every style prompt."""
 
     def test_the_ban_forbids_the_drawn_mark_not_the_word(self):
-        from lipsync import fork_e2e
+        from lipsync import clauses
 
-        ban = fork_e2e.NO_BRANDS_CLAUSE
+        ban = clauses.NO_BRANDS_CLAUSE
         self.assertIn("no logo", ban)
         self.assertIn("no lettering", ban)
         self.assertNotIn("no brand names", ban)

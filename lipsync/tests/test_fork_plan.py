@@ -440,18 +440,18 @@ class TheVerdictHasThreeOutcomesOnEveryAxis(unittest.TestCase):
 
 
 class TheBrandBanIsImportedAndNotCopied(unittest.TestCase):
-    """`no_brands_clause` must forward the stand's text, never hold a copy of it."""
+    """`no_brands_clause` must forward the declared clause, never hold a copy of it."""
 
-    def test_the_ban_in_the_prompt_is_the_stand_text_itself(self):
-        from lipsync import fork_e2e
+    def test_the_ban_in_the_prompt_is_the_declared_text_itself(self):
+        from lipsync import clauses
 
-        self.assertIn(fork_e2e.NO_BRANDS_CLAUSE, P.extend_prompt())
+        self.assertIn(clauses.NO_BRANDS_CLAUSE, P.extend_prompt())
 
-    def test_swapping_the_stand_text_swaps_the_prompt(self):
+    def test_swapping_the_declared_text_swaps_the_prompt(self):
         """Negative control: a local copy would keep the old words."""
-        from lipsync import fork_e2e
+        from lipsync import clauses
 
-        with mock.patch.object(fork_e2e, "NO_BRANDS_CLAUSE", "SWAPPED-BAN"):
+        with mock.patch.object(clauses, "NO_BRANDS_CLAUSE", "SWAPPED-BAN"):
             self.assertIn("SWAPPED-BAN", P.extend_prompt())
 
 

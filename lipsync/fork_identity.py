@@ -30,8 +30,28 @@ from .identity_arcface import MIN_COVERAGE  # noqa: E402
 
 FOREIGN_FACE_FIXTURE = Path(__file__).resolve().parent / "fixtures" / "foreign_face.png"
 
+#: CHOSEN 0.05 (by stream A, out of the instrument's own spread rather than a
+#: paired run): the same person across a change of scale sat at 0.208..0.374 on
+#: the live calibration set, so this bar is well inside the instrument's noise
+#: and an order away from the distance to a stranger (0.6809, the negative
+#: control row below). It decides the only branch of `upscale_drift_verdict`,
+#: and the sign of the excess names two different illnesses: past -0.05 the
+#: frames sit CLOSER to the reference than to the raw photo, meaning the
+#: upscaler repainted the face and `d_ref` has stopped being a comparison with
+#: the client at all; past +0.05 the upscaler spoiled the face. NOT MEASURED:
+#: no paired before/after upscaler run exists in this tree.
 UPSCALE_DRIFT_MAX = 0.05
 
+#: CHOSEN 0.05 (by stream A, out of the same instrument-noise order as
+#: `UPSCALE_DRIFT_MAX`; likewise not from a run of the restorer). It is not the
+#: main sign that the axis is dead — that is a foreign frame landing inside
+#: `SAME_PERSON_MAX`, and `restore_negative_control` tests for it first. This
+#: bar catches the earlier, not yet fatal stage: the restorer mixing the
+#: reference into a KNOWN STRANGER without carrying it over the bar, which
+#: inflates every `d_raw` taken after the restore. Crossing it turns the
+#: control's outcome into FAIL, and a failed control invalidates the run's
+#: identity numbers instead of merely warning about them. NOT MEASURED: the
+#: restorer has never been run on a foreign face, which needs a GPU.
 RESTORE_PULL_MAX = 0.05
 
 # Measuring devices, exercised by the tests and never by the paid path.
