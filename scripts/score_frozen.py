@@ -136,9 +136,31 @@ def score(q: dict[str, Any], got: dict[str, Any]) -> str:
         claim = got.get("claim") or {}
         if not claim:
             return "не годно"
-        return "годно" if claim.get("outcome") == "pass" and _above_floor(claim) else "не годно"
+        # Исполняется ТО, что записано в `scored`. Вопрос q03 говорит
+        # «outcome in (pass, fail)» нарочно: у kling-3.0.max_seconds источники
+        # спорят, и честное `fail` с обеими сторонами — это ОТВЕТ, а не провал.
+        # Первая редакция скорера этого не читала и применяла общее «== pass»,
+        # то есть засчитывала в провал честную работу прибора. Тот же дефект,
+        # что уже ловили на брифах, этажом ниже.
+        допустимые = разрешённые_исходы(q.get("scored", ""))
+        if claim.get("outcome") not in допустимые:
+            return "не годно"
+        return "годно" if _above_floor(claim) else "не годно"
 
     return "годно" if got.get("claims") else "не годно"
+
+
+def разрешённые_исходы(scored: str) -> tuple[str, ...]:
+    """Какие исходы `scored` считает ответом. По умолчанию — только `pass`.
+
+    Читается форма «outcome in (pass, fail)» и «outcome == pass». Всё
+    незнакомое даёт строгий разбор по умолчанию: скорер, трактующий
+    неизвестную запись широко, ослабляет набор молча.
+    """
+    низ = scored.lower()
+    if "in (pass, fail)" in низ or "in (pass,fail)" in низ:
+        return ("pass", "fail")
+    return ("pass",)
 
 
 def требуемое_имя(scored: str) -> str:
