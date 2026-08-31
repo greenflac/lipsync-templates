@@ -40,6 +40,25 @@ ALLOWED = frozenset({"jfif", "jfif_version", "jfif_unit", "jfif_density", "dpi"}
 #: each frame large enough to judge texture at a glance.
 FRAMES = 6
 
+#: Every frame is centre-cropped SQUARE and scaled to this side, so every sheet
+#: in the bank comes out at exactly the same pixel size.
+#:
+#: ИЗМЕРЕНО 2026-08-31, and the reason is a leak that was caught before a single
+#: reader saw the new bank: with the frame width fixed and the height left to
+#: follow the aspect ratio, the strip's HEIGHT sorted 56 of 56 cases by source
+#: (`scripts/check_sheet_shape.py`). Kling's clips are one house format;
+#: Civitai's are whatever the uploader rendered. Nobody would have had to look
+#: at a pixel.
+#:
+#: A square centre crop is the least destructive normalisation available: a 16:9
+#: crop reduces a vertical clip to a horizontal band and usually loses the
+#: subject, while padding to a fixed canvas moves the same giveaway from the
+#: file header into the black bars. Content IS lost at the edges, and that is
+#: the price of the number meaning anything.
+#: ВЫБРАНО 214 — the height the earlier landscape sheets already had, so the
+#: readers' workload does not change.
+FRAME_SIDE = 214
+
 
 def sheet(clip: Path) -> Path | None:
     import imageio_ffmpeg
@@ -71,7 +90,8 @@ def sheet(clip: Path) -> Path | None:
             (
                 f"fps=1/{step:.3f},"
                 f"crop=iw:ih*{1 - WATERMARK_STRIP:.3f}:0:0,"
-                f"scale=380:-1,tile={FRAMES}x1"
+                "crop='min(iw,ih)':'min(iw,ih)',"
+                f"scale={FRAME_SIDE}:{FRAME_SIDE},tile={FRAMES}x1"
             ),
             "-frames:v",
             "1",

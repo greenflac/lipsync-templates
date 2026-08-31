@@ -181,6 +181,23 @@ python scripts/check_craft.py --check
 echo "== validator bench: the answer is cut off the picture"
 python scripts/validator.py check
 
+# Adding non-Kling video beside Kling video reopens the leak that has bitten
+# this bench twice: something that is not the picture, but correlates with the
+# source. A strip's height follows the clip's aspect ratio, and the two sources
+# no longer share a house format. Red only on a REAL leak; with no bank on disk
+# (it is gitignored, so CI has none) the answer is "не смогли", which is honest
+# and is not a build failure.
+echo "== validator bench: does the shape of the file give away the source"
+set +e
+python scripts/check_sheet_shape.py --check
+SHAPE=$?
+set -e
+if [ "$SHAPE" = "1" ]; then
+  echo "ПРОВАЛ: форма файла сортирует разборы по источнику"
+  exit 1
+fi
+[ "$SHAPE" = "2" ] && echo "(банка нет на диске — сравнивать нечего, это не провал)"
+
 echo "== mcp server handshake"
 python - <<'PY'
 import asyncio, sys

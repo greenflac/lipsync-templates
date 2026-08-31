@@ -61,6 +61,28 @@ USER_AGENT = "Mozilla/5.0"
 ALLOWED_INFO_KEYS = frozenset({"jfif", "jfif_version", "jfif_unit", "jfif_density", "dpi"})
 
 
+#: How the truth about a case was established. This is NOT a quality score and
+#: not a tier from the fact ladder — it answers one question: did a MACHINE
+#: record what it executed, or did a PERSON say what they did?
+#:
+#: `vendor_log`      the platform's own server-side record of the task it ran.
+#: `authors_pipeline` the dataset authors generated it themselves through each
+#:                   provider's API, and say so; their own tooling wrote the label.
+#: `uploader_claim`  a human posted the file and typed which model made it.
+#:
+#: Accepted by the owner 2026-08-31, with the condition that it is reported
+#: apart. The reason it is accepted at all: the bank's missing negative control
+#: — an input whose right answer is "not kling" — is broken by ANY non-kling
+#: label, even a noisy one. What a noisy label makes noisy is the SIZE of the
+#: percentage, not the fact that discrimination is finally being measured.
+TRUTH_GRADES = ("vendor_log", "authors_pipeline", "uploader_claim")
+
+#: The grade below which a number carries a health warning into every verdict
+#: computed over it — the same treatment `commercial_ok` gets, for the same
+#: reason: a field somebody might notice is not enough.
+UNVERIFIED_GRADE = "uploader_claim"
+
+
 @dataclass(frozen=True)
 class Source:
     """Where cases come from, and under what terms."""
@@ -70,6 +92,7 @@ class Source:
     commercial_ok: bool
     why_evidence: str
     media: str  # "image" | "video"
+    truth_grade: str = "vendor_log"
 
 
 SOURCES: dict[str, Source] = {
@@ -83,6 +106,7 @@ SOURCES: dict[str, Source] = {
             "а не подпись загрузчика"
         ),
         media="video",
+        truth_grade="vendor_log",
     ),
     "openfake": Source(
         key="openfake",
@@ -95,8 +119,34 @@ SOURCES: dict[str, Source] = {
             "выверены человеком поштучно"
         ),
         media="image",
+        truth_grade="authors_pipeline",
+    ),
+    "civitai": Source(
+        key="civitai",
+        licence="Civitai ToS 6.1 — personal, NON-COMMERCIAL use; сбор по авторизации "
+        "владельца 2026-08-27 (см. studio/knowledge/PROVENANCE.md)",
+        commercial_ok=False,
+        why_evidence=(
+            "модель названа ЗАГРУЗЧИКОМ: ролик приложен к странице конкретной базы, и "
+            "подпись страницы — это слово человека, а не запись исполнения. ИЗМЕРЕНО "
+            "2026-08-30 на 191 ролике: только 11 (5.8%) несут поле модели в собственных "
+            "метаданных, остальные 180 опираются на подпись. Берётся сознательно и "
+            "считается ОТДЕЛЬНО (scripts/probe_civitai_video.py)"
+        ),
+        media="video",
+        truth_grade="uploader_claim",
     ),
 }
+
+#: Video bases whose label is worth anything. A clip hung on an IMAGE checkpoint
+#: page (Illustrious, Pony) was made by some video model the page does not name,
+#: so its baseModel is not a label at all — it is the wrong question answered
+#: confidently. MEASURED 2026-08-30: 67 of 191 sampled clips were exactly that.
+CIVITAI_VIDEO_BASES = ("wan", "ltxv", "ltx", "minimax", "hunyuan", "cogvideo", "mochi", "seedance")
+
+#: Civitai's own rungs: PG and PG-13 are kept, R and above are not. Same cut the
+#: prompt collector already makes, so the two agree by construction.
+CIVITAI_MAX_NSFW = 2
 
 KLING_META = (
     "https://huggingface.co/datasets/bitmind/klingai-videos/resolve/main/video_metadata.parquet"

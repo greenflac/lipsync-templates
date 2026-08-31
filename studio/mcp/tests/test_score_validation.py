@@ -1,6 +1,6 @@
 """The scorer: can the number it prints be trusted, and can it be red?
 
-Five ways a validation score lies, and a test for each. Every fixture is written
+Six ways a validation score lies, and a test for each. Every fixture is written
 here, so nothing needs the case bank — which is gitignored, and a test that
 needs it passes on this machine and fails in CI.
 """
@@ -33,6 +33,17 @@ def _case(cid: str, model: str, *, source: str = "openfake", ok: bool = False) -
 #: Enough distinct right answers that a source is a real choice. Written here as
 #: literals rather than imported from the scorer (rule T2).
 _MODELS = ("veo-3", "sora-2", "midjourney-7", "flux.2-klein-9b")
+
+
+def _uploader_case(cid: str, model: str) -> dict:
+    """A case whose model was typed by a person, not recorded by a machine."""
+    return {
+        "case_id": cid,
+        "source": "civitai",
+        "commercial_ok": False,
+        "truth_grade": "uploader_claim",
+        "truth": {"model": model},
+    }
 
 
 def _answer(cid: str, said: str | None, *, recognised: bool = False) -> dict:
@@ -169,6 +180,61 @@ class ASourceWithOneRightAnswerIsNotAMeasurement(unittest.TestCase):
         assert out["источники_без_выбора"] == []
         assert out["различающая_часть"]["cases"] == n + 2
         assert "единственным семейством" not in out["note"]
+
+
+class WhoWroteTheTruthChangesTheShapeOfTheReport(unittest.TestCase):
+    """The sixth way a score lies. Fixing the fifth required video that is not
+    Kling, and the only such video available is labelled by its uploader. The
+    owner accepted that grade on one condition: it is named."""
+
+    def test_uploader_labelled_cases_are_tallied_apart(self) -> None:
+        cases = [_case("a", "veo-3"), _case("b", "sora-2")]
+        cases += [_uploader_case("c", "Wan Video 14B t2v")]
+        cases += [_uploader_case("d", "MiniMax H3")]
+        answers = [
+            _answer("a", "veo-3"),
+            _answer("b", "midjourney-7"),
+            _answer("c", "wan-video-2.5"),
+            _answer("d", "minimax"),
+        ]
+        out = scorer.score(cases, answers)
+        assert out["истина_записана_машиной"]["cases"] == 2
+        assert out["истина_записана_машиной"]["family_rate"] == 0.5
+        assert out["истина_от_загрузчика"]["cases"] == 2
+        assert out["истина_от_загрузчика"]["family_rate"] == 1.0
+        assert out["грейды_в_вердикте"] == ["uploader_claim", "vendor_log"]
+
+    def test_a_bank_with_no_uploader_labels_says_so_rather_than_going_quiet(self) -> None:
+        """The negative control (rule I5). A marker that is always present is
+        not a marker — this is the input on which it must be absent."""
+        cases = [_case("a", "veo-3"), _case("b", "sora-2")]
+        out = scorer.score(cases, [_answer("a", "veo-3"), _answer("b", "sora-2")])
+        assert out["грейды_в_вердикте"] == ["vendor_log"]
+        assert out["истина_от_загрузчика"]["cases"] == 0
+        assert out["истина_от_загрузчика"]["family_rate"] is None
+
+    def test_a_case_with_no_grade_field_counts_as_machine_written(self) -> None:
+        """Cases built before the field existed must not silently become
+        uploader-labelled — that would mark honest material as doubtful."""
+        out = scorer.score([_case("a", "veo-3")], [_answer("a", "veo-3")])
+        assert out["истина_записана_машиной"]["cases"] == 1
+        assert out["истина_от_загрузчика"]["cases"] == 0
+
+
+class TheVideoFamiliesTheNewSourceBrings(unittest.TestCase):
+    def test_the_three_non_kling_video_engines_are_recognised_as_families(self) -> None:
+        """Written as literals (rule T2). Without these, every Civitai case
+        would fall into the '?' bucket and score zero however well it was read.
+        The left column is what Civitai's own baseModel field says."""
+        assert scorer.family_of("Wan Video 14B i2v 720p") == "wan"
+        assert scorer.family_of("MiniMax H3") == "minimax"
+        assert scorer.family_of("LTXV 2.5") == "ltx"
+
+    def test_an_unknown_engine_does_not_borrow_a_family(self) -> None:
+        """The negative control: the table must not match something it was
+        never given."""
+        assert scorer.family_of("Pony Diffusion XL") == "pony diffusion xl"
+        assert scorer.family_of("") == "?"
 
 
 class TheBlindingMapIsHowTheHalvesMeet(unittest.TestCase):

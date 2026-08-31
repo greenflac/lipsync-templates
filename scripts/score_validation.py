@@ -8,7 +8,7 @@ WHAT IS BEING MEASURED
 Whether this agent can tell, from the picture alone, which generator made it.
 Nobody has that number; until now it was established by the owner correcting me.
 
-FIVE WAYS THE NUMBER COULD LIE, AND WHAT IS DONE ABOUT EACH
+SIX WAYS THE NUMBER COULD LIE, AND WHAT IS DONE ABOUT EACH
 
 1. GUESSING. A reader pushed to answer will answer, and a corpus of twelve
    candidates rewards a coin-flip 8% of the time. So `не смогли` is a first-class
@@ -41,6 +41,16 @@ FIVE WAYS THE NUMBER COULD LIE, AND WHAT IS DONE ABOUT EACH
    whose truth carries a single family is marked `различимо: false`, its rate is
    printed but never headlined, and the verdict is computed over the
    discriminating part alone.
+
+6. A TRUTH NOBODY'S MACHINE WROTE DOWN. The fix for (5) needed video that is not
+   Kling, and the material available is Civitai, where the model is typed by the
+   person who uploaded the clip. MEASURED 2026-08-30 over 191 clips: 11 carry a
+   model field their own tooling wrote, 180 rest on the page's caption. The
+   owner accepted that grade 2026-08-31 on one condition — it is named. So every
+   case carries `truth_grade`, the report splits by it, and a verdict computed
+   over uploader-labelled cases prints the warning above the number. What the
+   noise costs is the PRECISION of the percentage; the discrimination it makes
+   possible is real either way.
 """
 
 from __future__ import annotations
@@ -63,6 +73,14 @@ BLIND_MAP = BANK / "BLIND_MAP.json"
 #: a lucky run, and printing a percentage over ten would invite exactly that.
 MIN_ANSWERED = 20
 
+#: A truth nobody's machine wrote down. Cases from Civitai are labelled by the
+#: person who uploaded the clip, and the owner accepted them 2026-08-31 for one
+#: specific job: breaking a bank in which every video was Kling. What a noisy
+#: label costs is the PRECISION of the percentage, not the existence of the
+#: measurement — so they are counted, and counted apart, and the split is
+#: printed above the number rather than beside it.
+UNVERIFIED_GRADE = "uploader_claim"
+
 
 def family_of(name: str) -> str:
     """The vendor line a model belongs to. Cheap on purpose: exact-model
@@ -76,6 +94,9 @@ def family_of(name: str) -> str:
         "gpt-image",
         "seedream",
         "wan",
+        "minimax",
+        "ltx",
+        "hunyuan",
         "recraft",
         "ideogram",
         "z-image",
@@ -128,6 +149,7 @@ def score(cases: list[dict], answers: list[dict], blind: dict[str, str] | None =
                 "answered": answered,
                 "family_hit": answered and family_of(said) == family_of(real),
                 "exact_hit": answered and said.strip().lower() == real.strip().lower(),
+                "truth_grade": str(case.get("truth_grade") or "vendor_log"),
                 "recognised": bool(answer.get("recognised")),
                 "confidence": answer.get("confidence"),
             }
@@ -163,6 +185,8 @@ def score(cases: list[dict], answers: list[dict], blind: dict[str, str] | None =
     blind_sources = sorted(s for s, f in families_per_source.items() if len(f) < 2)
     discriminating = [r for r in rows if r["source"] not in blind_sources]
 
+    by_uploader = [r for r in rows if r["truth_grade"] == UNVERIFIED_GRADE]
+    by_machine = [r for r in rows if r["truth_grade"] != UNVERIFIED_GRADE]
     restricted = [r for r in rows if not r["commercial_ok"]]
     clean = [r for r in rows if r["commercial_ok"]]
     recognised = [r for r in rows if r["recognised"]]
@@ -204,6 +228,9 @@ def score(cases: list[dict], answers: list[dict], blind: dict[str, str] | None =
         "различающая_часть": honest,
         "коммерчески_чистые": tally(clean),
         "ограниченные_non_commercial": tally(restricted),
+        "истина_от_загрузчика": tally(by_uploader),
+        "истина_записана_машиной": tally(by_machine),
+        "грейды_в_вердикте": sorted({r["truth_grade"] for r in discriminating}),
         "узнал_по_памяти": len(recognised),
         "без_узнавания": tally(without_memory),
         "rows": rows,
@@ -233,6 +260,15 @@ def main(argv: list[str]) -> int:
         print("cc-by-nc-4.0). Любой вывод отсюда несёт эту пометку дальше.")
         print("=" * 68)
 
+    unverified = out["истина_от_загрузчика"]
+    if UNVERIFIED_GRADE in out["грейды_в_вердикте"]:
+        print("=" * 68)
+        print(f"ИСТИНУ НАПИСАЛ ЧЕЛОВЕК: {unverified['cases']} из {out['checked']} разборов")
+        print("помечены загрузчиком, а не записаны машиной (Civitai). Принято")
+        print("владельцем 2026-08-31 ради негативного контроля. Величина процента")
+        print("по ним шумная; сам факт различения — нет.")
+        print("=" * 68)
+
     if out["источники_без_выбора"]:
         print("=" * 68)
         print("ЕДИНСТВЕННОЕ СЕМЕЙСТВО В ИСТОЧНИКЕ: " + ", ".join(out["источники_без_выбора"]))
@@ -243,10 +279,14 @@ def main(argv: list[str]) -> int:
     o = out["overall"]
     h = out["различающая_часть"]
     print(f"\nразборов {o['cases']} | отвечено {o['answered']} | не смогли {o['could_not']}")
-    print(f"ИТОГ (различающая часть): семейство {h['family_hits']}/{h['answered']} = "
-          f"{h['family_rate']}, модель {h['exact_hits']}/{h['answered']} = {h['exact_rate']}")
-    print(f"всё вместе, для справки:  семейство {o['family_hits']}/{o['answered']} = "
-          f"{o['family_rate']}, модель {o['exact_hits']}/{o['answered']} = {o['exact_rate']}")
+    print(
+        f"ИТОГ (различающая часть): семейство {h['family_hits']}/{h['answered']} = "
+        f"{h['family_rate']}, модель {h['exact_hits']}/{h['answered']} = {h['exact_rate']}"
+    )
+    print(
+        f"всё вместе, для справки:  семейство {o['family_hits']}/{o['answered']} = "
+        f"{o['family_rate']}, модель {o['exact_hits']}/{o['answered']} = {o['exact_rate']}"
+    )
     print(
         f"случайное угадывание при {len(out['families_in_bank'])} семействах = {out['baseline_random']}"
     )
@@ -256,6 +296,14 @@ def main(argv: list[str]) -> int:
         print(
             f"  {src:10} отвечено {t['answered']:3}/{t['cases']:3}  "
             f"семейство {t['family_rate']}{mark}"
+        )
+    print("\nпо грейду истины:")
+    for name, t in (
+        ("записана машиной", out["истина_записана_машиной"]),
+        ("написана человеком", out["истина_от_загрузчика"]),
+    ):
+        print(
+            f"  {name:19} отвечено {t['answered']:3}/{t['cases']:3}  семейство {t['family_rate']}"
         )
     print(f"\nузнал по памяти, а не прочитал: {out['узнал_по_памяти']}")
     bm = out["без_узнавания"]

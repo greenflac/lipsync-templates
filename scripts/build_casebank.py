@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Assemble the case bank: media with the answer cut off, truth kept apart.
 
-    python scripts/build_casebank.py --kling 18 --openfake 24
+    python scripts/build_casebank.py --kling 18 --openfake 24 --civitai 16
 
 Writes `work/casebank/<id>.<ext>` — what a reader is shown — and
 `work/casebank/TRUTH.json`, which the reader never receives. Both live under
@@ -154,6 +154,153 @@ def build_kling(count: int) -> list[dict]:
     return made
 
 
+CIVITAI_MODELS = (
+    "https://civitai.com/api/v1/models?limit=40&page={page}&sort=Most%20Downloaded&period=Month"
+)
+CIVITAI_VERSION = "https://civitai.com/api/v1/model-versions/{version_id}"
+
+#: How deep to walk the model listing before giving up. ВЫБРАНО 6: the probe run
+#: (scripts/probe_civitai_video.py) got 60 versions with video from three pages,
+#: but only a third of those sat on a VIDEO base — six pages leaves room for the
+#: filter to reject two thirds and still fill a bank. One request per page.
+CIVITAI_PAGES = 6
+
+#: At most this many clips from one model version. The reason is the same one
+#: `MAX_PER_PROVENANCE` exists for in the retriever: one uploader's showcase
+#: page is one author's taste, and sixteen clips from it would measure that
+#: author rather than the model.
+CIVITAI_PER_VERSION = 2
+
+
+def _civitai_base_family(base: str) -> str | None:
+    """The video engine a page claims, or None if the page is not about video."""
+    text = str(base or "").lower()
+    for known in C.CIVITAI_VIDEO_BASES:
+        if known in text:
+            return known
+    return None
+
+
+def build_civitai(count: int) -> list[dict]:
+    """Cases whose truth is the UPLOADER'S WORD, taken deliberately.
+
+    Accepted by the owner 2026-08-31 to break the bank's missing negative
+    control: every video in it was Kling, so "guessed the family" was correct by
+    construction and measured nothing. Any non-Kling video breaks that, and a
+    noisy label breaks it just as well as a clean one — what the noise costs is
+    the precision of the number, not the existence of the measurement.
+
+    The label is trusted no further than that. `truth_grade: uploader_claim`
+    travels on every case, the scorer reports the grade apart, and a verdict
+    computed over these carries the warning at the top.
+    """
+
+    def api(url: str) -> dict:
+        try:
+            return json.loads(C._curl(url, timeout=60) or b"{}")
+        except (OSError, json.JSONDecodeError):
+            return {}
+
+    # Walk the listing first: it says which versions have video, so the
+    # expensive per-version request is only spent where it can pay off.
+    wanted: list[tuple[str, int, str]] = []  # (family, version_id, model_name)
+    seen_versions: set[int] = set()
+    for page in range(1, CIVITAI_PAGES + 1):
+        listing = api(CIVITAI_MODELS.format(page=page))
+        for model in listing.get("items", []):
+            for version in model.get("modelVersions", []):
+                family = _civitai_base_family(version.get("baseModel"))
+                vid = version.get("id")
+                if not family or vid in seen_versions:
+                    continue
+                if not any(i.get("type") == "video" for i in version.get("images", [])):
+                    continue
+                seen_versions.add(vid)
+                wanted.append((family, int(vid), str(model.get("name") or "")))
+        if not listing.get("items"):
+            break
+
+    by_family: dict[str, list[tuple[str, int, str]]] = collections.defaultdict(list)
+    for entry in wanted:
+        by_family[entry[0]].append(entry)
+    print(
+        f"  версий с видео на видео-базе: {len(wanted)} по семействам "
+        f"{ {k: len(v) for k, v in sorted(by_family.items())} }"
+    )
+
+    # Round-robin across families so one popular base cannot fill the bank —
+    # which is the very defect this source is being added to fix.
+    rng = random.Random(SEED)
+    order: list[tuple[str, int, str]] = []
+    pools = {k: (rng.sample(v, len(v))) for k, v in by_family.items()}
+    while any(pools.values()):
+        for family in sorted(pools):
+            if pools[family]:
+                order.append(pools[family].pop())
+
+    made: list[dict] = []
+    per_family: dict[str, int] = collections.defaultdict(int)
+    for family, version_id, model_name in order:
+        if len(made) >= count:
+            break
+        detail = api(CIVITAI_VERSION.format(version_id=version_id))
+        base = str(detail.get("baseModel") or family)
+        taken = 0
+        for item in detail.get("images", []):
+            if len(made) >= count or taken >= CIVITAI_PER_VERSION:
+                break
+            if item.get("type") != "video":
+                continue
+            if int(item.get("nsfwLevel") or 0) > C.CIVITAI_MAX_NSFW:
+                continue
+            url = str(item.get("url") or "")
+            if not url:
+                continue
+            cid = _case_id("cv", f"{version_id}|{url}")
+            out = OUT / f"{cid}.mp4"
+            if out.is_file():
+                report = {"bytes": out.stat().st_size, "remaining": [], "stripped": []}
+            else:
+                try:
+                    data = C._curl(url, timeout=180)
+                except OSError:
+                    continue
+                if len(data) < 10_000:
+                    continue
+                report = C.strip_video(data, out)
+            if report["remaining"]:
+                print(f"  ПРОПУЩЕН {cid}: чистка оставила {report['remaining']}")
+                continue
+            meta = item.get("meta") or {}
+            made.append(
+                {
+                    "case_id": cid,
+                    "source": "civitai",
+                    "media": "video",
+                    "path": f"work/casebank/{cid}.mp4",
+                    "commercial_ok": False,
+                    "licence": C.SOURCES["civitai"].licence,
+                    "truth_grade": "uploader_claim",
+                    "truth": {
+                        "model": base,
+                        "family_hint": family,
+                        "model_page": model_name,
+                        "version_id": version_id,
+                        "prompt": meta.get("prompt"),
+                        "meta_keys": sorted(str(k) for k in meta),
+                        "label_written_by": "uploader",
+                        "source_url": CIVITAI_VERSION.format(version_id=version_id),
+                        "rights": "owner_authorisation_2026-08-27",
+                    },
+                }
+            )
+            per_family[family] += 1
+            taken += 1
+            print(f"  {cid}  {base:26} {report['bytes'] / 1e6:.1f} МБ")
+    print(f"  собрано по семействам: {dict(sorted(per_family.items()))}")
+    return made
+
+
 def build_openfake(count: int) -> list[dict]:
     """Cases from a corpus of eighty generators. NON-COMMERCIAL, carried through."""
     handle = C.remote_parquet(OPENFAKE_SHARD, OPENFAKE_SIZE)
@@ -209,6 +356,7 @@ def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--kling", type=int, default=18)
     parser.add_argument("--openfake", type=int, default=24)
+    parser.add_argument("--civitai", type=int, default=16)
     args = parser.parse_args(argv)
 
     OUT.mkdir(parents=True, exist_ok=True)
@@ -216,11 +364,15 @@ def main(argv: list[str]) -> int:
     if args.kling:
         print("== Kling: серверный лог задач вендора")
         cases += build_kling(args.kling)
+    if args.civitai:
+        print("== Civitai: видео не-Kling, истина = СЛОВО ЗАГРУЗЧИКА, NON-COMMERCIAL")
+        cases += build_civitai(args.civitai)
     if args.openfake:
         print("== OpenFake: восемьдесят генераторов, NON-COMMERCIAL")
         cases += build_openfake(args.openfake)
 
     restricted = [c for c in cases if not c["commercial_ok"]]
+    unverified = [c for c in cases if c.get("truth_grade") == C.UNVERIFIED_GRADE]
     TRUTH.write_text(json.dumps(cases, ensure_ascii=False, indent=1), encoding="utf-8")
 
     print(f"\nпроверено {len(cases)}\nнарушений 0\nне смогли 0")
@@ -228,10 +380,21 @@ def main(argv: list[str]) -> int:
         # The owner's ruling: restricted material is processed and NAMED. It is
         # said here, at the top of the bank, so nothing downstream has to
         # remember to say it.
+        # The licences are read off the CASES, not named from a constant. The
+        # first version hardcoded OpenFake's and duly printed it over sixteen
+        # Civitai clips — a message that contradicts its own evidence (rule E2).
+        licences = sorted({c["licence"] for c in restricted})
         print(
-            f"\nВНИМАНИЕ: {len(restricted)} из {len(cases)} разборов — NON-COMMERCIAL "
-            f"({C.SOURCES['openfake'].licence}). Любой вердикт, посчитанный по ним, "
-            "обязан нести эту пометку."
+            f"\nВНИМАНИЕ: {len(restricted)} из {len(cases)} разборов — NON-COMMERCIAL. "
+            "Любой вердикт, посчитанный по ним, обязан нести эту пометку. Лицензии:"
+        )
+        for licence in licences:
+            print(f"  — {licence}")
+    if unverified:
+        print(
+            f"\nВНИМАНИЕ: у {len(unverified)} из {len(cases)} разборов истину написал "
+            "ЗАГРУЗЧИК, а не машина. Принято владельцем 2026-08-31 ради негативного "
+            "контроля; считается отдельной строкой и пометку несёт дальше."
         )
     if not cases:
         print(f"\n{UNMEASURED}: ни одного разбора не собрано")

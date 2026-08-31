@@ -26,21 +26,41 @@
 Скрипт оставлен, чтобы число можно было перепроверить, а не поверить.
 """
 
-import json, subprocess, time, collections
+import json
+import subprocess
+import time
+import collections
 
 UA = "Mozilla/5.0"
-MODEL_KEYS = ("Model", "model", "baseModel", "civitaiResources", "resources",
-              "Model hash", "engine", "comfy", "workflow", "extra")
+MODEL_KEYS = (
+    "Model",
+    "model",
+    "baseModel",
+    "civitaiResources",
+    "resources",
+    "Model hash",
+    "engine",
+    "comfy",
+    "workflow",
+    "extra",
+)
+
 
 def get(url):
-    r = subprocess.run(["curl","-sL","-A",UA,"--max-time","60",url],
-                       capture_output=True, check=False)
-    try: return json.loads(r.stdout)
-    except Exception: return {}
+    r = subprocess.run(
+        ["curl", "-sL", "-A", UA, "--max-time", "60", url], capture_output=True, check=False
+    )
+    try:
+        return json.loads(r.stdout)
+    except Exception:
+        return {}
+
 
 version_ids, base_of = [], {}
 for page in (1, 2, 3):
-    d = get(f"https://civitai.com/api/v1/models?limit=40&page={page}&sort=Most%20Downloaded&period=Month")
+    d = get(
+        f"https://civitai.com/api/v1/models?limit=40&page={page}&sort=Most%20Downloaded&period=Month"
+    )
     for m in d.get("items", []):
         for v in m.get("modelVersions", []):
             if any(i.get("type") == "video" for i in v.get("images", [])):
@@ -65,13 +85,14 @@ for vid in version_ids:
         hit = [k for k in MODEL_KEYS if k in meta]
         if hit:
             with_model += 1
-            for k in hit: keyhits[k] += 1
+            for k in hit:
+                keyhits[k] += 1
     time.sleep(0.4)
 
 print(f"\nроликов просмотрено:            {total}")
 print(f"с полем модели в СВОИХ метаданных: {with_model}")
 print(f"без него (истина = подпись страницы): {total - with_model}")
 print(f"ключи, которые встретились: {dict(keyhits)}")
-print(f"\nbaseModel страницы, к которой ролик приложен:")
+print("\nbaseModel страницы, к которой ролик приложен:")
 for b, n in bases.most_common(12):
     print(f"  {b:24} {n}")
