@@ -318,8 +318,16 @@ def poll_pypi(get: Callable[[str], tuple[str, Any]] = _get) -> dict[str, Any]:
 
 def report(hf: dict[str, Any], pypi: dict[str, Any], findings: dict[str, list]) -> int:
     """Напечатать разницу числами и вернуть код возврата с тремя исходами."""
+    # Канал считается ответившим, только если ответили ВСЕ его источники.
+    # Пока один живой тег из шести засчитывался как живой канал, итог печатал
+    # «не смогли 0» строкой выше «не ответили: пять отказов» и выносил вердикт
+    # «нового нет» по одной шестой выборки — знаменатель находок съезжал молча
+    # (найдено независимой проверкой 2026-08-31). Соседний refill_queue.report
+    # тот же случай решает так же: любой молчащий источник — третий исход.
     channels = 2
-    answered = (1 if hf["answered"] else 0) + (1 if pypi["answered"] else 0)
+    hf_whole = hf["answered"] == len(HF_TASKS)
+    pypi_whole = pypi["answered"] == len(PYPI_CLIENTS)
+    answered = (1 if hf_whole else 0) + (1 if pypi_whole else 0)
     print("ЧТО ПОЯВИЛОСЬ С ПРОШЛОГО РАЗА")
     print(f"каналов опрошено {channels}, ответили {answered}, не смогли {channels - answered}")
     print(
@@ -349,10 +357,10 @@ def report(hf: dict[str, Any], pypi: dict[str, Any], findings: dict[str, list]) 
         print(f"  {row['package']:24} {row['version']:12} {row['covers']}")
 
     if answered == 0:
-        print("\nисход: не смогли — ни один индекс не ответил")
+        print("\nисход: не смогли — ни один индекс не ответил целиком")
         return 2
     if answered < channels:
-        print(f"\nисход: не смогли полностью — ответили {answered} из {channels}")
+        print(f"\nисход: не смогли полностью — целиком ответили {answered} из {channels}")
         return 2
     print(f"\nисход: годно — {len(findings['new_families'])} новых семейств к разбору")
     return 0
@@ -370,7 +378,8 @@ def main(argv: list[str]) -> int:
         print(
             json.dumps({"hugging_face": hf, "pypi": pypi, **findings}, ensure_ascii=False, indent=2)
         )
-        return 0 if hf["answered"] or pypi["answered"] else 2
+        whole = hf["answered"] == len(HF_TASKS) and pypi["answered"] == len(PYPI_CLIENTS)
+        return 0 if whole else 2
     return report(hf, pypi, findings)
 
 

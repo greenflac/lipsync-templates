@@ -192,7 +192,7 @@ def advise_and_note(model: str, attribute: str = "", *, log: Path | None = None)
         model,
         attribute,
         str(answer.get("outcome") or ""),
-        known=int(answer.get("checked") or 0),
+        known=misses.evidence(answer, attribute),
         note=str(answer.get("note") or "")[:200],
         path=log,
     )

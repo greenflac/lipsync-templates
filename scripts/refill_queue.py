@@ -42,14 +42,26 @@ from studio.selfrag.facts import STALE_AFTER_DAYS, TIER_VENDOR  # noqa: E402
 ROOT = Path(__file__).resolve().parents[1]
 FACTS = ROOT / "studio" / "knowledge" / "model_facts.jsonl"
 
+#: Причина — ОДНА строка в одном месте, и производители берут её отсюда же.
+#: Пока производители печатали свои литералы, а `PRIORITY` держал их копии,
+#: опечатка на стороне производителя уводила все протухшие вендорские факты в
+#: хвост очереди, и ни один тест этого не видел: тесты порядка подавали в
+#: `order()` литералы, набранные в самом тесте, то есть проверяли копию
+#: (найдено независимой проверкой 2026-08-31, правило Е1).
+STALE_VENDOR = "протухший вендорский факт"
+ASKED_UNKNOWN = "спросили — не знаем"
+NEW_FAMILY = "новое семейство"
+NEW_VERSION = "новая версия известного семейства"
+STALE_OTHER = "протухший факт прочих тиров"
+
 #: ВЫБРАНО 2026-08-31. Меньшее число — раньше в очереди. Обоснование каждой
 #: ступени — в докстроке модуля; переставить их молча нельзя, тест держит.
 PRIORITY: dict[str, int] = {
-    "протухший вендорский факт": 1,
-    "спросили — не знаем": 2,
-    "новое семейство": 3,
-    "новая версия известного семейства": 4,
-    "протухший факт прочих тиров": 5,
+    STALE_VENDOR: 1,
+    ASKED_UNKNOWN: 2,
+    NEW_FAMILY: 3,
+    NEW_VERSION: 4,
+    STALE_OTHER: 5,
 }
 
 
@@ -70,7 +82,7 @@ def stale_work(today: date | None = None, path: Path | None = None) -> list[dict
         vendor = fact.tier == TIER_VENDOR
         found.append(
             {
-                "reason": "протухший вендорский факт" if vendor else "протухший факт прочих тиров",
+                "reason": STALE_VENDOR if vendor else STALE_OTHER,
                 "model": fact.model,
                 "detail": f"{fact.attribute}, источнику {age} дней",
                 "where": fact.source_url,
@@ -83,7 +95,7 @@ def missed_work(path: Path | None = None) -> list[dict[str, Any]]:
     """Модели, о которых спрашивали не раз и база молчала."""
     return [
         {
-            "reason": "спросили — не знаем",
+            "reason": ASKED_UNKNOWN,
             "model": row["model"],
             "detail": f"спрашивали {row['misses']} раз(а), последний {row['last_asked']}",
             "where": ", ".join(row["attributes"]) or "всё",
@@ -100,7 +112,7 @@ def discovered_work(payload: dict[str, Any] | None) -> list[dict[str, Any]]:
     for row in payload.get("new_families", []):
         found.append(
             {
-                "reason": "новое семейство",
+                "reason": NEW_FAMILY,
                 "model": row.get("family", ""),
                 "detail": f"загрузчиков {len(row.get('uploaders', []))}, задача {row.get('task', '')}",
                 "where": ", ".join(row.get("examples", [])[:2]),
@@ -109,7 +121,7 @@ def discovered_work(payload: dict[str, Any] | None) -> list[dict[str, Any]]:
     for row in payload.get("new_versions", []):
         found.append(
             {
-                "reason": "новая версия известного семейства",
+                "reason": NEW_VERSION,
                 "model": row.get("stem", ""),
                 "detail": f"семейство {row.get('family', '')}, перезаливок {row.get('count', 0)}",
                 "where": ", ".join(row.get("examples", [])[:2]),
@@ -170,14 +182,19 @@ def check_journal(path: Path | None = None) -> int:
     сообщением (файл лежит в репозитории заполненным, и пустым он может стать
     только если строки вычистили), целый журнал печатает числа и молчит.
     """
-    rows = misses.load(path)
+    rows, torn = misses.read(path)
     broken = [(i, misses.problems(row)) for i, row in enumerate(rows, 1) if misses.problems(row)]
     cover = misses.coverage(rows)
-    print(f"журнал вопросов: строк {len(rows)}, битых {len(broken)}")
+    print(
+        f"журнал вопросов: разобрано {len(rows)}, не разобралось {len(torn)}, "
+        f"битых по схеме {len(broken)}"
+    )
+    if torn:
+        print("  строки, не разобравшиеся как JSON: " + ", ".join(str(n) for n in torn[:10]))
     print(f"покрытие: {cover.note}, исход {cover.outcome}")
     for number, found in broken[:10]:
         print(f"  строка {number}: " + "; ".join(found))
-    if broken:
+    if broken or torn:
         print("ПРОВАЛ: битые строки в журнале — знаменатель покрытия им врёт")
         return 1
     if not rows:

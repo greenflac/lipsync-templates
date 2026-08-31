@@ -56,9 +56,16 @@ REQUIRED = ("model", "asked_on", "outcome")
 #:
 #: Расхождение не гипотетическое, оно поймано первым же живым прогоном
 #: 2026-08-31: `advise("wan-2.2")` вернул `не смогли`, потому что модели нет в
-#: РЕЕСТРЕ ДОСТУПНОСТИ, — и одновременно `checked 3`, то есть три атрибута о
-#: ней записаны. Считать это промахом значит мерить полноту реестра и называть
-#: результат покрытием базы.
+#: РЕЕСТРЕ ДОСТУПНОСТИ, — и одновременно `checked 1`, то есть один атрибут о
+#: ней записан (`benchmark_score`). Считать это промахом значит мерить полноту
+#: реестра и называть результат покрытием базы.
+#:
+#: ЧЕМ ЭТО ЧИСЛО НЕ ЯВЛЯЕТСЯ, и почему это важно. Полем `checked` из `advise`
+#: его заполнять нельзя: `checked` считает ОПРОШЕННЫЕ атрибуты, а не найденные.
+#: Спроси `advise("flux-2", "выдуманный-атрибут")` — вернётся `checked 2` при
+#: `claims["выдуманный-атрибут"]["checked"] == 0`. Найдено независимой
+#: проверкой 2026-08-31, до неё журнал засчитывал такой вопрос закрытым и
+#: поднимал им покрытие. Здесь лежит число НАЙДЕННОГО: см. `evidence()`.
 KNOWN_FIELD = "known"
 
 #: ВЫБРАНО 2026-08-31: столько промахов подряд об ОДНОЙ модели считается
@@ -75,7 +82,8 @@ def covered(row: dict[str, Any]) -> bool:
     покрытия, и попадание модели в очередь дочитывания — а развилка, повторённая
     в двух местах, разъедется.
     """
-    return int(row.get(KNOWN_FIELD, 0) or 0) > 0
+    raw = row.get(KNOWN_FIELD, 0)
+    return isinstance(raw, int) and not isinstance(raw, bool) and raw > 0
 
 
 @dataclass(frozen=True)
@@ -91,6 +99,35 @@ class Coverage:
     note: str
 
 
+def evidence(answer: dict[str, Any], attribute: str = "") -> int:
+    """Сколько записанного стоит за этим ответом. Ноль — база промолчала.
+
+    Считается по СОДЕРЖИМОМУ ответа, а не по его счётчику `checked`: тот
+    считает опрошенные атрибуты, включая те, по которым не нашлось ничего.
+
+    Спросили про конкретный атрибут — засчитывается только он. Известность
+    модели не закрывает вопрос об её отдельном свойстве: `flux-2` базе знаком,
+    и это не ответ на вопрос про его `max_seconds`, если про `max_seconds`
+    ничего не записано.
+    """
+    claims = answer.get("claims") or {}
+    found = 0
+    if isinstance(claims, dict):
+        for verdict in claims.values():
+            if isinstance(verdict, dict):
+                found += int(verdict.get("checked") or 0)
+    # Только то, что относится к ЭТОЙ модели. `class_findings` сюда не входят
+    # нарочно: это ремесленные находки по классу задач, одни и те же 12 из 171
+    # для любого имени, включая выдуманное. Поймано негативным контролем (И5):
+    # первая редакция считала их, и `h3-max`, о котором база молчит, получил
+    # свидетельство 12 и был бы засчитан закрытым.
+    if not str(attribute or "").strip():
+        modes = answer.get("failure_modes")
+        if isinstance(modes, list):
+            found += len(modes)
+    return found
+
+
 def problems(row: dict[str, Any]) -> list[str]:
     """Что не так с одной строкой журнала. Пусто — значит ничего.
 
@@ -104,6 +141,13 @@ def problems(row: dict[str, Any]) -> list[str]:
     outcome = str(row.get("outcome") or "")
     if outcome and outcome not in OUTCOMES:
         found.append(f"outcome: {outcome!r} не из {OUTCOMES}")
+    # Поле, на котором держится решение «промах или нет», обязано быть числом.
+    # Без этой проверки строка со словом вместо числа роняла гейт трассировкой
+    # вместо третьего исхода — проверка не могла отработать ровно на том входе,
+    # ради которого написана (найдено независимой проверкой 2026-08-31).
+    raw = row.get(KNOWN_FIELD, 0)
+    if isinstance(raw, bool) or not isinstance(raw, int) or raw < 0:
+        found.append(f"{KNOWN_FIELD}: {raw!r} — нужно целое неотрицательное")
     return found
 
 
@@ -144,23 +188,39 @@ def note_question(
     return row
 
 
-def load(path: Path | None = None) -> list[dict[str, Any]]:
-    """Строки журнала. Отсутствующий файл — пустой журнал, а не ошибка."""
+def read(path: Path | None = None) -> tuple[list[dict[str, Any]], list[int]]:
+    """Строки журнала и НОМЕРА тех, что не разобрались.
+
+    Второй список — не мелочь. Журнал пишется `open("a")`, и оборванная строка
+    — самая вероятная его порча. Пока `load` глотал её молча, `check_journal`
+    печатал «битых 0» и возвращал «годно», а знаменатель покрытия тихо съезжал
+    — тот самый класс дефекта, который на этом проекте дороже всех. Найдено
+    независимой проверкой 2026-08-31.
+    """
     target = STORE if path is None else path
     if not target.exists():
-        return []
+        return [], []
     rows: list[dict[str, Any]] = []
-    for line in target.read_text(encoding="utf-8").splitlines():
+    torn: list[int] = []
+    for number, line in enumerate(target.read_text(encoding="utf-8").splitlines(), 1):
         line = line.strip()
         if not line or line.startswith("//"):
             continue
         try:
             row = json.loads(line)
         except json.JSONDecodeError:
+            torn.append(number)
             continue
         if isinstance(row, dict):
             rows.append(row)
-    return rows
+        else:
+            torn.append(number)
+    return rows, torn
+
+
+def load(path: Path | None = None) -> list[dict[str, Any]]:
+    """Только разобравшиеся строки. Кто решает исход — пользуется `read`."""
+    return read(path)[0]
 
 
 def coverage(rows: Iterable[dict[str, Any]]) -> Coverage:

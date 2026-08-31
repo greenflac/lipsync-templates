@@ -115,9 +115,52 @@ class Channels(unittest.TestCase):
         self.assertEqual(code, 2)
 
     def test_a_live_index_with_nothing_new_is_still_a_pass(self):
-        alive = {"answered": 1, "refused": [], "candidates": [], "clients": []}
-        code = discover.report(alive, alive, {"new_families": [], "new_versions": []})
+        alive_hf = {
+            "answered": len(discover.HF_TASKS),
+            "refused": [],
+            "candidates": [],
+            "clients": [],
+        }
+        alive_pypi = {
+            "answered": len(discover.PYPI_CLIENTS),
+            "refused": [],
+            "candidates": [],
+            "clients": [],
+        }
+        code = discover.report(alive_hf, alive_pypi, {"new_families": [], "new_versions": []})
         self.assertEqual(code, 0)
+
+    def test_one_answering_tag_out_of_six_is_not_a_live_channel(self):
+        """«Нового нет» по одной шестой выборки — это съехавший знаменатель.
+
+        Прежняя редакция печатала «не смогли 0» строкой выше пяти отказов и
+        возвращала 0 (найдено независимой проверкой 2026-08-31).
+        """
+        limping = {"answered": 1, "refused": ["пять отказов"], "candidates": [], "clients": []}
+        alive_pypi = {
+            "answered": len(discover.PYPI_CLIENTS),
+            "refused": [],
+            "candidates": [],
+            "clients": [],
+        }
+        code = discover.report(limping, alive_pypi, {"new_families": [], "new_versions": []})
+        self.assertEqual(code, 2)
+
+    def test_one_silent_client_makes_pypi_incomplete(self):
+        alive_hf = {
+            "answered": len(discover.HF_TASKS),
+            "refused": [],
+            "candidates": [],
+            "clients": [],
+        }
+        limping = {
+            "answered": len(discover.PYPI_CLIENTS) - 1,
+            "refused": ["один"],
+            "candidates": [],
+            "clients": [],
+        }
+        code = discover.report(alive_hf, limping, {"new_families": [], "new_versions": []})
+        self.assertEqual(code, 2)
 
     def test_pypi_reports_a_version_per_client(self):
         def answer(url: str):

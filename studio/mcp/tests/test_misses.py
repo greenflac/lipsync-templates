@@ -159,6 +159,63 @@ class Writing(unittest.TestCase):
             self.assertEqual(len(misses.load(path)), 1)
 
 
+class Evidence(unittest.TestCase):
+    """`known` — число НАЙДЕННОГО, а не число опрошенного."""
+
+    def test_an_attribute_nobody_recorded_is_no_evidence(self):
+        """`advise` вернёт checked=2 на выдуманный атрибут знакомой модели."""
+        answer = {
+            "checked": 2,
+            "claims": {"выдуманный": {"checked": 0}},
+            "failure_modes": [{"value": "x"}, {"value": "y"}],
+            "class_findings": [{"value": "z"}] * 12,
+        }
+        self.assertEqual(misses.evidence(answer, "выдуманный"), 0)
+
+    def test_class_findings_are_not_about_the_model(self):
+        """Одни и те же 12 находок возвращаются для любого имени, включая
+        выдуманное: засчитывать их значит закрыть любой вопрос."""
+        answer = {"checked": 0, "claims": {}, "failure_modes": [], "class_findings": [1] * 12}
+        self.assertEqual(misses.evidence(answer), 0)
+
+    def test_recorded_claims_are_evidence(self):
+        answer = {"claims": {"max_seconds": {"checked": 3}}, "failure_modes": [1]}
+        self.assertEqual(misses.evidence(answer, "max_seconds"), 3)
+
+    def test_asking_about_the_whole_model_counts_its_failure_modes(self):
+        answer = {"claims": {"max_seconds": {"checked": 3}}, "failure_modes": [1, 2]}
+        self.assertEqual(misses.evidence(answer, ""), 5)
+
+
+class TornLines(unittest.TestCase):
+    def test_a_line_that_is_not_json_is_counted_not_dropped(self):
+        """Журнал пишется open("a"): оборванная строка — его обычная порча."""
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "misses.jsonl"
+            path.write_text(
+                '{"model":"a","outcome":"pass","known":1,"asked_on":"2026-08-31"}\nобрыв{'
+            )
+            rows, torn = misses.read(path)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(torn, [2])
+
+    def test_a_json_line_that_is_not_an_object_is_torn_too(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "misses.jsonl"
+            path.write_text("[1, 2, 3]\n")
+            self.assertEqual(misses.read(path)[1], [1])
+
+    def test_a_known_field_that_is_not_a_number_is_a_schema_problem(self):
+        """Раньше это роняло гейт трассировкой вместо третьего исхода."""
+        broken = {"model": "a", "outcome": "pass", "asked_on": "2026-08-31", "known": "много"}
+        self.assertTrue(any("known" in p for p in misses.problems(broken)))
+        self.assertFalse(misses.covered(broken))
+
+    def test_a_negative_known_is_refused(self):
+        broken = {"model": "a", "outcome": "pass", "asked_on": "2026-08-31", "known": -1}
+        self.assertTrue(any("known" in p for p in misses.problems(broken)))
+
+
 class Wiring(unittest.TestCase):
     def test_the_tool_actually_writes_the_question_down(self):
         """Связка, а не копия: без неё модуль честен и не вызывается никем."""
@@ -170,6 +227,18 @@ class Wiring(unittest.TestCase):
             rows = misses.load(path)
         self.assertEqual(len(rows), 1)
         self.assertEqual(rows[0]["outcome"], "could not measure")
+        self.assertEqual(rows[0]["known"], 0)
+
+    def test_a_known_model_asked_as_a_whole_is_written_as_covered(self):
+        """Негативный контроль связки (И5): прибор обязан не только молчать
+        на незнакомом, но и шевельнуться на знакомом."""
+        from studio.mcp import server
+
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "misses.jsonl"
+            server.advise_and_note("kling-3.0", "", log=path)
+            rows = misses.load(path)
+        self.assertGreater(rows[0]["known"], 0)
 
 
 if __name__ == "__main__":
