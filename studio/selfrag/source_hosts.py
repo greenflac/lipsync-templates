@@ -200,7 +200,18 @@ VENDOR_SOURCES: dict[str, tuple[str, ...]] = {
     ),
     "deepseek": ("huggingface.co/deepseek-ai/", "api-docs.deepseek.com", "deepseek.com"),
     "kimi": ("huggingface.co/moonshotai/", "moonshot.ai", "platform.moonshot.ai"),
-    "minimax": ("huggingface.co/MiniMaxAI/", "minimax.io", "platform.minimaxi.com"),
+    # `platform.minimax.io` добавлен 2026-08-31: это доки самого вендора, и
+    # именно там лежит таблица характеристик H3 / H3 Max. Прочитано напрямую
+    # (200, dateModified 2026-08-30). Хост не выводится из `minimax.io`
+    # автоматически — совпадение здесь точное, и это правильно: поддомен может
+    # принадлежать кому угодно. `www.` рядом по той же причине.
+    "minimax": (
+        "huggingface.co/MiniMaxAI/",
+        "minimax.io",
+        "www.minimax.io",
+        "platform.minimax.io",
+        "platform.minimaxi.com",
+    ),
 }
 
 #: CHOSEN the same way. A portal here is a platform that RUNS models or hosts

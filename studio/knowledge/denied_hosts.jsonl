@@ -372,3 +372,7 @@
 {"host": "llm-stats.com", "url": "https://llm-stats.com/", "reason": "Tunnel connection failed: 403 Forbidden", "why_wanted": "Section 1: find an OPEN catalogue channel for CLOSED LLMs after openrouter.ai and api.together.xyz were refused", "incidental": false, "state": "refused", "first_seen": "2026-08-28"}
 {"host": "production.cloudfront.docker.com", "url": "https://production.cloudfront.docker.com/registry-v2/", "reason": "Forbidden (docker pull qdrant/qdrant: manifest resolved, blob download refused)", "why_wanted": "run Qdrant as a container, as the RAG handover assumes. MEASURED 2026-08-28: not needed — qdrant-client local mode indexes and queries with no server at all", "incidental": false, "state": "refused", "first_seen": "2026-08-28"}
 {"host": "seed.bytedance.com", "url": "https://seed.bytedance.com/en/omnihuman", "state": "open", "first_seen": "2026-08-31"}
+{"host": "www.minimax.io", "url": "https://www.minimax.io/", "state": "open", "first_seen": "2026-08-31"}
+{"host": "docs.x.ai", "url": "https://docs.x.ai/docs/models", "state": "open", "first_seen": "2026-08-31"}
+{"host": "docs.voyageai.com", "url": "https://docs.voyageai.com/docs/embeddings", "state": "open", "first_seen": "2026-08-31"}
+{"host": "platform.minimax.io", "url": "https://platform.minimax.io/docs/guides/video-generation", "state": "open", "first_seen": "2026-08-31"}

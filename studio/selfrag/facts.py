@@ -192,6 +192,11 @@ UNKNOWN_TIER_RANK = 99
 
 #: Past this, a fact is reported as stale rather than current. CHOSEN: the
 #: video field re-versioned roughly every two months through 2026.
+#: Сколько символов должно совпасть, чтобы имена считались соседними. ВЫБРАНО:
+#: три символа дают шум (`gen` цепляет всё подряд), шесть теряют короткие
+#: имена вроде `h3-max`. Сторожится мутацией в обе стороны (правило Т1).
+NEAR_MIN_SHARED = 4
+
 STALE_AFTER_DAYS = 90
 
 #: Attributes where several different values are a LIST, not a disagreement.
@@ -527,17 +532,29 @@ class FactStore:
         return len({model for model, _attribute in self._index})
 
     def near(self, model: str, *, limit: int = 8) -> list[str]:
-        """Ids in the base that share a prefix with this one, longest first.
+        """Ids in the base close to this one: общее начало, затем вхождение.
 
         For the caller who asked about `omnihuman-1.5` and was handed the
         registry's list of seven — the base may well hold the model under a
         neighbouring id, and pointing at it costs one line.
+
+        ВХОЖДЕНИЕ ДОБАВЛЕНО 2026-08-31, и вот на чём это поймано. Владелец
+        спросил про «H3 max» — так модель называет вендор. В базе она лежит
+        под `minimax-h3-max`, с именем вендора впереди. Общего НАЧАЛА у этих
+        строк нет вовсе («h» против «m»), поэтому подсказка возвращала пустоту,
+        и ответ читался как «о такой модели ничего не известно» — при
+        четырнадцати записанных о ней фактах. Спрашивают продуктовым именем, а
+        хранится оно вендорским, и одно правило по префиксу этого не ловит
+        никогда.
+
+        Порядок сохранён: сначала совпадения по началу, они точнее; вхождения
+        после. Иначе короткое общее имя вытеснило бы точного соседа.
         """
         low = str(model or "").strip().lower()
-        if not low:
+        if len(low) < NEAR_MIN_SHARED:
             return []
         every = sorted({m for m, _a in self._index})
-        hits: list[tuple[int, str]] = []
+        hits: list[tuple[int, int, str]] = []
         for candidate in every:
             if candidate == low:
                 continue
@@ -546,9 +563,11 @@ class FactStore:
                 if a != b:
                     break
                 shared += 1
-            if shared >= 4:
-                hits.append((-shared, candidate))
-        return [c for _s, c in sorted(hits)][:limit]
+            if shared >= NEAR_MIN_SHARED:
+                hits.append((0, -shared, candidate))
+            elif low in candidate or candidate in low:
+                hits.append((1, -len(low), candidate))
+        return [c for _rank, _s, c in sorted(hits)][:limit]
 
     def class_claims(self, model: str) -> list[Fact]:
         """Facts recorded about the CLASS this model belongs to.
