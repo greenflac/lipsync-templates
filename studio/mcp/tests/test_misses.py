@@ -1,0 +1,141 @@
+"""Журнал заданных вопросов: считает ли он то, ради чего заведён.
+
+Ожидаемые значения здесь — ЛИТЕРАЛЫ, а не импорт из проверяемого модуля
+(правило Т2): импортированное ожидание уедет вместе с кодом и промолчит.
+"""
+
+from __future__ import annotations
+
+import json
+import tempfile
+import unittest
+from pathlib import Path
+
+from studio.mcp import misses
+
+
+def row(model: str, outcome: str, attribute: str = "max_seconds", asked_on: str = "2026-08-31"):
+    return {"model": model, "attribute": attribute, "outcome": outcome, "asked_on": asked_on}
+
+
+class CoverageCounts(unittest.TestCase):
+    def test_no_questions_is_the_third_outcome_not_a_clean_sheet(self):
+        """Р2: ноль вопросов — «не смогли», а не покрытие 100%."""
+        got = misses.coverage([])
+        self.assertEqual(got.outcome, "could not measure")
+        self.assertIsNone(got.rate)
+        self.assertEqual(got.asked, 0)
+
+    def test_rate_is_answered_over_asked(self):
+        got = misses.coverage(
+            [
+                row("kling-2.6", "pass"),
+                row("veo-3.1", "pass"),
+                row("h3-max", "could not measure"),
+            ]
+        )
+        self.assertEqual(got.asked, 3)
+        self.assertEqual(got.answered, 2)
+        self.assertEqual(got.missed, 1)
+        self.assertAlmostEqual(got.rate, 2 / 3)
+        self.assertEqual(got.outcome, "fail")
+
+    def test_contested_counts_as_known_not_as_a_miss(self):
+        """Спорящие источники — это знание о модели, а не пробел в базе."""
+        got = misses.coverage([row("kling-2.6", "fail")])
+        self.assertEqual(got.contested, 1)
+        self.assertEqual(got.missed, 0)
+        self.assertEqual(got.rate, 1.0)
+
+    def test_a_full_sheet_is_pass(self):
+        got = misses.coverage([row("kling-2.6", "pass")])
+        self.assertEqual(got.outcome, "pass")
+
+    def test_a_malformed_row_leaves_the_denominator(self):
+        """Строка без исхода не считается ни попаданием, ни промахом."""
+        broken = {"model": "kling", "asked_on": "2026-08-31"}
+        got = misses.coverage([row("veo-3.1", "pass"), broken])
+        self.assertEqual(got.asked, 1)
+
+    def test_an_unknown_outcome_word_is_refused(self):
+        found = misses.problems(row("kling", "годно"))
+        self.assertTrue(any("outcome" in p for p in found))
+
+
+class Queue(unittest.TestCase):
+    def test_one_miss_does_not_reach_the_queue(self):
+        """Порог: одна опечатка в имени модели не заводит работу."""
+        got = misses.queue([row("h3-max", "could not measure")])
+        self.assertEqual(got, [])
+
+    def test_two_misses_do(self):
+        got = misses.queue([row("h3-max", "could not measure"), row("h3-max", "could not measure")])
+        self.assertEqual([r["model"] for r in got], ["h3-max"])
+        self.assertEqual(got[0]["misses"], 2)
+
+    def test_answered_models_never_enter_the_queue(self):
+        got = misses.queue([row("kling-2.6", "pass"), row("kling-2.6", "pass")])
+        self.assertEqual(got, [])
+
+    def test_the_queue_is_ordered_by_how_often_it_was_asked(self):
+        rows = [row("h3-max", "could not measure")] * 3 + [
+            row("seedance-2", "could not measure")
+        ] * 2
+        got = misses.queue(rows)
+        self.assertEqual([r["model"] for r in got], ["h3-max", "seedance-2"])
+
+    def test_attributes_travel_with_the_queue_row(self):
+        rows = [
+            row("h3-max", "could not measure", attribute="max_seconds"),
+            row("h3-max", "could not measure", attribute="resolution"),
+        ]
+        got = misses.queue(rows)
+        self.assertEqual(got[0]["attributes"], ["max_seconds", "resolution"])
+
+
+class Writing(unittest.TestCase):
+    def test_a_question_lands_as_one_line(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "misses.jsonl"
+            misses.note_question("h3-max", "max_seconds", "could not measure", path=path)
+            misses.note_question("kling-2.6", "", "pass", path=path)
+            rows = [json.loads(line) for line in path.read_text().splitlines()]
+        self.assertEqual([r["model"] for r in rows], ["h3-max", "kling-2.6"])
+        self.assertEqual(rows[0]["outcome"], "could not measure")
+
+    def test_a_malformed_question_is_not_written(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "misses.jsonl"
+            misses.note_question("", "max_seconds", "pass", path=path)
+            self.assertFalse(path.exists())
+
+    def test_an_unwritable_log_does_not_break_the_answer(self):
+        """Счётчик наблюдает за консультацией, а не участвует в ней."""
+        path = Path("/proc/definitely-not-writable/misses.jsonl")
+        got = misses.note_question("kling-2.6", "", "pass", path=path)
+        self.assertEqual(got["model"], "kling-2.6")
+
+    def test_load_skips_comments_and_junk(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "misses.jsonl"
+            path.write_text(
+                '// шапка\n{"model":"a","outcome":"pass","asked_on":"2026-08-31"}\nне json\n'
+            )
+            self.assertEqual(len(misses.load(path)), 1)
+
+
+class Wiring(unittest.TestCase):
+    def test_the_tool_actually_writes_the_question_down(self):
+        """Связка, а не копия: без неё модуль честен и не вызывается никем."""
+        from studio.mcp import server
+
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "misses.jsonl"
+            server.advise_and_note("совершенно-неизвестная-модель-xyz", "max_seconds", log=path)
+            rows = misses.load(path)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["outcome"], "could not measure")
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -71,6 +71,11 @@ VENDOR: dict[str, str] = {
     "googleblog.com": "Google developer announcements",
     "bfl.ml": "Black Forest Labs, older domain (bfl.ai already answers)",
     "minimax.io": "MiniMax / Hailuo — video and speech models",
+    # Second root domain, and the docs live here rather than on the .io:
+    # `platform.minimaxi.com` is what `source_hosts.py` already calls the
+    # vendor of the `minimax` family, so the base can cite a page it is
+    # not allowed to open. Owner said 2026-08-31 they add it upstream.
+    "minimaxi.com": "MiniMax platform docs — the API reference itself",
     "hailuoai.video": "Hailuo product pages",
     "kimi.ai": "Moonshot Kimi — platform docs",
     "qwen.ai": "Qwen — Alibaba's model line",

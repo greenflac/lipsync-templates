@@ -70,7 +70,7 @@ from mcp.server.mcpserver import MCPServer
 
 from studio import knowledge
 from studio.selfrag.facts import STALE_AFTER_DAYS  # noqa: E402
-from studio.mcp import advice, contract, creative, fetch, probe, proposal, search
+from studio.mcp import advice, contract, creative, fetch, misses, probe, proposal, search
 from studio.mcp import lipsync_prompt as lp
 
 server = MCPServer(
@@ -177,6 +177,27 @@ def _json(payload: Any) -> str:
     return json.dumps(payload, ensure_ascii=False, indent=2, default=str)
 
 
+def advise_and_note(model: str, attribute: str = "", *, log: Path | None = None) -> dict:
+    """Проконсультировать и записать, что вопрос БЫЛ задан.
+
+    Вынесено из инструмента (правило Т5): развилка внутри `@server.tool()`
+    тестом недостижима, а тест, повторяющий её у себя, проверяет копию.
+
+    Записывается КАЖДЫЙ вопрос, а не только промах: журнал одних промахов
+    растёт и когда база улучшается, и когда ухудшается — без попаданий рядом
+    у покрытия нет знаменателя. Зачем это нужно — в `misses.py`.
+    """
+    answer = advice.advise(model, attribute)
+    misses.note_question(
+        model,
+        attribute,
+        str(answer.get("outcome") or ""),
+        note=str(answer.get("note") or "")[:200],
+        path=log,
+    )
+    return answer
+
+
 @server.tool()
 def model_advice(model: str, attribute: str = "") -> str:
     """What is known about a generation model, with every source and its date.
@@ -189,7 +210,7 @@ def model_advice(model: str, attribute: str = "") -> str:
     :param model: e.g. "kling-3.0", "veo-3.1", "flux-2".
     :param attribute: one attribute such as "max_seconds"; empty for everything.
     """
-    return _json(advice.advise(model, attribute))
+    return _json(advise_and_note(model, attribute))
 
 
 @server.tool()
