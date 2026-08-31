@@ -82,6 +82,46 @@ __all__ = [
 FAMILY_SEPARATORS: tuple[str, ...] = ("-", ".", "_")
 
 VENDOR_SOURCES: dict[str, tuple[str, ...]] = {
+    # ЛАБОРАТОРИИ, ЧЕЙ АККАУНТ НА HUGGINGFACE — ЭТО ИХ СОБСТВЕННАЯ ПУБЛИКАЦИЯ.
+    # Добавлены 2026-08-31 после того, как гейт лестницы покраснел: `portal`
+    # обогнал `vendor` (602 против 511) на пятой волне разбора HuggingFace.
+    # Гейт указал на правду, а не на перебор — карточка, которую лаборатория
+    # написала о своей же модели, это ВЕНДОРСКИЙ документ, и записывать её как
+    # портальную значит занижать то, что у нас есть из первых рук.
+    #
+    # Сюда попадает только аккаунт, который И опубликовал модель, И назван
+    # именем её разработчика. Перезаливщики и дообучатели (John6666, Lykon,
+    # RunDiffusion, digiplay, stablediffusionapi, Comfy-Org, diffusers и ещё
+    # сотня таких) СЮДА НЕ ПОПАДАЮТ — их карточка про чужую модель, и `portal`
+    # для неё верен. Из 137 разобранных аккаунтов признаны вендорскими 22.
+    "kokoro": ("huggingface.co/hexgrad/",),
+    "xtts": ("huggingface.co/coqui/", "coqui.ai"),
+    "f5-tts": ("huggingface.co/SWivid/",),
+    "e2-tts": ("huggingface.co/SWivid/",),
+    "higgs": ("huggingface.co/bosonai/", "boson.ai"),
+    "s2-pro": ("huggingface.co/fishaudio/", "fish.audio"),
+    "csm": ("huggingface.co/sesame/", "sesame.com"),
+    "zonos": ("huggingface.co/Zyphra/", "zyphra.com"),
+    "orpheus": ("huggingface.co/canopylabs/",),
+    "melotts": ("huggingface.co/myshell-ai/",),
+    "minicpm": ("huggingface.co/openbmb/",),
+    "voxcpm": ("huggingface.co/openbmb/",),
+    "moss-tts": ("huggingface.co/OpenMOSS-Team/",),
+    "mova": ("huggingface.co/OpenMOSS-Team/",),
+    "cosmos": ("huggingface.co/nvidia/", "developer.nvidia.com"),
+    "parakeet": ("huggingface.co/nvidia/", "developer.nvidia.com"),
+    "bigvgan": ("huggingface.co/nvidia/",),
+    "nemotron": ("huggingface.co/nvidia/", "developer.nvidia.com"),
+    "mms": ("huggingface.co/facebook/",),
+    "seamless": ("huggingface.co/facebook/",),
+    "voxtral": ("huggingface.co/mistralai/", "mistral.ai"),
+    "speaker-diarization": ("huggingface.co/pyannote/",),
+    "indic-parler": ("huggingface.co/ai4bharat/", "huggingface.co/parler-tts/"),
+    "parler-tts": ("huggingface.co/parler-tts/",),
+    "noobai": ("huggingface.co/Laxhar/",),
+    "illustrious": ("huggingface.co/OnomaAIResearch/",),
+    "sdxl": ("huggingface.co/stabilityai/", "stability.ai"),
+    "sd-turbo": ("huggingface.co/stabilityai/", "stability.ai"),
     "kling": (
         "kling.ai",
         "klingai.com",
