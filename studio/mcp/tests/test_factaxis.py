@@ -339,9 +339,15 @@ class РучныеРазметки(unittest.TestCase):
 
 class Гейт(unittest.TestCase):
     def test_контрольный_набор_даёт_три_разных_исхода(self):
-        исходы = [r["got"] for r in gate.control_results()]
-        self.assertEqual(sorted(исходы), sorted([FAIL_, PASS_, UNMEASURED_]))
-        self.assertEqual(gate.control_verdict(gate.control_results())["outcome"], PASS_)
+        результаты = gate.control_results()
+        исходы = [r["got"] for r in результаты]
+        # Проверяется НАБОР исходов, а не их число: шагов больше трёх, потому
+        # что два из них добавлены ради констант, а не ради нового исхода.
+        # Литералы, не импорт из проверяемого модуля (Т2).
+        self.assertEqual(sorted(set(исходы)), ["could not measure", "fail", "pass"])
+        self.assertEqual([r["expected"] for r in результаты], исходы)
+        self.assertGreaterEqual(len(результаты), 3)
+        self.assertEqual(gate.control_verdict(результаты)["outcome"], PASS_)
 
     def test_прибор_из_одинаковых_случаев_краснеет(self):
         """Негативный контроль негативного контроля (И5)."""
