@@ -151,6 +151,34 @@ def _canonical(model: str) -> str:
     return MERGES.get(name, name)
 
 
+#: Строки харвеста, ПЕРЕНЕСЁННЫЕ в базе под другой атрибут, с причиной и датой.
+#: Ключ — (модель, атрибут харвеста, кусок URL), значение — новый атрибут.
+#:
+#: Зачем именованная таблица, а не тихое послабление. Харвест — исторический
+#: файл: он говорит, что и откуда собрали в тот день. База с тех пор могла
+#: переименовать атрибут, и тогда сверка честно краснеет. Править исторический
+#: файл значит переписывать свидетельство; ослабить сверку молча значит
+#: потерять её. Поэтому перенос называется здесь поимённо и грепается.
+MOVED: dict[tuple[str, str, str], str] = {
+    # 2026-08-31: цена ПЕРЕПРОДАВЦА в его кредитах стояла под атрибутом,
+    # который читается как цена вендора, и под одним именем два прайс-листа
+    # выглядели спором о цене. Найдено на veo-3.1, исправлено во всех четырёх
+    # местах разом (правило И7).
+    ("veo-3.1", "price_per_second", "docs.dev.runwayml.com"): "price_per_second_reseller",
+    ("seedance2", "price_per_second", "docs.dev.runwayml.com"): "price_per_second_reseller",
+    ("eleven_v3", "price", "docs.dev.runwayml.com"): "price_reseller",
+    ("seed_audio", "price", "docs.dev.runwayml.com"): "price_reseller",
+}
+
+
+def _moved_to(model: str, attribute: str, url: str) -> str:
+    """Новый атрибут, если строку перенесли. Пусто — не переносили."""
+    for (m, a, часть), новый in MOVED.items():
+        if m == model and a == attribute and часть in str(url or ""):
+            return новый
+    return ""
+
+
 def _canonical_attribute(attribute: str) -> str:
     """Имя свойства, под которым база хранит этот факт.
 
@@ -220,7 +248,11 @@ def _check(path: Path) -> int:
     checked = 0
     for row in _rows(path):
         model = _canonical(str(row.get("model", "")))
-        row = {**row, "attribute": _canonical_attribute(row.get("attribute", ""))}
+        перенесён = _moved_to(model, str(row.get("attribute", "")), str(row.get("source_url", "")))
+        row = {
+            **row,
+            "attribute": перенесён or _canonical_attribute(row.get("attribute", "")),
+        }
         # Two keys, two questions. The yield is decided on model+attribute+page;
         # whether the row STANDS is decided on the full claim, value included,
         # because that is what the base is keyed on. Using the yield key for
@@ -291,7 +323,9 @@ def main(argv: list[str]) -> int:
     for row in rows:
         row = dict(row)
         row["model"] = _canonical(str(row.get("model", "")))
-        row["attribute"] = _canonical_attribute(row.get("attribute", ""))
+        row["attribute"] = _moved_to(
+            str(row.get("model", "")), str(row.get("attribute", "")), str(row.get("source_url", ""))
+        ) or _canonical_attribute(row.get("attribute", ""))
         key = _yield_key(
             str(row.get("model", "")),
             str(row.get("attribute", "")),
