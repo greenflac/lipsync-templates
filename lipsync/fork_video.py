@@ -9,7 +9,6 @@ import subprocess
 import time
 from pathlib import Path
 
-from . import framemath
 from .fork_identity import FAIL, PASS, UNMEASURED
 
 #: CHOSEN: the bare tool name, so PATH decides which build runs. It is a
@@ -21,6 +20,14 @@ FFPROBE_BIN = "ffprobe"
 #: CHOSEN for the same reason as FFPROBE_BIN: the decoder is reached by name.
 FFMPEG_BIN = "ffmpeg"
 
+#: CHOSEN — the rate the driving has to be FILMED at, quoted in the refusal to
+#: conform upward below, which is the only place it is read. No measurement in
+#: this tree stands behind the number itself. It moved here on 2026-08-31 from
+#: `framemath`, which was deleted with the loop finder: the rest of that module
+#: computed how many frames a loop had to be repeated to, and nothing but the
+#: loop finder ever asked.
+FILMING_FPS_MIN = 30
+
 PROBE_TIMEOUT_S = 20
 
 DECODE_TIMEOUT_S = 600
@@ -28,6 +35,14 @@ DECODE_TIMEOUT_S = 600
 NAME_DIGITS = 5
 
 FRAME_SUFFIX = ".png"
+
+#: CHOSEN: what counts as a frame when a directory is READ back, as against
+#: `FRAME_SUFFIX` above, which is the one suffix this module WRITES. The list is
+#: closed on purpose: the report and the manifest lying beside the frames are
+#: not silently taken for frames. No measurement stands behind it. It is
+#: declared here alone and the stand reads this one rather than keeping its own,
+#: which it did until the two spellings disagreed by container.
+FRAME_SUFFIXES = (".png", ".jpg", ".jpeg")
 
 #: DERIVED from how the expectation is computed: a container without
 #: `nb_frames` has its count taken as duration x rate, and rounding that to a
@@ -257,7 +272,7 @@ def fps_plan(source_fps, *, want=None) -> dict:
                 f"{want - source_fps:g} fps would have to be invented), and "
                 f"an invented frame in a driving is an invented "
                 f"movement. Shooting the driving at no less than "
-                f"{framemath.WRAP_FPS} fps is a filming requirement"
+                f"{FILMING_FPS_MIN} fps is a filming requirement"
             ),
         }
     return {

@@ -23,22 +23,22 @@ BODY_POINTS = {
 
 #: CHOSEN 0.5, the midpoint of MediaPipe's 0..1 visibility score: under it a
 #: point is the model's guess rather than something it saw. No run in this tree
-#: measured where the guessing starts. It is declared here alone — the intake and
-#: the loop finder import this bar — so that every reading of a skeleton in the
-#: product discards the same points.
+#: measured where the guessing starts. It is declared here alone — the intake
+#: imports this bar — so that every reading of a skeleton in the product
+#: discards the same points.
 MIN_VISIBILITY = 0.5
 
 #: Declared instruments: public here, called by no production path on purpose.
 #:
-#: `pose_delta` is the reference implementation of the quantity the product
-#: actually runs, `fork_looper.pose_gap`. The two are not a duplicate: this one
-#: takes RAW landmark points and normalises them afresh on every call, which is
-#: the obvious way to compute it and the wrong way to compute it hundreds of
-#: thousands of times; `pose_gap` normalises once per frame and reuses the
-#: result across pairs. Keeping the slow, obvious version is what makes the fast
-#: one checkable — `test_pose_gap_is_the_same_number_as_pose_delta` asserts the
-#: two numbers agree on a fixture. Delete this and the product's own instrument
-#: has nothing to be wrong against.
+#: `pose_delta` is how far two skeletons are apart, and it is the only
+#: implementation of that quantity left in the package. Until 2026-08-31 there
+#: was a second one — `fork_looper.pose_gap`, which normalised once per frame
+#: instead of once per call because the loop finder computed it hundreds of
+#: thousands of times — and the pair checked each other on a fixture. The loop
+#: finder was deleted as a tool the product does not run, and the fast copy went
+#: with it: no production path was left calling it. What holds `pose_delta` to a
+#: known answer now is `test_pose.py`, where every expectation is arithmetic
+#: done on paper rather than a number this module produced.
 INSTRUMENTS = ("pose_delta",)
 
 # Licence, checked on 2026-08-28 from the installed distribution's own
@@ -111,6 +111,14 @@ def landmarks(path: str | Path) -> dict | None:
         name: (float(lm[i].x), float(lm[i].y), float(lm[i].visibility))
         for name, i in BODY_POINTS.items()
     }
+
+
+def read_pose(path) -> dict:
+    """Capture the pose of one frame. Injection point: the test replaces it wholesale."""
+    try:
+        return {"points": landmarks(path), "why": "", "people": None}
+    except Exception as exc:  # noqa: BLE001 — deliberately broad: any failure means we could not ask
+        return {"points": None, "why": f"{type(exc).__name__}: {exc}"}
 
 
 def _normalise(points: dict) -> dict | None:

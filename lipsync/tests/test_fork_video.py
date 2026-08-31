@@ -207,6 +207,18 @@ class FpsRule(unittest.TestCase):
         self.assertEqual(got["mode"], fv.REFUSE)
         self.assertIsNone(got["fps"])
 
+    def test_the_refusal_tells_the_operator_the_rate_to_film_at(self):
+        """The refusal is only actionable if it names the number to shoot at.
+
+        The constant moved here on 2026-08-31 from a module deleted with the
+        loop finder, and nothing had ever moved with it: it could have been set
+        to any number at all and this message would still have read plausibly.
+        The literal is written out here rather than imported.
+        """
+        note = fv.fps_plan(24.0, want=30)["note"]
+        self.assertEqual(fv.FILMING_FPS_MIN, 30)
+        self.assertIn("no less than 30 fps", note)
+
     def test_2997_to_30_is_refused_and_30005_to_30_is_not(self):
         """The rate tolerance is clamped by literals from both sides."""
         self.assertEqual(fv.fps_plan(29.97002997002997, want=30)["outcome"], FAIL)
@@ -654,6 +666,26 @@ class Wiring(unittest.TestCase):
     def test_the_three_outcomes_map_to_three_different_exit_codes(self):
         self.assertEqual(fv.EXIT_BY_OUTCOME, {"pass": 0, "fail": 1, "could not measure": 2})
         self.assertEqual(len(set(fv.EXIT_BY_OUTCOME.values())), 3)
+
+    def test_the_suffix_written_is_one_of_the_suffixes_read_back(self):
+        """The two are a pair: this module writes one and accepts three.
+
+        They arrived from different modules — `FRAME_SUFFIXES` came here on
+        2026-08-31 when the loop finder that declared it was deleted — and a
+        pair that never meets is how they drift apart. Written as literals: an
+        expectation imported from the module under test moves with it.
+        """
+        self.assertEqual(fv.FRAME_SUFFIX, ".png")
+        self.assertEqual(fv.FRAME_SUFFIXES, (".png", ".jpg", ".jpeg"))
+        self.assertIn(fv.FRAME_SUFFIX, fv.FRAME_SUFFIXES)
+
+    def test_every_accepted_suffix_is_lower_case_and_dotted(self):
+        """The stand lower-cases the file's suffix before matching, so a
+        capital in this list would silently never match."""
+        for suffix in fv.FRAME_SUFFIXES:
+            with self.subTest(suffix=suffix):
+                self.assertTrue(suffix.startswith("."), suffix)
+                self.assertEqual(suffix, suffix.lower(), suffix)
 
 
 class EntryPoint(unittest.TestCase):

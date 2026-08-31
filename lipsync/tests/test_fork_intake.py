@@ -630,11 +630,11 @@ class BarsAreImportedNotCopied(unittest.TestCase):
         self.assertIs(fi.SAME_PERSON_MAX, fork_identity.SAME_PERSON_MAX)
         self.assertEqual(fi.SAME_PERSON_MAX, 0.35)
 
-    def test_the_cut_bar_is_the_one_from_fork_looper(self):
-        from lipsync import fork_looper
+    def test_the_cut_bar_is_the_one_from_motion(self):
+        from lipsync import motion
 
-        self.assertIs(fi.CUT_JUMP, fork_looper.CUT_JUMP)
-        self.assertEqual(fi.CUT_JUMP, 4.0)
+        self.assertIs(fi.JUMP_MAX, motion.JUMP_MAX)
+        self.assertEqual(fi.JUMP_MAX, 4.0)
 
     def test_the_visibility_bar_is_the_one_from_pose(self):
         from lipsync import pose
@@ -654,7 +654,7 @@ class BarsAreImportedNotCopied(unittest.TestCase):
         from pathlib import Path
 
         src = Path(fi.__file__).read_text(encoding="utf-8")
-        borrowed = {"SAME_PERSON_MAX", "CUT_JUMP", "MIN_VISIBILITY", "MIN_FACE_PX"}
+        borrowed = {"SAME_PERSON_MAX", "JUMP_MAX", "MIN_VISIBILITY", "MIN_FACE_PX"}
         offenders = []
         for node in ast.walk(ast.parse(src)):
             if isinstance(node, ast.Assign):

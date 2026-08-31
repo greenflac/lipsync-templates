@@ -11,8 +11,7 @@ from pathlib import Path
 from .clauses import NO_BRANDS_CLAUSE, NO_LOOK_TRANSFER_CLAUSE, ROLE_CLAUSE
 from .frame import FRAME
 from .fork_identity import FAIL, PASS, UNMEASURED, SAME_PERSON_MAX
-from .fork_looper import FRAME_SUFFIXES
-from .fork_video import EXIT_BY_OUTCOME
+from .fork_video import EXIT_BY_OUTCOME, FRAME_SUFFIXES
 from . import fork_aesthetic, fork_plan, pollinations
 
 
@@ -164,7 +163,7 @@ STYLE_MARGIN_MIN = 0.05
 
 #: CHOSEN by the owner: an editing cut inside a single scene is a defect of the
 #: generation and not a style, so the allowance is none. The detector's own
-#: threshold is `fork_looper.CUT_JUMP` and is read from there, never copied here.
+#: threshold is `motion.JUMP_MAX` and is read from there, never copied here.
 MAX_CUTS_OUT = 0
 
 #: MEASURED with ArcFace on our own material in one run, as three rungs: the
@@ -843,9 +842,9 @@ CARD_SAMPLE_FRAMES = 24
 
 def _read_pose(path) -> dict:
     """Read the pose points of one image. The one reader every card and check uses."""
-    from . import fork_looper  # noqa: PLC0415
+    from . import pose  # noqa: PLC0415
 
-    return (fork_looper.read_pose(str(path)) or {}).get("points") or {}
+    return (pose.read_pose(str(path)) or {}).get("points") or {}
 
 
 def driving_card(frames, *, pose=None, plan=None) -> dict:
@@ -1653,9 +1652,9 @@ def _default_decode():
 
 
 def _default_cuts():
-    from . import fork_looper  # noqa: PLC0415
+    from . import motion  # noqa: PLC0415
 
-    return fork_looper.cuts
+    return motion.cuts
 
 
 def stage_finish(*, produced, driving, out_path, window=None, finish=None) -> dict:

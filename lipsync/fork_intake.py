@@ -6,13 +6,13 @@ import shutil
 import subprocess
 import time
 
-from . import fork_looper, fork_video
+from . import fork_video, motion, pose
 from .fork_identity import FAIL, PASS, UNMEASURED
 
 
 from .fork_identity import SAME_PERSON_MAX  # noqa: E402
 
-from .fork_looper import CUT_JUMP  # noqa: E402
+from .motion import JUMP_MAX  # noqa: E402
 
 from .pose import MIN_VISIBILITY  # noqa: E402
 
@@ -51,7 +51,7 @@ VSYNC_ADVICE = (
     "frames with duplicates, snapping the stream to its own grid"
 )
 
-EXIT_BY_OUTCOME = fork_looper.EXIT_BY_OUTCOME
+EXIT_BY_OUTCOME = fork_video.EXIT_BY_OUTCOME
 
 
 def read_count_frames(path) -> dict:
@@ -591,8 +591,8 @@ def driving_intake(
     t0 = time.perf_counter()
     prober = read_count_frames if prober is None else prober
     decoder = read_decoded_frames if decoder is None else decoder
-    gray = fork_looper.read_gray if gray is None else gray
-    pose_reader = fork_looper.read_pose if pose_reader is None else pose_reader
+    gray = motion.read_gray if gray is None else gray
+    pose_reader = pose.read_pose if pose_reader is None else pose_reader
     if face_prober is None:
 
         def face_prober(p):
@@ -639,19 +639,19 @@ def driving_intake(
         axes["cuts"] = {
             **tally(0, 0, 1),
             "cuts": [],
-            "bar": CUT_JUMP,
+            "bar": JUMP_MAX,
             "note": (
                 "no frames given: nothing to look for seams in. This is not 'there are no seams'"
             ),
         }
         marks: list = []
     else:
-        c = fork_looper.cuts(paths, gray=gray)
+        c = motion.cuts(paths, gray=gray)
         marks = c.get("cuts") or []
         axes["cuts"] = {
             **(tally(len(paths) - 1, 0, 0) if c.get("outcome") != UNMEASURED else tally(0, 0, 1)),
             "cuts": marks,
-            "bar": CUT_JUMP,
+            "bar": JUMP_MAX,
             "note": c.get("note", ""),
         }
     steps["cuts"] = round(time.perf_counter() - t, 3)

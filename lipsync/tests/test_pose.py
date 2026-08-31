@@ -1,17 +1,22 @@
 """Pose arithmetic on synthetic skeletons, without MediaPipe.
 
 `pose_delta` is declared an instrument in `pose.INSTRUMENTS`: no production path
-calls it, and these tests are the reason it may stay. The product runs
-`fork_looper.pose_gap`, which computes the same quantity from points normalised
-once per frame instead of once per call; `test_pose_gap_is_the_same_number_as_
-pose_delta` holds the two to the same number. That comparison is only worth
-something while the slow side is known to be right, which is what is checked
-here — against literals computed on paper, not against the module.
+calls it, and these tests are the reason it may stay. Until 2026-08-31 a second
+implementation of the same quantity existed — `fork_looper.pose_gap`, which
+normalised once per frame instead of once per call — and the two were held to
+the same number on a fixture. The loop finder was deleted as a tool the product
+does not run and the fast copy went with it, so the known answer `pose_delta` is
+checked against is now arithmetic done on paper alone, below.
+
+`read_pose` is the other half of this file: it is the reader every production
+path uses to turn a frame into landmarks, and it moved here from the deleted
+module because it wraps `landmarks` and nothing else.
 """
 
 from __future__ import annotations
 
 import unittest
+from unittest import mock
 
 try:
     import numpy as np  # noqa: F401
@@ -157,6 +162,75 @@ class TheInstrumentCanSayNoAndCanSayYes(unittest.TestCase):
         self.assertEqual(self.p.pose_delta(_skeleton(), _skeleton())["mean"], 0.0)
 
 
+# C2: evidence is not truncated. Markers sit at BOTH ends because `[:N]` cuts
+# the tail and `[-N:]` cuts the head — a test with one marker passes on half
+# the defects.
+EVIDENCE_HEAD = "HEADMARK_e3f1"
+EVIDENCE_TAIL = "TAILMARK_9b27"
+LONG_EVIDENCE = EVIDENCE_HEAD + " " + ("filler " * 90) + EVIDENCE_TAIL
+SHORT_EVIDENCE = "no such file"
+
+
+def ends_kept(text: str) -> bool:
+    """Return True when both ends of `LONG_EVIDENCE` survived into `text`."""
+    return EVIDENCE_HEAD in str(text) and EVIDENCE_TAIL in str(text)
+
+
+class EvidenceMarkers(unittest.TestCase):
+    """Negative control for the instrument the whole-evidence tests use."""
+
+    def test_the_marker_check_notices_a_cut_at_either_end(self):
+        self.assertGreater(len(LONG_EVIDENCE), 200)
+        self.assertTrue(ends_kept(LONG_EVIDENCE))
+        self.assertFalse(ends_kept(LONG_EVIDENCE[:200]), "a cut tail must be seen")
+        self.assertFalse(ends_kept(LONG_EVIDENCE[-120:]), "a cut head must be seen")
+
+    def test_a_short_reason_carries_neither_marker_and_the_check_stays_silent(self):
+        self.assertFalse(ends_kept(SHORT_EVIDENCE))
+
+
+class ReadPoseAnswersInThreeWays(unittest.TestCase):
+    """A pose, no pose, or the reason there is none — never a silent empty."""
+
+    def setUp(self):
+        from lipsync import pose
+
+        self.p = pose
+
+    def test_the_points_the_detector_returned_are_what_comes_back(self):
+        """The wiring: `read_pose` is `landmarks` plus an answer for failure."""
+        points = _skeleton()
+        with mock.patch.object(self.p, "landmarks", return_value=points):
+            got = self.p.read_pose("frame.png")
+        self.assertIs(got["points"], points)
+        self.assertEqual(got["why"], "")
+
+    def test_a_frame_with_no_body_is_not_a_failure(self):
+        """None from the detector means 'nobody there', and carries no reason."""
+        with mock.patch.object(self.p, "landmarks", return_value=None):
+            got = self.p.read_pose("frame.png")
+        self.assertIsNone(got["points"])
+        self.assertEqual(got["why"], "")
+
+    def test_a_pose_reader_crash_carries_the_whole_reason(self):
+        """C2: the reason reaches the caller uncut, both ends of it."""
+        with mock.patch.object(self.p, "landmarks", side_effect=RuntimeError(LONG_EVIDENCE)):
+            got = self.p.read_pose("frame.png")
+        self.assertIsNone(got["points"])
+        self.assertTrue(ends_kept(got["why"]), got["why"])
+
+    def test_a_short_pose_reader_crash_arrives_unchanged(self):
+        with mock.patch.object(self.p, "landmarks", side_effect=RuntimeError(SHORT_EVIDENCE)):
+            got = self.p.read_pose("frame.png")
+        self.assertTrue(got["why"].endswith(SHORT_EVIDENCE), got["why"])
+
+    def test_the_crash_is_named_and_not_only_described(self):
+        """The type is part of the evidence: `ImportError` and `OSError` differ."""
+        with mock.patch.object(self.p, "landmarks", side_effect=ImportError("mediapipe")):
+            got = self.p.read_pose("frame.png")
+        self.assertEqual(got["why"], "ImportError: mediapipe")
+
+
 @unittest.skipUnless(HAVE_NUMPY, "numpy not installed (live extra)")
 class TheInstrumentDeclarationMatchesWhatIsHere(unittest.TestCase):
     def test_pose_delta_is_the_one_declared_instrument(self):
@@ -170,6 +244,17 @@ class TheInstrumentDeclarationMatchesWhatIsHere(unittest.TestCase):
 
         for name in ("pose_drift", "limb_consistency", "world_proportions", "pose_distance"):
             self.assertFalse(hasattr(pose, name), f"{name} is back")
+
+    def test_the_second_implementation_of_pose_delta_did_not_move_in_here(self):
+        """`pose_gap` was the loop finder's copy of this quantity and went with it.
+
+        Keeping it would mean two ways to compute one number with no production
+        caller for either, which is the duplicate `pose_delta` was documented as
+        NOT being.
+        """
+        from lipsync import pose
+
+        self.assertFalse(hasattr(pose, "pose_gap"), "pose_gap is back")
 
 
 if __name__ == "__main__":
