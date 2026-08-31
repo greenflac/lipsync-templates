@@ -17,7 +17,7 @@ it up in this project with no further setup. To check it by hand:
 python -m studio.mcp.server        # stdio; Ctrl-C to stop
 ```
 
-Twelve tools appear in the chat. Three of them write; the rest only read.
+Fourteen tools appear in the chat. Seven of them write; the rest only read.
 
 | tool | what it does |
 |---|---|
@@ -33,6 +33,8 @@ Twelve tools appear in the chat. Three of them write; the rest only read.
 | `blocked_hosts` | the allowlist request, built from refusals that really happened |
 | `reachable_hosts` | re-probe which hosts answer right now |
 | `probe_model_limit` | ask a vendor API for the impossible and read the real limit |
+| `propose_measurement` | **writes.** File a paid generation for the operator to approve — you cannot approve it yourself |
+| `measurement_proposals` | what has been proposed, approved and spent |
 
 ### Analysing a creative you uploaded by hand
 
