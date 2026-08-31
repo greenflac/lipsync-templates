@@ -1,4 +1,16 @@
-"""The MCP server the owner talks to in chat. Twelve tools, three of which write.
+"""The MCP server the owner talks to in chat. Fourteen tools, seven of which write.
+
+THE NUMBERS IN THIS LINE ARE GATED, NOT PROSE
+
+They said "twelve, three" while the server carried fourteen and seven — a
+docstring that drifted quietly because nothing checked it. `test_server_surface`
+now reads this very line and compares it to the live tool list, so the next
+tool that lands either updates this sentence or turns the build red. Three of
+the seven write KNOWLEDGE (record_model_fact, withdraw_model_fact,
+propose_measurement); the other four write the DENIAL JOURNAL as a side effect
+of reaching the network (fetch_url, search_web, reachable_hosts,
+probe_model_limit), which is a write nobody asked for and which a reader of
+this file deserves to know about.
 
 IT ANSWERS FOR THE FIELD, NOT FOR THIS REPOSITORY
 
@@ -55,6 +67,7 @@ from typing import Any
 from mcp.server.mcpserver import MCPServer
 
 from studio import knowledge
+from studio.selfrag.facts import STALE_AFTER_DAYS  # noqa: E402
 from studio.mcp import advice, contract, creative, fetch, probe, proposal, search
 from studio.mcp import lipsync_prompt as lp
 
@@ -258,7 +271,7 @@ def analyse_creative(path: str, frames_dir: str = "") -> str:
 
 
 @server.tool()
-def stale_model_facts(days: int = 90) -> str:
+def stale_model_facts(days: int = STALE_AFTER_DAYS) -> str:
     """Which recorded claims are old enough to be worth re-checking on the web."""
     return _json(advice.stale(days=days))
 

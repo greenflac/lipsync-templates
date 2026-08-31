@@ -4,6 +4,17 @@ Provenance is data, not documentation: every record carries its own origin
 fields, so anyone who takes the file sees where it came from without reading
 this page. This page explains the basis.
 
+## Лицензии сторонних артефактов, прочитанные до встраивания (Ц5)
+
+| Артефакт | Лицензия | Чем прочитана | Когда |
+|---|---|---|---|
+| `sentence-transformers` 6.0.0 | Apache-2.0 | `pypi.org/pypi/.../json` → `license_expression` | 2026-08-31 |
+| `sentence-transformers/all-MiniLM-L6-v2` | apache-2.0 | `huggingface.co/api/models/...` → `cardData.license` и тег | 2026-08-31 |
+| `qdrant-client` 1.19.0 | Apache-2.0 | METADATA колеса | 2026-08-28 |
+
+Обе строки для плотного канала читаются одной командой каждая, поэтому проверку
+можно повторить, а не поверить в неё. Коммерческих ограничений ни у одной нет.
+
 ## Sources
 
 | Source | Records | Origin | Basis |

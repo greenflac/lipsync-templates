@@ -71,9 +71,21 @@ REACH_UNKNOWN = "unknown"
 #: row in the denial log at all.
 #:
 #: Each was fetched successfully on the date given. This is a MEASUREMENT with
-#: a date, not a permanent property: a hub can go dark, and `--check` in
-#: `scripts/open_routes.py` re-probes them so that shows up as a red build
-#: rather than as a harvest that quietly returns nothing.
+#: a date, not a permanent property: a hub can go dark.
+#:
+#: NOTHING RE-PROBES THEM, and saying so is the point. An earlier version of
+#: this comment promised that `--check` in `scripts/open_routes.py` would turn
+#: the build red when a hub went dark. That script has never existed — review
+#: 2026-08-31 went looking for it. A promised gate is worse than no gate: it
+#: reads as a guarantee and buys nothing.
+#:
+#: It is not written now, deliberately. Such a step would have to reach the
+#: network on every build, so it would go red on somebody else's outage and
+#: teach everyone to ignore it — and the house rule is that a test does not
+#: touch the network (T4). The honest guarantee is the DATE on each row: after
+#: it, this table is a claim about the past. A harvest that suddenly returns
+#: nothing is the real signal, and `reachable_hosts` re-probes on demand when
+#: somebody asks.
 OPEN_HUBS: dict[str, str] = {
     "huggingface.co": "model cards, the models API, and every lab's own org — MEASURED 2026-08-28",
     "raw.githubusercontent.com": "any public repo's README, LICENSE and docs — MEASURED 2026-08-27",
