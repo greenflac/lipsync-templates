@@ -162,6 +162,28 @@ class Channels(unittest.TestCase):
         code = discover.report(alive_hf, limping, {"new_families": [], "new_versions": []})
         self.assertEqual(code, 2)
 
+    def test_a_channel_short_by_one_source_is_not_whole(self):
+        """Ослабление на шаг: «почти все ответили» — всё ещё не «ответили»."""
+        short = {"answered": len(discover.HF_TASKS) - 1}
+        whole = {"answered": len(discover.PYPI_CLIENTS)}
+        self.assertEqual(discover.channels_answered(short, whole), 1)
+
+    def test_both_whole_channels_count_as_two(self):
+        self.assertEqual(
+            discover.channels_answered(
+                {"answered": len(discover.HF_TASKS)},
+                {"answered": len(discover.PYPI_CLIENTS)},
+            ),
+            2,
+        )
+
+    def test_the_json_branch_uses_the_same_rule_as_the_report(self):
+        """Ветка --json была второй копией правила и осталась со старым."""
+        limping = {"answered": 1}
+        whole = {"answered": len(discover.PYPI_CLIENTS)}
+        self.assertEqual(discover.channels_answered(limping, whole), 1)
+        self.assertNotEqual(discover.channels_answered(limping, whole), 2)
+
     def test_pypi_reports_a_version_per_client(self):
         def answer(url: str):
             return "ok", {"info": {"version": "9.9.9"}}

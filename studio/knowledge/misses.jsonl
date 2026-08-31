@@ -1,5 +1,7 @@
 // Каждый вопрос о модели, заданный агенту, и что база смогла ответить.
 // Зачем и как считается — studio/mcp/misses.py. Append-only.
+// Переписан целиком 2026-08-31 дважды, при смене семантики поля `known`.
+// Отступление от append-only записано долгом в studio/mcp/misses.py.
 {"model": "h3-max", "attribute": "", "outcome": "could not measure", "known": 0, "asked_on": "2026-08-31", "note": "'h3-max' is in neither the registry nor the fact base. Nothing was checked, which is not the same as nothing being wrong. Search the web and call `record` to put it there."}
 {"model": "minimax-h3", "attribute": "max_seconds", "outcome": "could not measure", "known": 0, "asked_on": "2026-08-31", "note": "'minimax-h3' is in neither the registry nor the fact base. Nothing was checked, which is not the same as nothing being wrong. Search the web and call `record` to put it there."}
 {"model": "minimax-hailuo-02", "attribute": "", "outcome": "could not measure", "known": 0, "asked_on": "2026-08-31", "note": "'minimax-hailuo-02' is in neither the registry nor the fact base. Nothing was checked, which is not the same as nothing being wrong. Search the web and call `record` to put it there."}

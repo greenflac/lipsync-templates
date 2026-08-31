@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import importlib.util
+import tempfile
 import unittest
 from datetime import date
 from pathlib import Path
@@ -60,14 +61,43 @@ class ReasonsAreOneString(unittest.TestCase):
     """
 
     def test_every_reason_a_producer_emits_has_a_priority(self):
+        """Все ТРИ производителя вызываются по-настоящему.
+
+        Первая редакция этого теста подставляла константы руками для двух из
+        трёх — то есть сравнивала `PRIORITY` сам с собой, и опечатка на стороне
+        `stale_work`/`missed_work` оставляла её зелёной (найдено независимой
+        проверкой 2026-08-31). Это ровно тот дефект, который тест закрывает.
+        """
         payload = {
             "new_families": [{"family": "x", "uploaders": ["a", "b"], "examples": []}],
             "new_versions": [{"stem": "y", "family": "x", "count": 2, "examples": []}],
         }
         produced = {r["reason"] for r in refill.discovered_work(payload)}
-        produced |= {refill.STALE_VENDOR, refill.STALE_OTHER, refill.ASKED_UNKNOWN}
-        unranked = produced - set(refill.PRIORITY)
-        self.assertEqual(unranked, set())
+
+        with tempfile.TemporaryDirectory() as tmp:
+            journal = Path(tmp) / "misses.jsonl"
+            row = '{"model":"h3-max","attribute":"","outcome":"could not measure",'
+            row += '"known":0,"asked_on":"2026-08-31"}\n'
+            journal.write_text(row * 2, encoding="utf-8")
+            produced |= {r["reason"] for r in refill.missed_work(journal)}
+
+            facts = Path(tmp) / "facts.jsonl"
+            facts.write_text(
+                "\n".join(
+                    [
+                        '{"model":"m","attribute":"a","value":"v","source_url":'
+                        '"https://example.test/x","tier":"vendor","stated_on":"2020-01-01"}',
+                        '{"model":"m","attribute":"b","value":"v","source_url":'
+                        '"https://example.test/y","tier":"blog","stated_on":"2020-01-01"}',
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            produced |= {r["reason"] for r in refill.stale_work(path=facts)}
+
+        self.assertEqual(len(produced), 5)  # все пять ступеней действительно порождаются
+        self.assertEqual(produced - set(refill.PRIORITY), set())
 
     def test_the_lowest_rung_is_ranked_below_the_others(self):
         """Пятая ступень тоже константа-решение: в живой очереди это 26 строк
@@ -105,6 +135,45 @@ class Verdict(unittest.TestCase):
         """Пустая очередь при трёх живых источниках — это хорошая новость."""
         code = refill.report([], {"a": True, "b": True}, 5)
         self.assertEqual(code, 0)
+
+
+class Gate(unittest.TestCase):
+    """`check_journal` — функция, производящая коды возврата для scripts/check.
+
+    Сторож стоял на её помощнике, а не на ней: подмена `if broken or torn` на
+    `if broken` оставляла все тесты зелёными и возвращала исходный дефект
+    целиком (найдено независимой проверкой 2026-08-31). Тот же класс, который
+    этими же тестами и чинили.
+    """
+
+    def journal(self, body: str) -> int:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "misses.jsonl"
+            path.write_text(body, encoding="utf-8")
+            return refill.check_journal(path)
+
+    GOOD = '{"model":"a","outcome":"pass","known":1,"asked_on":"2026-08-31"}\n'
+
+    def test_a_whole_journal_passes(self):
+        self.assertEqual(self.journal(self.GOOD), 0)
+
+    def test_a_torn_line_fails_the_build(self):
+        self.assertEqual(self.journal(self.GOOD + "обрыв{"), 1)
+
+    def test_a_line_broken_by_schema_fails_the_build(self):
+        bad = '{"model":"a","outcome":"годно","known":1,"asked_on":"2026-08-31"}\n'
+        self.assertEqual(self.journal(self.GOOD + bad), 1)
+
+    def test_a_non_numeric_known_fails_instead_of_crashing(self):
+        bad = '{"model":"a","outcome":"pass","known":"много","asked_on":"2026-08-31"}\n'
+        self.assertEqual(self.journal(bad), 1)
+
+    def test_an_empty_journal_is_the_third_outcome_not_a_pass(self):
+        self.assertEqual(self.journal("// только шапка\n"), 2)
+
+    def test_a_journal_of_pure_junk_is_broken_not_empty(self):
+        """Второй исход не подменяется третьим: строки БЫЛИ, они испорчены."""
+        self.assertEqual(self.journal("это не json\nи это тоже\n"), 1)
 
 
 class Sources(unittest.TestCase):

@@ -187,6 +187,10 @@ def advise_and_note(model: str, attribute: str = "", *, log: Path | None = None)
     растёт и когда база улучшается, и когда ухудшается — без попаданий рядом
     у покрытия нет знаменателя. Зачем это нужно — в `misses.py`.
     """
+    # Нормализация ОДНА и здесь: дальше `advise` и `misses.evidence` обязаны
+    # видеть одну и ту же строку, иначе «атрибут задан» решается двумя
+    # способами и они расходятся на пробельном входе.
+    attribute = str(attribute or "").strip()
     answer = advice.advise(model, attribute)
     misses.note_question(
         model,

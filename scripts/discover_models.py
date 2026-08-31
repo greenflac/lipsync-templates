@@ -316,6 +316,21 @@ def poll_pypi(get: Callable[[str], tuple[str, Any]] = _get) -> dict[str, Any]:
     return {"clients": rows, "answered": len(rows), "refused": refused}
 
 
+def channels_answered(hf: dict[str, Any], pypi: dict[str, Any]) -> int:
+    """Сколько каналов ответили ЦЕЛИКОМ. Считается в одном месте (правило Е1).
+
+    Пока это считалось дважды — в `report` и в ветке `--json` — вторая копия
+    осталась со старым, ослабленным правилом и молча возвращала «годно» по
+    одной шестой выборки (найдено независимой проверкой 2026-08-31).
+    """
+    whole = 0
+    if int(hf.get("answered") or 0) == len(HF_TASKS):
+        whole += 1
+    if int(pypi.get("answered") or 0) == len(PYPI_CLIENTS):
+        whole += 1
+    return whole
+
+
 def report(hf: dict[str, Any], pypi: dict[str, Any], findings: dict[str, list]) -> int:
     """Напечатать разницу числами и вернуть код возврата с тремя исходами."""
     # Канал считается ответившим, только если ответили ВСЕ его источники.
@@ -325,9 +340,7 @@ def report(hf: dict[str, Any], pypi: dict[str, Any], findings: dict[str, list]) 
     # (найдено независимой проверкой 2026-08-31). Соседний refill_queue.report
     # тот же случай решает так же: любой молчащий источник — третий исход.
     channels = 2
-    hf_whole = hf["answered"] == len(HF_TASKS)
-    pypi_whole = pypi["answered"] == len(PYPI_CLIENTS)
-    answered = (1 if hf_whole else 0) + (1 if pypi_whole else 0)
+    answered = channels_answered(hf, pypi)
     print("ЧТО ПОЯВИЛОСЬ С ПРОШЛОГО РАЗА")
     print(f"каналов опрошено {channels}, ответили {answered}, не смогли {channels - answered}")
     print(
@@ -378,8 +391,7 @@ def main(argv: list[str]) -> int:
         print(
             json.dumps({"hugging_face": hf, "pypi": pypi, **findings}, ensure_ascii=False, indent=2)
         )
-        whole = hf["answered"] == len(HF_TASKS) and pypi["answered"] == len(PYPI_CLIENTS)
-        return 0 if whole else 2
+        return 0 if channels_answered(hf, pypi) == 2 else 2
     return report(hf, pypi, findings)
 
 

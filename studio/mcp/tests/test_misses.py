@@ -182,6 +182,17 @@ class Evidence(unittest.TestCase):
         answer = {"claims": {"max_seconds": {"checked": 3}}, "failure_modes": [1]}
         self.assertEqual(misses.evidence(answer, "max_seconds"), 3)
 
+    def test_a_whitespace_attribute_is_an_attribute_here_as_it_is_for_advise(self):
+        """`advise` решает «атрибут задан» голой истинностью строки.
+
+        Пока здесь стоял `strip`, а там нет, `"   "` для `advise` был атрибутом
+        (и не находил ничего), а здесь считался пустым — и вопрос о
+        несуществующем свойстве закрывался числом failure_modes модели. Дефект
+        возвращался целиком, только через пробел.
+        """
+        answer = {"claims": {"   ": {"checked": 0}}, "failure_modes": [1, 2]}
+        self.assertEqual(misses.evidence(answer, "   "), 0)
+
     def test_asking_about_the_whole_model_counts_its_failure_modes(self):
         answer = {"claims": {"max_seconds": {"checked": 3}}, "failure_modes": [1, 2]}
         self.assertEqual(misses.evidence(answer, ""), 5)
@@ -211,12 +222,37 @@ class TornLines(unittest.TestCase):
         self.assertTrue(any("known" in p for p in misses.problems(broken)))
         self.assertFalse(misses.covered(broken))
 
+    def test_a_boolean_is_not_a_count(self):
+        """`True` — это `int` для Python, но не число найденных фактов."""
+        broken = {"model": "a", "outcome": "pass", "asked_on": "2026-08-31", "known": True}
+        self.assertTrue(any("known" in p for p in misses.problems(broken)))
+        self.assertFalse(misses.covered(broken))
+
     def test_a_negative_known_is_refused(self):
         broken = {"model": "a", "outcome": "pass", "asked_on": "2026-08-31", "known": -1}
         self.assertTrue(any("known" in p for p in misses.problems(broken)))
 
 
 class Wiring(unittest.TestCase):
+    def test_a_whitespace_attribute_is_normalised_once_at_the_entry(self):
+        """Оба пути обязаны видеть ОДНУ строку, иначе «атрибут задан»
+        решается двумя способами и они расходятся на пробеле.
+
+        Сравниваются два ответа, а не число: числа базы поедут, а равенство
+        «спросить про `"   "` — то же, что спросить про модель целиком» —
+        это и есть проверяемое утверждение.
+        """
+        from studio.mcp import server
+
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "misses.jsonl"
+            server.advise_and_note("kling-3.0", "   ", log=path)
+            server.advise_and_note("kling-3.0", "", log=path)
+            blank, empty = misses.load(path)
+        self.assertEqual(blank["attribute"], empty["attribute"])
+        self.assertEqual(blank["known"], empty["known"])
+        self.assertGreater(empty["known"], 0)
+
     def test_the_tool_actually_writes_the_question_down(self):
         """Связка, а не копия: без неё модуль честен и не вызывается никем."""
         from studio.mcp import server

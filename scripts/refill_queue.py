@@ -192,8 +192,11 @@ def check_journal(path: Path | None = None) -> int:
     if torn:
         print("  строки, не разобравшиеся как JSON: " + ", ".join(str(n) for n in torn[:10]))
     print(f"покрытие: {cover.note}, исход {cover.outcome}")
+    # «запись», а не «строка»: здесь порядковый номер среди РАЗОБРАВШИХСЯ, и
+    # он не совпадает с номером строки в файле, если выше был обрыв. Две разные
+    # нумерации под одним словом — способ отправить читателя не туда.
     for number, found in broken[:10]:
-        print(f"  строка {number}: " + "; ".join(found))
+        print(f"  запись {number}: " + "; ".join(found))
     if broken or torn:
         print("ПРОВАЛ: битые строки в журнале — знаменатель покрытия им врёт")
         return 1
