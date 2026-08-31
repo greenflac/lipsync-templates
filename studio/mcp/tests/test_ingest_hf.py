@@ -348,6 +348,6 @@ class Заявки(unittest.TestCase):
         голая = dict(self.СТРОКА, license_name="", license="", licences=[], troubles=[])
         self.assertEqual([z[1] for z in hf.заявки(голая)], ["adoption"])
 
-    def test_тиры_пробуются_по_очереди_и_их_ровно_два(self):
+    def test_тиры_пробуются_по_очереди_и_их_ровно_три(self):
         """Тир не выбирается каналом: его решает URL внутри advice.record."""
-        self.assertEqual(hf.ТИРЫ_ПО_ОЧЕРЕДИ, ("portal", "vendor"))
+        self.assertEqual(hf.ТИРЫ_ПО_ОЧЕРЕДИ, ("portal", "vendor", "blog"))
