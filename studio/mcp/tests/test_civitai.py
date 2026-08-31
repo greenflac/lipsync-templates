@@ -11,6 +11,7 @@ expectation that moves with the code checks nothing (house rule T2).
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import tempfile
 import unittest
@@ -18,6 +19,15 @@ from collections.abc import Callable
 from pathlib import Path
 
 from studio.mcp import civitai
+
+#: CLI грузится по пути, а не импортом: `scripts/` не пакет, а развилка кода
+#: возврата обязана быть достижима тестом (Т5).
+_CLI = importlib.util.spec_from_file_location(
+    "collect_civitai", Path(__file__).resolve().parents[3] / "scripts" / "collect_civitai.py"
+)
+assert _CLI and _CLI.loader
+_cli = importlib.util.module_from_spec(_CLI)
+_CLI.loader.exec_module(_cli)
 
 HARVESTED = "2026-08-27"
 RIGHTS = "owner_authorisation_2026-08-27"
@@ -72,6 +82,25 @@ def _listing(model_over: dict | None = None, **over: object) -> dict:
     }
     model.update(model_over or {})
     return {"items": [model], "metadata": {}}
+
+
+def _many_versions(count: int) -> dict:
+    """Один автор с несколькими версиями — так проверяется потолок --versions.
+
+    Все версии у ОДНОЙ модели нарочно: круговой обход по моделям тогда ничего
+    не меняет, и в срез попадают ровно первые `max_versions`.
+    """
+    listing = _listing()
+    model = listing["items"][0]
+    model["modelVersions"] = [
+        {
+            "id": 128713 + i,
+            "baseModel": "SD 1.5",
+            "images": [{"hasPositivePrompt": True}],
+        }
+        for i in range(count)
+    ]
+    return listing
 
 
 REF = {
@@ -400,6 +429,64 @@ class Collecting(unittest.TestCase):
         assert "not JSON" in out["note"], out["note"]
         assert "CUT" not in out["note"]
 
+    def test_a_CUT_version_answer_is_counted_apart_from_a_REFUSED_one(self) -> None:
+        """Правка обрезания дошла только до листинга. Ответ версии, не влезший
+        в потолок, объявлялся отказом и уводил читателя искать выпотрошенный
+        эндпоинт вместо тела, которое длиннее потолка."""
+        listing = _listing()
+
+        def cut_versions(url: str, **_: object) -> dict:
+            if "model-versions" in url:
+                return {
+                    "outcome": "pass",
+                    "status": 200,
+                    "text": '{"images":[{"meta":{"prompt":"обрезано тут',
+                    "truncated": True,
+                    "max_bytes": 3_000_000,
+                }
+            return {"outcome": "pass", "status": 200, "text": json.dumps(listing)}
+
+        out = self._collect(cut_versions)
+        assert "1 CUT at" in out["note"], out["note"]
+        assert "1 refused" not in out["note"], out["note"]
+
+    def test_JUNK_from_a_version_is_still_refused_not_called_cut(self) -> None:
+        """Негативный контроль (И5): если всё нечитаемое звать обрезанием,
+        сообщение врёт в другую сторону — так же дорого."""
+        listing = _listing()
+
+        def junk_versions(url: str, **_: object) -> dict:
+            if "model-versions" in url:
+                return {
+                    "outcome": "pass",
+                    "status": 200,
+                    "text": "<html>rate limited</html>",
+                    "truncated": False,
+                    "max_bytes": 3_000_000,
+                }
+            return {"outcome": "pass", "status": 200, "text": json.dumps(listing)}
+
+        out = self._collect(junk_versions)
+        assert "1 refused" in out["note"], out["note"]
+        assert "1 CUT at" not in out["note"], out["note"]
+
+    def test_versions_left_by_the_ceiling_are_counted_not_lost(self) -> None:
+        """Арифметика отчёта обязана сходиться: «просмотрено 8645, пропущено
+        2088, запрошено 1200» оставляло 5357 версий без объяснения."""
+        listing = _many_versions(6)
+        fetcher = _Fetcher({"/api/v1/models": listing, "/model-versions/": _version()})
+        out = self._collect(fetcher, max_versions=2)
+        assert "left unfetched by the version ceiling" in out["note"], out["note"]
+        assert "4 left unfetched" in out["note"], out["note"]
+
+    def test_no_ceiling_leaves_nothing_unfetched(self) -> None:
+        """Другая сторона: счётчик, который всегда положителен, ничего не
+        сообщает."""
+        listing = _many_versions(3)
+        fetcher = _Fetcher({"/api/v1/models": listing, "/model-versions/": _version()})
+        out = self._collect(fetcher, max_versions=None)
+        assert "0 left unfetched" in out["note"], out["note"]
+
     def test_the_listing_ceiling_clears_the_largest_measured_listing(self) -> None:
         """Literals, not an import of the thing being checked (rule T2).
         ИЗМЕРЕНО 2026-08-31: limit=100 is 6 516 550 bytes."""
@@ -548,3 +635,24 @@ class Summarising(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TheExitCodeIsReadOffWhatHappened(unittest.TestCase):
+    """Прежняя версия строила исход из одного числа `written`, и ветка `1` была
+    недостижима: жёсткий отказ API выходил с нулём, если хоть одно другое
+    семейство что-то записало."""
+
+    def test_a_hard_failure_exits_one_even_when_something_was_written(self) -> None:
+        assert _cli.exit_code(["fail", "pass"], 42) == 1
+
+    def test_everything_fine_exits_zero(self) -> None:
+        assert _cli.exit_code(["pass", "pass"], 42) == 0
+
+    def test_answered_but_empty_exits_two_not_one_and_not_zero(self) -> None:
+        """Третье состояние: API ответил и не дал ничего. Это не успех и не
+        крах, и вызывающему в конвейере надо их различать."""
+        assert _cli.exit_code(["could not measure"], 0) == 2
+
+    def test_a_failure_wins_over_an_empty_result(self) -> None:
+        """Порядок важен: сломанное семейство рядом с пустым — это поломка."""
+        assert _cli.exit_code(["fail", "could not measure"], 0) == 1

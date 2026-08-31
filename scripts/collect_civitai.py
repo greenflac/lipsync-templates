@@ -34,12 +34,29 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from lipsync.fork_identity import PASS  # noqa: E402
+from lipsync.fork_identity import FAIL, PASS, UNMEASURED  # noqa: E402
 
 from studio.mcp import civitai  # noqa: E402
 
 #: The basis these rows stand on, from PROVENANCE.md. Stamped per row.
 DEFAULT_RIGHTS = "owner_authorisation_2026-08-27"
+
+
+def exit_code(outcomes: list[str], written: int) -> int:
+    """Три состояния в коде возврата, посчитанные ПО СВИДЕТЕЛЬСТВУ.
+
+    Прежняя версия строила исход из одного числа `written`, поэтому получалось
+    только два состояния: ветка `1` была недостижима, и жёсткий отказ API
+    выходил с нулём, если хоть одно другое семейство что-то записало. Значение
+    выводится из того, что исполнилось, а не из намерения (правило Е2).
+
+    Вынесено из `main` (Т5): развилка внутри точки входа тестом недостижима.
+    """
+    if any(o == FAIL for o in outcomes):
+        return 1
+    if written:
+        return 0
+    return 2
 
 
 def main(argv: list[str]) -> int:
@@ -117,15 +134,16 @@ def main(argv: list[str]) -> int:
     # not make it a failure either. The counts go out beside the verdict so a
     # reader sees the denominator (house rule P2).
     got = sum(int(o["written"]) for o in outcomes)
-    empty = [f for f, o in zip(families, outcomes) if o["outcome"] != PASS]
-    print(f"\nсемейств {len(families)}\nзаписей {got}\nбез результата {len(empty)}")
-    if empty:
-        print("  nothing from: " + ", ".join(f or "(unfiltered)" for f in empty))
-    out = {"outcome": PASS if got else "could not measure"}
-    # Three outcomes reach the exit code as three states, not two: an API that
-    # answered and gave nothing is not a success and is not a crash either, and
-    # a caller in a pipeline needs to tell them apart.
-    return {PASS: 0}.get(str(out["outcome"]), 2 if out["outcome"] != "fail" else 1)
+    broke = [f for f, o in zip(families, outcomes) if o["outcome"] == FAIL]
+    empty = [f for f, o in zip(families, outcomes) if o["outcome"] == UNMEASURED]
+    print(
+        f"\nсемейств {len(families)}\nзаписей {got}\n"
+        f"сломалось {len(broke)}\nбез результата {len(empty)}"
+    )
+    for label, names in (("сломалось на", broke), ("ничего не дало", empty)):
+        if names:
+            print(f"  {label}: " + ", ".join(f or "(unfiltered)" for f in names))
+    return exit_code([o["outcome"] for o in outcomes], got)
 
 
 if __name__ == "__main__":

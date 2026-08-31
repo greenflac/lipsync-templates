@@ -179,6 +179,14 @@ REQUIRED_ROW_FIELDS: tuple[str, ...] = (
 #: read whatever a host decides to send.
 LISTING_MAX_BYTES = 12_000_000
 
+#: То же для ответа ОДНОЙ версии. ИЗМЕРЕНО 2026-08-31: самый большой ответ
+#: версии в прогоне на 1200 версий — 1.4 МБ, то есть 3 МБ хватало и хватает.
+#: Именованная константа здесь не ради запаса, а ради того, чтобы обрезание
+#: версии можно было НАЗВАТЬ: раньше потолок стоял числом прямо в вызове, и
+#: усечённый ответ уходил в `refused`, уводя читателя в «эндпоинт выпотрошили»
+#: вместо «тело длиннее потолка».
+VERSION_MAX_BYTES = 3_000_000
+
 #: Politeness, not a limit Civitai publishes. Civitai's terms bind automated
 #: access to "any applicable rate limits" without naming one, so this is a
 #: CHOSEN floor on the interval between requests rather than a measured
@@ -529,20 +537,29 @@ def collect(
         wanted = [ref for ref in wanted if not _publishes_above_ceiling(ref)]
     worth_it = _one_model_at_a_time(wanted)
     skipped = len(refs) - len(worth_it)
+    # Отрезанные потолком — это «не смотрели», а не «смотрели и не годно».
+    # Раньше они не считались нигде, и арифметика в отчёте не сходилась:
+    # «просмотрено 8645, пропущено 2088, запрошено 1200» оставляло 5357 версий
+    # без объяснения, читавшихся как потеря (правило Е3 — частичный результат
+    # печатается числами).
+    capped = 0
     if max_versions is not None:
+        before = len(worth_it)
         worth_it = worth_it[: max(0, int(max_versions))]
+        capped = before - len(worth_it)
 
     rows: list[dict] = []
     no_prompt = 0
     too_explicit = 0
     refused = 0
+    cut = 0
     for index, ref in enumerate(worth_it):
         if index:
             sleeper(delay_seconds)
         answer = get(
             VERSION_URL.format(id=ref["version_id"]),
             why_wanted="collect prompt-and-result pairs from Civitai",
-            max_bytes=3_000_000,
+            max_bytes=VERSION_MAX_BYTES,
         )
         if answer.get("outcome") != PASS:
             refused += 1
@@ -550,7 +567,15 @@ def collect(
         try:
             payload = json.loads(answer.get("text") or "")
         except ValueError:
-            refused += 1
+            # ОБРЕЗАНО и ОТКАЗАНО — разные вещи, и раньше обе печатались как
+            # `refused`. Правка обрезания дошла только до листинга; ответ
+            # версии, не влезший в потолок, до сих пор объявлялся отказом и
+            # уводил читателя искать выпотрошенный эндпоинт вместо тела,
+            # которое длиннее потолка (правило Е2 — верить свидетельству).
+            if answer.get("truncated"):
+                cut += 1
+            else:
+                refused += 1
             continue
         found = pairs_from_version(payload, ref, harvested, rights)
         no_prompt += int(found["no_prompt"])
@@ -604,7 +629,8 @@ def collect(
     detail = (
         f"{listings} listing page(s), {len(refs)} version(s) seen, {skipped} skipped as "
         f"claiming no prompt or above the model ceiling, {len(worth_it)} fetched, "
-        f"{refused} refused; {explicit_note}; "
+        f"{refused} refused, {cut} CUT at the {VERSION_MAX_BYTES}-byte ceiling, "
+        f"{capped} left unfetched by the version ceiling; {explicit_note}; "
         f"{len(rows)} pair(s) parsed, {len(rows) - len(fresh)} already held, "
         f"{no_prompt} image(s) without wording, {too_explicit} above the nsfw ceiling"
     )
