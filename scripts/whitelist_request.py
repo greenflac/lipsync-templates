@@ -36,12 +36,32 @@ uses to decide what a source is worth:
                social sites and blogspam. NAMED HERE ON PURPOSE: a request
                that visibly excludes junk is a request somebody can believe.
 
-WILDCARDS
+WILDCARDS, AND THE SECOND LINE THAT IS NOT OPTIONAL
 
-Hosts are collapsed to their registrable domain and requested as `*.domain`,
-because the useful pages sit on subdomains nobody can enumerate in advance —
-`docs.`, `api.`, `platform.`, `developer.`, `blog.`, `www.`. Fifteen domains
-in the current log already appear under two to four subdomains each.
+Hosts are collapsed to their registrable domain and requested as TWO lines:
+`*.domain` AND `domain`. The wildcard is for the pages nobody can enumerate in
+advance — `docs.`, `api.`, `platform.`, `developer.`, `blog.`, `www.` — and the
+bare form is for the domain itself.
+
+The second line was missing until 2026-08-31, and it cost a whole round trip
+with the owner. They pasted the generated `*.domain` list into the environment
+whitelist, and afterwards 22 of 28 hosts still answered 403. It looked like the
+whitelist had not been applied at all; it had. MEASURED, by probing apex and
+subdomain side by side:
+
+    x.ai            403 (proxy)        docs.x.ai            200
+    minimax.io      403 (proxy)        www.minimax.io       200
+    bytedance.com   403 (proxy)        www.bytedance.com    200
+    voyageai.com    403 (proxy)        docs.voyageai.com    200
+
+`*.example.com` matches a subdomain and NOT the apex. Every one of the six
+domains that did work was reached through a subdomain, and every one that did
+not was probed at its apex — a split with no exceptions across 28 hosts, which
+is what turned a suspicion into a diagnosis.
+
+`scripts/allowlist_request.py`, the older generator, had emitted both forms all
+along. Two generators for one artefact, and the newer one silently dropped a
+line the older one had — rule E1, in a place nobody was watching.
 """
 
 from __future__ import annotations
@@ -328,6 +348,15 @@ def wanted_reasons(path: Path | None = None) -> dict[str, str]:
     return out
 
 
+def wildcard_forms(domain: str) -> tuple[str, ...]:
+    """Обе формы, которые надо внести в whitelist для одного домена.
+
+    Вынесено функцией (правило Т5), потому что от неё зависит, доедет ли
+    заявка до работающего доступа, и одной строки здесь уже не хватило.
+    """
+    return (f"*.{domain}", domain)
+
+
 def _report(groups: dict[str, list[str]], only: str = "") -> int:
     known = set()
     for _n, _t, table in TIERS:
@@ -362,7 +391,8 @@ def _report(groups: dict[str, list[str]], only: str = "") -> int:
         print(f"--- ТИР {number}: {title}  ({len(rows)} доменов)")
         for domain in rows:
             seen = ", ".join(sorted(groups[domain]))
-            print(f"  *.{domain}")
+            for form in wildcard_forms(domain):
+                print(f"  {form}")
             print(f"       зачем: {table[domain]}")
             print(f"       упирались в: {seen}")
         total += len(rows)
@@ -373,7 +403,8 @@ def _report(groups: dict[str, list[str]], only: str = "") -> int:
         print("     самая сильная строка заявки: под этими URL стоят утверждения,")
         print("     которые никто не смог проверить.")
         for domain in cited:
-            print(f"  *.{domain}")
+            for form in wildcard_forms(domain):
+                print(f"  {form}")
             print(f"       упирались в: {', '.join(sorted(groups[domain]))}")
         total += len(cited)
         print()
