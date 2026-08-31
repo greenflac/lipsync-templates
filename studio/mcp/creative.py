@@ -48,6 +48,8 @@ The engine's modules are imported, never reimplemented, and never edited:
 
 from __future__ import annotations
 
+import subprocess
+import tempfile
 from pathlib import Path
 from typing import Sequence
 
@@ -394,13 +396,118 @@ def intake_of(path: str | Path) -> dict:
     }
 
 
+#: Расширения, которые разбираются как ВИДЕО, а не как картинка.
+VIDEO_SUFFIXES = frozenset({".mp4", ".mov", ".webm", ".mkv", ".m4v", ".avi"})
+
+#: Сколько кадров вынимать из ролика. ВЫБРАНО 6: столько же, сколько берёт
+#: раскадровка стенда-валидатора, и по той же причине — шести хватает, чтобы
+#: увидеть движение и дрейф, и каждый кадр остаётся достаточно крупным, чтобы
+#: по нему мерили текстуру.
+VIDEO_FRAMES = 6
+
+
+def frames_from_video(path: str | Path, into: Path, *, count: int = VIDEO_FRAMES) -> dict:
+    """Вынуть `count` кадров из ролика, равномерно по всей его длине.
+
+    ЗАЧЕМ ЭТА ФУНКЦИЯ ПОЯВИЛАСЬ. Докстроки `analyse` и MCP-инструмента
+    утверждали: «An mp4 cannot be decoded here (no ffmpeg, MEASURED)», и звали
+    оператора декодировать ролик где-то ещё. ИЗМЕРЕНО 2026-08-31: ffmpeg 7.0.2
+    лежит в окружении, ставится вместе с `imageio-ffmpeg`, и этим же ffmpeg
+    весь стенд-валидатор режет раскадровки. Утверждение было верным когда-то и
+    устарело молча — ровно тот класс расхождения «документ обещает одно, код
+    делает другое», который разбирался в этот день пять раз.
+
+    Три исхода (Р1): кадры вынуты, ролик не читается, ffmpeg недоступен. Третий
+    существует не для симметрии: `imageio-ffmpeg` — необязательная зависимость,
+    и «его нет» обязано отличаться от «файл битый».
+    """
+    into.mkdir(parents=True, exist_ok=True)
+    try:
+        import imageio_ffmpeg
+    except Exception as exc:  # noqa: BLE001 - отсутствие пакета это измерение
+        return {
+            **_house(
+                UNMEASURED,
+                0,
+                0,
+                1,
+                f"imageio-ffmpeg недоступен ({type(exc).__name__}), декодировать ролик нечем",
+            ),
+            "frames": [],
+        }
+
+    exe = imageio_ffmpeg.get_ffmpeg_exe()
+    seconds = _video_seconds(exe, path)
+    if seconds is None:
+        return {
+            **_house(
+                UNMEASURED, 0, 0, 1, f"ffmpeg не смог прочитать длительность {Path(path).name}"
+            ),
+            "frames": [],
+        }
+    step = max(seconds / count, 0.04)
+    done = subprocess.run(
+        [
+            exe,
+            "-y",
+            "-loglevel",
+            "error",
+            "-i",
+            str(path),
+            "-vf",
+            f"fps=1/{step:.4f}",
+            "-frames:v",
+            str(count),
+            str(into / "frame_%03d.jpg"),
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    got = sorted(str(f) for f in into.glob("frame_*.jpg"))
+    if not got:
+        return {
+            **_house(
+                UNMEASURED,
+                0,
+                0,
+                1,
+                f"ffmpeg не выдал ни одного кадра: {(done.stderr or '').strip()[:160]}",
+            ),
+            "frames": [],
+        }
+    return {
+        **_house(PASS, len(got), 0, 0, f"{len(got)} кадр(ов) из {seconds:.1f} с, шаг {step:.2f} с"),
+        "frames": got,
+    }
+
+
+def _video_seconds(exe: str, path: str | Path) -> float | None:
+    """Длительность ролика по выводу ffmpeg, или None если её там нет."""
+    done = subprocess.run(
+        [exe, "-hide_banner", "-i", str(path)], capture_output=True, text=True, check=False
+    )
+    for line in done.stderr.splitlines():
+        if "Duration:" in line:
+            stamp = line.split("Duration:")[1].split(",")[0].strip()
+            try:
+                hours, minutes, secs = stamp.split(":")
+                return int(hours) * 3600 + int(minutes) * 60 + float(secs)
+            except ValueError:
+                return None
+    return None
+
+
 def analyse(path: str | Path, *, frames: Sequence[str] | None = None) -> dict:
     """Everything measurable about one creative, and everything that was not.
 
-    :param path: a still image — the creative, or its first frame.
-    :param frames: the frame sequence, when there is one, for the motion
-        instruments. An mp4 cannot be decoded here (no ffmpeg, MEASURED), so a
-        caller with a video decodes it elsewhere and passes the frames.
+    :param path: a still image, OR a video — `.mp4`, `.mov`, `.webm` and the
+        rest of `VIDEO_SUFFIXES`. A video is decoded here into six frames; the
+        look is measured on the middle one, and the motion instruments get the
+        whole sequence.
+    :param frames: a frame sequence you extracted yourself. Given, it wins over
+        anything decoded from `path` — a caller who already has the frames
+        should not pay for a second decode.
 
     Three outcomes over the whole creative, and `could_not_run` names every
     instrument that did not run and why. That list is the point: an answer with
@@ -411,12 +518,38 @@ def analyse(path: str | Path, *, frames: Sequence[str] | None = None) -> dict:
     the engine's intake loads a face model or discovers it cannot. The order is
     fixed here so a missing package is found before a decode is attempted.
     """
-    parts = {
-        "look": look(path),
-        "intake": intake_of(path),
-    }
-    if frames is not None:
-        parts["motion"] = motion_of(frames)
+    # Ролик приводится к кадрам ПЕРЕД замерами, и кадры остаются на диске на
+    # время разбора: `look` меряет один кадр, `motion_of` — всю последовательность.
+    still = Path(path)
+    decoded: dict | None = None
+    temp: tempfile.TemporaryDirectory | None = None
+    if frames is None and still.suffix.lower() in VIDEO_SUFFIXES:
+        temp = tempfile.TemporaryDirectory()
+        decoded = frames_from_video(still, Path(temp.name))
+        got = list(decoded.get("frames") or [])
+        if got:
+            frames = got
+            # Середина, а не первый кадр: первый у ролика часто титульный или
+            # ещё не разогнавшийся, и мерить по нему текстуру значит мерить не то.
+            still = Path(got[len(got) // 2])
+
+    try:
+        parts = {
+            "look": look(still),
+            "intake": intake_of(still),
+        }
+        if frames is not None:
+            parts["motion"] = motion_of(frames)
+        if decoded is not None and str(decoded.get("outcome")) == UNMEASURED:
+            parts["video_decode"] = decoded
+        return _finish(path, parts)
+    finally:
+        if temp is not None:
+            temp.cleanup()
+
+
+def _finish(path: str | Path, parts: dict) -> dict:
+    """Свести замеры в один вердикт. Вынесено, чтобы кадры удалялись гарантированно."""
 
     could_not_run = [
         {"instrument": name, "why": str(part.get("note", ""))}

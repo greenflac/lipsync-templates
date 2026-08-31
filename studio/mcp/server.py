@@ -293,14 +293,20 @@ def withdraw_model_fact(
 def analyse_creative(path: str, frames_dir: str = "") -> str:
     """Measure a creative you dropped in: what it looks like, what moves in it.
 
-    Point it at an image — a reference you liked, a frame you generated, a
-    competitor's still. It answers in the SAME vocabulary `write_lipsync_prompt`
-    takes, so the palette and lighting words come back ready to use.
+    Point it at an image OR a video — a reference you liked, a driving clip you
+    are about to run, a competitor's still. It answers in the SAME vocabulary
+    `write_lipsync_prompt` takes, so the palette and lighting words come back
+    ready to use.
 
-    :param path: the image file. An mp4 cannot be decoded here (no ffmpeg), so
-        for a clip pass its extracted frames instead.
-    :param frames_dir: a directory of frames, in filename order, for the loop
-        and motion instruments. Omit it for a still.
+    :param path: the file. A video (`.mp4`, `.mov`, `.webm`, …) is decoded here
+        into six frames: the look is measured on the MIDDLE one — a first frame
+        is often a title card or a shot that has not settled — and the motion
+        instruments get the whole sequence, so a loop seam or a drift shows up.
+        Until 2026-08-31 this said an mp4 could not be decoded here; that was
+        true when written and had gone stale, ffmpeg 7.0.2 ships with
+        `imageio-ffmpeg`.
+    :param frames_dir: frames you extracted yourself, in filename order. Given,
+        it wins over decoding `path` — nobody should pay for a second decode.
 
     Read the `could_not_run` list before trusting a clean answer. Several
     instruments need packages this environment does not have — every face and
