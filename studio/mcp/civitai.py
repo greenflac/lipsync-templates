@@ -94,12 +94,28 @@ PROVENANCE_PREFIX = "civitai:"
 #: tag-soup fragment, not a short prompt.
 MIN_PROMPT_WORDS = 3
 
-#: CHOSEN. Civitai's browsing levels rise 1 (PG), 2 (PG-13), 4 (R), 8 (X),
-#: 16 (XXX). This is a commercial creator service, so the two safe rungs are
-#: kept and everything above is dropped — and the number dropped is REPORTED,
-#: never silently discarded, because "we collected 4000 rows" reads very
-#: differently from "we collected 4000 and threw 9000 away".
-MAX_NSFW_LEVEL = 2
+#: Civitai's browsing levels rise 1 (PG), 2 (PG-13), 4 (R), 8 (X), 16 (XXX).
+#:
+#: ВЫБРАНО 4 by the owner 2026-08-31: R is admissible, on the grounds that the
+#: niche carries a lot of advanced craft and this project does not republish the
+#: creatives anywhere. It was 2 before that ruling.
+#:
+#: X and XXX stay out. That is not the owner's ceiling being second-guessed —
+#: it is a different category of material, and building a corpus of it is not
+#: something this collector does. MEASURED 2026-08-31 on 308 prompt-bearing
+#: images so the cost of that line is a number rather than a feeling:
+#:
+#:     1  PG     176  57.1%
+#:     2  PG-13   61  19.8%
+#:     4  R       45  14.6%   ← admitted by this ruling
+#:     8  X       19   6.2%   ← not collected
+#:    16  XXX      7   2.3%   ← not collected
+#:
+#: So the line costs 8.5% of the available wording, and the ruling buys 14.6%.
+#: The number dropped is REPORTED either way, never silently discarded: "we
+#: collected 4000 rows" reads very differently from "we collected 4000 and
+#: threw 9000 away".
+MAX_NSFW_LEVEL = 4
 
 #: The image levels this collector will keep, as the bitmask Civitai uses for
 #: a MODEL. On a model, `nsfwLevel` is not a rating but a bitmask of every rung
@@ -111,7 +127,18 @@ MAX_NSFW_LEVEL = 2
 #: passed the image ceiling at level 2 while its model was named "NSFW MASTER"
 #: and carried nsfwLevel 31. The model's own `nsfw` BOOLEAN said False for it,
 #: so the boolean is not the signal — the bitmask is.
-ALLOWED_MODEL_LEVELS = 3
+#:
+#: DERIVED from `MAX_NSFW_LEVEL`, not written twice (rule E1): every rung up to
+#: and including the ceiling, OR-ed together — 1|2 = 3 at a ceiling of 2,
+#: 1|2|4 = 7 at a ceiling of 4. The first version hardcoded 3 beside a ceiling
+#: of 2, and the two would have drifted apart the moment either moved, which is
+#: exactly what happened when the owner raised the ceiling.
+#:
+#: This gate is OFF by default (`safe_models_only=False`) and always was. Worth
+#: saying because it was briefly mistaken for the reason the corpus is small:
+#: MEASURED 2026-08-31, the corpus is small because the runs were small —
+#: 300 models alone offer ~20 000 rows at the old ceiling, and 473 were taken.
+ALLOWED_MODEL_LEVELS = sum(rung for rung in (1, 2, 4, 8, 16) if rung <= MAX_NSFW_LEVEL)
 
 #: The generation parameters worth keeping, MEASURED over a real sample: each
 #: was present on 60 of the 60 images that had a prompt, except clipSkip (38).

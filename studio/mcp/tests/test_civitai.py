@@ -140,26 +140,49 @@ class ReadingOneVersion(unittest.TestCase):
         ]
 
     def test_an_image_above_the_nsfw_ceiling_is_dropped_and_counted(self) -> None:
-        out = civitai.pairs_from_version(_version([_image(nsfwLevel=4)]), REF, HARVESTED, RIGHTS)
+        out = civitai.pairs_from_version(_version([_image(nsfwLevel=8)]), REF, HARVESTED, RIGHTS)
         assert out["outcome"] == "could not measure", "zero usable is never a pass"
         assert out["too_explicit"] == 1
         assert out["rows"] == []
 
-    def test_the_ceiling_admits_pg_and_pg13_and_refuses_r(self) -> None:
-        """Both directions of the constant, as literals: 1 and 2 in, 4 out."""
+    def test_the_ceiling_admits_pg_pg13_and_R(self) -> None:
+        """The owner's ruling 2026-08-31, as literals: 1, 2 and 4 in."""
         kept = civitai.pairs_from_version(
-            _version([_image(nsfwLevel=1), _image(nsfwLevel=2, url="https://i/2.jpeg")]),
+            _version(
+                [
+                    _image(nsfwLevel=1),
+                    _image(nsfwLevel=2, url="https://i/2.jpeg"),
+                    _image(nsfwLevel=4, url="https://i/4.jpeg"),
+                ]
+            ),
             REF,
             HARVESTED,
             RIGHTS,
         )
-        assert [r["nsfw_level"] for r in kept["rows"]] == [1, 2]
-        assert (
-            civitai.pairs_from_version(_version([_image(nsfwLevel=4)]), REF, HARVESTED, RIGHTS)[
-                "rows"
-            ]
-            == []
-        )
+        assert [r["nsfw_level"] for r in kept["rows"]] == [1, 2, 4]
+
+    def test_the_ceiling_still_refuses_X_and_XXX(self) -> None:
+        """The other direction, and the line that does not move with the
+        ruling: 8 and 16 are a different category and are not collected."""
+        for level in (8, 16):
+            out = civitai.pairs_from_version(
+                _version([_image(nsfwLevel=level)]), REF, HARVESTED, RIGHTS
+            )
+            assert out["rows"] == [], f"уровень {level} не должен собираться"
+            assert out["too_explicit"] == 1
+
+    def test_the_model_bitmask_follows_the_ceiling_instead_of_repeating_it(self) -> None:
+        """One knowledge, one place (rule E1). The bitmask is every rung up to
+        the ceiling OR-ed together; written as a literal here so it cannot move
+        together with the code it is checking (rule T2)."""
+        assert civitai.MAX_NSFW_LEVEL == 4
+        assert civitai.ALLOWED_MODEL_LEVELS == 7
+
+    def test_a_model_publishing_X_is_still_recognised_as_above_the_ceiling(self) -> None:
+        """The gate is off by default, but when switched on it must still fire:
+        bitmask 31 spans XXX even when the model's own boolean says otherwise."""
+        assert civitai._publishes_above_ceiling({"model_nsfw_level": 31}) is True
+        assert civitai._publishes_above_ceiling({"model_nsfw_level": 7}) is False
 
     def test_a_missing_nsfw_level_is_dropped_rather_than_assumed_safe(self) -> None:
         """Absent is not zero. An unrated image is unrated, not PG."""
@@ -339,10 +362,16 @@ class Collecting(unittest.TestCase):
         assert "were SKIPPED" in out["note"]
 
     def test_the_bitmask_is_read_as_a_bitmask_not_a_rating(self) -> None:
-        """3 is 1|2 and passes; 7 is 1|2|4 and does not, even though a rating
-        of 7 would be 'above 2' either way — the point is that 31 contains 1,
-        so a comparison would have let the worst models through."""
-        for level, kept in ((3, 1), (7, 0), (31, 0), (1, 1)):
+        """The discriminator, and it flipped when the owner raised the ceiling
+        to R on 2026-08-31.
+
+        7 is 1|2|4 — every rung at or below the ceiling — so as a BITMASK it
+        passes, while as a plain rating 7 > 4 would drop it. 9 is 1|8: it looks
+        small and contains X. 31 contains everything. Read as numbers, 7 and 9
+        would both be refused and 31 would be too — but a model at 31 also
+        contains rung 1, and an earlier comparison-based reading let exactly
+        those through."""
+        for level, kept in ((3, 1), (7, 1), (9, 0), (31, 0), (1, 1)):
             with self.subTest(level=level):
                 path = self.path.with_name(f"n{level}.jsonl")
                 listing = _listing(model_over={"nsfwLevel": level})

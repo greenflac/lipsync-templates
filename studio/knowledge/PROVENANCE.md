@@ -126,8 +126,14 @@ from **one** uploader before `summarise` said so.
 
 ### What is deliberately dropped, and counted
 
-- images above `nsfw_level` 2 (Civitai's PG and PG-13 rungs are kept, R and
-  above are not) — 27 of 210 on the first real run;
+- images above `nsfw_level` 4 — Civitai's PG, PG-13 and R rungs are kept, X
+  and XXX are not. It was 2 until the owner ruled on 2026-08-31 that R is
+  admissible, on the grounds that the niche carries a lot of advanced craft and
+  this project does not republish the creatives anywhere. MEASURED the same day
+  over 308 prompt-bearing images, so both the ruling and the remaining line
+  have a number: PG 57.1%, PG-13 19.8%, R 14.6%, X 6.2%, XXX 2.3%. The ruling
+  buys 14.6% of the available wording; refusing X and XXX costs 8.5%. On the
+  first real run at the old ceiling, 27 of 210 were dropped here;
 - images whose wording is under three words — 13 of 210;
 - workflow-specific parameters (ADetailer, Hires) that belong to the
   uploader's tooling rather than to the prompt.
