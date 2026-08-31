@@ -49,6 +49,7 @@ import re
 __all__ = [
     "BLOG_PATH_SEGMENTS",
     "USER_WRITTEN_SEGMENTS",
+    "PORTALS_WHERE_USERS_ARE_THE_POINT",
     "FAMILY_SEPARATORS",
     "PORTAL_SOURCES",
     "VENDOR_SOURCES",
@@ -296,6 +297,23 @@ USER_WRITTEN_SEGMENTS: frozenset[str] = frozenset(
     {"discussions", "issues", "community", "forum", "comments", "pull"}
 )
 
+#: Площадки, ГДЕ ПОЛЬЗОВАТЕЛЬСКОЕ И ЕСТЬ СОДЕРЖАНИЕ. На них сегмент из набора
+#: выше ничего не понижает: люди выкладывают воркфлоу с результатами, и это
+#: ровно то, ради чего площадка объявлена порталом (решение владельца
+#: 2026-08-27 про `reddit.com/r/comfyui/`).
+#:
+#: Для всех ОСТАЛЬНЫХ порталов обсуждение — не голос площадки, а голос
+#: посетителя, и оно понижается. Без этого различия одно и то же обсуждение
+#: получало РАЗНЫЙ тир в зависимости от формы ссылки: ИЗМЕРЕНО 2026-08-31,
+#: `huggingface.co/MiniMaxAI/MiniMax-H3/discussions/42` давал `blog`, а
+#: `huggingface.co/api/models/MiniMaxAI/MiniMax-H3/discussions` — `portal`,
+#: потому что понижение применялось только внутри вендорской ветки. Один и тот
+#: же текст, две ступени, и решала форма URL, которую записывающий выбрал
+#: случайно.
+PORTALS_WHERE_USERS_ARE_THE_POINT: frozenset[str] = frozenset(
+    {"reddit.com/r/comfyui/", "old.reddit.com/r/comfyui/", "civitai.com", "prompthero.com"}
+)
+
 _HOST = re.compile(r"https?://([^/:?#]+)", re.I)
 
 
@@ -376,5 +394,9 @@ def classify(model: str, url: str, *, vendor_tier: str, portal_tier: str, blog_t
             return vendor_tier
     for entry in PORTAL_SOURCES:
         if _matches(url, entry):
-            return blog_tier if segments & BLOG_PATH_SEGMENTS else portal_tier
+            if segments & BLOG_PATH_SEGMENTS:
+                return blog_tier
+            if entry not in PORTALS_WHERE_USERS_ARE_THE_POINT and segments & USER_WRITTEN_SEGMENTS:
+                return blog_tier
+            return portal_tier
     return blog_tier

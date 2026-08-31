@@ -279,3 +279,33 @@ class Wiring(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class UnknownNameStillPointsSomewhere(unittest.TestCase):
+    """Ветка «имени нет нигде» обязана назвать соседа, если он есть.
+
+    Поймано на живом вопросе владельца 2026-08-31: он спросил про `h3-max`,
+    база держала `minimax-h3-max` с двадцатью одним атрибутом, а верхняя нота
+    отвечала «нет ни в реестре, ни в базе» — формально про эту строку верно,
+    по существу нет, и читают именно её. Подсказка лежала этажом ниже, в
+    `availability`, куда вызывающий не смотрит.
+    """
+
+    def test_a_neighbour_is_named_in_the_note_the_caller_reads(self):
+        from studio.mcp import advice
+
+        note = advice.advise("h3-max")["note"]
+        self.assertIn("minimax-h3-max", note)
+
+    def test_an_invented_name_is_not_given_a_neighbour(self):
+        """Негативный контроль: подсказка обязана уметь молчать."""
+        from studio.mcp import advice
+
+        note = advice.advise("зззывыдуманная-модель-которой-нет")["note"]
+        self.assertNotIn("The base does hold", note)
+
+    def test_the_note_no_longer_claims_the_base_knows_nothing(self):
+        from studio.mcp import advice
+
+        note = advice.advise("h3-max")["note"]
+        self.assertIn("under that exact name", note)

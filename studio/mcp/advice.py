@@ -321,15 +321,29 @@ def advise(model: str, attribute: str = "", *, path: Path | None = None) -> dict
     )
 
     if live["card"] is None and not known_here:
+        # Соседние имена идут В ЭТУ ноту, а не только в `availability`. Ветка
+        # писала свою ноту с нуля и теряла подсказку, добавленную выше, —
+        # ПОЙМАНО на живом вопросе владельца 2026-08-31: он спросил про
+        # `h3-max`, база держала `minimax-h3-max` с двадцатью одним атрибутом,
+        # и верхняя нота отвечала «нет ни в реестре, ни в базе». Формально про
+        # эту строку — верно; по существу — нет, и читают именно её.
+        neighbours = store.near(name)
+        hint = (
+            f" The base does hold {', '.join(neighbours)} — if that is the same "
+            "model under another name, ask again by that id."
+            if neighbours
+            else ""
+        )
         return {
             "outcome": UNMEASURED,
             "checked": 0,
             "violations": 0,
             "unmeasured": 1,
             "note": (
-                f"{name!r} is in neither the registry nor the fact base. Nothing "
-                "was checked, which is not the same as nothing being wrong. "
-                "Search the web and call `record` to put it there."
+                f"{name!r} is in neither the registry nor the fact base under "
+                "that exact name. Nothing was checked, which is not the same as "
+                "nothing being wrong. Search the web and call `record` to put it "
+                "there." + hint
             ),
             "availability": live,
             "claims": {},
