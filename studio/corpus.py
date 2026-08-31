@@ -24,7 +24,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
-from studio.selfrag.facts import Fact, FactStore, load_facts
+from studio.selfrag.facts import CLASS_SUFFIX, Fact, FactStore, load_facts
 
 #: Атрибуты, которые говорят, как модель СЕБЯ ВЕДЁТ, а не что принимает её API.
 #: Это дефицитная половина базы, и считать её отдельно — весь смысл снимка.
@@ -47,9 +47,16 @@ APPLICABILITY = frozenset(
 #: опыт оператора. Самая дорогая и самая редкая часть корпуса.
 WITNESSED_TIERS = frozenset({"probe", "operator"})
 
-#: Скоуп «про класс задач, а не про модель». Такие факты возвращаются на любой
-#: запрос и потому не считаются знанием О МОДЕЛИ — см. замер перекрытия 1.00.
-CLASS_SCOPE = "*"
+
+#: Что считать скоупом, а не моделью, решает `CLASS_SUFFIX` из `facts.py`, а не
+#: этот модуль. Первая редакция сравнивала с литералом `"*"` и потому считала
+#: МОДЕЛЬЮ семейный скоуп `eleven-*` — то есть завела второе определение
+#: одного понятия ровно в том модуле, который написан против этого. Поймано
+#: независимой приёмкой 2026-08-31; цена сегодня единица, но растёт с каждым
+#: новым семейным скоупом.
+def is_scope(model: str) -> bool:
+    """Это скоуп («про класс»), а не модель."""
+    return str(model or "").endswith(CLASS_SUFFIX)
 
 
 @dataclass(frozen=True)
@@ -86,7 +93,7 @@ def snapshot(facts: list[Fact] | None = None, path: Path | None = None) -> Snaps
     по_моделям: dict[str, list[Fact]] = {}
     class_facts = 0
     for fact in rows:
-        if fact.model == CLASS_SCOPE:
+        if is_scope(fact.model):
             class_facts += 1
             continue
         по_моделям.setdefault(fact.model.lower(), []).append(fact)

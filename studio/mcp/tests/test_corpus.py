@@ -35,6 +35,17 @@ class Counting(unittest.TestCase):
         self.assertEqual(s.class_facts, 1)
         self.assertEqual(s.facts, 2)
 
+    def test_a_family_scope_is_a_scope_too(self):
+        """`eleven-*` — скоуп вендорской линейки, а не модель по имени.
+
+        Первая редакция сравнивала с литералом `"*"` и считала его моделью:
+        второе определение одного понятия в модуле, написанном против этого.
+        Поймано независимой приёмкой, не автором.
+        """
+        s = snapshot([факт("eleven-*"), факт("kling-3.0")])
+        self.assertEqual(s.models, 1)
+        self.assertEqual(s.class_facts, 1)
+
     def test_two_facts_about_one_model_are_one_model(self):
         s = snapshot([факт("kling-3.0", "max_seconds"), факт("kling-3.0", "fps")])
         self.assertEqual(s.models, 1)
@@ -70,6 +81,18 @@ class Composition(unittest.TestCase):
         s = snapshot([факт("a", tier="paper")])
         self.assertEqual(s.with_witness, 0)
 
+    def test_an_operator_note_is_a_witness(self):
+        """Сторож СУЖЕНИЯ: убрать `operator` из набора — и заголовочное число
+        «кто-то запускал» правится одним словом при зелёном гейте."""
+        s = snapshot([факт("a", tier="operator")])
+        self.assertEqual(s.with_witness, 1)
+
+    def test_runs_on_is_applicability(self):
+        """Сторож СУЖЕНИЯ с другой стороны: из набора можно молча вынуть
+        атрибут, и без этого теста ни один прогон не шевельнётся."""
+        s = snapshot([факт("a", "runs_on", tier="blog")])
+        self.assertEqual(s.with_applicability, 1)
+
 
 class NeverJustASum(unittest.TestCase):
     def test_the_share_of_an_empty_base_is_not_zero_percent(self):
@@ -98,13 +121,15 @@ class OneDefinitionOnly(unittest.TestCase):
         список, а не противоречие. Второе определение одного понятия — тот же
         дефект Е1, ради которого модуль и написан; поймано на себе.
         """
-        from studio.selfrag.facts import FactStore
-
         rows = [
             факт("a", "resolution", "720p"),
             факт("a", "resolution", "1080p"),
         ]
-        self.assertEqual(snapshot(rows).contested_pairs, len(FactStore(rows).contested()))
+        # Ожидаемое ЛИТЕРАЛОМ (правило Т2): импорт `FactStore` сюда означал бы
+        # проверку копии — тест поехал бы вместе с проверяемым модулем и
+        # промолчал. `resolution` не входит в MULTI_VALUED, два разных значения
+        # у одной пары — одно противоречие.
+        self.assertEqual(snapshot(rows).contested_pairs, 1)
 
 
 if __name__ == "__main__":
