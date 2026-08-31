@@ -36,6 +36,56 @@ class LicenceReading(unittest.TestCase):
         self.assertIn("запрет учить другие модели на выходах", hf.license_flags(текст))
 
 
+class ForeignLicence(unittest.TestCase):
+    """Р1 в этом приборе: «оговорок нет» и «прочитать не смогли» — разное.
+
+    Поймано на IndexTeam/IndexTTS-2 2026-08-31: `LICENSE.txt` несёт
+    некоммерческую оговорку, `LICENSE_ZH.txt` — та же лицензия по-китайски.
+    Детектор читает только по-английски и молча выдал по ней «оговорок не
+    нашли», после чего прибор объявил РАСХОЖДЕНИЕ между весами. Отсутствие
+    свидетельства выдавалось за свидетельство отсутствия, да ещё и за находку.
+    """
+
+    def test_a_chinese_licence_is_not_reported_as_clean(self):
+        китайская = "本许可协议规定了模型的使用条款和条件，包括商业使用的限制条款。" * 6
+        self.assertEqual(hf.license_flags(китайская), [hf.CANNOT_READ])
+
+    def test_an_english_licence_with_a_few_dashes_is_still_readable(self):
+        английская = "This licence — see § 3 — is for research purposes only. " * 6
+        self.assertIn("только для исследований", hf.license_flags(английская))
+
+    def test_an_unread_file_does_not_create_a_disagreement(self):
+        licences = [
+            {"file": "LICENSE.txt", "flags": ["некоммерческая оговорка"], "chars": 1},
+            {"file": "LICENSE_ZH.txt", "flags": [hf.CANNOT_READ], "chars": 1},
+        ]
+        self.assertFalse(hf.licences_disagree(licences))
+
+    def test_a_real_disagreement_still_fires_beside_an_unread_file(self):
+        """Непрочитанный файл глушит ложную тревогу, а не настоящую."""
+        licences = [
+            {"file": "a", "flags": ["только для исследований"], "chars": 1},
+            {"file": "b", "flags": [], "chars": 1},
+            {"file": "zh", "flags": [hf.CANNOT_READ], "chars": 1},
+        ]
+        self.assertTrue(hf.licences_disagree(licences))
+
+    def test_a_bilingual_licence_is_unreadable_too(self):
+        """Настоящие файлы двуязычные: половина строк английские, половина нет.
+
+        На чисто китайском тексте порог не проверяется — там доля 1.0, и
+        сработает любое значение. Различает прибор именно смесь.
+        """
+        смесь = "Article 3. Commercial use. 第三条 商业使用受到限制，" * 6
+        доля = sum(1 for ch in смесь if ord(ch) > 127) / len(смесь)
+        self.assertGreater(доля, 0.2)
+        self.assertLess(доля, 0.9)
+        self.assertEqual(hf.license_flags(смесь), [hf.CANNOT_READ])
+
+    def test_an_empty_file_is_unreadable_not_clean(self):
+        self.assertEqual(hf.license_flags(""), [hf.CANNOT_READ])
+
+
 class LicenceFiles(unittest.TestCase):
     def дерево(self, *paths: str):
         def get(url: str):

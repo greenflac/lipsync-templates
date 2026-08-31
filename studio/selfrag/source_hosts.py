@@ -206,6 +206,16 @@ VENDOR_SOURCES: dict[str, tuple[str, ...]] = {
     # (200, dateModified 2026-08-30). Хост не выводится из `minimax.io`
     # автоматически — совпадение здесь точное, и это правильно: поддомен может
     # принадлежать кому угодно. `www.` рядом по той же причине.
+    # Аккаунт организации на HuggingFace — это пространство самого вендора, и
+    # эти пять добавлены 2026-08-31 ПОСЛЕ чтения их страниц скриптом
+    # `ingest_hf.py`: карточка, файлы лицензий и обсуждения открыты у каждого.
+    # Без объявления сторож тира отклонял вендорские заявления как `portal`, и
+    # он был прав: тир решает URL, а не намерение записывающего.
+    "chatterbox": ("huggingface.co/ResembleAI/",),
+    "indextts": ("huggingface.co/IndexTeam/",),
+    "supertonic": ("huggingface.co/Supertone/",),
+    "sensenova": ("huggingface.co/sensenova/",),
+    "krea": ("huggingface.co/krea/", "huggingface.co/Comfy-Org/Krea-2"),
     "minimax": (
         "huggingface.co/MiniMaxAI/",
         "minimax.io",
