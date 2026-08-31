@@ -25,6 +25,7 @@ def _case(cid: str, model: str, *, source: str = "openfake", ok: bool = False) -
     return {
         "case_id": cid,
         "source": source,
+        "media": "video" if source in {"kling", "video"} else "image",
         "commercial_ok": ok,
         "truth": {"kling_version": model} if source == "kling" else {"model": model},
     }
@@ -40,6 +41,7 @@ def _uploader_case(cid: str, model: str) -> dict:
     return {
         "case_id": cid,
         "source": "civitai",
+        "media": "video",
         "commercial_ok": False,
         "truth_grade": "uploader_claim",
         "truth": {"model": model},
@@ -155,6 +157,23 @@ class ASourceWithOneRightAnswerIsNotAMeasurement(unittest.TestCase):
         assert out["различающая_часть"]["family_rate"] == 0.5
         assert out["outcome"] == PASS
         assert "kling" in out["note"]
+
+    def test_a_SECOND_VENDOR_in_the_medium_makes_the_first_measurable_again(self) -> None:
+        """The crux, and what the first version of this rule got wrong. Kling
+        still holds exactly one family; what changed is that a reader looking at
+        a strip now has more than one video family to choose between, so those
+        answers discriminate. MEASURED 2026-08-31: keying on the source instead
+        threw away nine answered Kling cases scoring 0.4444."""
+        cases = [_case(f"k{i}", "1.6", source="kling", ok=True) for i in range(8)]
+        cases += [_uploader_case(f"c{i}", "Wan Video 14B t2v") for i in range(8)]
+        answers = [_answer(f"k{i}", "kling-1.6") for i in range(8)]
+        answers += [_answer(f"c{i}", "wan-video-2.5" if i % 2 else "kling-1.6") for i in range(8)]
+        out = scorer.score(cases, answers)
+        assert out["источники_без_выбора"] == []
+        assert out["по_источнику"]["kling"]["различимо"] is True
+        assert out["по_источнику"]["kling"]["семейств_в_источнике"] == 1
+        assert out["по_источнику"]["kling"]["семейств_в_среде"] == 2
+        assert out["различающая_часть"]["cases"] == 16
 
     def test_two_versions_of_one_vendor_are_still_one_family(self) -> None:
         """Kling 1.5 beside Kling 1.6 does NOT rescue the source: the question

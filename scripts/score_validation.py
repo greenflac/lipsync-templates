@@ -37,10 +37,21 @@ SIX WAYS THE NUMBER COULD LIE, AND WHAT IS DONE ABOUT EACH
    were right every time because every video in the bank IS kling — the format
    of the sheet announced the source, and no input existed where the correct
    answer was "not kling". That is a missing negative control (rule I5), and a
-   rate measured without one is not a measurement of discrimination. So a source
-   whose truth carries a single family is marked `различимо: false`, its rate is
-   printed but never headlined, and the verdict is computed over the
-   discriminating part alone.
+   rate measured without one is not a measurement of discrimination.
+
+   The test is per MEDIUM, not per source, and the first version got that wrong.
+   It asked how many families a SOURCE holds, which was right while Kling was the
+   only video in the bank and wrong the moment Civitai was added: Kling still
+   holds one family, but a reader looking at a strip now chooses between three
+   video families, so those cases discriminate again. Keying on the source threw
+   real data away — MEASURED 2026-08-31, nine answered Kling cases scoring 0.4444
+   were discarded, and 0.4444 is what a removed prop sounds like: the very same
+   cases scored 1.00 while the bank held no other video.
+
+   So a source is `различимо: false` when its MEDIUM holds fewer than two
+   families — that is exactly when the medium alone gives the answer away. Its
+   rate is printed but never headlined, and the verdict is computed over the
+   discriminating part.
 
 6. A TRUTH NOBODY'S MACHINE WROTE DOWN. The fix for (5) needed video that is not
    Kling, and the material available is Civitai, where the model is typed by the
@@ -174,15 +185,26 @@ def score(cases: list[dict], answers: list[dict], blind: dict[str, str] | None =
     families = {family_of(str(c["truth"].get("model") or "kling")) for c in cases}
     baseline = round(1 / max(len(families), 1), 4)
 
-    # How many DIFFERENT right answers a source offers. One is not a choice:
-    # a reader that always says the same word scores 100% there (rule I5).
+    # How many DIFFERENT right answers a MEDIUM offers. One is not a choice: a
+    # reader that sees a strip and always says the same word scores 100% there,
+    # having discriminated nothing (rule I5). Medium, not source, because the
+    # medium is what a reader can tell for free just by looking.
     families_per_source: dict[str, set[str]] = {}
+    families_per_medium: dict[str, set[str]] = {}
+    medium_of_source: dict[str, str] = {}
     for case in cases:
         real = str(case["truth"].get("model") or "")
         if case["source"] == "kling":
             real = f"kling-{case['truth'].get('kling_version')}"
+        medium = str(case.get("media") or "?")
         families_per_source.setdefault(case["source"], set()).add(family_of(real))
-    blind_sources = sorted(s for s, f in families_per_source.items() if len(f) < 2)
+        families_per_medium.setdefault(medium, set()).add(family_of(real))
+        medium_of_source[case["source"]] = medium
+    blind_sources = sorted(
+        source
+        for source, medium in medium_of_source.items()
+        if len(families_per_medium.get(medium, set())) < 2
+    )
     discriminating = [r for r in rows if r["source"] not in blind_sources]
 
     by_uploader = [r for r in rows if r["truth_grade"] == UNVERIFIED_GRADE]
@@ -204,7 +226,7 @@ def score(cases: list[dict], answers: list[dict], blind: dict[str, str] | None =
         note = f"семейство {honest['family_rate']} против случайного {baseline}"
         if blind_sources:
             note += (
-                f"; считано без источников с единственным семейством "
+                f"; считано без источников, у которых в среде одно семейство "
                 f"({', '.join(blind_sources)}) — там отличать не от чего"
             )
     return {
@@ -220,6 +242,9 @@ def score(cases: list[dict], answers: list[dict], blind: dict[str, str] | None =
             src: dict(
                 tally([r for r in rows if r["source"] == src]),
                 семейств_в_источнике=len(families_per_source.get(src, set())),
+                семейств_в_среде=len(
+                    families_per_medium.get(medium_of_source.get(src, "?"), set())
+                ),
                 различимо=src not in blind_sources,
             )
             for src in sorted({r["source"] for r in rows})
@@ -271,9 +296,10 @@ def main(argv: list[str]) -> int:
 
     if out["источники_без_выбора"]:
         print("=" * 68)
-        print("ЕДИНСТВЕННОЕ СЕМЕЙСТВО В ИСТОЧНИКЕ: " + ", ".join(out["источники_без_выбора"]))
-        print("Там правильный ответ всегда один и тот же, поэтому его процент не")
-        print("измеряет различение. Итог считается по остальным (правило И5).")
+        print("ЕДИНСТВЕННОЕ СЕМЕЙСТВО В СРЕДЕ: " + ", ".join(out["источники_без_выбора"]))
+        print("Среду читатель различает бесплатно, просто посмотрев. Если в ней одно")
+        print("семейство, ответ известен без чтения, и процент там не измеряет")
+        print("различение. Итог считается по остальным (правило И5).")
         print("=" * 68)
 
     o = out["overall"]
@@ -292,7 +318,7 @@ def main(argv: list[str]) -> int:
     )
     print("\nпо источнику:")
     for src, t in out["по_источнику"].items():
-        mark = "" if t["различимо"] else "  ← одно семейство, не измерение"
+        mark = "" if t["различимо"] else "  ← одно семейство в среде, не измерение"
         print(
             f"  {src:10} отвечено {t['answered']:3}/{t['cases']:3}  "
             f"семейство {t['family_rate']}{mark}"
