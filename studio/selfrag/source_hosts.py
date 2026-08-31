@@ -211,6 +211,10 @@ VENDOR_SOURCES: dict[str, tuple[str, ...]] = {
     # `ingest_hf.py`: карточка, файлы лицензий и обсуждения открыты у каждого.
     # Без объявления сторож тира отклонял вендорские заявления как `portal`, и
     # он был прав: тир решает URL, а не намерение записывающего.
+    # Прочитаны скриптом 2026-08-31 вместе с остальной очередью.
+    "anima": ("huggingface.co/circlestone-labs/",),
+    "pocket": ("huggingface.co/kyutai/",),
+    "gemma": ("huggingface.co/google/", "ai.google.dev", "deepmind.google"),
     "chatterbox": ("huggingface.co/ResembleAI/",),
     "indextts": ("huggingface.co/IndexTeam/",),
     "supertonic": ("huggingface.co/Supertone/",),
