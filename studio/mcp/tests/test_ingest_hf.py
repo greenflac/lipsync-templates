@@ -300,3 +300,54 @@ class Verdict(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class Заявки(unittest.TestCase):
+    """Находки как утверждения. Ожидаемое — литералы (Т2)."""
+
+    СТРОКА = {
+        "model_id": "coqui/XTTS-v2",
+        "outcome": "годно",
+        "downloads": 7804353,
+        "likes": 3755,
+        "license_name": "coqui-public-model-license",
+        "licences": [{"file": "LICENSE.txt", "flags": ["некоммерческая оговорка"], "chars": 4014}],
+        "troubles": [
+            {"num": 122, "title": "GPT2InferenceModel has no attribute", "status": "open"}
+        ],
+        "card_url": "https://huggingface.co/coqui/XTTS-v2",
+        "license_url": "https://huggingface.co/coqui/XTTS-v2/tree/main",
+    }
+
+    def test_имя_модели_без_аккаунта_и_в_нижнем_регистре(self):
+        self.assertEqual({z[0] for z in hf.заявки(self.СТРОКА)}, {"xtts-v2"})
+
+    def test_значение_это_слова_источника_и_ничего_больше(self):
+        """Приписанное к значению своё слово уже разводило базу с гейтом."""
+        по_атрибуту = {z[1]: z[2] for z in hf.заявки(self.СТРОКА)}
+        self.assertEqual(по_атрибуту["license"], "coqui-public-model-license")
+        self.assertEqual(по_атрибуту["failure_mode"], "GPT2InferenceModel has no attribute")
+
+    def test_поле_лицензии_и_прочитанный_текст_это_РАЗНЫЕ_атрибуты(self):
+        """Иначе оговорка внутри файла затирает имя лицензии и наоборот."""
+        атрибуты = [z[1] for z in hf.заявки(self.СТРОКА)]
+        self.assertIn("license", атрибуты)
+        self.assertIn("license_restriction", атрибуты)
+
+    def test_принятость_несёт_оба_числа(self):
+        по_атрибуту = {z[1]: z[2] for z in hf.заявки(self.СТРОКА)}
+        self.assertEqual(по_атрибуту["adoption"], "7804353 скачиваний, 3755 лайков")
+
+    def test_ссылка_на_тред_ведёт_в_тред_а_не_на_карточку(self):
+        ссылки = {z[1]: z[3] for z in hf.заявки(self.СТРОКА)}
+        self.assertEqual(
+            ссылки["failure_mode"], "https://huggingface.co/coqui/XTTS-v2/discussions/122"
+        )
+
+    def test_без_лицензии_и_без_тредов_остаётся_только_принятость(self):
+        голая = dict(self.СТРОКА, license_name="", license="", licences=[], troubles=[])
+        self.assertEqual([z[1] for z in hf.заявки(голая)], ["adoption"])
+
+    def test_тиры_пробуются_по_очереди_и_их_ровно_два(self):
+        """Тир не выбирается каналом: его решает URL внутри advice.record."""
+        self.assertEqual(hf.ТИРЫ_ПО_ОЧЕРЕДИ, ("portal", "vendor"))

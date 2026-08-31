@@ -392,12 +392,109 @@ def report(rows: list[dict[str, Any]], store: FactStore | None = None) -> int:
     return 0
 
 
+#: Тир, под которым заявляются находки. `advice.record` всё равно решит по
+#: URL и откажет, если заявка расходится, — поэтому здесь не «настройка», а
+#: первое предположение: страница модели на чужом аккаунте портала. Для
+#: вендорских аккаунтов (Lightricks, black-forest-labs) отказ придёт наоборот,
+#: и заявка повторяется вторым тиром. ИЗМЕРЕНО 2026-08-31 на 10 моделях: 18
+#: заявок отказано первым тиром, 4 вторым, потеряно ноль.
+ТИРЫ_ПО_ОЧЕРЕДИ: tuple[str, ...] = ("portal", "vendor")
+
+
+def заявки(row: dict) -> list[tuple[str, str, str, str, str]]:
+    """Находки одной модели как утверждения: модель, атрибут, значение, URL, нота.
+
+    Значение — СЛОВА ИСТОЧНИКА и ничего больше: имя лицензии как оно записано
+    в поле, заголовок треда как его написал автор треда. Своё рассуждение
+    уходит в ноту. Правило оплачено: приписанное к значению «— у Runway»
+    развело этот же файл с гейтом атрибуции на четырёх строках.
+    """
+    имя = row["model_id"].split("/")[-1].lower()
+    карточка, out = row["card_url"], []
+    лиц = row.get("license_name") or row.get("license")
+    if лиц:
+        out.append((имя, "license", str(лиц), карточка, "поле лицензии карточки HuggingFace"))
+    for L in row.get("licences") or []:
+        if L.get("flags"):
+            out.append(
+                (
+                    имя,
+                    "license_restriction",
+                    "; ".join(L["flags"]),
+                    row["license_url"],
+                    f"прочитан файл {L['file']}, {L['chars']} символов",
+                )
+            )
+    out.append(
+        (
+            имя,
+            "adoption",
+            f"{row['downloads']} скачиваний, {row['likes']} лайков",
+            карточка,
+            "счётчик HuggingFace",
+        )
+    )
+    for t in row.get("troubles") or []:
+        out.append(
+            (
+                имя,
+                "failure_mode",
+                t["title"],
+                f"{карточка}/discussions/{t['num']}",
+                f"тред #{t['num']}, состояние {t['status']}",
+            )
+        )
+    return out
+
+
+def записать(rows: list[dict], today: str) -> dict:
+    """Провести находки через `advice.record`. Р2: три числа рядом с исходом.
+
+    Тир не выбирается здесь и не подаётся как истина: он ПРЕДЛАГАЕТСЯ, а
+    решает URL внутри `advice.record`. Отказ по несовпадению тира — не ошибка
+    канала, а работа гейта, поэтому заявка повторяется вторым тиром, и только
+    отказ обоими считается неудачей.
+    """
+    from studio.mcp import advice  # локально: без записи модуль не нужен
+
+    записано = отказано = 0
+    причины: dict[str, int] = {}
+    for row in rows:
+        if row.get("outcome") != "годно":
+            continue
+        for модель, атрибут, значение, url, нота in заявки(row):
+            for тир in ТИРЫ_ПО_ОЧЕРЕДИ:
+                out = advice.record(
+                    модель, атрибут, значение, url, тир, today, note=нота, read_directly=True
+                )
+                if out["outcome"] == "pass":
+                    записано += 1
+                    break
+            else:
+                отказано += 1
+                причины[str(out["note"])[:100]] = причины.get(str(out["note"])[:100], 0) + 1
+    return {"записано": записано, "отказано": отказано, "причины": причины}
+
+
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("models", nargs="+", help="id вида MiniMaxAI/MiniMax-H3")
     parser.add_argument("--json", action="store_true")
+    parser.add_argument(
+        "--record",
+        metavar="ДАТА",
+        help="записать находки в базу через advice.record, датой источника ДАТА",
+    )
     args = parser.parse_args(argv)
     rows = [survey(m) for m in args.models]
+    if args.record:
+        итог = записать(rows, args.record)
+        print(
+            f"записано {итог['записано']}, отказано {итог['отказано']}, "
+            f"моделей {len([r for r in rows if r.get('outcome') == 'годно'])}"
+        )
+        for почему, сколько in sorted(итог["причины"].items(), key=lambda x: -x[1]):
+            print(f"  {сколько}  {почему}")
     if args.json:
         print(json.dumps(rows, ensure_ascii=False, indent=2))
         return 0 if all(r.get("outcome") == "годно" for r in rows) else 2
