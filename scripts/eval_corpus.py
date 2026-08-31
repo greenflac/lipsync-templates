@@ -164,16 +164,39 @@ def _recall(examples: list[dict], must: list[str]) -> float:
     return sum(1 for p in must if p in blob) / len(must) if must else 0.0
 
 
-def _real_score(index: K.KnowledgeIndex, gold: list[dict]) -> tuple[float, list[list[dict]]]:
-    """Recall@5 of the shipped retriever, and what it returned per row."""
+#: Во сколько раз шире пул просить у того же ретривера ради ранжирующего
+#: базиса. ВЫБРАНО 4: достаточно, чтобы перемешивание что-то меняло, и мало,
+#: чтобы «случайные пять из двадцати» оставались осмысленным сравнением.
+#:
+#: ЗАЧЕМ ЭТО ЗДЕСЬ. Разбор 2026-08-31: критерий RANKING не мог сработать НИ НА
+#: ОДНОМ входе. Базис считался по тем же пяти записям, что ретривер и вернул —
+#: `retrieve` держит `if len(lane) >= k: continue`, значит отдаёт РОВНО k, — а
+#: перемешать пять и взять пять это те же пять. Условие `wider > 0` не
+#: выполнялось никогда, `ranking_measurable` был вечно False, и шаг молча
+#: печатал «не смогли 1», годами не проверяя ничего.
+WIDER_POOL = 4
+
+
+def _real_score(
+    index: K.KnowledgeIndex, gold: list[dict]
+) -> tuple[float, list[list[dict]], list[list[dict]]]:
+    """Recall@5 ретривера, что он вернул на каждой строке, и ШИРОКИЙ пул.
+
+    Широкий пул берётся у того же ретривера тем же запросом, только с большим
+    `k`. Это и есть «что он допустил, но не выдал» — единственное, на чём
+    перемешивание вообще способно что-то показать.
+    """
     answers: list[list[dict]] = []
+    pools: list[list[dict]] = []
     total = 0.0
     for row in gold:
         out = K.retrieve(row["query"], index=index)
         examples = out.get("examples", [])
         answers.append(examples)
+        wide = K.retrieve(row["query"], index=index, k=K.DEFAULT_K * WIDER_POOL)
+        pools.append(wide.get("examples", []))
         total += _recall(examples, row["must_retrieve"])
-    return total / len(gold), answers
+    return total / len(gold), answers, pools
 
 
 def _admission_baseline(entries: list, gold: list[dict]) -> float:
@@ -190,10 +213,11 @@ def _admission_baseline(entries: list, gold: list[dict]) -> float:
 def _ranking_baseline(answers: list[list[dict]], gold: list[dict]) -> float:
     """Best recall over BASELINE_SEEDS shuffles of the retriever's own answers.
 
-    With k=5 returned and k=5 scored, a shuffle of the same five is the same
-    five — so this baseline is only meaningful where the retriever admitted MORE
-    than it returned. It is reported either way, and reported as unmeasurable
-    when no row admitted a wider pool, rather than printed as a passing 0.0.
+    С пятью выданными и пятью оцениваемыми перемешать те же пять — это те же
+    пять, поэтому базис осмыслен только там, где ретривер ДОПУСТИЛ больше, чем
+    выдал. Пул берётся у него же с `k = DEFAULT_K * WIDER_POOL`; если и там
+    строк не больше пяти, ряд честно остаётся неизмеримым, а не печатается
+    проходным нулём.
     """
     best = 0.0
     for s in range(BASELINE_SEEDS):
@@ -244,11 +268,13 @@ def report(*, index: K.KnowledgeIndex | None = None) -> dict:
             ),
         }
 
-    real, answers = _real_score(index, gold)
+    real, answers, pools = _real_score(index, gold)
     admission = _admission_baseline(index.entries, gold)
-    ranking = _ranking_baseline(answers, gold)
+    ranking = _ranking_baseline(pools, gold)
 
-    wider = sum(1 for a in answers if len(a) > K.DEFAULT_K)
+    # Считается по ШИРОКОМУ пулу, а не по выдаче: у выдачи длина ровно k по
+    # построению, поэтому прежнее `len(a) > DEFAULT_K` было тождественно нулю.
+    wider = sum(1 for pool in pools if len(pool) > K.DEFAULT_K)
     failures = []
     if real < admission + ADMISSION_MARGIN:
         failures.append(
