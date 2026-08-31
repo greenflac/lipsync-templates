@@ -406,7 +406,11 @@ def live_kling(
     poll_s: int = 15,
     wait_s: int = KLING_WAIT_S,
 ) -> str:
-    """Place the fal order and download the output. This is the paid path: exactly $0.21 per call."""
+    """Place the fal order and download the output. This is the paid path.
+
+    The price is not fixed: it is `KLING_PRICE_PER_SECOND_USD` for every second
+    of the window, so it is read from `kling_price` and never restated here.
+    """
     import os  # noqa: PLC0415
     import urllib.request  # noqa: PLC0415
 
