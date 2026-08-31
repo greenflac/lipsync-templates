@@ -73,3 +73,22 @@ as if anybody could reproduce them.
 A different prompt corpus — the `prompt / result / model / tags / rating`
 format from the product brief — is read by `studio/selfrag/corpus.py` from
 `corpus/prompts.jsonl` instead. See `docs/SELFRAG.md`.
+
+## `catalog.jsonl` — это НЕ факты
+
+Каталоги площадок (openrouter, deepinfra) лежат в `catalog.jsonl` со своей
+схемой: имя, площадка, цена тремя полями (`amount` / `unit` / `condition`),
+тип, `deprecated` с датой снятия, `replaced_by` вместе с именем назвавшей его
+площадки. Это ИНДЕКС: повод пойти прочитать вендора, а не заявление вендора.
+
+Решение владельца 2026-08-31: массового импорта каталогов в `model_facts.jsonl`
+не будет. Симуляция такого импорта дала применимость 36.6% -> 18.6%, долю tier
+`portal` 21% -> 60% базы и 476 моделей, известных только каталогу — после этого
+метрика покрытия мерит скачанные строки, а не закрытые вопросы.
+
+Пишется `scripts/poll_catalogs.py`, читается `studio/mcp/catalog.py`,
+сторожится `scripts/check_catalog.py` (в `scripts/check`). Гейт отсеивает
+четыре класса записей, которые каталог отдаёт как модели: маршрутизаторы
+(`openrouter/auto`, цена -1), снятые (`deprecated`), операции редактирования,
+помеченные площадкой как `text-to-video` (Bria/video_*), и «бессрочно»,
+одетое датой (`2098-12-31`). ИЗМЕРЕНО 2026-08-31: 763 записи, отсеяно 154.
