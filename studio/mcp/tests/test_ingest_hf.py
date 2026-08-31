@@ -222,6 +222,69 @@ class TroubleFilter(unittest.TestCase):
         self.assertEqual(hf.troubles(payload), [])
 
 
+class BehaviourVersusSetup(unittest.TestCase):
+    """Проблема установки — не свойство модели, и смешивать их нельзя.
+
+    ИЗМЕРЕНО 2026-08-31 на 49 тредах восьми моделей: 24 (49%) были про то, что
+    «не ставится», «не грузится», «нет CUDA». Это настоящие проблемы людей, но
+    они не говорят НИЧЕГО о том, как модель себя ведёт, — а за применимостью
+    канал и заведён. Оценка выхода поправлена с 4.0 до 3.1 на модель.
+
+    Фикстуры ниже — НАСТОЯЩИЕ заголовки из живых обсуждений, отобранные
+    глазами. Правило по ключевым словам разъезжается при первой же правке, если
+    его граница не закреплена.
+    """
+
+    ПОВЕДЕНИЕ = (
+        "发现minimax的小瑕疵：眨眼问题，人物几乎不会眨眼睛",
+        "Model hallucinations/Artifacts Issue",
+        "Regarding the issues of clarity and character distortion",
+        "distilled....screen distortion...unwanted spots appear in the video",
+        "LoRA loads without error but has zero conditioning effect on 13B",
+        "缺乏不同方向的文字识别能力",
+    )
+    УСТАНОВКА = (
+        "Got an error trying to load from pretrained local files",
+        "Issue: SD 3.5L Randomly Stalls on 'Loading VAE Model...' Step",
+        "Running on <4gb Vram",
+        "Google collab error. pip install does not work.",
+        "AssertionError: You do not have CLIP state dict!",
+    )
+
+    def разложить(self, заголовки):
+        полезные = hf.troubles(
+            {"discussions": [{"num": i, "title": t} for i, t in enumerate(заголовки)]}
+        )
+        установка = hf.troubles(
+            {"discussions": [{"num": i, "title": t} for i, t in enumerate(заголовки)]}, setup=True
+        )
+        return {t["title"] for t in полезные}, {t["title"] for t in установка}
+
+    def test_behaviour_reports_stay_behaviour(self):
+        поведение, _ = self.разложить(self.ПОВЕДЕНИЕ)
+        self.assertEqual(поведение, set(self.ПОВЕДЕНИЕ))
+
+    def test_a_lora_that_loads_but_does_nothing_is_behaviour(self):
+        """Слово «loads» в заголовке не делает отчёт установочным.
+
+        Ровно на этом правило один раз ошиблось: `\bload` съедал настоящий
+        отчёт о том, что LoRA грузится и не влияет.
+        """
+        поведение, _ = self.разложить(
+            ("LoRA loads without error but has zero conditioning effect",)
+        )
+        self.assertEqual(len(поведение), 1)
+
+    def test_setup_problems_go_to_setup(self):
+        поведение, установка = self.разложить(self.УСТАНОВКА)
+        self.assertEqual(поведение, set())
+        self.assertEqual(установка, set(self.УСТАНОВКА))
+
+    def test_the_two_groups_never_overlap(self):
+        поведение, установка = self.разложить(self.ПОВЕДЕНИЕ + self.УСТАНОВКА)
+        self.assertEqual(поведение & установка, set())
+
+
 class Verdict(unittest.TestCase):
     def test_a_model_whose_card_will_not_open_is_the_third_outcome(self):
         got = hf.survey("x/y", lambda url: ("HTTP 401", b""))

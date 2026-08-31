@@ -168,12 +168,40 @@ def license_flags(text: str) -> list[str]:
     return found
 
 
-def troubles(payload: dict[str, Any]) -> list[dict[str, Any]]:
-    """Треды, похожие на отчёт о дефекте. Просьбы и вакансии сюда не идут."""
+#: Признаки того, что тред про УСТАНОВКУ и окружение, а не про поведение
+#: модели. ИЗМЕРЕНО 2026-08-31 на 49 тредах восьми моделей: 24 из них (49%) —
+#: «не ставится», «не грузится», «нет CUDA», «404». Это настоящие проблемы
+#: людей, но они не говорят НИЧЕГО о том, как модель себя ведёт, а именно за
+#: применимостью канал и заведён. Оценка выхода поправлена с 4.0 до 3.1
+#: полезной записи на модель.
+#:
+#: Граница правила закреплена настоящими заголовками в тесте: слово `loads` в
+#: «LoRA loads without error but has zero conditioning effect» едва не увело
+#: настоящий отчёт о поведении в установку.
+SETUP_TROUBLE = re.compile(
+    r"(install|pip\b|colab|import|module|cuda|oom|vram|memory|download|404"
+    r"|not found|config\.json|failed to fetch|环境|安装"
+    r"|loading|pretrained|stall|state dict|dependency|version conflict)",
+    re.I,
+)
+
+
+def troubles(payload: dict[str, Any], *, setup: bool = False) -> list[dict[str, Any]]:
+    """Треды, похожие на отчёт о дефекте.
+
+    :param setup: вернуть вместо этого треды про установку и окружение.
+
+    Просьбы и вакансии не идут сюда вовсе. Установка отделена от поведения:
+    «не ставится на Colab» — проблема человека, «персонажи не моргают» —
+    свойство модели, и ради второго канал заведён. Обе группы считаются и
+    печатаются: молча выбросить половину значит соврать о выходе канала.
+    """
     rows = []
     for item in (payload.get("discussions") or [])[:DISCUSSIONS_SCANNED]:
         title = str(item.get("title") or "")
-        if TROUBLE.search(title):
+        if not TROUBLE.search(title):
+            continue
+        if bool(SETUP_TROUBLE.search(title)) == setup:
             rows.append({"num": item.get("num"), "title": title, "status": item.get("status")})
     return rows
 
@@ -223,7 +251,9 @@ def survey(model_id: str, get: Callable[[str], tuple[str, bytes]] = _get) -> dic
             )
     talk_state, talk = get(f"{API}{model_id}/discussions")
 
-    found = troubles(json.loads(talk)) if talk_state == "ok" else []
+    разобрано = json.loads(talk) if talk_state == "ok" else {}
+    found = troubles(разобрано) if talk_state == "ok" else []
+    установочные = troubles(разобрано, setup=True) if talk_state == "ok" else []
     return {
         "model_id": model_id,
         "outcome": "годно",
@@ -241,6 +271,7 @@ def survey(model_id: str, get: Callable[[str], tuple[str, bytes]] = _get) -> dic
         "card_chars": len(readme),
         "discussions_total": (json.loads(talk).get("count") if talk_state == "ok" else None),
         "troubles": found,
+        "setup_troubles": установочные,
         "card_url": f"{WEB}{model_id}",
         "license_url": f"{WEB}{model_id}/tree/main",
     }
@@ -331,7 +362,8 @@ def report(rows: list[dict[str, Any]], store: FactStore | None = None) -> int:
             print(f"    похожие имена (могут быть ЧУЖИЕ): {', '.join(знание['neighbours'][:5])}")
         print(
             f"    обсуждений: {row['discussions_total']},"
-            f" похожих на отчёт о дефекте {len(row['troubles'])}"
+            f" про поведение модели {len(row['troubles'])},"
+            f" про установку {len(row.get('setup_troubles', []))}"
         )
         for t in row["troubles"][:6]:
             print(f"       #{t['num']} [{t['status']}] {t['title'][:80]}")
