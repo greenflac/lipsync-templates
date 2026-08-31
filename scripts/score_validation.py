@@ -140,8 +140,16 @@ def score(cases: list[dict], answers: list[dict], blind: dict[str, str] | None =
         else:
             unmatched.append(said_id)
 
+    # КАЖДЫЙ разбор становится строкой, а не только тот, на который пришёл
+    # ответ. Найдено разбором 2026-08-31: строки строились из `seen`, то есть
+    # из ответов, и разбор, на который читатель просто ничего не прислал,
+    # исчезал из ВСЕХ знаменателей сразу — не попадая ни в «отвечено», ни в
+    # «не смогли», ни в `cases`. Меньший знаменатель льстит каждому проценту
+    # над ним, и это ровно та форма, против которой в этом же файле уже стоит
+    # отчёт по `не_сошлись_идентификаторы`.
     rows: list[dict] = []
-    for cid, answer in seen.items():
+    for cid in by_id:
+        answer = seen.get(cid, {"outcome": "нет ответа", "guess": {}})
         case = by_id[cid]
         truth = case["truth"]
         real = str(truth.get("model") or truth.get("kling_version") or "")
@@ -161,6 +169,7 @@ def score(cases: list[dict], answers: list[dict], blind: dict[str, str] | None =
                 "family_hit": answered and family_of(said) == family_of(real),
                 "exact_hit": answered and said.strip().lower() == real.strip().lower(),
                 "truth_grade": str(case.get("truth_grade") or "vendor_log"),
+                "no_answer": cid not in seen,
                 "recognised": bool(answer.get("recognised")),
                 "confidence": answer.get("confidence"),
             }
@@ -216,14 +225,32 @@ def score(cases: list[dict], answers: list[dict], blind: dict[str, str] | None =
 
     overall = tally(rows)
     honest = tally(discriminating)
-    outcome = UNMEASURED if honest["answered"] < MIN_ANSWERED else PASS
+
+    # ТРИ ИСХОДА, А НЕ ДВА. Найдено разбором 2026-08-31: `FAIL` импортировался
+    # и не возвращался этой функцией НИКОГДА, поэтому чтение на уровне монетки
+    # печаталось как «годно» — прибор физически не мог сказать «не годно».
+    # Порог — сам случайный базис: узнавание не лучше угадывания это не слабый
+    # результат, это отсутствие умения, и называть его успехом нельзя.
+    rate = honest["family_rate"]
+    if honest["answered"] < MIN_ANSWERED:
+        outcome = UNMEASURED
+    elif rate is not None and rate <= baseline:
+        outcome = FAIL
+    else:
+        outcome = PASS
+
     if outcome is UNMEASURED:
         note = (
             f"различающих ответов {honest['answered']} < {MIN_ANSWERED}: числа "
             "печатаются, но процент по такой выборке — слух, а не измерение"
         )
+    elif outcome is FAIL:
+        note = (
+            f"семейство {rate} НЕ ВЫШЕ случайного {baseline}: на этой выборке "
+            "агент не отличает генераторы, и называть это успехом нельзя"
+        )
     else:
-        note = f"семейство {honest['family_rate']} против случайного {baseline}"
+        note = f"семейство {rate} против случайного {baseline}"
         if blind_sources:
             note += (
                 f"; считано без источников, у которых в среде одно семейство "
@@ -234,6 +261,7 @@ def score(cases: list[dict], answers: list[dict], blind: dict[str, str] | None =
         "checked": len(rows),
         "violations": 0,
         "не_сошлись_идентификаторы": unmatched,
+        "без_ответа": sorted(r["case_id"] for r in rows if r["no_answer"]),
         "unmeasured": overall["could_not"],
         "baseline_random": baseline,
         "families_in_bank": sorted(families),

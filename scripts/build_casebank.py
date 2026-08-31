@@ -64,6 +64,22 @@ CLOSED_MODELS = frozenset(
 )
 
 
+#: Почему разбор не доехал до банка. Считается по причинам, а не одним числом:
+#: «шесть пропущено» и «шесть пропущено, из них пять — чистка оставила носитель»
+#: читаются по-разному, и второе — повод остановиться.
+#:
+#: Найдено разбором 2026-08-31: сборка печатала «нарушений 0, не смогли 0»
+#: ЛИТЕРАЛОМ, при том что молча пропускала кейсы — включая те, у которых чистка
+#: метаданных оставила носитель, то есть ровно те, ради которых чистка и есть.
+SKIPS: dict[str, int] = collections.defaultdict(int)
+
+
+def _skip(reason: str, case_id: str = "") -> None:
+    """Записать пропуск и назвать его вслух. Тихий `continue` — это ноль в отчёте."""
+    SKIPS[reason] += 1
+    print(f"  ПРОПУЩЕН {case_id or '?'}: {reason}")
+
+
 def _case_id(prefix: str, key: str) -> str:
     return f"{prefix}-" + hashlib.sha256(key.encode("utf-8")).hexdigest()[:10]
 
@@ -105,6 +121,7 @@ def build_kling(count: int) -> list[dict]:
             break
         name = str(row.get("filename") or "")
         if not name.endswith(".mp4"):
+            _skip("не mp4 в логе задач", name)
             continue
         cid = _case_id("kv", name)
         done_already = OUT / f"{cid}.mp4"
@@ -117,12 +134,14 @@ def build_kling(count: int) -> list[dict]:
             try:
                 data = C._curl(C.kling_batch_url(name), timeout=180)
             except OSError:
+                _skip("не скачался", cid)
                 continue
             if len(data) < 10_000:
+                _skip("файл меньше 10 КБ — не ролик", cid)
                 continue
             report = C.strip_video(data, done_already)
         if report["remaining"]:
-            print(f"  ПРОПУЩЕН {cid}: чистка оставила {report['remaining']}")
+            _skip(f"чистка оставила носитель {report['remaining']}", cid)
             continue
         a = args(row)
         made.append(
@@ -252,9 +271,11 @@ def build_civitai(count: int) -> list[dict]:
             if item.get("type") != "video":
                 continue
             if int(item.get("nsfwLevel") or 0) > C.CIVITAI_MAX_NSFW:
+                _skip("выше потолка nsfw")
                 continue
             url = str(item.get("url") or "")
             if not url:
+                _skip("у ролика нет url")
                 continue
             cid = _case_id("cv", f"{version_id}|{url}")
             out = OUT / f"{cid}.mp4"
@@ -264,12 +285,14 @@ def build_civitai(count: int) -> list[dict]:
                 try:
                     data = C._curl(url, timeout=180)
                 except OSError:
+                    _skip("не скачался", cid)
                     continue
                 if len(data) < 10_000:
+                    _skip("файл меньше 10 КБ — не ролик", cid)
                     continue
                 report = C.strip_video(data, out)
             if report["remaining"]:
-                print(f"  ПРОПУЩЕН {cid}: чистка оставила {report['remaining']}")
+                _skip(f"чистка оставила носитель {report['remaining']}", cid)
                 continue
             meta = item.get("meta") or {}
             made.append(
@@ -319,6 +342,7 @@ def build_openfake(count: int) -> list[dict]:
                 continue
             blob = (row.get("image") or {}).get("bytes")
             if not blob:
+                _skip("в строке нет байтов картинки")
                 continue
             # `prompt` is nullable here — a real row hit None on the first run
             # and took the whole build down after sixteen cases were already on
@@ -328,7 +352,7 @@ def build_openfake(count: int) -> list[dict]:
             cid = _case_id("of", f"{model}|{prompt[:60]}|{len(blob)}")
             report = C.strip_image(blob, OUT / f"{cid}.jpg")
             if report["remaining"]:
-                print(f"  ПРОПУЩЕН {cid}: чистка оставила {report['remaining']}")
+                _skip(f"чистка оставила носитель {report['remaining']}", cid)
                 continue
             per_model[model] += 1
             made.append(
@@ -375,7 +399,13 @@ def main(argv: list[str]) -> int:
     unverified = [c for c in cases if c.get("truth_grade") == C.UNVERIFIED_GRADE]
     TRUTH.write_text(json.dumps(cases, ensure_ascii=False, indent=1), encoding="utf-8")
 
-    print(f"\nпроверено {len(cases)}\nнарушений 0\nне смогли 0")
+    # Носитель, переживший чистку, — НАРУШЕНИЕ: чистка существует ровно затем,
+    # чтобы происхождение не доехало до читателя. Всё прочее — «не смогли».
+    leaked = sum(n for reason, n in SKIPS.items() if "носитель" in reason)
+    could_not = sum(SKIPS.values()) - leaked
+    for reason, n in sorted(SKIPS.items(), key=lambda kv: -kv[1]):
+        print(f"  пропущено {n}×: {reason}")
+    print(f"\nпроверено {len(cases)}\nнарушений {leaked}\nне смогли {could_not}")
     if restricted:
         # The owner's ruling: restricted material is processed and NAMED. It is
         # said here, at the top of the bank, so nothing downstream has to

@@ -11,7 +11,7 @@ import importlib.util
 import unittest
 from pathlib import Path
 
-from lipsync.fork_identity import PASS, UNMEASURED
+from lipsync.fork_identity import FAIL, PASS, UNMEASURED
 
 _SPEC = importlib.util.spec_from_file_location(
     "score_validation", Path(__file__).resolve().parents[3] / "scripts" / "score_validation.py"
@@ -256,6 +256,59 @@ class TheVideoFamiliesTheNewSourceBrings(unittest.TestCase):
         assert scorer.family_of("") == "?"
 
 
+class ThePrinterMustBeAbleToSayNOTGOOD(unittest.TestCase):
+    """Найдено разбором 2026-08-31: FAIL импортировался и не возвращался
+    НИКОГДА. Чтение на уровне монетки печаталось как «годно»."""
+
+    def test_a_rate_at_or_below_chance_is_NOT_GOOD(self) -> None:
+        n = scorer.MIN_ANSWERED
+        cases = [_case(str(i), _MODELS[i % len(_MODELS)]) for i in range(n)]
+        # Всегда один и тот же ответ: попадает ровно в четверти случаев, что и
+        # есть случайный базис при четырёх семействах.
+        answers = [_answer(str(i), "veo-3") for i in range(n)]
+        out = scorer.score(cases, answers)
+        assert out["различающая_часть"]["family_rate"] == out["baseline_random"]
+        assert out["outcome"] == FAIL, out["note"]
+        assert "НЕ ВЫШЕ случайного" in out["note"]
+
+    def test_a_rate_above_chance_is_good(self) -> None:
+        """Негативный контроль (И5): прибор, который краснеет всегда, ничего
+        не измеряет. Тот же банк, но читатель попадает вдвое чаще базиса."""
+        n = scorer.MIN_ANSWERED
+        cases = [_case(str(i), _MODELS[i % len(_MODELS)]) for i in range(n)]
+        answers = [
+            _answer(str(i), _MODELS[i % len(_MODELS)] if i % 2 == 0 else "veo-3") for i in range(n)
+        ]
+        out = scorer.score(cases, answers)
+        assert out["различающая_часть"]["family_rate"] > out["baseline_random"]
+        assert out["outcome"] == PASS, out["note"]
+
+    def test_too_few_answers_still_wins_over_the_rate(self) -> None:
+        """Порядок исходов: «нечего мерить» важнее «плохо измерено». Иначе
+        выборка из трёх разборов печатала бы уверенное «не годно»."""
+        cases = [_case(str(i), _MODELS[i % len(_MODELS)]) for i in range(4)]
+        answers = [_answer(str(i), "veo-3") for i in range(4)]
+        assert scorer.score(cases, answers)["outcome"] == UNMEASURED
+
+
+class ACaseNobodyAnsweredIsStillACase(unittest.TestCase):
+    def test_an_unanswered_case_lands_in_could_not_not_in_nothing(self) -> None:
+        cases = [_case("a", "veo-3"), _case("b", "sora-2"), _case("c", "midjourney-7")]
+        out = scorer.score(cases, [_answer("a", "veo-3")])
+        assert out["checked"] == 3
+        assert out["overall"]["answered"] == 1
+        assert out["overall"]["could_not"] == 2
+        assert out["без_ответа"] == ["b", "c"]
+
+    def test_a_fully_answered_bank_reports_none_missing(self) -> None:
+        """Негативный контроль: список пропавших обязан быть пустым, когда
+        никто не пропал, иначе он ничего не значит."""
+        cases = [_case("a", "veo-3"), _case("b", "sora-2")]
+        out = scorer.score(cases, [_answer("a", "veo-3"), _answer("b", "sora-2")])
+        assert out["без_ответа"] == []
+        assert out["overall"]["could_not"] == 0
+
+
 class TheBlindingMapIsHowTheHalvesMeet(unittest.TestCase):
     def test_an_answer_under_a_blind_id_finds_its_truth(self) -> None:
         cases = [_case("of-real", "veo-3")]
@@ -269,7 +322,12 @@ class TheBlindingMapIsHowTheHalvesMeet(unittest.TestCase):
         cases = [_case("of-real", "veo-3")]
         out = scorer.score(cases, [_answer("case-999", "veo-3")], {"case-001": "of-real"})
         assert out["не_сошлись_идентификаторы"] == ["case-999"]
-        assert out["checked"] == 0
+        # Разбор при этом НЕ исчезает: он есть в банке, ответа на него нет, и
+        # это «не смогли», а не отсутствие разбора. Раньше здесь стоял 0, и
+        # знаменатель тихо съезжал вниз вместе с ним.
+        assert out["checked"] == 1
+        assert out["без_ответа"] == ["of-real"]
+        assert out["overall"]["could_not"] == 1
 
 
 if __name__ == "__main__":

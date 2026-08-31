@@ -547,6 +547,19 @@ def reachability(hosts: Any = None, *, why_wanted: str = "") -> dict:
         else:
             other.append({"host": host, "note": out["note"]})
 
+    # THE DEFECT THIS BLOCK EXISTS FOR, found by review 2026-08-31 and reproduced
+    # with a stubbed fetch: with egress or DNS down, every host lands in `other`
+    # and this returned `pass` with an EMPTY `open` list — "checked 12,
+    # violations 0", the exact shape of rule R2 that this repository keeps a
+    # separate test against. The module's own docstring, forty lines up, forbids
+    # it in so many words: "could not measure — the network failed, timed out,
+    # or DNS died". An agent branching on `outcome` could not tell "the policy
+    # forbids nothing" from "we reached nobody".
+    #
+    # The `if not targets` branch below was the only UNMEASURED path and it was
+    # DEAD: `targets` falls back to _DEFAULT_HOSTS, so it is never empty. Kept,
+    # because a caller could pass an empty tuple in future, but it is no longer
+    # the only way out.
     if not targets:
         return {
             "outcome": UNMEASURED,
@@ -560,13 +573,19 @@ def reachability(hosts: Any = None, *, why_wanted: str = "") -> dict:
         }
 
     return {
-        "outcome": FAIL if closed else PASS,
+        "outcome": FAIL if closed else (PASS if open_hosts else UNMEASURED),
         "checked": len(targets),
         "violations": len(closed),
         "unmeasured": len(other),
         "note": (
             f"{len(open_hosts)} open, {len(closed)} refused by policy, "
             f"{len(other)} unreached for other reasons, out of {len(targets)} probed"
+            + (
+                " — NOBODY answered, so this is not a map of what is allowed, it is "
+                "a map of nothing: treat it as не смогли, not as a clean bill"
+                if not open_hosts and not closed
+                else ""
+            )
         ),
         "open": sorted(open_hosts),
         "closed": sorted(closed),
