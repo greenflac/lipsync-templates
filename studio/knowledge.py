@@ -946,9 +946,37 @@ class KnowledgeIndex:
         return self.dense_report
 
     def load_dense_from_db(self, *, model_id: str = DENSE_MODEL_ID) -> dict:
-        """Reuse vectors already stored in the file, without re-embedding."""
+        """Reuse vectors already stored in the file, without re-embedding.
+
+        Сохранённые векторы годятся, только если они посчитаны ТОЙ ЖЕ моделью и
+        описывают РОВНО ТЕ ЖЕ записи. Иначе выдача молча поедет: старый вектор
+        под новым текстом — это ответ на вопрос, которого никто не задавал.
+        Поэтому сверяется имя модели из `meta` и множество идентификаторов;
+        расхождение — «не смогли», а не тихое использование того, что нашлось.
+        """
         with self.lock:
             rows = self.conn.execute("SELECT id, dim, data FROM vectors").fetchall()
+            stored_model = self.conn.execute(
+                "SELECT value FROM meta WHERE key = 'dense_model'"
+            ).fetchone()
+        if rows and (not stored_model or str(stored_model[0]) != model_id):
+            self.dense_report = _result(
+                UNMEASURED,
+                f"stored vectors were made by {stored_model[0] if stored_model else 'nobody knows'}"
+                f", not by {model_id}",
+                unmeasured=1,
+                error_code="MODEL_CHANGED",
+            )
+            return self.dense_report
+        want = {e.entry_id for e in self.entries if e.kind != KIND_CORE}
+        if rows and {int(r[0]) for r in rows} != want:
+            self.dense_report = _result(
+                UNMEASURED,
+                f"stored vectors cover {len(rows)} entries, the index has {len(want)}",
+                unmeasured=1,
+                error_code="STALE",
+            )
+            return self.dense_report
         if not rows:
             self.dense_report = _result(
                 UNMEASURED, "no stored vectors", unmeasured=1, error_code="EMPTY"
@@ -1081,7 +1109,14 @@ def build_index(
     if dense is None:
         dense = os.environ.get(DENSE_ENV_FLAG, "") == "1"
     if dense:
-        index.attach_dense()
+        # СНАЧАЛА взять готовое. ИЗМЕРЕНО 2026-08-31: эмбеддинги 13 426 записей
+        # стоят 171 с, они честно складываются в файл — и не читались НИКОГДА.
+        # `load_dense_from_db` существовала без единого вызова, поэтому каждая
+        # сборка платила три минуты заново. Кэш, который наполняется и не
+        # читается, — это не кэш, а расход.
+        reused = index.load_dense_from_db()
+        if reused["outcome"] != PASS:
+            index.attach_dense()
 
     total = sum(loaded.values())
     examples = total - loaded["core"]
