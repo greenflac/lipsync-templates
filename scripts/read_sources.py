@@ -44,8 +44,10 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from lipsync.fork_identity import PASS, UNMEASURED  # noqa: E402
+from merge_model_ids import ATTRIBUTE_MERGES  # noqa: E402
 
 from studio.mcp import advice  # noqa: E402
 from studio.selfrag.facts import (  # noqa: E402
@@ -929,6 +931,19 @@ def _standing() -> dict[tuple[str, str, str, str], object]:
     }
 
 
+def _canonical_attribute(attribute: str) -> str:
+    """Имя свойства, под которым база хранит факт сейчас.
+
+    Записи о прочтениях — исторические: они говорят, что и когда мы открыли
+    глазами. Слияние написаний 2026-08-31 (`licence` -> `license`) увело факт
+    из-под старого имени, и этот гейт честно покраснел. Чинить его правкой
+    исторической записи значит переписывать свидетельство; сверка приводится к
+    каноническому имени, файл остаётся как есть. Ровно так же здесь уже
+    поступают с именами моделей в `ingest_harvest.py`.
+    """
+    return ATTRIBUTE_MERGES.get(str(attribute), str(attribute))
+
+
 def check() -> int:
     """Would this pass still change anything? Reads only — it must not write.
 
@@ -942,7 +957,9 @@ def check() -> int:
         return 1
     left = []
     for row in WITHDRAWN:
-        key = claim_key(row["model"], row["attribute"], row["value"], row["source_url"])
+        key = claim_key(
+            row["model"], _canonical_attribute(row["attribute"]), row["value"], row["source_url"]
+        )
         if key in standing:
             left.append(f"still asserted: {row['model']}.{row['attribute']} <- {row['source_url']}")
     for entry in READINGS:
@@ -951,7 +968,7 @@ def check() -> int:
             old_value = replaces[0]  # type: ignore[index]
             old = claim_key(
                 str(entry["model"]),
-                str(entry["attribute"]),
+                _canonical_attribute(str(entry["attribute"])),
                 str(old_value),
                 str(entry["source_url"]),
             )
@@ -961,7 +978,7 @@ def check() -> int:
                 )
         key = claim_key(
             str(entry["model"]),
-            str(entry["attribute"]),
+            _canonical_attribute(str(entry["attribute"])),
             str(entry["value"]),
             str(entry["source_url"]),
         )

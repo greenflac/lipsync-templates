@@ -87,6 +87,22 @@ MERGES: dict[str, str] = {
     "elevenlabs-*": "eleven-*",
 }
 
+#: То же правило, но про ИМЯ АТРИБУТА, а не модели. Обнаружено 2026-08-31,
+#: когда `ingest_hf.py` показал у Hunyuan атрибут `licence`, а записывали мы
+#: везде `license`. ИЗМЕРЕНО по всей базе: 267 имён атрибутов, столкновение
+#: ровно одно — `licence` (10 фактов) против `license` (9). Спросивший одно
+#: написание не видит 9 фактов из 19.
+#:
+#: Побеждает `license` не по вкусу, а по свидетельству (правило Е2): именно так
+#: поле называется в машиночитаемой карточке HuggingFace (`cardData.license`),
+#: откуда теперь и приходит большинство этих фактов.
+#:
+#: Цена ошибки здесь выше средней: пропущенный факт о лицензии — это
+#: research-only модель, уехавшая в продакшен.
+ATTRIBUTE_MERGES: dict[str, str] = {
+    "licence": "license",
+}
+
 WHY = (
     "merged into the id the vendor's own documentation uses; the same claim "
     "stands under that id. Two spellings of one model answer a caller from "
@@ -96,14 +112,22 @@ WHY = (
 
 def _plan(path: Path | None = None) -> list:
     """Every standing fact filed under a spelling that is not the vendor's."""
-    return [f for f in load_facts(path or DEFAULT_FACTS_PATH) if f.model in MERGES]
+    rows = load_facts(path or DEFAULT_FACTS_PATH)
+    return [f for f in rows if f.model in MERGES or f.attribute in ATTRIBUTE_MERGES]
+
+
+def canonical_of(fact) -> tuple[str, str]:
+    """Под какими именем модели и именем атрибута факт должен стоять."""
+    return MERGES.get(fact.model, fact.model), ATTRIBUTE_MERGES.get(fact.attribute, fact.attribute)
 
 
 def _check(path: Path | None = None) -> int:
     stale = _plan(path)
     for fact in stale[:10]:
         print(f"  всё ещё под чужим написанием: {fact.model}.{fact.attribute}")
-    print(f"\nпроверено {len(MERGES)} написаний\nне слито {len(stale)}")
+    print(f"\nпроверено {len(MERGES)} написаний имени модели")
+    print(f"проверено {len(ATTRIBUTE_MERGES)} написаний имени атрибута")
+    print(f"не слито {len(stale)}")
     return 1 if stale else 0
 
 
@@ -118,14 +142,14 @@ def main(argv: list[str]) -> int:
 
     moved = kept = failed = 0
     for fact in _plan():
-        canonical = MERGES[fact.model]
+        canonical, attribute = canonical_of(fact)
         if args.dry_run:
-            print(f"  {fact.model}.{fact.attribute} -> {canonical}")
+            print(f"  {fact.model}.{fact.attribute} -> {canonical}.{attribute}")
             moved += 1
             continue
         written = advice.record(
             canonical,
-            fact.attribute,
+            attribute,
             fact.value,
             fact.source_url,
             fact.tier,
@@ -147,7 +171,7 @@ def main(argv: list[str]) -> int:
             kept += 1
         moved += 1
 
-    print(f"\nнаписаний в таблице {len(MERGES)}")
+    print(f"\nнаписаний в таблице {len(MERGES) + len(ATTRIBUTE_MERGES)}")
     print(f"перенесено {moved}")
     print(f"из них уже стояло под каноническим id {kept}")
     print(f"не смогли {failed}")

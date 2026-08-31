@@ -59,7 +59,7 @@ from read_sources import READINGS  # noqa: E402
 # 2026-08-27: the merge ran, and this gate went red on 22 rows whose model had
 # been filed under the vendor's own id while this file was still looking for
 # the old spelling.
-from merge_model_ids import MERGES  # noqa: E402
+from merge_model_ids import ATTRIBUTE_MERGES, MERGES  # noqa: E402
 
 DEFAULT_HARVEST = (
     Path(__file__).resolve().parents[1] / "studio" / "knowledge" / "harvest_2026-08-27.jsonl"
@@ -151,6 +151,19 @@ def _canonical(model: str) -> str:
     return MERGES.get(name, name)
 
 
+def _canonical_attribute(attribute: str) -> str:
+    """Имя свойства, под которым база хранит этот факт.
+
+    То же самое и по той же причине, что `_canonical` для модели. 2026-08-31
+    слияние `licence` -> `license` увело 10 фактов, и этот гейт покраснел на
+    строках харвеста, чьё свойство база переименовала. Красное было ЧЕСТНЫМ —
+    расхождение настоящее, — но чинить его правкой исторических файлов значит
+    переписывать запись о том, что тогда собрали. Сверка приводится к
+    каноническому имени, файлы остаются как есть.
+    """
+    return ATTRIBUTE_MERGES.get(str(attribute), str(attribute))
+
+
 def _rows(path: Path) -> list[dict]:
     rows: list[dict] = []
     for line in path.read_text(encoding="utf-8").splitlines():
@@ -207,6 +220,7 @@ def _check(path: Path) -> int:
     checked = 0
     for row in _rows(path):
         model = _canonical(str(row.get("model", "")))
+        row = {**row, "attribute": _canonical_attribute(row.get("attribute", ""))}
         # Two keys, two questions. The yield is decided on model+attribute+page;
         # whether the row STANDS is decided on the full claim, value included,
         # because that is what the base is keyed on. Using the yield key for
@@ -277,6 +291,7 @@ def main(argv: list[str]) -> int:
     for row in rows:
         row = dict(row)
         row["model"] = _canonical(str(row.get("model", "")))
+        row["attribute"] = _canonical_attribute(row.get("attribute", ""))
         key = _yield_key(
             str(row.get("model", "")),
             str(row.get("attribute", "")),

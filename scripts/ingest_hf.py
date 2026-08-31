@@ -41,6 +41,8 @@ from typing import Any, Callable
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from studio.selfrag.facts import FactStore  # noqa: E402
+
 API = "https://huggingface.co/api/models/"
 WEB = "https://huggingface.co/"
 
@@ -235,7 +237,26 @@ def licences_disagree(licences: list[dict[str, Any]]) -> bool:
     return len(наборы) > 1
 
 
-def report(rows: list[dict[str, Any]]) -> int:
+def already_known(model_id: str, store: FactStore | None = None) -> dict[str, Any]:
+    """Что база УЖЕ знает про эту модель. Спрашивается ДО записи «нового».
+
+    ЗАЧЕМ ЭТО ЗДЕСЬ. 2026-08-31 я объявил семейство `latentsync`, написав в
+    комментарии к исходнику, что выделенных липсинк-моделей в базе нет. Их было
+    двадцать фактов, с 27 августа, включая вендорские режимы отказа. Повтор
+    ключа поймал ЛИНТЕР, а не я, и записанный «новый» факт оказался СЛАБЕЕ
+    стоявшего из того же источника. Инструмент спросить базу был под рукой.
+    Намерение «сначала спрашивать» — это строка правил, которая забывается;
+    поэтому оно здесь, в выдаче, рядом с находками.
+    """
+    склад = store or FactStore()
+    короткое = model_id.rsplit("/", 1)[-1].lower()
+    соседи = склад.near(короткое)
+    свои = [m for m in склад.models() if m == короткое]
+    атрибуты = sorted({a for m in свои + соседи for a in склад.attributes(m)})
+    return {"ids": свои + соседи, "attributes": атрибуты}
+
+
+def report(rows: list[dict[str, Any]], store: FactStore | None = None) -> int:
     """Печать числами и три исхода (правила Р1, Р2, Е3)."""
     done = [r for r in rows if r.get("outcome") == "годно"]
     for row in rows:
@@ -260,8 +281,19 @@ def report(rows: list[dict[str, Any]]) -> int:
                 " какой вес вы грузите, и один файл ответа не даёт (Ц5)"
             )
         print(f"    карточка:   {row['card_chars']} символов, задача {row['pipeline'] or '—'}")
+        знание = already_known(row["model_id"], store)
+        if знание["ids"]:
+            print(f"    В БАЗЕ УЖЕ: {', '.join(знание['ids'][:5])}")
+            print(
+                f"       атрибутов записано {len(знание['attributes'])}: "
+                f"{', '.join(знание['attributes'][:8])}"
+            )
+            print("       новым записывать только то, чего здесь НЕТ")
+        else:
+            print("    в базе о ней ничего — всё найденное будет новым")
         print(
-            f"    обсуждений: {row['discussions_total']}, похожих на отчёт о дефекте {len(row['troubles'])}"
+            f"    обсуждений: {row['discussions_total']},"
+            f" похожих на отчёт о дефекте {len(row['troubles'])}"
         )
         for t in row["troubles"][:6]:
             print(f"       #{t['num']} [{t['status']}] {t['title'][:80]}")
