@@ -270,6 +270,12 @@ def survey(model_id: str, get: Callable[[str], tuple[str, bytes]] = _get) -> dic
         "card_read": readme_state == "ok",
         "card_chars": len(readme),
         "discussions_total": (json.loads(talk).get("count") if talk_state == "ok" else None),
+        # Отдельным полем, потому что «обсуждений ноль» и «обсуждения нам не
+        # отдали» — разные исходы (Р1), а вместе они читаются как «модель без
+        # опыта практиков». ИЗМЕРЕНО 2026-08-31: из 12 моделей 11 отдали
+        # обсуждения, одна (hexgrad/Kokoro-82M) ответила 403 — обсуждения на
+        # ней просто выключены, и это не отсутствие опыта.
+        "discussions_state": talk_state,
         "troubles": found,
         "setup_troubles": установочные,
         "card_url": f"{WEB}{model_id}",
@@ -360,8 +366,14 @@ def report(rows: list[dict[str, Any]], store: FactStore | None = None) -> int:
             # разные задачи. Печатать их как «уже в базе» значит подсказывать
             # неверно (поймано на живой выдаче 2026-08-31).
             print(f"    похожие имена (могут быть ЧУЖИЕ): {', '.join(знание['neighbours'][:5])}")
+        всего = row["discussions_total"]
+        сказано = (
+            f"{всего}"
+            if row.get("discussions_state") == "ok"
+            else f"НЕ СМОГЛИ прочесть ({row.get('discussions_state')})"
+        )
         print(
-            f"    обсуждений: {row['discussions_total']},"
+            f"    обсуждений: {сказано},"
             f" про поведение модели {len(row['troubles'])},"
             f" про установку {len(row.get('setup_troubles', []))}"
         )
