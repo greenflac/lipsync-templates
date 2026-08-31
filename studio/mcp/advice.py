@@ -49,6 +49,7 @@ from studio.selfrag.facts import (
     STALE_AFTER_DAYS,
     TIERS,
     TIER_BLOG,
+    TIER_OPERATOR,
     TIER_PORTAL,
     TIER_VENDOR,
     Fact,
@@ -454,6 +455,7 @@ def record(
     note: str = "",
     fix: str = "",
     read_directly: bool | None = None,
+    witnessed: str = "",
     path: Path | None = None,
 ) -> dict:
     """Write one web finding into the fact base, with who said it and when.
@@ -526,7 +528,33 @@ def record(
             "written": None,
         }
 
-    if not fields["source_url"].startswith(("http://", "https://")):
+    # Тир `operator` стоит третьим сверху — выше статьи и выше бенчмарка, — и
+    # платит за это единственным условием: сказать, ЧТО ИМЕННО было запущено и
+    # что вышло. Без этого запись отвергается, а не просто весит меньше.
+    # «Модель держит текст» — мнение; «подали кадр с текстом, отрисованным
+    # Pillow, текст дошёл без искажений» — факт, который кто-то может пойти и
+    # опровергнуть. Ярлык нужен ровно затем, чтобы одно отличалось от другого.
+    if fields["tier"] == TIER_OPERATOR and not str(witnessed).strip():
+        return {
+            "outcome": FAIL,
+            "checked": len(fields),
+            "violations": 1,
+            "unmeasured": 0,
+            "note": (
+                "ничего не записано: тир operator требует поля witnessed — что "
+                "запущено и что вышло, в наблюдаемых словах. Вывод без "
+                "наблюдения это мнение, а тир для мнений уже есть, он "
+                "называется blog"
+            ),
+            "written": None,
+        }
+
+    # У наблюдения оператора страницы нет и быть не может, поэтому требование
+    # http-ссылки к нему не применяется: `source_url` несёт его собственную
+    # отметку — дату разговора, номер задачи, путь к файлу.
+    if fields["tier"] != TIER_OPERATOR and not fields["source_url"].startswith(
+        ("http://", "https://")
+    ):
         return {
             "outcome": FAIL,
             "checked": len(fields),
@@ -589,6 +617,7 @@ def record(
         "note": str(note or ""),
         "fix": str(fix or ""),
         "read_directly": None if read_directly is None else bool(read_directly),
+        "witnessed": str(witnessed or ""),
     }
     target = path or DEFAULT_FACTS_PATH
     key = claim_key(fields["model"], fields["attribute"], fields["value"], fields["source_url"])

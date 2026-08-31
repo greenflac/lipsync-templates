@@ -26,6 +26,14 @@ TIERS, and why a blog can never promote a fact:
                rather than a document about it. Below `vendor` because one
                probe sees one account at one moment, and a limit it reports
                may belong to a billing plan rather than to the model.
+    operator   the OWNER RAN IT AND SAW WHAT CAME OUT. First-hand, about the
+               exact model and the exact workflow, today — and recorded by a
+               person rather than by a machine, which is the whole difference
+               from `probe`. Added 2026-08-31 on the owner's decision, and it
+               is not a courtesy rung: the sharpest correction of that week
+               ("nano-banana is fed pre-rendered Pillow text, which is why the
+               text holds") came from the owner and had nowhere to live, so it
+               survived only in a chat that was about to end.
     paper      arXiv or a venue, with a method somebody can check
     benchmark  an independent leaderboard or evaluation with a method
     portal     a platform that RUNS the model or hosts what people made with
@@ -35,10 +43,28 @@ TIERS, and why a blog can never promote a fact:
                configuration and its ceiling may be its plan.
     blog       everything else, including the well-written aggregators
 
-The first, sixth and fifth rungs are decided by WHOSE PAGE IT IS, from the
-table in `source_hosts.py`, not by how the page reads. `probe`, `paper` and
-`benchmark` are decided by HOW THE FACT WAS OBTAINED, which no URL can tell
-you — those are declared by whoever records the fact.
+The vendor, portal and blog rungs are decided by WHOSE PAGE IT IS, from the
+table in `source_hosts.py`, not by how the page reads. `probe`, `paper`,
+`benchmark` and `operator` are decided by HOW THE FACT WAS OBTAINED, which no
+URL can tell you — those are declared by whoever records the fact.
+
+WHY `operator` SITS WHERE IT SITS, AND WHAT IT HAD TO EARN
+
+Directly below `probe`, and the argument is symmetry: both are ONE first-hand
+observation of the running system, with the same confound — one account, one
+region, one moment, one workflow. A probe is written down by the API; an
+operator report is written down by a person, and a person remembers a
+conclusion more easily than what they actually saw.
+
+So this rung costs something the others do not: an `operator` fact MUST carry
+`witnessed` — what was run and what came out, in observable terms. Without it
+the record is refused, not merely weighted down. "Nano-banana keeps text" is an
+opinion; "fed nano-banana-edit a frame with Pillow-rendered text, the text
+survived unchanged" is a fact somebody else can go and contradict.
+
+It has no URL and needs none — there is no page. `source_url` carries the
+operator's own reference (a chat date, a job id, a file) and `read_directly`
+is True by construction: they were there.
 
 A fact carried only by `blog` sources stays weak however many blogs repeat it,
 because ten blogs quoting each other is one source. This is not snobbery about
@@ -107,6 +133,7 @@ __all__ = [
     "STALE_AFTER_DAYS",
     "TIERS",
     "TIER_BLOG",
+    "TIER_OPERATOR",
     "TIER_BENCHMARK",
     "TIER_PORTAL",
     "TIER_PAPER",
@@ -126,6 +153,7 @@ TIER_BENCHMARK = "benchmark"
 TIER_PORTAL = "portal"
 TIER_BLOG = "blog"
 TIER_PAPER = "paper"
+TIER_OPERATOR = "operator"
 
 #: Strongest first. Order is the only ranking; there are deliberately no
 #: numeric weights, because a weight invites averaging and averaging a vendor
@@ -147,6 +175,7 @@ TIER_PAPER = "paper"
 TIERS: tuple[str, ...] = (
     TIER_VENDOR,
     TIER_PROBE,
+    TIER_OPERATOR,
     TIER_PAPER,
     TIER_BENCHMARK,
     TIER_PORTAL,
@@ -245,6 +274,12 @@ class Fact:
     #: None means nobody recorded it rather than nobody read it.
     read_directly: bool | None = None
 
+    #: Обязательно для тира `operator` и бессмысленно для остальных: ЧТО именно
+    #: оператор запустил и что увидел, в наблюдаемых словах. Вывод без этого —
+    #: мнение с ярлыком, а ярлык нужен ровно затем, чтобы такие записи можно
+    #: было отличать друг от друга.
+    witnessed: str = ""
+
     @property
     def age_days(self) -> int | None:
         """Days since the source stated it; None when the source gave no date."""
@@ -317,6 +352,7 @@ def _rows(path: Path) -> list[tuple[Fact, bool]]:
                     read_directly=(
                         None if row.get("read_directly") is None else bool(row["read_directly"])
                     ),
+                    witnessed=str(row.get("witnessed", "")),
                 ),
                 bool(row.get("withdrawn")),
             )
@@ -380,6 +416,7 @@ class FactStore:
                         "note": f.note,
                         # None means nobody recorded it, and prints as such.
                         "read_directly": f.read_directly,
+                        "witnessed": f.witnessed,
                     }
                     for f in sorted(
                         facts,

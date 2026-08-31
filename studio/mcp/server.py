@@ -164,8 +164,9 @@ def record_model_fact(
     note: str = "",
     fix: str = "",
     read_directly: bool | None = None,
+    witnessed: str = "",
 ) -> str:
-    """Write one thing you found on the web into the knowledge base.
+    """Write one thing you found on the web — or ran yourself — into the base.
 
     Use it after searching, when `model_advice` showed a gap, a contradiction
     or a stale claim.
@@ -176,6 +177,14 @@ def record_model_fact(
     how a fact known through a summary becomes one you opened, without the page
     being counted twice. If the page does NOT say what was recorded, use
     `withdraw_model_fact` instead.
+
+    :param witnessed: REQUIRED when `tier` is "operator", ignored otherwise.
+        What was actually run and what came out, in observable words. A verdict
+        without an observation is an opinion, and there is already a tier for
+        opinions — it is called "blog". Compare: "nano-banana keeps text" is an
+        opinion; "fed nano-banana-edit a frame with Pillow-rendered text, the
+        text survived unchanged" is a fact somebody can go and contradict.
+        Without it the record is REFUSED, not merely weighted down.
 
     :param tier: the ladder is, strongest first — "vendor" (the model vendor's
         own page), "probe" (their API answered), "paper" (arXiv or a venue),
@@ -208,6 +217,7 @@ def record_model_fact(
             note=note,
             fix=fix,
             read_directly=read_directly,
+            witnessed=witnessed,
         )
     )
 

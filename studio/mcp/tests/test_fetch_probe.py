@@ -423,7 +423,7 @@ class Probe(unittest.TestCase):
 class FactTiers(unittest.TestCase):
     """The tier ladder studio/mcp records into. Literals, not imports of the ladder."""
 
-    LADDER = ("vendor", "probe", "paper", "benchmark", "portal", "blog")
+    LADDER = ("vendor", "probe", "operator", "paper", "benchmark", "portal", "blog")
 
     def test_the_ladder_is_what_it_says_it_is(self) -> None:
         from studio.selfrag.facts import TIERS
@@ -434,8 +434,20 @@ class FactTiers(unittest.TestCase):
         from studio.selfrag.facts import TIERS
 
         assert TIERS.index("probe") > TIERS.index("vendor")
-        for weaker in ("paper", "benchmark", "portal", "blog"):
+        for weaker in ("operator", "paper", "benchmark", "portal", "blog"):
             assert TIERS.index("probe") < TIERS.index(weaker)
+
+    def test_operator_sits_below_probe_and_above_everything_written_outside(self) -> None:
+        """Добавлено 2026-08-31 по решению владельца. Ниже `probe`, потому что
+        у них общий изъян — одно наблюдение одного аккаунта в один момент, — а
+        записано оно человеком, не машиной. Выше статьи и бенчмарка, потому что
+        те говорят про метод вообще, а оператор про эту модель и этот рабочий
+        процесс сегодня."""
+        from studio.selfrag.facts import TIERS
+
+        assert TIERS.index("operator") > TIERS.index("probe")
+        for weaker in ("paper", "benchmark", "portal", "blog"):
+            assert TIERS.index("operator") < TIERS.index(weaker)
 
     def test_a_portal_outranks_a_blog_and_nothing_else(self) -> None:
         """The owner's middle rung, 2026-08-27: vendor page, then platforms,
