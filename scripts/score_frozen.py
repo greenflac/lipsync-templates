@@ -33,6 +33,7 @@ from typing import Any
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from studio.factindex import FactIndex, verdict  # noqa: E402
+from studio.terms import bridge, bridged_words  # noqa: E402
 from studio.mcp import advice  # noqa: E402
 
 ЗАМОРОЖЕННЫЕ = (
@@ -75,9 +76,22 @@ def ask_advise(q: dict[str, Any]) -> dict[str, Any]:
 
 
 def ask_factindex(q: dict[str, Any], index: FactIndex) -> dict[str, Any]:
-    hits = index.search(q["ask"])
-    v = verdict(hits, q["ask"])
-    return {"outcome": v["outcome"], "hits": v["hits"], "models": [h["model"] for h in v["hits"]]}
+    """Спросить индекс, проведя вопрос через мост терминов.
+
+    Мост добавляет английские соответствия доменных слов и НЕ трогает
+    остальное: негативные контроли обязаны остаться пустыми, и на это есть
+    отдельный тест. Что именно мост узнал — печатается, иначе его работу нечем
+    проверить.
+    """
+    спрошено = bridge(q["ask"])
+    hits = index.search(спрошено)
+    v = verdict(hits, спрошено)
+    return {
+        "outcome": v["outcome"],
+        "hits": v["hits"],
+        "models": [h["model"] for h in v["hits"]],
+        "bridged": bridged_words(q["ask"]),
+    }
 
 
 def score(q: dict[str, Any], got: dict[str, Any]) -> str:
