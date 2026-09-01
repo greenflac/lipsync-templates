@@ -274,10 +274,20 @@ def troubles(payload: dict[str, Any], *, setup: bool = False) -> list[dict[str, 
 #: независимым оценщиком (`studio/harvest_quality.py`) на 123 строках этого
 #: канала: 21 из 27 осуждённых были именно вопросами. Прибор, который ловит
 #: своего же сборщика, для того и заведён.
+#: Признаков два, и оба узкие. Первый — знак вопроса в конце. Второй —
+#: ИНВЕРСИЯ вспомогательного глагола в начале («Can we…», «Is there…»),
+#: которая по-английски бывает только вопросом.
+#:
+#: Вопросительных слов how/what/why/when/where в начале здесь НЕТ намеренно, и
+#: это исправление собственной первой редакции: она отвергала «When using the
+#: official model, generating a 15-second 720p video takes only 3 minutes» —
+#: то есть настоящее наблюдение, начатое придаточным. ИЗМЕРЕНО: с ними
+#: отвергалось 22 сохранённые строки из 123, без них 15, и семь разницы —
+#: ложные срабатывания.
 ВОПРОС = re.compile(
-    r"\?\s*$|^\s*(can|could|is|are|was|were|does|do|did|how|what|why|which|who"
-    r"|when|where|would|should|will|has|have|any|anyone|anybody|somebody"
-    r"|possible|is there|как|почему|можно ли|есть ли)\b",
+    r"\?\s*$"
+    r"|^\s*(can|could|is|are|was|were|does|do|did|would|should|will|has|have"
+    r"|any|anyone|anybody|somebody|is there|можно ли|есть ли)\b",
     re.I,
 )
 

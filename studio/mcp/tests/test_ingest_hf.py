@@ -465,3 +465,11 @@ class ТелоТреда(unittest.TestCase):
         """Вторая половина контроля: без неё прошёл бы фильтр, режущий всё."""
         отчёт = "On a 4090 at 1280x720 with 30 steps the mouth desyncs after 6 seconds."
         self.assertEqual(hf.наблюдение(отчёт), отчёт)
+
+    def test_придаточное_с_when_это_не_вопрос(self):
+        """Исправление собственной первой редакции: она резала наблюдения."""
+        о = "When using the official model, generating a 15-second 720p video takes 3 minutes."
+        self.assertEqual(hf.наблюдение(о), о)
+
+    def test_инверсия_без_знака_вопроса_всё_равно_вопрос(self):
+        self.assertEqual(hf.наблюдение("Can we get bf16 weights for the 5B model at 720p"), "")
