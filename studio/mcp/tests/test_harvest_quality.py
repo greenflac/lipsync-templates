@@ -298,7 +298,11 @@ class ГейтНаСвоейБазе(unittest.TestCase):
             for i, з in enumerate(ЗАГОЛОВКИ * 3)
         ]
         строки += [
-            _строка(р, "разбор тела треда", f"https://huggingface.co/м/discussions/9{i}")
+            _строка(
+                р,
+                "HARVESTED 2026-08-27 из тела треда",
+                f"https://huggingface.co/м/discussions/9{i}",
+            )
             for i, р in enumerate(РАЗБОРЫ)
         ]
         строки += [
@@ -312,7 +316,7 @@ class ГейтНаСвоейБазе(unittest.TestCase):
             _строка(
                 "Skin tone is not preserved under the flowmatch_distill scheduler - dark "
                 "skin is rendered markedly redder than the reference",
-                "разбор",
+                "разбор прочего канала",
                 "https://example.com/другая",
             )
         ]
@@ -320,8 +324,8 @@ class ГейтНаСвоейБазе(unittest.TestCase):
             путь = _написать_базу(Path(каталог), строки)
             вердикт = гейт.проверить(путь)
         self.assertEqual(вердикт["outcome"], ГОДНО, вердикт.get("беды"))
-        self.assertEqual(вердикт["группы"]["массовый заход"]["осуждено"], 15)
-        self.assertEqual(вердикт["группы"]["ручной разбор"]["осуждено"], 0)
+        self.assertEqual(вердикт["группы"][гейт.ЗАГОЛОВОЧНЫЙ]["осуждено"], 15)
+        self.assertEqual(вердикт["группы"][гейт.РУЧНОЙ]["осуждено"], 0)
 
     def test_прибор_молчащий_на_массовом_заходе_красит_гейт(self) -> None:
         """Негативный контроль гейта: заголовки заменены настоящими разборами."""
@@ -330,7 +334,11 @@ class ГейтНаСвоейБазе(unittest.TestCase):
             for i, р in enumerate(РАЗБОРЫ * 4)
         ]
         строки += [
-            _строка(р, "разбор тела треда", f"https://huggingface.co/м/discussions/9{i}")
+            _строка(
+                р,
+                "HARVESTED 2026-08-27 из тела треда",
+                f"https://huggingface.co/м/discussions/9{i}",
+            )
             for i, р in enumerate(РАЗБОРЫ)
         ]
         строки += [_строка("話者が二人になる", "чужой", "https://example.com/страница")]
@@ -338,7 +346,7 @@ class ГейтНаСвоейБазе(unittest.TestCase):
             путь = _написать_базу(Path(каталог), строки)
             вердикт = гейт.проверить(путь)
         self.assertEqual(вердикт["outcome"], НЕ_ГОДНО)
-        self.assertTrue(any("массовый заход" in б for б in вердикт["беды"]))
+        self.assertTrue(any("заголовочный заход" in б for б in вердикт["беды"]))
 
     def test_прибор_бракующий_ручные_красит_гейт(self) -> None:
         строки = [
@@ -346,7 +354,11 @@ class ГейтНаСвоейБазе(unittest.TestCase):
             for i, з in enumerate(ЗАГОЛОВКИ * 3)
         ]
         строки += [
-            _строка(з, "разбор тела треда", f"https://huggingface.co/м/discussions/9{i}")
+            _строка(
+                з,
+                "HARVESTED 2026-08-27 из тела треда",
+                f"https://huggingface.co/м/discussions/9{i}",
+            )
             for i, з in enumerate(ЗАГОЛОВКИ)
         ]
         строки += [_строка("話者が二人になる", "чужой", "https://example.com/страница")]
@@ -409,24 +421,24 @@ class ЖиваяБаза(unittest.TestCase):
         self.группы = гейт.разложить(self.факты)
 
     def test_группы_нашлись(self) -> None:
-        self.assertEqual(len(self.группы["массовый заход"]), ЖИВЫХ_МАССОВЫХ)
-        self.assertEqual(len(self.группы["ручной разбор"]), ЖИВЫХ_РУЧНЫХ)
-        self.assertGreater(len(self.группы["прочие каналы"]), 100)
+        self.assertEqual(len(self.группы[гейт.ЗАГОЛОВОЧНЫЙ]), ЖИВЫХ_МАССОВЫХ)
+        self.assertEqual(len(self.группы[гейт.РУЧНОЙ]), ЖИВЫХ_РУЧНЫХ)
+        self.assertGreater(len(self.группы[гейт.ПРОЧИЕ]), 100)
 
     def test_массовый_заход_осуждён(self) -> None:
-        итог = hq.учесть(self.группы["массовый заход"])
+        итог = hq.учесть(self.группы[гейт.ЗАГОЛОВОЧНЫЙ])
         доля = итог["осуждено"] / итог["checked"]
         self.assertGreaterEqual(
             доля, ПОЛ_ОСУЖДЕНИЯ, f"осуждено {итог['осуждено']} из {итог['checked']}"
         )
 
     def test_ручной_разбор_пропущен_целиком(self) -> None:
-        итог = hq.учесть(self.группы["ручной разбор"])
+        итог = hq.учесть(self.группы[гейт.РУЧНОЙ])
         осуждённые = [f.value for f, в in итог["строки"] if в.исход == НЕ_ГОДНО]
         self.assertEqual(len(осуждённые), ЛОЖНЫХ_РУЧНЫХ_ПОЗВОЛЕНО, осуждённые)
 
     def test_прочие_каналы_не_забракованы(self) -> None:
-        итог = hq.учесть(self.группы["прочие каналы"])
+        итог = hq.учесть(self.группы[гейт.ПРОЧИЕ])
         доля = итог["осуждено"] / итог["checked"]
         self.assertLessEqual(доля, 0.01, f"осуждено {итог['осуждено']} из {итог['checked']}")
 
