@@ -37,8 +37,12 @@ PACKAGE = Path(__file__).resolve().parent.parent
 #: The product's operations, each a thing an operator runs on purpose.
 #: `fork_e2e` is the pipeline; `fork_batch` runs it over a matrix; `fork_finish`
 #: is the final assembly on its own; `fork_video` is the decoding utility every
-#: stage borrows. Anything else with an entry point is a tool that wandered in.
+#: stage borrows; `fork_aesthetic_publish` is the owner's own step, added by the
+#: contract of 01.09.2026 — decision 7 makes publishing a separate command a
+#: person runs after looking at the draft, so it is an operation of the product
+#: and not a tool that wandered in. Anything else with an entry point is.
 DECLARED_OPERATIONS = (
+    "fork_aesthetic_publish",
     "fork_batch",
     "fork_e2e",
     "fork_finish",
