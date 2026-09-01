@@ -328,6 +328,108 @@ class TheAnthropometryIsCutOutAndTheCutIsReadable(unittest.TestCase):
         self.assertEqual(len(A.strip_anthropometry(A.load("y2k")["prompt"])["dropped"]), 2)
 
 
+class TheCutDoesNotWeldTheWordsAroundIt(unittest.TestCase):
+    """An optional intensifier must not swallow the space in front of its word.
+
+    MEASURED 01.09.2026 on the shipped cutter: 'a beautiful woman standing in
+    the room' came back as 'Awoman standing in the room'. The pattern shape
+    `(?:very|...)?\\s*<word>` matches the space BEFORE <word> whenever the
+    intensifier is absent, so the article and the noun weld into one token,
+    the word boundary the gender swap needs is gone, and 'woman' rides on into
+    the model. The report called that run clean: dropped=[], genders=[],
+    outcome=pass -- the repair masked the breakage, so the numbers are
+    asserted here next to the text.
+    """
+
+    #: T3: both edges and the middle. The intensifier is ABSENT in the first
+    #: block (the half that carries the defect), PRESENT in the second (the
+    #: half that always worked and must keep working), and the third block has
+    #: nothing at all in front of the word -- the one case where eating the
+    #: leading space is harmless, so it separates "cut too much" from "cut in
+    #: the wrong place". Expected strings are literals (T2).
+    WELDING = (
+        ("a beautiful woman standing in the room", "A person standing in the room"),
+        ("the beautiful woman walks", "The person walks"),
+        ("a gorgeous woman walks", "A person walks"),
+        ("the pretty girl runs", "The person runs"),
+        ("a stunning lady waits", "A person waits"),
+    )
+    INTENSIFIED = (
+        ("a very beautiful woman walks", "A person walks"),
+        ("an extremely beautiful woman walks", "A person walks"),
+        ("a very gorgeous woman walks", "A person walks"),
+    )
+    NOTHING_IN_FRONT = (
+        ("beautiful woman walks", "Person walks"),
+        ("pretty girl runs", "Person runs"),
+    )
+
+    def _one(self, prompt, want):
+        got = A.strip_anthropometry(prompt)
+        self.assertEqual(
+            got["prompt"],
+            want,
+            f"the cut welded the neighbours: {prompt!r} -> {got['prompt']!r}, "
+            f"wanted {want!r}. Culprit: an ANTHROPOMETRY_WORDS pattern of the "
+            f"shape `(?:...)?\\s*word` eats the space in FRONT of the word "
+            f"when the optional group matches empty",
+        )
+        return got
+
+    def test_the_words_on_both_sides_of_the_cut_stay_separate(self):
+        for prompt, want in self.WELDING:
+            with self.subTest(prompt=prompt):
+                self._one(prompt, want)
+
+    def test_an_intensified_phrase_keeps_working(self):
+        for prompt, want in self.INTENSIFIED:
+            with self.subTest(prompt=prompt):
+                self._one(prompt, want)
+
+    def test_a_word_at_the_very_start_is_still_cut_whole(self):
+        for prompt, want in self.NOTHING_IN_FRONT:
+            with self.subTest(prompt=prompt):
+                self._one(prompt, want)
+
+    def test_the_gender_swap_still_fires_after_the_cut_and_is_COUNTED(self):
+        """The welded token hid the noun, and the report then claimed a clean run."""
+        for prompt, _ in self.WELDING:
+            with self.subTest(prompt=prompt):
+                got = A.strip_anthropometry(prompt)
+                self.assertEqual(
+                    [(g["from"], g["times"]) for g in got["genders"]][:1],
+                    [(prompt.split()[2], 1)],
+                    f"{prompt!r}: the gendered noun was not swapped, and the "
+                    f"report says genders={got['genders']} -- a silent leak of "
+                    f"the noun into the model",
+                )
+
+    def test_no_output_carries_a_token_that_exists_in_no_dictionary(self):
+        welded = ("awoman", "thewoman", "agirl", "thegirl", "alady", "aperson")
+        for prompt, _ in self.WELDING + self.INTENSIFIED:
+            with self.subTest(prompt=prompt):
+                low = A.strip_anthropometry(prompt)["prompt"].lower()
+                for bad in welded:
+                    self.assertNotIn(bad, low, f"{prompt!r} -> {low!r}")
+
+    def test_mutating_the_word_list_both_ways_moves_what_is_cut(self):
+        """T1: stricter and looser, on the list this class guards."""
+        was = A.ANTHROPOMETRY_WORDS
+        try:
+            A.ANTHROPOMETRY_WORDS = ()
+            loose = A.strip_anthropometry("a beautiful woman walks")
+            self.assertEqual(loose["words"], [])
+            self.assertEqual(loose["prompt"], "A beautiful person walks")
+            A.ANTHROPOMETRY_WORDS = (r"\bwalks\b",)
+            strict = A.strip_anthropometry("a beautiful woman walks")
+            self.assertEqual(strict["prompt"], "A beautiful person")
+        finally:
+            A.ANTHROPOMETRY_WORDS = was
+        self.assertEqual(
+            A.strip_anthropometry("a beautiful woman walks")["prompt"], "A person walks"
+        )
+
+
 class TheCutIsWiredIntoTheComposedPrompt(unittest.TestCase):
     """A cutter that is written but never called looks working until a run."""
 
