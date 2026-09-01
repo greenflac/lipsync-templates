@@ -42,6 +42,9 @@ PACKAGE = Path(__file__).resolve().parent.parent
 #: person runs after looking at the draft, so it is an operation of the product
 #: and not a tool that wandered in. Anything else with an entry point is.
 DECLARED_OPERATIONS = (
+    # The owner's aesthetic contract of 2026-09-01 makes the aesthetic a unit an
+    # operator builds and then publishes, so both halves are declared commands.
+    "fork_aesthetic_build",
     "fork_aesthetic_publish",
     "fork_batch",
     "fork_e2e",
