@@ -2719,3 +2719,94 @@ class TwoDecisionConstantsNobodyWasWatching(unittest.TestCase):
         self.assertEqual(note["outcome"], PASS)
         self.assertIn("new geometry", note["note"])
         self.assertIn("960x960", note["note"])
+
+
+class TheAestheticModeReachesEveryStage(unittest.TestCase):
+    """MEASURED on a live run of 2026-09-01: `--aesthetic` died in stage 1 with
+    `TypeError: expected str, bytes or os.PathLike object, not NoneType`.
+
+    The mode is advertised by the CLI (`--style` is "not needed with --aesthetic"),
+    and stage 2 resolves the aesthetic to its file itself. Stages 1 and 3 are handed
+    the raw `style_ref`, which is `None` in that mode, so the one place that knows
+    which file the style reference is cannot be read by the two stages that need it.
+    """
+
+    class _A:
+        """Aesthetic neighbour with the real signature and no disk of its own."""
+
+        @staticmethod
+        def gender_of(_aid):
+            return "f"
+
+        @staticmethod
+        def pair_check(*, client_gender, aesthetic_gender):
+            ok = client_gender == aesthetic_gender
+            return {"outcome": "pass" if ok else "fail", "note": "gender"}
+
+        @staticmethod
+        def aesthetic_file(aid):
+            return f"assets/aesthetics/{aid}_f.png"
+
+        @staticmethod
+        def compose(_aid, *, card=None):
+            return {"prompt": "aesthetic in words"}
+
+        @staticmethod
+        def assemble_prompt(*, card=None):
+            return E.NO_BRANDS_CLAUSE
+
+    def test_stage_one_is_handed_the_aesthetic_file_not_none(self):
+        seen = {}
+
+        def intake(*, client_photo, style_ref, driving, driving_frames=None, card_reader=None):
+            seen["style_ref"] = style_ref
+            return {"outcome": "pass", "checked": 1, "violations": 0, "unmeasured": 0}
+
+        got = E.stage_intake(
+            client_photo="assets/fork_client_selfie_f.png",
+            style_ref=E.aesthetic_style_ref("y2k", aesthetic_mod=self._A),
+            driving="d.mp4",
+            intake=intake,
+        )
+        self.assertEqual(seen["style_ref"], "assets/aesthetics/y2k_f.png")
+        self.assertNotEqual(got["outcome"], "could not measure")
+
+    def test_stage_three_measures_against_the_aesthetic_file_not_none(self):
+        asked = []
+
+        def similarity(a, b):
+            asked.append((a, b))
+            return 0.9 if "styled" in str(b) else 0.1
+
+        got = E.stage_style_acceptance(
+            styled="styled.png",
+            style_ref=E.aesthetic_style_ref("y2k", aesthetic_mod=self._A),
+            client_photo="assets/fork_client_selfie_f.png",
+            similarity=similarity,
+            distances=lambda *_a, **_k: {"outcome": "pass", "median": 0.1},
+        )
+        self.assertTrue(asked, "the style instrument was never called")
+        self.assertTrue(
+            all(a == "assets/aesthetics/y2k_f.png" for a, _b in asked),
+            f"the floor and the hit must be taken against the aesthetic file: {asked}",
+        )
+        self.assertNotEqual(got["outcome"], "could not measure")
+
+    def test_a_style_and_an_aesthetic_together_are_refused(self):
+        with self.assertRaises(SystemExit):
+            E.main(
+                [
+                    "--client",
+                    "c.png",
+                    "--style",
+                    "s.png",
+                    "--aesthetic",
+                    "y2k",
+                    "--client-gender",
+                    "f",
+                    "--driving",
+                    "d.mp4",
+                    "--window",
+                    "0:99",
+                ]
+            )
