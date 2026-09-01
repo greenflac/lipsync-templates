@@ -132,6 +132,9 @@ MEASUREMENT_TIERS: frozenset[str] = frozenset({TIER_PAPER, TIER_BENCHMARK})
 #: Головные имена взяты по частоте на живой базе 2026-08-31.
 QUALITY_ATTRIBUTES: frozenset[str] = frozenset(
     {
+        # Отчёт практика о прогоне без названного знака. В CONTRA не входит
+        # намеренно: «человек описал, что вышло» не равно «здесь ломается».
+        "observed_behaviour",
         "failure_mode",
         "limitation",
         "degrades_when",

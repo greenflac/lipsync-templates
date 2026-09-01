@@ -206,6 +206,241 @@ def troubles(payload: dict[str, Any], *, setup: bool = False) -> list[dict[str, 
     return rows
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# ТЕЛО ТРЕДА, А НЕ ЗАГОЛОВОК
+#
+# Заголовок треда — это ВОПРОС, который человек задал, а не то, что он выяснил.
+# Канал полгода писал в базу subject line: ИЗМЕРЕНО на живой базе 2026-09-01 —
+# 183 строки средней длиной 62 символа, и у 80 моделей из 169 вся применимость
+# держалась на них. Две строки оказались положительными отзывами, записанными
+# как `failure_mode`. Тело того же треда несёт железо, настройки и исход:
+# «Currently testing LTX 2.5 on my RTX 3060 12GB ... 960x544, T2V, gets me a
+# 15-second video in just about 5 minutes» — это и есть применимость.
+# ─────────────────────────────────────────────────────────────────────────────
+
+#: Куски, по которым в теле опознаётся НАЗВАННОЕ УСЛОВИЕ ПРОГОНА: железо,
+#: разрешение, длительность, шаги. Наблюдение без условий — это впечатление;
+#: с условиями — свидетельство, которое можно перепроверить. ВЫБРАНО по разбору
+#: живых тел тредов 2026-09-01, список кусков, а не полных имён.
+УСЛОВИЯ_ПРОГОНА = re.compile(
+    r"(rtx ?\d{3,4}|gtx ?\d{3,4}|a100|h100|l40|4090|3090|3060"
+    r"|m[1-4] (max|pro|ultra)|\d+ ?gb|\d+ ?vram|\d{3,4}\s?[x×]\s?\d{3,4}"
+    r"|\d+\s?(fps|steps?|frames?|seconds?|sec|minutes?|min)|cfg ?\d|denoise"
+    r"|comfyui|diffusers|fp8|fp16|bf16|int8|q\d_k|lora weight|seed)",
+    re.I,
+)
+
+#: Куски, по которым опознаётся НАЗВАННЫЙ ИСХОД: что именно вышло. Без исхода
+#: условия — это конфигурация, а не наблюдение. ВЫБРАНО там же.
+ИСХОД_ПРОГОНА = re.compile(
+    r"(works?|working|got|gets?|produces?|output|result|renders?|generat"
+    r"|fails?|breaks?|crash|hang|freez|distort|artifact|flicker|blink|drift"
+    r"|blur|noise|garbl|glitch|desync|out of sync|ignores?|no effect|zero effect"
+    r"|quality|speed|fast|slow|takes? about|took|per (image|frame|second))",
+    re.I,
+)
+
+#: Слова, которыми автор сообщает, что у него ПОЛУЧИЛОСЬ. Нужны не ради похвалы,
+#: а чтобы не записать положительный отчёт под отрицательным атрибутом: ровно
+#: так «Impressive Speed & Quality Out of the Box» попало в базу провалом
+#: LTX-2.5 (ИЗМЕРЕНО 2026-09-01, строка отозвана).
+ЗНАК_УДАЧИ = re.compile(
+    r"(impressive|mind-blowing|awesome|excellent|works (great|well|fine|perfectly)"
+    r"|no (issues?|problems?)|out of the box|smooth|flawless|отлично|работает)",
+    re.I,
+)
+
+#: Слова, которыми автор сообщает, что СЛОМАЛОСЬ.
+ЗНАК_ПРОВАЛА = re.compile(
+    r"(fails?|failed|broken|breaks?|doesn'?t work|not work|crash|error|garbage"
+    r"|distort|artifact|flicker|unusable|useless|wrong|bad|poor|terrible"
+    r"|no effect|zero effect|ignores?|desync|out of sync|не работает|ломается)",
+    re.I,
+)
+
+#: Формы, которые НЕ являются наблюдением, чем бы ни выглядели: стектрейс,
+#: строка лога, дамп конфига. В них есть и «условия», и слово про исход, но
+#: наблюдения нет — есть машинный вывод. Поймано на живой выдаче: тред #58
+#: у LTX-2.5 дал `File "/Users/.../ComfyUI/execution.py", line 344`.
+МАШИННЫЙ_ВЫВОД = re.compile(
+    r"(traceback|File \"|, line \d+|0x[0-9a-f]{6,}|\| INFO \||\| DEBUG \|"
+    r"|^\s*(at|in) [\w./\\]+:\d+|Error: \w+Error|\bself\.\w+\(|>>> )",
+    re.I | re.M,
+)
+
+#: Минимальная длина извлечённого предложения. ВЫБРАНО 40: ниже этого порога
+#: на живых телах не помещается «условие плюс исход» — а именно их пара и
+#: отличает наблюдение от реплики. Сторожится мутацией в обе стороны (Т1).
+МИН_ДЛИНА_НАБЛЮДЕНИЯ = 40
+
+#: Сколько предложений берётся из одного тела. ВЫБРАНО 2: одно почти всегда
+#: несёт либо условия, либо исход, но не оба.
+ПРЕДЛОЖЕНИЙ_ИЗ_ТЕЛА = 2
+
+#: Границей предложения считается точка, за которой НЕ стоит цифра: иначе
+#: «LTX 2.5» рвётся пополам и значение начинается с «5 on my RTX 3060» — то
+#: есть перестаёт быть словами источника. Поймано на первом же живом теле.
+_ГРАНИЦА = re.compile(r"(?<=[.!?])(?!\d)\s+|\n+")
+_КАРТИНКА = re.compile(r"!?\[[^\]]*\]\([^)]*\)|https?://\S+")
+
+
+def первое_сообщение(payload: dict[str, Any]) -> tuple[str, str]:
+    """Текст первого комментария треда и имя его автора.
+
+    Именно первый: он принадлежит тому, кто пришёл с наблюдением. Ответы —
+    это уже обсуждение, и там чаще догадки, чем прогоны.
+    """
+    for событие in payload.get("events") or []:
+        if событие.get("type") != "comment":
+            continue
+        данные = событие.get("data") or {}
+        сырое = (данные.get("latest") or {}).get("raw") or данные.get("raw") or ""
+        автор = (событие.get("author") or {}).get("name") or ""
+        if str(сырое).strip():
+            return str(сырое), str(автор)
+    return "", ""
+
+
+#: Имя, отличное от разбираемой модели, делает предложение утверждением О
+#: ДРУГОЙ МОДЕЛИ. Записать его под нашим именем — это ровно тот класс дефекта,
+#: который абляция назвала самой глубокой дырой базы. Поймано на живой выдаче:
+#: тред #61 у LTX-2.5 говорит про Seedance 2.5, и заявка ушла бы к LTX.
+ЧУЖОЕ_ИМЯ = re.compile(
+    r"\b(seedance|kling|veo|runway|sora|wan[- ]?\d|hunyuan|minimax|hailuo|pika"
+    r"|luma|flux|sdxl|stable[- ]diffusion|midjourney|dall[- ]?e|qwen|gemini|gpt)\b",
+    re.I,
+)
+
+
+def про_чужую_модель(фраза: str, model_id: str) -> bool:
+    """Названо ли в предложении имя модели, отличное от разбираемой.
+
+    Сравнение по КУСКАМ имени репозитория, а не по полному совпадению: у
+    `Lightricks/LTX-2.5` своим считается «ltx», а «seedance» — чужим.
+    """
+    своё = re.split(r"[-_./ ]", model_id.lower())
+    for найдено in ЧУЖОЕ_ИМЯ.findall(фраза):
+        имя = найдено.lower()
+        if not any(имя.startswith(ч) or ч.startswith(имя) for ч in своё if len(ч) > 2):
+            return True
+    return False
+
+
+def наблюдение(тело: str, model_id: str = "") -> str:
+    """Слова автора, в которых названы И условия прогона, И исход.
+
+    Пустая строка — третий исход (Р1): тело есть, наблюдения в нём нет. Это
+    НЕ то же самое, что «тред плохой»: вопрос без прогона — законное
+    содержимое обсуждения, просто не факт о модели.
+    """
+    чистое = _КАРТИНКА.sub(" ", тело or "")
+    годные = []
+    for кусок in _ГРАНИЦА.split(чистое):
+        фраза = " ".join(кусок.split())
+        if len(фраза) < МИН_ДЛИНА_НАБЛЮДЕНИЯ:
+            continue
+        if МАШИННЫЙ_ВЫВОД.search(фраза):
+            continue
+        if model_id and про_чужую_модель(фраза, model_id):
+            continue
+        if УСЛОВИЯ_ПРОГОНА.search(фраза) and ИСХОД_ПРОГОНА.search(фраза):
+            годные.append(фраза)
+        if len(годные) >= ПРЕДЛОЖЕНИЙ_ИЗ_ТЕЛА:
+            break
+    return " ".join(годные)
+
+
+def знак(текст: str) -> str:
+    """`удача`, `провал` или `неясно`. Решает АТРИБУТ, под которым писать.
+
+    Три исхода и здесь: текст, где нет ни одного знака, не записывается вовсе,
+    потому что записать его провалом — это выдумать провал.
+    """
+    удача, провал = bool(ЗНАК_УДАЧИ.search(текст)), bool(ЗНАК_ПРОВАЛА.search(текст))
+    if удача and not провал:
+        return "удача"
+    if провал and not удача:
+        return "провал"
+    return "неясно"
+
+
+#: Атрибут выбирается ЗНАКОМ наблюдения, а не предполагается. Третья строка
+#: существует потому, что «неясно» — это 6 наблюдений из 11 на живом замере, и
+#: выбросить их значит потерять больше половины выхода, а записать провалом —
+#: выдумать провал. `observed_behaviour` не утверждает ни того, ни другого:
+#: практик описал прогон, знак не назван.
+АТРИБУТ_ПО_ЗНАКУ = {
+    "удача": "runs_on",
+    "провал": "failure_mode",
+    "неясно": "observed_behaviour",
+}
+
+
+def наблюдения_модели(
+    model_id: str, get: Callable[[str], tuple[str, bytes]] = _get
+) -> tuple[list[dict[str, Any]], dict[str, int]]:
+    """Наблюдения из ТЕЛ всех тредов модели, и рядом — счётчики отсева (Р2).
+
+    ОТБОР ИДЁТ ПО ТЕЛУ, А НЕ ПО ЗАГОЛОВКУ, и это главное решение всей функции.
+    Отбор по заголовку выбирает треды со словами «error», «problem», «fail» —
+    то есть ровно ту популяцию, где гуще всего проблем установки и реже всего
+    отчётов о поведении модели. ИЗМЕРЕНО на Lightricks/LTX-2.5, 50 тредов:
+    фильтр по заголовку отобрал 8, чтение тел нашло 11, и это ДРУГИЕ 11.
+    Отчёт «LTX 2.5 on RTX 3060 ... 15-second video in about 5 minutes»
+    заголовочный фильтр записал ПРОВАЛОМ, потому что в названии было слово
+    «Quality».
+
+    Цена названа честно: один запрос на тред вместо одного на модель.
+    """
+    состояние, тело = get(f"{API}{model_id}/discussions")
+    if состояние != "ok":
+        return [], {"канал не ответил": 1}
+    try:
+        треды = (json.loads(тело).get("discussions") or [])[:DISCUSSIONS_SCANNED]
+    except json.JSONDecodeError:
+        return [], {"выдача не разобралась": 1}
+
+    найдено: list[dict[str, Any]] = []
+    счёт: dict[str, int] = {}
+
+    def плюс(имя: str) -> None:
+        счёт[имя] = счёт.get(имя, 0) + 1
+
+    for тред in треды:
+        номер = тред.get("num")
+        состояние, сырое = get(f"{API}{model_id}/discussions/{номер}")
+        if состояние != "ok":
+            плюс("тред не прочли")
+            continue
+        try:
+            разобранное = json.loads(сырое)
+        except json.JSONDecodeError:
+            плюс("тред не разобрался")
+            continue
+        текст, автор = первое_сообщение(разобранное)
+        if not текст.strip():
+            плюс("тело пустое")
+            continue
+        видно = наблюдение(текст, model_id)
+        if not видно:
+            плюс("условия и исход не названы вместе")
+            continue
+        з = знак(видно)
+        плюс(f"наблюдение: {з}")
+        найдено.append(
+            {
+                "num": номер,
+                "title": str(тред.get("title") or ""),
+                "status": тред.get("status"),
+                "author": автор,
+                "sign": з,
+                "attribute": АТРИБУТ_ПО_ЗНАКУ[з],
+                "observation": видно,
+            }
+        )
+    return найдено, счёт
+
+
 def license_paths(model_id: str, get: Callable[[str], tuple[str, bytes]] = _get) -> list[str]:
     """Файлы репозитория, похожие на лицензию, короткое имя первым.
 
@@ -249,6 +484,7 @@ def survey(model_id: str, get: Callable[[str], tuple[str, bytes]] = _get) -> dic
                     "chars": len(body_here),
                 }
             )
+    наблюдения, счёт_наблюдений = наблюдения_модели(model_id, get)
     talk_state, talk = get(f"{API}{model_id}/discussions")
 
     разобрано = json.loads(talk) if talk_state == "ok" else {}
@@ -277,6 +513,8 @@ def survey(model_id: str, get: Callable[[str], tuple[str, bytes]] = _get) -> dic
         # ней просто выключены, и это не отсутствие опыта.
         "discussions_state": talk_state,
         "troubles": found,
+        "observations": наблюдения,
+        "observation_counts": счёт_наблюдений,
         "setup_troubles": установочные,
         "card_url": f"{WEB}{model_id}",
         "license_url": f"{WEB}{model_id}/tree/main",
@@ -377,8 +615,11 @@ def report(rows: list[dict[str, Any]], store: FactStore | None = None) -> int:
             f" про поведение модели {len(row['troubles'])},"
             f" про установку {len(row.get('setup_troubles', []))}"
         )
-        for t in row["troubles"][:6]:
-            print(f"       #{t['num']} [{t['status']}] {t['title'][:80]}")
+        сч = row.get("observation_counts") or {}
+        печать = ", ".join(f"{k} {v}" for k, v in sorted(сч.items()))
+        print(f"    наблюдений из тел: {len(row.get('observations') or [])}  ({печать})")
+        for н in (row.get("observations") or [])[:6]:
+            print(f"       #{н['num']} [{н['sign']}->{н['attribute']}] {н['observation'][:76]}")
     print(f"\nпроверено {len(rows)}, разобрано {len(done)}, не смогли {len(rows) - len(done)}")
     if not rows:
         print("исход: не смогли — не назвали ни одной модели")
@@ -463,14 +704,18 @@ def заявки(row: dict) -> list[tuple[str, str, str, str, str]]:
             f"счётчик HuggingFace: {row['downloads']} скачиваний, {row['likes']} лайков",
         )
     )
-    for t in row.get("troubles") or []:
+    # НАБЛЮДЕНИЯ ИЗ ТЕЛ, а не заголовки. Заголовок — это вопрос, который человек
+    # задал; тело — то, что он выяснил. Атрибут выбирает ЗНАК наблюдения, и
+    # положительный отчёт больше не может попасть под `failure_mode`.
+    for н in row.get("observations") or []:
         out.append(
             (
                 имя,
-                "failure_mode",
-                t["title"],
-                f"{карточка}/discussions/{t['num']}",
-                f"тред #{t['num']}, состояние {t['status']}",
+                н["attribute"],
+                н["observation"],
+                f"{карточка}/discussions/{н['num']}",
+                f"тело треда #{н['num']}, автор {н['author'] or 'неизвестен'}, "
+                f"знак {н['sign']}, заголовок: {н['title'][:70]}",
             )
         )
     return out

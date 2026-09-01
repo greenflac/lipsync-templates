@@ -33,6 +33,10 @@ from studio.selfrag.facts import CLASS_SUFFIX, Fact, FactStore, load_facts
 #: случае. Расширять его — осознанное решение с правкой этой строки.
 APPLICABILITY = frozenset(
     {
+        # Практик описал прогон, но знак не назвал. Это применимость: он
+        # запускал. ИЗМЕРЕНО 2026-09-01: таких наблюдений 6 из 11 на живом
+        # замере тел тредов — больше половины выхода канала.
+        "observed_behaviour",
         "failure_mode",
         "limitation",
         "degrades_when",

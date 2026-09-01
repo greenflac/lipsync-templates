@@ -312,8 +312,16 @@ class Заявки(unittest.TestCase):
         "likes": 3755,
         "license_name": "coqui-public-model-license",
         "licences": [{"file": "LICENSE.txt", "flags": ["некоммерческая оговорка"], "chars": 4014}],
-        "troubles": [
-            {"num": 122, "title": "GPT2InferenceModel has no attribute", "status": "open"}
+        "observations": [
+            {
+                "num": 122,
+                "title": "GPT2InferenceModel has no attribute",
+                "status": "open",
+                "author": "kto-to",
+                "sign": "провал",
+                "attribute": "failure_mode",
+                "observation": "On a 3090 at 22kHz the model raises AttributeError mid-generation.",
+            }
         ],
         "card_url": "https://huggingface.co/coqui/XTTS-v2",
         "license_url": "https://huggingface.co/coqui/XTTS-v2/tree/main",
@@ -326,7 +334,10 @@ class Заявки(unittest.TestCase):
         """Приписанное к значению своё слово уже разводило базу с гейтом."""
         по_атрибуту = {z[1]: z[2] for z in hf.заявки(self.СТРОКА)}
         self.assertEqual(по_атрибуту["license"], "coqui-public-model-license")
-        self.assertEqual(по_атрибуту["failure_mode"], "GPT2InferenceModel has no attribute")
+        self.assertEqual(
+            по_атрибуту["failure_mode"],
+            "On a 3090 at 22kHz the model raises AttributeError mid-generation.",
+        )
 
     def test_поле_лицензии_и_прочитанный_текст_это_РАЗНЫЕ_атрибуты(self):
         """Иначе оговорка внутри файла затирает имя лицензии и наоборот."""
@@ -345,7 +356,7 @@ class Заявки(unittest.TestCase):
         )
 
     def test_без_лицензии_и_без_тредов_остаётся_только_принятость(self):
-        голая = dict(self.СТРОКА, license_name="", license="", licences=[], troubles=[])
+        голая = dict(self.СТРОКА, license_name="", license="", licences=[], observations=[])
         self.assertEqual([z[1] for z in hf.заявки(голая)], ["adoption"])
 
     def test_тиры_пробуются_по_очереди_и_их_ровно_три(self):
@@ -363,3 +374,79 @@ class Заявки(unittest.TestCase):
         self.assertEqual(hf.принятость(1_000), "более 1 тыс. скачиваний")
         self.assertEqual(hf.принятость(999), "менее 1 тыс. скачиваний")
         self.assertEqual(hf.принятость(0), "менее 1 тыс. скачиваний")
+
+
+class ТелоТреда(unittest.TestCase):
+    """Наблюдение из тела, а не заголовок. Ожидаемое — литералы (Т2), сети нет (Т4)."""
+
+    ТЕЛО = (
+        "Currently testing LTX 2.5 on my RTX 3060 12GB, and the speed is mind-blowing. "
+        "Running a basic, default ComfyUI workflow (960x544, T2V) gets me a 15-second "
+        "video in just about 5 minutes."
+    )
+
+    def test_версия_модели_не_рвётся_точкой(self):
+        """Значение — слова источника целиком; «LTX 2.5» не делится пополам."""
+        self.assertTrue(hf.наблюдение(self.ТЕЛО).startswith("Currently testing LTX 2.5"))
+
+    def test_нужны_И_условия_И_исход(self):
+        self.assertEqual(hf.наблюдение("Has anyone tried this? I get an error."), "")
+        self.assertEqual(hf.наблюдение("I ran it on a 4090 with 30 steps at 1280x720."), "")
+
+    def test_наблюдение_с_условиями_и_исходом_берётся(self):
+        фраза = "On a 4090 at 1280x720 with 30 steps the mouth desyncs after 6 seconds."
+        self.assertEqual(hf.наблюдение(фраза), фраза)
+
+    def test_короче_порога_не_берётся(self):
+        """Край диапазона снизу (Т3): 39 символов против порога 40."""
+        self.assertEqual(hf.МИН_ДЛИНА_НАБЛЮДЕНИЯ, 40)
+        self.assertEqual(hf.наблюдение("On a 3090 it works at 512x512 30 fps"), "")
+
+    def test_стектрейс_не_наблюдение(self):
+        """Машинный вывод несёт и условия, и слово про исход, а наблюдения нет."""
+        self.assertEqual(
+            hf.наблюдение('File "/home/u/ComfyUI/execution.py", line 344, in get_output_data'),
+            "",
+        )
+
+    def test_предложение_про_чужую_модель_отбрасывается(self):
+        """Записать чужое наблюдение под своим именем — худший класс дефекта."""
+        фраза = "Seedance 2.5 generates a single native clip up to 30 seconds at 1080x1920."
+        self.assertEqual(hf.наблюдение(фраза, "Lightricks/LTX-2.5"), "")
+        self.assertTrue(hf.про_чужую_модель(фраза, "Lightricks/LTX-2.5"))
+
+    def test_своё_имя_чужим_не_считается(self):
+        фраза = "LTX 2.5 renders 15-second video on a 3060 in about 5 minutes."
+        self.assertFalse(hf.про_чужую_модель(фраза, "Lightricks/LTX-2.5"))
+        self.assertEqual(hf.наблюдение(фраза, "Lightricks/LTX-2.5"), фраза)
+
+    def test_знак_решает_атрибут_и_имеет_три_исхода(self):
+        self.assertEqual(hf.знак("works great and fast, no issues"), "удача")
+        self.assertEqual(hf.знак("it fails and the output is garbage"), "провал")
+        self.assertEqual(hf.знак("I set the resolution to 720p and pressed run"), "неясно")
+        self.assertEqual(hf.знак("works great but it also fails sometimes"), "неясно")
+
+    def test_положительный_отчёт_не_попадает_под_failure_mode(self):
+        """Тот самый дефект: «Impressive ... Out of the Box» лежало провалом."""
+        self.assertEqual(hf.АТРИБУТ_ПО_ЗНАКУ["удача"], "runs_on")
+        self.assertEqual(hf.АТРИБУТ_ПО_ЗНАКУ["провал"], "failure_mode")
+        self.assertEqual(hf.АТРИБУТ_ПО_ЗНАКУ["неясно"], "observed_behaviour")
+
+    def test_первое_сообщение_берёт_автора_наблюдения(self):
+        payload = {
+            "events": [
+                {"type": "status-change", "data": {}},
+                {"type": "comment", "author": {"name": "LabMike3D"}, "data": {"raw": "текст"}},
+                {"type": "comment", "author": {"name": "другой"}, "data": {"raw": "ответ"}},
+            ]
+        }
+        self.assertEqual(hf.первое_сообщение(payload), ("текст", "LabMike3D"))
+
+    def test_тред_без_комментариев_даёт_пустое(self):
+        self.assertEqual(hf.первое_сообщение({"events": []}), ("", ""))
+
+    def test_канал_не_ответил_это_третий_исход(self):
+        """Р1: «не смогли прочесть» не сворачивается в «наблюдений нет»."""
+        найдено, счёт = hf.наблюдения_модели("x/y", get=lambda u: ("HTTP 403", b""))
+        self.assertEqual(найдено, [])
+        self.assertEqual(счёт, {"канал не ответил": 1})
