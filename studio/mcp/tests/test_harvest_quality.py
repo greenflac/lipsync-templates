@@ -214,6 +214,21 @@ class ГраницыПорогов(unittest.TestCase):
         self.assertGreater(смешанное, 0.0)
         self.assertLess(смешанное, 1.0)
 
+    def test_смешанный_текст_судится_а_не_отклоняется(self) -> None:
+        """Между краями: латиница с вкраплением иероглифов ещё читается.
+
+        Порог отказа — половина букв. Строка, где чужих букв меньше, ОБЯЗАНА
+        получить вердикт: отказ на первом же иероглифе превратил бы «не смогли»
+        в отговорку.
+        """
+        смешанное = (
+            "lipsync 話者 breaks down as soon as a second speaker starts talking in the same clip"
+        )
+        доля = hq.доля_чужих_букв(смешанное)
+        self.assertGreater(доля, 0.01)
+        self.assertLess(доля, 0.5)
+        self.assertEqual(hq.судить(смешанное, "failure_mode").исход, ГОДНО)
+
     def test_титульный_регистр_края(self) -> None:
         self.assertFalse(hq.титульный_регистр("Wan Animate drifts"))
         self.assertTrue(hq.титульный_регистр("Speed And Quality Combined Here"))
@@ -367,6 +382,60 @@ class ГейтНаСвоейБазе(unittest.TestCase):
             вердикт = гейт.проверить(путь)
         self.assertEqual(вердикт["outcome"], НЕ_ГОДНО)
         self.assertTrue(any("ручной разбор" in б for б in вердикт["беды"]))
+
+    def test_прибор_бракующий_прочие_каналы_красит_гейт(self) -> None:
+        """Третья половина контроля: осуждение здоровых записей прочих каналов."""
+        строки = [
+            _строка(з, f"тред #{i}, состояние open", f"https://huggingface.co/м/discussions/{i}")
+            for i, з in enumerate(ЗАГОЛОВКИ * 3)
+        ]
+        строки += [
+            _строка(
+                р,
+                "HARVESTED 2026-08-27 из тела треда",
+                f"https://huggingface.co/м/discussions/9{i}",
+            )
+            for i, р in enumerate(РАЗБОРЫ)
+        ]
+        # Прочий канал, набитый заголовками: прибор обязан их осудить, а гейт —
+        # покраснеть, потому что доля осуждённых выше потолка 0.01.
+        строки += [
+            _строка(з, "вендорская страница", f"https://example.com/страница/{i}")
+            for i, з in enumerate(ЗАГОЛОВКИ * 4)
+        ]
+        with TemporaryDirectory() as каталог:
+            путь = _написать_базу(Path(каталог), строки)
+            вердикт = гейт.проверить(путь)
+        self.assertEqual(вердикт["outcome"], НЕ_ГОДНО)
+        self.assertTrue(any("прочие каналы" in б for б in вердикт["беды"]), вердикт["беды"])
+
+    def test_неопознанная_метка_канала_идёт_в_не_смогли(self) -> None:
+        """Чужой заход не приписывается к ручному разбору: там его осудили бы."""
+        строки = [
+            _строка(з, f"тред #{i}, состояние open", f"https://huggingface.co/м/discussions/{i}")
+            for i, з in enumerate(ЗАГОЛОВКИ * 3)
+        ]
+        строки += [
+            _строка(
+                р,
+                "HARVESTED 2026-08-27 из тела треда",
+                f"https://huggingface.co/м/discussions/9{i}",
+            )
+            for i, р in enumerate(РАЗБОРЫ)
+        ]
+        строки += [
+            _строка(
+                "Gemma API call issues",
+                "метка нового захода",
+                "https://huggingface.co/м/discussions/77",
+            )
+        ]
+        строки += [_строка("話者が二人になる", "чужой", "https://example.com/страница")]
+        with TemporaryDirectory() as каталог:
+            путь = _написать_базу(Path(каталог), строки)
+            вердикт = гейт.проверить(путь)
+        self.assertEqual(вердикт["outcome"], ГОДНО, вердикт.get("беды"))
+        self.assertEqual(вердикт["неопознанных"], 1)
 
     def test_пустая_база_это_не_смогли(self) -> None:
         with TemporaryDirectory() as каталог:
