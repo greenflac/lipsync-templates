@@ -2925,6 +2925,21 @@ class TheOrderTakesAnAestheticAndNothingElse(unittest.TestCase):
         said = self._refusal(["--client", "c.png", "--aesthetic", "icecream"])
         self.assertIn("the following arguments are required: --client-gender", said)
 
+    def test_an_aesthetic_that_is_not_ready_is_the_third_outcome_not_a_traceback(self):
+        """SEEN by eye 2026-09-01: ordering `icecream` from the current base.
+
+        The aesthetics in the base carry no driving and no window yet, and the
+        operator got a raw traceback. "The aesthetic is not ready" is a "could
+        not measure": nothing was generated, nothing was paid for, and the exit
+        code has to say that rather than "the product is broken".
+        """
+        said = io.StringIO()
+        with mock.patch("sys.stderr", said):
+            code = E.main(list(self.ORDER))
+        self.assertEqual(code, E.EXIT_BY_OUTCOME[UNMEASURED])
+        self.assertIn("icecream", said.getvalue())
+        self.assertIn("not ready", said.getvalue())
+
     def test_the_style_flag_is_gone(self):
         self.assertIn(
             "unrecognized arguments: --style", self._refusal([*self.ORDER, "--style", "s.png"])
