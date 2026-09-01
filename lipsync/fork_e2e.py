@@ -572,6 +572,24 @@ def _default_aesthetic():
     return fork_aesthetic
 
 
+def aesthetic_style_ref(aesthetic, *, aesthetic_mod=None):
+    """Return the style reference an aesthetic stands for, or None when there is no aesthetic.
+
+    The style reference is one fact and three stages read it: intake checks the
+    file, stylization sends it and style acceptance measures the floor and the
+    hit against it. It is resolved here, once, above all three — deriving it
+    inside one stage is what left the other two holding `None`.
+
+    Example:
+        >>> aesthetic_style_ref(None) is None
+        True
+    """
+    if aesthetic is None:
+        return None
+    A = _default_aesthetic() if aesthetic_mod is None else aesthetic_mod
+    return str(A.aesthetic_file(aesthetic))
+
+
 def _default_plan():
     """Return the plan neighbour. Same reasoning as above."""
     return fork_plan
@@ -995,7 +1013,7 @@ def stage_stylize(
                 driving_card=card_fact,
                 note="gender mismatch: generation was not started",
             )
-        style_ref = str(A.aesthetic_file(aesthetic))
+        style_ref = aesthetic_style_ref(aesthetic, aesthetic_mod=A)
         prompt = f"{A.compose(aesthetic, card=card)['prompt']}. {A.assemble_prompt(card=card)}"
 
     built = (
@@ -1789,6 +1807,13 @@ def run(
         log=log,
     )
 
+    # The aesthetic names the style reference for the WHOLE run, so it is
+    # resolved here, before the first stage, and the resolved path is what every
+    # stage is handed. Resolving it inside stage 2 left stage 1 and stage 3 with
+    # `None`, and stage 1 died on it — the mode never reached the paid call.
+    if aesthetic is not None:
+        style_ref = aesthetic_style_ref(aesthetic, aesthetic_mod=aesthetic_mod)
+
     styled = out / "styled.png"
     window = out / "window.mp4"
     produced = out / "kling_out.mp4"
@@ -1995,6 +2020,11 @@ def main(argv=None) -> int:
     a = ap.parse_args(argv)
     if a.aesthetic is None and a.style is None:
         ap.error("either --style or --aesthetic is required")
+    # Two style references are two answers to one question. Letting the aesthetic
+    # quietly win hides the operator's mistake: they steer with --style and the
+    # aesthetic is what runs. Refused here, before any generation is ordered.
+    if a.aesthetic is not None and a.style is not None:
+        ap.error("--style and --aesthetic are two style references for one run: pass one of them")
     if a.aesthetic is not None and a.client_gender is None:
         ap.error("--aesthetic requires --client-gender")
     first, last = parse_window(a.window)

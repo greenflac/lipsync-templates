@@ -2792,6 +2792,45 @@ class TheAestheticModeReachesEveryStage(unittest.TestCase):
         )
         self.assertNotEqual(got["outcome"], "could not measure")
 
+    def test_run_hands_stage_one_the_resolved_reference_not_none(self):
+        """The seam itself: `run` in aesthetic mode, not the stages called by hand.
+
+        This is the test the previous three were missing — they proved the helper
+        and the stages, which is exactly the shape of coverage that let the defect
+        live: every part green, the join untested.
+        """
+        seen = {}
+
+        def intake(*, client_photo, style_ref, driving, driving_frames=None, card_reader=None):
+            seen["style_ref"] = style_ref
+            return {"outcome": "pass", "checked": 1, "violations": 0, "unmeasured": 0}
+
+        def stylize(**_kw):
+            raise RuntimeError("stop here: stage 1 is what this test watches")
+
+        with TemporaryDirectory() as tmp:
+            E.run(
+                client_photo="assets/fork_client_selfie_f.png",
+                style_ref=None,
+                driving="README.md",
+                first=0,
+                last=99,
+                out_dir=tmp,
+                aesthetic="y2k",
+                client_gender="f",
+                aesthetic_mod=self._A,
+                intake=intake,
+                stylize=stylize,
+                pose=lambda _p: {},
+                log=io.StringIO(),
+            )
+
+        self.assertEqual(
+            seen.get("style_ref"),
+            "assets/aesthetics/y2k_f.png",
+            "run must resolve the aesthetic before stage 1, not inside stage 2",
+        )
+
     def test_a_style_and_an_aesthetic_together_are_refused(self):
         with self.assertRaises(SystemExit):
             E.main(

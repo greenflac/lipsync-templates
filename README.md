@@ -115,10 +115,10 @@ The root is not decoration: the suite uses package-relative imports, so
 discovering from `lipsync/tests` collects a smaller suite and errors out on the
 first relative import.
 
-**953 tests in 23 files, no network, no GPU.** Run of 2026-08-31, quoted verbatim:
+**957 tests in 23 files, no network, no GPU.** Run of 2026-09-01, quoted verbatim:
 
 ```
-Ran 953 tests in 42.8s
+Ran 957 tests in 44.7s
 
 OK (skipped=12)
 ```
@@ -261,10 +261,10 @@ python3 -m unittest discover -s . -p "test_*.py"
 поэтому запуск из `lipsync/tests` собирает меньший набор и падает ошибкой на
 первом же относительном импорте.
 
-**953 теста в 23 файлах, без сети и без GPU.** Прогон 2026-08-31, вывод дословно:
+**957 тестов в 23 файлах, без сети и без GPU.** Прогон 2026-09-01, вывод дословно:
 
 ```
-Ran 953 tests in 42.8s
+Ran 957 tests in 44.7s
 
 OK (skipped=12)
 ```
