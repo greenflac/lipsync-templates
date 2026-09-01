@@ -130,12 +130,16 @@ FORBIDDEN_TIERS = ("pro",)
 #: and texture too, so it REWARDS repainting. A one-sided measure cannot say
 #: "alike on these axes while differing on those", and that is the thing wanted.
 STYLE_MODEL = "nanobanana-2"
-STYLE_ROUTE = "pollinations.compose"
-#: CHOSEN with the model above: `compose` is called with two pictures, the
-#: first carrying the person and the second only the look. The count is a
-#: decision because the roles are positional — a third image has no role to
-#: hold, and one image cannot keep the two apart.
-STYLE_IMAGES = 2
+STYLE_ROUTE = "pollinations.images_edit"
+#: CHOSEN by the owner on 2026-09-01 (contract, decision 2) out of the two
+#: routes this package owns: `compose` takes two or more pictures,
+#: `images_edit` takes exactly one. The look now travels in the aesthetic's
+#: PROMPT, which is the aesthetic's own material, so the second picture has no
+#: role left to hold — and a picture handed to a route with no role for it is
+#: repainted from, which is how a style reference put its own dress on the
+#: client. The previous edition read 2 with `compose`; that count was a
+#: decision about positional roles that no longer exist.
+STYLE_IMAGES = 1
 
 #: The size we ASK the styliser for: `frame.FRAME`, taken rather than
 #: restated. The reference and the clip must share one frame or the reference is
@@ -450,15 +454,33 @@ def live_kling(
 
 
 def live_stylize(
-    *, person, style, prompt: str, out_path, model: str = STYLE_MODEL, size=STYLED_SIZE
+    *,
+    person,
+    style=None,
+    prompt: str,
+    out_path,
+    model: str = STYLE_MODEL,
+    size=STYLED_SIZE,
+    edit=None,
 ) -> str:
-    """Stylize with two images through the measured winner. Goes to the network."""
-    urls = [pollinations.upload(person), pollinations.upload(style)]
-    if len(urls) != STYLE_IMAGES:
-        raise RuntimeError(f"expected exactly {STYLE_IMAGES} links, got {len(urls)}")
+    """Stylize ONE picture — the client photo — with the prompt. Goes to the network.
+
+    :param person: the photo carrying the person; the only image that goes out.
+    :param style: the style reference. Accepted and NOT sent: the stage hands
+        the same arguments to whichever styliser is injected, and the reference
+        is still the yardstick stage 3 measures the hit against. Its look
+        reaches the route as words, through the aesthetic's prompt.
+    :param edit: injection point for the route; `pollinations.images_edit` when
+        omitted, so a test never goes to the network.
+    :returns: the path the route wrote.
+    """
+    send = pollinations.images_edit if edit is None else edit
+    sent = [person]
+    if len(sent) != STYLE_IMAGES:
+        raise RuntimeError(f"expected exactly {STYLE_IMAGES} picture, got {len(sent)}")
     width, height = size
-    return pollinations.compose(
-        prompt, urls, out_path, model=model, width=int(width), height=int(height)
+    return send(
+        prompt, str(person), str(out_path), model=model, width=int(width), height=int(height)
     )
 
 
@@ -593,6 +615,137 @@ def aesthetic_style_ref(aesthetic, *, aesthetic_mod=None):
 def _default_plan():
     """Return the plan neighbour. Same reasoning as above."""
     return fork_plan
+
+
+#: The four axes an aesthetic card names. Taken from the plan neighbour rather
+#: than retyped: the card is read by `fork_plan.in_card`, and a list of axes
+#: that drifted from the reader would judge a frame on axes nobody compares.
+CARD_AXES = fork_plan.PERSON_AXES
+
+
+def _aesthetic_field(aesthetic, *, field: str, accessor: str, aesthetic_mod=None):
+    """Return one field of an aesthetic, through the neighbour and never through the file.
+
+    The accessor is preferred when the neighbour has it; otherwise the
+    aesthetic mapping the neighbour itself loads is read by field name. Either
+    way the aesthetics base is opened by `fork_aesthetic` alone — this module
+    parsing the same JSON would be a second place holding one knowledge.
+
+    TODO(2026-09-01, handoff): `fork_aesthetic` is gaining `driving_of`,
+    `window_of` and `card_of` under another writer. Until they land this
+    wrapper falls back to the field name, and when they land the fallback stops
+    being reached. It is written here and not there because the neighbour has
+    one writer.
+
+    :param aesthetic: the aesthetic id, or an already loaded mapping.
+    :param field: the field name in the aesthetics base.
+    :param accessor: the neighbour function to prefer.
+    :returns: the value, or `None` when the aesthetic does not carry it.
+    """
+    A = _default_aesthetic() if aesthetic_mod is None else aesthetic_mod
+    fn = getattr(A, accessor, None)
+    if callable(fn):
+        return fn(aesthetic)
+    loader = getattr(A, "load", None)
+    if isinstance(aesthetic, str):
+        # A neighbour with neither the accessor nor a loader cannot answer, and
+        # "cannot answer" is not "the aesthetic has no such field": the callers
+        # turn `None` into a refusal or a "could not measure", never into a pass.
+        return None if not callable(loader) else (loader(aesthetic) or {}).get(field)
+    return (aesthetic or {}).get(field)
+
+
+def aesthetic_driving(aesthetic, *, aesthetic_mod=None):
+    """Return the driving copy the aesthetic was proven with, or `None` when it names none.
+
+    >>> aesthetic_driving(None) is None
+    True
+    """
+    if aesthetic is None:
+        return None
+    return _aesthetic_field(
+        aesthetic, field="driving", accessor="driving_of", aesthetic_mod=aesthetic_mod
+    )
+
+
+def aesthetic_window(aesthetic, *, aesthetic_mod=None):
+    """Return the aesthetic's window as `(first, last)`, or `None` when it names none.
+
+    A window that is not a pair of whole frame numbers is refused rather than
+    repaired: the window decides what is paid for.
+
+    >>> aesthetic_window(None) is None
+    True
+    """
+    if aesthetic is None:
+        return None
+    got = _aesthetic_field(
+        aesthetic, field="window", accessor="window_of", aesthetic_mod=aesthetic_mod
+    )
+    if got is None:
+        return None
+    if isinstance(got, str):
+        return parse_window(got)
+    if not isinstance(got, (list, tuple)) or len(got) != 2:
+        raise ValueError(f"the aesthetic window {got!r} is not a pair 'first, last'")
+    first, last = int(got[0]), int(got[1])
+    if first > last:
+        raise ValueError(f"the aesthetic window {got!r}: the first frame is after the last")
+    return (first, last)
+
+
+def aesthetic_card(aesthetic, *, aesthetic_mod=None, plan=None) -> dict:
+    """Return the aesthetic's composition card in the shape `fork_plan.in_card` reads.
+
+    The card was taken off the aesthetic's own demo frame when the aesthetic was
+    built, so it is what the client frame is compared with. Three outcomes: a
+    complete card, or "could not measure" — an aesthetic without a card, or with
+    a partial one, is NOT quietly handed back to the global plan bands.
+
+    :param aesthetic: the aesthetic id, or an already loaded mapping.
+    :returns: `outcome` with `checked` / `violations` / `unmeasured`, the four
+        axes and their `tol_*` tolerances, and a note naming what is missing.
+
+    >>> aesthetic_card(None)["outcome"]
+    'could not measure'
+    """
+    P = _default_plan() if plan is None else plan
+    if aesthetic is None:
+        return {**P.tally(0, 0, 1), "note": "no aesthetic: there is no card to compare against"}
+    raw = _aesthetic_field(aesthetic, field="card", accessor="card_of", aesthetic_mod=aesthetic_mod)
+    if not isinstance(raw, dict):
+        return {
+            **P.tally(0, 0, 1),
+            "note": (
+                f"the aesthetic carries no composition card (field 'card' is "
+                f"{raw!r}): the composition is NOT MEASURED. The global plan "
+                f"bands do not apply to an aesthetic — MEASURED 2026-09-01, "
+                f"they refused a correct frame"
+            ),
+        }
+    tolerances = raw.get("tolerances")
+    tolerances = tolerances if isinstance(tolerances, dict) else {}
+    card = {a: raw.get(a) for a in CARD_AXES}
+    card.update({f"tol_{a}": tolerances.get(a) for a in CARD_AXES})
+    missing = [a for a in CARD_AXES if card[a] is None or card[f"tol_{a}"] is None]
+    if missing:
+        return {
+            **P.tally(len(CARD_AXES) - len(missing), 0, len(missing)),
+            **card,
+            "note": (
+                f"the aesthetic card is partial: {missing} carry no value or no "
+                f"tolerance, so the composition is NOT MEASURED rather than "
+                f"judged on what is left"
+            ),
+        }
+    return {
+        **P.tally(len(CARD_AXES), 0, 0),
+        **card,
+        "note": (
+            "the aesthetic's own card, taken off its demo frame: "
+            + ", ".join(f"{a} {card[a]}+-{card[f'tol_{a}']}" for a in CARD_AXES)
+        ),
+    }
 
 
 def _size_pair(value):
@@ -923,16 +1076,25 @@ def driving_card(frames, *, pose=None, plan=None) -> dict:
     return got
 
 
-def _person_in_plan(image, *, plan, pose=None, card=None) -> tuple:
-    """Check whether the person in the image fits the plan bands. Three outcomes."""
+def _person_in_plan(image, *, plan, pose=None, card=None, card_name: str = "driving") -> tuple:
+    """Check where the person stands in the image. Three outcomes.
+
+    :param card: the composition card to compare against, when there is one.
+    :param card_name: whose card it is — "driving" or "aesthetic". An
+        aesthetic's card is the ONLY criterion its frames have: by the owner's
+        decision of 2026-09-01 the global plan bands do not apply to an
+        aesthetic, so a missing card there is "could not measure" and never a
+        quiet fall back to the bands.
+    """
     if pose is None:
         pose = _read_pose
 
+    named = f"person in the {card_name} card"
     try:
         points = pose(str(image))
     except Exception as exc:  # noqa: BLE001
         return (
-            "person in plan",
+            named if card_name == "aesthetic" else "person in plan",
             UNMEASURED,
             f"the pose was not captured: {type(exc).__name__}: {exc}",
         )
@@ -942,7 +1104,21 @@ def _person_in_plan(image, *, plan, pose=None, card=None) -> tuple:
     # "no card", which is how a run loses its person check without going red.
     if card and card.get("outcome") == PASS:
         got = plan.in_card(points, card)
-        return ("person in the driving card", got["outcome"], str(got.get("note")))
+        return (named, got["outcome"], str(got.get("note")))
+    if card_name == "aesthetic":
+        # MEASURED on the live paid run of 2026-09-01: the `icecream` template
+        # seats the person on a scoop and the ankles came out at 0.4873 against
+        # the plan band 0.86..0.99, so the bands stopped a CORRECT frame. The
+        # bands describe a standing full-length person, which is a template the
+        # aesthetic replaced; without the aesthetic's card there is nothing left
+        # to compare with, and that is the third outcome, not a defect.
+        return (
+            named,
+            UNMEASURED,
+            f"{str((card or {}).get('note') or 'the aesthetic named no card')}. "
+            f"The global plan bands are NOT applied to an aesthetic: on "
+            f"2026-09-01 they refused a correct frame at ankles 0.4873",
+        )
     # The four bands are the plan's decision and `plan_verdict` is where it is
     # made. This function used to compare against `SHOULDERS_BAND` and its three
     # neighbours itself, which meant one plan judged in two implementations:
@@ -991,6 +1167,15 @@ def stage_stylize(
 ) -> dict:
     """Turn the client photo and the style reference into a styled photo on the plan."""
     A = _default_aesthetic() if aesthetic_mod is None else aesthetic_mod
+    P = _default_plan() if plan is None else plan
+    card_name = "driving"
+    if aesthetic is not None:
+        # The aesthetic brings its own card, taken off its demo frame when it
+        # was built, and from here on that card is the run's only composition
+        # criterion — for the framing line in the prompt as well as for the
+        # check below, so the frame is asked for and judged by one description.
+        card_name = "aesthetic"
+        card = aesthetic_card(aesthetic, aesthetic_mod=A, plan=P) if card is None else card
     checks_pre = []
     # The card decides the framing clause in the prompt and which question the
     # person check asks, so the stage carries it as a fact rather than implying
@@ -1000,6 +1185,10 @@ def stage_stylize(
     # defect of the stylization this stage is about.
     card_fact = {
         "outcome": (card or {}).get("outcome", UNMEASURED),
+        # Whose card it is travels with the card. Two runs framed by two
+        # different descriptions look identical in a report that only says
+        # "card", and after 2026-09-01 the difference is the whole point.
+        "source": card_name,
         "note": str((card or {}).get("note", "no composition card was built for this run")),
     }
     if aesthetic is not None:
@@ -1050,14 +1239,13 @@ def stage_stylize(
         (
             "stylization",
             PASS,
-            f"{STYLE_ROUTE}/{STYLE_MODEL}, {STYLE_IMAGES} images, "
+            f"{STYLE_ROUTE}/{STYLE_MODEL}, images {STYLE_IMAGES}, "
             f"{round(time.perf_counter() - t0, 1)} s",
         )
     )
     checks.append(file_fact(got or out_path, "styled photo"))
     made = str(got or out_path)
 
-    P = _default_plan() if plan is None else plan
     planned = Path(str(out_path)).with_name(Path(str(out_path)).stem + "_9x16.png")
 
     fitted = fit_frame_to_plan(made, planned, plan=P, sizer=sizer, cropper=cropper)
@@ -1140,7 +1328,7 @@ def stage_stylize(
                 )
             )
 
-        checks.append(_person_in_plan(made, plan=P, pose=pose, card=card))
+        checks.append(_person_in_plan(made, plan=P, pose=pose, card=card, card_name=card_name))
 
     return _result(
         STAGES[1],
@@ -1764,10 +1952,10 @@ def stage_report(stages: list, *, out_path=None) -> dict:
 def run(
     *,
     client_photo,
-    style_ref,
-    driving,
-    first: int,
-    last: int,
+    style_ref=None,
+    driving=None,
+    first: int | None = None,
+    last: int | None = None,
     out_dir="work/e2e",
     intake=None,
     stylize=None,
@@ -1797,7 +1985,39 @@ def run(
     endpoint: str = KLING_ENDPOINT,
     log=None,
 ) -> dict:
-    """Walk the whole path stage by stage. Print each one immediately and stop at the first "fail"."""
+    """Walk the whole path stage by stage. Print each one immediately and stop at the first "fail".
+
+    With an aesthetic, the style reference, the driving and the window all come
+    from the aesthetic and MUST NOT be handed in as well — decision 4 of the
+    contract of 2026-09-01. Without one (the batch stand runs that way), the
+    three are required from the caller.
+    """
+    if aesthetic is not None:
+        given = [
+            name
+            for name, value in (("driving", driving), ("first", first), ("last", last))
+            if value is not None
+        ]
+        if given:
+            raise ValueError(
+                f"aesthetic {aesthetic!r} was given together with {given}: the "
+                f"driving and the window belong to the aesthetic and are read "
+                f"from it. Two answers to one question is how the wrong one wins"
+            )
+        driving = aesthetic_driving(aesthetic, aesthetic_mod=aesthetic_mod)
+        window_frames = aesthetic_window(aesthetic, aesthetic_mod=aesthetic_mod)
+        if driving is None or window_frames is None:
+            raise ValueError(
+                f"aesthetic {aesthetic!r} names no driving ({driving!r}) or no "
+                f"window ({window_frames!r}): it is not ready for a client order"
+            )
+        first, last = window_frames
+    elif driving is None or first is None or last is None:
+        raise ValueError(
+            f"without an aesthetic the driving and the window are required: "
+            f"driving={driving!r}, first={first!r}, last={last!r}"
+        )
+
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
     say(
@@ -1850,7 +2070,9 @@ def run(
         # run that did not hand one in by hand. The driving is the only thing that
         # knows where the person stands, and it is on disk by now, so the card is
         # measured from it rather than left for an operator to remember.
-        if card is None:
+        # An aesthetic carries its own card and stage 2 reads it there; measuring
+        # the driving here as well would build a second description of one frame.
+        if card is None and aesthetic is None:
             card = driving_card(driving_frames, pose=pose, plan=plan)
             say(f"      · driving card: {card['outcome']} — {card['note']}", log=log)
         r2 = step(
@@ -1990,18 +2212,19 @@ def main(argv=None) -> int:
 
     ap = argparse.ArgumentParser(description="end-to-end product stand")
     ap.add_argument("--client", required=True)
-    ap.add_argument("--style", default=None, help="style reference; not needed with --aesthetic")
-    ap.add_argument("--driving", required=True)
-    ap.add_argument("--window", required=True, help="first:last, e.g. 100:199")
     ap.add_argument("--out", default="work/e2e")
+    # Decision 8 of 2026-09-01: the product has one path, the aesthetic. There
+    # is no `--style` any more, and no `--driving` or `--window` either — the
+    # aesthetic keeps the driving it was proven with and the window on it, so
+    # asking the operator for them would be a second place to get them wrong.
     ap.add_argument(
-        "--aesthetic", default=None, help="aesthetic name from assets/fork_aesthetics.json"
+        "--aesthetic", required=True, help="aesthetic name from assets/fork_aesthetics.json"
     )
     ap.add_argument(
         "--client-gender",
-        default=None,
+        required=True,
         choices=("m", "f"),
-        help="client gender; required together with --aesthetic",
+        help="client gender; the aesthetic of the same gender is the one that runs",
     )
     ap.add_argument("--frames", default=None, help="directory with already unpacked driving frames")
     ap.add_argument(
@@ -2018,22 +2241,21 @@ def main(argv=None) -> int:
         ),
     )
     a = ap.parse_args(argv)
-    if a.aesthetic is None and a.style is None:
-        ap.error("either --style or --aesthetic is required")
-    # Two style references are two answers to one question. Letting the aesthetic
-    # quietly win hides the operator's mistake: they steer with --style and the
-    # aesthetic is what runs. Refused here, before any generation is ordered.
-    if a.aesthetic is not None and a.style is not None:
-        ap.error("--style and --aesthetic are two style references for one run: pass one of them")
-    if a.aesthetic is not None and a.client_gender is None:
-        ap.error("--aesthetic requires --client-gender")
-    first, last = parse_window(a.window)
+    try:
+        return _order(a)
+    except ValueError as exc:
+        # An aesthetic that is not ready, or an order carrying what the
+        # aesthetic already owns, is a refusal BEFORE any generation: nothing
+        # was made and nothing was paid for. That is the third outcome, and a
+        # traceback would read to the operator as a broken product.
+        say(f"TOTAL: {UNMEASURED} — the order was not started: {exc}")
+        return EXIT_BY_OUTCOME[UNMEASURED]
+
+
+def _order(a) -> int:
+    """Place one parsed order and return its exit code. Split out so a test can reach it."""
     got = run(
         client_photo=a.client,
-        style_ref=a.style,
-        driving=a.driving,
-        first=first,
-        last=last,
         out_dir=a.out,
         driving_frames=frame_paths(a.frames),
         aesthetic=a.aesthetic,

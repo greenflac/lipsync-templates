@@ -1132,23 +1132,22 @@ class TheStyliserIsAskedForThePlanNotForWhateverTheRouteDefaultsTo(unittest.Test
             self.assertEqual(side % 16, 0, f"{side} is not a multiple of 16")
 
     def test_the_asked_size_reaches_the_gateway_call(self):
+        """The size travels on the real gateway attribute, not only on an injected one."""
         from lipsync import pollinations
 
         seen = {}
 
-        def compose(prompt, urls, out_path, **kw):
+        def images_edit(prompt, ref_path, out_path, **kw):
             seen.update(kw)
-            seen["urls"] = list(urls)
+            seen["refs"] = [str(ref_path)]
             return str(out_path)
 
-        with (
-            mock.patch.object(pollinations, "upload", lambda p: f"u://{p}"),
-            mock.patch.object(pollinations, "compose", compose),
-        ):
+        with mock.patch.object(pollinations, "images_edit", images_edit):
             E.live_stylize(person="c.png", style="s.png", prompt="p", out_path="o.png")
         self.assertEqual((seen.get("width"), seen.get("height")), E.STYLED_SIZE)
         self.assertEqual(seen.get("model"), E.STYLE_MODEL)
-        self.assertEqual(len(seen["urls"]), E.STYLE_IMAGES)
+        self.assertEqual(len(seen["refs"]), E.STYLE_IMAGES)
+        self.assertEqual(seen["refs"], ["c.png"])
 
     def test_the_gateway_default_no_longer_disagrees_with_its_siblings(self):
         """The trap was that one route out of three defaulted to 3:4. A caller that
@@ -1393,12 +1392,10 @@ class TheDeliverableIsBuiltEvenWhenIdentityCannotBeMeasured(unittest.TestCase):
                 [
                     "--client",
                     "c.png",
-                    "--style",
-                    "s.png",
-                    "--driving",
-                    "d.mp4",
-                    "--window",
-                    "100:199",
+                    "--aesthetic",
+                    "icecream",
+                    "--client-gender",
+                    "f",
                     "--operator-ok-identity",
                 ]
             )
@@ -1409,12 +1406,10 @@ class TheDeliverableIsBuiltEvenWhenIdentityCannotBeMeasured(unittest.TestCase):
                 [
                     "--client",
                     "c.png",
-                    "--style",
-                    "s.png",
-                    "--driving",
-                    "d.mp4",
-                    "--window",
-                    "100:199",
+                    "--aesthetic",
+                    "icecream",
+                    "--client-gender",
+                    "f",
                 ]
             )
         self.assertIs(seen["operator_ok_identity"], False)
@@ -1435,12 +1430,10 @@ class TheFramesChannelReachesRunFromTheCommandLine(unittest.TestCase):
                 [
                     "--client",
                     "c.png",
-                    "--style",
-                    "s.png",
-                    "--driving",
-                    "d.mp4",
-                    "--window",
-                    "100:199",
+                    "--aesthetic",
+                    "icecream",
+                    "--client-gender",
+                    "f",
                     *argv,
                 ]
             )
@@ -1575,6 +1568,22 @@ class TheGenderGateStopsTheRunBeforeAnyGeneration(unittest.TestCase):
         def assemble_prompt(*, card=None):
             return "roles, " + E.NO_BRANDS_CLAUSE
 
+        @staticmethod
+        def card_of(_aid):
+            """The card this aesthetic carries: the composition `_pose_ok` stands in."""
+            return {
+                "shoulders": 0.32,
+                "ankles": 0.92,
+                "centre": 0.50,
+                "width": 0.16,
+                "tolerances": {
+                    "shoulders": 0.05,
+                    "ankles": 0.05,
+                    "centre": 0.1837,
+                    "width": 0.1326,
+                },
+            }
+
     def test_a_mismatched_gender_stops_before_the_styliser_is_called(self):
         seen = []
 
@@ -1617,63 +1626,11 @@ class TheGenderGateStopsTheRunBeforeAnyGeneration(unittest.TestCase):
         self.assertIn("aesthetic in words", seen["prompt"])
 
 
-class TheTemplateFlagsReachRunFromTheCommandLine(unittest.TestCase):
-    """A flag that is parsed and lost looks functional until a run."""
-
-    def _seen(self, argv):
-        seen = {}
-
-        def fake_run(**kw):
-            seen.update(kw)
-            return {"exit_code": 0}
-
-        with mock.patch.object(E, "run", fake_run):
-            E.main(argv)
-        return seen
-
-    def test_the_aesthetic_and_gender_travel_to_run(self):
-        got = self._seen(
-            [
-                "--client",
-                "c.png",
-                "--driving",
-                "d.mp4",
-                "--window",
-                "100:199",
-                "--aesthetic",
-                "y2k",
-                "--client-gender",
-                "f",
-            ]
-        )
-        self.assertEqual(got["aesthetic"], "y2k")
-        self.assertEqual(got["client_gender"], "f")
-
-    def test_an_aesthetic_without_a_gender_is_refused(self):
-        with self.assertRaises(SystemExit):
-            self._seen(
-                [
-                    "--client",
-                    "c.png",
-                    "--driving",
-                    "d.mp4",
-                    "--window",
-                    "100:199",
-                    "--aesthetic",
-                    "y2k",
-                ]
-            )
-
-    def test_neither_style_nor_aesthetic_is_refused(self):
-        with self.assertRaises(SystemExit):
-            self._seen(["--client", "c.png", "--driving", "d.mp4", "--window", "100:199"])
-
-    def test_the_old_style_path_still_works_without_an_aesthetic(self):
-        got = self._seen(
-            ["--client", "c.png", "--style", "s.png", "--driving", "d.mp4", "--window", "100:199"]
-        )
-        self.assertIsNone(got["aesthetic"])
-        self.assertEqual(got["style_ref"], "s.png")
+# The class that stood here, `TheTemplateFlagsReachRunFromTheCommandLine`, is
+# gone: every case it held is now in `TheOrderTakesAnAestheticAndNothingElse`,
+# which asks the same questions of the command line the contract of 2026-09-01
+# leaves — one order, one aesthetic. Its last case, "the old style path still
+# works without an aesthetic", was decision 8 itself and is not replaced.
 
 
 class TheOutpaintFixesTheLetterboxWithoutLosingTheRun(unittest.TestCase):
@@ -2360,12 +2317,10 @@ class TheRunDoesNotReachThePaidCallOnAnUnadmittedFrame(unittest.TestCase):
                 [
                     "--client",
                     "c.png",
-                    "--style",
-                    "s.png",
-                    "--driving",
-                    "d.mp4",
-                    "--window",
-                    "100:199",
+                    "--aesthetic",
+                    "icecream",
+                    "--client-gender",
+                    "f",
                     "--operator-ok-styliser-size",
                 ]
             )
@@ -2379,9 +2334,7 @@ class TheRunDoesNotReachThePaidCallOnAnUnadmittedFrame(unittest.TestCase):
             return {"exit_code": 0}
 
         with mock.patch.object(E, "run", fake_run):
-            E.main(
-                ["--client", "c.png", "--style", "s.png", "--driving", "d.mp4", "--window", "1:9"]
-            )
+            E.main(["--client", "c.png", "--aesthetic", "icecream", "--client-gender", "f"])
         self.assertIs(seen["operator_ok_styliser_size"], False)
 
 
@@ -2755,6 +2708,18 @@ class TheAestheticModeReachesEveryStage(unittest.TestCase):
         def assemble_prompt(*, card=None):
             return E.NO_BRANDS_CLAUSE
 
+        @staticmethod
+        def driving_of(_aid):
+            return "README.md"
+
+        @staticmethod
+        def window_of(_aid):
+            return (0, 99)
+
+        @staticmethod
+        def card_of(_aid):
+            return None
+
     def test_stage_one_is_handed_the_aesthetic_file_not_none(self):
         seen = {}
 
@@ -2811,10 +2776,6 @@ class TheAestheticModeReachesEveryStage(unittest.TestCase):
         with TemporaryDirectory() as tmp:
             E.run(
                 client_photo="assets/fork_client_selfie_f.png",
-                style_ref=None,
-                driving="README.md",
-                first=0,
-                last=99,
                 out_dir=tmp,
                 aesthetic="y2k",
                 client_gender="f",
@@ -2831,21 +2792,356 @@ class TheAestheticModeReachesEveryStage(unittest.TestCase):
             "run must resolve the aesthetic before stage 1, not inside stage 2",
         )
 
-    def test_a_style_and_an_aesthetic_together_are_refused(self):
-        with self.assertRaises(SystemExit):
-            E.main(
-                [
-                    "--client",
-                    "c.png",
-                    "--style",
-                    "s.png",
-                    "--aesthetic",
-                    "y2k",
-                    "--client-gender",
-                    "f",
-                    "--driving",
-                    "d.mp4",
-                    "--window",
-                    "0:99",
-                ]
+
+class _AestheticStub:
+    """Aesthetic neighbour of the shape the contract gives it, with no disk of its own.
+
+    The four fields the order now reads — the demo frame, the driving copy, the
+    window and the composition card — are answered here as literals so that a
+    change in the base cannot move the expectation with the code.
+    """
+
+    DEMO = "assets/aesthetics/icecream_f.png"
+    DRIVING = "assets/drivings/icecream_f.mp4"
+    WINDOW = (150, 299)
+    # The card of a template that seats the person on an ice cream scoop: the
+    # ankles sit near the middle of the frame, which the global plan bands call
+    # a defect and the aesthetic calls its own composition.
+    CARD = {
+        "shoulders": 0.30,
+        "ankles": 0.4873,
+        "centre": 0.53,
+        "width": 0.31,
+        "tolerances": {
+            "shoulders": 0.05,
+            "ankles": 0.05,
+            "centre": 0.1837,
+            "width": 0.1326,
+        },
+    }
+
+    def __init__(self, *, card=CARD, driving=DRIVING, window=WINDOW):
+        self._card = card
+        self._driving = driving
+        self._window = window
+
+    def gender_of(self, _aid):
+        return "f"
+
+    def pair_check(self, *, client_gender, aesthetic_gender):
+        ok = client_gender == aesthetic_gender
+        return {
+            "outcome": PASS if ok else FAIL,
+            "checked": 1,
+            "violations": 0 if ok else 1,
+            "unmeasured": 0,
+            "note": "stub gate",
+        }
+
+    def aesthetic_file(self, aid):
+        return f"assets/aesthetics/{aid}_f.png"
+
+    def compose(self, _aid, *, card=None):
+        return {"prompt": "aesthetic in words"}
+
+    def assemble_prompt(self, *, card=None):
+        return "roles, " + E.NO_BRANDS_CLAUSE
+
+    def driving_of(self, _aid):
+        return self._driving
+
+    def window_of(self, _aid):
+        return self._window
+
+    def card_of(self, _aid):
+        return self._card
+
+
+def _pose_on_the_ice_cream(_path):
+    """A pose the ICECREAM template produces: ankles 0.4873, in the middle of the frame.
+
+    MEASURED on the live paid run of 2026-09-01, where the global plan band
+    0.86..0.99 called this correct frame a defect and stopped stage 2.
+    """
+    return {
+        "l_shoulder": (0.685, 0.30, 0.99),
+        "r_shoulder": (0.375, 0.30, 0.99),
+        "l_ankle": (0.60, 0.4873, 0.96),
+        "r_ankle": (0.46, 0.4873, 0.96),
+    }
+
+
+def _pose_off_the_card(_path):
+    """The same person shoved to the right edge: off the aesthetic card on `centre`."""
+    return {
+        "l_shoulder": (0.99, 0.30, 0.99),
+        "r_shoulder": (0.80, 0.30, 0.99),
+        "l_ankle": (0.95, 0.4873, 0.96),
+        "r_ankle": (0.85, 0.4873, 0.96),
+    }
+
+
+class TheOrderTakesAnAestheticAndNothingElse(unittest.TestCase):
+    """Decisions 8 and 4: `--style` is gone, and the driving and the window are not asked for.
+
+    Every case here is the command line's behaviour, not the text of the module.
+    """
+
+    def _seen(self, argv):
+        seen = {}
+
+        def fake_run(**kw):
+            seen.update(kw)
+            return {"exit_code": 0}
+
+        with mock.patch.object(E, "run", fake_run):
+            E.main(argv)
+        return seen
+
+    ORDER = ["--client", "c.png", "--aesthetic", "icecream", "--client-gender", "f"]
+
+    def _refusal(self, argv) -> str:
+        """Return what the parser said when it refused. The reason is the assertion.
+
+        A bare `SystemExit` is not enough here: a flag that is still accepted
+        while another required one is missing exits too, and the test would be
+        green on the defect it names.
+        """
+        said = io.StringIO()
+        with mock.patch("sys.stderr", said), self.assertRaises(SystemExit):
+            self._seen(argv)
+        return said.getvalue()
+
+    def test_a_bare_order_is_accepted_and_carries_the_aesthetic(self):
+        got = self._seen(list(self.ORDER))
+        self.assertEqual(got["aesthetic"], "icecream")
+        self.assertEqual(got["client_gender"], "f")
+
+    def test_an_order_without_an_aesthetic_is_refused(self):
+        said = self._refusal(["--client", "c.png", "--client-gender", "f"])
+        self.assertIn("the following arguments are required: --aesthetic", said)
+
+    def test_an_order_without_a_client_gender_is_refused(self):
+        said = self._refusal(["--client", "c.png", "--aesthetic", "icecream"])
+        self.assertIn("the following arguments are required: --client-gender", said)
+
+    def test_an_aesthetic_that_is_not_ready_is_the_third_outcome_not_a_traceback(self):
+        """SEEN by eye 2026-09-01: ordering `icecream` from the current base.
+
+        The aesthetics in the base carry no driving and no window yet, and the
+        operator got a raw traceback. "The aesthetic is not ready" is a "could
+        not measure": nothing was generated, nothing was paid for, and the exit
+        code has to say that rather than "the product is broken".
+        """
+        said = io.StringIO()
+        with mock.patch("sys.stderr", said):
+            code = E.main(list(self.ORDER))
+        self.assertEqual(code, E.EXIT_BY_OUTCOME[UNMEASURED])
+        self.assertIn("icecream", said.getvalue())
+        self.assertIn("not ready", said.getvalue())
+
+    def test_the_style_flag_is_gone(self):
+        self.assertIn(
+            "unrecognized arguments: --style", self._refusal([*self.ORDER, "--style", "s.png"])
+        )
+
+    def test_the_driving_flag_is_gone(self):
+        self.assertIn(
+            "unrecognized arguments: --driving", self._refusal([*self.ORDER, "--driving", "d.mp4"])
+        )
+
+    def test_the_window_flag_is_gone(self):
+        self.assertIn(
+            "unrecognized arguments: --window", self._refusal([*self.ORDER, "--window", "150:299"])
+        )
+
+
+class TheDrivingAndTheWindowComeFromTheAesthetic(unittest.TestCase):
+    """Decision 4: the aesthetic keeps its driving copy and its window; nobody retypes them."""
+
+    def _run_to_the_window(self, stub=None, **over):
+        """Drive `run` on stubs as far as stage 4 and return the whole reply.
+
+        The driving the stub names is written to disk inside the run's own
+        temporary directory, because stage 1 checks the file before anything
+        else — a stub path that does not exist would stop the run at intake and
+        the window would never be reached.
+        """
+        seen: dict = {}
+
+        def probe(path):
+            seen.setdefault("probed", []).append(str(path))
+            return _probe_ok(path)
+
+        def cutter(src, dst):
+            seen["cut_from"] = str(src)
+            Path(dst).write_bytes(b"\x00" * 32)
+            first, last = _AestheticStub.WINDOW
+            return {"path": str(dst), "frames": last - first + 1}
+
+        def intake(*, client_photo, style_ref, driving, driving_frames=None, card_reader=None):
+            seen["driving"] = str(driving)
+            return {"outcome": PASS, "checked": 1, "violations": 0, "unmeasured": 0}
+
+        plan = _PlanOk(arrived=EXACT_RETURN)
+        with TemporaryDirectory() as td, _no_network():
+            root = Path(td)
+            client = root / "client.png"
+            client.write_bytes(b"\x00" * 64)
+            driving = root / Path(_AestheticStub.DRIVING).name
+            driving.write_bytes(b"\x00" * 64)
+            stub = _AestheticStub(driving=str(driving)) if stub is None else stub
+            seen["names"] = {"driving": str(driving)}
+            kw = dict(
+                client_photo=client,
+                out_dir=Path(td) / "out",
+                aesthetic="icecream",
+                client_gender="f",
+                aesthetic_mod=stub,
+                intake=intake,
+                stylize=_stylize_ok,
+                similarity=_similarity_ok,
+                distances=_distances_ok,
+                probe=probe,
+                cutter=cutter,
+                decode=_decode_ok,
+                cuts=_cuts_ok,
+                upload=_upload_ok,
+                kling=_kling_ok,
+                finish=_finish_ok,
+                plan=plan,
+                sizer=plan.sizer,
+                cropper=plan.cropper,
+                pose=_pose_on_the_ice_cream,
+                log=io.StringIO(),
             )
+            kw.update(over)
+            got = E.run(**kw)
+        return got, seen
+
+    def test_the_driving_the_aesthetic_names_is_the_one_that_is_cut(self):
+        got, seen = self._run_to_the_window()
+        named = seen["names"]["driving"]
+        self.assertEqual(seen.get("driving"), named)
+        self.assertEqual(seen.get("cut_from"), named)
+        self.assertEqual(got["outcome"], PASS, got["stopped_at"])
+
+    def test_the_window_the_aesthetic_names_is_the_one_that_is_cut(self):
+        got, _seen = self._run_to_the_window()
+        numbers = got["stages"][3]["numbers"]
+        self.assertEqual((numbers["first"], numbers["last"]), _AestheticStub.WINDOW)
+
+    def test_a_window_handed_in_next_to_an_aesthetic_is_refused(self):
+        """Two answers to one question: the operator's window and the aesthetic's."""
+        with self.assertRaises(ValueError):
+            self._run_to_the_window(first=0, last=99)
+
+    def test_a_driving_handed_in_next_to_an_aesthetic_is_refused(self):
+        with self.assertRaises(ValueError):
+            self._run_to_the_window(driving="other.mp4")
+
+
+class TheStyliserIsGivenOnePicture(unittest.TestCase):
+    """Decision 2: photo plus prompt through `images_edit`, never `compose` with two."""
+
+    def test_the_client_photo_is_the_only_image_that_goes_out(self):
+        sent: list = []
+
+        def edit(prompt, ref_path, out_path, **kw):
+            sent.append({"prompt": prompt, "ref": str(ref_path), "size": kw})
+            Path(out_path).write_bytes(b"\x00" * 8)
+            return str(out_path)
+
+        def refuse(*_a, **_k):
+            raise AssertionError("compose() is the two-image route and must not be called")
+
+        with TemporaryDirectory() as td, mock.patch.object(E.pollinations, "compose", refuse):
+            E.live_stylize(
+                person="client.png",
+                style="aesthetic_demo.png",
+                prompt="a look",
+                out_path=Path(td) / "styled.png",
+                edit=edit,
+            )
+        self.assertEqual(len(sent), E.STYLE_IMAGES, f"images sent: {sent}")
+        self.assertEqual(len(sent), 1, f"exactly one picture goes to the styliser: {sent}")
+        self.assertEqual(sent[0]["ref"], "client.png")
+        self.assertEqual(sent[0]["prompt"], "a look")
+
+    def test_the_asked_size_is_still_the_frame(self):
+        sent: dict = {}
+
+        def edit(prompt, ref_path, out_path, **kw):
+            sent.update(kw)
+            return str(out_path)
+
+        with TemporaryDirectory() as td:
+            E.live_stylize(
+                person="client.png",
+                style=None,
+                prompt="a look",
+                out_path=Path(td) / "styled.png",
+                edit=edit,
+            )
+        self.assertEqual((sent.get("width"), sent.get("height")), tuple(E.STYLED_SIZE))
+
+
+class TheCompositionIsJudgedByTheAestheticCard(unittest.TestCase):
+    """Decision 3, and the defect it repairs.
+
+    MEASURED on the live paid run of 2026-09-01: the `icecream` template seats
+    the person on a scoop, the ankles came out at 0.4873 against the global plan
+    band 0.86..0.99, and stage 2 stopped on a CORRECT frame. The plan bands are
+    not the aesthetic's criterion; the aesthetic's own card is.
+    """
+
+    def _stage(self, stub, pose, **over):
+        with TemporaryDirectory() as td:
+            return _stylize_stage(
+                Path(td) / "styled.png",
+                plan=_PlanOk(arrived=EXACT_RETURN),
+                aesthetic="icecream",
+                client_gender="f",
+                aesthetic_mod=stub,
+                prompt=None,
+                pose=pose,
+                **over,
+            )
+
+    def _person_checks(self, got):
+        return [c for c in got["checks"] if c["name"].startswith("person in")]
+
+    def test_a_frame_on_the_aesthetic_card_passes_though_the_plan_bands_refuse_it(self):
+        got = self._stage(_AestheticStub(), _pose_on_the_ice_cream)
+        checks = self._person_checks(got)
+        self.assertEqual(len(checks), 1, [c["name"] for c in got["checks"]])
+        self.assertEqual(checks[0]["name"], "person in the aesthetic card")
+        self.assertEqual(checks[0]["outcome"], PASS, checks[0]["note"])
+        self.assertEqual(got["outcome"], PASS, [c for c in got["checks"] if c["outcome"] != PASS])
+
+    def test_a_frame_off_the_aesthetic_card_is_still_a_defect(self):
+        got = self._stage(_AestheticStub(), _pose_off_the_card)
+        checks = self._person_checks(got)
+        self.assertEqual(checks[0]["name"], "person in the aesthetic card")
+        self.assertEqual(checks[0]["outcome"], FAIL, checks[0]["note"])
+
+    def test_an_aesthetic_without_a_card_is_unmeasured_and_not_judged_by_the_bands(self):
+        """The third outcome: no card is "could not measure", never the global bands."""
+        got = self._stage(_AestheticStub(card=None), _pose_on_the_ice_cream)
+        checks = self._person_checks(got)
+        self.assertEqual(len(checks), 1, [c["name"] for c in got["checks"]])
+        self.assertEqual(checks[0]["outcome"], UNMEASURED, checks[0]["note"])
+        self.assertNotEqual(checks[0]["outcome"], FAIL)
+        self.assertNotEqual(checks[0]["outcome"], PASS)
+
+    def test_without_an_aesthetic_the_plan_bands_still_judge(self):
+        """The negative control: the bands are not deleted, they are scoped."""
+        with TemporaryDirectory() as td:
+            got = _stylize_stage(
+                Path(td) / "styled.png",
+                plan=_PlanOk(arrived=EXACT_RETURN),
+                pose=_pose_on_the_ice_cream,
+            )
+        checks = self._person_checks(got)
+        self.assertEqual(checks[0]["name"], "person in plan")
+        self.assertEqual(checks[0]["outcome"], FAIL, checks[0]["note"])
