@@ -201,6 +201,227 @@ def aesthetic_file(aesthetic_id: str, gender: str | None = None, *, root=None) -
     return base / f"{aesthetic_id}_{g}.png"
 
 
+#: CHOSEN (owner's contract 01.09.2026, decisions 3 and 4): what an aesthetic
+#: must carry before it can take a client order. The driving and its window are
+#: decision 4 — the aesthetic keeps its OWN copy of the driving in the
+#: repository, because a driving that lives anywhere else is a driving that
+#: changes under the aesthetic that was proven on it. The card is decision 3 —
+#: the client frame is judged against the card taken from this aesthetic's own
+#: demo, and the global plan bands are explicitly not applied to aesthetics.
+#: `trial` is deliberately NOT in this tuple: decision 5 makes the paid trial a
+#: condition of PUBLISHING an aesthetic, and once it is published the trial is
+#: provenance of the build, not something a client order reads.
+ORDER_FIELDS = ("driving", "window", "card")
+
+#: DERIVED from `fork_plan.PERSON_AXES`: a card carries one median and one
+#: tolerance per axis the plan measures. Imported rather than restated so that
+#: an axis added to the plan cannot go silently missing from every card here.
+CARD_AXES = fork_plan.PERSON_AXES
+
+DRIVING_DIR = Path("assets") / "drivings"
+
+TRIAL_DIR = Path("docs") / "trials"
+
+
+def _resolve(aesthetic, path=None) -> dict:
+    """Return the aesthetic as a dict, loading it from the base when a name was given."""
+    if isinstance(aesthetic, str):
+        return load(aesthetic, path)
+    if isinstance(aesthetic, dict):
+        return aesthetic
+    raise TypeError(
+        f"an aesthetic is a name or a dict, got {type(aesthetic).__name__}: {aesthetic!r}"
+    )
+
+
+def _missing(got: dict, name: str) -> bool:
+    """Say whether the field is absent or empty. An empty field is an absent field, not a value."""
+    return got.get(name) in (None, "", [], {}, ())
+
+
+def _window_fault(value) -> str | None:
+    """Return why the window is unusable, or None. One reader, two callers: the accessor and the gate."""
+    if not isinstance(value, (list, tuple)) or len(value) != 2:
+        return f"a window is [first, last], two frame numbers, got {value!r}"
+    first, last = value
+    if not all(isinstance(n, int) and not isinstance(n, bool) for n in (first, last)):
+        return f"frame numbers are whole numbers, got {value!r}"
+    if first < 0:
+        return f"the first frame {first} is before the start of the driving"
+    if first > last:
+        return f"the first frame {first} is after the last {last}"
+    return None
+
+
+def _card_fault(value) -> str | None:
+    """Return why the card is unusable, or None. Checks every axis, and says how many were missing."""
+    if not isinstance(value, dict):
+        return f"a card is an object with {len(CARD_AXES)} axes and their tolerances, got {value!r}"
+    tolerances = value.get("tolerances")
+    if not isinstance(tolerances, dict):
+        return f"the card carries no 'tolerances' object, got {tolerances!r}"
+    absent = [a for a in CARD_AXES if not isinstance(value.get(a), (int, float))]
+    no_tol = [a for a in CARD_AXES if not isinstance(tolerances.get(a), (int, float))]
+    if absent or no_tol:
+        return (
+            f"of {len(CARD_AXES)} axes {len(absent)} carry no median {absent} "
+            f"and {len(no_tol)} carry no tolerance {no_tol}"
+        )
+    return None
+
+
+def _demand(aesthetic, name: str, path=None):
+    """Return one required field, or raise naming the aesthetic and what an order needs."""
+    got = _resolve(aesthetic, path)
+    if _missing(got, name):
+        raise KeyError(
+            f"the aesthetic {got.get('id')!r} carries no {name!r}. An aesthetic "
+            f"without {' and '.join(ORDER_FIELDS)} is NOT ready for an order; "
+            f"ask order_ready() for the verdict with its numbers instead of "
+            f"guessing a default here"
+        )
+    return got[name]
+
+
+def driving_of(aesthetic, path=None, *, root=None) -> Path:
+    """Return the aesthetic's own copy of the driving. A missing driving is an exception, not a default.
+
+    `aesthetic` is a name or the loaded dict; `root` prefixes the stored
+    repository-relative path, for reading a base that is not the shipped one.
+
+    >>> driving_of({"id": "ramp", "driving": "assets/drivings/ramp_f.mp4"})
+    PosixPath('assets/drivings/ramp_f.mp4')
+    """
+    got = Path(str(_demand(aesthetic, "driving", path)))
+    return got if root is None else Path(root) / got
+
+
+def window_of(aesthetic, path=None) -> tuple[int, int]:
+    """Return the aesthetic's driving window as (first, last) frame numbers, both inclusive.
+
+    `aesthetic` is a name or the loaded dict. A window that is not two ordered
+    frame numbers is an exception: cutting by time is forbidden on this project.
+
+    >>> window_of({"id": "ramp", "window": [150, 299]})
+    (150, 299)
+    """
+    got = _demand(aesthetic, "window", path)
+    fault = _window_fault(got)
+    if fault:
+        raise ValueError(
+            f"the aesthetic {_resolve(aesthetic, path).get('id')!r} has a broken window: {fault}"
+        )
+    return int(got[0]), int(got[1])
+
+
+def card_of(aesthetic, path=None) -> dict:
+    """Return the aesthetic's composition card in the shape `fork_plan` reads.
+
+    The base stores the card the way the owner's contract prints it, with the
+    tolerances nested under one key; `fork_plan.in_card` and
+    `fork_plan.framing_clause` read a flat `tol_<axis>` per axis and refuse
+    anything whose `outcome` is not a pass. Converting here, once, is what
+    keeps every reader from parsing the base for itself.
+
+    `aesthetic` is a name or the loaded dict.
+
+    >>> card_of({"id": "ramp", "card": {"shoulders": 0.53, "ankles": 0.92,
+    ...     "centre": 0.53, "width": 0.31, "tolerances": {"shoulders": 0.05,
+    ...     "ankles": 0.05, "centre": 0.1837, "width": 0.1326}}})["tol_centre"]
+    0.1837
+    """
+    got = _demand(aesthetic, "card", path)
+    fault = _card_fault(got)
+    if fault:
+        raise ValueError(
+            f"the aesthetic {_resolve(aesthetic, path).get('id')!r} has a broken card: {fault}"
+        )
+    flat: dict = {axis: float(got[axis]) for axis in CARD_AXES}
+    flat.update({f"tol_{axis}": float(got["tolerances"][axis]) for axis in CARD_AXES})
+    return {
+        **tally(len(CARD_AXES), 0, 0),
+        **flat,
+        "note": (
+            f"the aesthetic's own card over {len(CARD_AXES)} axes: "
+            + ", ".join(f"{a} {flat[a]}+-{flat['tol_' + a]}" for a in CARD_AXES)
+            + "; the global plan bands are NOT applied to an aesthetic"
+        ),
+    }
+
+
+def trial_of(aesthetic, path=None, *, root=None) -> Path:
+    """Return the paid trial clip the aesthetic was signed off on. Absent is an exception, not a default.
+
+    `aesthetic` is a name or the loaded dict; `root` prefixes the stored path.
+
+    >>> trial_of({"id": "ramp", "trial": "docs/trials/ramp_f.mp4"})
+    PosixPath('docs/trials/ramp_f.mp4')
+    """
+    got = Path(str(_demand(aesthetic, "trial", path)))
+    return got if root is None else Path(root) / got
+
+
+def order_ready(aesthetic, path=None) -> dict:
+    """Check that an aesthetic carries everything a client order needs. A gate, with its numbers.
+
+    Three outcomes: a pass, a fail listing what is missing or broken, and
+    `could not measure` when the aesthetic itself could not be read — that last
+    one is not permission to continue, and it is not folded into either of the
+    other two.
+
+    `aesthetic` is a name or the loaded dict.
+
+    >>> order_ready({"id": "y2k", "demo": "f"})["outcome"]
+    'fail'
+    """
+    try:
+        got = _resolve(aesthetic, path)
+    except (KeyError, TypeError, ValueError, OSError) as exc:
+        return {
+            **tally(0, 0, 1),
+            "missing": list(ORDER_FIELDS),
+            "broken": [],
+            "note": (
+                f"the aesthetic could not be read, so NOTHING of the "
+                f"{len(ORDER_FIELDS)} fields was checked: {exc}. This is NOT "
+                f"permission to continue"
+            ),
+        }
+
+    faults = {"window": _window_fault, "card": _card_fault}
+    missing, broken = [], []
+    for name in ORDER_FIELDS:
+        if _missing(got, name):
+            missing.append(name)
+            continue
+        fault = faults.get(name, lambda _v: None)(got[name])
+        if fault:
+            broken.append(f"{name}: {fault}")
+
+    checked = len(ORDER_FIELDS)
+    violations = len(missing) + len(broken)
+    head = f"checked {checked}, missing {len(missing)}, broken {len(broken)}"
+    if not violations:
+        return {
+            **tally(checked, 0, 0),
+            "missing": [],
+            "broken": [],
+            "note": f"{head}: the aesthetic {got.get('id')!r} is ready for an order",
+        }
+    return {
+        **tally(checked, violations, 0),
+        "missing": missing,
+        "broken": broken,
+        "note": (
+            f"{head}: the aesthetic {got.get('id')!r} is NOT ready for an "
+            f"order — missing {missing or 'nothing'}, broken "
+            f"{broken or 'nothing'}. The six aesthetics shipped before the "
+            f"contract of 01.09 carry none of these fields, and they read as "
+            f"not ready ON PURPOSE rather than being filled with placeholders"
+        ),
+    }
+
+
 def pair_check(*, client_gender: str, aesthetic_gender: str) -> dict:
     """Check that the client's gender and the aesthetic's gender match. A gate, not advice."""
 

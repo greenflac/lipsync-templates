@@ -7,6 +7,7 @@ from tempfile import TemporaryDirectory
 from unittest import mock
 
 from lipsync import fork_aesthetic as A
+from lipsync import fork_plan
 from lipsync.fork_identity import FAIL, PASS, UNMEASURED
 
 DEMO = "assets/fork_plan_woman_fullbody.png"
@@ -693,3 +694,226 @@ class WholeEvidence(unittest.TestCase):
         got = A.accept(made="aes.png", demo=DEMO, distances=self._unmeasured(SHORT_EVIDENCE))
         self.assertEqual(got["outcome"], UNMEASURED)
         self.assertTrue(got["note"].endswith(SHORT_EVIDENCE), got["note"])
+
+
+READY = {
+    "id": "ramp",
+    "name": "Ramp",
+    "kind": "transform",
+    "prompt": "a ramp at dusk",
+    "demo": "f",
+    "demo_why": "the wardrobe is neutral",
+    "driving": "assets/drivings/ramp_f.mp4",
+    "window": [150, 299],
+    "card": {
+        "shoulders": 0.53,
+        "ankles": 0.92,
+        "centre": 0.53,
+        "width": 0.31,
+        "tolerances": {"shoulders": 0.05, "ankles": 0.05, "centre": 0.1837, "width": 0.1326},
+    },
+    "trial": "docs/trials/ramp_f.mp4",
+}
+
+
+def without(field):
+    """Return the complete aesthetic with one field taken out."""
+    return {k: v for k, v in READY.items() if k != field}
+
+
+class AnAestheticWithoutItsDrivingIsNotReadyForAnOrder(unittest.TestCase):
+    """The order fields are a gate with three outcomes, and the shipped six do not pass it."""
+
+    def test_the_six_shipped_aesthetics_read_as_NOT_READY_and_say_what_is_absent(self):
+        """They predate the contract. Reading them as ready is the defect this gate exists for."""
+        for aid in A.ids():
+            with self.subTest(aid=aid):
+                got = A.order_ready(aid)
+                self.assertEqual(got["outcome"], FAIL)
+                self.assertEqual(got["checked"], 3)
+                self.assertEqual(got["violations"], 3)
+                self.assertEqual(got["unmeasured"], 0)
+                self.assertEqual(got["missing"], ["driving", "window", "card"])
+
+    def test_the_shipped_base_was_NOT_filled_with_placeholders(self):
+        for aid in A.ids():
+            with self.subTest(aid=aid):
+                raw = A.load(aid)
+                for field in ("driving", "window", "card", "trial"):
+                    self.assertNotIn(field, raw)
+
+    def test_a_complete_aesthetic_is_ready_and_the_numbers_are_printed(self):
+        got = A.order_ready(READY)
+        self.assertEqual(got["outcome"], PASS)
+        self.assertEqual((got["checked"], got["violations"], got["unmeasured"]), (3, 0, 0))
+        self.assertEqual(got["missing"], [])
+        self.assertIn("checked 3, missing 0, broken 0", got["note"])
+
+    def test_each_order_field_is_guarded_ON_ITS_OWN(self):
+        """S8: break exactly one field at a time, or one test can cover for the other two."""
+        for field in ("driving", "window", "card"):
+            with self.subTest(field=field):
+                got = A.order_ready(without(field))
+                self.assertEqual(got["outcome"], FAIL)
+                self.assertEqual(got["missing"], [field])
+                self.assertEqual(got["violations"], 1)
+                self.assertEqual(got["checked"], 3)
+                self.assertIn(field, got["note"])
+
+    def test_the_TRIAL_is_not_an_order_field_because_it_gates_the_PUBLISH(self):
+        """Decision 5 makes the trial a condition of publishing, not of ordering."""
+        got = A.order_ready(without("trial"))
+        self.assertEqual(got["outcome"], PASS)
+        self.assertNotIn("trial", A.ORDER_FIELDS)
+
+    def test_an_empty_field_is_an_ABSENT_field_and_not_a_value(self):
+        for field, empty in (("driving", ""), ("window", []), ("card", {})):
+            with self.subTest(field=field):
+                got = A.order_ready({**READY, field: empty})
+                self.assertEqual(got["outcome"], FAIL)
+                self.assertEqual(got["missing"], [field])
+
+    def test_an_aesthetic_that_could_not_be_READ_is_the_THIRD_outcome(self):
+        for bad in ("no-such-aesthetic", 42, None):
+            with self.subTest(bad=bad):
+                got = A.order_ready(bad)
+                self.assertEqual(got["outcome"], UNMEASURED)
+                self.assertEqual(got["checked"], 0)
+                self.assertEqual(got["unmeasured"], 1)
+                self.assertIn("NOT", got["note"])
+
+    def test_zero_checks_is_never_reported_as_a_pass(self):
+        """R2: no violations over no checks is not a success."""
+        got = A.order_ready("no-such-aesthetic")
+        self.assertEqual(got["violations"], 0)
+        self.assertNotEqual(got["outcome"], PASS)
+
+    def test_mutating_the_order_field_list_both_ways_moves_the_verdict(self):
+        """T1: looser and stricter on the constant that decides readiness."""
+        was = A.ORDER_FIELDS
+        try:
+            A.ORDER_FIELDS = ()
+            loose = A.order_ready(without("driving"))
+            self.assertEqual(loose["checked"], 0)
+            self.assertEqual(loose["outcome"], UNMEASURED)
+            A.ORDER_FIELDS = ("driving", "window", "card", "trial")
+            strict = A.order_ready(without("trial"))
+            self.assertEqual(strict["outcome"], FAIL)
+            self.assertEqual(strict["missing"], ["trial"])
+        finally:
+            A.ORDER_FIELDS = was
+        self.assertEqual(A.order_ready(without("trial"))["outcome"], PASS)
+
+
+class ABrokenOrderFieldIsCaughtAndNotJustAnAbsentOne(unittest.TestCase):
+    """A field that is present but unusable is a violation, not a pass."""
+
+    BAD_WINDOWS = (
+        ([150], "two frame numbers"),
+        ([150, 299, 400], "two frame numbers"),
+        ("150:299", "two frame numbers"),
+        ([150.5, 299.0], "whole numbers"),
+        ([True, False], "whole numbers"),
+        ([-1, 299], "before the start"),
+        ([300, 299], "after the last"),
+    )
+
+    def test_a_window_that_is_not_two_ordered_frame_numbers_is_a_violation(self):
+        for window, why in self.BAD_WINDOWS:
+            with self.subTest(window=window):
+                got = A.order_ready({**READY, "window": window})
+                self.assertEqual(got["outcome"], FAIL)
+                self.assertEqual(got["missing"], [])
+                self.assertEqual(len(got["broken"]), 1)
+                self.assertIn(why, got["broken"][0])
+
+    def test_a_window_of_ONE_frame_is_allowed_because_first_may_equal_last(self):
+        self.assertEqual(A.order_ready({**READY, "window": [7, 7]})["outcome"], PASS)
+
+    def test_a_card_missing_an_axis_says_HOW_MANY_axes_were_missing(self):
+        short = {k: v for k, v in READY["card"].items() if k != "ankles"}
+        got = A.order_ready({**READY, "card": short})
+        self.assertEqual(got["outcome"], FAIL)
+        self.assertIn("of 4 axes 1 carry no median", got["broken"][0])
+        self.assertIn("ankles", got["broken"][0])
+
+    def test_a_card_missing_a_TOLERANCE_is_broken_too(self):
+        tol = {k: v for k, v in READY["card"]["tolerances"].items() if k != "width"}
+        got = A.order_ready({**READY, "card": {**READY["card"], "tolerances": tol}})
+        self.assertEqual(got["outcome"], FAIL)
+        self.assertIn("carry no tolerance", got["broken"][0])
+
+    def test_a_card_with_no_tolerances_object_at_all_is_broken(self):
+        got = A.order_ready(
+            {**READY, "card": {k: v for k, v in READY["card"].items() if k != "tolerances"}}
+        )
+        self.assertEqual(got["outcome"], FAIL)
+        self.assertIn("tolerances", got["broken"][0])
+
+    def test_more_than_one_broken_field_is_counted_and_not_collapsed(self):
+        got = A.order_ready({**READY, "window": [9, 8], "card": {"tolerances": {}}})
+        self.assertEqual(got["violations"], 2)
+        self.assertEqual(len(got["broken"]), 2)
+
+
+class TheReadersDoNotParseTheBaseThemselves(unittest.TestCase):
+    """Every order field has an accessor, so a reader never reaches into the json."""
+
+    def test_the_accessors_return_what_the_contract_stores(self):
+        self.assertEqual(A.driving_of(READY), Path("assets/drivings/ramp_f.mp4"))
+        self.assertEqual(A.window_of(READY), (150, 299))
+        self.assertEqual(A.trial_of(READY), Path("docs/trials/ramp_f.mp4"))
+
+    def test_a_root_prefixes_the_stored_repository_relative_path(self):
+        self.assertEqual(
+            A.driving_of(READY, root="/base"), Path("/base/assets/drivings/ramp_f.mp4")
+        )
+        self.assertEqual(A.trial_of(READY, root="/base"), Path("/base/docs/trials/ramp_f.mp4"))
+
+    def test_an_accessor_REFUSES_rather_than_inventing_a_default(self):
+        for field, call in (
+            ("driving", A.driving_of),
+            ("window", A.window_of),
+            ("card", A.card_of),
+            ("trial", A.trial_of),
+        ):
+            with self.subTest(field=field):
+                with self.assertRaises(KeyError) as caught:
+                    call(without(field))
+                self.assertIn(field, str(caught.exception))
+                self.assertIn("order_ready", str(caught.exception))
+
+    def test_the_accessors_read_the_base_by_NAME_too(self):
+        with self.assertRaises(KeyError):
+            A.driving_of("y2k")
+        self.assertEqual(A.gender_of("y2k"), "f")
+
+    def test_a_broken_window_raises_instead_of_returning_a_wrong_pair(self):
+        for window in ([300, 299], "150:299", [1.5, 2.5]):
+            with self.subTest(window=window):
+                with self.assertRaises(ValueError):
+                    A.window_of({**READY, "window": window})
+
+    def test_the_card_comes_back_in_the_shape_fork_plan_READS(self):
+        """The base stores nested tolerances; fork_plan reads flat tol_<axis> and demands a pass."""
+        got = A.card_of(READY)
+        self.assertEqual(got["outcome"], PASS)
+        self.assertEqual(got["checked"], 4)
+        self.assertEqual(got["centre"], 0.53)
+        self.assertEqual(got["tol_centre"], 0.1837)
+        self.assertEqual(got["tol_width"], 0.1326)
+        self.assertNotIn("tolerances", got)
+
+    def test_fork_plan_really_ACCEPTS_the_card_this_module_hands_it(self):
+        """A shape that only looks right is what a behaviour test is for."""
+        card = A.card_of(READY)
+        self.assertTrue(fork_plan.framing_clause(card).startswith("FRAMING"))
+        self.assertEqual(fork_plan.framing_clause({**card, "outcome": FAIL}), "")
+
+    def test_the_card_axes_are_the_PLANS_and_not_a_second_copy(self):
+        self.assertIs(A.CARD_AXES, fork_plan.PERSON_AXES)
+        self.assertEqual(len(A.CARD_AXES), 4)
+
+    def test_a_broken_card_raises_instead_of_returning_half_a_card(self):
+        with self.assertRaises(ValueError):
+            A.card_of({**READY, "card": {"shoulders": 0.5, "tolerances": {}}})
