@@ -39,6 +39,9 @@ PACKAGE = Path(__file__).resolve().parent.parent
 #: is the final assembly on its own; `fork_video` is the decoding utility every
 #: stage borrows. Anything else with an entry point is a tool that wandered in.
 DECLARED_OPERATIONS = (
+    # The owner's aesthetic contract of 2026-09-01 makes building a draft
+    # aesthetic a command an operator runs, so it is declared here as one.
+    "fork_aesthetic_build",
     "fork_batch",
     "fork_e2e",
     "fork_finish",
