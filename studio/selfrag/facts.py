@@ -217,6 +217,24 @@ BREAKAGE_ATTRIBUTES: tuple[str, ...] = ("failure_mode", "limitation", "degrades_
 
 MULTI_VALUED: frozenset[str] = frozenset(
     {
+        # Added 2026-09-01 with the body-reading harvest, and MEASURED before
+        # and after: the base went from 7 contested pairs to 93, and 30 of the
+        # new ones were `observed_behaviour`. Not one is a disagreement. Two
+        # practitioners describing two different runs — one on a 3060 at
+        # 960x544, one on a 3090 at 720p — are not contradicting each other;
+        # they are two observations, which is the whole point of collecting
+        # them. Flattening them to a contradiction would bury the pairs that
+        # are real, and three of those are `max_seconds`.
+        "observed_behaviour",
+        # Same pass, 1 pair, and it is the same shape: three practitioners
+        # reported LTX-2.5 running — on a 3060 12GB, on a 3090 with 128GB RAM,
+        # and on the distilled ComfyUI workflow. "It runs on X" and "it runs on
+        # Y" are both true; a model runs on many rigs.
+        "runs_on",
+        # Same pass, 7 pairs. A licence carries several restrictions at once:
+        # a non-commercial clause and a territorial exclusion coexist in one
+        # document, and MiniMax H3 alone lists four.
+        "license_restriction",
         "failure_mode",
         # Added 2026-08-27 with the applicability harvest, and MEASURED before
         # and after: the base reported 38 contested (model, attribute) pairs,
