@@ -35,12 +35,19 @@ ANTHROPOMETRY_CLAUSES = (
     r"\bphysique\b",
 )
 
+#: An optional intensifier carries its own separator INSIDE the group
+#: (`(?:very\s+)?word`), never beside it (`(?:very)?\s*word`): the second
+#: shape matches the space in FRONT of the word whenever the group matches
+#: empty, and the cut then welds the article to the noun. MEASURED
+#: 01.09.2026: "a beautiful woman standing in the room" came back as
+#: "Awoman standing in the room", the word boundary was gone, the gender
+#: swap below never fired, and the report still said genders=[] pass.
 ANTHROPOMETRY_WORDS = (
-    r"\b(?:extremely|very|incredibly|stunningly|exceptionally)?\s*beautiful\b",
+    r"\b(?:(?:extremely|very|incredibly|stunningly|exceptionally)\s+)?beautiful\b",
     r"\bsupermodel-level\b",
     r"\bsupermodel\b",
     r"\bbeauty\b",
-    r"\b(?:extremely|very)?\s*(?:gorgeous|stunning|attractive|pretty)\b",
+    r"\b(?:(?:extremely|very)\s+)?(?:gorgeous|stunning|attractive|pretty)\b",
     r"\bbrunette\b",
     r"\bblonde?\b",
     r"\bplatinum\b",
