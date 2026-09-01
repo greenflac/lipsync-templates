@@ -894,21 +894,49 @@ class TheReadersDoNotParseTheBaseThemselves(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     A.window_of({**READY, "window": window})
 
-    def test_the_card_comes_back_in_the_shape_fork_plan_READS(self):
-        """The base stores nested tolerances; fork_plan reads flat tol_<axis> and demands a pass."""
+    def test_the_card_comes_back_in_the_NESTED_shape_the_contract_declares(self):
+        """One declared shape for a card. Readers that need the plan's flat form convert it."""
         got = A.card_of(READY)
-        self.assertEqual(got["outcome"], PASS)
-        self.assertEqual(got["checked"], 4)
-        self.assertEqual(got["centre"], 0.53)
-        self.assertEqual(got["tol_centre"], 0.1837)
-        self.assertEqual(got["tol_width"], 0.1326)
-        self.assertNotIn("tolerances", got)
+        self.assertEqual(
+            got,
+            {
+                "shoulders": 0.53,
+                "ankles": 0.92,
+                "centre": 0.53,
+                "width": 0.31,
+                "tolerances": {
+                    "shoulders": 0.05,
+                    "ankles": 0.05,
+                    "centre": 0.1837,
+                    "width": 0.1326,
+                },
+            },
+        )
 
-    def test_fork_plan_really_ACCEPTS_the_card_this_module_hands_it(self):
-        """A shape that only looks right is what a behaviour test is for."""
-        card = A.card_of(READY)
-        self.assertTrue(fork_plan.framing_clause(card).startswith("FRAMING"))
-        self.assertEqual(fork_plan.framing_clause({**card, "outcome": FAIL}), "")
+    def test_the_card_carries_a_tolerance_for_every_axis_the_plan_measures(self):
+        got = A.card_of(READY)
+        self.assertEqual(sorted(got["tolerances"]), sorted(fork_plan.PERSON_AXES))
+        self.assertEqual(sorted(k for k in got if k != "tolerances"), sorted(fork_plan.PERSON_AXES))
+
+    def test_the_card_is_a_COPY_and_editing_it_does_not_reach_the_base(self):
+        got = A.card_of(READY)
+        got["centre"] = 0.99
+        got["tolerances"]["centre"] = 0.99
+        self.assertEqual(A.card_of(READY)["centre"], 0.53)
+        self.assertEqual(READY["card"]["tolerances"]["centre"], 0.1837)
+
+    def test_load_ALSO_surfaces_the_new_fields_for_a_reader_that_falls_back_to_it(self):
+        """A reader that cannot find an accessor reads what load() returned, so load must carry them."""
+        with TemporaryDirectory() as tmp:
+            path = Path(tmp) / "base.json"
+            path.write_text(json.dumps(base_with(READY)), encoding="utf-8")
+            got = A.load("ramp", path)
+            for field in ("driving", "window", "card", "trial"):
+                with self.subTest(field=field):
+                    self.assertEqual(got[field], READY[field])
+            self.assertEqual(A.window_of("ramp", path), (150, 299))
+            self.assertEqual(A.driving_of("ramp", path), Path("assets/drivings/ramp_f.mp4"))
+            self.assertEqual(A.card_of("ramp", path)["tolerances"]["centre"], 0.1837)
 
     def test_the_card_axes_are_the_PLANS_and_not_a_second_copy(self):
         self.assertIs(A.CARD_AXES, fork_plan.PERSON_AXES)

@@ -315,19 +315,21 @@ def window_of(aesthetic, path=None) -> tuple[int, int]:
 
 
 def card_of(aesthetic, path=None) -> dict:
-    """Return the aesthetic's composition card in the shape `fork_plan` reads.
+    """Return the aesthetic's composition card in the nested form the contract declares.
 
-    The base stores the card the way the owner's contract prints it, with the
-    tolerances nested under one key; `fork_plan.in_card` and
-    `fork_plan.framing_clause` read a flat `tol_<axis>` per axis and refuse
-    anything whose `outcome` is not a pass. Converting here, once, is what
-    keeps every reader from parsing the base for itself.
+    The contract of 01.09 declares ONE shape for a card — the four axes beside
+    a `tolerances` object — and this returns that shape, validated, so the
+    declared form and the stored form cannot drift apart. `fork_plan.in_card`
+    reads a flat `tol_<axis>` instead, and the caller that hands the card to
+    the plan converts it; the conversion is deliberately not done here, because
+    the contract's shape is what every reader of the base is promised.
 
-    `aesthetic` is a name or the loaded dict.
+    `aesthetic` is a name or the loaded dict. A card that is missing an axis or
+    a tolerance is an exception, not a card with holes in it.
 
     >>> card_of({"id": "ramp", "card": {"shoulders": 0.53, "ankles": 0.92,
     ...     "centre": 0.53, "width": 0.31, "tolerances": {"shoulders": 0.05,
-    ...     "ankles": 0.05, "centre": 0.1837, "width": 0.1326}}})["tol_centre"]
+    ...     "ankles": 0.05, "centre": 0.1837, "width": 0.1326}}})["tolerances"]["centre"]
     0.1837
     """
     got = _demand(aesthetic, "card", path)
@@ -336,16 +338,9 @@ def card_of(aesthetic, path=None) -> dict:
         raise ValueError(
             f"the aesthetic {_resolve(aesthetic, path).get('id')!r} has a broken card: {fault}"
         )
-    flat: dict = {axis: float(got[axis]) for axis in CARD_AXES}
-    flat.update({f"tol_{axis}": float(got["tolerances"][axis]) for axis in CARD_AXES})
     return {
-        **tally(len(CARD_AXES), 0, 0),
-        **flat,
-        "note": (
-            f"the aesthetic's own card over {len(CARD_AXES)} axes: "
-            + ", ".join(f"{a} {flat[a]}+-{flat['tol_' + a]}" for a in CARD_AXES)
-            + "; the global plan bands are NOT applied to an aesthetic"
-        ),
+        **{axis: float(got[axis]) for axis in CARD_AXES},
+        "tolerances": {axis: float(got["tolerances"][axis]) for axis in CARD_AXES},
     }
 
 
