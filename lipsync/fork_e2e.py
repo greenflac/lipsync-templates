@@ -645,7 +645,15 @@ def _aesthetic_field(aesthetic, *, field: str, accessor: str, aesthetic_mod=None
     A = _default_aesthetic() if aesthetic_mod is None else aesthetic_mod
     fn = getattr(A, accessor, None)
     if callable(fn):
-        return fn(aesthetic)
+        try:
+            return fn(aesthetic)
+        except (KeyError, ValueError):
+            # The neighbour REFUSES to guess a default for a field an unready
+            # aesthetic does not carry, and it is right to. Its refusal is an
+            # answer, not a crash: `None` here becomes the readiness verdict the
+            # caller already asks for, with its numbers, instead of a traceback
+            # in the operator's face.
+            return None
     loader = getattr(A, "load", None)
     if isinstance(aesthetic, str):
         # A neighbour with neither the accessor nor a loader cannot answer, and

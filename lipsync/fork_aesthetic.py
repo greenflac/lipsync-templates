@@ -474,7 +474,11 @@ def assemble_prompt(*, legacy: bool = False, card=None) -> str:
     return f"{AESTHETIC_ROLE_CLAUSE}. {NEVER_THE_FACE_CLAUSE}.{tail} {no_brands_clause()}"
 
 
-# A measuring device, exercised by the tests and never by the paid path.
+# Empty since 2026-09-01: `leak_verdict` left this list on the day it gained a
+# production caller. The aesthetic builder runs it at stage 4, so the claim that
+# it never reaches the paid path stopped being true, and a stale declaration here
+# is a gate voting for itself. The reasoning below is why the measurement exists,
+# not a claim about who calls it.
 #
 # `accept` — the axis the pipeline does run — asks one question: is the demo
 # identity still on the aesthetic? One distance cannot answer the question that
@@ -484,7 +488,7 @@ def assemble_prompt(*, legacy: bool = False, card=None) -> str:
 # both distances and looking at their difference is the only way to see it, and
 # a stranger in the client's clip is the most expensive defect this repository
 # can ship.
-INSTRUMENTS = ("leak_verdict",)
+INSTRUMENTS: tuple[str, ...] = ()
 
 
 def leak_verdict(*, made, client, demo, distances=None) -> dict:
