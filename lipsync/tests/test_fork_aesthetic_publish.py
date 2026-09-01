@@ -485,3 +485,82 @@ class TheElementIsPROVEDReadableBeforeItIsWritten(unittest.TestCase):
         got = P.inspect(tree.draft, root=tree.root, sizer=GOOD_SIZER)
         self.assertEqual(got["outcome"], PASS)
         self.assertEqual(got["checked"], 9)
+
+
+class TheFrameGateAgreesWithTheProductItGuards(unittest.TestCase):
+    """MEASURED 2026-09-01: publish refused a demo frame the whole pipeline accepts.
+
+    Every aesthetic already shipped in `assets/aesthetics` is 1530x2720, and the
+    product frame is 720x1280. A gate that demands pixel equality would refuse all
+    six of them, so pixel equality is not the product's standard — the plan ratio
+    is, and that is what the order path measures with its own tolerance.
+    """
+
+    def _draft_with_frame(self, tmp, size):
+        from PIL import Image
+
+        draft = Path(tmp) / "draft"
+        draft.mkdir(parents=True)
+        Image.new("RGB", size, "white").save(draft / "demo.png")
+        (draft / "driving.mp4").write_bytes(b"driving")
+        (draft / "trial.mp4").write_bytes(b"trial")
+        (draft / "aesthetic.json").write_text(
+            json.dumps(
+                {
+                    "id": "probe",
+                    "name": "Probe",
+                    "kind": "transform",
+                    "prompt": "a prompt",
+                    "demo": "f",
+                    "demo_why": "why",
+                    "driving": "assets/drivings/probe_f.mp4",
+                    "window": [0, 149],
+                    "card": {
+                        "shoulders": 0.3,
+                        "ankles": 0.9,
+                        "centre": 0.5,
+                        "width": 0.4,
+                        "tolerances": {
+                            "shoulders": 0.05,
+                            "ankles": 0.05,
+                            "centre": 0.05,
+                            "width": 0.05,
+                        },
+                    },
+                    "trial": "docs/trials/probe_f.mp4",
+                }
+            ),
+            encoding="utf-8",
+        )
+        return draft
+
+    def _root(self, tmp):
+        root = Path(tmp) / "root"
+        (root / "assets").mkdir(parents=True)
+        (root / "assets" / "fork_aesthetics.json").write_text(
+            json.dumps(
+                {
+                    "aesthetics": [
+                        {"id": "other", "name": "Other", "kind": "scene", "prompt": "p", "demo": "m"}
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
+        return root
+
+    def test_a_frame_on_the_plan_ratio_is_admitted_at_the_shipped_size(self):
+        with TemporaryDirectory() as tmp:
+            draft = self._draft_with_frame(tmp, (1530, 2720))
+            got = P.publish(draft, root=self._root(tmp))
+        self.assertNotEqual(
+            got["outcome"],
+            "fail",
+            f"1530x2720 is the size of every aesthetic already shipped: {got.get('note')}",
+        )
+
+    def test_a_frame_off_the_plan_ratio_is_still_refused(self):
+        with TemporaryDirectory() as tmp:
+            draft = self._draft_with_frame(tmp, (1280, 720))
+            got = P.publish(draft, root=self._root(tmp))
+        self.assertEqual(got["outcome"], "fail", "a landscape frame must not publish")
