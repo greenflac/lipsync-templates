@@ -268,6 +268,19 @@ def troubles(payload: dict[str, Any], *, setup: bool = False) -> list[dict[str, 
     re.I | re.M,
 )
 
+#: ВОПРОС — не наблюдение, чем бы ни был обставлен. «Is there a way to
+#: implement this in a comfyui workflow?» несёт и условия, и слово про исход,
+#: но человек не рассказывает, что вышло, — он спрашивает. ИЗМЕРЕНО
+#: независимым оценщиком (`studio/harvest_quality.py`) на 123 строках этого
+#: канала: 21 из 27 осуждённых были именно вопросами. Прибор, который ловит
+#: своего же сборщика, для того и заведён.
+ВОПРОС = re.compile(
+    r"\?\s*$|^\s*(can|could|is|are|was|were|does|do|did|how|what|why|which|who"
+    r"|when|where|would|should|will|has|have|any|anyone|anybody|somebody"
+    r"|possible|is there|как|почему|можно ли|есть ли)\b",
+    re.I,
+)
+
 #: Минимальная длина извлечённого предложения. ВЫБРАНО 40: ниже этого порога
 #: на живых телах не помещается «условие плюс исход» — а именно их пара и
 #: отличает наблюдение от реплики. Сторожится мутацией в обе стороны (Т1).
@@ -339,7 +352,7 @@ def наблюдение(тело: str, model_id: str = "") -> str:
         фраза = " ".join(кусок.split())
         if len(фраза) < МИН_ДЛИНА_НАБЛЮДЕНИЯ:
             continue
-        if МАШИННЫЙ_ВЫВОД.search(фраза):
+        if ВОПРОС.search(фраза) or МАШИННЫЙ_ВЫВОД.search(фраза):
             continue
         if model_id and про_чужую_модель(фраза, model_id):
             continue

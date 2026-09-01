@@ -450,3 +450,18 @@ class ТелоТреда(unittest.TestCase):
         найдено, счёт = hf.наблюдения_модели("x/y", get=lambda u: ("HTTP 403", b""))
         self.assertEqual(найдено, [])
         self.assertEqual(счёт, {"канал не ответил": 1})
+
+    def test_вопрос_не_наблюдение_даже_с_условиями(self):
+        """Поймано независимым оценщиком: 21 из 27 осуждённых были вопросами."""
+        for вопрос in (
+            "Can we get the diffusers structured format in place for the 5B model at 720p?",
+            "Is there a way to implement this in a comfyui workflow with 30 steps?",
+            "How do I run this on a 3090 at 720p with 30 steps?",
+            "Anyone got this working on a 4090 at 1280x720 with 30 steps yet?",
+        ):
+            self.assertEqual(hf.наблюдение(вопрос), "", f"пропущен вопрос: {вопрос}")
+
+    def test_отчёт_о_прогоне_вопросом_не_считается(self):
+        """Вторая половина контроля: без неё прошёл бы фильтр, режущий всё."""
+        отчёт = "On a 4090 at 1280x720 with 30 steps the mouth desyncs after 6 seconds."
+        self.assertEqual(hf.наблюдение(отчёт), отчёт)
