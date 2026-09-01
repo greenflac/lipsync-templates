@@ -44,6 +44,13 @@ HANDOFF_MAX_LINES = 400
 #: пустой не бывает молча — каждый элемент виден в отчёте и в диффе.
 GRANDFATHERED = ("HANDOFF_MCP_AGENT.md", "HANDOFF_studio-mvp.md")
 
+#: Префикс файла, который АРХИВОМ И ЯВЛЯЕТСЯ по назначению. Потолок стоит
+#: затем, чтобы архив не помещался в ЖИВОЙ хэндоф; мерить им сам архив —
+#: значит требовать дробить его на ARCHIVE_2, ARCHIVE_3, и тогда потолок
+#: перестаёт мерить что-либо. Исключение узкое и по имени, а рядом печатается
+#: число исключённых: спрятать под этим именем живой хэндоф не выйдет молча.
+ARCHIVE_PREFIX = "HANDOFF_ARCHIVE_"
+
 
 def check_records(rows: list[dict]) -> dict:
     """Схема записей. Вынесено из main (Т5), чтобы развилка была достижима тестом."""
@@ -82,13 +89,14 @@ def check_handoffs(sizes: dict[str, int], limit: int = HANDOFF_MAX_LINES) -> dic
             "раздулись": [],
             "note": "хэндофов не найдено — сравнивать нечего",
         }
+    archives = sorted(name for name in sizes if name.startswith(ARCHIVE_PREFIX))
     fat = sorted(
         f"{name}: {count} строк при потолке {limit}"
         for name, count in sizes.items()
-        if count > limit and name not in GRANDFATHERED
+        if count > limit and name not in GRANDFATHERED and name not in archives
     )
     old = sorted(name for name in sizes if name in GRANDFATHERED)
-    checked = len(sizes) - len(old)
+    checked = len(sizes) - len(old) - len(archives)
     # Ноль проверенных — не успех, даже когда нарушений тоже ноль (правило Р2).
     # Поймано собственным тестом: файл, целиком состоящий из унаследованных
     # хэндофов, печатал «годно», ничего не проверив.
@@ -100,12 +108,14 @@ def check_handoffs(sizes: dict[str, int], limit: int = HANDOFF_MAX_LINES) -> dic
         "unmeasured": len(old),
         "раздулись": fat,
         "унаследованные": old,
+        "архивы": archives,
         "note": (
             f"{checked} хэндофов в пределах {limit} строк"
+            + (f", архивов не мерено {len(archives)}" if archives else "")
             if not fat and checked
             else f"{len(fat)} хэндофов снова стали архивом: {'; '.join(fat)}"
             if fat
-            else f"проверять нечего: все {len(old)} хэндофов унаследованы"
+            else f"проверять нечего: унаследовано {len(old)}, архивов {len(archives)}"
         ),
     }
 
