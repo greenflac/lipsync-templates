@@ -1,0 +1,327 @@
+{
+ "снято": "2026-09-01",
+ "откуда": "https://civitai.com/api/v1/",
+ "модели": {
+  "1651125": {
+   "id": 1651125,
+   "name": "Wan2.1_14B_FusionX",
+   "type": "Checkpoint",
+   "description": "<h2 id=\"wan2.1_14b_fusionx-merged-models-for-faster-richer-motion-and-detail-in-as-little-as-8-steps!\">🌀 Wan2.1_14B_FusionX — Merged models for Faster, Richer Motion &amp; Detail in as little as 8 steps!</h2><p></p><p><strong>📢 7/1/2025 Update!</strong></p><h3 id=\"new:-fusionx-lightning-workflows\">New: FusionX Lightning Workflows</h3><p>Looking for <strong>faster video generations</strong> with WAN2.1? Check out the new <strong>FusionX_Lightning_Workflows</strong> — optimized with <strong>LightX LoRA</strong> to render videos in as little as <strong>70 seconds (4 steps, 1024x576)</strong>!</p><p>🧩 Available in:<br />• Native • Native GGUF • Wrapper<br /><em>(VACE &amp; Phantom coming soon)</em></p><p>🎞️ <strong>Image-to-Video just got a major upgrade!!!!!!</strong><br />Better <strong>prompt adherence</strong>, <strong>more motion</strong>, and smoother dynamics.</p><p>⚖️ <strong>FusionX vs Lightning?</strong><br />Original = max realism.<br />Lightning = speed + low VRAM, with similar quality using smart prompts.</p><p>👉 <a target=\"_new\" rel=\"ugc\" href=\"https://civitai.com/models/1736052?modelVersionId=1964792\">Check it out here</a></p><hr /><p>☕ Like what I do? Support me here: <a rel=\"ugc\" href=\"https://buymeacoffee.com/vrgamedevgirl\">Buy Me A Coffee</a> 💜<br />Every coffee helps fuel more free LoRAs &amp; workflows!</p><hr /><p><strong>📢 </strong>Did you know you can now use <strong>FusionX as a LoRA</strong> instead of a full base model?<br />Perfect if you want more control while sticking with your own <strong>WAN2.1 + SkyReels</strong> setup.</p><p>🔗 Grab the <strong>FusionX LoRAs</strong> <a target=\"_blank\" rel=\"ugc\" href=\"https://civitai.com/models/1678575?modelVersionId=1900357\">HERE</a><br />🔗 Or Check out the <strong>Lightning Workflows</strong> <a target=\"_blank\" rel=\"ugc\" href=\"https://civitai.com/models/1681541?modelVersionId=1903803\">HERE</a> for a huge speed boost.</p><hr /><p>📌 <strong>Important Details- Please read the full description below because small changes to settings will provide totally different results in a bad way! I have been testing and already found better settings so just please read below! Thank you :)</strong></p><p>💡Workflows can be found <a target=\"_blank\" rel=\"ugc\" href=\"https://civitai.com/models/1663553?modelVersionId=1882890\">HERE </a>(This is a wip and more will be added soon.)</p><p><em>🛠️Updates section has been moved to the end of the description.</em></p><p>A high-performance <strong>text-to-video model</strong> built on top of the base WAN 2.1 14B T2V model — <strong>carefully merged with multiple research-grade models</strong> to enhance motion quality, scene consistency, and visual detail, comparable to some of the many close source models.</p><p><strong>## 📢 Join The Community!</strong></p><p>A friendly space to chat, share creations, and get support.</p><p>👉 <a target=\"_blank\" rel=\"ugc\" href=\"https://discord.gg/hxPmmXmRW3\">Click here to join the Discord!</a></p><p>Come say hi in <code>#welcome</code>, check out the rules, and show off your creations! 🎨🧠</p><p></p><h3 id=\"what's-inside-this-base-model:\">💡 What’s Inside this base model:</h3><ul><li><p>🧠 <strong>CausVid</strong> – Causal motion modeling for better scene flow and dramatic speed boot</p></li><li><p>🎞️ <strong>AccVideo</strong> – Improves temporal alignment and realism along with speed boot</p></li><li><p>🎨 <strong>MoviiGen1.1</strong> – Brings cinematic smoothness and lighting</p></li><li><p>🧬 <strong>MPS Reward LoRA</strong> – Tuned for motion dynamics and detail</p></li><li><p>✨ <strong>Custom LoRAs (by me)</strong> – Focused on texture, clarity, and fine details. (These both were set to very low strengths and have a very small impact)</p></li></ul><hr /><h3 id=\"highlights:\">🔥 <strong>Highlights:</strong></h3><ul><li><p>📝 Accepts <strong>standard prompt + negative prompt</strong> setup</p></li><li><p>🌀 Tuned for <strong>high temporal coherence</strong> and <strong>expressive, cinematic scenes</strong></p></li><li><p>🔁 <strong>Drop-in replacement</strong> for WAN 2.1 T2V — just better</p></li><li><p>🚀 Renders up to <strong>50% faster</strong> than the base model (especially with <strong>SageAttn</strong> enabled)</p></li><li><p>🧩 Fully compatible with <strong>VACE</strong></p></li><li><p>🧠 Optimized for use in <strong>ComfyUI</strong>, With both the <strong>Kijai Wan Wrapper and native nodes.</strong></p></li></ul><hr /><p>📌 <strong>Important Details for text to video:</strong></p><ul><li><p>🔧 <strong>CGF must be set to 1</strong> — anything higher will not provide acceptable results.</p></li><li><p>🔧 <strong>Shift - </strong>Results can vary based on Resolution. 1024x576 should start at 1 and if using 1080x720 start at 2. <strong>Note:</strong> For more realism lower shift values is what you need. If your looking for a more stylized look then test higher shift values between 3-9</p></li><li><p><strong>Scheduler:</strong> Most of my examples used Uni_pc but you can get different results using others. Is really all about experimenting. I noticed depending on the prompt that the flowmatch_causvid works well too and helps with small details.</p></li></ul><p>📌 <strong>Important Details for image to video:</strong></p><ul><li><p>🔧 <strong>CGF must be set to 1</strong> — anything higher will not provide acceptable results.</p></li><li><p>🔧 <strong>Shift - </strong>For image to video I found that 2 is best but you can experiment.</p></li><li><p><strong>Scheduler:</strong> Most of my examples used dmp++_sde/beta and seems to work best but you can experiment.</p></li><li><p>After testing, to get more motion and reduce the slow-mo look, set your frame count to 121 and frames per second to 24. This can provide up to a 50% motion speed boost.</p></li></ul><p>📌<strong>Other Important Details:</strong></p><ul><li><p>⚡ <strong>Video generation works with as few as 6 steps</strong>, but <strong>8–10 steps</strong> yield the best quality. Lower steps are great for fast drafts with huge speed gains.</p></li><li><p>🧩 <strong>Best results using the Kaji Wan Wrapper</strong> custom node:<br /><a target=\"_blank\" rel=\"ugc\" href=\"https://github.com/kijai/ComfyUI-WanVideoWrapper\">https://github.com/kijai/ComfyUI-WanVideoWrapper</a></p></li><li><p>🧪 Also tested with the <strong>native WAN workflow</strong>, generation time is a bit longer but results match wrapper.</p></li><li><p>❗ <strong>Do not re-add CausVid, AccVideo, or MPS LoRAs</strong> — they’re already baked into the model and may cause unwanted results.</p></li><li><p>🎨 You <strong>can use other LoRAs</strong> for additional styling — feel free to experiment.</p></li><li><p>📽️ All demo videos were generated at <strong>1024x576</strong>, <strong>81 frames</strong>, using <strong>only this model</strong> — no upscaling, interpolation, or extra LoRAs.</p></li><li><p>🖥️ Rendered on an <strong>RTX 5090</strong> — each video takes around <strong>138 seconds</strong> with the listed settings.</p></li><li><p>🧠 If you run out of VRAM, enable <strong>block swapping</strong> — start at 5 blocks and adjust as needed.</p></li><li><p>🚀 <strong>SageAttn was enabled</strong>, providing up to a <strong>30% speed boost</strong>. (Wrapper only)</p></li><li><p>Workflows for each model can be found here: <a target=\"_blank\" rel=\"ugc\" href=\"https://civitai.com/models/1663553?modelVersionId=1882890\">HERE</a></p></li><li><p>🚫 <strong>Do not use teacache</strong> — it’s unnecessary due to the low step count.</p></li><li><p>🔍 “<strong>Enhance a video</strong>” and “<strong>SLG</strong>” features were <strong>not tested</strong> — feel free to explore on your own. --<strong> Edit.</strong> I did test \"Enhance a video\" and you can get more vibrant results with this turned on. Settings between 2-4. Experiment! SLG has not been tested much.</p></li><li><p>💬 Have questions? You’re welcome to leave a message or join the community:</p><ul><li><p>👉 Click here to join the Discord!</p></li></ul></li><li><p>📝 <strong>Want better prompts?</strong> All my example video prompts were created using this custom GPT:<br />🎬 <a target=\"_new\" rel=\"ugc\" href=\"https://chatgpt.com/g/g-67c3a6d6d19c81919b3247d2bfd01d0b-wan-cinematic-video-prompt-generator\">WAN Cinematic Video Prompt Generator</a><br />Try asking it to add <strong>extra visual and cinematic details</strong> — it makes a noticeable difference.</p></li></ul><hr /><p>⚠️ <strong>Disclaimer:</strong></p><ul><li><p>Videos generated using this model are intended for <strong>personal, educational, or experimental use only</strong>, unless you’ve completed your own legal due diligence.</p></li><li><p>This model is a <strong>merge of multiple research-grade sources</strong>, and is <strong>not guaranteed to be free of copyrighted or proprietary data</strong>.</p></li><li><p><strong>You are solely responsible</strong> for any content you generate and how it is used.</p></li><li><p>If you choose to use outputs commercially, you <strong>assume all legal liability</strong> for copyright infringement, misuse, or violation of third-party rights.</p></li></ul><p>When in doubt, <strong>consult a qualified legal advisor</strong> before monetizing or distributing any generated content.</p><p></p><hr /><p>### 🧠 More GGUF Variants</p><p>- 🖼️ <a target=\"_blank\" rel=\"ugc\" href=\"https://huggingface.co/QuantStack/Wan2.1_I2V_14B_FusionX-GGUF/tree/main\">[FusionX Image-to-Video (GGUF)]</a></p><p>- 🎥 <a target=\"_blank\" rel=\"ugc\" href=\"https://huggingface.co/QuantStack/Wan2.1_T2V_14B_FusionX-GGUF/tree/main\">[FusionX Text-to-Video (GGUF)]</a></p><p>- 🎞️<a target=\"_blank\" rel=\"ugc\" href=\"https://huggingface.co/QuantStack/Wan2.1_T2V_14B_FusionX_VACE-GGUF/tree/main\"> [FusionX T2V VACE GGUF (for native)]</a></p><p>- 👻 <a target=\"_blank\" rel=\"ugc\" href=\"https://huggingface.co/QuantStack/Phantom_Wan_14B_FusionX-GGUF/tree/main\">[FusionX Phantom GGUF (for native)]</a></p><p></p><hr /><p>###🧠 fp16 Versions can be found here:</p><p>-- 🖼️<a target=\"_blank\" rel=\"ugc\" href=\"https://huggingface.co/vrgamedevgirl84/Wan14BT2VFusioniX/tree/main\">fp16 FusionX Models</a></p><hr /><hr /><p>📌<strong>gguf comparisons!</strong><br /><strong>I'm slowly adding to this list, but here you can see how the models compare against the main model.</strong></p><p><strong>Text to video:</strong></p><p><img src=\"https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/31414604-de0f-471c-934b-11c537277fed/width=525/31414604-de0f-471c-934b-11c537277fed.jpeg\" />--------</p><p>🛠️Update 6/8/2025 - Image to video model is published! Settings that I use in the example videos: <strong>Steps = 10 / cfg = 1 / shift = 2 / schedular = dmp++_sde </strong>i'll post a WF soon.</p><p>🛠️Update 6/7/2025 - Published a i2v phantom model that can take up to 4 reference images and combine them into a video. Posting workflow soon</p><p>Phantom WF is getting uploaded soon.</p><p>🛠️Update 6/6/2025 - Added a new gguf model! If you want the highest quality and have enough VRAM get the V1.0 model otherwise gguf is the next best thing! When using the gguf's it will take longer to generate even on an RTX 5090.</p>",
+   "allowCommercialUse": [
+    "RentCivit",
+    "Rent"
+   ],
+   "allowNoCredit": true,
+   "allowDerivatives": true,
+   "allowDifferentLicense": false,
+   "stats": {
+    "downloadCount": 39035,
+    "thumbsUpCount": 1870
+   },
+   "creator": {
+    "username": "vrgamedevgirl",
+    "image": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/d1d17e06-c4b8-4f64-86f4-db6ce0f80707/width=96/vrgamedevgirl.jpeg"
+   },
+   "modelVersions": [
+    {
+     "id": 1868891,
+     "name": "FusionX_Text2Video",
+     "baseModel": "Wan Video 14B t2v",
+     "description": null
+    },
+    {
+     "id": 1882322,
+     "name": "FusionX_Image2Video",
+     "baseModel": "Wan Video 14B i2v 720p",
+     "description": "<p>Image2Video_FusionX</p>"
+    },
+    {
+     "id": 1878555,
+     "name": "FusionX_PhantomV1",
+     "baseModel": "Wan Video 14B i2v 720p",
+     "description": "<p>FusionX_PhantomV1</p>"
+    }
+   ]
+  },
+  "2354193": {
+   "id": 2354193,
+   "name": "LTX-2.3 All-In-One workflow for RTX 3060 with 12 GB VRAM + 32 GB RAM",
+   "type": "Workflows",
+   "description": "<p>[edit:</p><h3 id=\"13.05.2026:-update-version-4.4-(see-version-description).\">13.05.2026: Update version 4.4 (see version description).</h3><p>Small fixes to get back fast generations.</p><p></p><h3 id=\"attention:\">Attention:</h3><p>If you struggle with node conflicts or you get errors while running the workflow, please have a look at my short Trouble Shooting Guide note in the wokflow first. Most importent is to update all components sucsessfully! ]</p><p></p><p></p><p></p><p><span style=\"background-color:rgb(26, 27, 30);color:rgb(230, 73, 128);font-family:-apple-system, BlinkMacSystemFont, &quot;Segoe UI&quot;, Roboto, Helvetica, Arial, sans-serif, &quot;Apple Color Emoji&quot;, &quot;Segoe UI Emoji&quot;;font-size:16px\">Special thanks to:</span></p><p><span class=\"MentionNode_mention__q78sK\" data-type=\"mention\" data-id=\"mention:3140956\" data-label=\"ArcleinSK\">@ArcleinSK</span> <span style=\"color:rgb(230, 73, 128)\">for investigation and solving the FLF issue, as well as forcing the First-Mid-Last Frame option and last but not least for charing fantastic knowlage.</span></p><p><span class=\"MentionNode_mention__q78sK\" data-type=\"mention\" data-id=\"mention:3583984\" data-label=\"boinobin730\">@boinobin730</span> <span style=\"color:rgb(230, 73, 128)\">for initialising, forcing and supporting this project in all kinds of matter, like providing links, running tests, sharing knowlage and inspiring diskussions.</span></p><p><span class=\"MentionNode_mention__q78sK\" data-type=\"mention\" data-id=\"mention:5164344\" data-label=\"Urabewe\">@Urabewe</span> <span style=\"color:rgb(230, 73, 128)\">for publishing the original, perfectly running 12 GB VRAM LTX-2.3</span> <a target=\"_blank\" rel=\"ugc\" href=\"https://civitai.com/models/2304098\">workflows</a><span style=\"color:rgb(230, 73, 128)\"> mainly used here in this workflow.</span></p><p></p><h2 id=\"features:\"><span style=\"color:rgb(76, 110, 245)\"><strong>Features:</strong></span></h2><p>Simple to use all-In-One LTX-2 workflow with options for:</p><ul><li><p>Text to Video</p></li><li><p>Image to Video</p></li><li><p>First/Last Frame to Video</p></li><li><p>Fisrt/Mid/Last Frame to Video</p></li><li><p>Video to Video</p></li><li><p>Text + Audio to Video</p></li><li><p>Image + Audio to Video</p></li><li><p>First/Last Frame + Audio to Video</p></li><li><p>First/Mid/Last Frame + Audio to Video</p></li></ul><ul><li><p>easy switching between all options,</p></li><li><p>all steps highly automated: no manual frame or width/hight calculations necessary,</p></li><li><p>easy to set inputs by predefined sliders and aspeckt ratio inputs (no risk to set wrong frame counts or wrong width/hight values),</p></li><li><p>completely automated resizing and cropping (if necessary) of your input images/videos.</p></li><li><p>brilliant audio generation (speech/sound) with LTX-2.3.</p></li></ul><p></p><h2 id=\"ltx-2.3-specifications:\"><span style=\"color:rgb(76, 110, 245)\"><strong>LTX-2.3 specifications:</strong></span></h2><p>Workflow version v4.3 consistently follows the LTX-2.3 specifications for 16:9/9:16 aspect ratios, including automatic width/hight calculations, as well as automatic input image/video resizing/cropping.</p><p>In addition you can simply choose now any other aspect ratios according to your needs while still getting the right values calculated for width/hight and automatic image/video resize/crop.</p><p></p><h2 id=\"requirements:\"><span style=\"color:rgb(76, 110, 245)\"><strong>Requirements:</strong></span></h2><ul><li><p>GPU with 12 GB VRAM (some users reported they got it running with 8 GB too),</p></li><li><p>32 GB VRAM,</p></li><li><p>Swap file size: 64 - 128 GB.</p></li></ul><p></p><h3 id=\"speed-and-video-length:\"><span style=\"color:rgb(76, 110, 245)\"><strong>Speed and video length:</strong></span></h3><p>Runs very fast: 5 second (1280 x 864) Video: &lt; 10 minutes.</p><p>Generation of long high quality videos in one run possible: 10 - 20 seconds without any issues,</p><p>Testrun: 30 second video (1024 x 704) tooks around 40 minutes without any OOM errors. Longer videos might be possible, but not tested yet.</p><p></p><h3 id=\"important:\"><span style=\"color:rgb(76, 110, 245)\">Important:</span></h3><p>This workflow is intended for advanced comfyui users who know how to install and operate the system and are able to resolve basic system errors themselves, like as node conflicts, or general system issues.</p><p></p><h3 id=\"about-this-workflow:\"><span style=\"color:rgb(76, 110, 245)\">About this workflow:</span></h3><p>This workflow is mainly based on the fantastic LTX-2.3 <a target=\"_blank\" rel=\"ugc\" href=\"https://civitai.com/models/2443867/ltx-23-22b-gguf-workflows-12gb-vram\">workflows</a> of <span class=\"MentionNode_mention__q78sK\" data-type=\"mention\" data-id=\"mention:5164344\" data-label=\"Urabewe\">@Urabewe</span>.</p><p>As far as I know, those were the first workflows running LTX-2 with 12 GB VRAM. All credits goes to the original creator.</p><p>My job was only to combine and organise the different workflows in a simple to use all-in-one design.</p>",
+   "allowCommercialUse": [
+    "RentCivit"
+   ],
+   "allowNoCredit": true,
+   "allowDerivatives": false,
+   "allowDifferentLicense": true,
+   "stats": {
+    "downloadCount": 30310,
+    "thumbsUpCount": 740
+   },
+   "creator": {
+    "username": "arkinson",
+    "image": "https://cdn.discordapp.com/embed/avatars/0.png"
+   },
+   "modelVersions": [
+    {
+     "id": 2942921,
+     "name": "v4.4",
+     "baseModel": "LTXV 2.3",
+     "description": "<p>Small fixes to get back fast generations:</p><ul><li><p>re-edit of the audio part back to the template workflows,</p></li><li><p>reduce preview_rate back to 8 instead of 24.</p></li></ul><p>Special thanks to @Silicon_Mirage for giving the right hint with the wrong audio part.</p>"
+    },
+    {
+     "id": 2887190,
+     "name": "v4.3",
+     "baseModel": "LTXV 2.3",
+     "description": "<p>Minor update after testing and several very usefull user inputs:</p><ul><li><p>bug fix: Aspect Ratio subgraph: changed round_to_multiply = 64 insted of 32, </p></li><li><p>some little improvements, like:</p><ul><li><p>bypassing audio for the upscale pass,</p></li><li><p>adding audio preview,</p></li><li><p>increasing preview_rate = 24 for better video previews.</p></li></ul></li></ul>"
+    },
+    {
+     "id": 2839499,
+     "name": "v4.2",
+     "baseModel": "LTXV 2.3",
+     "description": "<p>Version 4.2</p><ul><li><p>Fixed wrong setting in \"Aspect Ratio\" subgraph</p></li></ul><p>Version 4.1</p><ul><li><p>Fixed issue with not visible \"Aspect Ratio\" input.</p></li></ul><p>Version 4.0</p><ul><li><p>Added First-Mid-Last Frame to Video option.</p></li><li><p>Fixed recent Fisrt/Last Frame issues.</p></li><li><p>Completely re-designed input \"interface\" to easy choose the best LTX-2.3 aspect ratios or other standard aspect ratios as well as any custom aspect ratios or automatic aspect ratio calculations according to your input images or videos.</p></li><li><p>Completely re-designed Widh/Hight calculation under the hood. All values are strictly devisible by 32 for any aspect ratios now.</p></li></ul><p>I did a lot of pre-tests. All options should work as intended.</p><p>As allways: please let me know if you find any \"bugs\" - and of course, let me know if you have any ideas to improve this workflow.</p>"
+    }
+   ]
+  },
+  "2129484": {
+   "id": 2129484,
+   "name": "MultiTalk Lip-Sync (Wanxiang Implementation)",
+   "type": "Workflows",
+   "description": "<p>🎥 YouTube Video Tutorial</p><p>Want to know what this workflow actually does and how to start fast?<br />This video explains what the tool is, how to launch the workflow instantly, and shares my core design logic — no local setup, no complicated environment.<br />Everything starts directly on RunningHub, so you can experience it in action first.</p><p>👉 <strong>YouTube Tutorial:</strong> <a target=\"_blank\" rel=\"ugc\" href=\"https://youtu.be/yO2ymTk5NCg\">https://youtu.be/yO2ymTk5NCg</a></p><p>Before you begin, I recommend watching the video thoroughly — getting the full context helps you understand the tool faster and avoid common detours.</p><hr /><p>⚙️ RunningHub Workflow</p><p>Try the workflow online right now — no installation required.<br />👉 <strong>Workflow:</strong> <a target=\"_blank\" rel=\"ugc\" href=\"https://www.runninghub.ai/post/1937838193955749889/?inviteCode=rh-v1111\">https://www.runninghub.ai/post/1937838193955749889/?inviteCode=rh-v1111</a></p><p>If the results meet your expectations, you can later deploy it locally for customization.</p><p>🎁 <strong>Fan Benefits:</strong><br />Register to get <strong>1000 points + daily login 100 points — enjoy 4090 performance and 48 GB super power!</strong></p><hr /><p>📺 Bilibili Updates (Mainland China &amp; Asia-Pacific)</p><p>If you’re in the Asia-Pacific region, you can watch the video below to see the workflow demonstration and creative breakdown.</p><p>📺 <strong>Bilibili Video:</strong> <a target=\"_blank\" rel=\"ugc\" href=\"https://www.bilibili.com/video/BV1PhKHzPEtp/\">https://www.bilibili.com/video/BV1PhKHzPEtp/</a></p><hr /><p>☕ Support Me on Ko-fi</p><p>If you find my content helpful and want to support future creations, you can buy me a coffee ☕.<br />Every bit of support helps me keep creating — just like a spark that can ignite a blazing flame.</p><p>👉 <strong>Ko-fi:</strong> <a target=\"_blank\" rel=\"ugc\" href=\"https://ko-fi.com/aiksk\">https://ko-fi.com/aiksk</a></p><hr /><p>💼 Business Contact</p><p>For collaboration or inquiries, please contact <strong>aiksk95</strong> on WeChat.</p><hr /><p>🎥 YouTube 视频教程</p><p>想了解这个工作流到底是怎样的工具，以及如何快速启动？<br />视频主要介绍 工具定位、快速启动方法 和 我的构筑思路。<br />我们会直接在 RunningHub 上进行演示，让你第一时间看到实际效果。</p><p>👉 <strong>YouTube 教程：</strong> <a target=\"_blank\" rel=\"ugc\" href=\"https://youtu.be/yO2ymTk5NCg\">https://youtu.be/yO2ymTk5NCg</a></p><p>开始前建议尽量完整地观看视频 —— 把握整体思路会更快上手，也能少走常见弯路。</p><hr /><p>⚙️ 在线体验工作流</p><p>现在就可以在线体验，无需安装。<br />👉 <strong>工作流：</strong> <a target=\"_blank\" rel=\"ugc\" href=\"https://www.runninghub.ai/post/1937838193955749889/?inviteCode=rh-v1111\">https://www.runninghub.ai/post/1937838193955749889/?inviteCode=rh-v1111</a></p><p>打开上方链接即可直接运行该工作流，实时查看生成效果。<br />如果觉得效果理想，你也可以在本地进行自定义部署。</p><p>🎁 <strong>粉丝福利：</strong><br />注册即送 <strong>1000 积分</strong>，每日登录 <strong>100 积分</strong>，畅玩 4090 体验 48 G 超级性能！</p><hr /><p>📺 Bilibili 更新（中国大陆及南亚太地区）</p><p>如果你在中国大陆或南亚太地区，可以通过下方视频查看该工作流的实测效果与构思讲解。</p><p>📺 <strong>B站视频：</strong> <a target=\"_blank\" rel=\"ugc\" href=\"https://www.bilibili.com/video/BV1PhKHzPEtp/\">https://www.bilibili.com/video/BV1PhKHzPEtp/</a></p><hr /><p>我会在 <strong>夸克网盘</strong> 持续更新模型资源：<br />👉 <a target=\"_blank\" rel=\"ugc\" href=\"https://pan.quark.cn/s/20c6f6f8d87b\">https://pan.quark.cn/s/20c6f6f8d87b</a></p><p>这些资源主要面向本地用户，方便进行创作与学习。</p>",
+   "allowCommercialUse": [
+    "Image",
+    "RentCivit",
+    "Rent",
+    "Sell"
+   ],
+   "allowNoCredit": true,
+   "allowDerivatives": true,
+   "allowDifferentLicense": true,
+   "stats": {
+    "downloadCount": 115,
+    "thumbsUpCount": 4
+   },
+   "creator": {
+    "username": "AIKSK",
+    "image": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/caecf376-0dd2-478d-beee-b243562508cf/width=96/AIKSK.jpeg"
+   },
+   "modelVersions": [
+    {
+     "id": 2408802,
+     "name": "v1.0",
+     "baseModel": "Wan Video 14B i2v 480p",
+     "description": null
+    }
+   ]
+  },
+  "2448150": {
+   "id": 2448150,
+   "name": "LTX-2.3",
+   "type": "Checkpoint",
+   "description": "<p>This is not my model. Don't ask me questions. I don't know the answers.</p><p>Go to the <a target=\"_blank\" rel=\"ugc\" href=\"https://huggingface.co/Lightricks/LTX-2.3\">official LTX-2.3 HuggingFace repo</a> for answers.</p><p>I've only uploaded the model here as a way to tag the videos I generate with it. It will most likely be taken down once the official owners or CivitAI upload their own version, so be warned.</p><p>The following is the original README as of time of publishing.</p><hr /><p>LTX-2.3 is a DiT-based audio-video foundation model designed to generate synchronized video and audio within a single model. It brings together the core building blocks of modern video generation, with open weights and a focus on practical, local execution.</p><p><a target=\"_blank\" rel=\"ugc\" href=\"https://youtu.be/o-7us-BR_gQ\"><strong><img src=\"https://huggingface.co/Lightricks/LTX-2.3/resolve/main/ltx2.3-open.png\" alt=\"LTX-2 Open Source\" /></strong></a></p><h1 id=\"model-checkpoints\"><span><strong>Model Checkpoints</strong></span></h1><p><strong>NameNotes</strong>ltx-2.3-22b-devThe full model, flexible and trainable in bf16ltx-2.3-22b-distilledThe distilled version of the full model, 8 steps, CFG=1ltx-2.3-22b-distilled-lora-384A LoRA version of the distilled model applicable to the full modelltx-2.3-spatial-upscaler-x2-1.0An x2 spatial upscaler for the ltx-2.3 latents, used in multi stage (multiscale) pipelines for higher resolutionltx-2.3-spatial-upscaler-x1.5-1.0An x1.5 spatial upscaler for the ltx-2.3 latents, used in multi stage (multiscale) pipelines for higher resolutionltx-2.3-temporal-upscaler-x2-1.0An x2 temporal upscaler for the ltx-2.3 latents, used in multi stage (multiscale) pipelines for higher FPS</p><h2 id=\"model-details\"><span><strong>Model Details</strong></span></h2><ul><li><p><strong>Developed by:</strong> Lightricks</p></li><li><p><strong>Model type:</strong> Diffusion-based audio-video foundation model</p></li><li><p><strong>Language(s):</strong> English</p></li></ul><h1 id=\"online-demo\"><span><strong>Online demo</strong></span></h1><p>LTX-2.3 is accessible right away via the <a target=\"_blank\" rel=\"ugc\" href=\"https://console.ltx.video/playground/\"><strong><u>API Playground</u></strong></a>.</p><h1 id=\"run-locally\"><span><strong>Run locally</strong></span></h1><h2 id=\"direct-use-license\"><span><strong>Direct use license</strong></span></h2><p>You can use the models - full, distilled, upscalers and any derivatives of the models - for purposes under the <a target=\"_blank\" rel=\"ugc\" href=\"https://huggingface.co/Lightricks/LTX-2.3/blob/main/LICENSE\"><strong><u>license</u></strong></a>.</p>",
+   "allowCommercialUse": [],
+   "allowNoCredit": true,
+   "allowDerivatives": true,
+   "allowDifferentLicense": false,
+   "stats": {
+    "downloadCount": 11437,
+    "thumbsUpCount": 552
+   },
+   "creator": {
+    "username": "clueless_engineer",
+    "image": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/8a959494-072f-4534-984b-6c01c1cba4a8/width=96/clueless_engineer.jpeg"
+   },
+   "modelVersions": [
+    {
+     "id": 2752735,
+     "name": "Full",
+     "baseModel": "LTXV 2.3",
+     "description": "<p>Full version from <a target=\"_blank\" rel=\"ugc\" href=\"https://huggingface.co/Lightricks/LTX-2.3/tree/main\">https://huggingface.co/Lightricks/LTX-2.3/tree/main</a></p>"
+    },
+    {
+     "id": 2752717,
+     "name": "FP8",
+     "baseModel": "LTXV 2.3",
+     "description": "<p>FP8 from <a target=\"_blank\" rel=\"ugc\" href=\"https://huggingface.co/Lightricks/LTX-2.3-fp8/tree/main\">https://huggingface.co/Lightricks/LTX-2.3-fp8/tree/main</a></p>"
+    },
+    {
+     "id": 2752762,
+     "name": "Full Distilled",
+     "baseModel": "LTXV 2.3",
+     "description": "<p>Full Distilled from <a target=\"_blank\" rel=\"ugc\" href=\"https://huggingface.co/Lightricks/LTX-2.3/tree/main\">https://huggingface.co/Lightricks/LTX-2.3/tree/main</a></p>"
+    }
+   ]
+  }
+ },
+ "версии": {
+  "1868891": {
+   "id": 1868891,
+   "modelId": 1651125,
+   "name": "FusionX_Text2Video",
+   "baseModel": "Wan Video 14B t2v",
+   "images": [
+    {
+     "nsfwLevel": 1,
+     "meta": null
+    },
+    {
+     "nsfwLevel": 1,
+     "meta": null
+    },
+    {
+     "nsfwLevel": 1,
+     "meta": null
+    },
+    {
+     "nsfwLevel": 4,
+     "meta": null
+    },
+    {
+     "nsfwLevel": 1,
+     "meta": {
+      "seed": 159753456,
+      "steps": 10,
+      "sampler": "UniPC",
+      "cfgScale": 1
+     }
+    },
+    {
+     "nsfwLevel": 1,
+     "meta": {
+      "seed": 159753456,
+      "steps": 10,
+      "sampler": "UniPC",
+      "cfgScale": 1
+     }
+    },
+    {
+     "nsfwLevel": 1,
+     "meta": {
+      "seed": 159753456,
+      "steps": 10,
+      "sampler": "UniPC",
+      "cfgScale": 1
+     }
+    },
+    {
+     "nsfwLevel": 1,
+     "meta": {
+      "seed": 1002959892432282,
+      "steps": 10,
+      "sampler": "UniPC",
+      "cfgScale": 1
+     }
+    },
+    {
+     "nsfwLevel": 1,
+     "meta": {
+      "steps": 10,
+      "sampler": "UniPC",
+      "cfgScale": 1
+     }
+    },
+    {
+     "nsfwLevel": 1,
+     "meta": {
+      "seed": 159753456,
+      "steps": 10,
+      "sampler": "UniPC",
+      "cfgScale": 1
+     }
+    }
+   ]
+  },
+  "2752735": {
+   "id": 2752735,
+   "modelId": 2448150,
+   "name": "Full",
+   "baseModel": "LTXV 2.3",
+   "images": [
+    {
+     "nsfwLevel": 2,
+     "meta": {
+      "seed": 2033869065,
+      "steps": 8,
+      "sampler": "Euler",
+      "cfgScale": 1
+     }
+    },
+    {
+     "nsfwLevel": 1,
+     "meta": {
+      "seed": 1722956533,
+      "steps": 8
+     }
+    },
+    {
+     "nsfwLevel": 2,
+     "meta": {
+      "seed": 1722956530,
+      "steps": 8
+     }
+    },
+    {
+     "nsfwLevel": 1,
+     "meta": {
+      "seed": 1958217311,
+      "steps": 8
+     }
+    },
+    {
+     "nsfwLevel": 1,
+     "meta": {
+      "seed": 1108764262,
+      "steps": 8
+     }
+    },
+    {
+     "nsfwLevel": 2,
+     "meta": {
+      "seed": 1108764267,
+      "steps": 8
+     }
+    },
+    {
+     "nsfwLevel": 1,
+     "meta": {
+      "seed": 1108764260,
+      "steps": 8
+     }
+    },
+    {
+     "nsfwLevel": 4,
+     "meta": {
+      "seed": 291312474,
+      "steps": 10
+     }
+    },
+    {
+     "nsfwLevel": 2,
+     "meta": {
+      "seed": 799779850,
+      "steps": 10
+     }
+    },
+    {
+     "nsfwLevel": 2,
+     "meta": {
+      "seed": 1557926952,
+      "steps": 10
+     }
+    }
+   ]
+  },
+  "2408802": {
+   "id": 2408802,
+   "modelId": 2129484,
+   "name": "v1.0",
+   "baseModel": "Wan Video 14B i2v 480p",
+   "images": [
+    {
+     "nsfwLevel": 1,
+     "meta": null
+    }
+   ]
+  }
+ }
+}
