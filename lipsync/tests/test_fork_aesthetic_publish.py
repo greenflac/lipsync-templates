@@ -204,7 +204,11 @@ class ARefusalLeavesTheTreeExactlyAsItWas(unittest.TestCase):
                 self.assertIn(absent, got["problems"][0])
 
     def test_a_demo_frame_that_is_not_the_product_frame_is_refused(self):
-        for wrong in ((1080, 1920), (720, 1281), (1280, 720), (512, 512)):
+        # 1080x1920 and 720x1281 were here until 2026-09-01 and both sit ON the
+        # plan ratio: they encoded pixel equality, which is not the product's
+        # standard — every shipped aesthetic is 1530x2720. What must be refused
+        # is a frame off the RATIO.
+        for wrong in ((1280, 720), (512, 512), (900, 1200), (720, 1600)):
             with self.subTest(wrong=wrong):
                 got = self.refusal(files=WHOLE_DRAFT, sizer=sizer_of(wrong))
                 self.assertIn(f"{wrong[0]}x{wrong[1]}", got["problems"][0])
@@ -410,7 +414,7 @@ class TheCommandLineSaysTheOutcomeInItsExitCode(unittest.TestCase):
 
     def test_the_default_sizer_really_REFUSES_a_picture_of_the_wrong_size(self):
         """The injected sizer could agree with a defect the real one would catch."""
-        tree = Tree(self.stack, files={**WHOLE_DRAFT, P.DRAFT_DEMO: real_png((1080, 1920))})
+        tree = Tree(self.stack, files={**WHOLE_DRAFT, P.DRAFT_DEMO: real_png((1280, 720))})
         before = snapshot(tree.root)
         self.assertEqual(P.main([str(tree.draft), "--root", str(tree.root)]), 1)
         self.assertEqual(snapshot(tree.root), before)
@@ -541,7 +545,13 @@ class TheFrameGateAgreesWithTheProductItGuards(unittest.TestCase):
             json.dumps(
                 {
                     "aesthetics": [
-                        {"id": "other", "name": "Other", "kind": "scene", "prompt": "p", "demo": "m"}
+                        {
+                            "id": "other",
+                            "name": "Other",
+                            "kind": "scene",
+                            "prompt": "p",
+                            "demo": "m",
+                        }
                     ]
                 }
             ),

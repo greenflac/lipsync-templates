@@ -218,7 +218,16 @@ def stylize_demo(*, prompt: str, demo, out_path, model=None, size=FRAME) -> str:
     )
 
 
-def stage_stylize(*, prompt, gender, out_path, stylize=None, sizer=None) -> dict:
+def stage_stylize(
+    *,
+    prompt,
+    gender,
+    out_path,
+    stylize=None,
+    sizer=None,
+    cropper=None,
+    operator_ok_styliser_size: bool = False,
+) -> dict:
     """Stage 3: one image through img2img, at the delivery frame and no other size."""
     checks: list = []
     numbers: dict = {"asked": list(FRAME), "model": fork_e2e.STYLE_MODEL}
@@ -246,14 +255,37 @@ def stage_stylize(*, prompt, gender, out_path, stylize=None, sizer=None) -> dict
     if checks[-1][1] != PASS:
         return _result(BUILD_STAGES[2], checks, numbers=numbers)
 
-    got, note = fork_e2e.frame_size(made, sizer=sizer)
-    numbers["got"] = list(got) if got else None
-    kept = fork_e2e.styliser_kept_the_plan(asked=FRAME, got=got)
-    checks.append(("the route kept the ordered size", kept["outcome"], f"{note}; {kept['note']}"))
+    # The order path already knows how to bring a frame onto the plan and how to
+    # keep "what was ordered" apart from "what the frame is after the repair".
+    # Building a second answer here is how the two commands start disagreeing
+    # about one picture, so the repair is CALLED, not restated.
+    planned = str(Path(made).with_name(Path(made).stem + "_9x16.png"))
+    fitted = fork_e2e.fit_frame_to_plan(made, planned, plan=fork_plan, sizer=sizer, cropper=cropper)
+    numbers["got"] = list(fitted.get("arrived") or ()) or None
+    kept = fork_e2e.styliser_kept_the_plan(asked=FRAME, got=fitted.get("arrived"))
+    kept_outcome, kept_note = kept["outcome"], kept["note"]
+    if kept_outcome == FAIL and fitted["outcome"] == PASS:
+        repair = (
+            f"; repaired by {fitted['action']} to {fitted['shipped'][0]}x{fitted['shipped'][1]}"
+        )
+        if operator_ok_styliser_size:
+            kept_outcome = PASS
+            kept_note += repair + ", and the ENGINEER ADMITTED that repaired frame by eye"
+        else:
+            kept_note += repair + (
+                ", which is the plan — but the route still ignored the order, so the "
+                "build stops here; pass --operator-ok-styliser-size once the repaired "
+                "frame has been looked at"
+            )
+    checks.append(("the route kept the ordered size", kept_outcome, kept_note))
+    if fitted["outcome"] != UNMEASURED:
+        made = fitted["path"]
     return _result(BUILD_STAGES[2], checks, numbers=numbers, styled=made)
 
 
-def stage_demo_acceptance(*, made, gender, distances=None, sizer=None) -> dict:
+def stage_demo_acceptance(
+    *, made, gender, distances=None, sizer=None, operator_ok_identity: bool = False
+) -> dict:
     """Stage 4: the demo identity survived, the other demo did not leak, the canvas is 9:16."""
     checks: list = []
     numbers: dict = {}
@@ -265,17 +297,44 @@ def stage_demo_acceptance(*, made, gender, distances=None, sizer=None) -> dict:
 
     kept = fork_aesthetic.accept(made=made, demo=mine, distances=distances)
     numbers["identity_median"] = kept.get("median")
-    checks.append(("demo identity survived", kept["outcome"], str(kept.get("note"))))
+    identity_outcome, identity_note = kept["outcome"], str(kept.get("note"))
+    # OWNER 2026-09-01: a template is admitted by the engineer's eye in any case,
+    # so the middle band is a note here, not a stop. It is offered ONLY on the
+    # middle band — past the "different person" rung the answer is a swap, and no
+    # admission turns that into a pass. The real risk is judged on the clip.
+    if identity_outcome == UNMEASURED and operator_ok_identity:
+        median = kept.get("median")
+        if median is not None and float(median) < fork_e2e.LADDER_REJECTED:
+            identity_outcome = PASS
+            identity_note += (
+                "; the ENGINEER ADMITTED it by eye — a scene that repeats the face "
+                "across the frame gives ArcFace many faces to one, and the swap risk "
+                "is judged on the trial clip, not here"
+            )
+    checks.append(("demo identity survived", identity_outcome, identity_note))
 
     leak = fork_aesthetic.leak_verdict(made=made, client=mine, demo=other, distances=distances)
     numbers["leak_gap"] = leak.get("gap")
-    checks.append(
-        (
-            "the other demo did not leak",
-            leak["outcome"],
-            f"measured against {other.name}; {leak.get('note')}",
+    leak_outcome, leak_note = leak["outcome"], f"measured against {other.name}; {leak.get('note')}"
+    # Same admission as the identity axis above and for the same reason: a scene
+    # that repeats the face gives the instrument many faces to one, and it then
+    # cannot put the two distances on opposite sides of the bar. The admission is
+    # offered ONLY while the demo's own face is the closer of the two — the moment
+    # the other one is closer the verdict is a real leak, and no eye overrides it.
+    to_client, to_demo = leak.get("to_client"), leak.get("to_demo")
+    if (
+        leak_outcome == UNMEASURED
+        and operator_ok_identity
+        and to_client is not None
+        and to_demo is not None
+        and float(to_demo) > float(to_client)
+    ):
+        leak_outcome = PASS
+        leak_note += (
+            "; the ENGINEER ADMITTED it by eye — the demo's own face is the closer "
+            "of the two by a clear gap, and the swap risk is judged on the clip"
         )
-    )
+    checks.append(("the other demo did not leak", leak_outcome, leak_note))
 
     got, note = fork_e2e.frame_size(made, sizer=sizer)
     numbers["size"] = list(got) if got else None
@@ -328,6 +387,9 @@ def stage_trial(
     work_dir,
     upload=None,
     kling=None,
+    cropper=None,
+    operator_ok_styliser_size: bool = False,
+    operator_ok_identity: bool = False,
     probe=None,
     cutter=None,
     decode=None,
@@ -522,6 +584,9 @@ def run(
     cutter=None,
     decode=None,
     cuts=None,
+    cropper=None,
+    operator_ok_styliser_size: bool = False,
+    operator_ok_identity: bool = False,
     log=None,
 ) -> dict:
     """Run the seven stages in order and stop before the paid one if any cheap stage failed."""
@@ -548,6 +613,8 @@ def run(
                 out_path=out / DRAFT_NAMES["demo"],
                 stylize=stylize,
                 sizer=sizer,
+                cropper=cropper,
+                operator_ok_styliser_size=operator_ok_styliser_size,
             )
         )
         styled = stages[-1].get("styled")
@@ -555,7 +622,15 @@ def run(
         add(not_reached(BUILD_STAGES[2], "the prompt did not assemble: nothing to stylise with"))
 
     if styled:
-        add(stage_demo_acceptance(made=styled, gender=gender, distances=distances, sizer=sizer))
+        add(
+            stage_demo_acceptance(
+                made=styled,
+                gender=gender,
+                distances=distances,
+                sizer=sizer,
+                operator_ok_identity=operator_ok_identity,
+            )
+        )
         add(stage_card(made=styled, pose=pose))
     else:
         add(not_reached(BUILD_STAGES[3], "no styled demo: nothing to accept"))
@@ -635,6 +710,16 @@ def main(argv=None) -> int:
     parser.add_argument("--out", required=True, dest="out_dir")
     parser.add_argument("--demo-why", default="", dest="demo_why")
     parser.add_argument("--frames", default=None, help="directory of unpacked driving frames")
+    parser.add_argument(
+        "--operator-ok-styliser-size",
+        action="store_true",
+        help="the engineer looked by eye and admitted the frame trimmed back onto the plan",
+    )
+    parser.add_argument(
+        "--operator-ok-identity",
+        action="store_true",
+        help="the engineer looked by eye and admitted the identity on the middle band",
+    )
     args = parser.parse_args(argv)
 
     frames = fork_e2e.frame_paths(args.frames) if args.frames else None
@@ -648,6 +733,8 @@ def main(argv=None) -> int:
         out_dir=args.out_dir,
         demo_why=args.demo_why,
         frames=frames,
+        operator_ok_styliser_size=args.operator_ok_styliser_size,
+        operator_ok_identity=args.operator_ok_identity,
     )
     return fork_video.EXIT_BY_OUTCOME[got["outcome"]]
 

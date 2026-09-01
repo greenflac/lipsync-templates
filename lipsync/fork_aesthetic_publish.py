@@ -15,7 +15,7 @@ import shutil
 import sys
 from pathlib import Path
 
-from . import fork_aesthetic
+from . import fork_aesthetic, fork_plan
 from .fork_identity import FAIL, PASS, UNMEASURED
 from .fork_video import EXIT_BY_OUTCOME
 from .frame import FRAME
@@ -205,11 +205,17 @@ def inspect(draft, *, root=None, sizer=None) -> dict:
         checked -= 1
         unmeasured.append(f"the demo frame size was not taken: {type(exc).__name__}: {exc}")
     else:
-        if (width, height) != FRAME:
+        # The product's standard is the plan RATIO, not a pixel size: every
+        # aesthetic already shipped is 1530x2720 while `FRAME` is 720x1280, and
+        # the order path judges the frame it pays for by ratio with a tolerance
+        # too. Demanding pixel equality here made this gate stricter than the
+        # pipeline it feeds, which is one question with two answers.
+        axis = fork_plan.ratio_axis(width, height)
+        if axis["outcome"] != PASS:
             problems.append(
-                f"the demo frame is {width}x{height} and the product frame is "
-                f"{FRAME[0]}x{FRAME[1]}: a frame off the delivery size travels "
-                f"into every order this aesthetic takes"
+                f"the demo frame is {width}x{height} and is not on the plan "
+                f"{FRAME[0]}x{FRAME[1]} = {FRAME[0] / FRAME[1]:.4f}: {axis['note']}. "
+                f"A frame off the plan travels into every order this aesthetic takes"
             )
 
     element = None
