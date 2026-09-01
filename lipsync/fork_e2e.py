@@ -2241,6 +2241,19 @@ def main(argv=None) -> int:
         ),
     )
     a = ap.parse_args(argv)
+    try:
+        return _order(a)
+    except ValueError as exc:
+        # An aesthetic that is not ready, or an order carrying what the
+        # aesthetic already owns, is a refusal BEFORE any generation: nothing
+        # was made and nothing was paid for. That is the third outcome, and a
+        # traceback would read to the operator as a broken product.
+        say(f"TOTAL: {UNMEASURED} — the order was not started: {exc}")
+        return EXIT_BY_OUTCOME[UNMEASURED]
+
+
+def _order(a) -> int:
+    """Place one parsed order and return its exit code. Split out so a test can reach it."""
     got = run(
         client_photo=a.client,
         out_dir=a.out,
