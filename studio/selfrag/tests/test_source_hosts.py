@@ -10,13 +10,48 @@ import unittest
 from unittest import mock
 
 from studio.selfrag import source_hosts as S
-from studio.selfrag.facts import DEFAULT_FACTS_PATH, load_facts
+from studio.selfrag.facts import DEFAULT_FACTS_PATH, Fact, load_facts
 
 VENDOR, PORTAL, BLOG = "vendor", "portal", "blog"
 
 
 def tier(model: str, url: str) -> str:
     return S.classify(model, url, vendor_tier=VENDOR, portal_tier=PORTAL, blog_tier=BLOG)
+
+
+def first_hand_coverage(facts) -> tuple[int, int, int]:
+    """How many MODELS the base can answer about from first hand, not how many rows.
+
+    Returns `(models, with_a_vendor_source, with_a_source_above_blog)`. Counted
+    per model and not per row on purpose — see
+    `test_the_real_base_rests_on_first_hand_sources` for why the row count
+    stopped meaning what it used to mean.
+
+    Kept out of the test bodies (house rule Т5) so the negative control below
+    can run the same code on a base built by hand, with no file and no network.
+    """
+    rungs: dict[str, set[str]] = {}
+    for fact in facts:
+        rungs.setdefault(fact.model, set()).add(tier(fact.model, fact.source_url))
+    with_vendor = sum(1 for got in rungs.values() if VENDOR in got)
+    above_blog = sum(1 for got in rungs.values() if VENDOR in got or PORTAL in got)
+    return len(rungs), with_vendor, above_blog
+
+
+#: CHOSEN, comfortably under the 163 MEASURED on 2026-09-01 (a base of 1575
+#: claims about 466 models), so that harvesting more community material never
+#: touches it and losing the vendor documents always does.
+MODELS_WITH_A_VENDOR_SOURCE_FLOOR = 120
+
+#: CHOSEN, well under the 0.895 MEASURED the same day on the same base. A share
+#: and not a count, because the number of models grows and the share is what the
+#: sentence "we mostly answer from first hand" actually means.
+#:
+#: Both floors live here and not in the test body so that the negative control
+#: measures itself against the very numbers the real base is held to. A floor
+#: mutated in either direction has to move both tests, which is what makes the
+#: mutation visible.
+ABOVE_BLOG_SHARE_FLOOR = 0.70
 
 
 class WhoOwnsThePage(unittest.TestCase):
@@ -115,7 +150,7 @@ class TheTableAgainstTheRealBase(unittest.TestCase):
     one rung, that is a failure and not a tidier file.
     """
 
-    def test_the_real_base_lands_on_all_three_rungs(self) -> None:
+    def test_the_real_base_rests_on_first_hand_sources(self) -> None:
         """WHY THIS STOPPED PINNING AN EXACT COUNT, 2026-08-27.
 
         It asserted `len(facts) == <today's number>` with the comment "update
@@ -133,9 +168,8 @@ class TheTableAgainstTheRealBase(unittest.TestCase):
 
         * every rung is populated — a table edit that sweeps the base onto one
           rung is the failure this exists to catch,
-        * `vendor` is the largest — if a change ever makes `blog` the biggest
-          rung of a base built from vendor documents, something is badly
-          wrong,
+        * the base rests on first-hand sources — see the next docstring section
+          for what replaced the rung-size race that used to stand here,
         * the base does not SHRINK below a floor — the count may grow freely,
           but a collapse means claims stopped loading.
 
@@ -144,6 +178,45 @@ class TheTableAgainstTheRealBase(unittest.TestCase):
         `paper` on the METHOD ladder and belongs to nobody in particular on
         the WHOSE-PAGE ladder this test asks about. The two ladders answering
         differently is the design.
+
+        WHY `vendor` IS NO LONGER REQUIRED TO BE THE LARGEST RUNG, 2026-09-01.
+
+        That assertion was a PROXY. What it meant was "we answer mostly from
+        first hand"; what it counted was which bucket held the most ROWS after
+        re-deriving every rung from its URL. Two things broke the link between
+        the two.
+
+        The premise moved. The owner asked for the practitioners' own reports
+        to be collected — HuggingFace and Civitai threads by name. Material
+        that is DELIBERATELY second-hand now enters the base by instruction, so
+        the third rung growing is the instruction working, not damage.
+
+        And the count never measured what it claimed anyway. The third bucket
+        is not "hearsay": MEASURED on the 1698-claim base, its 600 rows are 308
+        HuggingFace discussion threads, 214 arxiv.org, 31 github.com, 23
+        raw.githubusercontent.com and 24 assorted hosts — and 236 of those 600
+        are `paper` or `benchmark` on the METHOD ladder, i.e. sources nobody
+        calls a blog, sitting on hosts this table has no opinion about. A
+        vendor document also yields a BOUNDED number of rows (a model card
+        answers a handful of attributes) while threads and papers yield
+        unbounded ones, so the ratio tracked harvest shape, not provenance.
+
+        The proof it had come loose is in its own history: the rung race went
+        red on 2026-08-31 (`portal` 602 vs `vendor` 511) and was answered by
+        EDITING THE HOST TABLE, not by fixing any data — a gate you can turn
+        green by reclassifying is measuring the classifier, not the base. Its
+        margin had been decaying all along under the same table: +131, +153,
+        +134, +61, +32 across the HuggingFace waves. A guard whose margin is a
+        coin flip on the next harvest is a guard that will be silenced.
+
+        What stands here instead measures the intention directly and PER MODEL,
+        which is the unit an answer is given about: how many models we can say
+        anything about from first hand, and what share of them have any source
+        above the third rung. Appending 123 practitioner observations moves
+        neither number by one (MEASURED: 163 of 466 and 417 of 466, identical
+        before and after) — which is the point, because those observations took
+        nothing away. Deleting the model cards moves both to the floor; the
+        negative control below is that base, built by hand.
         """
         # `load_facts` and not the raw lines: the file is a log where a later
         # row supersedes an earlier one about the same claim and a withdrawal
@@ -162,15 +235,99 @@ class TheTableAgainstTheRealBase(unittest.TestCase):
 
         for rung in (VENDOR, PORTAL, BLOG):
             assert seen[rung] > 0, f"nothing lands on {rung}: {seen}"
-        assert seen[VENDOR] == max(seen.values()), (
-            f"`vendor` is no longer the largest rung: {seen}. A base built from "
-            "vendor documents whose biggest rung is `blog` has lost its ladder."
+        models, with_vendor, above_blog = first_hand_coverage(facts)
+
+        assert with_vendor >= MODELS_WITH_A_VENDOR_SOURCE_FLOOR, (
+            f"only {with_vendor} of {models} models have a first-hand source; "
+            "the base stopped resting on vendor documents"
+        )
+
+        share = above_blog / models
+        assert share >= ABOVE_BLOG_SHARE_FLOOR, (
+            f"only {above_blog} of {models} models ({share:.1%}) have any source "
+            "above the third rung: the base is becoming hearsay about models "
+            "nobody documented"
         )
 
     def test_no_rung_is_empty_which_is_what_a_useless_table_looks_like(self) -> None:
         with mock.patch.dict(S.VENDOR_SOURCES, {}, clear=True):
             with mock.patch.object(S, "PORTAL_SOURCES", ()):
                 assert tier("kling-3.0", "https://kling.ai/docs") == BLOG
+
+
+class ABaseThatLostItsFirstHandSources(unittest.TestCase):
+    """The negative control for the guard above (house rule И5).
+
+    A guard that only ever sees a healthy base measures nothing, and the guard
+    it replaced had exactly that defect: it could be turned green by editing the
+    host table. These two bases are built by hand — no file, no network — and
+    differ ONLY in who wrote the pages. The healthy one must clear both floors
+    and the hollowed-out one must fail both, or the floors are decoration.
+
+    The sizes are literals chosen to straddle the floors: 200 models is above
+    the 120 vendor floor, and 200 of 200 is above the 0.70 share floor.
+    """
+
+    #: MEASURED nowhere — invented input, and deliberately so: this control has
+    #: to keep working when the real base is ten times its present size.
+    HOW_MANY_MODELS = 200
+
+    def _facts(self, url_for) -> list[Fact]:
+        return [
+            Fact(
+                model=f"kling-{i}",
+                attribute="max_duration_seconds",
+                value="10",
+                source_url=url_for(i),
+                tier="vendor",
+            )
+            for i in range(self.HOW_MANY_MODELS)
+        ]
+
+    def test_a_base_of_vendor_documents_clears_both_floors(self) -> None:
+        models, with_vendor, above_blog = first_hand_coverage(
+            self._facts(lambda i: f"https://kling.ai/docs/{i}")
+        )
+        assert (models, with_vendor, above_blog) == (200, 200, 200), (
+            models,
+            with_vendor,
+            above_blog,
+        )
+        assert with_vendor >= MODELS_WITH_A_VENDOR_SOURCE_FLOOR
+        assert above_blog / models >= ABOVE_BLOG_SHARE_FLOOR
+
+    def test_THE_CONTROL_the_same_claims_from_nobody_in_particular_fail_both(self) -> None:
+        """Same models, same claims, same count of rows — only the authorship
+        is gone. This is the failure the old rung race was meant to catch and
+        could not: here the base did not shrink and no rung was swept, the
+        first-hand material simply stopped being there."""
+        models, with_vendor, above_blog = first_hand_coverage(
+            self._facts(lambda i: f"https://some-host-nobody-tabled.example/kling-{i}")
+        )
+        assert (models, with_vendor, above_blog) == (200, 0, 0), (
+            models,
+            with_vendor,
+            above_blog,
+        )
+        assert not with_vendor >= MODELS_WITH_A_VENDOR_SOURCE_FLOOR
+        assert not above_blog / models >= ABOVE_BLOG_SHARE_FLOOR
+
+    def test_THE_OTHER_HALF_practitioner_threads_added_on_top_change_nothing(self) -> None:
+        """The premise change, as a test. 400 community observations appended to
+        the healthy base — more rows on the third rung than there are models —
+        must not move either number by one, because they took nothing away."""
+        base = self._facts(lambda i: f"https://kling.ai/docs/{i}")
+        crowd = [
+            Fact(
+                model=f"kling-{i % self.HOW_MANY_MODELS}",
+                attribute="observed_behaviour",
+                value="15-second clip in about 5 minutes on an RTX 3060",
+                source_url=f"https://huggingface.co/Kwai/Kling/discussions/{i}",
+                tier="blog",
+            )
+            for i in range(400)
+        ]
+        assert first_hand_coverage(base + crowd) == (200, 200, 200)
 
 
 class TheHostIsNotAlwaysTheAuthor(unittest.TestCase):
