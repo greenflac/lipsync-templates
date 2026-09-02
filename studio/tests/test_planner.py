@@ -24,6 +24,7 @@ import unittest
 from datetime import date
 
 from studio import planner as pn
+from studio import pricing
 from studio.factindex import FactIndex
 from studio.selfrag.facts import Fact
 
@@ -383,6 +384,134 @@ class ЦенаВОтборе(unittest.TestCase):
     def test_ни_строки_о_цене(self) -> None:
         состояние, _ = pn.price_stance(list(ЗДОРОВЫЕ), pn.budget_from("бюджет 1 доллар"))
         self.assertEqual(состояние, "цена не записана")
+
+
+class ПереводЗаЧто(unittest.TestCase):
+    """Точный перевод внутри одного измерения — и запрет на всё остальное.
+
+    Найдено чтением выдачи 2026-09-02 (П3): на «дубляж..., бюджет $0.10 за
+    секунду» прибор говорил «цена записана, но с бюджетом НЕСРАВНИМА» о цене
+    `0.6 usd за minute`, то есть о $0.01 за секунду — в потолок с десятикратным
+    запасом.
+
+    Здесь проверяются ДВА РАЗНЫХ запрета, которые до этого были слиты в один:
+    единица (кредиты -> доллары) не переводится НИКОГДА, потому что курс
+    назначает вендор; «за что» (минута -> секунда) переводится, потому что
+    шестьдесят — определение единицы.
+    """
+
+    @staticmethod
+    def _цена(amount: float, unit: str, per: str) -> pricing.Price:
+        return pricing.Price(
+            amount=amount, unit=unit, per=per, conditional=False, outcome="годно", note=""
+        )
+
+    def test_минута_переводится_в_секунду(self) -> None:
+        сколько, откуда = pn.to_budget_per(
+            self._цена(0.6, "usd", "minute"), pn.budget_from("бюджет $0.10 за секунду")
+        )
+        self.assertIsNotNone(сколько)
+        # Литерал (Т2): 0.6 / 60 = 0.01, и делитель здесь не импортируется.
+        self.assertAlmostEqual(float(сколько or 0.0), 0.01, places=9)
+        self.assertIn("ПЕРЕВЕДЕНО НАМИ", откуда)
+        # Исходная строка обязана стоять рядом с переведённой.
+        self.assertIn("0.6", откуда)
+        self.assertIn("minute", откуда)
+        self.assertIn("second", откуда)
+
+    def test_секунда_переводится_в_минуту(self) -> None:
+        сколько, откуда = pn.to_budget_per(
+            self._цена(0.01, "usd", "second"), pn.budget_from("бюджет $1 за минуту")
+        )
+        self.assertAlmostEqual(float(сколько or 0.0), 0.6, places=9)
+        self.assertIn("ПЕРЕВЕДЕНО НАМИ", откуда)
+
+    def test_совпавшее_за_что_переводом_не_называется(self) -> None:
+        сколько, откуда = pn.to_budget_per(
+            self._цена(0.05, "usd", "second"), pn.budget_from("бюджет $0.10 за секунду")
+        )
+        self.assertEqual(сколько, 0.05)
+        # Ничего не считали — и говорить о переводе нечего: иначе пометка
+        # обесценится там, где она действительно нужна.
+        self.assertEqual(откуда, "")
+
+    def test_кредиты_в_доллары_не_переводятся_никогда(self) -> None:
+        # НЕГАТИВНЫЙ КОНТРОЛЬ, ради которого запреты и разведены: курс кредита
+        # к доллару — решение вендора, оно нигде не записано, и «курс по
+        # умолчанию» обязан ронять этот тест.
+        for за_что in ("second", "minute", "run"):
+            сколько, откуда = pn.to_budget_per(
+                self._цена(40.0, "credits", за_что), pn.budget_from("бюджет $0.10 за секунду")
+            )
+            self.assertIsNone(сколько, за_что)
+            self.assertEqual(откуда, "")
+
+    def test_картинка_и_мегапиксель_не_переводятся(self) -> None:
+        # Сколько мегапикселей в картинке — свойство картинки, а не определение.
+        сколько, _ = pn.to_budget_per(
+            self._цена(0.03, "usd", "megapixel"), pn.budget_from("бюджет $0.10 за кадр")
+        )
+        self.assertIsNone(сколько)
+
+    def test_знаки_и_токены_не_переводятся(self) -> None:
+        # Сколько знаков в токене — свойство модели и текста, у разных разное.
+        сколько, _ = pn.to_budget_per(
+            self._цена(0.1, "usd", "1000_chars"), pn.budget_from("бюджет $0.10 за секунду")
+        )
+        self.assertIsNone(сколько)
+
+    def test_таблица_перевода_закрытая_и_известная_разборщику(self) -> None:
+        # Каждое «за что» таблицы обязано существовать у разборщика цен (Ц10),
+        # и единицы в таблице нет вовсе — переводить её нечем и незачем.
+        for из_, в in pn.PER_CONVERSION:
+            self.assertIn(из_, pricing.PER)
+            self.assertIn(в, pricing.PER)
+        плоско = {p for пара in pn.PER_CONVERSION for p in пара}
+        self.assertEqual(плоско, {"minute", "second"})
+        self.assertNotIn("credits", плоско)
+        self.assertNotIn("usd", плоско)
+
+    def test_положение_считается_по_переведённой_цене(self) -> None:
+        свои = [факт("м", "price_per_minute", "$0.6 per minute", "vendor")]
+        # 0.6/мин = 0.01/с: в потолок 0.10/с укладывается...
+        состояние, нота = pn.price_stance(свои, pn.budget_from("бюджет $0.10 за секунду"))
+        self.assertEqual(состояние, "в бюджете")
+        self.assertIn("ПЕРЕВЕДЕНО НАМИ", нота)
+        # ...и в потолок 0.001/с — нет. Перевод обязан работать в обе стороны.
+        строже, _ = pn.price_stance(свои, pn.budget_from("бюджет $0.001 за секунду"))
+        self.assertEqual(строже, "дороже бюджета")
+
+    def test_потолок_за_секунду_валидатору_не_передаётся(self) -> None:
+        # Поле `pipeline.Step.budget_usd` — бюджет ШАГА, и посекундный потолок
+        # в нём даёт класс `цена` там, где модель укладывается десятикратно.
+        свои = [
+            факт("м-lipsync", "price_per_minute", "$0.6 per minute", "vendor"),
+            факт("м-lipsync", "architecture", "lipsync talking-head", "vendor"),
+            факт("м-lipsync", "license", "apache-2.0", "vendor"),
+        ]
+        посекундный = pn.plan(
+            "из готового ролика сделай липсинк под другой язык, бюджет $0.10 за секунду",
+            facts=свои,
+            today=СЕГОДНЯ,
+        )
+        self.assertNotIn("цена", посекундный["classes"])
+        self.assertIn("НЕ передан", посекундный["budget"]["note"])
+
+    def test_потолок_за_ролик_валидатору_передаётся(self) -> None:
+        # Обратная сторона (И5): пошаговый потолок обязан доезжать до
+        # валидатора, иначе «класс цена не сработал» означало бы «его выключили».
+        свои = [
+            факт("м-lipsync", "price_per_run_usd", "$9.00 per run", "vendor"),
+            факт("м-lipsync", "architecture", "lipsync talking-head", "vendor"),
+            факт("м-lipsync", "license", "apache-2.0", "vendor"),
+        ]
+        пошаговый = pn.plan(
+            "из готового ролика сделай липсинк под другой язык, бюджет $0.10 за ролик",
+            facts=свои,
+            today=СЕГОДНЯ,
+        )
+        self.assertIn("цена", пошаговый["classes"])
+        self.assertNotIn("НЕ передан", пошаговый["budget"]["note"])
 
 
 class ПочемуНеСосед(unittest.TestCase):

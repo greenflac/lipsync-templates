@@ -104,6 +104,21 @@ def run(path: Path = pn.DEFAULT_BRIEFS_PATH) -> dict:
                 беды.append(f"expect_rival={ждали_строку!r} — такого положения нет")
             elif not any(годен(t) for t in строки_о_проверенных):
                 беды.append(f"строка о проверенных: {строки_о_проверенных}, ждали {ждали_строку!r}")
+        # Перевод «за что»: посчитанное нами число обязано называться
+        # посчитанным нами, и ожидание на это есть отдельное.
+        if "expect_converted" in row:
+            переведено = [
+                str((s.get("chosen") or {}).get("price_note") or "")
+                for s in итог["steps"]
+                if s.get("chosen")
+            ]
+            есть = any(pn.CONVERTED_MARK in t for t in переведено)
+            ждали_перевод = str(row["expect_converted"]) == "да"
+            if есть != ждали_перевод:
+                беды.append(
+                    f"перевод «за что»: {'есть' if есть else 'нет'}, "
+                    f"ждали {'есть' if ждали_перевод else 'нет'}"
+                )
         if "expect_budget" in row:
             снято = (итог.get("budget") or {}).get("amount")
             if снято != row["expect_budget"]:
@@ -188,6 +203,31 @@ def run(path: Path = pn.DEFAULT_BRIEFS_PATH) -> dict:
             elif про_проверенных:
                 строка_лишняя.append(f"{c['id']}/{s['step']} ({выбран['model']})")
 
+    # ПЕРЕВОД «ЗА ЧТО», числом по всем брифам разом, и негативный контроль к
+    # нему: ни одно переведённое число не смеет появиться без пометки о том,
+    # что его посчитали мы, и ни одна цена в кредитах не смеет быть переведена
+    # в доллары (курс — решение вендора, его нигде не записано).
+    переводов = 0
+    перевод_без_пометки: list[str] = []
+    кредиты_переведены: list[str] = []
+    for c in случаи:
+        for s in c["plan"]["steps"]:
+            выбран = s["chosen"]
+            if выбран is None:
+                continue
+            нота = str(выбран.get("price_note") or "")
+            записано = str(выбран.get("price") or "")
+            if pn.CONVERTED_MARK in нота:
+                переводов += 1
+            # Переведённое число всегда несёт исходную строку рядом: если в
+            # ноте стоит «за second», а записана цена «за minute», пометка о
+            # переводе обязана быть.
+            if " за second" in нота and " за minute" in записано:
+                if pn.CONVERTED_MARK not in нота:
+                    перевод_без_пометки.append(f"{c['id']}/{s['step']} ({выбран['model']})")
+            if "credits" in нота and pn.CONVERTED_MARK in нота:
+                кредиты_переведены.append(f"{c['id']}/{s['step']} ({выбран['model']})")
+
     молчащие = [c for c in случаи if not c["steps"]]
     заговорившие = [c for c in случаи if c["steps"]]
     исходы = {c["outcome"] for c in случаи}
@@ -214,6 +254,9 @@ def run(path: Path = pn.DEFAULT_BRIEFS_PATH) -> dict:
         "rival_none_at_all": нет_проверенных,
         "rival_line_missing": строка_пропущена,
         "rival_line_spurious": строка_лишняя,
+        "per_converted": переводов,
+        "converted_unmarked": перевод_без_пометки,
+        "credits_converted": кредиты_переведены,
     }
 
 
@@ -253,6 +296,15 @@ def verdict(итог: dict) -> tuple[int, list[str]]:
         )
     for где in итог["rival_line_spurious"]:
         беды.append(f"выбранный сам проверен, а строка о вытесненном всё равно напечатана: {где}")
+    for где in итог["converted_unmarked"]:
+        беды.append(f"цена переведена и не названа переведённой: {где}")
+    for где in итог["credits_converted"]:
+        беды.append(f"КРЕДИТЫ ПЕРЕВЕДЕНЫ В ДОЛЛАРЫ — курса не записано нигде: {где}")
+    if not итог["per_converted"]:
+        беды.append(
+            "ни на одном шаге «за что» не переводилось: ветка перевода не проверена вовсе "
+            f"(«{pn.CONVERTED_MARK}»)"
+        )
     if not итог["rival_displaced"]:
         беды.append(
             "ни на одном шаге цена не вытеснила проверенного кандидата: ветка "
@@ -286,6 +338,11 @@ def render(итог: dict) -> str:
             f"{итог['candidates_without_applicability']} (все с пометкой: "
             f"{итог['candidates_unmarked'] == 0}), без доказательства "
             f"{итог['candidates_without_evidence']}"
+        ),
+        (
+            f"«за что» переведено на {итог['per_converted']} шаг(ах), "
+            f"без пометки {len(итог['converted_unmarked'])}, "
+            f"кредитов переведено в доллары {len(итог['credits_converted'])}"
         ),
         (
             f"проверенный вытеснен ценой на {итог['rival_displaced']} шаг(ах), "

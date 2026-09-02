@@ -439,6 +439,16 @@ def plan_pipeline(brief: str, creative: str = "", budget_usd: float = 0.0) -> st
 
     Prices are not invented. A step whose model has no comparable price line
     says `цена не записана`.
+
+    A price recorded per MINUTE is compared against a per-SECOND ceiling, and
+    vice versa, because sixty is the definition of the unit and not anybody's
+    exchange rate. The converted figure is labelled as ours and printed beside
+    the recorded one — "$0.6 за минуту = $0.01 за секунду" — so you can always
+    see which number the vendor wrote and which one we worked out. Nothing else
+    converts: a price in credits is never turned into dollars (that rate is the
+    vendor's decision and is recorded nowhere), and neither is per-image against
+    per-megapixel, or per-1000-chars against per-token. Those stay "could not
+    compare", which is an answer, not a failure.
     """
     return _json(
         planner.plan(
