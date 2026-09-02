@@ -9,6 +9,7 @@ import importlib.util
 import json
 import tempfile
 import unittest
+from unittest import mock
 from datetime import date
 from pathlib import Path
 
@@ -465,3 +466,58 @@ class СостояниеИсточникаРядомСВозрастом(unittes
         )
         self.assertEqual(len(строки), 1)
         self.assertEqual(строки[0]["reason"], refill.STALE_VENDOR)
+
+
+class ПромахПересчитываетсяПоНынешнейБазе(unittest.TestCase):
+    """ИЗМЕРЕНО 2026-09-02: журнал держал `minimax-h3` с двумя промахами по
+    `max_seconds`, а база отвечает на этот вопрос `15` — ответ появился в тот
+    же день, когда семья атрибутов научилась разворачивать `max_seconds` в
+    `duration_enum` и соседей.
+
+    Очередь, которая просит сделанного, читается по диагонали. На канале опроса
+    портала это уже разбиралось; здесь тот же пересчёт.
+    """
+
+    def _журнал(self, строки: list[dict]) -> Path:
+        путь = Path(tempfile.mkdtemp()) / "misses.jsonl"
+        путь.write_text(
+            "".join(json.dumps(с, ensure_ascii=False) + "\n" for с in строки), encoding="utf-8"
+        )
+        return путь
+
+    def _промах(self, model: str, attribute: str = "max_seconds") -> dict:
+        return {
+            "model": model,
+            "attribute": attribute,
+            "outcome": "could not measure",
+            "known": 0,
+            "asked_on": "2026-08-31",
+            "note": "",
+        }
+
+    def _ответ(self, reason: str, near: list[str] | None = None):
+        return lambda model, attribute="", **kw: {"reason": reason, "near": near or []}
+
+    def test_отвеченный_промах_из_очереди_уходит(self):
+        путь = self._журнал([self._промах("m"), self._промах("m")])
+        with mock.patch.object(refill.advice, "advise", self._ответ("answered")):
+            self.assertEqual(refill.missed_work(путь), [])
+
+    def test_молчание_с_похожим_именем_это_другая_работа(self):
+        """Не «идти читать источники», а «спросивший написал имя иначе»."""
+        путь = self._журнал([self._промах("h3-max"), self._промах("h3-max")])
+        with mock.patch.object(
+            refill.advice, "advise", self._ответ("name_maybe_mistyped", ["minimax-h3-max"])
+        ):
+            строки = refill.missed_work(путь)
+        self.assertEqual(строки[0]["reason"], refill.ASKED_OTHER_SPELLING)
+        self.assertIn("minimax-h3-max", строки[0]["detail"])
+
+    def test_полное_молчание_остаётся_спросом(self):
+        """Вторая половина (И5): пересчёт не должен опустошать очередь. Модель,
+        которой база не знает вовсе, — по-прежнему работа читать источники."""
+        путь = self._журнал([self._промах("нет-такой"), self._промах("нет-такой")])
+        with mock.patch.object(refill.advice, "advise", self._ответ("model_unknown")):
+            строки = refill.missed_work(путь)
+        self.assertEqual(строки[0]["reason"], refill.ASKED_UNKNOWN)
+        self.assertNotIn("база держит", строки[0]["detail"])
