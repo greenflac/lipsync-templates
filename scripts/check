@@ -440,7 +440,7 @@ python scripts/creative_fit.py --check
 echo "== tests (разрешение)"
 python -m unittest studio.tests.test_resolution
 
-echo "== заголовок ответа против базы: цена и скорость"
+echo "== заголовок ответа против базы: цена, скорость, лицензия"
 python scripts/check_headline.py --check
 
 echo "== планировщик: план из брифа и пометка о неизмеренной применимости"

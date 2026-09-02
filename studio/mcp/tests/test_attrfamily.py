@@ -105,3 +105,42 @@ class РазворотНазываетсяВслух(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ЛицензионнаяСемья(unittest.TestCase):
+    """Тот же дефект, что у цены, но в опасную сторону.
+
+    ИЗМЕРЕНО 2026-09-02 ЧЕРЕЗ `advise` (а не по сырым строкам): из 253 моделей
+    с лицензионной строкой на вопрос `license` молчали 14, и у 11 записана
+    некоммерческая оговорка и больше ничего. Модель, которую нельзя брать в
+    коммерческую работу, отвечала «о лицензии ничего не известно» — ровно
+    перед решением, которое правило Ц5 велит принимать ПОСЛЕ чтения лицензии.
+    """
+
+    def test_оговорка_отвечает_на_вопрос_о_лицензии(self):
+        self.assertEqual(
+            attrfamily.expand("license", ["license_restriction"]), ["license_restriction"]
+        )
+
+    def test_лицензия_хвостом_имени_тоже_находится(self):
+        """`architecture_and_license` — два имени пишут лицензию хвостом."""
+        self.assertEqual(
+            attrfamily.expand("license", ["architecture_and_license"]),
+            ["architecture_and_license"],
+        )
+
+    def test_условия_площадки_лицензией_модели_не_считаются(self):
+        """И5: `portal_license` — условия ПЕРЕПРОДАЖИ. На fal.ai все 57
+        карточек `commercial`, и у модели, чьи веса лежат под «research only»,
+        такой ответ дал бы ложный зелёный на правиле Ц5."""
+        self.assertEqual(attrfamily.expand("license", ["portal_license"]), [])
+
+    def test_британское_написание_спрашивает_то_же(self):
+        self.assertEqual(
+            attrfamily.expand("licence", ["license_restriction"]), ["license_restriction"]
+        )
+
+    def test_цена_лицензией_не_становится(self):
+        """Вторая половина: семьи не перетекают друг в друга."""
+        self.assertEqual(attrfamily.expand("license", ["price_per_minute"]), [])
+        self.assertEqual(attrfamily.expand("price", ["license_restriction"]), [])

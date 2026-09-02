@@ -41,6 +41,7 @@ import dataclasses
 import json
 from datetime import date
 from pathlib import Path
+from typing import Any
 
 from lipsync.fork_identity import FAIL, PASS, UNMEASURED
 
@@ -162,9 +163,60 @@ IDENTITY_TIERS: tuple[str, ...] = (TIER_VENDOR, TIER_PORTAL, TIER_BLOG)
 # are one list and one bug waiting.
 
 
+#: Прочитанная база, ключ — файл И ЕГО СОСТОЯНИЕ. Не срок жизни и не флаг:
+#: кэш, который может отстать от файла, ломает обещание «`record` виден сразу»,
+#: и отладка такого расхождения дороже всего, что кэш сэкономил.
+#:
+#: ЗАЧЕМ. ИЗМЕРЕНО 2026-09-02: `scripts/check_headline.py` задаёт 1182 вопроса
+#: и на каждый перечитывает файл в 1833 строки — 43 секунды при 85 у всей
+#: сборки. Продукту это стоит того же: `plan_pipeline` спрашивает базу по разу
+#: на кандидата.
+_ПРОЧИТАННОЕ: dict[tuple[str, int, int], FactStore] = {}
+
+
 def store_for(path: Path | None = None) -> FactStore:
-    """A fact store read fresh from disk, so a `record` is visible immediately."""
-    return FactStore(load_facts(path or DEFAULT_FACTS_PATH))
+    """A fact store read fresh from disk, so a `record` is visible immediately.
+
+    Кэшируется по (путь, время изменения в наносекундах, размер). Файл
+    изменился хоть на байт — ключ другой, и база читается заново; поэтому
+    «свежесть» здесь не обещание, а следствие ключа. Файла нет — читаем как
+    прежде, без кэша: у отсутствующего файла нет состояния, по которому его
+    можно отличить от появившегося.
+    """
+    файл = Path(path or DEFAULT_FACTS_PATH)
+    try:
+        снимок = файл.stat()
+    except OSError:
+        return FactStore(load_facts(файл))
+    ключ = ключ_снимка(файл, снимок)
+    готовое = _ПРОЧИТАННОЕ.get(ключ)
+    if готовое is None:
+        готовое = FactStore(load_facts(файл))
+        # Один ключ на файл: держать историю состояний незачем, а память за
+        # длинный прогон она съедает (1833 строки на снимок).
+        for прежний in [к for к in _ПРОЧИТАННОЕ if к[0] == str(файл)]:
+            _ПРОЧИТАННОЕ.pop(прежний, None)
+        _ПРОЧИТАННОЕ[ключ] = готовое
+    return готовое
+
+
+def snapshot_size(снимок: Any) -> int:
+    """Размер из `stat`. Отдельной функцией, чтобы подменяться в тесте (Т5)."""
+    return int(снимок.st_size)
+
+
+def ключ_снимка(файл: Path, снимок: Any) -> tuple[str, int, int]:
+    """Ключ кэша: путь, время изменения в наносекундах И РАЗМЕР.
+
+    Вынесено отдельной функцией (Т5), потому что размер в ключе иначе
+    недостижим тестом: любая настоящая правка файла сдвигает и время, так что
+    ключ различался бы и без размера, и мутант «время без размера» проходил
+    молча. Здесь его видно.
+
+    Размер нужен на файловых системах, округляющих время: две правки в один
+    такт часов дали бы один ключ и ответ по прежней базе.
+    """
+    return (str(файл), int(снимок.st_mtime_ns), snapshot_size(снимок))
 
 
 def _spread_by_attribute(facts: list[Fact]) -> list[Fact]:

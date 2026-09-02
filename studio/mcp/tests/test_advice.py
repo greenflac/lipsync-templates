@@ -1206,3 +1206,100 @@ class ЦенаПодДругимИменем(unittest.TestCase):
         out = advice.advise("sync-lipsync-2", attribute="max_seconds", path=self.путь)
         assert out["outcome"] == "could not measure", out["note"]
         assert out["reason"] == "attribute_unknown"
+
+
+class ПрочитаннаяБазаНеОтстаёт(unittest.TestCase):
+    """Кэш базы фактов держится на состоянии файла, а не на сроке жизни.
+
+    ЗАЧЕМ КЭШ. ИЗМЕРЕНО 2026-09-02: `scripts/check_headline.py` задаёт 1182
+    вопроса и перечитывал файл на каждый — 43 с; стало 3 с.
+
+    ЧЕМ ОН ОПАСЕН. Обещание `record` — «записанное видно сразу». Кэш, который
+    может отстать от файла, это обещание ломает, а расхождение между тем, что
+    записано, и тем, что отвечает инструмент, отлаживается дороже всего, что
+    кэш сэкономил. Поэтому здесь проверяется не скорость, а СВЕЖЕСТЬ.
+    """
+
+    def setUp(self) -> None:
+        self._dir = tempfile.TemporaryDirectory()
+        self.addCleanup(self._dir.cleanup)
+        self.путь = Path(self._dir.name) / "facts.jsonl"
+        patcher = mock.patch.dict(source_hosts.VENDOR_SOURCES, TEST_VENDOR_SOURCES, clear=False)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def test_записанное_видно_сразу(self) -> None:
+        первый = advice.advise("test-model", attribute="resolution", path=self.путь)
+        assert первый["outcome"] == "could not measure", первый["note"]
+        advice.record(
+            "test-model",
+            "resolution",
+            "1080p",
+            "https://some-magazine.test/review",
+            "blog",
+            "2026-08-01",
+            path=self.путь,
+        )
+        второй = advice.advise("test-model", attribute="resolution", path=self.путь)
+        # Исход остаётся третьим: одна блоговая строка — слабая опора, и это
+        # верное поведение продукта, а не отставший кэш. Свежесть видна по
+        # ПРИЧИНЕ и по значению: до записи причина была «атрибут неизвестен»,
+        # после — «источник слаб», и значение читается.
+        # До записи база пуста, поэтому имя ей неизвестно вовсе — это ДРУГОЙ
+        # третий исход, чем «модель есть, атрибута нет», и подменять один
+        # другим в ожидании теста значит проверять не то (Р1).
+        assert первый["reason"] == "model_unknown", первый["reason"]
+        assert второй["reason"] != "attribute_unknown", второй["reason"]
+        assert второй["claims"]["resolution"]["values"] == ["1080p"], второй["claims"]
+
+    def test_дважды_подряд_один_и_тот_же_ответ(self) -> None:
+        """Негативный контроль (И5): кэш обязан не только обновляться, но и
+        отдавать то же самое, когда файл не менялся."""
+        advice.record(
+            "test-model",
+            "resolution",
+            "1080p",
+            "https://some-magazine.test/review",
+            "blog",
+            "2026-08-01",
+            path=self.путь,
+        )
+        а = advice.advise("test-model", attribute="resolution", path=self.путь)
+        б = advice.advise("test-model", attribute="resolution", path=self.путь)
+        assert а["claims"] == б["claims"]
+
+    def test_размер_входит_в_ключ(self) -> None:
+        """Размер в ключе иначе недостижим тестом: любая настоящая правка
+        сдвигает и время, так что ключ различался бы и без размера. Мутант
+        «время без размера» проходил молча, пока ключ не стал функцией."""
+
+        class Снимок:
+            st_mtime_ns = 1_700_000_000_000_000_000
+            st_size = 10
+
+        а = Снимок()
+        б = Снимок()
+        б.st_size = 11
+        путь = Path("/x/facts.jsonl")
+        assert advice.ключ_снимка(путь, а) != advice.ключ_снимка(путь, б)
+
+    def test_изменение_без_сдвига_часов_тоже_видно(self) -> None:
+        """Файловые системы округляют время, и две записи в одну секунду могли
+        бы дать один ключ. Поэтому в ключе И размер: правка, не сдвинувшая
+        время, меняет длину файла."""
+        self.путь.write_text("", encoding="utf-8")
+        снимок = self.путь.stat()
+        with mock.patch.object(advice, "snapshot_size", lambda _: 0):
+            advice.advise("test-model", attribute="resolution", path=self.путь)
+        advice.record(
+            "test-model",
+            "resolution",
+            "720p",
+            "https://some-magazine.test/review",
+            "blog",
+            "2026-08-01",
+            path=self.путь,
+        )
+        assert self.путь.stat().st_size != снимок.st_size, "правка изменила размер файла"
+        итог = advice.advise("test-model", attribute="resolution", path=self.путь)
+        assert итог["claims"]["resolution"]["values"] == ["720p"], итог["claims"]
