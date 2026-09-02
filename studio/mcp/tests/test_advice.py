@@ -896,3 +896,46 @@ class VerdictFollowsEvidence(unittest.TestCase):
         self.assertEqual(advice.claims_found(real["claims"]), 1)
         self.assertEqual(advice.claims_found(invented["claims"]), 0)
         self.assertEqual(advice.claims_found(None), 0)
+
+    def test_one_weak_attribute_does_not_sink_the_answered_ones(self) -> None:
+        """Граница «всё слабое» против «часть слабая» — Е3: числами, а не флагом.
+
+        Мутация `unmeasured == len(claims)` -> `unmeasured > 0` не краснела ни
+        на одном тесте до этого (замер 2026-09-02): смешанного входа в наборе
+        не было, и обе стороны границы проверялись одной её стороной.
+        """
+        path = self._base(
+            [
+                _fact(attribute="max_seconds", value="10", tier="vendor"),
+                _fact(
+                    attribute="resolution",
+                    value="1080p",
+                    tier="blog",
+                    source_url="https://blog.test/x",
+                ),
+            ]
+        )
+        out = advice.advise("test-model", path=path)
+        self.assertEqual(out["outcome"], "pass")
+        self.assertEqual(out["reason"], "answered")
+        self.assertEqual(out["unmeasured"], 1, "слабый атрибут сосчитан, а не спрятан")
+        self.assertEqual(out["claims"]["max_seconds"]["outcome"], "pass")
+        self.assertEqual(out["claims"]["resolution"]["outcome"], "could not measure")
+        self.assertIn("1 of them only weakly", out["note"])
+
+    def test_all_weak_attributes_do_sink_it(self) -> None:
+        """Другая сторона той же границы: слабо ВСЁ — ответа нет."""
+        path = self._base(
+            [
+                _fact(attribute="max_seconds", value="10", tier="blog"),
+                _fact(
+                    attribute="resolution",
+                    value="1080p",
+                    tier="blog",
+                    source_url="https://blog.test/x",
+                ),
+            ]
+        )
+        out = advice.advise("test-model", path=path)
+        self.assertEqual(out["outcome"], "could not measure")
+        self.assertEqual(out["reason"], "sources_blog_only")
