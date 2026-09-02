@@ -1133,3 +1133,76 @@ class КраткаяФорма(unittest.TestCase):
 
     def test_краткая_говорит_что_она_краткая(self):
         self.assertIn("КРАТКАЯ", advice.brief("minimax-h3")["full_answer"])
+
+
+class ЦенаПодДругимИменем(unittest.TestCase):
+    """Провод от семьи атрибутов к самой выдаче.
+
+    ИЗМЕРЕНО 2026-09-02 на живой базе: цена записана у 79 моделей, а на вопрос
+    `price` отвечали 7 — у 72 она лежала под `price_per_minute`,
+    `price_per_second_usd` и ещё пятнадцатью именами, и `advise` отвечал
+    «nothing is recorded» при записанном факте. Семья проверена отдельно
+    (`test_attrfamily.py`); здесь проверяется, что она доехала до ответа.
+    """
+
+    def setUp(self) -> None:
+        self._dir = tempfile.TemporaryDirectory()
+        self.addCleanup(self._dir.cleanup)
+        self.путь = Path(self._dir.name) / "facts.jsonl"
+        self.путь.write_text(
+            "\n".join(
+                json.dumps(строка, ensure_ascii=False)
+                for строка in (
+                    {
+                        "model": "sync-lipsync-2",
+                        "attribute": "price_per_minute",
+                        "value": "$3 per minute of video",
+                        "source_url": "https://fal.ai/models/sync-lipsync-2",
+                        "tier": "portal",
+                        "stated_on": "2026-08-27",
+                    },
+                    {
+                        "model": "sync-lipsync-2",
+                        "attribute": "price_relative",
+                        "value": "50% lower price per character",
+                        "source_url": "https://fal.ai/models/sync-lipsync-2",
+                        "tier": "portal",
+                        "stated_on": "2026-08-27",
+                    },
+                )
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+
+    def test_вопрос_о_цене_находит_записанную_цену(self) -> None:
+        out = advice.advise("sync-lipsync-2", attribute="price", path=self.путь)
+        assert out["outcome"] == "pass", out["note"]
+        assert list(out["claims"]) == ["price_per_minute"], list(out["claims"])
+
+    def test_разворот_назван_в_ноте_а_не_только_в_ключах(self) -> None:
+        """Молча подставить минуту на вопрос о цене значит дать сравнить её с
+        секундой соседней модели."""
+        out = advice.advise("sync-lipsync-2", attribute="price", path=self.путь)
+        assert "price_per_minute" in out["note"], out["note"]
+        assert out["asked_as"], "разворот обязан называться отдельным полем"
+
+    def test_насколько_дешевле_ценой_не_считается(self) -> None:
+        """`price_relative` лежит у той же модели и начинается с `price`;
+        сколько платят, из него не следует."""
+        out = advice.advise("sync-lipsync-2", attribute="price", path=self.путь)
+        assert "price_relative" not in out["claims"], list(out["claims"])
+
+    def test_краткая_форма_несёт_тот_же_разворот(self) -> None:
+        """Краткая форма стоит по умолчанию у `model_advice`, и потерять
+        разворот в ней значит вернуть дефект туда, где его читают чаще."""
+        out = advice.brief("sync-lipsync-2", attribute="price", path=self.путь)
+        assert out["outcome"] == "pass"
+        assert list(out["claims"]) == ["price_per_minute"]
+        assert "price_per_minute" in out["note"]
+
+    def test_чужой_атрибут_по_прежнему_третий_исход(self) -> None:
+        """Негативный контроль провода: разворот не обязан находить ничего."""
+        out = advice.advise("sync-lipsync-2", attribute="max_seconds", path=self.путь)
+        assert out["outcome"] == "could not measure", out["note"]
+        assert out["reason"] == "attribute_unknown"

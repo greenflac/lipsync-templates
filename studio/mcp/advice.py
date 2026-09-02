@@ -44,7 +44,7 @@ from pathlib import Path
 
 from lipsync.fork_identity import FAIL, PASS, UNMEASURED
 
-from studio.selfrag import registry, source_hosts
+from studio.selfrag import attrfamily, registry, source_hosts
 from studio.selfrag.facts import (
     DEFAULT_FACTS_PATH,
     STALE_AFTER_DAYS,
@@ -345,7 +345,21 @@ def advise(model: str, attribute: str = "", *, path: Path | None = None) -> dict
     resolution = store.resolve(name)
     known_here = bool(resolution.names)
 
-    attributes = [attribute] if attribute else store.attributes(name)
+    # СПРОШЕННОЕ СЛОВО РАЗВОРАЧИВАЕТСЯ В ЗАПИСАННЫЕ ИМЕНА. ИЗМЕРЕНО
+    # 2026-09-02: цена записана у 79 моделей, а на вопрос `price` отвечали 7
+    # — у остальных 72 она лежит под `price_per_minute`,
+    # `price_per_second_usd`, `price_per_image_usd` и ещё пятнадцатью именами.
+    # Ответ «nothing is recorded» при записанном факте гонит спросившего
+    # искать заново то, что уже лежит; правила разворота и его негативный
+    # контроль — в `studio/selfrag/attrfamily.py`.
+    if attribute:
+        attributes = attrfamily.expand(attribute, store.attributes(name))
+        # Не нашлось родственников — спрашиваем ровно то, что спросили, чтобы
+        # ветка `attribute_unknown` ниже сработала как прежде (Р1).
+        attributes = attributes or [attribute]
+    else:
+        attributes = store.attributes(name)
+    asked_as = attrfamily.как_отвечено(attribute, attributes) if attribute else ""
     claims: dict[str, dict] = {}
     contested: list[str] = []
     for attr in attributes:
@@ -605,9 +619,15 @@ def advise(model: str, attribute: str = "", *, path: Path | None = None) -> dict
         "unmeasured": unmeasured,
         "note": (
             f"{len(claims)} attribute(s) answered from {claims_found(claims)} recorded "
-            f"source(s), {unmeasured} of them only weakly." + axis
+            f"source(s), {unmeasured} of them only weakly."
+            # Разворот спрошенного слова называется в ноте, а не только в
+            # ключах: читают ноту, и «спросил price — получил price_per_minute»
+            # обязано быть видно там же, где ответ.
+            + (f" ВНИМАНИЕ: {asked_as}" if asked_as else "")
+            + axis
         ),
         "reason": REASON_ANSWERED,
+        "asked_as": asked_as,
         "availability": live,
         "claims": claims,
         "failure_modes": failures,
@@ -994,7 +1014,19 @@ def brief(model: str, attribute: str = "", *, path: Path | None = None) -> dict:
     полный = advise(model, attribute, path=path)
     кратко: dict = {
         ключ: полный[ключ]
-        for ключ in ("outcome", "checked", "violations", "unmeasured", "reason", "note")
+        for ключ in (
+            "outcome",
+            "checked",
+            "violations",
+            "unmeasured",
+            "reason",
+            "note",
+            # Разворот спрошенного слова едет и в краткую форму: именно она
+            # стоит по умолчанию у `model_advice`, и потерять в ней «спросили
+            # price, ответили price_per_minute» значит вернуть дефект туда,
+            # где его читают чаще всего.
+            "asked_as",
+        )
         if ключ in полный
     }
     доступность = полный.get("availability") or {}
