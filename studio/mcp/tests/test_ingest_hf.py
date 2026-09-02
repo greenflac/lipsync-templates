@@ -5,10 +5,14 @@
 
 from __future__ import annotations
 
+import email.message
 import importlib.util
 import json
 import unittest
+import urllib.error
+import urllib.request
 from pathlib import Path
+from unittest import mock
 
 SPEC = importlib.util.spec_from_file_location(
     "ingest_hf", Path(__file__).resolve().parents[3] / "scripts" / "ingest_hf.py"
@@ -447,7 +451,7 @@ class ТелоТреда(unittest.TestCase):
 
     def test_канал_не_ответил_это_третий_исход(self):
         """Р1: «не смогли прочесть» не сворачивается в «наблюдений нет»."""
-        найдено, счёт = hf.наблюдения_модели("x/y", get=lambda u: ("HTTP 403", b""))
+        найдено, счёт, _ = hf.наблюдения_модели("x/y", get=lambda u: ("HTTP 403", b""))
         self.assertEqual(найдено, [])
         self.assertEqual(счёт, {"канал не ответил": 1})
 
@@ -553,3 +557,135 @@ class ТелоТреда(unittest.TestCase):
         )
         for заявка in hf.заявки(строка):
             self.assertNotIn("dzft3w", " ".join(str(x) for x in заявка))
+
+
+class ОтветХоста:
+    """Заглушка ответа `urlopen`: контекст-менеджер с `read`."""
+
+    def __init__(self, тело: bytes) -> None:
+        self._тело = тело
+
+    def __enter__(self) -> "ОтветХоста":
+        return self
+
+    def __exit__(self, *_: object) -> None:
+        return None
+
+    def read(self, cap: int) -> bytes:
+        return self._тело[:cap]
+
+
+def отказ(код: int, retry_after: str | None = None) -> urllib.error.HTTPError:
+    заголовки = email.message.Message()
+    if retry_after is not None:
+        заголовки["Retry-After"] = retry_after
+    return urllib.error.HTTPError("https://x/", код, "no", заголовки, None)
+
+
+class Вежливость(unittest.TestCase):
+    """Канал не долбит хост: пауза, повтор на «не сейчас», отказ на «нет».
+
+    Сети здесь нет (Т4): `urlopen` и `sleep` подменены, а ожидаемые числа —
+    литералы (Т2), а не пересчёт формулы из проверяемого модуля.
+    """
+
+    def прогон(self, ответы: list[object]) -> tuple[str, bytes, list[float], int]:
+        сны: list[float] = []
+        счёт = {"n": 0}
+
+        def urlopen(request: object, timeout: int = 0) -> object:
+            счёт["n"] += 1
+            ответ = ответы[min(счёт["n"] - 1, len(ответы) - 1)]
+            if isinstance(ответ, BaseException):
+                raise ответ
+            return ответ
+
+        with (
+            mock.patch.object(hf.urllib.request, "urlopen", urlopen),
+            mock.patch.object(hf.time, "sleep", сны.append),
+        ):
+            состояние, тело = hf._get("https://x/")
+        return состояние, тело, сны, счёт["n"]
+
+    def test_на_429_ждём_и_повторяем(self):
+        """Половина контроля «прибор обязан шевельнуться»."""
+        состояние, тело, сны, запросов = self.прогон([отказ(429), ОтветХоста(b"ok")])
+        self.assertEqual(состояние, "ok")
+        self.assertEqual(тело, b"ok")
+        self.assertEqual(запросов, 2)
+        # 0.2 — пауза отката перед вторым запросом, 0.2 — пауза после удачи.
+        self.assertEqual(сны, [0.2, 0.2])
+
+    def test_на_404_не_повторяем(self):
+        """Вторая половина контроля: «нет» — это ответ, а не перегрузка (И5)."""
+        состояние, _, сны, запросов = self.прогон([отказ(404)])
+        self.assertEqual(состояние, "HTTP 404")
+        self.assertEqual(запросов, 1)
+        self.assertEqual(сны, [])
+
+    def test_откат_растёт_и_повторов_конечное_число(self):
+        состояние, _, сны, запросов = self.прогон([отказ(503)])
+        self.assertEqual(состояние, "HTTP 503")
+        self.assertEqual(запросов, 4)
+        self.assertEqual(сны, [0.2, 0.4, 0.8])
+
+    def test_слово_хоста_важнее_нашей_формулы(self):
+        _, _, сны, _ = self.прогон([отказ(429, "7"), ОтветХоста(b"ok")])
+        self.assertEqual(сны, [7.0, 0.2])
+
+    def test_ожидание_упирается_в_потолок(self):
+        _, _, сны, _ = self.прогон([отказ(429, "3600"), ОтветХоста(b"ok")])
+        self.assertEqual(сны, [60.0, 0.2])
+
+    def test_неразобранный_retry_after_откатывается_к_формуле(self):
+        _, _, сны, _ = self.прогон([отказ(429, "Wed, 21 Oct 2026 07:28:00 GMT"), ОтветХоста(b"ok")])
+        self.assertEqual(сны, [0.2, 0.2])
+
+    def test_после_удачи_пауза_есть(self):
+        _, _, сны, запросов = self.прогон([ОтветХоста(b"ok")])
+        self.assertEqual(запросов, 1)
+        self.assertEqual(сны, [0.2])
+
+    def test_обрыв_связи_не_крутится_бесконечно(self):
+        состояние, _, _, запросов = self.прогон([TimeoutError()])
+        self.assertEqual(состояние, "TimeoutError")
+        self.assertEqual(запросов, 1)
+
+    def test_мы_представляемся(self):
+        """Анонимный запрос администратору нечем ответить, кроме бана."""
+        имена: list[str] = []
+
+        def urlopen(request: urllib.request.Request, timeout: int = 0) -> object:
+            имена.append(request.headers.get("User-agent") or "")
+            return ОтветХоста(b"ok")
+
+        with (
+            mock.patch.object(hf.urllib.request, "urlopen", urlopen),
+            mock.patch.object(hf.time, "sleep", lambda _: None),
+        ):
+            hf._get("https://x/")
+        self.assertEqual(len(имена), 1)
+        self.assertIn("github.com/greenflac/lipsync-templates", имена[0])
+
+
+class ЛишнихЗапросовНет(unittest.TestCase):
+    """Один заход по модели не спрашивает у хоста одно и то же дважды (Е1)."""
+
+    КАРТОЧКА = json.dumps({"author": "V", "downloads": 1, "likes": 1, "createdAt": "2026-01-01"})
+    ЛИСТИНГ = json.dumps({"count": 0, "discussions": []})
+
+    def test_обсуждения_тянутся_один_раз(self):
+        спрошено: list[str] = []
+
+        def get(url: str) -> tuple[str, bytes]:
+            спрошено.append(url)
+            if url.endswith("/discussions"):
+                return "ok", self.ЛИСТИНГ.encode()
+            if "/api/models/" in url:
+                return "ok", self.КАРТОЧКА.encode()
+            return "HTTP 404", b""
+
+        hf.survey("V/M", get=get)
+        повторы = [u for u in set(спрошено) if спрошено.count(u) > 1]
+        self.assertEqual(повторы, [])
+        self.assertEqual(спрошено.count("https://huggingface.co/api/models/V/M/discussions"), 1)

@@ -34,6 +34,7 @@ import argparse
 import json
 import re
 import sys
+import time
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -80,16 +81,80 @@ TROUBLE = re.compile(
 )
 
 
+#: Пауза между запросами к чужому хосту. ВЫБРАНО 0.2 с: ИЗМЕРЕНО, что разбор
+#: одной модели стоит 7 запросов на фикстуре с двумя тредами и порядка 35 на
+#: живой, то есть заход по 82 моделям — тысячи обращений. Без паузы это залп с
+#: одного адреса под нашим же User-Agent, то есть форма, по которой банят. При
+#: 0.2 с тот же заход растягивается на минуты, а не на секунды, и остаётся
+#: работой, а не нагрузкой.
+ПАУЗА_МЕЖДУ_ЗАПРОСАМИ = 0.2
+
+#: Коды, на которых НАДО подождать и повторить, а не считать отказом: хост не
+#: сказал «нет», он сказал «не сейчас». Разница видна пользователю: «модель
+#: этого не умеет» против «мы не смогли посмотреть» (Р1).
+ЖДАТЬ_И_ПОВТОРИТЬ: frozenset[int] = frozenset({429, 500, 502, 503, 504})
+
+#: Сколько раз повторяем. ВЫБРАНО 3: дальше откат становится дольше самого
+#: захода, а хост, отвечающий 429 четвёртый раз подряд, просит уйти.
+ПОВТОРОВ = 3
+
+#: Множитель отката. ВЫБРАНО 2: 0.2 -> 0.4 -> 0.8 -> 1.6, суммарно меньше
+#: четырёх секунд на запрос. Хост, назвавший Retry-After, слушается вместо
+#: этой формулы — своё число ему виднее.
+ОТКАТ = 2.0
+
+#: Потолок ожидания по Retry-After. ВЫБРАНО 60 с: больше — это уже не пауза,
+#: а зависший заход, и честнее сказать «не смогли» и уйти.
+ПОТОЛОК_ОЖИДАНИЯ = 60.0
+
+#: Кто мы и куда писать, если мы мешаем. Анонимный User-Agent — это то, на что
+#: администратору остаётся ответить только баном.
+АГЕНТ = "lipsync-studio/ingest (+https://github.com/greenflac/lipsync-templates)"
+
+
+def _подождать(ответ: object, попытка: int) -> float:
+    """Сколько ждать: слово хоста важнее нашей формулы.
+
+    `Retry-After` может прийти секундами. Дата в этом поле тоже допустима
+    стандартом, но мы её не разбираем и честно откатываемся к своей формуле —
+    угадать дату неверно хуже, чем подождать по-своему.
+    """
+    сколько = ПАУЗА_МЕЖДУ_ЗАПРОСАМИ * (ОТКАТ**попытка)
+    заголовки = getattr(ответ, "headers", None)
+    сказано = заголовки.get("Retry-After") if заголовки else None
+    if сказано:
+        try:
+            сколько = float(str(сказано).strip())
+        except ValueError:
+            pass
+    return min(сколько, ПОТОЛОК_ОЖИДАНИЯ)
+
+
 def _get(url: str, cap: int = 400_000) -> tuple[str, bytes]:
-    """Один запрос. Отказ — это состояние, а не исключение."""
-    request = urllib.request.Request(url, headers={"User-Agent": "lipsync-studio/ingest"})
-    try:
-        with urllib.request.urlopen(request, timeout=25) as response:
-            return "ok", response.read(cap)
-    except urllib.error.HTTPError as error:
-        return f"HTTP {error.code}", b""
-    except Exception as error:  # noqa: BLE001 — состояние канала, не наша ошибка
-        return type(error).__name__, b""
+    """Один запрос, вежливо. Отказ — это состояние, а не исключение.
+
+    «Не сейчас» и «нет» — разные ответы, и путать их значит записать чужую
+    перегрузку как отсутствие знания.
+    """
+    request = urllib.request.Request(url, headers={"User-Agent": АГЕНТ})
+    последнее = "не пробовали"
+    последнее_ответ: object = None
+    for попытка in range(ПОВТОРОВ + 1):
+        if попытка:
+            time.sleep(_подождать(последнее_ответ, попытка - 1))
+        try:
+            with urllib.request.urlopen(request, timeout=25) as response:
+                тело = response.read(cap)
+                time.sleep(ПАУЗА_МЕЖДУ_ЗАПРОСАМИ)
+                return "ok", тело
+        except urllib.error.HTTPError as error:
+            последнее, последнее_ответ = f"HTTP {error.code}", error
+            if error.code not in ЖДАТЬ_И_ПОВТОРИТЬ:
+                return последнее, b""
+        except Exception as error:  # noqa: BLE001 — состояние канала, не наша ошибка
+            последнее, последнее_ответ = type(error).__name__, None
+            break
+    return последнее, b""
 
 
 #: Доля не-ASCII символов, выше которой текст считается написанным не на том
@@ -410,7 +475,7 @@ def знак(текст: str) -> str:
 
 def наблюдения_модели(
     model_id: str, get: Callable[[str], tuple[str, bytes]] = _get
-) -> tuple[list[dict[str, Any]], dict[str, int]]:
+) -> tuple[list[dict[str, Any]], dict[str, int], dict[str, Any]]:
     """Наблюдения из ТЕЛ всех тредов модели, и рядом — счётчики отсева (Р2).
 
     ОТБОР ИДЁТ ПО ТЕЛУ, А НЕ ПО ЗАГОЛОВКУ, и это главное решение всей функции.
@@ -426,11 +491,12 @@ def наблюдения_модели(
     """
     состояние, тело = get(f"{API}{model_id}/discussions")
     if состояние != "ok":
-        return [], {"канал не ответил": 1}
+        return [], {"канал не ответил": 1}, {}
     try:
-        треды = (json.loads(тело).get("discussions") or [])[:DISCUSSIONS_SCANNED]
+        листинг = json.loads(тело)
+        треды = (листинг.get("discussions") or [])[:DISCUSSIONS_SCANNED]
     except json.JSONDecodeError:
-        return [], {"выдача не разобралась": 1}
+        return [], {"выдача не разобралась": 1}, {}
 
     найдено: list[dict[str, Any]] = []
     счёт: dict[str, int] = {}
@@ -470,7 +536,7 @@ def наблюдения_модели(
                 "observation": видно,
             }
         )
-    return найдено, счёт
+    return найдено, счёт, листинг
 
 
 def license_paths(model_id: str, get: Callable[[str], tuple[str, bytes]] = _get) -> list[str]:
@@ -516,12 +582,14 @@ def survey(model_id: str, get: Callable[[str], tuple[str, bytes]] = _get) -> dic
                     "chars": len(body_here),
                 }
             )
-    наблюдения, счёт_наблюдений = наблюдения_модели(model_id, get)
-    talk_state, talk = get(f"{API}{model_id}/discussions")
-
-    разобрано = json.loads(talk) if talk_state == "ok" else {}
-    found = troubles(разобрано) if talk_state == "ok" else []
-    установочные = troubles(разобрано, setup=True) if talk_state == "ok" else []
+    # Листинг обсуждений берётся ОДИН раз и передаётся дальше. Прежде его
+    # тянули дважды на каждую модель — здесь и внутри `наблюдения_модели`, —
+    # то есть 82 лишних запроса за заход. Это Е1: одно знание, одно место.
+    наблюдения, счёт_наблюдений, разобрано = наблюдения_модели(model_id, get)
+    talk_state = "ok" if разобрано else "не отдался"
+    talk = json.dumps(разобрано) if разобрано else ""
+    found = troubles(разобрано) if разобрано else []
+    установочные = troubles(разобрано, setup=True) if разобрано else []
     return {
         "model_id": model_id,
         "outcome": "годно",
