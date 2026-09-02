@@ -560,8 +560,20 @@ def _finish(path: str | Path, parts: dict) -> dict:
     violations = sum(int(part.get("violations", 0) or 0) for part in parts.values())
     unmeasured = sum(int(part.get("unmeasured", 0) or 0) for part in parts.values())
 
+    # ЦЕЛИКОМ НЕ ОТРАБОТАВШИЙ ПРИБОР ДЕЛАЕТ ВЕРДИКТ ТРЕТЬИМ, а не первым.
+    # Найдено чтением выдачи (П3, 2026-09-02): на `lipsync/fixtures/face_ref.png`
+    # ответ был `outcome: pass` при `NOT RUN: intake` — то есть не отработала
+    # ровно та часть, ради которой креатив и смотрят: есть ли лицо, крупное ли
+    # оно, один ли человек в кадре. Числа рядом честные (`unmeasured: 4`,
+    # список `could_not_run`), но читают верхнюю строку, а она говорила «годно».
+    #
+    # Нарушение по-прежнему главнее: если то, что ОТРАБОТАЛО, уже нашло
+    # нарушение, исход `fail` — знание о поломке не отменяется незнанием
+    # остального.
     if violations:
         outcome = FAIL
+    elif could_not_run:
+        outcome = UNMEASURED
     elif checked:
         outcome = PASS
     else:

@@ -272,3 +272,61 @@ class TheVocabularyIsImportedNotRestated(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ВердиктПриНеотработавшемПриборе(unittest.TestCase):
+    """Найдено чтением выдачи (П3, 2026-09-02).
+
+    `analyse_creative("lipsync/fixtures/face_ref.png")` отвечал `pass` при
+    `NOT RUN: intake` — не отработала ровно та часть, ради которой креатив и
+    смотрят: есть ли лицо, крупное ли, один ли человек в кадре. Числа рядом
+    были честные, но читают верхнюю строку, а она говорила «годно».
+    """
+
+    def test_неотработавшая_часть_делает_вердикт_третьим(self) -> None:
+        out = creative._finish(
+            "x.png",
+            {
+                "look": {"outcome": "pass", "checked": 3, "violations": 0, "unmeasured": 1},
+                "intake": {
+                    "outcome": "could not measure",
+                    "checked": 0,
+                    "violations": 0,
+                    "unmeasured": 3,
+                    "note": "нет модуля распознавания лиц",
+                },
+            },
+        )
+        self.assertEqual(out["outcome"], "could not measure")
+        self.assertEqual([c["instrument"] for c in out["could_not_run"]], ["intake"])
+
+    def test_найденное_нарушение_главнее_незнания(self) -> None:
+        """Знание о поломке не отменяется незнанием остального: если то, что
+        отработало, уже нашло нарушение, исход `fail`."""
+        out = creative._finish(
+            "x.png",
+            {
+                "look": {"outcome": "fail", "checked": 3, "violations": 1, "unmeasured": 0},
+                "intake": {
+                    "outcome": "could not measure",
+                    "checked": 0,
+                    "violations": 0,
+                    "unmeasured": 3,
+                },
+            },
+        )
+        self.assertEqual(out["outcome"], "fail")
+
+    def test_когда_отработало_всё_вердикт_первый(self) -> None:
+        """Вторая половина контроля (И5): правило не должно превратить всякий
+        ответ в «не смогли»."""
+        out = creative._finish(
+            "x.png",
+            {"look": {"outcome": "pass", "checked": 3, "violations": 0, "unmeasured": 0}},
+        )
+        self.assertEqual(out["outcome"], "pass")
+
+    def test_ничего_не_отработало_это_тоже_третий_исход(self) -> None:
+        out = creative._finish("x.png", {})
+        self.assertEqual(out["outcome"], "could not measure")
+        self.assertEqual(out["checked"], 0)
