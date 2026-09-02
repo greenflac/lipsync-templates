@@ -67,6 +67,33 @@ class ЦенаСловамиИсточника(unittest.TestCase):
         self.assertNotIn("price", атрибуты)
 
 
+class ЧемМодельЗанята(unittest.TestCase):
+    """ИЗМЕРЕНО 2026-09-02: свежие имена с портала не доезжают до кандидатов
+    планировщика — из 15 показанных на трёх брифах записанный вход был у
+    ОДНОГО. У новых моделей в базе лежат цена и схема входа, и ни одного слова
+    о том, ЧТО они делают, а якорный отбор ищет именно слова задачи.
+    """
+
+    def test_описание_записывается_словами_вендора(self):
+        з = [
+            с
+            for с in ip.заявки(карточка(shortDescription="Generate lipsync from any audio"))
+            if с[1] == "positioning"
+        ]
+        self.assertEqual(len(з), 1, з)
+        self.assertEqual(з[0][2], "Generate lipsync from any audio")
+
+    def test_имя_атрибута_уже_есть_в_базе(self):
+        """Шестого написания одного и того же не заводим: `positioning` в базе
+        уже стоит."""
+        з = ip.заявки(карточка(shortDescription="x"))
+        self.assertIn("positioning", [с[1] for с in з])
+
+    def test_пустое_описание_строки_не_даёт(self):
+        self.assertNotIn("positioning", [с[1] for с in ip.заявки(карточка(shortDescription=""))])
+        self.assertNotIn("positioning", [с[1] for с in ip.заявки(карточка())])
+
+
 class СнятаСОбслуживания(unittest.TestCase):
     """Рекомендовать снятую модель значит послать человека платить за 404."""
 
