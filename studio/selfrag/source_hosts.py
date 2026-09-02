@@ -310,6 +310,19 @@ VENDOR_SOURCES: dict[str, tuple[str, ...]] = {
     # Строк о них в базе НОЛЬ, и это не довод против записи, а довод за: пока
     # семья не объявлена, факт с вендорской страницы ложится на `blog`, то есть
     # первый же сбор обесценит сам себя.
+    # `docs.anthropic.com` открылся тем же прощупыванием; страница
+    # /en/docs/about-claude/models/overview прочитана мной 2026-09-02 и
+    # перечисляет идентификаторы моделей (claude-opus-5, claude-sonnet-5,
+    # claude-haiku-4-5 и другие) — то есть это спека вендора, а не витрина.
+    # В базе сейчас одна модель этой семьи.
+    "claude": ("docs.anthropic.com", "anthropic.com", "www.anthropic.com"),
+    # `www.hedra.com` тоже открылся, и Hedra — вендор аватар-липсинка, то есть
+    # прямой предмет этого репозитория. ОГОВОРКА ЧЕСТНО: на главной странице
+    # (<title>Hedra — Visual Inference Models and Infrastructure</title>)
+    # идентификаторов моделей НЕТ, это витрина; объявлена только принадлежность
+    # хостов вендору, а конкретное имя модели по Ц10 придётся доказать
+    # страницей в момент записи факта, а не этой строкой.
+    "hedra": ("hedra.com", "www.hedra.com", "docs.hedra.com"),
     "videoretalk": ("help.aliyun.com/zh/model-studio/", "tongyi.aliyun.com"),
     "liveportrait": ("help.aliyun.com/zh/model-studio/", "tongyi.aliyun.com"),
     "emoji": ("help.aliyun.com/zh/model-studio/", "tongyi.aliyun.com"),
