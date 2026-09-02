@@ -386,3 +386,82 @@ class ОчередьПортала(unittest.TestCase):
 
     def test_файла_нет_строк_нет_и_прогон_цел(self):
         self.assertEqual(refill.portal_work(Path(tempfile.mkdtemp()) / "нет.json"), [])
+
+
+class СостояниеИсточникаРядомСВозрастом(unittest.TestCase):
+    """Возраст факта — ДОГАДКА о том, что источник мог поменяться; отпечаток —
+    наблюдение, менялся ли он.
+
+    ПРОВЕРЕНО РУКАМИ 2026-09-02 на `kling-3.0.max_seconds = 15`, источнику 209
+    дней: страница жива и говорит дословно «extended video duration of up to 15
+    seconds». Факт верен; протухла только его дата. Строка из очереди при этом
+    не убирается — вендор мог выпустить новую модель, ничего не поменяв на
+    старой странице, — но рядом с ней теперь стоит, что известно об источнике.
+    """
+
+    def _журнал(self, записи: list[dict]) -> Path:
+        путь = Path(tempfile.mkdtemp()) / "vendor_pages.jsonl"
+        путь.write_text(
+            "// шапка\n" + "".join(json.dumps(з, ensure_ascii=False) + "\n" for з in записи),
+            encoding="utf-8",
+        )
+        return путь
+
+    def _з(self, отпечаток: str, способ: str = "сп-1", дата: str = "2026-09-01") -> dict:
+        return {
+            "url": "https://vendor.test/a",
+            "fingerprint": отпечаток,
+            "method": способ,
+            "seen_on": дата,
+        }
+
+    def test_источник_не_менялся(self):
+        сост = refill.состояние_источников(self._журнал([self._з("aaa"), self._з("aaa")]))
+        self.assertEqual(сост["https://vendor.test/a"][0], refill.ИСТОЧНИК_ПРЕЖНИЙ)
+
+    def test_источник_изменился(self):
+        сост = refill.состояние_источников(self._журнал([self._з("aaa"), self._з("bbb")]))
+        self.assertEqual(сост["https://vendor.test/a"][0], refill.ИСТОЧНИК_ИЗМЕНИЛСЯ)
+
+    def test_одно_наблюдение_это_не_наблюдение(self):
+        """Сравнивать не с чем: одна запись — основание, а не история."""
+        сост = refill.состояние_источников(self._журнал([self._з("aaa")]))
+        self.assertEqual(сост["https://vendor.test/a"][0], refill.ИСТОЧНИК_НЕ_НАБЛЮДАЛИ)
+
+    def test_разные_способы_не_сравниваются(self):
+        сост = refill.состояние_источников(
+            self._журнал([self._з("aaa", "сп-старый"), self._з("bbb", "сп-новый")])
+        )
+        self.assertEqual(сост["https://vendor.test/a"][0], refill.ИСТОЧНИК_НЕ_НАБЛЮДАЛИ)
+
+    def test_строка_очереди_несёт_состояние(self):
+        строки = refill.с_состоянием_источника(
+            [
+                {
+                    "reason": refill.STALE_VENDOR,
+                    "model": "m",
+                    "detail": "x",
+                    "where": "https://vendor.test/a",
+                }
+            ],
+            {"https://vendor.test/a": (refill.ИСТОЧНИК_ПРЕЖНИЙ, "2026-09-02")},
+        )
+        self.assertIn(refill.ИСТОЧНИК_ПРЕЖНИЙ, строки[0]["detail"])
+        self.assertIn("2026-09-02", строки[0]["detail"])
+
+    def test_строка_из_очереди_не_исчезает(self):
+        """И5: наблюдение НЕ отменяет возраст. Вендор мог выпустить новую
+        модель, ничего не поменяв на старой странице."""
+        строки = refill.с_состоянием_источника(
+            [
+                {
+                    "reason": refill.STALE_VENDOR,
+                    "model": "m",
+                    "detail": "x",
+                    "where": "https://vendor.test/a",
+                }
+            ],
+            {"https://vendor.test/a": (refill.ИСТОЧНИК_ПРЕЖНИЙ, "2026-09-02")},
+        )
+        self.assertEqual(len(строки), 1)
+        self.assertEqual(строки[0]["reason"], refill.STALE_VENDOR)
