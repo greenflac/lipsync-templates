@@ -125,6 +125,42 @@ def вид_входа(поле: str) -> str:
 }
 
 
+#: ЧТО МОДЕЛЬ ВЫДАЁТ. Схема выхода в OpenAPI лежит рядом со схемой входа и
+#: читается так же. ИЗМЕРЕНО 2026-09-02 на четырёх эндпоинтах:
+#:
+#:     pixverse/lipsync   -> video
+#:     elevenlabs/tts     -> audio, timestamps
+#:     sync-lipsync       -> video
+#:     infinitalk         -> seed, video
+#:
+#: ЗАЧЕМ. Планировщик проверяет, что модель ПРИНИМАЕТ, и не проверяет, что она
+#: ВЫДАЁТ. Поймано на живом прогоне через MCP: шагу «озвучка» (produces: аудио)
+#: он выбрал `pixverse-lipsync` — липсинк-модель с перечнем голосов в схеме, —
+#: а выдаёт она video. Шаг, которому нужен звук, получил модель, которая звука
+#: не отдаёт.
+#:
+#: Скалярные поля выхода (`seed`, `timestamps`) видом не считаются: это не
+#: артефакт, а сопровождающие числа. Отсекаются по типу, а не по имени.
+СКАЛЯР = frozenset({"integer", "number", "boolean", "string"})
+
+
+def вид_выхода(поле: str, тело: dict[str, Any]) -> str:
+    """Вид артефакта на выходе по имени поля и его типу. Пусто — не артефакт."""
+    if str(тело.get("type") or "") in СКАЛЯР:
+        return ""
+    м = ВИД_ВХОДА.search(str(поле or ""))
+    return ПО_РУССКИ[м.group(1).lower()] if м else ""
+
+
+def схема_выхода(тело: dict[str, Any]) -> dict[str, Any] | None:
+    """Схема ВЫХОДА из OpenAPI. Нет её — значит эндпоинт о выходе молчит."""
+    схемы = (тело.get("components") or {}).get("schemas") or {}
+    for имя, т in схемы.items():
+        if имя.endswith("Output") and isinstance(т, dict):
+            return т
+    return None
+
+
 def схема_входа(тело: dict[str, Any]) -> dict[str, Any] | None:
     """Схема ВХОДА из OpenAPI. Нет её — значит ответ не тот, что мы ждали."""
     схемы = (тело.get("components") or {}).get("schemas") or {}
@@ -159,6 +195,10 @@ def спросить(эндпоинт: str) -> tuple[str, dict[str, Any] | None]
     вход = схема_входа(разобрано) if isinstance(разобрано, dict) else None
     if вход is None:
         return (FAIL, None)
+    # Выход едет вместе со входом: это одна схема одного эндпоинта, и второй
+    # запрос за ней был бы вторым походом к чужому хосту за тем же файлом.
+    вход = dict(вход)
+    вход["_выход"] = схема_выхода(разобрано) or {}
     return (PASS, вход)
 
 
@@ -186,6 +226,11 @@ def заявки(эндпоинт: str, вход: dict[str, Any]) -> list[tuple[
     виды = sorted({в for к in поля if (в := вид_входа(к))})
     if виды:
         out.append((имя, "accepts_inputs", ", ".join(виды), url, нота))
+
+    выходные = (вход.get("_выход") or {}).get("properties") or {}
+    отдаёт = sorted({в for к, т in выходные.items() if (в := вид_выхода(к, т or {}))})
+    if отдаёт:
+        out.append((имя, "produces_outputs", ", ".join(отдаёт), url, нота))
 
     for поле, атрибут in ПЕРЕЧИСЛЕНИЯ.items():
         значения = (поля.get(поле) or {}).get("enum")

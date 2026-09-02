@@ -109,6 +109,56 @@ class ЗаявкиИзСхемы(unittest.TestCase):
         self.assertEqual(sc.заявки("fal-ai/x", self._вход({"seed": {}})), [])
 
 
+class ЧтоМодельВЫДАЁТ(unittest.TestCase):
+    """ПОЙМАНО НА ЖИВОМ ПРОГОНЕ ЧЕРЕЗ MCP: шагу «озвучка» (produces: аудио)
+    планировщик выбрал `pixverse-lipsync` — липсинк-модель с перечнем голосов в
+    схеме, — а выдаёт она `video`. Шаг, которому нужен звук, получил модель,
+    которая звука не отдаёт: вход проверялся, выход — нет.
+    """
+
+    def test_артефакт_выхода_опознаётся(self):
+        self.assertEqual(sc.вид_выхода("video", {"$ref": "#/components/schemas/File"}), "видео")
+        self.assertEqual(sc.вид_выхода("audio", {"$ref": "#/components/schemas/File"}), "аудио")
+
+    def test_скалярное_поле_артефактом_не_является(self):
+        """`seed` (integer) и `timestamps` — сопровождающие числа, а не то, что
+        модель отдаёт. Отсекаются по ТИПУ, а не по имени."""
+        self.assertEqual(sc.вид_выхода("seed", {"type": "integer"}), "")
+        self.assertEqual(sc.вид_выхода("timestamps", {}), "")
+
+    def test_строка_артефактом_не_считается(self):
+        """ИЗМЕРЕНО на 20 схемах выхода: ни одно поле с видом в имени не имеет
+        типа `string` — артефакты приходят как `$ref` на File (13 полей) или
+        массивом (2). Строками типизированы `request_id` и `prompt`, то есть не
+        артефакты.
+
+        ГРАНИЦА, НАЗВАННАЯ ВСЛУХ: правило верно ДЛЯ ЭТОГО портала. Площадка,
+        отдающая ссылку строкой (`video: {type: string}`), потеряется — и это
+        придётся заметить на её первых же строках, а не выводить из общих
+        соображений сейчас."""
+        self.assertEqual(sc.вид_выхода("video", {"type": "string"}), "")
+
+    def test_массив_артефактов_это_артефакт(self):
+        """`portrait-enhance.images` — массив: `images: {type: array}` отдаёт
+        картинки, и выбросить его значило бы не заметить выход целиком."""
+        self.assertEqual(sc.вид_выхода("images", {"type": "array"}), "изображение")
+
+    def test_поле_с_видом_но_скалярное_тоже_не_артефакт(self):
+        """Вторая половина (И5): имя не решает. `video_quality: integer` —
+        настройка, а не выход."""
+        self.assertEqual(sc.вид_выхода("video_quality", {"type": "integer"}), "")
+
+    def test_выход_едет_строкой_в_заявках(self):
+        вход = {"properties": {"audio_url": {}}, "_выход": {"properties": {"video": {}}}}
+        з = {с[1]: с[2] for с in sc.заявки("fal-ai/x", вход)}
+        self.assertEqual(з.get("produces_outputs"), "видео")
+        self.assertEqual(з.get("accepts_inputs"), "аудио")
+
+    def test_схема_без_выхода_строки_не_даёт(self):
+        з = [с[1] for с in sc.заявки("fal-ai/x", {"properties": {"audio_url": {}}})]
+        self.assertNotIn("produces_outputs", з)
+
+
 class ТриИсхода(unittest.TestCase):
     def test_молчание_переспрашивается_один_раз(self):
         """ИЗМЕРЕНО: из пяти эндпоинтов два не ответили, а на повторе ответили
