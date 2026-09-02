@@ -1,0 +1,16 @@
+брифов в файле 8, разобрано 8
+шагов плана ожидается 10, собрано репозиторием 0
+негативных контролей 2, на скольких поиск фактов всё равно ответил: 1
+
+  оживить-фото         шагов собрано 0/3; поиск: pass, фактов 8, моделей 8
+      krea-2, ltx-video, runway-gen-4.5, sdxl-turbo, stable-diffusion-3-medium-diffusers, sulphur-2-base, voxcpm2, wan-2.2-animate-move
+  дубляж-ролика        шагов собрано 0/2; поиск: pass, фактов 2, моделей 2
+      cogvideox-5b, indextts-2
+  с-нуля-15с           шагов собрано 0/1; поиск: pass, фактов 8, моделей 8
+      clair-obscur-expedition-33-ltx-2, dasiwa-wan-2-2-i2v-14b-synthseduction-v9-lightspeed-gguf, flux-faetastic-details, hunyuan-video-safetensors-new-uncensored-llama, ltx-2-3-all-in-one-workflow-for-rtx-3060-with-12-gb-vram-32-gb-ram, ltx-2-3-enhancers, minimax-h3, wan2-1-14b-fusionx
+  липсинк-без-видео    шагов собрано 0/1; поиск: could not measure, фактов 0, моделей 0
+  замена-персонажа     шагов собрано 0/1; поиск: could not measure, фактов 0, моделей 0
+  фоли-к-оживлению     шагов собрано 0/2; поиск: could not measure, фактов 0, моделей 0
+  сделай-красиво       шагов собрано 0/0; поиск: could not measure, фактов 0, моделей 0
+  манипулятор          шагов собрано 0/0; поиск: pass, фактов 1, моделей 1
+      indextts-2
