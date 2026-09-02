@@ -958,3 +958,35 @@ class VerdictFollowsEvidence(unittest.TestCase):
         out = advice.advise("test-model", path=path)
         self.assertEqual(out["outcome"], "could not measure")
         self.assertEqual(out["reason"], "sources_blog_only")
+
+
+class КарточкаЭтоДанные(unittest.TestCase):
+    """Найдено чтением собственной выдачи (П3, 2026-09-02).
+
+    В ответе стояло `"card": "ModelCard(model_id='kling-3.0', media='video',
+    ...)"` — `repr()` датакласса, засунутый в поле JSON сериализатором сервера
+    (`default=str`). Прочесть из него поле нельзя иначе как регулярками, а
+    потребитель, у которого `json.dumps` без `default`, прямо падает.
+    """
+
+    def test_ответ_сериализуется_без_подпорок(self):
+        """Главное: `json.dumps` БЕЗ `default=str`. Именно подпорка и прятала
+        дефект — сервер молча превращал объект в строку."""
+        json.dumps(advice.advise("kling-3.0"), ensure_ascii=False)
+
+    def test_поля_карточки_читаются_как_поля(self):
+        карточка = advice.advise("kling-3.0")["availability"]["card"]
+        self.assertIsInstance(карточка, dict)
+        self.assertEqual(карточка["model_id"], "kling-3.0")
+        self.assertIsInstance(карточка["skeleton"], list)
+
+    def test_нет_карточки_остаётся_нет_карточки(self):
+        """Вторая половина (И5): пустое не должно превратиться в объект с
+        полями — «реестр этой модели не знает» обязано остаться отличимым."""
+        self.assertIsNone(advice.advise("latentsync-1.6")["availability"]["card"])
+
+    def test_чужой_объект_не_теряется_молча(self):
+        """Р1 у преобразователя: то, что не датакласс и не словарь, отдаётся
+        своим текстом, а не выбрасывается."""
+        self.assertEqual(advice._card_as_dict("что-то"), {"repr": "что-то"})
+        self.assertIsNone(advice._card_as_dict(None))

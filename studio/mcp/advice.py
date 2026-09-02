@@ -37,6 +37,7 @@ source, and `facts.py` enforces that; this module only reports it.
 
 from __future__ import annotations
 
+import dataclasses
 import json
 from datetime import date
 from pathlib import Path
@@ -281,6 +282,26 @@ def _card_vs_base(card: object, store: FactStore, name: str) -> list[dict]:
     return out
 
 
+def _card_as_dict(card: object) -> dict | None:
+    """Карточка реестра в виде обычного словаря. `None` остаётся `None`.
+
+    Кортежи разворачиваются в списки: JSON кортежей не знает, а разница между
+    «поле пустое» и «поля нет» здесь значащая, поэтому пустое поле остаётся
+    пустым списком, а не исчезает.
+    """
+    if card is None:
+        return None
+    if isinstance(card, dict):
+        return card
+    if not dataclasses.is_dataclass(card) or isinstance(card, type):
+        return {"repr": str(card)}
+    готово: dict = {}
+    for поле in dataclasses.fields(card):
+        значение = getattr(card, поле.name)
+        готово[поле.name] = list(значение) if isinstance(значение, tuple) else значение
+    return готово
+
+
 def advise(model: str, attribute: str = "", *, path: Path | None = None) -> dict:
     """What is known about one model, and how much of it is worth believing.
 
@@ -352,6 +373,19 @@ def advise(model: str, attribute: str = "", *, path: Path | None = None) -> dict
     # "measured on this model" are different claims and a reader has to be
     # able to tell them apart. They also never vote in a contradiction.
     card_vs_base = _card_vs_base(live.get("card"), store, name)
+
+    # КАРТОЧКА ОТДАЁТСЯ СЛОВАРЁМ, А НЕ PYTHON-ОБЪЕКТОМ. Найдено чтением
+    # собственной выдачи (П3, 2026-09-02): в ответе стояло
+    #     "card": "ModelCard(model_id='kling-3.0', media='video', status=...)"
+    # — то есть `repr()` датакласса, засунутый в поле JSON сериализатором
+    # сервера (`default=str`). Потребитель не может прочесть из него ни одного
+    # поля, не разбирая строку регулярками, а любой другой потребитель
+    # (`json.dumps` без `default`) на этом объекте прямо падает.
+    #
+    # Преобразуется ОДИН раз и здесь, ниже по коду `live` уходит в шесть
+    # разных ответов (Е1: одно знание — одно место).
+    live = dict(live)
+    live["card"] = _card_as_dict(live.get("card"))
 
     # The registry's note names the seven models it holds cards for, and it
     # reads as the whole of what is known. It is not: the fact base holds 205
