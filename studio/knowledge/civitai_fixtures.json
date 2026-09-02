@@ -1,5 +1,5 @@
 {
- "снято": "2026-09-01",
+ "снято": "2026-09-01; вторая ступень — 2026-09-02",
  "откуда": "https://civitai.com/api/v1/",
  "модели": {
   "1651125": {
@@ -18,10 +18,7 @@
     "downloadCount": 39035,
     "thumbsUpCount": 1870
    },
-   "creator": {
-    "username": "vrgamedevgirl",
-    "image": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/d1d17e06-c4b8-4f64-86f4-db6ce0f80707/width=96/vrgamedevgirl.jpeg"
-   },
+   "creator": {},
    "modelVersions": [
     {
      "id": 1868891,
@@ -58,10 +55,7 @@
     "downloadCount": 30310,
     "thumbsUpCount": 740
    },
-   "creator": {
-    "username": "arkinson",
-    "image": "https://cdn.discordapp.com/embed/avatars/0.png"
-   },
+   "creator": {},
    "modelVersions": [
     {
      "id": 2942921,
@@ -101,10 +95,7 @@
     "downloadCount": 115,
     "thumbsUpCount": 4
    },
-   "creator": {
-    "username": "AIKSK",
-    "image": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/caecf376-0dd2-478d-beee-b243562508cf/width=96/AIKSK.jpeg"
-   },
+   "creator": {},
    "modelVersions": [
     {
      "id": 2408802,
@@ -127,10 +118,7 @@
     "downloadCount": 11437,
     "thumbsUpCount": 552
    },
-   "creator": {
-    "username": "clueless_engineer",
-    "image": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/8a959494-072f-4534-984b-6c01c1cba4a8/width=96/clueless_engineer.jpeg"
-   },
+   "creator": {},
    "modelVersions": [
     {
      "id": 2752735,
@@ -149,6 +137,77 @@
      "name": "Full Distilled",
      "baseModel": "LTXV 2.3",
      "description": "<p>Full Distilled from <a target=\"_blank\" rel=\"ugc\" href=\"https://huggingface.co/Lightricks/LTX-2.3/tree/main\">https://huggingface.co/Lightricks/LTX-2.3/tree/main</a></p>"
+    }
+   ]
+  },
+  "1714513": {
+   "id": 1714513,
+   "name": "Video Upscale or Enhancer using Wan FusionX Ingredients",
+   "type": "Workflows",
+   "description": "<h3 id=\"video-upscale-and-enhancement-workflow\">🎬 Video Upscale &amp; Enhancement Workflow ✨</h3><p>Enhance or upscale any video with flexible control over quality and creativity.</p><hr /><p>🔧 <strong>Usage Tips:</strong></p><ul><li><p><strong>🆙 Just Upscaling?</strong><br />Leave the prompt empty, set <strong>Denoise: 0.3–0.5</strong><br />➤ Preserves original look, improves clarity.</p></li><li><p><strong>🎨 Light Style Edit?</strong><br />Add a prompt, set <strong>Denoise: 0.7–0.8</strong><br />➤ Subtle creative enhancement.</p></li><li><p><strong>⚠️ High Denoise Warning:</strong><br /><strong>0.85+</strong> = generates new content from the prompt.<br />No prompt? Expect <strong>random results</strong> 🎲</p></li></ul><hr /><p>🎯 <strong>Great For:</strong></p><ul><li><p>📼 Low-res or blurry videos</p></li><li><p>🖼️ CGI/3D Renders (e.g., Blender)</p></li><li><p>🔁 Breathing life into old clips</p></li><li><p>🖼️Upscale and/or Restyle old AI video's</p></li></ul><hr /><p>🔧<strong>Notes: If doing more than 121 frames, and you OOM or if your low on VRAM you will want to batch processing or context options. Enable block swapping if you need to.</strong></p><hr /><p>☕ Like what I do? Support me here: <a target=\"_blank\" rel=\"ugc\" href=\"https://buymeacoffee.com/vrgamedevgirl\">Buy Me A Coffee</a> 💜<br />Every coffee helps fuel more free LoRAs &amp; workflows!</p><hr /><p><strong>If you need help please reach out.</strong></p><p><strong>📢 Join The Community!</strong></p><p>👉 <a target=\"_blank\" rel=\"ugc\" href=\"https://discord.gg/hxPmmXmRW3\">Click here to join the Discord!</a></p><hr /><p>This workflow uses the Lora's that are part of FusionX but CausVid has been replaced with a new Lora that allows you to use 4 steps. Higher steps above 8 could cause an overcooked looked so beware. 4 steps works very well.</p>",
+   "nsfwLevel": 7,
+   "allowCommercialUse": [],
+   "allowNoCredit": false,
+   "allowDerivatives": false,
+   "allowDifferentLicense": true,
+   "stats": {
+    "downloadCount": 6361,
+    "thumbsUpCount": 267,
+    "thumbsDownCount": 2,
+    "commentCount": 31,
+    "tippedAmountCount": 120
+   },
+   "creator": {},
+   "modelVersions": [
+    {
+     "id": 1940207,
+     "name": "Wan Vid2Vid Upscale",
+     "baseModel": "Wan Video 14B t2v",
+     "publishedAt": "2025-06-25T03:00:00.000Z"
+    }
+   ]
+  },
+  "1662740": {
+   "id": 1662740,
+   "name": "Lenovo UltraReal",
+   "type": "LORA",
+   "description": "<p>--Krea2<br />Actually i tested with different combinations raw and turbo. For best quality i use raw with cfg4, for fast result i use raw, but witth cfg1 and turbo lora (it really gives better quality then kreo2 turbo model). U can use with other loras freely, also works good with nicegirls lora and nsfw loras. recommended weight 0.8 for raw and 1.2-2 for turbo<br /><br /><strong>--Ideogram4</strong><br />Works good with <a target=\"_blank\" rel=\"ugc\" href=\"https://civitai.red/models/2688234/realism-engine-ideogram-4?modelVersionId=3026632\">realism engine lora</a> for nsfw images.<br />Also updated my repo for better lora control <a target=\"_blank\" rel=\"ugc\" href=\"https://github.com/DanrisiUA/ComfyUI-LoRA-Block-Filter\">https://github.com/DanrisiUA/ComfyUI-LoRA-Block-Filter</a><br />One more. Made cool nodes with cursor (i have no clue how some of them to use) for ideogram <a target=\"_blank\" rel=\"ugc\" href=\"https://github.com/DanrisiUA/ComfyUI-Ideogram4-Enhanced.git\"><span style=\"background-color:rgb(24, 24, 24);color:rgb(227, 148, 220);font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;font-size:12px\">https://github.com/DanrisiUA/ComfyUI-Ideogram4-Enhanced.git</span></a></p><p></p><p><strong>--Anima1.0</strong></p><p>Trained on top of my last <code>ultrareal_finetune_base1</code> checkpoint for a slight realism boost. I also \"vibecoded\" a few experimental nodes for Anima (pretty sure something similar already exists, but here we are): <a target=\"_blank\" rel=\"ugc\" href=\"https://github.com/DanrisiUA/ComfyUI-AnimaDynamicCFG\">https://github.com/DanrisiUA/ComfyUI-AnimaDynamicCFG</a></p><p>Consider this a temporary realism upgrade until I train the next major fine-tune.<br /><br />--Anima0.5<br />Trained on anima3. Recommended strength: 0.6.</p><p>Works best with block filtering — I created a ComfyUI nodepack for this: <a target=\"_blank\" rel=\"ugc\" href=\"https://github.com/DanrisiUA/ComfyUI-LoRA-Block-Filter\">ComfyUI-LoRA-Block-Filter</a>. Examples generated alongside my other LoRA — nicegirls. <br /><span style=\"background-color:rgb(24, 24, 24);color:rgba(228, 228, 228, 0.92);font-family:&quot;Segoe WPC&quot;, &quot;Segoe UI&quot;, sans-serif;font-size:13px\">Experimental version. Results may vary depending on prompt and block weight settings.</span><br /><br /><br />--Flux2<br />I use <strong>it</strong> with res2m+beta57, guidance 4, and <strong>it</strong> works very <strong>well</strong>. <strong>The</strong> quality <strong>is</strong> similar to my Qwen Lenovo, but I noticed that Flux2 <strong>is</strong> more flexible and <strong>has</strong> better prompt adherence.<br />Recommend to use with strength 0.85-0.9<br /><br />-- Z-image Turbo<br />Actually i'm not sure that my workflow is correct, i believe the result could be better<br />Recommend to use with strength 0.80-0.9<br />I used euler + sgm_uniform with 4 guidance<br />P.S: at this moment for ComfyUI u need this pack to load lora properly <a target=\"_blank\" rel=\"ugc\" href=\"https://github.com/PGCRT/CRT-Nodes?tab=readme-ov-file\">https://github.com/PGCRT/CRT-Nodes</a><br /><br />--Chroma<br />My first try to train lora that enhance realism in Chroma. <br />I'll upload my workflow today a lil bit later (or atm u can just take it from images) cause there some nuances about settings. But from my observations i noticed that for fast gen dpmpp2m + beta with cfg 3 works good . More experimental settigns are res_2s_rkmk2e + beta57 and cfg 3, more accurate gens, better limbs and fingers, but gives a bit weird grain on very small details + plus this method is pretty long<br /><br />--Qwen<br />Works perfectly and much better then other versions. Gives extremely \"live\" images with amateurish quality with dramatic light and shadows, some blur and with vibe of 2000s street photography<br />You can take workflow here <a target=\"_blank\" rel=\"ugc\" href=\"https://huggingface.co/Danrisi/Lenovo_Qwen/resolve/main/Qwen_danrisi.json\">https://huggingface.co/Danrisi/Lenovo_Qwen/resolve/main/Qwen_danrisi.json</a><br />Thanx to <a target=\"_blank\" rel=\"ugc\" href=\"https://civitai.com/user/fox23vang226\"><strong>fox23vang226</strong></a>. i understood that it's possible (and even have better effect) to use lora with values 1.5 - 2.0. <br />P.S.: almost all example images generate with both loras (NiceGirls)<br /><br /><strong>--Wan</strong><br />This is the first release — mainly a test to explore Wan's capabilities.<br />Note: In this initial version, facial details are somewhat lacking. For better results, I recommend using it alongside the<a target=\"_blank\" rel=\"ugc\" href=\"https://civitai.com/models/1822984?modelVersionId=2066474\"> <em>Instagirls</em> LoRA</a> by my friend, which significantly enhances facial features.<br /><br />--Flux<br />Who needs a fancy name when the shadows and highlights do all the talking? This experimental LoRA is the scrappy cousin of my Samsung one—same punchy light-and-shadow mojo, but trained on a chaotic mix of pics from my ancient phones (so no Samsung for now)</p>",
+   "nsfwLevel": 31,
+   "allowCommercialUse": [
+    "RentCivit",
+    "Rent",
+    "Sell",
+    "Image"
+   ],
+   "allowNoCredit": false,
+   "allowDerivatives": false,
+   "allowDifferentLicense": false,
+   "stats": {
+    "downloadCount": 160716,
+    "thumbsUpCount": 4848,
+    "thumbsDownCount": 9,
+    "commentCount": 0,
+    "tippedAmountCount": 4971
+   },
+   "creator": {},
+   "modelVersions": [
+    {
+     "id": 3075606,
+     "name": "v1.0 Krea2",
+     "baseModel": "Krea 2",
+     "publishedAt": "2026-06-27T17:35:09.672Z"
+    },
+    {
+     "id": 3025161,
+     "name": "v1.0 Ideogram4",
+     "baseModel": "Ideogram 4.0",
+     "publishedAt": "2026-06-12T01:46:59.466Z"
+    },
+    {
+     "id": 2973386,
+     "name": "v1.0 Anima_base1",
+     "baseModel": "Anima",
+     "publishedAt": "2026-05-25T19:18:04.634Z"
     }
    ]
   }

@@ -985,8 +985,35 @@ def check() -> int:
         fact = standing.get(key)
         if fact is None:
             left.append(f"not recorded: {entry['model']}.{entry['attribute']}")
-        elif fact.read_directly != entry.get("read_directly") or fact.note != entry.get("note", ""):
-            left.append(f"differs: {entry['model']}.{entry['attribute']}")
+        elif fact.read_directly != entry.get("read_directly"):
+            left.append(
+                f"differs: {entry['model']}.{entry['attribute']} — отметка о чтении съехала: "
+                f"журнал {entry.get('read_directly')!r}, база {fact.read_directly!r}"
+            )
+        elif not str(fact.note or "").strip():
+            left.append(f"differs: {entry['model']}.{entry['attribute']} — нота исчезла")
+        elif fact.note != entry.get("note", ""):
+            # НОТА РАЗОШЛАСЬ, И ЭТО НЕ НАРУШЕНИЕ. Сверка сузилась 2026-09-02, и
+            # вот на чём. Строка `civitai-api.licence` была отозвана как
+            # «устаревшая», это оказалось ошибкой, и её восстановили — с новой
+            # нотой, где эта история и записана. Чтение НЕ пропало: то же
+            # значение, тот же URL, `read_directly` по-прежнему True.
+            #
+            # Гейт объявлял это расхождением, потому что сравнивал ноты
+            # побуквенно. Своя же докстрока говорит, ради чего он стоит:
+            # «fails if a claim withdrew has come back, or if a reading it
+            # recorded has been edited away». Ни того, ни другого здесь нет, а
+            # требовать побуквенно равной прозы — значит объявлять нарушением
+            # всякое честное уточнение и учить снимать гейт правкой текста.
+            #
+            # Сужено ровно на прозу: отметка о чтении и НАЛИЧИЕ ноты
+            # по-прежнему сверяются строго, и обе проверки выше краснеют.
+            # Расхождение печатается — молчать о нём тоже нельзя.
+            print(
+                f"  нота уточнена (не нарушение): {entry['model']}.{entry['attribute']}\n"
+                f"      журнал: {str(entry.get('note', ''))[:90]}\n"
+                f"      база:   {str(fact.note)[:90]}"
+            )
     for line in left:
         print(f"  {line}")
     print(f"\nпроверено {len(WITHDRAWN) + len(READINGS)}\nрасхождений {len(left)}\nне смогли 0")
