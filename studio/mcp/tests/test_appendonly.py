@@ -190,3 +190,135 @@ class ИсторияИКонтроль(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def _репо_со_слиянием(*, теряем: bool) -> tuple[Path, str]:
+    """Две ветки дописывали журнал одновременно, потом их слили.
+
+    Сети нет (Т4), это настоящий git во временном каталоге. Возвращает корень и
+    коммит-пол — тот, от которого разошлись ветки.
+    """
+    корень = Path(tempfile.mkdtemp())
+    журнал = корень / "log.jsonl"
+
+    def git(*args: str) -> str:
+        return subprocess.run(
+            ["git", *args], cwd=корень, check=True, capture_output=True, text=True
+        ).stdout.strip()
+
+    git("init", "-q")
+    git("config", "user.email", "t@t")
+    git("config", "user.name", "t")
+    журнал.write_text("общая-1\nобщая-2\n", encoding="utf-8")
+    git("add", "-A")
+    git("commit", "-qm", "общее")
+    пол = git("rev-parse", "HEAD")
+
+    журнал.write_text("общая-1\nобщая-2\nмоя-3\n", encoding="utf-8")
+    git("add", "-A")
+    git("commit", "-qm", "моя ветка")
+    моя = git("rev-parse", "HEAD")
+
+    git("checkout", "-q", "-b", "чужая", пол)
+    журнал.write_text("общая-1\nобщая-2\nчужая-3\n", encoding="utf-8")
+    git("add", "-A")
+    git("commit", "-qm", "чужая ветка")
+    чужая = git("rev-parse", "HEAD")
+
+    git("checkout", "-q", моя)
+    # Слияние руками: конфликт в журнале решается человеком, и здесь
+    # проверяется РЕЗУЛЬТАТ его решения, а не умение git его получить.
+    итог = "общая-1\nобщая-2\nмоя-3\n" if теряем else "общая-1\nобщая-2\nмоя-3\nчужая-3\n"
+    журнал.write_text(итог, encoding="utf-8")
+    git("add", "-A")
+    subprocess.run(
+        ["git", "commit", "-qm", "слияние", "-p", моя, "-p", чужая],
+        cwd=корень,
+        capture_output=True,
+    )
+    if len(ao.родители("HEAD", repo=корень)) < 2:
+        # Старый git не знает `commit -p`; собираем слияние через commit-tree.
+        дерево = git("write-tree")
+        слитый = git("commit-tree", дерево, "-p", моя, "-p", чужая, "-m", "слияние")
+        git("reset", "-q", "--hard", слитый)
+    return корень, пол
+
+
+class Слияние(unittest.TestCase):
+    """У слияния два родителя, и правило для него другое.
+
+    Найдено 2026-09-02 на первом же слитом канале: обход истории сравнивал
+    коммит с ПРЕДЫДУЩИМ В СПИСКЕ, а `git log --reverse` вытягивает в одну
+    линию коммиты разных веток. Соседями оказались версии, которые друг друга
+    никогда не видели, и гейт объявил нарушением то, что чужая ветка не
+    продолжает мою — а она и не должна.
+    """
+
+    def test_слияние_сохранившее_обе_ветки_проходит(self):
+        корень, пол = _репо_со_слиянием(теряем=False)
+        шаги = ao.сверить_историю("log.jsonl", floor=пол, repo=корень)
+        плохие = [ш for ш in шаги if ш.outcome == FAIL_]
+        self.assertEqual([ш.почему for ш in плохие], [])
+
+    def test_слияние_потерявшее_чужую_строку_краснеет(self):
+        """Половина контроля, ради которой правило и ослаблено осторожно:
+        порядок при слиянии меняться может, а пропажа — нет."""
+        корень, пол = _репо_со_слиянием(теряем=True)
+        шаги = ao.сверить_историю("log.jsonl", floor=пол, repo=корень)
+        плохие = [ш for ш in шаги if ш.outcome == FAIL_]
+        self.assertEqual(len(плохие), 1, [ш.почему for ш in шаги])
+        self.assertIn("слияние потеряло", плохие[0].problems[0])
+
+    def test_пропали_считает_только_исчезнувшее(self):
+        """Т2: ожидаемое — литералы. Перестановка пропажей не считается."""
+        self.assertEqual(ao.пропали(["a", "b"], ["b", "a"]), [])
+        self.assertEqual(ao.пропали(["a", "b"], ["a"]), ["b"])
+        self.assertEqual(ao.пропали(["a"], ["a", "b", "c"]), [])
+        self.assertEqual(ao.пропали([], ["a"]), [])
+
+    def test_у_обычного_коммита_родитель_один(self):
+        корень, _ = _репо(["a"], ["a", "b"])
+        subprocess.run(["git", "add", "-A"], cwd=корень, check=True, capture_output=True)
+        subprocess.run(["git", "commit", "-qm", "2"], cwd=корень, check=True, capture_output=True)
+        self.assertEqual(len(ao.родители("HEAD", repo=корень)), 1)
+
+
+class СравниваемСоСвоимРодителем(unittest.TestCase):
+    """Дыра, найденная мутацией: сверять с ПОЛОМ вместо родителя.
+
+    На прямой цепочке разницы нет, поэтому её не видел ни один тест. Разница
+    появляется, когда переписан НЕ первый коммит после пола: строки пола
+    остаются на месте, и сверка с полом такое нарушение пропускает.
+    """
+
+    def test_переписанный_второй_коммит_виден(self):
+        корень = Path(tempfile.mkdtemp())
+        журнал = корень / "log.jsonl"
+
+        def git(*args: str) -> str:
+            return subprocess.run(
+                ["git", *args], cwd=корень, check=True, capture_output=True, text=True
+            ).stdout.strip()
+
+        git("init", "-q")
+        git("config", "user.email", "t@t")
+        git("config", "user.name", "t")
+        журнал.write_text("пол-1\n", encoding="utf-8")
+        git("add", "-A")
+        git("commit", "-qm", "пол")
+        пол = git("rev-parse", "HEAD")
+
+        журнал.write_text("пол-1\nвторая\n", encoding="utf-8")
+        git("add", "-A")
+        git("commit", "-qm", "дописано")
+
+        # Третий коммит выбрасывает строку ВТОРОГО. Строки пола целы, поэтому
+        # сверка с полом молчит, а сверка с родителем обязана покраснеть.
+        журнал.write_text("пол-1\nдругая\n", encoding="utf-8")
+        git("add", "-A")
+        git("commit", "-qm", "переписано")
+
+        шаги = ao.сверить_историю("log.jsonl", floor=пол, repo=корень)
+        плохие = [ш for ш in шаги if ш.outcome == FAIL_]
+        self.assertEqual(len(плохие), 1, [ш.почему for ш in шаги])
+        self.assertIn("переписан, а не дописан", плохие[0].почему)

@@ -342,28 +342,22 @@ class Building(unittest.TestCase):
             thread.join()
         self.assertEqual(errors, [], f"threaded retrieval raised {errors[:1]}")
 
-    def test_every_query_touches_the_connection_under_the_lock(self) -> None:
-        """The test that would have caught it, and does not need a race to.
-
-        CI went red on 2026-08-27 with `ValueError: not enough values to
-        unpack (expected 1, got 0)` inside `_channel_phrase`, on Python 3.12,
-        in the threaded test above. It cannot be reproduced on this machine:
-        MEASURED here, `sqlite3.threadsafety == 3`, which is the SERIALIZED
-        build — it locks the shared connection for us, so one missing lock in
-        our own code is invisible. The runner's build evidently does not, and
-        a guarantee that depends on how somebody compiled sqlite is not one.
-
-        So this asserts the property directly, by reading the source: every
-        `conn.execute` in the module is either inside a `with ... lock` block
-        or in `build_index`, which runs before any thread exists. It is
-        deterministic — it was red on the unlocked line and green after — and
-        it covers the NEXT query somebody adds, which a timing test never
-        reliably would.
-        """
+    @staticmethod
+    def _незапертые(source: str) -> list[int]:
+        """Строки с запросом к ОБЩЕМУ соединению вне замка. Вынесено (Т5),
+        чтобы негативный контроль гонял тот же код, а не его копию."""
         import ast
 
-        source = Path(K.__file__).read_text(encoding="utf-8")
         tree = ast.parse(source)
+
+        def на_общем(func: ast.Attribute) -> bool:
+            цель = func.value
+            return (
+                isinstance(цель, ast.Attribute)
+                and цель.attr == "conn"
+                and isinstance(цель.value, ast.Name)
+                and цель.value.id == "self"
+            )
 
         def executes(node: ast.AST, *, locked: bool) -> list[tuple[int, bool]]:
             found: list[tuple[int, bool]] = []
@@ -377,6 +371,7 @@ class Building(unittest.TestCase):
                     isinstance(child, ast.Call)
                     and isinstance(child.func, ast.Attribute)
                     and child.func.attr in ("execute", "executemany")
+                    and на_общем(child.func)
                 ):
                     found.append((child.lineno, here))
                 found.extend(executes(child, locked=here))
@@ -386,11 +381,49 @@ class Building(unittest.TestCase):
         for node in ast.walk(tree):
             if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 continue
-            # `build_index` runs before the index is shared with anybody.
             if node.name == "build_index":
                 continue
             unlocked += [line for line, locked in executes(node, locked=False) if not locked]
+        return unlocked
 
+    def test_сужение_не_ослепило_правило(self) -> None:
+        """И5 к сужению: правило обязано ловить незапертый запрос к общему
+        соединению и молчать на своём собственном."""
+        плохо = "class I:\n    def m(self):\n        self.conn.execute('SELECT 1')\n"
+        хорошо = "def f(path):\n    conn = open_it(path)\n    conn.execute('SELECT 1')\n"
+        под_замком = (
+            "class I:\n    def m(self):\n        with self.lock:\n"
+            "            self.conn.execute('SELECT 1')\n"
+        )
+        self.assertEqual(len(self._незапертые(плохо)), 1)
+        self.assertEqual(self._незапертые(хорошо), [])
+        self.assertEqual(self._незапертые(под_замком), [])
+
+    def test_every_query_touches_the_connection_under_the_lock(self) -> None:
+        """The test that would have caught it, and does not need a race to.
+
+        CI went red on 2026-08-27 with `ValueError: not enough values to
+        unpack (expected 1, got 0)` inside `_channel_phrase`, on Python 3.12,
+        in the threaded test above. It cannot be reproduced on this machine:
+        MEASURED here, `sqlite3.threadsafety == 3`, which is the SERIALIZED
+        build — it locks the shared connection for us, so one missing lock in
+        our own code is invisible. The runner's build evidently does not, and
+        a guarantee that depends on how somebody compiled sqlite is not one.
+
+        So this asserts the property directly, by reading the source: every
+        query on the index's SHARED connection is either inside a
+        `with ... lock` block or in `build_index`, which runs before any
+        thread exists. It is deterministic — it was red on the unlocked line
+        and green after — and it covers the NEXT query somebody adds, which a
+        timing test never reliably would.
+
+        Сужено 2026-09-02 до `self.conn` — до того, о чём правило и написано.
+        Кэш векторов открывает СВОЁ короткоживущее соединение к отдельному
+        файлу и ни с кем его не делит; замок индекса ему не нужен, а взять его
+        было бы прямо вредно — он держал бы весь индекс на время записи 27 МБ.
+        Негативный контроль на сужение — `test_сужение_не_ослепило_правило`.
+        """
+        unlocked = self._незапертые(Path(K.__file__).read_text(encoding="utf-8"))
         self.assertEqual(
             unlocked,
             [],

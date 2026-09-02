@@ -18,6 +18,7 @@ available. The three rankings are merged with reciprocal rank fusion.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -786,6 +787,98 @@ CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 """
 
 
+#: Кэш векторов, и ключ у него — ХЕШ ТЕКСТА, а не номер строки. Это починка
+#: долга DEBT(2026-08-31), записанного у `DELETE FROM vectors`: векторы там
+#: стираются при каждой пересборке ПРАВИЛЬНО (записи получают новые
+#: автоинкрементные идентификаторы, и старый вектор под новым текстом — это
+#: ответ на незаданный вопрос), но следствием было то, что кэш не мог
+#: сработать никогда.
+#:
+#: ИЗМЕРЕНО 2026-09-02, 4 CPU, без GPU:
+#:     сборка индекса без плотного канала      1.5 с   (13 438 записей)
+#:     attach_dense                          160.1 с   (13 426 текстов, ~525 знаков)
+#:     из них загрузка модели                  3.1 с
+#: То есть 157 секунд — это счёт эмбеддингов, и он платится при КАЖДОМ старте
+#: сервера, потому что `build_index` по умолчанию собирается в `:memory:`.
+#: Первый вызов пользователя ждёт всё это время: ИЗМЕРЕНО — 162 с на первый
+#: `write_lipsync_prompt` и 0.1 с на второй.
+#:
+#: Хеш содержимого снимает эту цену, не трогая правило: вектор привязан к
+#: ТЕКСТУ, поэтому подложить его под другой текст невозможно по построению.
+#: Имя модели входит в ключ — векторы другой модели не подхватятся.
+VECTOR_CACHE_PATH = Path(__file__).with_name("knowledge") / "vector_cache.sqlite3"
+
+VECTOR_CACHE_SCHEMA = """
+CREATE TABLE IF NOT EXISTS vector_cache (
+    sha TEXT NOT NULL,
+    model TEXT NOT NULL,
+    dim INTEGER NOT NULL,
+    data BLOB NOT NULL,
+    PRIMARY KEY (sha, model)
+);
+"""
+
+
+def _text_sha(text: str) -> str:
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def _cache_conn(path: Path | None) -> sqlite3.Connection | None:
+    """Соединение с кэшем, или None. Кэш — удобство: его отказ не отказ сборки."""
+    if path is None:
+        return None
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        conn = sqlite3.connect(str(path))
+        conn.executescript(VECTOR_CACHE_SCHEMA)
+        return conn
+    except sqlite3.Error:
+        return None
+
+
+def _cached_vectors(path: Path | None, model_id: str, shas: Sequence[str]) -> dict[str, bytes]:
+    """Что уже посчитано. Пустой ответ — законный исход, а не ошибка."""
+    conn = _cache_conn(path)
+    if conn is None:
+        return {}
+    найдено: dict[str, bytes] = {}
+    try:
+        with conn:
+            for кусок in range(0, len(shas), 500):
+                часть = list(dict.fromkeys(shas[кусок : кусок + 500]))
+                места = ",".join("?" * len(часть))
+                for sha, data in conn.execute(
+                    f"SELECT sha, data FROM vector_cache WHERE model = ? AND sha IN ({места})",
+                    [model_id, *часть],
+                ):
+                    найдено[str(sha)] = bytes(data)
+    except sqlite3.Error:
+        return {}
+    finally:
+        conn.close()
+    return найдено
+
+
+def _store_vectors(
+    path: Path | None, model_id: str, dim: int, rows: Sequence[tuple[str, bytes]]
+) -> int:
+    """Дописать посчитанное. Возвращает число записанных строк."""
+    conn = _cache_conn(path)
+    if conn is None or not rows:
+        return 0
+    try:
+        with conn:
+            conn.executemany(
+                "INSERT OR REPLACE INTO vector_cache (sha, model, dim, data) VALUES (?,?,?,?)",
+                [(sha, model_id, dim, data) for sha, data in rows],
+            )
+    except sqlite3.Error:
+        return 0
+    finally:
+        conn.close()
+    return len(rows)
+
+
 def dense_probe(*, model_id: str = DENSE_MODEL_ID) -> dict:
     """Report whether the dense channel can run, with an error code if not.
 
@@ -906,8 +999,14 @@ class KnowledgeIndex:
         ]
         self.by_id = {entry.entry_id: entry for entry in self.entries}
 
-    def attach_dense(self, *, model_id: str = DENSE_MODEL_ID) -> dict:
-        """Embed every non-core entry, or record why that could not be done."""
+    def attach_dense(
+        self, *, model_id: str = DENSE_MODEL_ID, cache_path: Path | None = VECTOR_CACHE_PATH
+    ) -> dict:
+        """Embed every non-core entry, or record why that could not be done.
+
+        :param cache_path: файл кэша векторов, ключ — ХЕШ ТЕКСТА. `None`
+            отключает кэш: так делают тесты, чтобы не писать в репозиторий.
+        """
         probe = dense_probe(model_id=model_id)
         self.dense_report = probe
         if probe["outcome"] != PASS:
@@ -922,8 +1021,27 @@ class KnowledgeIndex:
                 UNMEASURED, "nothing to embed", unmeasured=1, error_code="EMPTY"
             )
             return self.dense_report
-        vectors = model.encode([e.text for e in targets], normalize_embeddings=True, batch_size=64)
-        matrix = np.asarray(vectors, dtype="float32")
+        хеши = [_text_sha(e.text) for e in targets]
+        из_кэша = _cached_vectors(cache_path, model_id, хеши)
+        нужно = [(i, e) for i, e in enumerate(targets) if хеши[i] not in из_кэша]
+        if нужно:
+            свежие = model.encode(
+                [e.text for _, e in нужно], normalize_embeddings=True, batch_size=64
+            )
+            свежие = np.asarray(свежие, dtype="float32")
+            for (i, _), строка in zip(нужно, свежие):
+                из_кэша[хеши[i]] = строка.tobytes()
+            _store_vectors(
+                cache_path,
+                model_id,
+                int(свежие.shape[1]),
+                [(хеши[i], из_кэша[хеши[i]]) for i, _ in нужно],
+            )
+        self.dense_cached = len(targets) - len(нужно)
+        self.dense_embedded = len(нужно)
+        matrix = np.frombuffer(b"".join(из_кэша[h] for h in хеши), dtype="float32").reshape(
+            len(targets), -1
+        )
         self.dense_ids = [e.entry_id for e in targets]
         self.dense_matrix = matrix
         dim = int(matrix.shape[1])
@@ -940,7 +1058,8 @@ class KnowledgeIndex:
             self.conn.commit()
         self.dense_report = _result(
             PASS,
-            f"embedded {len(self.dense_ids)} entries with {model_id}",
+            f"embedded {self.dense_embedded} entries with {model_id}, "
+            f"{self.dense_cached} taken from the vector cache",
             checked=len(self.dense_ids),
         )
         return self.dense_report
@@ -1099,11 +1218,12 @@ def build_index(
     # таблицу — вызов не лишний, он станет рабочим, как только вектор будет
     # ключиться СОДЕРЖИМЫМ, а не номером строки.
     #
-    # # DEBT(2026-08-31): починка требует схемы (колонка с хешем текста) в
-    # чужом модуле — владелец `studio/knowledge.py` другой агент (Ц2). Здесь
-    # оставлена запись, а не правка: три минуты платятся один раз на старте
-    # агента, а не на каждый запрос, и это цена, которую владелец должен
-    # взвесить сам.
+    # ДОЛГ DEBT(2026-08-31) ЗАКРЫТ 2026-09-02 — ровно так, как он и был описан:
+    # вектор ключится содержимым, но не здесь, а в отдельном файле
+    # `VECTOR_CACHE_PATH`. Эти три строки остаются как были: стирать `vectors`
+    # при пересборке по-прежнему ПРАВИЛЬНО, потому что идентификаторы новые.
+    # ИЗМЕРЕНО 2026-09-02 на тех же 13 426 записях: первая сборка 160.3 с,
+    # вторая 3.0 с, векторы побайтно те же.
     conn.execute("DELETE FROM vectors")
     index = KnowledgeIndex(conn)
 
