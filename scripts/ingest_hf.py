@@ -333,6 +333,43 @@ def troubles(payload: dict[str, Any], *, setup: bool = False) -> list[dict[str, 
     re.I | re.M,
 )
 
+#: КОД — не наблюдение, даже когда он не падал. Первая редакция ловила только
+#: АВАРИЙНЫЙ машинный вывод (стектрейс, лог), и этого не хватило: разбор
+#: собственного улова 2026-09-02 глазами (П3) нашёл среди пяти находок две
+#: строки кода, прошедшие все фильтры, —
+#:     `export MODEL_BASE=FastVideo/FastWan2.2-TI2V-5B-Full-Diffusers`
+#:     `output_np = (output_np * 0.5 * 127).astype(np.int8) # Adjust the factor`
+#: Обе несут и «условия прогона» (имя модели, числа), и слово про исход, и обе
+#: не рассказывают НИЧЕГО о том, что вышло. Признаки взяты по этим двум и
+#: проверены на обратную сторону: предложение о том, что человек ЗАПУСТИЛ
+#: командой, остаётся наблюдением, если он сказал, что получилось.
+КОД = re.compile(
+    r"(^\s*(export|set|cd|pip|conda|git|python[23]?|bash|sudo|npm|apt(-get)?)\s+\S+=?"
+    r"|^\s*[\w.\[\]]+\s*=\s*[^=\s].*[()\[\]]"
+    r"|\.astype\(|\.to\(|\bimport\s+\w+|\bdef\s+\w+\(|--\w[\w-]+\s+\S)",
+    re.M,
+)
+
+#: ПРЕДПОЛОЖЕНИЕ — не наблюдение. «If quantized to ~1.5GB, LTX could
+#: potentially generate short clips on Snapdragon 865» — это прикидка человека,
+#: а не то, что он видел; записанная как `observed_behaviour`, она становится
+#: свидетельством, которого не было. Найдена там же и тем же способом.
+#: Сослагательное наклонение ловится по модальным глаголам ВМЕСТЕ с
+#: неопределённостью: «it should work» без «I ran» — прогноз.
+ПРЕДПОЛОЖЕНИЕ = re.compile(
+    r"\b(could|would|might|may|should)\s+(potentially|probably|possibly|maybe|in theory)?\s*"
+    r"\w+|\b(i (guess|assume|expect|believe)|in theory|probably|presumably|hopefully)\b",
+    re.I,
+)
+
+#: Обратная сторона ПРЕДПОЛОЖЕНИЯ: если человек СКАЗАЛ, что запускал, его
+#: «should» — это оговорка внутри отчёта, а не прогноз вместо отчёта.
+ПРОГНАЛ = re.compile(
+    r"\b(i (ran|tried|tested|used|got|trained|generated|rendered)|works? for me|on my "
+    r"(rtx|gtx|mac|pc|gpu|card)|i(\'m| am) (running|using)|managed to|ended up)\b",
+    re.I,
+)
+
 #: ВОПРОС — не наблюдение, чем бы ни был обставлен. «Is there a way to
 #: implement this in a comfyui workflow?» несёт и условия, и слово про исход,
 #: но человек не рассказывает, что вышло, — он спрашивает. ИЗМЕРЕНО
@@ -436,7 +473,11 @@ def наблюдение(тело: str, model_id: str = "") -> str:
         фраза = " ".join(кусок.split())
         if len(фраза) < МИН_ДЛИНА_НАБЛЮДЕНИЯ:
             continue
-        if ВОПРОС.search(фраза) or МАШИННЫЙ_ВЫВОД.search(фраза):
+        if ВОПРОС.search(фраза) or МАШИННЫЙ_ВЫВОД.search(фраза) or КОД.search(фраза):
+            continue
+        # Прикидка — не наблюдение. Но «should» внутри отчёта человека,
+        # который сказал, что запускал, оговоркой и остаётся.
+        if ПРЕДПОЛОЖЕНИЕ.search(фраза) and not ПРОГНАЛ.search(фраза):
             continue
         if model_id and про_чужую_модель(фраза, model_id):
             continue

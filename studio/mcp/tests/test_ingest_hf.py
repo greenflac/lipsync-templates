@@ -689,3 +689,63 @@ class ЛишнихЗапросовНет(unittest.TestCase):
         повторы = [u for u in set(спрошено) if спрошено.count(u) > 1]
         self.assertEqual(повторы, [])
         self.assertEqual(спрошено.count("https://huggingface.co/api/models/V/M/discussions"), 1)
+
+
+class КодИПрикидка(unittest.TestCase):
+    """Найдено разбором СОБСТВЕННОГО улова глазами (П3), 2026-09-02.
+
+    Заход по 54 моделям дал пять наблюдений из тел. Я открыл все пять и увидел,
+    что три из них — не наблюдения: две строки кода и одна прикидка. Все три
+    прошли и фильтр вопроса, и фильтр машинного вывода: они несут условия
+    прогона (имя модели, числа, железо) и слово про исход, а рассказывают
+    НОЛЬ. Ожидаемое здесь — литералы с того самого прогона (Т2).
+    """
+
+    КОД_С_ПРОГОНА = (
+        "export MODEL_BASE=FastVideo/FastWan2.2-TI2V-5B-Full-Diffusers and then run training",
+        "output_np = (output_np * 0.5 * 127).astype(np.int8) # Adjust the factor (0.5) if needed",
+    )
+    ПРИКИДКА_С_ПРОГОНА = (
+        "If quantized to ~1.5GB, LTX could potentially generate short clips on Snapdragon 865.",
+    )
+    НАСТОЯЩИЕ_С_ПРОГОНА = (
+        "However, I am working with a laptop that has an NVIDIA GTX 1650 (4GB VRAM) and it fails.",
+        "Around 10 seconds in, the glitching starts and the output breaks on my RTX 3090.",
+    )
+
+    def test_строка_кода_не_наблюдение(self):
+        for текст in self.КОД_С_ПРОГОНА:
+            self.assertEqual(hf.наблюдение(текст), "", текст)
+
+    def test_прикидка_не_наблюдение(self):
+        """«could potentially» — это то, что человек предполагает, а не видел.
+        Записанная как observed_behaviour, она становится свидетельством,
+        которого не было."""
+        for текст in self.ПРИКИДКА_С_ПРОГОНА:
+            self.assertEqual(hf.наблюдение(текст), "", текст)
+
+    def test_настоящие_наблюдения_того_же_захода_остались(self):
+        """Вторая половина контроля (И5): фильтр, режущий всё, тоже даёт ноль
+        мусора, и без этой проверки он неотличим от работающего."""
+        for текст in self.НАСТОЯЩИЕ_С_ПРОГОНА:
+            self.assertNotEqual(hf.наблюдение(текст), "", текст)
+
+    def test_оговорка_внутри_отчёта_отчётом_и_остаётся(self):
+        """`should` у человека, который СКАЗАЛ, что запускал, — оговорка, а не
+        прогноз вместо отчёта. Без этого исключения фильтр съедал бы половину
+        настоящих отчётов практиков."""
+        текст = "I ran it on a 4090 at 720p with 30 steps, and it should work for anyone on 24GB."
+        self.assertNotEqual(hf.наблюдение(текст), "")
+
+    def test_обычное_настоящее_время_прикидкой_не_считается(self):
+        """Дыра, найденная мутацией: расширь список модальных до `is`/`are` —
+        и фильтр съест обычный отчёт в настоящем времени, а тесты этого не
+        заметят. Теперь заметят."""
+        текст = "The lips are out of sync after 6 seconds at 720p and 24 fps, every render."
+        self.assertNotEqual(hf.наблюдение(текст), "")
+
+    def test_команда_с_рассказом_об_исходе_остаётся(self):
+        """Признак — не слово «python» в строке, а отсутствие рассказа. Человек,
+        назвавший команду И то, что вышло, остаётся свидетелем."""
+        текст = "Running it at 512x512 on my 3060 takes 40 seconds per frame and the lips desync."
+        self.assertNotEqual(hf.наблюдение(текст), "")
