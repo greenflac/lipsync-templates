@@ -93,6 +93,53 @@ from __future__ import annotations
         # портала 2026-09-02.
         "кроме": ("portal_license",),
     },
+    "max_seconds": {
+        "prefixes": (),
+        # СКОЛЬКО СЕКУНД МОЖЕТ ВЫЙТИ НА ВЫХОДЕ. Закрытый список: у соседних
+        # имён то же слово «seconds» означает ДРУГУЮ длительность, и разбор
+        # сделан по значениям в базе, а не по звучанию.
+        #
+        #   max_seconds            = 15                    выход
+        #   duration_enum          = «4, 6, 8 seconds only» выход
+        #   max_duration_ms        = 600000 ms (10 min)     выход, другая единица
+        #   duration_quantisation  = «4, 6 or 8 — not continuous» выход
+        #
+        # ИЗМЕРЕНО 2026-09-02 через `advise`: строка о длительности записана у
+        # 45 моделей, а на вопрос `max_seconds` отвечали 25.
+        "exact": (
+            "max_seconds",
+            "max_duration_seconds",
+            "max_duration_ms",
+            "max_video_seconds",
+            "duration_enum",
+            "duration_enum_seconds",
+            "duration_range_seconds",
+            "duration_range_t2v_i2v",
+            "duration_range_v2v",
+            "duration_quantisation",
+        ),
+        # НЕГАТИВНЫЙ КОНТРОЛЬ (И5): те же слова о ВХОДЕ, не о выходе.
+        #   max_audio_seconds              = 30    длина поданного звука
+        #   max_input_seconds              = 30    длина поданного видео
+        #   reference_video_duration_range = 3..30 длина референса
+        #   max_frames                     = 161   кадры, а не секунды: без
+        #                                          частоты это не длительность
+        "кроме": (),
+    },
+    "resolution": {
+        # Приставки нет: вендоры пишут `max_resolution`, `native_resolution`,
+        # `resolutions_vertex` — слово стоит и в начале, и в середине, и в
+        # конце. ИЗМЕРЕНО через `advise`: строка о разрешении записана у 40
+        # моделей, а на вопрос `resolution` отвечали 2 — канонического имени
+        # `resolution` почти ни у кого нет.
+        "prefixes": (),
+        "exact": (),
+        "подстроки": ("resolution",),
+        # Разрешение ОБУЧЕНИЯ — не предел входа, и сравнивать с ним креатив
+        # значит отвечать не на тот вопрос (то же исключение стоит в
+        # `scripts/creative_fit.py`, и берётся оно отсюда — Е1).
+        "кроме": ("training_resolution",),
+    },
     "generation_time": {
         "prefixes": (),
         "кроме": (),
@@ -118,6 +165,12 @@ from __future__ import annotations
     "latency": "generation_time",
     "generation_speed": "generation_time",
     "скорость": "generation_time",
+    "duration": "max_seconds",
+    "max_duration": "max_seconds",
+    "длительность": "max_seconds",
+    "длина": "max_seconds",
+    "разрешение": "resolution",
+    "max_resolution": "resolution",
 }
 
 
@@ -158,7 +211,11 @@ def expand(asked: str, recorded: list[str] | tuple[str, ...]) -> list[str]:
         и
         for и in имена
         if и not in правило.get("кроме", ())
-        and (и in правило["exact"] or any(и.lower().startswith(п) for п in правило["prefixes"]))
+        and (
+            и in правило["exact"]
+            or any(и.lower().startswith(п) for п in правило["prefixes"])
+            or any(п in и.lower() for п in правило.get("подстроки", ()))
+        )
     ]
     # Спрошенное буквальное имя — первым, если оно записано: читают сверху, и
     # ответ на заданный вопрос не должен стоять третьим среди родственников.

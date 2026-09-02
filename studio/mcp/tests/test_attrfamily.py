@@ -144,3 +144,62 @@ class ЛицензионнаяСемья(unittest.TestCase):
         """Вторая половина: семьи не перетекают друг в друга."""
         self.assertEqual(attrfamily.expand("license", ["price_per_minute"]), [])
         self.assertEqual(attrfamily.expand("price", ["license_restriction"]), [])
+
+
+class ДлительностьВыходаНеДлительностьВхода(unittest.TestCase):
+    """ИЗМЕРЕНО через `advise`: строка о длительности записана у 45 моделей, а
+    на вопрос `max_seconds` отвечали 25. «Сколько секунд может выйти» — вопрос
+    видеостудии номер два после цены.
+
+    Негативный контроль здесь острее обычного: у соседних имён то же слово
+    `seconds` означает ДРУГУЮ длительность, и вернуть их значит ответить
+    числом не на тот вопрос.
+    """
+
+    def test_перечисление_длительностей_это_ответ(self):
+        self.assertEqual(attrfamily.expand("max_seconds", ["duration_enum"]), ["duration_enum"])
+
+    def test_другая_единица_тоже_ответ(self):
+        """`max_duration_ms = 600000 ms (10 min)` — тот же вопрос, другая
+        единица; она видна в имени, как и у цены."""
+        self.assertEqual(
+            attrfamily.expand("длительность", ["max_duration_ms"]), ["max_duration_ms"]
+        )
+
+    def test_длина_поданного_звука_это_не_длина_ролика(self):
+        """`bytedance-omnihuman / max_audio_seconds = 30` — сколько звука можно
+        подать, а не сколько видео выйдет."""
+        self.assertEqual(attrfamily.expand("max_seconds", ["max_audio_seconds"]), [])
+
+    def test_длина_поданного_видео_и_референса_тоже_не_ответ(self):
+        self.assertEqual(attrfamily.expand("max_seconds", ["max_input_seconds"]), [])
+        self.assertEqual(attrfamily.expand("max_seconds", ["reference_video_duration_range"]), [])
+
+    def test_кадры_без_частоты_это_не_секунды(self):
+        """`max_frames = 161`: без частоты кадров из этого длительность не
+        следует, а подставить 24 значило бы решить за вендора."""
+        self.assertEqual(attrfamily.expand("max_seconds", ["max_frames"]), [])
+
+
+class РазрешениеПодЛюбымИменем(unittest.TestCase):
+    """ИЗМЕРЕНО через `advise`: строка о разрешении записана у 40 моделей, а на
+    вопрос `resolution` отвечали 2 — канонического имени почти ни у кого нет,
+    вендоры пишут `max_resolution`, `native_resolution`, `resolutions_vertex`.
+    """
+
+    def test_слово_ловится_в_любом_месте_имени(self):
+        self.assertEqual(
+            attrfamily.expand("resolution", ["max_resolution", "resolutions_vertex"]),
+            ["max_resolution", "resolutions_vertex"],
+        )
+
+    def test_разрешение_обучения_пределом_входа_не_является(self):
+        """И5: `latentsync-1.6` держит только `training_resolution`, и ответить
+        им на вопрос «какой кадр модель принимает» значит ответить не на тот
+        вопрос. То же исключение стоит в `scripts/creative_fit.py` и берётся
+        отсюда (Е1)."""
+        self.assertEqual(attrfamily.expand("resolution", ["training_resolution"]), [])
+
+    def test_семьи_не_перетекают(self):
+        self.assertEqual(attrfamily.expand("resolution", ["max_seconds"]), [])
+        self.assertEqual(attrfamily.expand("max_seconds", ["max_resolution"]), [])

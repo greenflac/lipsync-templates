@@ -39,14 +39,18 @@ from typing import Any
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from studio import resolution as R  # noqa: E402
+from studio.selfrag import attrfamily  # noqa: E402
 from studio.selfrag.facts import load_facts  # noqa: E402
 
-#: Атрибуты, в которых лежит предел кадра. Подстрокой `resolution`, а не
-#: списком: вендоры заводят новые имена (`native_resolution`,
-#: `resolution_tiers`, `resolutions_vertex`), и список отставал бы молча.
-#: `training_resolution` исключён поимённо — это разрешение ОБУЧЕНИЯ, а не
-#: предел входа, и сравнивать с ним креатив значит отвечать не на тот вопрос.
-КРОМЕ: frozenset[str] = frozenset({"training_resolution"})
+#: Атрибуты, в которых лежит предел кадра, берутся у семьи `resolution`
+#: (`studio/selfrag/attrfamily.py`) — там же, откуда их берёт ответ
+#: `model_advice`. Е1: два места, решающих «какое имя отвечает на вопрос о
+#: разрешении», разъехались бы молча, и тогда гейт проверял бы одно, а
+#: пользователь получал другое.
+#:
+#: В семье, среди прочего, исключён `training_resolution`: разрешение ОБУЧЕНИЯ
+#: — не предел входа, и сравнивать с ним креатив значит отвечать не на тот
+#: вопрос (`latentsync-1.6` держит только его).
 
 
 def кадр_из_файла(путь: str) -> tuple[tuple[int, int] | None, str]:
@@ -63,11 +67,9 @@ def кадр_из_файла(путь: str) -> tuple[tuple[int, int] | None, str
 
 def пределы() -> list[tuple[str, str, str]]:
     """Строки базы про разрешение: модель, атрибут, значение."""
-    return [
-        (ф.model, ф.attribute, str(ф.value))
-        for ф in load_facts()
-        if "resolution" in ф.attribute and ф.attribute not in КРОМЕ
-    ]
+    строки = load_facts()
+    подходят = set(attrfamily.expand("resolution", [ф.attribute for ф in строки]))
+    return [(ф.model, ф.attribute, str(ф.value)) for ф in строки if ф.attribute in подходят]
 
 
 def сверить(кадр: tuple[int, int]) -> dict[str, Any]:
