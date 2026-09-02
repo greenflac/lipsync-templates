@@ -418,3 +418,90 @@ class ComfyOrgIsAPlatformNotARepository(unittest.TestCase):
             blog_tier="blog",
         )
         assert got == "blog", got
+
+
+class ОткрывшиесяХосты(unittest.TestCase):
+    """Хосты, объявленные 2026-09-02 после перепрощупывания карты отказов.
+
+    Они стояли в журнале отказов с 2026-08-27 и не перепроверялись, потому что
+    код, увидев `refused`, обходит хост стороной. Без записи в таблице
+    вендорская страница ложится на нижнюю ступень — тир решает URL, а не
+    намерение записывающего.
+    """
+
+    def рунг(self, model: str, url: str) -> str:
+        return S.classify(model, url, vendor_tier="vendor", portal_tier="portal", blog_tier="blog")
+
+    def test_документация_вендора_это_вендор(self) -> None:
+        for model, url in (
+            ("mistral-small-4-119b-2603", "https://docs.mistral.ai/api/"),
+            ("voxtral-small-24b-2507", "https://docs.mistral.ai/api/"),
+            ("flux-1-dev", "https://docs.bfl.ml/guides/x"),
+            ("kimi-k3", "https://platform.kimi.ai/docs"),
+            ("ideogram-v3", "https://developer.ideogram.ai/api"),
+        ):
+            self.assertEqual(self.рунг(model, url), "vendor", f"{model} @ {url}")
+
+    def test_чужая_модель_на_этом_хосте_вендором_не_становится(self) -> None:
+        """Половина контроля, без которой запись читалась бы как «всё, что на
+        этом хосте, — правда»: страница Mistral ничего не удостоверяет о Kling."""
+        self.assertEqual(self.рунг("kling-3.0", "https://docs.mistral.ai/api/"), "blog")
+
+    def test_общий_хост_объявлен_с_путём_а_не_целиком(self) -> None:
+        """`help.aliyun.com` держит ВСЮ документацию Alibaba Cloud. Объявить
+        его целиком значило бы выдать вендорский тир страницам про биллинг."""
+        model = "wan-2.6-flash"
+        внутри = "https://help.aliyun.com/zh/model-studio/wan-video-generation-api"
+        снаружи = "https://help.aliyun.com/zh/rds/billing"
+        self.assertEqual(self.рунг(model, внутри), "vendor")
+        self.assertEqual(self.рунг(model, снаружи), "blog")
+
+    def test_длинный_ключ_семьи_не_оставляет_модель_без_хоста(self) -> None:
+        """`vendor_sources_for` берёт САМОЕ ДЛИННОЕ совпадение, поэтому
+        `qwen-image` не видит записи ключа `qwen` вовсе. Дописать только к
+        короткому ключу — починить одну модель из трёх (И7)."""
+        for model in ("qwen-image", "qwen3-vl", "qwen2-audio-7b-instruct"):
+            self.assertEqual(
+                self.рунг(model, "https://help.aliyun.com/zh/model-studio/x"), "vendor", model
+            )
+
+
+class СлитнаяВерсия(unittest.TestCase):
+    """Вендоры пишут версию слитно: `wan2.1`, `flux2-klein`, `qwen2.5-omni`.
+
+    Разделительное правило такие имена не ловило, и дефект чинился ПО МЕСТУ
+    трижды — ключами `wan2`, `hunyuanvideo`, `qwen3`. ИЗМЕРЕНО 2026-09-02 на
+    живой базе (489 моделей): цифра-разделитель даёт вендорские источники 27
+    моделям и НИ ОДНОЙ не меняет семью на чужую.
+    """
+
+    def test_слитная_версия_читает_запись_своей_семьи(self) -> None:
+        for model, семья in (
+            ("qwen2.5-omni-7b", "qwen"),
+            ("flux2-klein-9b-consistency", "flux"),
+            ("seedance2_5", "seedance"),
+            ("voxcpm2", "voxcpm"),
+            ("cosmos3-super-image2video", "cosmos"),
+        ):
+            self.assertEqual(
+                S.vendor_sources_for(model), S.VENDOR_SOURCES[семья], f"{model} -> {семья}"
+            )
+
+    def test_чужое_имя_на_ту_же_букву_записи_не_читает(self) -> None:
+        """Вторая половина контроля. Совпадение идёт ТОЛЬКО по цифре после
+        ключа, иначе `wandering-model` унаследовал бы страницы Wan."""
+        for model in ("wandering-model", "kolors", "fluxion-labs-thing", "qwenty"):
+            self.assertEqual(S.vendor_sources_for(model), (), model)
+
+    def test_буква_после_ключа_разделителем_не_стала(self) -> None:
+        """Разделителем стала ЦИФРА, и только она. Одно и то же имя семьи с
+        цифрой и с буквой обязано разойтись по разные стороны — иначе правило
+        расширено не туда, куда написано."""
+        self.assertEqual(S.vendor_sources_for("voxcpm2"), S.VENDOR_SOURCES["voxcpm"])
+        self.assertEqual(S.vendor_sources_for("voxcpmx"), ())
+
+    def test_самое_длинное_совпадение_по_прежнему_главнее(self) -> None:
+        """`qwen-image` обязан читать СВОЮ запись, а не запись `qwen`: правило
+        длиннейшего ключа — то, чем семья дробится, когда версия меняет
+        хозяина."""
+        self.assertEqual(S.vendor_sources_for("qwen-image"), S.VENDOR_SOURCES["qwen-image"])

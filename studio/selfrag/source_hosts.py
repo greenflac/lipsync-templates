@@ -267,7 +267,64 @@ VENDOR_SOURCES: dict[str, tuple[str, ...]] = {
         "platform.minimax.io",
         "platform.minimaxi.com",
     ),
+    # ---- добавлено 2026-09-02 после перепрощупывания карты достижимости ----
+    #
+    # Эти хосты стояли в журнале отказов с 2026-08-27 и НЕ перепроверялись,
+    # потому что код, увидев `refused`, обходит хост стороной. Прощупывание
+    # всех 214 отказанных хостов показало, что 18 из них отвечают, и вот эти
+    # пять — документация самих вендоров. Каждая страница открыта и прочитана
+    # глазами 2026-09-02, титул приведён рядом: домен, отдающий 200, ещё не
+    # доказывает, что за ним вендор, а не припаркованная страница.
+    #
+    # Без объявления факт с такой страницы ложится на `blog` — нижнюю ступень,
+    # — и вендорское заявление весит как чужой пост. Тир решает URL, и это
+    # правильно; поэтому цена молчания таблицы измеряется прямо здесь.
+    #
+    # `mistral` заведён отдельным ключом рядом с `voxtral`: в базе три модели
+    # семейства (mistral-large-3, mistral-medium-3.5, mistral-small-4), и ключ
+    # `voxtral` до них не дотягивается — совпадение идёт по началу имени.
+    "mistral": (
+        "huggingface.co/mistralai/",
+        "mistral.ai",
+        # <title>Documentation - Mistral AI</title>, 200, 2026-09-02
+        "docs.mistral.ai",
+        "api.mistral.ai",
+    ),
+    # <title>API Overview | Ideogram | Documentation</title>, 200, 2026-09-02
+    "ideogram": ("developer.ideogram.ai", "about.ideogram.ai", "ideogram.ai"),
 }
+
+#: Хосты, дописанные к УЖЕ ОБЪЯВЛЕННЫМ семьям тем же прощупыванием 2026-09-02.
+#: Отдельным словарём, а не правкой строк выше: так видно, что именно принесло
+#: перепрощупывание, и одно знание остаётся в одном месте (Е1) — таблица выше
+#: не переписывается, а дополняется.
+#:
+#: `help.aliyun.com` объявлен С ПУТЁМ: под этим хостом лежит вся документация
+#: Alibaba Cloud, и объявить его целиком значило бы выдать вендорский тир
+#: страницам про базы данных и биллинг. Путь `/zh/model-studio/` — это Model
+#: Studio, где живут страницы Wan и Qwen; ровно этот адрес и стоял в журнале
+#: отказов («Wan 2.6 Flash supported output resolutions»).
+ОТКРЫЛИСЬ_2026_09_02: dict[str, tuple[str, ...]] = {
+    # <title>The frontier of visual intelligence - Black Forest Labs</title>
+    "flux": ("docs.bfl.ml", "bfl.ml"),
+    # <title>Kimi API Platform</title>
+    "kimi": ("platform.kimi.ai", "kimi.ai"),
+    # <title>…百炼-阿里云…</title> — Model Studio, страницы Wan и Qwen
+    "wan": ("help.aliyun.com/zh/model-studio/",),
+    # Три ключа, а не один: `vendor_sources_for` берёт САМОЕ ДЛИННОЕ совпадение,
+    # поэтому `qwen-image` читает свою запись и запись `qwen` не видит вовсе.
+    # Дописать только к короткому ключу значило бы починить одну модель из трёх
+    # (И7: чинить по месту — чинить пятую часть).
+    "qwen": ("help.aliyun.com/zh/model-studio/", "tongyi.aliyun.com"),
+    "qwen3": ("help.aliyun.com/zh/model-studio/", "tongyi.aliyun.com"),
+    "qwen-image": ("help.aliyun.com/zh/model-studio/", "tongyi.aliyun.com"),
+    # Та же ловушка длинного ключа: `voxtral-small-24b` совпадает с `voxtral`,
+    # а до заведённого рядом `mistral` не дотягивается никогда.
+    "voxtral": ("docs.mistral.ai", "api.mistral.ai"),
+}
+
+for _семья, _хосты in ОТКРЫЛИСЬ_2026_09_02.items():
+    VENDOR_SOURCES[_семья] = tuple(dict.fromkeys(VENDOR_SOURCES[_семья] + _хосты))
 
 #: CHOSEN the same way. A portal here is a platform that RUNS models or hosts
 #: the artifacts people made with them — it publishes what its own API takes,
@@ -403,6 +460,26 @@ def vendor_sources_for(model: str) -> tuple[str, ...]:
 
     Longest family wins, so a more specific key added later overrides a broader
     one without the broader one having to be touched.
+
+    ЦИФРА ТОЖЕ ОТДЕЛЯЕТ СЕМЬЮ ОТ ВЕРСИИ, и это правка формы, а не места.
+    Вендоры пишут версию слитно — `wan2.1`, `flux2-klein`, `qwen2.5-omni`,
+    `seedance2_5`, — и разделительное правило такие имена не ловило. Дефект
+    чинился ПО МЕСТУ трижды: ключами `wan2`, `hunyuanvideo`, `qwen3`. Ключ на
+    каждую слитную версию — это правило, которое будет неверным к следующему
+    релизу, а прошлая редакция этой же таблицы уже поймала себя на том же
+    (запись про `veo-3` против `veo-3.1` в шапке).
+
+    ИЗМЕРЕНО 2026-09-02 на живой базе (489 моделей): 27 моделей получают
+    источники своего вендора и НИ ОДНА не меняет семью на чужую. Совпадение
+    идёт только по ЦИФРЕ после ключа, поэтому `sdxl` по-прежнему не читает
+    запись `sd`, а `wandering-model` — запись `wan`.
+
+    ЧТО ЭТО НЕ ЧИНИТ, сказано вслух: имя вида `krea2turbonsfwaio` — это
+    пользовательская LoRA, названная по модели, и она получает страницы Krea,
+    хотя её автор не Krea. Класс не новый: `qwen-edit-skin` получал страницы
+    Qwen и по старому правилу. Отличать «версия вендора» от «имени в честь
+    вендора» этот прибор не умеет, и границу правильнее держать записанной,
+    чем притворяться, что её нет.
     """
     name = str(model or "").strip().lower()
     if not name:
@@ -410,7 +487,12 @@ def vendor_sources_for(model: str) -> tuple[str, ...]:
     best = ""
     for family in VENDOR_SOURCES:
         low = family.lower()
-        if name == low or any(name.startswith(low + sep) for sep in FAMILY_SEPARATORS):
+        слитная_версия = name.startswith(low) and len(name) > len(low) and name[len(low)].isdigit()
+        if (
+            name == low
+            or any(name.startswith(low + sep) for sep in FAMILY_SEPARATORS)
+            or слитная_версия
+        ):
             if len(low) > len(best):
                 best = low
     return VENDOR_SOURCES[best] if best else ()
