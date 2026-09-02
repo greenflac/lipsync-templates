@@ -1,0 +1,258 @@
+#!/usr/bin/env python3
+"""Мутации КАНАЛОВ и разборщиков, заведённых 2026-09-02.
+
+ЗАЧЕМ ОТДЕЛЬНЫЙ СКРИПТ, А НЕ СТРОКА В ОТЧЁТЕ
+
+За этот день я прогнал руками около полусотни мутаций по семи модулям —
+`attrfamily`, `resolution`, `lifecycle`, `ingest_portal`, `ingest_schema`,
+`recheck_vendor`, `refill_queue`, — и каждый раз писал в коммит «промолчал
+ноль». Это правда ровно на момент прогона: завтра кто-нибудь переставит
+константу, тесты останутся зелёными, и никто не узнает. Правило Ц7: то, что
+обязано выполняться всегда, — это скрипт, а не строка в отчёте.
+
+Устройство взято у `scripts/mutate_planner.py` (Е1: второй харнесс заводить
+незачем), отличается только таблицей и тем, какие тесты гоняются на каждую
+мутацию — по модулю, а не всё подряд, иначе прогон занимает минуты.
+
+ЗДОРОВЫЙ ПРОГОН ПЕЧАТАЕТСЯ ПЕРВОЙ СТРОКОЙ. На соседнем скрипте это спасало
+дважды: таблица «все покраснели» поверх УЖЕ красного дерева читается как
+успех, хотя не значит ничего.
+
+ЧТО ТАКОЕ «ПРОМОЛЧАЛ» И ПОЧЕМУ ЭТО НЕ ВСЕГДА ДЫРА В ТЕСТАХ. Сегодня четыре
+мутанта промолчали, и все четыре раза причина была РАЗНОЙ:
+
+    правило близости не сторожил ни один тест        -> дыра, завёл тест
+    размер в ключе кэша недостижим тестом            -> вынес функцией (Т5)
+    мутация правила литерал, ставший производным     -> мутант бил по КОПИИ
+    строка не встречалась в живых данных             -> граница, назвал вслух
+
+Молчание — это вопрос, а не приговор: сначала посмотреть, ЧТО именно не
+покраснело.
+"""
+
+from __future__ import annotations
+
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+
+#: (файл, что заменить, на что, подпись, какие тесты гонять).
+#: Тесты названы поимённо: гонять весь набор на каждую мутацию — минуты вместо
+#: секунд, а прибор, которым лень пользоваться, не используется.
+MUTANTS: list[tuple[str, str, str, str, str]] = [
+    # --- семьи атрибутов: пять вопросов, на которых ответ соврал -----------
+    (
+        "studio/selfrag/attrfamily.py",
+        '"кроме": ("price_relative",),',
+        '"кроме": (),',
+        "цена: «на 50% дешевле» снова считается ценой",
+        "studio.mcp.tests.test_attrfamily",
+    ),
+    (
+        # МУТИРУЕТСЯ ЕДИНСТВЕННЫЙ ЗАСЛОН, А НЕ ОДИН ИЗ ДВУХ. Сначала здесь
+        # стояла мутация «убрать `portal_license` из «кроме»» — и она
+        # промолчала: имя не начинается с `license`, и от семьи его держала
+        # ПРИСТАВКА, а «кроме» было поясом поверх подтяжек. Ненаблюдаемый
+        # заслон убран из семьи (см. комментарий там), остался один — и вот он
+        # проверяется: стоит семье начать ловить подстрокой, условия площадки
+        # станут лицензией модели.
+        "studio/selfrag/attrfamily.py",
+        '"prefixes": ("license", "licence"),',
+        '"подстроки": ("license", "licence"), "prefixes": (),',
+        "лицензия: приставка стала подстрокой — условия площадки станут лицензией модели",
+        "studio.mcp.tests.test_attrfamily",
+    ),
+    (
+        "studio/selfrag/attrfamily.py",
+        '"кроме": ("training_resolution",),',
+        '"кроме": (),',
+        "разрешение: разрешение ОБУЧЕНИЯ снова предел входа",
+        "studio.mcp.tests.test_attrfamily",
+    ),
+    (
+        "studio/selfrag/attrfamily.py",
+        '            "duration_quantisation",\n',
+        '            "duration_quantisation",\n            "max_audio_seconds",\n',
+        "длительность: длина входного ЗВУКА считается длиной ролика",
+        "studio.mcp.tests.test_attrfamily",
+    ),
+    (
+        "studio/selfrag/attrfamily.py",
+        '    "cost": "price",\n',
+        "",
+        "синоним `cost` убран",
+        "studio.mcp.tests.test_attrfamily",
+    ),
+    # --- разрешение: предел кадра ------------------------------------------
+    (
+        "studio/resolution.py",
+        '        return Предел(None, размер, "годно", f"ступень {лучшая}: {СТОРОНА_НЕ_УГАДЫВАЕТСЯ}")',
+        '        return Предел(int(размер * 16 / 9), размер, "годно", "достроено по 16:9")',
+        "разрешение: 720p достраивается до 1280x720 за вендора",
+        "studio.tests.test_resolution",
+    ),
+    (
+        "studio/resolution.py",
+        '    if предел.outcome != "годно":\n        return {"outcome": "не смогли"',
+        '    if предел.outcome != "годно":\n        return {"outcome": "годно"',
+        "разрешение: неразобранный предел считается «влезает»",
+        "studio.tests.test_resolution",
+    ),
+    (
+        "studio/resolution.py",
+        "    длинная, короткая = max(кадр), min(кадр)",
+        "    длинная, короткая = кадр[0], кадр[1]",
+        "разрешение: сравнение по ширине вместо длинной стороны",
+        "studio.tests.test_resolution",
+    ),
+    # --- конец службы -------------------------------------------------------
+    (
+        "studio/lifecycle.py",
+        "    if РАБОТАЕТ.search(текст):\n        return []",
+        "    if False:\n        return []",
+        "снятие: «всё ещё зовётся» больше не спасает рабочую модель",
+        "studio.tests.test_lifecycle",
+    ),
+    (
+        "studio/lifecycle.py",
+        "        if СИМВОЛ_КОДА.search(до):\n            continue",
+        "        if False:\n            continue",
+        "снятие: устаревший класс библиотеки считается снятой моделью",
+        "studio.tests.test_lifecycle",
+    ),
+    (
+        "studio/lifecycle.py",
+        '        "не годно" if прошло else "не смогли",',
+        '        "не годно",',
+        "снятие: «отключат через месяц» неотличимо от «уже отключена»",
+        "studio.tests.test_lifecycle",
+    ),
+    # --- канал схем ---------------------------------------------------------
+    (
+        "scripts/ingest_schema.py",
+        'МЕДИА_ПОЛЕ = re.compile(r"_urls?$", re.I)',
+        'МЕДИА_ПОЛЕ = re.compile(r"", re.I)',
+        "схемы: суффикс `_url` не требуется — флаг становится входом",
+        "studio.mcp.tests.test_ingest_schema",
+    ),
+    (
+        "scripts/ingest_schema.py",
+        '    if str(тело.get("type") or "") in СКАЛЯР:\n        return ""',
+        '    if False:\n        return ""',
+        "схемы: `seed` и `duration` считаются артефактом выхода",
+        "studio.mcp.tests.test_ingest_schema",
+    ),
+    (
+        "scripts/ingest_schema.py",
+        "ПОВТОРОВ = 1",
+        "ПОВТОРОВ = 5",
+        "схемы: молчащий хост переспрашивается пять раз",
+        "studio.mcp.tests.test_ingest_schema",
+    ),
+    # --- канал портала ------------------------------------------------------
+    (
+        "scripts/ingest_portal.py",
+        '    if запись.get("hidePricing"):\n        return ""',
+        '    if False:\n        return ""',
+        "портал: скрытая цена пишется как есть",
+        "studio.mcp.tests.test_ingest_portal",
+    ),
+    (
+        "scripts/ingest_portal.py",
+        "БЛИЗОСТЬ = 60",
+        "БЛИЗОСТЬ = 10000",
+        "портал: единица цены берётся от ЛЮБОГО тарифа строки",
+        "studio.mcp.tests.test_ingest_portal",
+    ),
+    # --- наблюдение за вендорскими страницами -------------------------------
+    (
+        "scripts/recheck_vendor.py",
+        '    очищено = СКРИПТЫ.sub(" ", текст or "")',
+        '    очищено = текст or ""',
+        "страницы: тело скриптов снова часть отпечатка",
+        "studio.mcp.tests.test_recheck_vendor",
+    ),
+    (
+        "scripts/recheck_vendor.py",
+        'прежний = предыдущая.get("fingerprint") if предыдущая.get("method") == СПОСОБ else None',
+        'прежний = предыдущая.get("fingerprint")',
+        "страницы: отпечатки РАЗНЫХ правил сравниваются между собой",
+        "studio.mcp.tests.test_recheck_vendor",
+    ),
+    # --- очередь ------------------------------------------------------------
+    (
+        "scripts/refill_queue.py",
+        "    CHANGED_SOURCE: 0,",
+        "    CHANGED_SOURCE: 3,",
+        "очередь: наблюдение об изменении ниже догадки о возрасте",
+        "studio.mcp.tests.test_refill_queue",
+    ),
+    (
+        "scripts/refill_queue.py",
+        '        if any(о.get("reason") == "answered" for о in ответы):\n            continue',
+        "        if False:\n            continue",
+        "очередь: промахи не пересчитываются по нынешней базе",
+        "studio.mcp.tests.test_refill_queue",
+    ),
+]
+
+
+def clean() -> None:
+    for d in ROOT.rglob("__pycache__"):
+        shutil.rmtree(d, ignore_errors=True)
+
+
+def run(тесты: str) -> tuple[int, str]:
+    p = subprocess.run(
+        [sys.executable, "-m", "unittest", тесты], cwd=ROOT, capture_output=True, text=True
+    )
+    хвост = (p.stdout + p.stderr).strip().splitlines()
+    return p.returncode, (хвост[-1] if хвост else "")
+
+
+def main() -> int:
+    clean()
+    наборы = sorted({м[4] for м in MUTANTS})
+    здоровые = {н: run(н) for н in наборы}
+    больные = [f"{н}: {к}" for н, (к, _) in здоровые.items() if к != 0]
+    print(
+        "ЗДОРОВЫЙ | наборов "
+        + str(len(наборы))
+        + (" — все зелёные" if not больные else f" — КРАСНЫЕ: {больные}")
+    )
+    if больные:
+        print("Таблица мутаций поверх красного дерева не значит ничего. Прогон остановлен.")
+        return 1
+
+    print()
+    print(f"{'мутация':64} | тесты | покраснело")
+    print("-" * 92)
+    молчали: list[str] = []
+    for файл, старое, новое, подпись, тесты in MUTANTS:
+        путь = ROOT / файл
+        было = путь.read_text(encoding="utf-8")
+        if старое not in было:
+            print(f"{подпись:64} | НЕ НАЙДЕНО в {файл}")
+            молчали.append(f"{подпись} (строка не найдена — правило переписали?)")
+            continue
+        путь.write_text(было.replace(старое, новое, 1), encoding="utf-8")
+        clean()
+        код, _ = run(тесты)
+        путь.write_text(было, encoding="utf-8")
+        clean()
+        print(f"{подпись:64} | rc={код}  | {'тесты' if код else 'НИКТО — константу не сторожат'}")
+        if код == 0:
+            молчали.append(подпись)
+
+    print()
+    print(f"мутантов {len(MUTANTS)}, промолчали на {len(молчали)}")
+    for m in молчали:
+        print(f"  ПРОМОЛЧАЛИ: {m}")
+    return 1 if молчали else 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
