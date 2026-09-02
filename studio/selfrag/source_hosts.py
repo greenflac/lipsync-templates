@@ -206,7 +206,15 @@ VENDOR_SOURCES: dict[str, tuple[str, ...]] = {
         "github.com/Tencent-Hunyuan/",
         "raw.githubusercontent.com/Tencent-Hunyuan/",
     ),
-    "wan2": ("github.com/Wan-Video/", "huggingface.co/Wan-AI/", "wan.video"),
+    # `wan2` УДАЛЁН 2026-09-02, и это не уборка, а починка. Ключ существовал
+    # только потому, что семья отделялась от версии дефисом и точкой, а вендор
+    # пишет `wan2.1-t2v` слитно. С тех пор цифра тоже отделяет — и ключ стал
+    # ТЕНЬЮ: он длиннее `wan`, значит побеждает, и все хосты, дописанные к
+    # `wan`, до слитных имён не доезжали. ИЗМЕРЕНО на живой базе: 12 имён
+    # (wan2.1-*, wan2.2-*) теряли `help.aliyun.com/zh/model-studio/` и
+    # `tongyi.aliyun.com` — оба вендорские, оба открылись в тот же день.
+    # Найдено не мной, а агентом сбора, который на этот отказ и наткнулся.
+    # Инвариант против повторения — `test_ни_один_длинный_ключ_не_беднее_короткого`.
     "qwen3": ("huggingface.co/Qwen/", "github.com/QwenLM/", "qwen.ai"),
     "stable-video": ("huggingface.co/stabilityai/", "stability.ai"),
     #
@@ -292,6 +300,20 @@ VENDOR_SOURCES: dict[str, tuple[str, ...]] = {
     ),
     # <title>API Overview | Ideogram | Documentation</title>, 200, 2026-09-02
     "ideogram": ("developer.ideogram.ai", "about.ideogram.ai", "ideogram.ai"),
+    # ЛИПСИНК-МОДЕЛИ ALIBABA, не заведённые ни разу, — а репозиторий про липсинк.
+    # Найдены агентом сбора на открывшейся странице Model Studio; имена
+    # проверены мной там же 2026-09-02 (Ц10: имя доказывается страницей, а не
+    # памятью) — `VideoRetalk`, `LivePortrait`, `emoji-v1`,
+    # `video-style-transform` присутствуют на
+    # help.aliyun.com/zh/model-studio/video-generation.
+    #
+    # Строк о них в базе НОЛЬ, и это не довод против записи, а довод за: пока
+    # семья не объявлена, факт с вендорской страницы ложится на `blog`, то есть
+    # первый же сбор обесценит сам себя.
+    "videoretalk": ("help.aliyun.com/zh/model-studio/", "tongyi.aliyun.com"),
+    "liveportrait": ("help.aliyun.com/zh/model-studio/", "tongyi.aliyun.com"),
+    "emoji": ("help.aliyun.com/zh/model-studio/", "tongyi.aliyun.com"),
+    "video-style-transform": ("help.aliyun.com/zh/model-studio/", "tongyi.aliyun.com"),
 }
 
 #: Хосты, дописанные к УЖЕ ОБЪЯВЛЕННЫМ семьям тем же прощупыванием 2026-09-02.

@@ -505,3 +505,46 @@ class СлитнаяВерсия(unittest.TestCase):
         длиннейшего ключа — то, чем семья дробится, когда версия меняет
         хозяина."""
         self.assertEqual(S.vendor_sources_for("qwen-image"), S.VENDOR_SOURCES["qwen-image"])
+
+
+class ДлинныйКлючНеБеднееКороткого(unittest.TestCase):
+    """Инвариант против дефекта, который стоил 12 имён и был найден чужим отказом.
+
+    Ключ, начинающийся с другого ключа и продолженный ЦИФРОЙ, — это тот же
+    вендор, разбитый по версиям. Побеждает он, потому что длиннее. Значит хост,
+    дописанный к короткому ключу, до его моделей не доезжает — молча.
+
+    Так и вышло 2026-09-02: `help.aliyun.com/zh/model-studio/` дописали к `wan`,
+    а `wan2.1-t2v` читает ключ `wan2` и нового хоста не видел. Гейт на это
+    написан один раз, вместо того чтобы каждый раз вспоминать.
+    """
+
+    def test_ни_один_длинный_ключ_не_беднее_короткого(self) -> None:
+        беднее = []
+        for длинный in S.VENDOR_SOURCES:
+            for короткий in S.VENDOR_SOURCES:
+                хвост = длинный[len(короткий) :]
+                if длинный == короткий or not длинный.startswith(короткий) or not хвост:
+                    continue
+                if not хвост[0].isdigit():
+                    continue
+                нет = sorted(set(S.VENDOR_SOURCES[короткий]) - set(S.VENDOR_SOURCES[длинный]))
+                if нет:
+                    беднее.append(f"{длинный!r} затеняет {короткий!r} и теряет {нет}")
+        self.assertEqual(беднее, [])
+
+    def test_инвариант_умеет_краснеть(self) -> None:
+        """И5: без этой половины «нарушений нет» неотличимо от «нечего искать»."""
+        подделка = {"вендор": ("a.test", "b.test"), "вендор2": ("a.test",)}
+        with mock.patch.dict(S.VENDOR_SOURCES, подделка, clear=True):
+            беднее = [
+                d
+                for d in S.VENDOR_SOURCES
+                for k in S.VENDOR_SOURCES
+                if d != k
+                and d.startswith(k)
+                and d[len(k) :]
+                and d[len(k)].isdigit()
+                and set(S.VENDOR_SOURCES[k]) - set(S.VENDOR_SOURCES[d])
+            ]
+            self.assertEqual(беднее, ["вендор2"])
