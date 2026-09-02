@@ -42,6 +42,10 @@
 ключе и правило сведения строк в `fit_stance`). Итог: 57 мутантов, промолчали
 на 0.
 
+ШЕСТОЙ ЗАХОД 2026-09-02: добавлено одиннадцать мутантов на константы запрета
+на вход (`BAN_ORDER`, `BAN_FORMS`, тексты положений, `BAN_EVIDENCE_LABEL`,
+`face_input` у операций, `step_inputs` и отсев запрещённых в `proven`).
+
 ЗДОРОВЫЙ ПРОГОН ПЕЧАТАЕТСЯ ПЕРВОЙ СТРОКОЙ, и это не украшение. Первые заходы
 второй и третьей серий ОБА показали `ЗДОРОВЫЙ | тесты rc=1`: таблица мутаций
 строилась поверх красного и не значила ничего. Причина оба раза была одна —
@@ -111,14 +115,14 @@ MUTANTS = [
     ),
     (
         "studio/planner.py",
-        "return (кадр, цена, -c.applicability, -c.anchored,",
-        "return (кадр, цена, -c.anchored, -c.applicability,",
+        "        -c.applicability,\n        -c.anchored,",
+        "        -c.anchored,\n        -c.applicability,",
         "by_evidence: применимость больше не первый ключ порядка",
     ),
     (
         "studio/planner.py",
-        "return (кадр, цена, -c.applicability, -c.anchored,",
-        "return (кадр, цена, c.applicability, -c.anchored,",
+        "        -c.applicability,\n        -c.anchored,",
+        "        c.applicability,\n        -c.anchored,",
         "by_evidence: применимость перевёрнута (измеренное вниз)",
     ),
     (
@@ -196,8 +200,8 @@ MUTANTS = [
     ),
     (
         "studio/planner.py",
-        "    return (кадр, цена, -c.applicability,",
-        "    return (кадр, -c.applicability, цена,",
+        "        кадр,\n        цена,\n        -c.applicability,",
+        "        кадр,\n        -c.applicability,\n        цена,",
         "by_evidence: цена перестаёт быть старшим ключом при названном потолке",
     ),
     (
@@ -273,7 +277,7 @@ MUTANTS = [
     ),
     (
         "studio/planner.py",
-        "    свои.sort(key=lambda c: by_evidence(c)[CUSTOMER_KEYS:])",
+        "    свои.sort(key=lambda c: by_evidence(c)[CONSTRAINT_KEYS:])",
         "    свои.sort(key=by_evidence)",
         "proven: цена возвращается в выбор вытесненного (назовёт того же, кого подняла)",
     ),
@@ -395,20 +399,20 @@ MUTANTS = [
     ),
     (
         "studio/planner.py",
-        "CUSTOMER_KEYS = 2",
-        "CUSTOMER_KEYS = 1",
-        "CUSTOMER_KEYS 2 -> 1 (цена возвращается в выбор вытесненного)",
+        "CONSTRAINT_KEYS = 3",
+        "CONSTRAINT_KEYS = 2",
+        "CONSTRAINT_KEYS 3 -> 2 (цена возвращается в выбор вытесненного)",
     ),
     (
         "studio/planner.py",
-        "CUSTOMER_KEYS = 2",
-        "CUSTOMER_KEYS = 3",
-        "CUSTOMER_KEYS 2 -> 3 (применимость выключается из выбора вытесненного)",
+        "CONSTRAINT_KEYS = 3",
+        "CONSTRAINT_KEYS = 4",
+        "CONSTRAINT_KEYS 3 -> 4 (применимость выключается из выбора вытесненного)",
     ),
     (
         "studio/planner.py",
-        "    return (кадр, цена, -c.applicability,",
-        "    return (цена, кадр, -c.applicability,",
+        "        запрет,\n        кадр,\n        цена,",
+        "        запрет,\n        цена,\n        кадр,",
         "by_evidence: кадр перестаёт быть старше цены",
     ),
     (
@@ -416,6 +420,75 @@ MUTANTS = [
         "    if приняли:\n        return FIT_IN,",
         "    if приняли and not отвергли:\n        return FIT_IN,",
         "fit_stance -> строже: один мелкий режим отменяет крупный",
+    ),
+    # --- константы запрета на вход шага, заведены 2026-09-02 ---
+    (
+        "studio/planner.py",
+        "    BAN_ALLOWED: 0,\n    BAN_UNKNOWN: 1,\n    BAN_FORBIDS: 2,",
+        "    BAN_ALLOWED: 0,\n    BAN_UNKNOWN: 2,\n    BAN_FORBIDS: 1,",
+        "BAN_ORDER -> слабее: запрещённый обгоняет того, о ком не сказано",
+    ),
+    (
+        "studio/planner.py",
+        "    BAN_ALLOWED: 0,\n    BAN_UNKNOWN: 1,\n    BAN_FORBIDS: 2,",
+        "    BAN_ALLOWED: 0,\n    BAN_UNKNOWN: 0,\n    BAN_FORBIDS: 0,",
+        "BAN_ORDER -> строже: три положения по входу сливаются в одно",
+    ),
+    (
+        "studio/planner.py",
+        '        "human faces are rejected",\n        "human face is rejected",\n'
+        '        "human faces cannot be uploaded",',
+        '        "faces",\n        "human face is rejected",\n'
+        '        "human faces cannot be uploaded",',
+        "BAN_FORMS -> слабее: ловля по слову вместо целой фразы",
+    ),
+    (
+        "studio/planner.py",
+        '    ARTEFACT_SELFIE: (\n        "human faces are rejected",',
+        '    ARTEFACT_SELFIE: (\n        "human faces are rejected NOWHERE",',
+        "BAN_FORMS -> строже: главная форма запрета выпадает из списка",
+    ),
+    (
+        "studio/planner.py",
+        'BAN_UNKNOWN = "о запрете на вход не сказано"',
+        'BAN_UNKNOWN = "вход разрешён явно"',
+        "BAN_UNKNOWN -> слабее: молчание базы печатается как разрешение",
+    ),
+    (
+        "studio/planner.py",
+        'BAN_FORBIDS = "вход ЗАПРЕЩЁН"',
+        'BAN_FORBIDS = "вход под вопросом"',
+        "BAN_FORBIDS -> слабее: стена перестаёт называться стеной",
+    ),
+    (
+        "studio/planner.py",
+        'BAN_EVIDENCE_LABEL = "ЗАПРЕТ НА ВХОД, а не довод"',
+        'BAN_EVIDENCE_LABEL = "чем выбран"',
+        "BAN_EVIDENCE_LABEL -> слабее: запрет снова печатается доводом",
+    ),
+    (
+        "studio/planner.py",
+        "        # видео на входе липсинка — по определению говорящая голова.\n        face_input=True,",
+        "        # видео на входе липсинка — по определению говорящая голова.\n        face_input=False,",
+        "face_input у липсинка -> False (запрет на лицо снова к нему не применяется)",
+    ),
+    (
+        "studio/planner.py",
+        "        # селфи клиента и есть лицо.\n        face_input=True,",
+        "        # селфи клиента и есть лицо.\n        face_input=False,",
+        "face_input у оживления -> False",
+    ),
+    (
+        "studio/planner.py",
+        "    if op.face_input and ARTEFACT_SELFIE not in op.requires:",
+        "    if False and op.face_input and ARTEFACT_SELFIE not in op.requires:",
+        "step_inputs -> строже: лицо перестаёт добавляться к входам шага",
+    ),
+    (
+        "studio/planner.py",
+        "        if c.applicability >= RIVAL_MIN_APPLICABILITY and c.ban_state != BAN_FORBIDS",
+        "        if c.applicability >= RIVAL_MIN_APPLICABILITY",
+        "proven -> слабее: запрещённый кандидат снова зовётся вытесненным",
     ),
 ]
 

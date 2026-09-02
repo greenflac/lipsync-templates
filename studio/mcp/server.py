@@ -453,6 +453,17 @@ def plan_pipeline(brief: str, creative: str = "", budget_usd: float = 0.0) -> st
     Prices are not invented. A step whose model has no comparable price line
     says `цена не записана`.
 
+    AND A MODEL WHOSE OWN VENDOR FORBIDS THE STEP'S INPUT IS RANKED LAST AND
+    SAID SO. Some models state outright that they reject human faces on input,
+    or take no video at all. That is not a quality complaint you can weigh
+    against price — it is a wall: the step cannot run. So it outranks every
+    other consideration, the refused candidates are named in one line per step
+    with the vendor's sentence and URL, and — this is the defect that started
+    it — such a sentence is never printed as a REASON THE MODEL WAS CHOSEN. One
+    and the same claim cannot be both the grounds for a choice and the cause of
+    a refusal. Three positions again, and "nothing recorded about a ban" is not
+    "allowed": absence cannot be proven from this base.
+
     A price recorded per MINUTE is compared against a per-SECOND ceiling, and
     vice versa, because sixty is the definition of the unit and not anybody's
     exchange rate. The converted figure is labelled as ours and printed beside

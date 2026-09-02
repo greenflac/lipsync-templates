@@ -655,15 +655,227 @@ class ОтвергнутыеКадром(unittest.TestCase):
         self.assertNotIn("в", сказано.split(" — ")[0].replace("КАДР ОТВЁРГ КАНДИДАТОВ", ""))
 
 
+#: НЕГАТИВНЫЙ КОНТРОЛЬ ЗАПРЕТА: настоящие строки живой базы, которые формой
+#: похожи на запрет и запретом НЕ являются. Каждая прочитана глазами
+#: 2026-09-02 (П3) и оставлена здесь дословно по смыслу — если список форм
+#: расширят «по звучанию», покраснеет вот это.
+НЕ_ЗАПРЕТЫ: tuple[Fact, ...] = (
+    # Ограничение КАЧЕСТВА, а не вход: модель принимает всё, просто рисует
+    # текст плохо.
+    факт(
+        "м",
+        "limitation",
+        "cannot render legible text at small sizes; letterforms break down",
+        "vendor",
+    ),
+    # Утверждение о ПОЛЕ, а не о модели.
+    факт(
+        "м",
+        "expander_evidence",
+        "automated prompt rewriting cannot generally substitute for human authoring",
+        "paper",
+    ),
+    # ПОТОЛОК ДЛИТЕЛЬНОСТИ, и та же строка прямо называет видео входом.
+    факт(
+        "м",
+        "video_to_video",
+        "yes — a filmed clip is a first-class input; combined video-reference "
+        "duration must not exceed 30 seconds",
+        "portal",
+    ),
+    # Ступень разрешения, а не вход.
+    факт("м", "price_per_second", "Lite $0.05/s (720p), 4k not supported", "vendor"),
+    # Счёт входов, а не запрет.
+    факт("м", "reference_images_max", "total inputs+outputs must not exceed 15", "portal"),
+    # Приём промпта.
+    факт("м", "negative_prompts", "not supported on most FLUX models", "vendor"),
+    # Трассировка питона.
+    факт("м", "failure_mode", "[ERROR] torch._dynamo.exc.Unsupported: Unsupported method", "blog"),
+)
+
+#: Настоящие строки-запреты живой базы, дословно по смыслу.
+ЗАПРЕТЫ: tuple[Fact, ...] = (
+    факт(
+        "запрет-лицо",
+        "human_face_restriction",
+        "input images containing human faces are rejected; real people cannot be generated",
+        "vendor",
+    ),
+    факт(
+        "запрет-загрузка",
+        "face_reference_restriction",
+        "real human faces cannot be uploaded as reference images or videos",
+        "vendor",
+    ),
+    факт(
+        "запрет-видео",
+        "resolution_enum",
+        "480p, 720p, 1080p (default 720p); no video input (image_url only)",
+        "portal",
+    ),
+)
+
+
+class ЗапретНаВход(unittest.TestCase):
+    """Запрет на вход — стена, а не плохая новость о качестве.
+
+    Найдено чтением полной выдачи 2026-09-02 (П3): на шаге липсинка был выбран
+    `seedance-2.0`, и ОБОСНОВАН выбор строкой
+    `face_reference_restriction = real human faces cannot be uploaded`, то есть
+    запретом на тот самый вход, который у шага есть. Довод сработал доводом,
+    потому что якорь поймал слово `face`, а знак утверждения не смотрел никто.
+    """
+
+    def test_запрет_на_лицо_опознан(self) -> None:
+        f = ЗАПРЕТЫ[0]
+        self.assertEqual(pn.bans_in(f, ("селфи",)), "селфи")
+
+    def test_запрет_на_загрузку_лица_опознан(self) -> None:
+        self.assertEqual(pn.bans_in(ЗАПРЕТЫ[1], ("селфи",)), "селфи")
+
+    def test_запрет_на_видеовход_опознан(self) -> None:
+        self.assertEqual(pn.bans_in(ЗАПРЕТЫ[2], ("видео",)), "видео")
+
+    def test_запрет_не_на_наш_вход_молчит(self) -> None:
+        # У шага озвучки нет ни лица, ни видео: запрет о них его не касается.
+        for f in ЗАПРЕТЫ:
+            self.assertEqual(pn.bans_in(f, ("бриф",)), "", f.attribute)
+
+    def test_негативный_контроль_ни_одна_не_запрет(self) -> None:
+        # И5: семь настоящих строк базы, похожих на запрет формой. Ловля по
+        # одному слову («must not», «not supported») зажгла бы каждую.
+        зажглись = [
+            f.attribute for f in НЕ_ЗАПРЕТЫ if pn.bans_in(f, ("селфи", "видео", "аудио", "бриф"))
+        ]
+        self.assertEqual(зажглись, [])
+
+    def test_три_положения_и_молчание_не_разрешение(self) -> None:
+        запрет, _ = pn.ban_stance(list(ЗАПРЕТЫ[:1]), ("селфи",))
+        молчание, нота = pn.ban_stance(list(НЕ_ЗАПРЕТЫ), ("селфи",))
+        разрешено, _ = pn.ban_stance(
+            [факт("м", "accepts_input_video", "yes — video_url plus image_url", "portal")],
+            ("видео",),
+        )
+        # Литералы (Т2): тексты положений — часть контракта.
+        self.assertEqual(запрет, "вход ЗАПРЕЩЁН")
+        self.assertEqual(молчание, "о запрете на вход не сказано")
+        self.assertEqual(разрешено, "вход разрешён явно")
+        self.assertEqual(len({запрет, молчание, разрешено}), 3)
+        self.assertIn("НЕ разрешение", нота)
+
+    def test_запрет_перевешивает_разрешение(self) -> None:
+        свои = [
+            факт("м", "accepts_input_video", "yes — video_url", "portal"),
+            ЗАПРЕТЫ[2],
+        ]
+        состояние, _ = pn.ban_stance(свои, ("видео",))
+        self.assertEqual(состояние, "вход ЗАПРЕЩЁН")
+
+    def test_вход_шага_включает_лицо_у_лицевых_операций(self) -> None:
+        # Мост между «вход объявлен артефактами» и «запрет написан про лицо».
+        лицевые = {op.name for op in pn.OPERATIONS if op.face_input}
+        self.assertEqual(лицевые, {"оживление", "замена_персонажа", "липсинк"})
+        липсинк = next(o for o in pn.OPERATIONS if o.name == "липсинк")
+        self.assertIn("селфи", pn.step_inputs(липсинк))
+        озвучка = next(o for o in pn.OPERATIONS if o.name == "озвучка")
+        self.assertNotIn("селфи", pn.step_inputs(озвучка))
+
+    def test_запрет_старше_всего_прочего(self) -> None:
+        запрещён = pn.Candidate(
+            "а-запрещён",
+            (),
+            9,
+            9,
+            0,
+            "",
+            anchored=9,
+            fit_state="кадр принимается",
+            price_state="в бюджете",
+            ban_state="вход ЗАПРЕЩЁН",
+        )
+        молчун = pn.Candidate(
+            "я-молчун",
+            (),
+            0,
+            0,
+            0,
+            "",
+            anchored=1,
+            fit_state="кадр НЕ принимается",
+            price_state="дороже бюджета",
+            ban_state="о запрете на вход не сказано",
+        )
+        порядок = sorted([запрещён, молчун], key=pn.by_evidence)
+        self.assertEqual([c.model for c in порядок], ["я-молчун", "а-запрещён"])
+
+    def test_запрет_не_печатается_как_довод(self) -> None:
+        # Значение НАРОЧНО несёт якорь операции («image-to-video»): именно так
+        # выглядит настоящая строка `sora-2/failure_mode`, из-за которой запрет
+        # и попадал в доводы. Без якоря строка в доводы не приходит вовсе, и
+        # тест проверял бы не ту развилку.
+        свои = [
+            факт(
+                "запрет-лицо",
+                "failure_mode",
+                "Input images containing human faces are rejected outright — an "
+                "image-to-video lipsync pipeline cannot run at all",
+                "vendor",
+            ),
+            факт("запрет-лицо", "architecture", "image-to-video i2v", "vendor"),
+        ]
+        итог = pn.plan("оживить селфи клиента", facts=свои, today=СЕГОДНЯ)
+        напечатано = pn.render(итог)
+        # Литерал (Т2): одно и то же утверждение не может быть одновременно
+        # основанием выбора и причиной отказа.
+        self.assertIn("ЗАПРЕТ НА ВХОД, а не довод", напечатано)
+        строка = next(стр for стр in напечатано.splitlines() if "ЗАПРЕТ НА ВХОД, а не довод" in стр)
+        self.assertIn("failure_mode", строка)
+        self.assertNotIn("чем выбран", строка)
+
+    def test_запрещённый_уходит_вниз_и_назван(self) -> None:
+        свои = list(ЗАПРЕТЫ[:1]) + [
+            факт("запрет-лицо", "architecture", "image-to-video i2v", "vendor"),
+            факт("чистый", "architecture", "image-to-video i2v", "vendor"),
+        ]
+        итог = pn.plan("оживить селфи клиента", facts=свои, today=СЕГОДНЯ)
+        шаг = итог["steps"][0]
+        self.assertEqual(шаг["chosen"]["model"], "чистый")
+        self.assertEqual(шаг["banned_count"], 1)
+        self.assertTrue(шаг["banned_input"].startswith("вход ЗАПРЕЩЁН"))
+        self.assertIn("запрет-лицо", шаг["banned_input"])
+        self.assertIn("вход запрещён 0", итог["note"])
+
+    def test_запрещать_некого_молчит(self) -> None:
+        # И5, вторая сторона: на базе без запретов ни строки об этом.
+        свои = list(НЕ_ЗАПРЕТЫ) + [
+            факт("м", "architecture", "image-to-video i2v", "vendor"),
+        ]
+        итог = pn.plan("оживить селфи клиента", facts=свои, today=СЕГОДНЯ)
+        шаг = итог["steps"][0]
+        self.assertEqual(шаг["banned_count"], 0)
+        self.assertEqual(шаг["banned_input"], "")
+        self.assertNotIn("вход ЗАПРЕЩЁН", pn.render(итог))
+
+    def test_запрещённый_не_называется_вытесненным(self) -> None:
+        # Запрещённый кандидат — не «проверенный, мимо которого мы прошли»:
+        # его нельзя было выбрать вовсе.
+        запрещён = pn.Candidate("запрещён", (), 5, 0, 0, "", anchored=5, ban_state="вход ЗАПРЕЩЁН")
+        чистый = pn.Candidate(
+            "чистый", (), 1, 0, 0, "", anchored=1, ban_state="о запрете на вход не сказано"
+        )
+        self.assertEqual([c.model for c in pn.proven([запрещён, чистый])], ["чистый"])
+
+
 class КлючиЗаказчика(unittest.TestCase):
-    """`CUSTOMER_KEYS` — сколько первых полей ключа приходят СНАРУЖИ."""
+    """`CONSTRAINT_KEYS` — сколько первых полей ключа суть ЖЁСТКИЕ ограничения."""
 
     def test_их_ровно_столько_сколько_названо(self) -> None:
-        # Литералы (Т2): два первых поля — кадр и цена.
-        self.assertEqual(pn.CUSTOMER_KEYS, 2)
+        # Литералы (Т2): три первых поля — запрет на вход, кадр и цена. Все
+        # три отвечают на «можно ли вообще», а не на «насколько хорошо».
+        self.assertEqual(pn.CONSTRAINT_KEYS, 3)
         self.assertEqual(
-            list(pn.KEY_FIELDS[: pn.CUSTOMER_KEYS]),
-            ["принимает ли кадр", "положение по цене"],
+            list(pn.KEY_FIELDS[: pn.CONSTRAINT_KEYS]),
+            ["запрещён ли вход шага", "принимает ли кадр", "положение по цене"],
         )
 
     def test_ни_кадр_ни_цена_не_решают_кто_доказан(self) -> None:
@@ -679,6 +891,7 @@ class КлючиЗаказчика(unittest.TestCase):
             anchored=1,
             fit_state="кадр принимается",
             price_state="в бюджете",
+            ban_state="вход разрешён явно",
         )
         сильный_но_неудобный = pn.Candidate(
             "я-сильный",
@@ -690,6 +903,7 @@ class КлючиЗаказчика(unittest.TestCase):
             anchored=5,
             fit_state="кадр НЕ принимается",
             price_state="дороже бюджета",
+            ban_state="о запрете на вход не сказано",
         )
         порядок = pn.proven([слабый_но_удобный, сильный_но_неудобный])
         self.assertEqual([c.model for c in порядок], ["я-сильный", "а-удобный"])

@@ -86,6 +86,29 @@
 с бюджетом несравнима» и «цены нет ни строки» — разные состояния, и слияние
 их и было вторым дефектом: у первого читатель видит число и решает сам.
 
+ЗАПРЕТ НА ВХОД — СТЕНА, А НЕ ПЛОХАЯ НОВОСТЬ О КАЧЕСТВЕ
+
+Шестой заход. На шаге липсинка выбирался `seedance-2.0`, и ОБОСНОВАН выбор был
+строкой `face_reference_restriction = "real human faces cannot be uploaded as
+reference images or videos"` — то есть запретом на тот самый вход, который у
+шага есть. Довод сработал доводом, потому что якорь поймал слово `face`, а ЗНАК
+утверждения не смотрел никто.
+
+Это не то же, что записанный выше предел порядка («поднимаем кандидата с плохой
+новостью выше того, о ком молчат»). Там `failure_mode` — измеренная
+применимость, плохая новость о КАЧЕСТВЕ, и она законный довод против. Здесь
+запрет на ВХОД: не довод, а стена.
+
+Три положения (`BAN_ORDER`), и главное из них третье: «о запрете не сказано» НЕ
+равно «разрешено». Список форм запрета выведен из ЗНАЧЕНИЙ живой базы, а не из
+звучания имён, и каждая форма — целая фраза с обеими половинами: что за вход и
+что с ним нельзя. Ловля по одному слову зажгла бы десять строк, запретом не
+являющихся (см. `BAN_FORMS`).
+
+Мост между «вход шага объявлен артефактами» и «запрет написан про лицо» —
+`Operation.face_input`: видео на входе липсинка есть по определению говорящая
+голова, хотя артефакт называется просто «видео».
+
 ПОДАННЫЙ КРЕАТИВ ДОЕЗЖАЕТ ДО ОТБОРА, А НЕ ТОЛЬКО ДО РАСШИРЕНИЯ
 
 Пятый заход, и он закрывает вторую половину цели владельца: «на основе готового
@@ -199,9 +222,17 @@ __all__ = [
     "ARTEFACT_REFERENCE",
     "ARTEFACT_SELFIE",
     "ARTEFACT_VIDEO",
+    "ALLOW_ATTRIBUTE_PREFIX",
+    "ALLOW_VALUE_PREFIX",
+    "BAN_ALLOWED",
+    "BAN_EVIDENCE_LABEL",
+    "BAN_FORBIDS",
+    "BAN_FORMS",
+    "BAN_ORDER",
+    "BAN_UNKNOWN",
     "CANDIDATES_SHOWN",
     "CONVERTED_MARK",
-    "CUSTOMER_KEYS",
+    "CONSTRAINT_KEYS",
     "FIT_ABSENT",
     "FIT_IN",
     "FIT_ORDER",
@@ -249,6 +280,10 @@ __all__ = [
     "Evidence",
     "Operation",
     "by_evidence",
+    "allows_in",
+    "ban_stance",
+    "bans_in",
+    "banned_line",
     "briefs",
     "candidates_for",
     "cheapest_price",
@@ -262,6 +297,7 @@ __all__ = [
     "plan",
     "render",
     "rows_in",
+    "step_inputs",
     "to_budget_per",
     "to_pipeline",
 ]
@@ -610,19 +646,126 @@ FIT_ORDER: dict[str, int] = {
 #: дефекта, что и вытесненный ценой проверенный.
 REJECTED_BY_FRAME_MARK = "КАДР ОТВЁРГ КАНДИДАТОВ"
 
-#: Сколько ПЕРВЫХ полей ключа — это ограничения ЗАКАЗЧИКА, а не наши доводы.
-#: КОНСТАНТА-РЕШЕНИЕ, ВЫБРАНО = 2: кадр и цена. Оба приходят снаружи (файл,
-#: который дал человек, и потолок, который он назвал), оба старше наших
-#: доводов в отборе — и оба обязаны выключаться там, где спрашивают «кто лучше
-#: всех ДОКАЗАН» (`proven`).
+# --------------------------------------------------------------------------
+# ЗАПРЕТ НА ВХОД ШАГА
+#
+# Заведено 2026-09-02, шестым заходом, по находке чтением ПОЛНОЙ выдачи (П3):
+#
+#     plan('оживить фото клиента, он говорит мою озвучку, бюджет $0.10/с',
+#          creative='assets/fork_client_selfie_f.png')
+#     шаг липсинк: seedance-2.0 — применимость не измерена
+#         чем выбран: face_reference_restriction=real human faces cannot be
+#                     uploaded as reference images or videos [vendor]
+#
+# Строка, которой ОБОСНОВАН выбор, — запрет на тот самый вход, который у шага
+# есть. Довод сработал доводом, потому что якорь поймал слово `face`, а ЗНАК
+# утверждения не смотрел никто.
+#
+# ЭТО НЕ ТО ЖЕ, ЧТО УЖЕ ЗАПИСАННЫЙ ПРЕДЕЛ ПОРЯДКА. Там сказано: «порядок
+# поднимает кандидата с плохой новостью выше кандидата, о котором молчат», и
+# это решение верное — `failure_mode` есть измеренная применимость, плохая
+# новость о КАЧЕСТВЕ. Здесь другое: запрет на ВХОД, делающий шаг невозможным.
+# Плохое качество — довод против; невозможный вход — не довод, а стена.
+#
+# СПИСОК ФОРМ ВЫВЕДЕН ИЗ ЗНАЧЕНИЙ, А НЕ ИЗ ЗВУЧАНИЯ ИМЁН, и это главное. Все
+# 16 строк живой базы, где вообще встречается форма запрета, прочитаны глазами
+# 2026-09-02, и десять из них запретом на вход НЕ являются:
+#
+#     seedance-2.0/video_to_video  «combined duration must not exceed…» —
+#         это ПОТОЛОК ДЛИТЕЛЬНОСТИ, и та же строка говорит «a filmed clip is a
+#         first-class input», то есть прямо противоположное запрету;
+#     veo-3.1/price_per_second     «4k not supported» — ступень разрешения;
+#     seedream-4.0-edit            «inputs+outputs must not exceed 15» — счёт;
+#     flux-2/negative_prompts      «not supported on most FLUX models» — приём
+#         промпта, а не вход;
+#     gpt-image-1/artifact_taxonomy «errors that must not be auto-retried»;
+#     voxcpm-0.5b/failure_mode     «torch._dynamo.exc.Unsupported» — трассировка.
+#
+# Ловля по одному слову («must not», «not supported») зажгла бы каждую из них.
+# Поэтому форма запрета здесь — ЦЕЛАЯ ФРАЗА, в которой стоят ОБЕ половины:
+# названный вход и наложенный на него запрет. Список закрытый, короткий, и
+# каждая строка в нём прослежена до настоящей записи базы.
+#
+# ЧЕГО В СПИСКЕ НЕТ НАРОЧНО (И6). `veo-3` и `veo-3.1`: «Photorealistic
+# renditions of a prominent person are rejected outright ... unless the project
+# is allowlisted». Это запрет на ИЗВЕСТНОЕ ЛИЦО и он условный — снимается
+# разрешением площадки. Селфи клиента под него не подпадает, и записать его
+# сюда значило бы отвергать модель за то, чего она не запрещает.
+# --------------------------------------------------------------------------
+
+#: Формы запрета на вход, по артефакту, который они запрещают. КОНСТАНТА-
+#: РЕШЕНИЕ, ВЫБРАНО чтением всех 16 строк живой базы с формой запрета.
+#:
+#: Фраза целиком, а не слово: в ней обязаны стоять ОБЕ половины — что за вход и
+#: что с ним нельзя. Каждая прослежена до записи:
+#:
+#:     «human faces are rejected»       sora-2/human_face_restriction [vendor],
+#:                                      sora-2/failure_mode [vendor]
+#:     «human face is rejected»         sora-2/failure_mode [vendor]
+#:     «human faces cannot be uploaded» seedance-2.0/face_reference_restriction
+#:     «no video input»                 seedance-2.5-i2v/resolution_enum,
+#:                                      pixverse-v6-i2v/resolution_enum
+#:
+#: Ключи — имена артефактов, которые шаг объявляет во `requires`. Аудио здесь
+#: нет: строки, запрещающей аудиовход, в базе нет ни одной, и заводить форму
+#: под ненайденное значило бы нарушить Ц10.
+BAN_FORMS: dict[str, tuple[str, ...]] = {
+    ARTEFACT_SELFIE: (
+        "human faces are rejected",
+        "human face is rejected",
+        "human faces cannot be uploaded",
+    ),
+    ARTEFACT_VIDEO: ("no video input",),
+}
+
+#: Имя атрибута, которым база говорит «этот вход принимается». ВЫБРАНО по
+#: живой базе: `accepts_input_video`, `accepts_image_url`. Значение обязано
+#: начинаться с «yes» — тот же атрибут со значением «no» есть отказ, а не
+#: разрешение, и читать его как разрешение было бы худшим из возможных.
+ALLOW_ATTRIBUTE_PREFIX = "accepts_"
+ALLOW_VALUE_PREFIX = "yes"
+
+#: ТРИ положения кандидата относительно входа шага, а не четыре: у фразы нет
+#: состояния «записана, но не разобрана» — она либо стоит в тексте, либо нет.
+#: Р1 при этом соблюдён буквально, и главное здесь третье:
+#: «запрета не найдено» НЕ равно «вход разрешён». Доказать отсутствие запрета
+#: по базе нельзя, и выдавать молчание за согласие — ровно тот дефект, который
+#: уже дважды чинился в этом модуле (цена, кадр).
+BAN_ALLOWED = "вход разрешён явно"
+BAN_UNKNOWN = "о запрете на вход не сказано"
+BAN_FORBIDS = "вход ЗАПРЕЩЁН"
+
+#: Порядок положений при отборе. КОНСТАНТА-РЕШЕНИЕ: запрет — последний, и он
+#: старше всего прочего (см. `KEY_FIELDS`). Невозможное старше нежелательного.
+BAN_ORDER: dict[str, int] = {
+    BAN_ALLOWED: 0,
+    BAN_UNKNOWN: 1,
+    BAN_FORBIDS: 2,
+}
+
+#: Как называется строка-запрет там, где печатались доводы. КОНСТАНТА-РЕШЕНИЕ:
+#: одно и то же утверждение не может быть одновременно основанием выбора и
+#: причиной отказа, а до 2026-09-02 запрет печатался под словами «чем выбран».
+BAN_EVIDENCE_LABEL = "ЗАПРЕТ НА ВХОД, а не довод"
+
+#: Сколько ПЕРВЫХ полей ключа — это ЖЁСТКИЕ ОГРАНИЧЕНИЯ, а не наши доводы о
+#: качестве модели. КОНСТАНТА-РЕШЕНИЕ, ВЫБРАНО = 3: запрет на вход, кадр, цена.
+#: Все три отвечают на вопрос «можно ли вообще», а не «насколько хорошо», все
+#: три старше наших доводов в отборе — и все три обязаны выключаться там, где
+#: спрашивают «кто лучше всех ДОКАЗАН» (`proven`).
+#:
+#: Имя менялось: было `CUSTOMER_KEYS` (кадр и цена приходят от заказчика).
+#: Запрет на вход приходит не от заказчика, а из базы, поэтому имя стало по
+#: РОДУ ключа, а не по его источнику. Переименование, а не второй счётчик (Е1).
 #:
 #: Заведено 2026-09-02 по РЕГРЕССИИ, пойманной собственным тестом: `proven()`
 #: роняла ровно один первый ключ, и когда перед ценой встал кадр, цена молча
 #: вернулась в выбор вытесненного кандидата — то есть вытесненным начинал
 #: называться тот, кого цена и подняла наверх. Число здесь, а не срез по месту.
-CUSTOMER_KEYS = 2
+CONSTRAINT_KEYS = 3
 
 KEY_FIELDS: tuple[str, ...] = (
+    "запрещён ли вход шага",
     "принимает ли кадр",
     "положение по цене",
     "строк применимости",
@@ -755,6 +898,17 @@ class Operation:
     requires: tuple[str, ...]
     produces: tuple[str, ...]
     requirement: str
+    #: Несёт ли ВХОД этой операции живое человеческое лицо. КОНСТАНТА-РЕШЕНИЕ у
+    #: каждой операции своя, и она не выводится из `requires`: артефакт
+    #: «видео» лица не подразумевает, а видео на входе ЛИПСИНКА — это по
+    #: определению говорящая голова.
+    #:
+    #: Найдено чтением выдачи 2026-09-02 (П3): у шага липсинка
+    #: `requires = ('видео', 'аудио')`, поэтому запрет «real human faces cannot
+    #: be uploaded» к нему не применялся, и `seedance-2.0` был выбран строкой
+    #: этого самого запрета в качестве довода. Вход шага объявлен артефактами,
+    #: а запрет написан про ЛИЦО — мост между ними и есть это поле.
+    face_input: bool = False
 
 
 #: Словарь операций студии. КОНСТАНТА-РЕШЕНИЕ, ВЫБРАНО по восьми настоящим
@@ -808,6 +962,8 @@ OPERATIONS: tuple[Operation, ...] = (
     ),
     Operation(
         name="оживление",
+        # селфи клиента и есть лицо.
+        face_input=True,
         cues=("оживить", "оживи", "оживл", "фото", "селфи", "портрет", "снимок"),
         anchors=("img2vid", "i2v", "image-to-video", "image2video", "image-to-video-generation"),
         requires=(ARTEFACT_SELFIE,),
@@ -830,6 +986,8 @@ OPERATIONS: tuple[Operation, ...] = (
     ),
     Operation(
         name="замена_персонажа",
+        # персонаж вставляется в кадр как изображение человека.
+        face_input=True,
         cues=("заменить персонаж", "замена персонаж", "подменить", "replace character"),
         anchors=("replace", "animate-replace", "character-replacement", "swap"),
         requires=(ARTEFACT_REFERENCE,),
@@ -849,6 +1007,8 @@ OPERATIONS: tuple[Operation, ...] = (
     ),
     Operation(
         name="липсинк",
+        # видео на входе липсинка — по определению говорящая голова.
+        face_input=True,
         cues=("липсинк", "lipsync", "губ", "синхрон", "говорит", "произносит", "читает текст"),
         anchors=("lipsync", "lip-sync", "липсинк", "lipsyncing", "talking-head", "lip-syncing"),
         requires=(ARTEFACT_VIDEO, ARTEFACT_AUDIO),
@@ -899,6 +1059,11 @@ class Evidence:
     axis: str
     source_url: str
     matched: tuple[str, ...]
+    #: Какой вход шага эта строка ЗАПРЕЩАЕТ, если запрещает. Непустое поле
+    #: означает, что строку нельзя печатать под словами «чем выбран»: одно и
+    #: то же утверждение не может быть одновременно основанием выбора и
+    #: причиной отказа.
+    forbids: str = ""
 
 
 @dataclass(frozen=True)
@@ -936,6 +1101,11 @@ class Candidate:
     #: сравнивали и предел не записан.
     fit_state: str = ""
     fit_note: str = ""
+    #: Одно из трёх положений относительно ВХОДА ШАГА (`BAN_ORDER`) и нота.
+    #: Пустая строка невозможна: вход у шага есть всегда, и молчание базы —
+    #: это `BAN_UNKNOWN`, а не отсутствие ответа.
+    ban_state: str = BAN_UNKNOWN
+    ban_note: str = ""
 
     @property
     def measured(self) -> bool:
@@ -1000,6 +1170,7 @@ def evidence_for(
     facts: Sequence[Fact],
     matched: Mapping[int, tuple[str, ...]],
     overrides: dict | None = None,
+    requires: Sequence[str] = (),
 ) -> tuple[list[Evidence], int, int, int]:
     """Строки доказательства с их родом по второй оси, и три счётчика.
 
@@ -1027,6 +1198,7 @@ def evidence_for(
                 axis=ось,
                 source_url=m.fact.source_url,
                 matched=tuple(matched.get(id(m.fact), ())),
+                forbids=bans_in(m.fact, requires),
             )
         )
     return строки, применимость, способность, не_смогли
@@ -1141,6 +1313,87 @@ def limit_facts(facts: Sequence[Fact]) -> list[Fact]:
     """
     подходят = set(af.expand(LIMIT_ATTRIBUTE_MARKER, [f.attribute for f in facts]))
     return [f for f in facts if f.attribute in подходят]
+
+
+def bans_in(fact: Fact, requires: Sequence[str]) -> str:
+    """Какой ИЗ ВХОДОВ ЭТОГО ШАГА запрещает строка. Ни один — пустая строка.
+
+    Вынесено отдельной функцией (Т5): это самая опасная развилка модуля —
+    ошибка в обе стороны дорога. Пропустив запрет, план предлагает модель,
+    которая работу физически не сделает; зажёгшись на ограничении качества,
+    он вычёркивает годную модель за то, чего она не запрещала.
+
+    Смотрит на ЗНАЧЕНИЕ, не на имя атрибута. Имя ничего не решает: запрет
+    приходил под `human_face_restriction`, `failure_mode` и `resolution_enum`,
+    а под теми же именами лежат строки, запретом не являющиеся.
+    """
+    низ = _norm(fact.value)
+    for артефакт in requires:
+        for фраза in BAN_FORMS.get(артефакт, ()):
+            if фраза in низ:
+                return артефакт
+    return ""
+
+
+def allows_in(fact: Fact, requires: Sequence[str]) -> bool:
+    """Говорит ли строка ПРЯМО, что вход принимается («accepts_… = yes»)."""
+    if not fact.attribute.startswith(ALLOW_ATTRIBUTE_PREFIX):
+        return False
+    if not _norm(fact.value).startswith(ALLOW_VALUE_PREFIX):
+        return False
+    имя = fact.attribute.lower()
+    return any(
+        (артефакт == ARTEFACT_VIDEO and "video" in имя)
+        or (артефакт == ARTEFACT_SELFIE and ("image" in имя or "face" in имя))
+        for артефакт in requires
+    )
+
+
+def step_inputs(op: Operation) -> tuple[str, ...]:
+    """Входы шага ДЛЯ ПРОВЕРКИ ЗАПРЕТА: объявленные артефакты плюс лицо.
+
+    Вынесено функцией (Т5) и не свёрнуто в `op.requires`: для валидатора вход
+    шага — это артефакты, которые кто-то должен произвести, а лицо никто не
+    производит, оно приходит с клиентом. Два разных вопроса к одному шагу.
+    """
+    if op.face_input and ARTEFACT_SELFIE not in op.requires:
+        return tuple(op.requires) + (ARTEFACT_SELFIE,)
+    return tuple(op.requires)
+
+
+def ban_stance(facts: Sequence[Fact], requires: Sequence[str]) -> tuple[str, str]:
+    """Запрещает ли база вход ЭТОГО шага. Три исхода, и главный из них третий.
+
+    `BAN_UNKNOWN` — не «разрешено». Отсутствие запрета в базе не есть
+    разрешение: доказать отсутствие нельзя, и выдавать молчание за согласие
+    здесь значило бы повторить дефект, который уже дважды чинился в этом
+    модуле — на цене и на кадре.
+
+    Запрет ПЕРЕВЕШИВАЕТ явное разрешение: строка «accepts_input_video = yes»
+    и строка «human faces cannot be uploaded» об одной модели не противоречат
+    друг другу — вторая сужает первую, а не спорит с ней.
+    """
+    if not requires:
+        return BAN_UNKNOWN, "у шага не объявлено входов — запрещать нечего"
+    запреты = [(f, bans_in(f, requires)) for f in facts]
+    запреты = [(f, а) for f, а in запреты if а]
+    if запреты:
+        факт, артефакт = запреты[0]
+        return BAN_FORBIDS, (
+            f"шагу нужен вход «{артефакт}», а база пишет запрет на него: "
+            f"{факт.attribute}={факт.value[:90]} [{факт.tier}, {факт.stated_on or 'даты нет'}] "
+            f"({факт.source_url}); строк-запретов {len(запреты)}"
+        )
+    разрешения = [f for f in facts if allows_in(f, requires)]
+    if разрешения:
+        f = разрешения[0]
+        return BAN_ALLOWED, (
+            f"вход принимается прямо: {f.attribute}={f.value[:70]} ({f.source_url})"
+        )
+    return BAN_UNKNOWN, (
+        f"о запрете на вход ({', '.join(requires)}) в базе не сказано ни строки "
+        f"из {len(facts)}: это НЕ разрешение"
+    )
 
 
 def fit_stance(facts: Sequence[Fact], frame: tuple[int, int] | None) -> tuple[str, str]:
@@ -1326,9 +1579,19 @@ def by_evidence(c: Candidate) -> tuple:
     годно», назвав класс, — а «не смогли» на модели, о которой молчат, читатель
     не отличил бы от «годно». Молчание не лучше плохой новости, оно хуже.
     """
+    запрет = BAN_ORDER.get(c.ban_state, 0)
     кадр = FIT_ORDER.get(c.fit_state, 0)
     цена = PRICE_ORDER.get(c.price_state, 0)
-    return (кадр, цена, -c.applicability, -c.anchored, -int(c.named), -c.capability, c.model)
+    return (
+        запрет,
+        кадр,
+        цена,
+        -c.applicability,
+        -c.anchored,
+        -int(c.named),
+        -c.capability,
+        c.model,
+    )
 
 
 def why_not(chosen: Candidate, neighbour: Candidate) -> str:
@@ -1355,6 +1618,7 @@ def why_not(chosen: Candidate, neighbour: Candidate) -> str:
 def _поле(c: Candidate, i: int) -> str:
     """Значение i-го поля ключа ЧЕЛОВЕЧЕСКИМИ словами, а не числом из кортежа."""
     значения = (
+        c.ban_state or "не считалось",
         c.fit_state or "не считалось",
         c.price_state or "не считалось",
         f"{c.applicability}",
@@ -1373,15 +1637,41 @@ def proven(found: Sequence[Candidate]) -> list[Candidate]:
     выбрать сильнейшего среди проверенных — разные решения, и мутировать их
     надо порознь.
 
-    Порядок здесь БЕЗ ключей заказчика (`CUSTOMER_KEYS`: кадр и цена), и это не
+    Порядок здесь БЕЗ жёстких ограничений (`CONSTRAINT_KEYS`: запрет, кадр,
+    цена), и это не
     небрежность: вопрос, на который отвечает эта функция, — «кто сильнее всех
     ДОКАЗАН», а не «кто дешевле и кто влезает». Ограничения заказчика уже
     сказали своё слово в общем отборе; повторить их здесь значило бы назвать
     вытесненным того же, кого они и вытеснили наверх.
     """
-    свои = [c for c in found if c.applicability >= RIVAL_MIN_APPLICABILITY]
-    свои.sort(key=lambda c: by_evidence(c)[CUSTOMER_KEYS:])
+    # Запрещённый кандидат — не «проверенный, которого мы прошли мимо»: его
+    # нельзя было выбрать вовсе. Назвать его вытесненным значило бы советовать
+    # то, что не запустится.
+    свои = [
+        c
+        for c in found
+        if c.applicability >= RIVAL_MIN_APPLICABILITY and c.ban_state != BAN_FORBIDS
+    ]
+    свои.sort(key=lambda c: by_evidence(c)[CONSTRAINT_KEYS:])
     return свои
+
+
+def banned_line(found: Sequence[Candidate]) -> str:
+    """ОДНА строка на шаг о кандидатах, чей вход база запрещает.
+
+    Существует по той же причине, что `frame_rejects_line`: запрещённый
+    кандидат по построению уходит в конец порядка и потому выпадает из
+    показанных `CANDIDATES_SHOWN`. Порядок при этом верен, а видимость — нет,
+    и на этом проекте это уже дважды был отдельный дефект.
+
+    Пусто, когда запрещать некого, — негативный контроль, а не экономия.
+    """
+    запрещённые = [c for c in found if c.ban_state == BAN_FORBIDS]
+    if not запрещённые:
+        return ""
+    первый = запрещённые[0]
+    хвост = f" и ещё {len(запрещённые) - 1}" if len(запрещённые) > 1 else ""
+    return f"{BAN_FORBIDS}, кандидат отклонён: {первый.model}{хвост} — {первый.ban_note}"
 
 
 def frame_rejects_line(found: Sequence[Candidate]) -> str:
@@ -1490,14 +1780,25 @@ def candidates_for(
 
     найдены: list[Candidate] = []
     for имя, свои in по_модели.items():
-        строки, применимость, способность, не_смогли = evidence_for(свои, слова, overrides)
+        строки, применимость, способность, не_смогли = evidence_for(
+            свои, слова, overrides, step_inputs(op)
+        )
+        # Строка-ЗАПРЕТ уходит в конец доводов: она не довод. Печатается она
+        # под своим именем (`BAN_EVIDENCE_LABEL`), но и стоять первой в списке
+        # оснований не должна — читают сверху.
         строки.sort(
-            key=lambda e: (e.axis != fa.APPLICABILITY_HEADER, e.stated_on or "", e.attribute)
+            key=lambda e: (
+                bool(e.forbids),
+                e.axis != fa.APPLICABILITY_HEADER,
+                e.stated_on or "",
+                e.attribute,
+            )
         )
         свёрнутое = имя.lower()
         все = по_имени.get(fold(имя), [])
         положение, нота = price_stance(все, потолок)
         по_кадру, нота_кадра = fit_stance(все, frame)
+        по_входу, нота_входа = ban_stance(все, step_inputs(op))
         найдены.append(
             Candidate(
                 model=имя,
@@ -1512,6 +1813,8 @@ def candidates_for(
                 price_note=нота,
                 fit_state=по_кадру,
                 fit_note=нота_кадра,
+                ban_state=по_входу,
+                ban_note=нота_входа,
             )
         )
     найдены.sort(key=by_evidence)
@@ -1623,6 +1926,7 @@ def plan(
     без_применимости = 0
     дороже_потолка = 0
     кадр_не_принят = 0
+    вход_запрещён = 0
     вытеснено_ценой = 0
     без_проверенных = 0
     for op in операции:
@@ -1637,6 +1941,8 @@ def plan(
             дороже_потолка += 1
         if лучший is not None and лучший.fit_state == FIT_OVER:
             кадр_не_принят += 1
+        if лучший is not None and лучший.ban_state == BAN_FORBIDS:
+            вход_запрещён += 1
         строка_о_проверенных = rival_line(лучший, предложены)
         if строка_о_проверенных.startswith(RIVAL_MARK):
             вытеснено_ценой += 1
@@ -1660,6 +1966,10 @@ def plan(
                 # Кандидаты, отвергнутые кадром: они уходят в конец порядка и
                 # потому не попадают в показанные — одна строка на шаг.
                 "rejected_by_frame": frame_rejects_line(предложены),
+                # Кандидаты, чей вход база запрещает: уходят в конец порядка и
+                # потому не попадают в показанные — одна строка на шаг.
+                "banned_input": banned_line(предложены),
+                "banned_count": sum(1 for c in предложены if c.ban_state == BAN_FORBIDS),
                 # Почему выбран этот, а не следующий за ним. Считается из того
                 # же ключа, по которому произошёл отбор (Е2), а не пишется
                 # рядом словами, которые с отбором разъедутся.
@@ -1728,7 +2038,8 @@ def plan(
             f"дороже потолка {дороже_потолка}, "
             f"проверенный вытеснен ценой {вытеснено_ценой}, "
             f"проверенных нет вовсе {без_проверенных}, "
-            f"кадр не принимают {кадр_не_принят}"
+            f"кадр не принимают {кадр_не_принят}, "
+            f"вход запрещён {вход_запрещён}"
         ),
         "brief": brief,
         "budget": строка_бюджета,
@@ -1785,6 +2096,8 @@ def _candidate_row(c: Candidate | None) -> dict | None:
         "price_note": c.price_note,
         "fit_state": c.fit_state,
         "fit_note": c.fit_note,
+        "ban_state": c.ban_state,
+        "ban_note": c.ban_note,
         "evidence": [
             {
                 "attribute": e.attribute,
@@ -1795,6 +2108,7 @@ def _candidate_row(c: Candidate | None) -> dict | None:
                 "axis": e.axis,
                 "source_url": e.source_url,
                 "matched": list(e.matched),
+                "forbids": e.forbids,
             }
             for e in c.evidence
         ],
@@ -1846,6 +2160,11 @@ def render(итог: dict) -> str:
         # дальше первой строки шага не пойдёт, это касается больше всего.
         if s.get("proven_rival"):
             строки.append(f"      {s['proven_rival']}")
+        по_входу = выбран.get("ban_state") or ""
+        if по_входу and по_входу != BAN_UNKNOWN:
+            строки.append(f"      вход шага: {по_входу} — {выбран.get('ban_note', '')}")
+        if s.get("banned_input"):
+            строки.append(f"      {s['banned_input']}")
         по_кадру = выбран.get("fit_state") or ""
         if по_кадру:
             строки.append(f"      кадр: {по_кадру} — {выбран.get('fit_note', '')}")
@@ -1863,8 +2182,9 @@ def render(итог: dict) -> str:
                 f"      вход плана (у заказчика уже есть): {', '.join(s['input_of_plan'])}"
             )
         for e in выбран["evidence"]:
+            подпись = BAN_EVIDENCE_LABEL if e.get("forbids") else "чем выбран"
             строки.append(
-                f"      чем выбран: {e['attribute']}={e['value'][:70]} "
+                f"      {подпись}: {e['attribute']}={e['value'][:70]} "
                 f"[{e['tier']}, {e['stated_on'] or 'даты нет'}, {e['kind'] or 'род не выведен'}]"
                 f" {e['source_url']}"
             )
