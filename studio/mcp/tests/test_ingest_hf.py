@@ -1148,3 +1148,74 @@ class ОднаОговоркаОднаСтрока(unittest.TestCase):
             ]
         )
         assert len(строки) == 2, строки
+
+
+class УдачаЛовитсяТемиЖеСловами(unittest.TestCase):
+    """ИЗМЕРЕНО 2026-09-02: из 314 строк с обсуждений HuggingFace `failure_mode`
+    — 221, а «удача» — 6.
+
+    Причина не в том, что практики не хвалят, а в асимметрии прибора: провал
+    ловился обычными словами оценки (bad, poor, wrong), удача требовала сильных
+    идиом (impressive, works perfectly). Одна и та же речь ловилась с одной
+    стороны и пропускалась с другой — а «успешные кейсы» владелец назвал первым
+    пунктом предмета мониторинга.
+    """
+
+    def test_обычная_похвала_результата_это_удача(self):
+        assert hf.знак("I get better result from lightning 8 step lora for upscaling.") == "удача"
+        assert hf.знак("its kinda good actually, around 4.7 it/s on my gtx1070") == "удача"
+
+    def test_похвала_не_результату_удачей_не_считается(self):
+        """«I am working with a laptop that has a GTX 1650» — слово про работу
+        относится к ноутбуку, а не к модели. Без близости к исходу таких строк
+        набралось четыре из двадцати одной."""
+        assert (
+            hf.знак("However, I am working with a laptop that has an NVIDIA GTX 1650 (4GB VRAM).")
+            != "удача"
+        )
+
+    def test_оценка_вдали_от_исхода_удачей_не_считается(self):
+        """Живая строка базы: «the vendor's own good-prompt example is a
+        multi-sentence scene description». Слово `good` тут — часть названия
+        примера, а не оценка результата прогона, и рядом с ним нет ни одного
+        слова об исходе. Без правила близости строка стала бы удачей.
+
+        Мутант «близость не требуется» промолчал ровно здесь: прежний
+        отрицательный пример ловился оговоркой, а не близостью, и правило
+        оставалось без сторожа."""
+        assert (
+            hf.знак(
+                "English-only prompting, and terse prompts underperform — the vendor's own "
+                "good-prompt example is a multi-sentence scene description"
+            )
+            != "удача"
+        )
+
+    def test_похвала_с_оговоркой_это_не_удача(self):
+        """«I think it's already better, BUT even slower, a full generation is
+        now 1000 seconds» — половина сравнения. Записать удачей значит
+        приписать модели успех, о котором автор говорит с оговоркой."""
+        assert (
+            hf.знак("I think it's already better, but even slower, a full generation is 1000 s")
+            != "удача"
+        )
+
+    def test_похвала_в_прошедшем_это_не_удача(self):
+        """«A few weeks ago I used flux.2 and everything seemed good» — начало
+        жалобы на то, что стало хуже."""
+        assert (
+            hf.знак("A few weeks ago, I used flux.2, and everything seemed good, speed normal")
+            != "удача"
+        )
+
+    def test_провал_по_прежнему_главнее(self):
+        """Вторая половина (И5): расширив удачу, нельзя отобрать у провала его
+        строки. Текст с обоими знаками — «неясно», а не «удача»."""
+        assert hf.знак("the quality is good but the model crashes on every second run") != "удача"
+
+    def test_безнаковый_текст_остаётся_безнаковым(self):
+        """Третий исход не сворачивается ни в первый, ни во второй: «steps 8,
+        10; cfgScale 1» — прогон без знака, и он записывается как
+        `observed_behaviour`, а не выбрасывается."""
+        assert hf.знак("steps 8, 10; cfgScale 1; sampler Euler") == "неясно"
+        assert hf.АТРИБУТ_ПО_ЗНАКУ["неясно"] == "observed_behaviour"
