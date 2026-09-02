@@ -26,6 +26,11 @@ import stop_named_not_asked as hook_script  # noqa: E402
 NAMES = ["veo-3", "veo-3.1", "sora-2", "kling-3.0", "chatterbox"]
 
 
+def NAMES_FROM_BASE() -> list[str]:
+    """Полный список базы: второму прибору нужны СЕМЕЙСТВА, а не пять имён."""
+    return nna.model_names()
+
+
 def line(record: dict) -> str:
     return json.dumps(record, ensure_ascii=False) + "\n"
 
@@ -98,6 +103,69 @@ class WhatCountsAsNaming(unittest.TestCase):
         self.assertEqual(nna.recommended_names(row, NAMES), ["chatterbox"])
 
 
+class NamesTheBaseDoesNotKnow(unittest.TestCase):
+    """Второй прибор: имя, похожее на настоящее, но базе не известное."""
+
+    def test_an_invented_name_of_a_known_family_is_caught(self) -> None:
+        got = nna.classify("Рекомендую kling-4.0: новая линейка.", NAMES_FROM_BASE())
+        self.assertEqual(got["outside"], ["kling-4.0"])
+        self.assertEqual(got["unsure"], [])
+
+    def test_a_library_version_is_not_a_model(self) -> None:
+        got = nna.classify("Рекомендую собирать на torch-2.4.", NAMES_FROM_BASE())
+        self.assertEqual(got["outside"], [])
+        self.assertEqual(got["unsure"], ["torch-2.4"])
+
+    def test_a_word_without_digits_is_not_even_unparseable(self) -> None:
+        """Без цифры `read-only` — обычное слово; иначе «не смогли» зальёт всё."""
+        got = nna.classify("Рекомендую read-only режим и dry-run.", NAMES_FROM_BASE())
+        self.assertEqual((got["outside"], got["unsure"]), ([], []))
+
+    def test_a_documentation_file_is_not_a_model(self) -> None:
+        got = nna.classify("Рекомендую прочесть sora-2.md целиком.", NAMES_FROM_BASE())
+        self.assertEqual((got["outside"], got["unsure"]), ([], []))
+
+    def test_a_reference_to_a_row_of_the_base_is_not_a_new_name(self) -> None:
+        got = nna.classify("Рекомендую взглянуть на kling-3.0.failure_mode.", NAMES_FROM_BASE())
+        self.assertEqual(got["outside"], [])
+
+    def test_a_glued_technical_word_is_not_a_model(self) -> None:
+        """`float16` цеплялось семейством: в базе есть модель `float`."""
+        got = nna.classify("Рекомендую держать веса во float16.", NAMES_FROM_BASE())
+        self.assertEqual((got["outside"], got["unsure"]), ([], []))
+
+    def test_two_names_glued_by_a_slash_are_two_names(self) -> None:
+        got = nna.classify("Рекомендую пару sora-2/kling-4.0.", NAMES_FROM_BASE())
+        self.assertEqual(got["outside"], ["kling-4.0"])
+
+    def test_a_three_letter_family_still_counts(self) -> None:
+        """`veo`, `wan`, `ltx`, `gpt` — семейства из трёх букв, и они настоящие."""
+        got = nna.classify("Рекомендую veo-9.9 на эту задачу.", NAMES_FROM_BASE())
+        self.assertEqual(got["outside"], ["veo-9.9"])
+
+    def test_a_two_letter_family_is_too_short_to_count(self) -> None:
+        """В базе есть `sd3.5-medium` с головой `sd`; двух букв мало, чтобы
+        `sd-9.9` считалось именем модели, — так цепляется что угодно."""
+        got = nna.classify("Рекомендую sd-9.9 сегодня.", NAMES_FROM_BASE())
+        self.assertEqual(got["outside"], [])
+
+    def test_a_name_outside_a_recommendation_is_silent(self) -> None:
+        got = nna.classify("Каталог отдал kling-4.0 и veo-9.9 строками.", NAMES_FROM_BASE())
+        self.assertEqual((got["outside"], got["unsure"]), ([], []))
+
+    def test_not_in_base_is_not_the_same_as_does_not_exist(self) -> None:
+        note = nna.unknown_name_note("kling-4.0", NAMES_FROM_BASE())
+        self.assertIn("не искали", note)
+        self.assertNotIn("не существует", note)
+        self.assertIn("kling-3.0", note)
+
+    def test_the_hook_never_tells_the_model_to_deny_existence(self) -> None:
+        advice = hook_script.what_to_do({"outside_base": ["kling-4.0"], "unasked": []})
+        self.assertIn("«такой модели нет»", advice)
+        self.assertIn("НЕ пиши", advice)
+        self.assertIn("record_model_fact", advice)
+
+
 class ThreeOutcomes(unittest.TestCase):
     def test_all_asked_is_pass_with_counters(self) -> None:
         got = nna.judge("Рекомендую veo-3.1, sora-2 слабее.", ["veo-3.1", "sora-2"], NAMES)
@@ -109,6 +177,34 @@ class ThreeOutcomes(unittest.TestCase):
         self.assertEqual(got["outcome"], "fail")
         self.assertEqual(got["unasked"], ["sora-2"])
         self.assertEqual((got["checked"], got["violations"]), (2, 1))
+
+    def test_an_unknown_name_fails_and_is_counted_apart(self) -> None:
+        got = nna.judge("Рекомендую kling-4.0.", [], NAMES_FROM_BASE())
+        self.assertEqual(got["outcome"], "fail")
+        self.assertEqual(got["outside_base"], ["kling-4.0"])
+        self.assertEqual(got["unasked"], [])
+        self.assertEqual((got["violations"], got["unmeasured"]), (1, 0))
+
+    def test_an_unparseable_name_is_neither_clean_nor_a_violation(self) -> None:
+        got = nna.judge("Рекомендую собирать на torch-2.4.", [], NAMES_FROM_BASE())
+        self.assertEqual(got["outcome"], "could not measure")
+        self.assertEqual((got["violations"], got["unmeasured"]), (0, 1))
+
+    def test_an_unparseable_name_does_not_block_the_turn(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "t.jsonl"
+            path.write_text(text_line("Рекомендую собирать на torch-2.4."), "utf-8")
+            code, report = hook_script.hook({"transcript_path": str(path)})
+        self.assertEqual(code, 3)
+        self.assertIn("не смогли 1", report)
+
+    def test_an_unknown_name_blocks_the_turn(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "t.jsonl"
+            path.write_text(text_line("Рекомендую kling-4.0."), "utf-8")
+            code, report = hook_script.hook({"transcript_path": str(path)})
+        self.assertEqual(code, 2)
+        self.assertIn("kling-4.0", report)
 
     def test_an_unreadable_trace_is_not_pass(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -204,8 +300,8 @@ class ControlSet(unittest.TestCase):
     def test_the_set_holds_both_directions(self) -> None:
         cases = hook_script.load_controls()
         expected = {case["expect_outcome"] for case in cases}
-        self.assertEqual(expected, {"pass", "fail"})
-        self.assertGreaterEqual(len(cases), 9)
+        self.assertEqual(expected, {"pass", "fail", "unmeasured"})
+        self.assertGreaterEqual(len(cases), 15)
 
     def test_a_one_sided_control_set_is_not_a_green_run(self) -> None:
         """Набор, где прибор ни разу не обязан шевельнуться, ничего не мерит."""
@@ -213,6 +309,12 @@ class ControlSet(unittest.TestCase):
         outcome = hook_script.run_controls(cases, nna.model_names())
         self.assertEqual(outcome["outcome"], "fail")
         self.assertTrue(any("исход" in line for line in outcome["lines"]))
+
+    def test_a_control_set_without_the_third_outcome_is_not_a_green_run(self) -> None:
+        """Набор из двух исходов не сторожит третий, каким бы полным ни был."""
+        cases = [c for c in hook_script.load_controls() if c["expect_outcome"] != "unmeasured"]
+        outcome = hook_script.run_controls(cases, nna.model_names())
+        self.assertEqual(outcome["outcome"], "fail")
 
     def test_an_empty_control_set_is_not_a_green_run(self) -> None:
         outcome = hook_script.run_controls([], nna.model_names())

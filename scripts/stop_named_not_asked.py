@@ -52,10 +52,11 @@ REPO = Path(__file__).resolve().parents[1]
 #: негативных случаев здесь большинство, и три из них сняты с живого следа.
 CONTROLS = REPO / "studio" / "fixtures" / "named_not_asked_controls.json"
 
-#: Сколько исходов набор обязан различить. ВЫБРАНО 2: `pass` и `fail`. Третий
-#: исход (`не смогли`) контролируется отдельным случаем — несуществующим
-#: следом, — потому что он про ЧТЕНИЕ следа, а не про текст ответа.
-CONTROL_OUTCOMES_MIN = 2
+#: Сколько исходов набор обязан различить. ВЫБРАНО 3: `pass`, `fail` и
+#: `could not measure`. Третий исход стал достижим ПО ТЕКСТУ ответа, а не
+#: только по нечитаемому следу: имя формы `torch-2.4` — это «разобрать не
+#: смогли», и свернуть его в «чисто» значит соврать в самую дешёвую сторону.
+CONTROL_OUTCOMES_MIN = 3
 
 #: Код возврата, которым Claude Code возвращает stderr модели и запрещает
 #: закончить ход. ВЫБРАНО не нами: это контракт хуков Claude Code.
@@ -81,22 +82,34 @@ def run_controls(cases: list[dict[str, Any]], names: list[str]) -> dict[str, Any
             "unmeasured": 1,
             "lines": ["контрольного набора нет — сравнивать не с чем"],
         }
+    wanted = {"pass": PASS, "fail": FAIL, "unmeasured": UNMEASURED}
     lines: list[str] = []
     wrong = 0
     seen: set[str] = set()
     for case in cases:
         got = nna.judge(str(case["answer"]), list(case.get("asked") or []), names)
         seen.add(got["outcome"])
-        expected = PASS if case["expect_outcome"] == "pass" else FAIL
-        ok = got["outcome"] == expected and got["unasked"] == list(case.get("expect_unasked") or [])
+        expected = wanted[str(case["expect_outcome"])]
+        ok = (
+            got["outcome"] == expected
+            and got["unasked"] == list(case.get("expect_unasked") or [])
+            and got["outside_base"] == list(case.get("expect_outside") or [])
+            and got["unsure"] == list(case.get("expect_unsure") or [])
+        )
         if not ok:
             wrong += 1
             lines.append(
-                f"  ПРОВАЛ {case['id']}: ждали {expected}/{case.get('expect_unasked')}, "
-                f"вышло {got['outcome']}/{got['unasked']}"
+                f"  ПРОВАЛ {case['id']}: ждали {expected} "
+                f"не-спрошено={case.get('expect_unasked') or []} "
+                f"вне-базы={case.get('expect_outside') or []} "
+                f"не-смогли={case.get('expect_unsure') or []}, вышло {got['outcome']} "
+                f"{got['unasked']} {got['outside_base']} {got['unsure']}"
             )
         else:
-            lines.append(f"  ok {case['id']}: {got['outcome']} {got['unasked']}")
+            lines.append(
+                f"  ok {case['id']}: {got['outcome']} "
+                f"{got['unasked']}{got['outside_base']}{got['unsure']}"
+            )
     missing = nna.verdict(REPO / "нет-такого-следа.jsonl")
     if missing["outcome"] != UNMEASURED:
         wrong += 1
@@ -122,6 +135,7 @@ def measure(directory: Path, names: list[str]) -> dict[str, Any]:
     """Ложные срабатывания на живом следе, числом (П1). Читает только *.jsonl."""
     files = sorted(directory.rglob("*.jsonl"))
     blocks = named_blocks = flagged = 0
+    outside_cued = outside_wide = unsure_cued = 0
     raw = nna.name_pattern(names)
     hits: list[str] = []
     for path in files:
@@ -151,17 +165,57 @@ def measure(directory: Path, names: list[str]) -> dict[str, Any]:
             got = nna.judge(answer, sorted(asked), names)
             if raw is not None and raw.search(nna.countable_text(answer)):
                 named_blocks += 1
+            outside_wide += len(nna.classify(answer, names, cued_only=False)["outside"])
+            outside_cued += len(got["outside_base"])
+            unsure_cued += len(got["unsure"])
             if got["violations"]:
                 flagged += 1
-                hits.append(f"  {path.name}: {got['unasked']} :: {answer.strip()[:160]}")
+                hits.append(
+                    f"  {path.name}: не спрошено {got['unasked']}, "
+                    f"вне базы {got['outside_base']} :: {answer.strip()[:160]}"
+                )
     return {
         "outcome": PASS if files else UNMEASURED,
         "checked": blocks,
         "violations": flagged,
         "unmeasured": 0 if files else 1,
         "named_blocks": named_blocks,
+        "outside_cued": outside_cued,
+        "outside_wide": outside_wide,
+        "unsure_cued": unsure_cued,
         "lines": hits,
     }
+
+
+def what_to_do(result: dict[str, Any]) -> str:
+    """Что именно чинить. Два рода провала лечатся РАЗНЫМИ действиями (Р1).
+
+    Про имя вне базы хук НЕ говорит «такой модели нет»: база собрана нами и
+    заведомо неполна, «нет в базе» и «не существует» — разные утверждения, и
+    второе мы доказать не можем. Сказать нужно «не смотрел» и пойти смотреть.
+    """
+    lines: list[str] = []
+    if result.get("unasked"):
+        lines.append(
+            "Позови `model_advice` на каждое из имён, названных без запроса, "
+            "или убери их из рекомендации: инструкция сервера требует спрашивать базу "
+            "о КАЖДОМ сравниваемом кандидате, а не только о том, который нравится."
+        )
+    if result.get("outside_base"):
+        lines.append(
+            "Имена вне базы: НЕ пиши «такой модели нет» — этого мы не знаем, база "
+            "заведомо неполна. Напиши «в базе этого нет, я не проверял», проверь имя "
+            "поиском (`search_web`/`fetch_url`) ДО того, как советовать, и, если модель "
+            "существует, положи найденное обратно через `record_model_fact`. "
+            "Существование внешнего имени доказывается командой, а не уверенным тоном."
+        )
+    if result.get("unsure"):
+        lines.append(
+            "Разобрать не смогли: если это имена моделей — назови их так, как их пишет "
+            "вендор, и позови `model_advice`; если это версии библиотек, они здесь ни при "
+            "чём. Ход не остановлен, но и чистым он не считается."
+        )
+    return "\n".join(lines)
 
 
 def hook(payload: dict[str, Any]) -> tuple[int, str]:
@@ -170,15 +224,11 @@ def hook(payload: dict[str, Any]) -> tuple[int, str]:
     result = nna.verdict(Path(transcript) if transcript else None)
     report = nna.render(result)
     if result["outcome"] == UNMEASURED:
-        return EXIT_UNMEASURED, report
+        return EXIT_UNMEASURED, report + ("\n" + what_to_do(result) if result.get("unsure") else "")
     if result["outcome"] == FAIL:
         if payload.get("stop_hook_active"):
             return 0, report + " (ход уже был остановлен этим хуком — второй раз не держу)"
-        return EXIT_BLOCK, (
-            report + "\nПрежде чем заканчивать: позови `model_advice` на каждое из этих имён "
-            "или убери их из рекомендации. Инструкция сервера требует спрашивать базу "
-            "о КАЖДОМ сравниваемом кандидате, а не только о том, который нравится."
-        )
+        return EXIT_BLOCK, report + "\n" + what_to_do(result)
     return 0, report
 
 
@@ -209,8 +259,11 @@ def main(argv: list[str]) -> int:
         print(
             f"следы: блоков ответа {outcome['checked']}, "
             f"из них называют имя из базы вообще {outcome['named_blocks']}, "
-            f"названо без запроса в рекомендательной фразе {outcome['violations']}, "
-            f"не смогли {outcome['unmeasured']}"
+            f"нарушений в рекомендательной фразе {outcome['violations']}, "
+            f"из них имён вне базы {outcome['outside_cued']}; "
+            f"имён вне базы БЕЗ фильтра фразы (широкая сеть) {outcome['outside_wide']}, "
+            f"разобрать не смогли (в рекомендательной фразе) {outcome['unsure_cued']}, "
+            f"следов не прочитано {outcome['unmeasured']}"
         )
         return 0 if outcome["outcome"] == PASS else EXIT_UNMEASURED
 
