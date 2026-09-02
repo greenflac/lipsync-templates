@@ -6,11 +6,31 @@
   "avatar",
   "talking"
  ],
- "checked": 32,
+ "checked": 66,
  "channels_asked": 3,
- "channels_answered": 1,
- "partial": true,
+ "channels_answered": 3,
+ "partial": false,
  "new_families": [
+  {
+   "family": "ai-avatar-multi",
+   "task": "AI Avatar Multi",
+   "uploaders": [
+    "fal.ai"
+   ],
+   "examples": [
+    "https://fal.ai/models/fal-ai/ai-avatar/multi"
+   ]
+  },
+  {
+   "family": "ai-avatar-multi-text",
+   "task": "AI Avatar Multi Text",
+   "uploaders": [
+    "fal.ai"
+   ],
+   "examples": [
+    "https://fal.ai/models/fal-ai/ai-avatar/multi-text"
+   ]
+  },
   {
    "family": "ai-avatar-single-text",
    "task": "AI Avatar Single Text",
@@ -19,6 +39,26 @@
    ],
    "examples": [
     "https://fal.ai/models/fal-ai/ai-avatar/single-text"
+   ]
+  },
+  {
+   "family": "argil-avatars-audio-to-video",
+   "task": "Avatars Audio to Video",
+   "uploaders": [
+    "fal.ai"
+   ],
+   "examples": [
+    "https://fal.ai/models/argil/avatars/audio-to-video"
+   ]
+  },
+  {
+   "family": "argil-avatars-text-to-video",
+   "task": "Avatars Text to Video",
+   "uploaders": [
+    "fal.ai"
+   ],
+   "examples": [
+    "https://fal.ai/models/argil/avatars/text-to-video"
    ]
   },
   {
@@ -62,6 +102,36 @@
    ]
   },
   {
+   "family": "heygen-v3-video-agent",
+   "task": "Heygen Video Agent",
+   "uploaders": [
+    "fal.ai"
+   ],
+   "examples": [
+    "https://fal.ai/models/fal-ai/heygen/v3/video-agent"
+   ]
+  },
+  {
+   "family": "image-apps-v2-headshot-photo",
+   "task": "Headshot Generator",
+   "uploaders": [
+    "fal.ai"
+   ],
+   "examples": [
+    "https://fal.ai/models/fal-ai/image-apps-v2/headshot-photo"
+   ]
+  },
+  {
+   "family": "image-apps-v2-portrait-enhance",
+   "task": "Portrait Enhance",
+   "uploaders": [
+    "fal.ai"
+   ],
+   "examples": [
+    "https://fal.ai/models/fal-ai/image-apps-v2/portrait-enhance"
+   ]
+  },
+  {
    "family": "infinitalk-single-text",
    "task": "Infinitalk",
    "uploaders": [
@@ -79,6 +149,36 @@
    ],
    "examples": [
     "https://fal.ai/models/fal-ai/infinitalk/video-to-video"
+   ]
+  },
+  {
+   "family": "instant-character",
+   "task": "Instant Character",
+   "uploaders": [
+    "fal.ai"
+   ],
+   "examples": [
+    "https://fal.ai/models/fal-ai/instant-character"
+   ]
+  },
+  {
+   "family": "kling-video-ai-avatar-v2-pro",
+   "task": "Kling AI Avatar v2 Pro",
+   "uploaders": [
+    "fal.ai"
+   ],
+   "examples": [
+    "https://fal.ai/models/fal-ai/kling-video/ai-avatar/v2/pro"
+   ]
+  },
+  {
+   "family": "kling-video-ai-avatar-v2-standard",
+   "task": "Kling AI Avatar v2 Standard",
+   "uploaders": [
+    "fal.ai"
+   ],
+   "examples": [
+    "https://fal.ai/models/fal-ai/kling-video/ai-avatar/v2/standard"
    ]
   },
   {
@@ -119,6 +219,46 @@
    ],
    "examples": [
     "https://fal.ai/models/fal-ai/kling-video/o3/standard/image-to-video"
+   ]
+  },
+  {
+   "family": "kling-video-v1-pro-ai-avatar",
+   "task": "Kling AI Avatar Pro",
+   "uploaders": [
+    "fal.ai"
+   ],
+   "examples": [
+    "https://fal.ai/models/fal-ai/kling-video/v1/pro/ai-avatar"
+   ]
+  },
+  {
+   "family": "kling-video-v1-standard-ai-avatar",
+   "task": "Kling AI Avatar",
+   "uploaders": [
+    "fal.ai"
+   ],
+   "examples": [
+    "https://fal.ai/models/fal-ai/kling-video/v1/standard/ai-avatar"
+   ]
+  },
+  {
+   "family": "live-portrait",
+   "task": "Live Portrait",
+   "uploaders": [
+    "fal.ai"
+   ],
+   "examples": [
+    "https://fal.ai/models/fal-ai/live-portrait"
+   ]
+  },
+  {
+   "family": "live-portrait-image",
+   "task": "Live Portrait",
+   "uploaders": [
+    "fal.ai"
+   ],
+   "examples": [
+    "https://fal.ai/models/fal-ai/live-portrait/image"
    ]
   },
   {
@@ -199,6 +339,26 @@
    ],
    "examples": [
     "https://fal.ai/models/fal-ai/sync-lipsync/v3"
+   ]
+  },
+  {
+   "family": "veed-avatars-audio-to-video",
+   "task": "Avatars",
+   "uploaders": [
+    "fal.ai"
+   ],
+   "examples": [
+    "https://fal.ai/models/veed/avatars/audio-to-video"
+   ]
+  },
+  {
+   "family": "veed-avatars-text-to-video",
+   "task": "Avatars",
+   "uploaders": [
+    "fal.ai"
+   ],
+   "examples": [
+    "https://fal.ai/models/veed/avatars/text-to-video"
    ]
   },
   {
