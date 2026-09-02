@@ -390,10 +390,23 @@ def plan_pipeline(brief: str, creative: str = "", budget_usd: float = 0.0) -> st
         matched against the operations vocabulary, and the models are then
         matched against the base in ENGLISH, which is the language the base is
         written in.
-    :param creative: a ready-made creative, if there is one. Only its extension
-        is read here — a video means the plan's video comes from the customer
-        rather than from a step. Point `analyse_creative` at the same file for
-        what is actually in the pixels.
+    :param creative: a ready-made creative, if there is one. Its extension says
+        whether the plan's video comes from the customer rather than from a
+        step, AND — since 2026-09-02 — its frame is measured, by the same
+        instrument `analyse_creative` uses, and checked against what each
+        candidate model records as its resolution limit. A model whose recorded
+        limit cannot take your frame is ranked last and named out loud, with the
+        vendor's own line and its URL beside the verdict.
+
+        Four positions, and the middle two are both "could not tell": the frame
+        is accepted / the limit is recorded but unparseable / no limit is
+        recorded at all / the frame is refused. "No limit recorded" is NOT
+        "accepted" — on the live base only 41 models of 505 record one, so
+        folding that silence into consent would quietly bless 92% of candidates.
+
+        The frame outranks price in the ordering: a model that cannot take the
+        frame will not run at all, while a model over budget will run and do the
+        work, merely expensively.
     :param budget_usd: a per-step ceiling, if you have one to pass. Left at 0
         the ceiling is read out of the BRIEF itself — "бюджет 0.5 доллара",
         "не дороже 2 долларов за ролик" — and the currency must be named: a
