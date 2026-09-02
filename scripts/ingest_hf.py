@@ -319,7 +319,7 @@ def troubles(payload: dict[str, Any], *, setup: bool = False) -> list[dict[str, 
 ЗНАК_ПРОВАЛА = re.compile(
     r"(fails?|failed|broken|breaks?|doesn'?t work|not work|crash|error|garbage"
     r"|distort|artifact|flicker|unusable|useless|wrong|bad|poor|terrible"
-    r"|no effect|zero effect|ignores?|desync|out of sync|не работает|ломается)",
+    r"|(?:no|zero) (?:effect|change|difference)|nothing happens|ignores?|desync|out of sync|не работает|ломается)",
     re.I,
 )
 
@@ -460,6 +460,76 @@ def про_чужую_модель(фраза: str, model_id: str) -> bool:
     return False
 
 
+#: ПОДВОДКА — не наблюдение. Предложение, кончающееся двоеточием, объявляет
+#: содержимое, а само его не несёт: «I got the following error when trying to
+#: load the model:» и «My local ComfyUI inference workflow uses:». Оба попали в
+#: базу и оба пришлось смотреть глазами, чтобы увидеть, что там ноль.
+ПОДВОДКА = re.compile(r":\s*$")
+
+#: ОТРИЦАНИЕ ПОЛОМКИ — не поломка. Поймано первым же живым прогоном после
+#: послабления: в находки попало «the model is still tagged as both
+#: text-to-video and image-to-video so NOTHING WILL BREAK in term of usage» —
+#: предложение говорит ровно обратное тому, за что его взяли.
+#:
+#: Тот же класс ошибки независимый оценщик уже ловил в канале Civitai на
+#: «without any OOM errors»: слово поломки внутри отрицания. Здесь оно стоит
+#: дорого вдвойне — такая строка не просто мусор, она записывает у модели
+#: поломку, которой у неё нет.
+НЕТ_ПОЛОМКИ = re.compile(
+    r"\b(?:nothing|never|without|no)\s+(?:\w+\s+){0,2}"
+    r"(?:break\w*|crash\w*|fail\w*|error\w*|issues?|problems?)\b"
+    r"|\b(?:won'?t|will not|does(?:n'?t| not)|do(?:n'?t| not)|did(?:n'?t| not)|cannot|can'?t)"
+    r"\s+(?:\w+\s+){0,2}"
+    r"(?:break|crash|fail)\b",
+    re.I,
+)
+
+#: ЧАСТИ СИСТЕМЫ, названные по имени. Отчёт о поломке — это факт сам по себе,
+#: но только если названо, ЧТО именно сломалось: «не работает» не наблюдение, а
+#: «temporal and spatial upscalers fail to load when placed inside
+#: models/upscale_models» — наблюдение, и очень полезное.
+#:
+#: Множественное число писалось не везде, и первая же проверка это поймала:
+#: `upscaler` есть, `upscalers` нет, и настоящая находка проходила мимо. Ошибка
+#: дешёвая на вид и дорогая по цене — она молча сужает канал.
+ЧАСТЬ_СИСТЕМЫ = re.compile(
+    r"\b(models?|checkpoints?|loras?|nodes?|workflows?|upscalers?|samplers?|vae|encoders?|"
+    r"decoders?|pipelines?|schedulers?|tokenizers?|weights?|safetensors|gguf|outputs?|"
+    r"videos?|audio|images?|frames?|prompts?|seed|watermark|face|lips?|teeth|"
+    r"мод(ель|ели)|нода|воркфлоу)\b",
+    re.I,
+)
+
+#: Сколько слов должно быть в отчёте о поломке без условий прогона. ВЫБРАНО 8:
+#: «it doesn't work» (3 слова) ничего не сообщает, а восемь слов уже вынуждают
+#: назвать, что и когда сломалось. Мерилось на живом следе — см. класс тестов
+#: `ПоломкаБезЖелеза`.
+СЛОВ_В_ОТЧЁТЕ_О_ПОЛОМКЕ = 8
+
+
+def поломка_без_железа(фраза: str) -> bool:
+    """Отчёт о поломке, где условий прогона нет, а факт есть.
+
+    ИЗМЕРЕНО 2026-09-02 на 30 тредах LTX-Video: правило «условия И исход»
+    отвергало 20 предложений, и среди них были настоящие находки —
+    «No matter the prompts, the model occasionally produces video with a
+    consistent watermark», «The temporal and spatial upscalers fail to load
+    when placed inside models/upscale_models», «I ran the sample as is but it
+    failed with OSError». У всех трёх нет железа, и все три — то, ради чего
+    канал существует.
+
+    Требуется ТРИ вещи разом: знак провала, названная часть системы и восемь
+    слов. Условия прогона у отчёта о поломке — подарок, а не условие: у
+    отчёта о СКОРОСТИ или об удаче наоборот, там без железа число пустое, и
+    для них правило остаётся прежним.
+    """
+    if not ЗНАК_ПРОВАЛА.search(фраза) or НЕТ_ПОЛОМКИ.search(фраза):
+        return False
+    if not ЧАСТЬ_СИСТЕМЫ.search(фраза):
+        return False
+    return len(фраза.split()) >= СЛОВ_В_ОТЧЁТЕ_О_ПОЛОМКЕ
+
+
 def наблюдение(тело: str, model_id: str = "") -> str:
     """Слова автора, в которых названы И условия прогона, И исход.
 
@@ -473,7 +543,12 @@ def наблюдение(тело: str, model_id: str = "") -> str:
         фраза = " ".join(кусок.split())
         if len(фраза) < МИН_ДЛИНА_НАБЛЮДЕНИЯ:
             continue
-        if ВОПРОС.search(фраза) or МАШИННЫЙ_ВЫВОД.search(фраза) or КОД.search(фраза):
+        if (
+            ВОПРОС.search(фраза)
+            or МАШИННЫЙ_ВЫВОД.search(фраза)
+            or КОД.search(фраза)
+            or ПОДВОДКА.search(фраза)
+        ):
             continue
         # Прикидка — не наблюдение. Но «should» внутри отчёта человека,
         # который сказал, что запускал, оговоркой и остаётся.
@@ -481,7 +556,9 @@ def наблюдение(тело: str, model_id: str = "") -> str:
             continue
         if model_id and про_чужую_модель(фраза, model_id):
             continue
-        if УСЛОВИЯ_ПРОГОНА.search(фраза) and ИСХОД_ПРОГОНА.search(фраза):
+        if (УСЛОВИЯ_ПРОГОНА.search(фраза) and ИСХОД_ПРОГОНА.search(фраза)) or поломка_без_железа(
+            фраза
+        ):
             годные.append(фраза)
         if len(годные) >= ПРЕДЛОЖЕНИЙ_ИЗ_ТЕЛА:
             break

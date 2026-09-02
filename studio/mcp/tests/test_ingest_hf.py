@@ -966,3 +966,94 @@ class СводкаСкорости(unittest.TestCase):
         заявлено = hf.заявки(строка)
         self.assertNotIn("failure_mode", {z[1] for z in заявлено})
         self.assertEqual(строка["dropped_long"], 1)
+
+
+class Подводка(unittest.TestCase):
+    """Предложение, кончающееся двоеточием, объявляет содержимое, а не несёт его.
+
+    Обе строки попали в базу и обе пришлось смотреть глазами, чтобы увидеть,
+    что там ноль: «I got the following error when trying to load the model:» и
+    «My local ComfyUI inference workflow uses:». Первая отозвана.
+    """
+
+    def test_подводка_наблюдением_не_считается(self):
+        for текст in (
+            "I got the following error when trying to load the model:",
+            "My local ComfyUI inference workflow uses:",
+        ):
+            self.assertEqual(hf.наблюдение(текст), "", текст)
+
+    def test_двоеточие_внутри_предложения_не_мешает(self):
+        """Половина контроля (И5): режется ТОЛЬКО двоеточие в конце, иначе
+        правило съело бы настоящие отчёты с пояснением после двоеточия."""
+        текст = "I ran the sample as is but it failed with OSError: Cannot load model weights."
+        self.assertNotEqual(hf.наблюдение(текст), "")
+
+
+class ПоломкаБезЖелеза(unittest.TestCase):
+    """Отчёт о поломке — факт сам по себе, и требовать к нему железо значит
+    выбрасывать то, ради чего канал заведён.
+
+    ИЗМЕРЕНО 2026-09-02 на 30 тредах LTX-Video: правило «условия И исход»
+    отвергало 20 предложений, среди которых были настоящие находки. После
+    послабления наблюдений стало 9 против 6, и все новые — настоящие, кроме
+    одной, о которой ниже.
+    """
+
+    НАСТОЯЩИЕ = (
+        "The temporal and spatial upscalers fail to load when placed inside models/upscale_models.",
+        "I ran the sample as is but it failed with OSError: Cannot load model weights.",
+        "Using the base-fp8 workflow, I get a crash in the LTXV Base Sampler node at 0/8.",
+        "The custom LoRAs produce zero change in the output and no warnings appear.",
+    )
+    НЕ_НАБЛЮДЕНИЯ = (
+        # Слишком коротко: сообщения нет.
+        "It doesn't work.",
+        "This is broken.",
+        # Похвала вендора: ни поломки, ни прогона.
+        "Lightricks has been quietly building the most efficient video generation models.",
+    )
+
+    def test_поломка_с_названной_частью_проходит(self):
+        for текст in self.НАСТОЯЩИЕ:
+            self.assertTrue(hf.поломка_без_железа(текст), текст)
+
+    def test_без_названной_части_и_без_длины_не_проходит(self):
+        for текст in self.НЕ_НАБЛЮДЕНИЯ:
+            self.assertFalse(hf.поломка_без_железа(текст), текст)
+
+    def test_короткая_жалоба_с_названной_частью_не_проходит(self):
+        """Дыра, найденная мутацией: порог 8 слов можно было опустить до трёх,
+        и «The model is broken» стало бы наблюдением. Это не отчёт, это
+        настроение: не сказано ни что делали, ни что увидели."""
+        for текст in ("The model is broken.", "The node crashes.", "Output is garbage."):
+            self.assertFalse(hf.поломка_без_железа(текст), текст)
+
+    def test_жалоба_без_названной_части_не_проходит(self):
+        """Вторая дыра оттуда же: без требования назвать часть системы
+        проходило «I tried everything and it still fails after every attempt» —
+        двенадцать слов, а сообщения ноль."""
+        текст = "I tried everything and it still fails after every single attempt today."
+        self.assertFalse(hf.поломка_без_железа(текст), текст)
+
+    def test_отрицание_поломки_поломкой_не_считается(self):
+        """ПОЙМАНО ПЕРВЫМ ЖЕ ЖИВЫМ ПРОГОНОМ после послабления. «...so NOTHING
+        WILL BREAK in term of usage» попало в находки: слово поломки внутри
+        отрицания. Такая строка не просто мусор — она записывает у модели
+        поломку, которой у неё нет.
+
+        Тот же класс независимый оценщик уже ловил в канале Civitai на
+        «without any OOM errors»."""
+        for текст in (
+            "Note that the model is still tagged as both text-to-video and image-to-video "
+            "so nothing will break in term of usage.",
+            "It ran for an hour without any OOM errors on the 3090 with the model loaded.",
+            "The workflow does not crash any more after the node update was applied.",
+        ):
+            self.assertFalse(hf.поломка_без_железа(текст), текст)
+
+    def test_у_скорости_и_удачи_правило_прежнее(self):
+        """Половина контроля (И5): послабление дано ТОЛЬКО отчётам о поломке.
+        Отчёт об удаче без железа ничего не сообщает — «works great» не факт."""
+        self.assertFalse(hf.поломка_без_железа("It works great with the model and the workflow."))
+        self.assertEqual(hf.наблюдение("It works great with the model and the workflow."), "")
