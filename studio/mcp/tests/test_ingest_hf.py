@@ -1219,3 +1219,34 @@ class УдачаЛовитсяТемиЖеСловами(unittest.TestCase):
         `observed_behaviour`, а не выбрасывается."""
         assert hf.знак("steps 8, 10; cfgScale 1; sampler Euler") == "неясно"
         assert hf.АТРИБУТ_ПО_ЗНАКУ["неясно"] == "observed_behaviour"
+
+
+class ИменованныйАргументЭтоКод(unittest.TestCase):
+    """Поймано на живом заходе 2026-09-02: в базу ушло
+
+        weight_name="Wan2.2-I2V-A14B-4steps-lora-rank64/high_noise_model.safetensors"
+
+    как `observed_behaviour`. Прежняя ветка `КОД` требовала скобок после `=`, а
+    у именованного аргумента их нет.
+    """
+
+    def test_присваивание_строкового_литерала_это_код(self):
+        assert hf.КОД.search(
+            'weight_name="Wan2.2-I2V-A14B-4steps-lora-rank64/high_noise_model.safetensors"'
+        )
+        assert hf.КОД.search("ckpt = 'sdxl_lightning_4step_unet.safetensors'")
+
+    def test_фраза_человека_кодом_не_считается(self):
+        """Вторая половина (И5): правило узкое нарочно. Обычная фраза со слова
+        `слово="` не начинается, поэтому знак равенства ВНУТРИ предложения
+        кодом не делает."""
+        assert not hf.КОД.search("I set the weight to 0.5 and the result was better")
+        assert not hf.КОД.search('The output quality="high" setting is what the docs recommend')
+
+    def test_человеческая_скоропись_со_знаком_равенства_не_код(self):
+        """Правило требует КАВЫЧКИ после `=` именно потому, что практики пишут
+        скорописью: «Result = much better with the lora at 0.5». Расширив
+        правило до любого знака, канал выбросил бы настоящее наблюдение —
+        мутант «любой символ после =» промолчал ровно здесь."""
+        assert not hf.КОД.search("Result = much better with the lora at 0.5")
+        assert not hf.КОД.search("speed = around 4 minutes per clip on my 3090")
