@@ -6,10 +6,13 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 import tempfile
 import unittest
 from datetime import date
 from pathlib import Path
+
+from studio.mcp import advice
 
 SPEC = importlib.util.spec_from_file_location(
     "refill_queue",
@@ -202,3 +205,51 @@ class Sources(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ОпубликованноеВОчередьНеИдёт(unittest.TestCase):
+    """Правило одно на проект, и жило оно в двух местах (Е1).
+
+    `advice.stale` научили отличать дату публикации от износа 2026-09-02, а
+    здесь тот же расчёт был переписан заново — и починка сюда не доехала.
+    ИЗМЕРЕНО в тот же день: в очереди из 51 строки лежало 10 ссылок на arXiv,
+    старейшей 1352 дня.
+    """
+
+    def _база(self, rows: list[dict]) -> Path:
+        файл = Path(tempfile.mkdtemp()) / "facts.jsonl"
+        файл.write_text(
+            "".join(json.dumps(r, ensure_ascii=False) + "\n" for r in rows), encoding="utf-8"
+        )
+        return файл
+
+    СТАРАЯ_СТАТЬЯ = {
+        "model": "м",
+        "attribute": "failure_mode",
+        "value": "статья",
+        "source_url": "https://arxiv.org/abs/2212.10562",
+        "tier": "paper",
+        "stated_on": "2022-12-20",
+    }
+    СТАРАЯ_ЦЕНА = {
+        "model": "м",
+        "attribute": "price_per_second_usd",
+        "value": "0.06",
+        "source_url": "https://fal.ai/models/x",
+        "tier": "portal",
+        "stated_on": "2024-01-01",
+    }
+
+    def test_статья_в_очередь_не_попадает(self):
+        очередь = refill.stale_work(path=self._база([self.СТАРАЯ_СТАТЬЯ]))
+        self.assertEqual(очередь, [])
+
+    def test_цена_площадки_в_очередь_попадает(self):
+        """Вторая половина (И5): иначе правило просто выключает очередь."""
+        очередь = refill.stale_work(path=self._база([self.СТАРАЯ_ЦЕНА]))
+        self.assertEqual([r["model"] for r in очередь], ["м"])
+
+    def test_правило_берётся_из_одного_места(self):
+        """Т2 наоборот, и нарочно: здесь ожидаемое — ИМЕННО импорт, потому что
+        проверяется, что второго списка тиров не завели."""
+        self.assertIs(refill.advice.PUBLISHED_TIERS, advice.PUBLISHED_TIERS)

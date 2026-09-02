@@ -37,6 +37,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from studio.mcp import misses  # noqa: E402
 from studio.selfrag import facts as facts_mod  # noqa: E402
+from studio.mcp import advice  # noqa: E402
 from studio.selfrag.facts import STALE_AFTER_DAYS, TIER_VENDOR  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -70,6 +71,10 @@ def stale_work(today: date | None = None, path: Path | None = None) -> list[dict
     rows = facts_mod.load_facts(FACTS if path is None else path)
     when = today or date.today()
     found: list[dict[str, Any]] = []
+    # Список из одного числа, а не просто число: счётчик обязан пережить
+    # замыкание и напечататься рядом с очередью (Р2 — «сколько не взяли»
+    # печатается, а не подразумевается).
+    опубликованных = [0]
     for fact in rows:
         if not fact.stated_on:
             continue
@@ -79,6 +84,19 @@ def stale_work(today: date | None = None, path: Path | None = None) -> list[dict
             continue
         if age <= STALE_AFTER_DAYS:
             continue
+        # ОПУБЛИКОВАННЫЙ ИСТОЧНИК В ОЧЕРЕДЬ ЧТЕНИЯ НЕ ИДЁТ. Правило одно на
+        # проект и живёт в `advice.PUBLISHED_TIERS` (Е1): здесь оно было
+        # переписано заново и поэтому не поехало вместе с починкой —
+        # ИЗМЕРЕНО 2026-09-02, в очереди из 51 строки лежало 10 arXiv-ссылок,
+        # старейшей 1352 дня. Статья говорит сегодня то же, что и в день
+        # публикации; «перечитай её» — работа, которую нельзя выполнить, а
+        # очередь, где такой работы пятая часть, читают по диагонали.
+        #
+        # Если модель с тех пор изменилась, ответ — измерить МОДЕЛЬ
+        # (`propose_measurement`), а не перечитать статью.
+        if fact.tier in advice.PUBLISHED_TIERS:
+            опубликованных[0] += 1
+            continue
         vendor = fact.tier == TIER_VENDOR
         found.append(
             {
@@ -87,6 +105,11 @@ def stale_work(today: date | None = None, path: Path | None = None) -> list[dict
                 "detail": f"{fact.attribute}, источнику {age} дней",
                 "where": fact.source_url,
             }
+        )
+    if опубликованных[0]:
+        print(
+            f"  опубликованных источников старше {STALE_AFTER_DAYS} дней: "
+            f"{опубликованных[0]} — в очередь НЕ взяты: статья не протухает"
         )
     return found
 
