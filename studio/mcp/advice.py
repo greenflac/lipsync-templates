@@ -313,7 +313,13 @@ def advise(model: str, attribute: str = "", *, path: Path | None = None) -> dict
 
     store = store_for(path)
     live = registry.availability(name)
-    known_here = name.lower() in {m.lower() for m in store.models()}
+    # Разрешение имени — одно на весь проект (`studio/selfrag/modelnames.py`),
+    # и здесь оно спрашивается, а не повторяется. До 2026-09-02 эта строка
+    # сравнивала сырое написание с сырым: `flux-2-klein-9b` и
+    # `flux.2-klein-9b` — одна модель в двух карманах, и спросивший первым
+    # получал 2 атрибута из 6 при исходе `pass`.
+    resolution = store.resolve(name)
+    known_here = bool(resolution.names)
 
     attributes = [attribute] if attribute else store.attributes(name)
     claims: dict[str, dict] = {}

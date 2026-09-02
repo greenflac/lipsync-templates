@@ -104,6 +104,7 @@ from lipsync.fork_identity import FAIL, PASS, UNMEASURED
 from studio import factaxis as fa
 from studio import pricing
 from studio.selfrag.facts import Fact
+from studio.selfrag.modelnames import fold
 
 __all__ = [
     "AMBIENT_ARTEFACTS",
@@ -350,9 +351,16 @@ def _norm(value: str) -> str:
 
 
 def facts_for(model: str, facts: Iterable[Fact]) -> list[Fact]:
-    """Все утверждения об одной модели. Имя сравнивается так же, как везде."""
-    имя = _norm(model)
-    return [f for f in facts if _norm(f.model) == имя]
+    """Все утверждения об одной модели, во ВСЕХ её написаниях.
+
+    «Так же, как везде» было неправдой: здесь имя сводилось к нижнему регистру
+    и пробелам, а разделители оставались значимыми — `ltx-2.3` и `ltx-2-3`
+    считались разными моделями, и шаг, опёртый на второе написание, получал 2
+    утверждения вместо 11. Разрешение имени теперь ИМПОРТИРУЕТСЯ из
+    `studio/selfrag/modelnames.py`, а не повторяется тут (правило Е1).
+    """
+    имя = fold(model)
+    return [f for f in facts if fold(f.model) == имя]
 
 
 def _has_marker(text: str, markers: Sequence[str]) -> str:

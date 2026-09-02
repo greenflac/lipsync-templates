@@ -48,7 +48,8 @@ from typing import Any, Callable
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from studio.selfrag import facts as facts_mod  # noqa: E402
+from studio.selfrag import facts as facts_mod
+from studio.selfrag.modelnames import fold  # noqa: E402
 from studio.selfrag.source_hosts import FAMILY_SEPARATORS, VENDOR_SOURCES  # noqa: E402
 
 FACTS = Path(__file__).resolve().parents[1] / "studio" / "knowledge" / "model_facts.jsonl"
@@ -198,9 +199,15 @@ def known_families() -> set[str]:
 
 
 def known_models(path: Path | None = None) -> set[str]:
-    """Имена моделей, о которых в базе есть хоть один живой факт."""
+    """Имена моделей, о которых в базе есть хоть один живой факт.
+
+    В СВЁРНУТОМ виде (правило Е1, одно разрешение имени на проект): у
+    HuggingFace модель зовётся `Lightricks/LTX-2.3`, а в базе она лежит как
+    `ltx-2-3`, и сравнение сырых строк объявляло бы уже известную модель
+    находкой. Свёртка одна и та же по обе стороны сравнения.
+    """
     rows = facts_mod.load_facts(FACTS if path is None else path)
-    return {fact.model.lower() for fact in rows}
+    return {fold(fact.model) for fact in rows}
 
 
 def split_findings(
@@ -213,6 +220,10 @@ def split_findings(
     Чистая функция над разобранным JSON: сеть сюда не заходит, поэтому решение
     достижимо из теста без сети (правило Т4).
     """
+    # Свёртка применяется К ОБЕИМ сторонам сравнения и ИМЕННО ЗДЕСЬ, в точке
+    # сравнения: свёрнутое ещё раз свёрнутым не портится, а вызывающий, у
+    # которого имена сырые, перестаёт зависеть от того, помнил ли он свернуть.
+    известные = {fold(m) for m in models}
     fresh_family: dict[str, dict[str, Any]] = {}
     fresh_version: dict[str, dict[str, Any]] = {}
     for row in candidates:
@@ -221,7 +232,7 @@ def split_findings(
         if not family:
             continue
         short = model_id.rsplit("/", 1)[-1].lower()
-        if short in models or model_id.lower() in models:
+        if fold(short) in известные or fold(model_id) in известные:
             continue
         settled = as_known(family, families)
         new_family = not settled

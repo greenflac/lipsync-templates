@@ -839,7 +839,12 @@ class VerdictFollowsEvidence(unittest.TestCase):
         """Модели нет / имя набрано с опечаткой / атрибута нет — разная работа дальше."""
         path = self._base([_fact(value="10", tier="vendor")])
         unknown = advice.advise("nope-9000", path=path)
-        mistyped = advice.advise("testmodel", path=path)
+        # ОПЕЧАТКА, А НЕ ДРУГОЕ НАПИСАНИЕ. До 2026-09-02 здесь стояло
+        # `testmodel`, и оно считалось опечаткой: имя сравнивалось сырой
+        # строкой, поэтому дефис делал из одной модели две. Теперь `testmodel`
+        # РАЗРЕШАЕТСЯ в `test-model` (см. соседний тест), и опечаткой служит
+        # перепутанная буква, которой свёртка не лечит.
+        mistyped = advice.advise("test-modle", path=path)
         gap = advice.advise("test-model", "выдуманный-атрибут", path=path)
 
         for out in (unknown, mistyped, gap):
@@ -852,6 +857,20 @@ class VerdictFollowsEvidence(unittest.TestCase):
         self.assertEqual(unknown["near"], [], "выдуманному имени сосед не предлагается")
         self.assertEqual(mistyped["near"], ["test-model"])
         self.assertEqual(gap["known_attributes"], ["max_seconds"], "чем спрашивать вместо")
+
+    def test_a_separator_is_not_a_different_model(self) -> None:
+        """ИЗМЕРЕНО 2026-09-02 на живой базе: 9 групп из 466 имён — одна
+        модель под двумя написаниями. `advise("flux.2-klein-9b")` отвечал 4
+        атрибутами и 6 провалами, `advise("flux-2-klein-9b")` — 2 и 0, и оба
+        ответа были `pass`. Разрешение имени одно на проект
+        (`studio/selfrag/modelnames.py`), и вот чем оно проверяется здесь."""
+        path = self._base([_fact(value="10", tier="vendor")])
+        for написание in ("testmodel", "TEST_MODEL", "test model", "test.model"):
+            out = advice.advise(написание, path=path)
+            self.assertEqual(out["outcome"], "pass", написание)
+            self.assertEqual(out["reason"], "answered", написание)
+        # Негативный контроль: соседнее имя — не то же самое имя.
+        self.assertEqual(advice.advise("test-model-pro", path=path)["outcome"], "could not measure")
 
     def test_every_reason_returned_is_one_of_the_declared_words(self) -> None:
         path = self._base([_fact(value="10", tier="vendor")])

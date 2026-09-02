@@ -47,6 +47,8 @@ import json
 from pathlib import Path
 from typing import Any, Iterable
 
+from studio.selfrag.modelnames import fold
+
 from lipsync.fork_identity import FAIL, PASS, UNMEASURED
 
 __all__ = [
@@ -293,7 +295,15 @@ def write_catalog(records: Iterable[dict], path: Path | None = None) -> int:
 
 
 def _norm(name: str) -> str:
-    return "".join(ch for ch in name.lower() if ch.isalnum())
+    """Свёртка имени модели. СВОЕЙ здесь больше нет (правило Е1).
+
+    Этот модуль нёс собственную копию правила («в нижний регистр, выкинуть
+    всё, кроме букв и цифр») — вторую в проекте после `pipeline._norm` и
+    третью, если считать `.lower()` в базе фактов. Копия и оригинал разошлись
+    ровно на `*`: тут область (`eleven-*`) сворачивалась в `eleven`, то есть в
+    имя модели. Теперь правило одно, и оно импортируется.
+    """
+    return fold(name)
 
 
 def _fact_rows(path: Path) -> tuple[list[dict], list[str]]:

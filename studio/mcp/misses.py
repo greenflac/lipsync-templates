@@ -46,6 +46,8 @@ from datetime import date
 from pathlib import Path
 from typing import Any, Iterable
 
+from studio.selfrag.modelnames import fold
+
 from lipsync.fork_identity import FAIL, PASS, UNMEASURED
 
 from studio.mcp import advice
@@ -277,12 +279,20 @@ def queue(
     список, и его читают с начала независимо от того, что там важнее.
     """
     counts: dict[str, int] = {}
+    spelled: dict[str, str] = {}
     attributes: dict[str, set[str]] = {}
     last: dict[str, str] = {}
     for row in rows:
         if problems(row) or covered(row):
             continue
-        name = str(row["model"]).lower()
+        # Ключ — СВЁРТКА имени (правило Е1, одно разрешение на проект).
+        # Порог `repeat` считает промахи ПО МОДЕЛИ, а до 2026-09-02 считал их
+        # по написанию: два вопроса об одной модели, заданные как `ltx-2.3` и
+        # `ltx 2.3`, давали две единицы вместо двойки и в очередь не попадали
+        # никогда. Показывается при этом написание, которым спросили, а не
+        # свёртка: `ltx23` — не имя модели ни у кого.
+        name = fold(row["model"])
+        spelled.setdefault(name, str(row["model"]).strip())
         counts[name] = counts.get(name, 0) + 1
         if row.get("attribute"):
             attributes.setdefault(name, set()).add(str(row["attribute"]))
@@ -291,7 +301,7 @@ def queue(
             last[name] = asked_on
     ready: list[dict[str, Any]] = [
         {
-            "model": name,
+            "model": spelled.get(name, name),
             "misses": count,
             "attributes": sorted(attributes.get(name, ())),
             "last_asked": last.get(name, ""),
@@ -299,5 +309,5 @@ def queue(
         for name, count in counts.items()
         if count >= repeat
     ]
-    ready.sort(key=lambda row: (-counts[str(row["model"])], str(row["model"])))
+    ready.sort(key=lambda row: (-counts[fold(row["model"])], str(row["model"])))
     return ready

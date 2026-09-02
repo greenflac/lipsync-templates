@@ -125,6 +125,9 @@ from typing import Sequence
 
 from lipsync.fork_identity import FAIL, PASS, UNMEASURED
 
+from studio.selfrag import modelnames
+from studio.selfrag.modelnames import fold
+
 __all__ = [
     "DEFAULT_FACTS_PATH",
     "BREAKAGE_ATTRIBUTES",
@@ -195,7 +198,10 @@ UNKNOWN_TIER_RANK = 99
 #: Сколько символов должно совпасть, чтобы имена считались соседними. ВЫБРАНО:
 #: три символа дают шум (`gen` цепляет всё подряд), шесть теряют короткие
 #: имена вроде `h3-max`. Сторожится мутацией в обе стороны (правило Т1).
-NEAR_MIN_SHARED = 4
+#: Значение живёт в `modelnames` и здесь ИМПОРТИРУЕТСЯ, а не копируется
+#: (правило Е1): подсказка о соседях и разрешение имени обязаны мерить одним
+#: порогом, иначе имя, которое разрешается, может не попасть в подсказки.
+NEAR_MIN_SHARED = modelnames.MIN_SHARED_PREFIX
 
 STALE_AFTER_DAYS = 90
 
@@ -391,11 +397,34 @@ class FactStore:
         self._index: dict[tuple[str, str], list[Fact]] = defaultdict(list)
         for fact in self.facts:
             self._index[(fact.model.lower(), fact.attribute.lower())].append(fact)
+        #: Свёртка имени -> написания, под которыми оно стоит в этой базе.
+        #: Журнал append-only, поэтому карманы не сливаются в файле; они
+        #: сливаются ЗДЕСЬ, на чтении. Разрешение имени — одно на весь проект
+        #: (`studio/selfrag/modelnames.py`), а не своя нормализация в каждом
+        #: потребителе: своих было пять.
+        self._spellings: dict[str, list[str]] = modelnames.group({m for m, _a in self._index})
+
+    def spellings(self, model: str) -> list[str]:
+        """Все написания базы, под которыми лежит эта модель.
+
+        Пусто — значит имя не разрешилось, и это третий исход, а не ноль
+        фактов: `resolve` рядом печатает, чем именно оно не разрешилось.
+        """
+        return list(self._spellings.get(fold(model), ()))
+
+    def resolve(self, model: str) -> modelnames.Resolution:
+        """Три исхода разрешения имени: нашлось / такого нет / не назвали."""
+        return modelnames.resolve(model, {m for m, _a in self._index})
 
     def attributes(self, model: str) -> list[str]:
-        """Every attribute anybody has stated for this model."""
-        low = model.lower()
-        return sorted({a for (m, a) in self._index if m == low})
+        """Every attribute anybody has stated for this model.
+
+        По ВСЕМ написаниям модели, а не по спрошенному. ИЗМЕРЕНО 2026-09-02:
+        `flux-2-klein-9b` отдавал 2 атрибута там, где `flux.2-klein-9b`
+        отдавал 4, и оба ответа были `pass`.
+        """
+        свои = set(self.spellings(model))
+        return sorted({a for (m, a) in self._index if m in свои})
 
     def models(self) -> list[str]:
         """Every model anybody has stated anything about."""
@@ -412,7 +441,12 @@ class FactStore:
         * `could not measure` — nobody has said anything, or everything said
           comes from blog tier alone, which cannot establish a fact.
         """
-        found = self._index.get((model.lower(), attribute.lower()), [])
+        low_attribute = attribute.lower()
+        found = [
+            fact
+            for spelling in self.spellings(model)
+            for fact in self._index.get((spelling, low_attribute), [])
+        ]
         if not found:
             return {
                 "outcome": UNMEASURED,
@@ -537,11 +571,11 @@ class FactStore:
         video" is a fact about the benchmark, not about a model breaking, and
         folding it in would answer a question nobody asked.
         """
-        low = model.lower()
+        свои = set(self.spellings(model))
         return [
             f
             for (m, a), facts in self._index.items()
-            if m == low and a in BREAKAGE_ATTRIBUTES
+            if m in свои and a in BREAKAGE_ATTRIBUTES
             for f in facts
         ]
 
@@ -567,25 +601,16 @@ class FactStore:
 
         Порядок сохранён: сначала совпадения по началу, они точнее; вхождения
         после. Иначе короткое общее имя вытеснило бы точного соседа.
+
+        СРАВНЕНИЕ ПО СВЁРТКЕ, 2026-09-02. Алгоритм не изменился, изменилось
+        то, ЧТО сравнивается: `flux-2` против `flux.2-dev` делили ровно четыре
+        знака общего начала, из которых один — дефис. Разделители в пороге
+        подсказки не значат ничего, и теперь они до него не доходят. Сам
+        алгоритм живёт в `modelnames.similar` и здесь не повторяется: имя,
+        которое разрешается в базу, и имя, которое подсказывается, обязаны
+        меряться одной меркой (правило Е1).
         """
-        low = str(model or "").strip().lower()
-        if len(low) < NEAR_MIN_SHARED:
-            return []
-        every = sorted({m for m, _a in self._index})
-        hits: list[tuple[int, int, str]] = []
-        for candidate in every:
-            if candidate == low:
-                continue
-            shared = 0
-            for a, b in zip(low, candidate):
-                if a != b:
-                    break
-                shared += 1
-            if shared >= NEAR_MIN_SHARED:
-                hits.append((0, -shared, candidate))
-            elif low in candidate or candidate in low:
-                hits.append((1, -len(low), candidate))
-        return [c for _rank, _s, c in sorted(hits)][:limit]
+        return modelnames.similar(model, {m for m, _a in self._index}, limit=limit)
 
     def class_claims(self, model: str) -> list[Fact]:
         """Facts recorded about the CLASS this model belongs to.
@@ -626,9 +651,20 @@ class FactStore:
         return out
 
     def contested(self) -> list[tuple[str, str]]:
-        """Every (model, attribute) the sources do not agree on."""
+        """Every (model, attribute) the sources do not agree on.
+
+        Одна модель — одна строка, даже когда она записана под двумя
+        написаниями: после свёртки на чтении оба написания отвечают ОДНИМ
+        набором утверждений, и печатать их дважды значило бы завысить число
+        спорных мест ровно на число дублей.
+        """
         out: list[tuple[str, str]] = []
+        seen: set[tuple[str, str]] = set()
         for model, attribute in sorted(self._index):
+            key = (fold(model), attribute)
+            if key in seen:
+                continue
+            seen.add(key)
             if self.claims(model, attribute)["outcome"] == FAIL:
                 out.append((model, attribute))
         return out

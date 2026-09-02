@@ -75,6 +75,19 @@ class Splitting(unittest.TestCase):
         got = discover.split_findings([hf("a/MiniMax-H3")], FAMILIES, {"minimax-h3"})
         self.assertEqual(got["new_versions"], [])
 
+    def test_another_spelling_of_a_known_model_is_not_a_finding(self):
+        """У HuggingFace модель зовётся `Lightricks/LTX-2.3`, в базе она лежит
+        как `ltx-2-3`. Сравнение сырых строк объявляло бы известную модель
+        находкой и слало бы дочитывать то, что уже прочитано."""
+        got = discover.split_findings([hf("Lightricks/LTX-2.3")], FAMILIES | {"ltx"}, {"ltx-2-3"})
+        self.assertEqual(got["new_versions"], [])
+        self.assertEqual(got["new_families"], [])
+
+    def test_a_neighbouring_version_is_still_a_finding(self):
+        """Негативный контроль: свёртка не должна проглатывать НОВУЮ версию."""
+        got = discover.split_findings([hf("Lightricks/LTX-2.5")], FAMILIES | {"ltx"}, {"ltx-2-3"})
+        self.assertEqual([r["stem"] for r in got["new_versions"]], ["ltx 2.5"])
+
     def test_one_uploader_is_not_a_new_family(self):
         """Личная LoRA лежит под одним аккаунтом; настоящую модель заливают многие."""
         rows = [hf("solo/aros-VelvetLynx"), hf("solo/aros-MidnightVesper")]

@@ -25,6 +25,7 @@ from pathlib import Path
 from typing import Any
 
 from studio.selfrag.facts import CLASS_SUFFIX, Fact, FactStore, load_facts
+from studio.selfrag.modelnames import fold
 
 #: Атрибуты, которые говорят, как модель СЕБЯ ВЕДЁТ, а не что принимает её API.
 #: Это дефицитная половина базы, и считать её отдельно — весь смысл снимка.
@@ -100,7 +101,11 @@ def snapshot(facts: list[Fact] | None = None, path: Path | None = None) -> Snaps
         if is_scope(fact.model):
             class_facts += 1
             continue
-        по_моделям.setdefault(fact.model.lower(), []).append(fact)
+        # Ключ — СВЁРТКА имени, а не сырое написание: `ltx-2.3` и `ltx-2-3`
+        # это одна модель, и до 2026-09-02 она считалась двумя — то есть
+        # знаменатель покрытия был завышен на число дублей (ИЗМЕРЕНО: 9 групп
+        # на 466 именах).
+        по_моделям.setdefault(fold(fact.model), []).append(fact)
 
     # Спорные пары считает FactStore.contested(), а НЕ этот модуль. Своя
     # арифметика здесь дала бы 76 против 7 у существующего прибора: тот знает
