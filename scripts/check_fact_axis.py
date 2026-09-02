@@ -39,12 +39,15 @@
 5. РЕТРИВЕР ОШИБАЕТСЯ, И ЭТО ЧИСЛО (RELEVANCE_CONTROL). Отношение строки к
    требованию решается по словам, значит бывает подобрана строка «про другое,
    но со схожими словами» и пропущена относящаяся, сказанная другими словами.
-   16 пар «строка — требование» размечены руками на настоящих строках базы;
+   19 пар «строка — требование» размечены руками на настоящих строках базы;
    печатаются ложные подборы и пропуски ОТДЕЛЬНО (Е3). Красит гейт только
    ПРОПУСК: он молча превращает `не годно` в `не смогли`, то есть прячет
    известный отказ. Ложный подбор расширяет основание, а не подменяет его,
    и держится под наблюдением числом.
-   ИЗМЕРЕНО 2026-09-02: ложных подборов 3 из 16, пропусков 0.
+   ИЗМЕРЕНО 2026-09-02: ложных подборов 4 из 19, пропусков 0. Число ложных
+   сверяется на РАВЕНСТВО (FALSE_PICKUPS_MEASURED) — иначе `RELEVANCE_FLOOR`
+   можно было бы опустить в ноль, и гейт остался бы зелёным (это наблюдалось
+   мутацией Т1, пока сверка была «не больше»).
 
 ТРИ ИСХОДА (Р1): годно / не годно / не смогли. Третий — когда база пуста, а не
 когда в ней нет нарушений. Рядом всегда печатаются `проверено N`,
@@ -461,6 +464,60 @@ RELEVANCE_CONTROL: tuple[tuple[str, tuple[tuple[Fact, bool], ...]], ...] = (
         ),
     ),
     (
+        # СЕРЕДИНА ДИАПАЗОНА и единственное место, где RELEVANCE_FLOOR решает
+        # (Т1). Требование НАЗЫВАЕТ МОДЕЛЬ и не говорит больше ничего: имя
+        # модели лежит в стогу каждой её строки, поэтому совпадают все три
+        # разом и одинаково слабо — ровно тот случай, ради которого порог у
+        # `factindex` и заведён («совпало ровно одним частым словом»).
+        # Значения скопированы ЦЕЛИКОМ, без сокращения: вес делится на корень
+        # длины стога, и укороченное значение весит больше живого, то есть
+        # проходило бы порог там, где живое его не проходит.
+        # ИЗМЕРЕНО 2026-09-02: при пороге 0.12 подобрана 1 строка из 3, при
+        # пороге 0.0 — все три. Порог здесь и только здесь решает.
+        "flux.1-dev должен отработать",
+        (
+            (
+                _fact(
+                    "flux.1-dev",
+                    "degrades_when",
+                    "English text rendering collapses as the number of distinct text REGIONS in "
+                    "one image grows: CVTG-2K word accuracy 0.6089 at 2 regions -> 0.5531 at 3 "
+                    "-> 0.4661 at 4 -> 0.4316 at 5 (average 0.4965). Under half the words are "
+                    "right once a layout has 5 text areas.",
+                    "https://arxiv.org/html/2508.02324v1",
+                    "benchmark",
+                ),
+                False,
+            ),
+            (
+                _fact(
+                    "flux.1-dev",
+                    "limitation",
+                    "Chinese long-text rendering is effectively zero: LongText-Bench-ZH 0.005 "
+                    "against 0.607 on the English split. HiDream-I1-Full is the same story "
+                    "(0.543 EN / 0.024 ZH). Western open-weight models are English-only for "
+                    "legible text in practice.",
+                    "https://arxiv.org/html/2508.02324v1",
+                    "benchmark",
+                ),
+                False,
+            ),
+            (
+                _fact(
+                    "flux.1-dev",
+                    "benchmark_score",
+                    "GenEval exposes compositional weakness where the overall score hides it: "
+                    "overall 0.66, but Position 0.22 and Color attribution 0.45 while Single "
+                    "Object is 0.98. Spatial relations ('X to the left of Y') and per-object "
+                    "colour binding are where prompts break, not object rendering.",
+                    "https://huggingface.co/HiDream-ai/HiDream-I1-Full",
+                    "benchmark",
+                ),
+                False,
+            ),
+        ),
+    ),
+    (
         # Край диапазона: требование, к которому база не относится ничем.
         "вылечить рак",
         (
@@ -489,6 +546,20 @@ RELEVANCE_CONTROL: tuple[tuple[str, tuple[tuple[Fact, bool], ...]], ...] = (
         ),
     ),
 )
+
+
+#: Сколько ложных подборов ретривер делает на RELEVANCE_CONTROL. ИЗМЕРЕНО
+#: 2026-09-02 прогоном `python scripts/check_fact_axis.py --check` на 19
+#: размеченных руками парах: ровно 4. Это не цель и не порог качества, а
+#: ЗАФИКСИРОВАННОЕ наблюдение, и сверяется оно на РАВЕНСТВО, а не на «не больше».
+#:
+#: Почему равенство. Потолок «не больше» сторожит одну сторону: его можно
+#: поднять до 500 зелёным, и тогда он не меряет ничего — это наблюдалось
+#: мутацией (Т1). Расхождение вниз — тоже событие: ретривер стал подбирать
+#: меньше чужого, и число надо перемерить и записать, а не оставить слаком.
+#: Заодно равенство делает сторожимым `RELEVANCE_FLOOR`: опущенный порог
+#: поднимает число ложных, поднятый — рождает пропуски, красящие гейт отдельно.
+FALSE_PICKUPS_MEASURED = 4
 
 
 def pair_results() -> list[dict]:
@@ -611,6 +682,16 @@ def relevance_verdict(results: list[dict]) -> dict:
         f"«{r['requirement']}»"
         for r in пропуски
     ]
+    if len(ложные) > FALSE_PICKUPS_MEASURED:
+        беды.append(
+            f"ложных подборов {len(ложные)}, измерено было {FALSE_PICKUPS_MEASURED}: "
+            f"ретривер стал считать своим то, что про другое"
+        )
+    elif len(ложные) < FALSE_PICKUPS_MEASURED:
+        беды.append(
+            f"ложных подборов {len(ложные)}, измерено было {FALSE_PICKUPS_MEASURED}: "
+            f"число упало — перемерить и записать новое, а не оставлять слаком"
+        )
     return {
         "outcome": FAIL if беды else PASS,
         "checked": len(results),
