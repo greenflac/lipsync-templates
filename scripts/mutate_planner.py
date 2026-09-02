@@ -46,6 +46,9 @@
 на вход (`BAN_ORDER`, `BAN_FORMS`, тексты положений, `BAN_EVIDENCE_LABEL`,
 `face_input` у операций, `step_inputs` и отсев запрещённых в `proven`).
 
+Тем же заходом добавлено шесть мутантов на константы КОНЦА СЛУЖБЫ
+(`LIFE_ORDER`, `blocked_rank`, `LIFE_RETIRED`, развилка в `life_stance`).
+
 ЗДОРОВЫЙ ПРОГОН ПЕЧАТАЕТСЯ ПЕРВОЙ СТРОКОЙ, и это не украшение. Первые заходы
 второй и третьей серий ОБА показали `ЗДОРОВЫЙ | тесты rc=1`: таблица мутаций
 строилась поверх красного и не значила ничего. Причина оба раза была одна —
@@ -486,9 +489,46 @@ MUTANTS = [
     ),
     (
         "studio/planner.py",
-        "        if c.applicability >= RIVAL_MIN_APPLICABILITY and c.ban_state != BAN_FORBIDS",
+        "        if c.applicability >= RIVAL_MIN_APPLICABILITY and blocked_rank(c) < BAN_ORDER[BAN_FORBIDS]",
         "        if c.applicability >= RIVAL_MIN_APPLICABILITY",
-        "proven -> слабее: запрещённый кандидат снова зовётся вытесненным",
+        "proven -> слабее: невозможный кандидат снова зовётся вытесненным",
+    ),
+    # --- константы конца службы, заведены 2026-09-02 той же осью ---
+    (
+        "studio/planner.py",
+        "    LIFE_LIVE: 0,\n    LIFE_ANNOUNCED: 1,\n    LIFE_RETIRED: 2,",
+        "    LIFE_LIVE: 0,\n    LIFE_ANNOUNCED: 2,\n    LIFE_RETIRED: 1,",
+        "LIFE_ORDER -> слабее: объявленное снятие становится отказом, а снятая — нет",
+    ),
+    (
+        "studio/planner.py",
+        "    LIFE_LIVE: 0,\n    LIFE_ANNOUNCED: 1,\n    LIFE_RETIRED: 2,",
+        "    LIFE_LIVE: 0,\n    LIFE_ANNOUNCED: 0,\n    LIFE_RETIRED: 0,",
+        "LIFE_ORDER -> строже: три положения по службе сливаются в одно",
+    ),
+    (
+        "studio/planner.py",
+        "    return max(BAN_ORDER.get(c.ban_state, 0), LIFE_ORDER.get(c.life_state, 0))",
+        "    return BAN_ORDER.get(c.ban_state, 0)",
+        "blocked_rank -> слабее: конец службы выпадает из оси невозможного",
+    ),
+    (
+        "studio/planner.py",
+        "    return max(BAN_ORDER.get(c.ban_state, 0), LIFE_ORDER.get(c.life_state, 0))",
+        "    return min(BAN_ORDER.get(c.ban_state, 0), LIFE_ORDER.get(c.life_state, 0))",
+        "blocked_rank -> слабее: одной причины невозможности перестаёт хватать",
+    ),
+    (
+        "studio/planner.py",
+        "        if снятие.outcome == life.НЕ_ГОДНО:",
+        "        if snятие_никогда := False:",
+        "life_stance -> строже: прошедший срок перестаёт быть отказом",
+    ),
+    (
+        "studio/planner.py",
+        'LIFE_RETIRED = "снята: срок прошёл"',
+        'LIFE_RETIRED = "снятие объявлено, срок впереди"',
+        "LIFE_RETIRED -> слабее: отказ печатается словами предупреждения",
     ),
 ]
 

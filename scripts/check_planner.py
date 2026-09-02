@@ -288,6 +288,9 @@ def run(path: Path = pn.DEFAULT_BRIEFS_PATH) -> dict:
     # стороны: отклонённый обязан быть НАЗВАН (он уходит в конец порядка и
     # выпадает из показанных), а строка-запрет не смеет печататься доводом.
     запретом_отклонено = 0
+    снятых = 0
+    объявлено_снятие = 0
+    выбран_снятый: list[str] = []
     шагов_с_запретом = 0
     запрет_без_строки: list[str] = []
     запрет_как_довод: list[str] = []
@@ -297,7 +300,16 @@ def run(path: Path = pn.DEFAULT_BRIEFS_PATH) -> dict:
             выбран = s["chosen"]
             if выбран is None:
                 continue
-            сколько = int(s.get("banned_count") or 0)
+            снятых += int(s.get("retired_count") or 0)
+            # Считается по ВСЕМ найденным, а не по выбранному: `sora-2` на
+            # живой базе объявлен к снятию И запрещён по входу, поэтому
+            # выбранным не бывает никогда — счёт по выбранному показал бы 0 и
+            # соврал бы, что оракул не подключён.
+            объявлено_снятие += int(s.get("announced_count") or 0)
+            если_объявлено = str(выбран.get("life_state") or "")
+            if если_объявлено == pn.LIFE_RETIRED:
+                выбран_снятый.append(f"{c['id']}/{s['step']} ({выбран['model']})")
+            сколько = int(s.get("banned_count") or 0) + int(s.get("retired_count") or 0)
             запретом_отклонено += сколько
             if сколько:
                 шагов_с_запретом += 1
@@ -338,6 +350,9 @@ def run(path: Path = pn.DEFAULT_BRIEFS_PATH) -> dict:
         "rival_line_missing": строка_пропущена,
         "rival_line_spurious": строка_лишняя,
         "banned_candidates": запретом_отклонено,
+        "retired_candidates": снятых,
+        "shutdown_announced": объявлено_снятие,
+        "chosen_is_retired": выбран_снятый,
         "steps_with_ban": шагов_с_запретом,
         "ban_unspoken": запрет_без_строки,
         "ban_as_evidence": запрет_как_довод,
@@ -389,6 +404,13 @@ def verdict(итог: dict) -> tuple[int, list[str]]:
         )
     for где in итог["rival_line_spurious"]:
         беды.append(f"выбранный сам проверен, а строка о вытесненном всё равно напечатана: {где}")
+    for где in итог["chosen_is_retired"]:
+        беды.append(f"ВЫБРАНА модель, у которой срок службы уже прошёл: {где}")
+    if not итог["shutdown_announced"]:
+        беды.append(
+            "ни на одном шаге не сработало предупреждение о будущем снятии: ветка "
+            f"«{pn.LIFE_ANNOUNCED}» не проверена вовсе"
+        )
     for где in итог["chosen_is_banned"]:
         беды.append(f"ВЫБРАН кандидат, чей вход база запрещает: {где}")
     for где in итог["ban_unspoken"]:
@@ -453,6 +475,11 @@ def render(итог: dict) -> str:
             f"{итог['candidates_without_applicability']} (все с пометкой: "
             f"{итог['candidates_unmarked'] == 0}), без доказательства "
             f"{итог['candidates_without_evidence']}"
+        ),
+        (
+            f"по концу службы: уже снятых {итог['retired_candidates']}, "
+            f"предупреждений о будущем снятии {итог['shutdown_announced']}, "
+            f"выбрана снятая {len(итог['chosen_is_retired'])}"
         ),
         (
             f"запретом на вход отклонено {итог['banned_candidates']} кандидат(ов) "

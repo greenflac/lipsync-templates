@@ -841,7 +841,8 @@ class ЗапретНаВход(unittest.TestCase):
         шаг = итог["steps"][0]
         self.assertEqual(шаг["chosen"]["model"], "чистый")
         self.assertEqual(шаг["banned_count"], 1)
-        self.assertTrue(шаг["banned_input"].startswith("вход ЗАПРЕЩЁН"))
+        self.assertTrue(шаг["banned_input"].startswith("ВОСПОЛЬЗОВАТЬСЯ НЕЛЬЗЯ"))
+        self.assertIn("вход ЗАПРЕЩЁН", шаг["banned_input"])
         self.assertIn("запрет-лицо", шаг["banned_input"])
         self.assertIn("вход запрещён 0", итог["note"])
 
@@ -854,7 +855,7 @@ class ЗапретНаВход(unittest.TestCase):
         шаг = итог["steps"][0]
         self.assertEqual(шаг["banned_count"], 0)
         self.assertEqual(шаг["banned_input"], "")
-        self.assertNotIn("вход ЗАПРЕЩЁН", pn.render(итог))
+        self.assertNotIn("ВОСПОЛЬЗОВАТЬСЯ НЕЛЬЗЯ", pn.render(итог))
 
     def test_запрещённый_не_называется_вытесненным(self) -> None:
         # Запрещённый кандидат — не «проверенный, мимо которого мы прошли»:
@@ -866,6 +867,104 @@ class ЗапретНаВход(unittest.TestCase):
         self.assertEqual([c.model for c in pn.proven([запрещён, чистый])], ["чистый"])
 
 
+#: Настоящие строки живой базы о конце службы, дословно по смыслу. Две первые
+#: — со сроком, который УЖЕ ПРОШЁЛ; третья — со сроком впереди.
+СНЯТИЯ: tuple[Fact, ...] = (
+    факт(
+        "снята-2026-06",
+        "status",
+        "DISCONTINUED on Vertex AI; discontinuation date June 30, 2026",
+        "vendor",
+    ),
+    факт("снята-2026-08", "lifecycle", "Gemini API shutdown Aug 17 2026", "vendor"),
+    факт("объявлена", "deprecation", "hard shutdown 2026-09-24", "vendor"),
+)
+
+
+class КонецСлужбы(unittest.TestCase):
+    """Снятая модель невозможна так же, как запрещённый вход, — та же ось.
+
+    Разбор строки здесь чужой целиком (`studio/lifecycle.py`, Е1); своё —
+    сведение многих строк одной модели в одно положение и место этого
+    положения в ключе отбора.
+    """
+
+    def test_срок_прошёл_это_отказ(self) -> None:
+        состояние, нота = pn.life_stance([СНЯТИЯ[0]], СЕГОДНЯ)
+        # Литерал (Т2): текст положения — часть контракта.
+        self.assertEqual(состояние, "снята: срок прошёл")
+        self.assertIn("status", нота)
+
+    def test_срок_впереди_это_предупреждение_а_не_отказ(self) -> None:
+        состояние, нота = pn.life_stance([СНЯТИЯ[2]], СЕГОДНЯ)
+        self.assertEqual(состояние, "снятие объявлено, срок впереди")
+        self.assertIn("предупреждение", нота)
+        # И в ключе это НЕ отказ: модель ещё отвечает.
+        предупреждён = pn.Candidate("м", (), 0, 0, 0, "", life_state=состояние)
+        self.assertLess(pn.blocked_rank(предупреждён), pn.BAN_ORDER[pn.BAN_FORBIDS])
+
+    def test_признаков_снятия_нет(self) -> None:
+        состояние, _ = pn.life_stance(list(НЕ_ЗАПРЕТЫ), СЕГОДНЯ)
+        self.assertEqual(состояние, "о снятии не сказано")
+
+    def test_одна_прошедшая_строка_решает(self) -> None:
+        # Требовать согласия всех строк значило бы ждать, пока вендор повторит
+        # объявление в каждом документе.
+        свои = list(НЕ_ЗАПРЕТЫ) + [СНЯТИЯ[1]]
+        состояние, _ = pn.life_stance(свои, СЕГОДНЯ)
+        self.assertEqual(состояние, "снята: срок прошёл")
+
+    def test_шкалы_запрета_и_службы_совпадают(self) -> None:
+        # `blocked_rank` берёт максимум из двух: разъехавшиеся шкалы дали бы
+        # бессмысленное число.
+        self.assertEqual(sorted(pn.LIFE_ORDER.values()), sorted(pn.BAN_ORDER.values()))
+        self.assertEqual(pn.LIFE_ORDER["снята: срок прошёл"], pn.BAN_ORDER["вход ЗАПРЕЩЁН"])
+
+    def test_ось_одна_любая_причина_достаточна(self) -> None:
+        запрещён = pn.Candidate("а", (), 0, 0, 0, "", ban_state="вход ЗАПРЕЩЁН")
+        снят = pn.Candidate("б", (), 0, 0, 0, "", life_state="снята: срок прошёл")
+        чистый = pn.Candidate("в", (), 0, 0, 0, "")
+        self.assertEqual(pn.blocked_rank(запрещён), pn.blocked_rank(снят))
+        self.assertLess(pn.blocked_rank(чистый), pn.blocked_rank(снят))
+
+    def test_снятая_уходит_вниз_и_названа(self) -> None:
+        свои = [
+            СНЯТИЯ[1],
+            факт("снята-2026-08", "architecture", "image-to-video i2v", "vendor"),
+            факт("живая", "architecture", "image-to-video i2v", "vendor"),
+        ]
+        итог = pn.plan("оживить селфи клиента", facts=свои, today=СЕГОДНЯ)
+        шаг = итог["steps"][0]
+        self.assertEqual(шаг["chosen"]["model"], "живая")
+        self.assertEqual(шаг["retired_count"], 1)
+        self.assertIn("ВОСПОЛЬЗОВАТЬСЯ НЕЛЬЗЯ", шаг["banned_input"])
+        self.assertIn("снята: срок прошёл", шаг["banned_input"])
+        self.assertIn("уже снятых выбрано 0", итог["note"])
+
+    def test_снимать_некого_молчит(self) -> None:
+        # И5, вторая сторона: на базе без снятий ни строки об этом.
+        свои = [факт("живая", "architecture", "image-to-video i2v", "vendor")]
+        итог = pn.plan("оживить селфи клиента", facts=свои, today=СЕГОДНЯ)
+        шаг = итог["steps"][0]
+        self.assertEqual(шаг["retired_count"], 0)
+        self.assertEqual(шаг["banned_input"], "")
+        self.assertNotIn("срок службы:", pn.render(итог))
+
+    def test_объявленная_но_живая_не_выбрасывается(self) -> None:
+        # И5: срок впереди — модель рабочая, и выбросить её значит выбросить
+        # рабочую. Она остаётся выбранной, но предупреждение печатается.
+        свои = [
+            СНЯТИЯ[2],
+            факт("объявлена", "architecture", "image-to-video i2v", "vendor"),
+        ]
+        итог = pn.plan("оживить селфи клиента", facts=свои, today=СЕГОДНЯ)
+        шаг = итог["steps"][0]
+        self.assertEqual(шаг["chosen"]["model"], "объявлена")
+        self.assertEqual(шаг["retired_count"], 0)
+        self.assertEqual(шаг["banned_input"], "")
+        self.assertIn("срок службы: снятие объявлено, срок впереди", pn.render(итог))
+
+
 class КлючиЗаказчика(unittest.TestCase):
     """`CONSTRAINT_KEYS` — сколько первых полей ключа суть ЖЁСТКИЕ ограничения."""
 
@@ -875,7 +974,7 @@ class КлючиЗаказчика(unittest.TestCase):
         self.assertEqual(pn.CONSTRAINT_KEYS, 3)
         self.assertEqual(
             list(pn.KEY_FIELDS[: pn.CONSTRAINT_KEYS]),
-            ["запрещён ли вход шага", "принимает ли кадр", "положение по цене"],
+            ["нельзя ли этим воспользоваться", "принимает ли кадр", "положение по цене"],
         )
 
     def test_ни_кадр_ни_цена_не_решают_кто_доказан(self) -> None:

@@ -86,6 +86,19 @@
 с бюджетом несравнима» и «цены нет ни строки» — разные состояния, и слияние
 их и было вторым дефектом: у первого читатель видит число и решает сам.
 
+ОСЬ НЕВОЗМОЖНОГО: ТРИ ПРИЧИНЫ, ОДНО ПОЛЕ КЛЮЧА
+
+«Вход шага запрещён», «кадр не принимается» и «модель уже отключена» — три
+проявления одного вопроса: этим воспользоваться нельзя. Три похожих правила в
+трёх местах разъезжаются (Е1), поэтому в ключе отбора у них ОДНО поле
+(`blocked_rank`, максимум из шкал), а в выдаче — три разных объяснения, потому
+что чинить их надо по-разному.
+
+Конец службы разбирает `studio/lifecycle.py` целиком, вместе со своим
+негативным контролем. Различие исходов здесь решающее: «уже отключена» —
+отказ, «отключат 2026-09-24» — ПРЕДУПРЕЖДЕНИЕ. Модель со сроком впереди ещё
+отвечает, и выбросить её значит выбросить рабочую.
+
 ЗАПРЕТ НА ВХОД — СТЕНА, А НЕ ПЛОХАЯ НОВОСТЬ О КАЧЕСТВЕ
 
 Шестой заход. На шаге липсинка выбирался `seedance-2.0`, и ОБОСНОВАН выбор был
@@ -206,6 +219,7 @@ from typing import Mapping, Sequence
 from lipsync.fork_identity import FAIL, PASS, UNMEASURED
 
 from studio import factaxis as fa
+from studio import lifecycle as life
 from studio import pipeline as pl
 from studio import pricing
 from studio import resolution
@@ -230,6 +244,11 @@ __all__ = [
     "BAN_FORMS",
     "BAN_ORDER",
     "BAN_UNKNOWN",
+    "BLOCKED_MARK",
+    "LIFE_ANNOUNCED",
+    "LIFE_LIVE",
+    "LIFE_ORDER",
+    "LIFE_RETIRED",
     "CANDIDATES_SHOWN",
     "CONVERTED_MARK",
     "CONSTRAINT_KEYS",
@@ -284,6 +303,7 @@ __all__ = [
     "ban_stance",
     "bans_in",
     "banned_line",
+    "blocked_rank",
     "briefs",
     "candidates_for",
     "cheapest_price",
@@ -293,6 +313,7 @@ __all__ = [
     "frame_rejects_line",
     "evidence_for",
     "inputs_of",
+    "life_stance",
     "limit_facts",
     "plan",
     "render",
@@ -743,6 +764,39 @@ BAN_ORDER: dict[str, int] = {
     BAN_FORBIDS: 2,
 }
 
+#: ТРИ положения кандидата по КОНЦУ СЛУЖБЫ. Заведено 2026-09-02 тем же заходом,
+#: что и запрет на вход, и НАРОЧНО на той же оси: «вход запрещён», «кадр не
+#: принимается» и «модель уже отключена» — три проявления одного вопроса «этим
+#: воспользоваться нельзя». Три похожих правила в трёх местах разъезжаются (Е1),
+#: поэтому в ключе отбора у них ОДНО поле — `blocked_rank`.
+#:
+#: Своего детектора не заведено: разбор целиком у `studio/lifecycle.py`, вместе
+#: с его негативным контролем (слово `sunset` в тексте промпта, `deprecated` про
+#: класс библиотеки, «Still callable but superseded» и снятие ОДНОГО эндпоинта
+#: снятием модели не считаются).
+#:
+#: Различие второго и третьего исхода здесь решающее: «уже отключена» — отказ,
+#: «отключат 2026-09-24» — ПРЕДУПРЕЖДЕНИЕ. Модель со сроком впереди ещё
+#: отвечает, и выбросить её значит выбросить рабочую.
+LIFE_LIVE = "о снятии не сказано"
+LIFE_ANNOUNCED = "снятие объявлено, срок впереди"
+LIFE_RETIRED = "снята: срок прошёл"
+
+#: Порядок положений по концу службы. КОНСТАНТА-РЕШЕНИЕ, ВЫБРАНО так, чтобы
+#: числа СОВПАДАЛИ по смыслу с `BAN_ORDER`: 0 — препятствий нет, 1 — знаем не
+#: всё, 2 — нельзя. Совпадение не косметическое: `blocked_rank` берёт максимум
+#: из двух, и разъехавшиеся шкалы дали бы бессмысленное число.
+LIFE_ORDER: dict[str, int] = {
+    LIFE_LIVE: 0,
+    LIFE_ANNOUNCED: 1,
+    LIFE_RETIRED: 2,
+}
+
+#: Заголовок строки о кандидатах, которыми воспользоваться нельзя.
+#: КОНСТАНТА-РЕШЕНИЕ: одна на обе причины, потому что ось одна, а рядом с ней
+#: печатается ИМЕННО ТА причина, которая сработала.
+BLOCKED_MARK = "ВОСПОЛЬЗОВАТЬСЯ НЕЛЬЗЯ"
+
 #: Как называется строка-запрет там, где печатались доводы. КОНСТАНТА-РЕШЕНИЕ:
 #: одно и то же утверждение не может быть одновременно основанием выбора и
 #: причиной отказа, а до 2026-09-02 запрет печатался под словами «чем выбран».
@@ -765,7 +819,7 @@ BAN_EVIDENCE_LABEL = "ЗАПРЕТ НА ВХОД, а не довод"
 CONSTRAINT_KEYS = 3
 
 KEY_FIELDS: tuple[str, ...] = (
-    "запрещён ли вход шага",
+    "нельзя ли этим воспользоваться",
     "принимает ли кадр",
     "положение по цене",
     "строк применимости",
@@ -1106,6 +1160,9 @@ class Candidate:
     #: это `BAN_UNKNOWN`, а не отсутствие ответа.
     ban_state: str = BAN_UNKNOWN
     ban_note: str = ""
+    #: Одно из трёх положений по КОНЦУ СЛУЖБЫ (`LIFE_ORDER`) и нота к нему.
+    life_state: str = LIFE_LIVE
+    life_note: str = ""
 
     @property
     def measured(self) -> bool:
@@ -1396,6 +1453,36 @@ def ban_stance(facts: Sequence[Fact], requires: Sequence[str]) -> tuple[str, str
     )
 
 
+def life_stance(facts: Sequence[Fact], today: date | None = None) -> tuple[str, str]:
+    """Кончилась ли служба модели. Разбор чужой (Е1), сведение — здесь.
+
+    `studio/lifecycle.py` судит ОДНУ строку; у модели их много, и правило
+    сведения названо вслух, потому что оно и есть решение: достаточно ОДНОЙ
+    строки, у которой срок уже прошёл, чтобы модель считалась снятой, и одной
+    объявленной — чтобы предупредить. Требовать согласия всех строк значило бы
+    ждать, пока вендор повторит объявление в каждом документе.
+    """
+    сегодня = today or date.today()
+    объявлено: list[tuple[Fact, life.Снятие]] = []
+    for f in facts:
+        снятие = life.разобрать(f.value, f.attribute, сегодня=сегодня)
+        if снятие.outcome == life.ГОДНО:
+            continue
+        объявлено.append((f, снятие))
+        if снятие.outcome == life.НЕ_ГОДНО:
+            return LIFE_RETIRED, (
+                f"{снятие.note}: {f.attribute}={f.value[:80]} "
+                f"[{f.tier}, {f.stated_on or 'даты нет'}] ({f.source_url})"
+            )
+    if объявлено:
+        f, снятие = объявлено[0]
+        return LIFE_ANNOUNCED, (
+            f"{снятие.note}: {f.attribute}={f.value[:80]} ({f.source_url}); "
+            "модель ещё отвечает — это предупреждение, а не отказ"
+        )
+    return LIFE_LIVE, f"признаков снятия нет ни в одной из {len(facts)} строк"
+
+
 def fit_stance(facts: Sequence[Fact], frame: tuple[int, int] | None) -> tuple[str, str]:
     """Где кандидат относительно поданного кадра: одно из четырёх положений и нота.
 
@@ -1548,6 +1635,20 @@ def cheapest_price(facts: Sequence[Fact]) -> str:
     return f"{дешёвая.amount} {pl.BUDGET_UNIT} за {дешёвая.per}"
 
 
+def blocked_rank(c: Candidate) -> int:
+    """Насколько этим кандидатом НЕЛЬЗЯ воспользоваться: 0, 1 или 2.
+
+    Одно поле ключа на всю ось невозможного, а не два соседних (Е1): «вход
+    запрещён» и «модель уже отключена» — разные свидетельства одного вывода, и
+    два поля рядом означали бы, что одно из них старше другого, чего никто не
+    решал. Берётся МАКСИМУМ: любая одна причина невозможности достаточна.
+
+    Оба состояния при этом печатаются порознь и своими словами: в ключе они
+    сходятся, в выдаче — нет, потому что чинить их надо по-разному.
+    """
+    return max(BAN_ORDER.get(c.ban_state, 0), LIFE_ORDER.get(c.life_state, 0))
+
+
 def by_evidence(c: Candidate) -> tuple:
     """Ключ порядка кандидатов, вынесенный из сортировки (Т5).
 
@@ -1579,7 +1680,7 @@ def by_evidence(c: Candidate) -> tuple:
     годно», назвав класс, — а «не смогли» на модели, о которой молчат, читатель
     не отличил бы от «годно». Молчание не лучше плохой новости, оно хуже.
     """
-    запрет = BAN_ORDER.get(c.ban_state, 0)
+    запрет = blocked_rank(c)
     кадр = FIT_ORDER.get(c.fit_state, 0)
     цена = PRICE_ORDER.get(c.price_state, 0)
     return (
@@ -1650,14 +1751,18 @@ def proven(found: Sequence[Candidate]) -> list[Candidate]:
     свои = [
         c
         for c in found
-        if c.applicability >= RIVAL_MIN_APPLICABILITY and c.ban_state != BAN_FORBIDS
+        if c.applicability >= RIVAL_MIN_APPLICABILITY and blocked_rank(c) < BAN_ORDER[BAN_FORBIDS]
     ]
     свои.sort(key=lambda c: by_evidence(c)[CONSTRAINT_KEYS:])
     return свои
 
 
 def banned_line(found: Sequence[Candidate]) -> str:
-    """ОДНА строка на шаг о кандидатах, чей вход база запрещает.
+    """ОДНА строка на шаг о кандидатах, которыми воспользоваться НЕЛЬЗЯ.
+
+    Одна на обе причины — запрет на вход и кончившийся срок службы, — потому
+    что они лежат на одной оси (`blocked_rank`) и читателю нужен один ответ:
+    кого выкинуло и почему. Причина названа своими словами, а не общими.
 
     Существует по той же причине, что `frame_rejects_line`: запрещённый
     кандидат по построению уходит в конец порядка и потому выпадает из
@@ -1666,12 +1771,14 @@ def banned_line(found: Sequence[Candidate]) -> str:
 
     Пусто, когда запрещать некого, — негативный контроль, а не экономия.
     """
-    запрещённые = [c for c in found if c.ban_state == BAN_FORBIDS]
-    if not запрещённые:
+    невозможные = [c for c in found if blocked_rank(c) >= BAN_ORDER[BAN_FORBIDS]]
+    if not невозможные:
         return ""
-    первый = запрещённые[0]
-    хвост = f" и ещё {len(запрещённые) - 1}" if len(запрещённые) > 1 else ""
-    return f"{BAN_FORBIDS}, кандидат отклонён: {первый.model}{хвост} — {первый.ban_note}"
+    первый = невозможные[0]
+    хвост = f" и ещё {len(невозможные) - 1}" if len(невозможные) > 1 else ""
+    почему = первый.ban_note if первый.ban_state == BAN_FORBIDS else первый.life_note
+    что = первый.ban_state if первый.ban_state == BAN_FORBIDS else первый.life_state
+    return f"{BLOCKED_MARK} ({что}): {первый.model}{хвост} — {почему}"
 
 
 def frame_rejects_line(found: Sequence[Candidate]) -> str:
@@ -1736,6 +1843,7 @@ def candidates_for(
     overrides: dict | None = None,
     budget: Budget | None = None,
     frame: tuple[int, int] | None = None,
+    today: date | None = None,
 ) -> list[Candidate]:
     """Кандидаты на операцию: модели, о которых база говорит СЛОВАМИ ОПЕРАЦИИ.
 
@@ -1799,6 +1907,7 @@ def candidates_for(
         положение, нота = price_stance(все, потолок)
         по_кадру, нота_кадра = fit_stance(все, frame)
         по_входу, нота_входа = ban_stance(все, step_inputs(op))
+        по_службе, нота_службы = life_stance(все, today)
         найдены.append(
             Candidate(
                 model=имя,
@@ -1815,6 +1924,8 @@ def candidates_for(
                 fit_note=нота_кадра,
                 ban_state=по_входу,
                 ban_note=нота_входа,
+                life_state=по_службе,
+                life_note=нота_службы,
             )
         )
     найдены.sort(key=by_evidence)
@@ -1927,10 +2038,11 @@ def plan(
     дороже_потолка = 0
     кадр_не_принят = 0
     вход_запрещён = 0
+    уже_снят = 0
     вытеснено_ценой = 0
     без_проверенных = 0
     for op in операции:
-        предложены = candidates_for(op, индекс, overrides, бюджет, кадр)
+        предложены = candidates_for(op, индекс, overrides, бюджет, кадр, today)
         лучший = предложены[0] if предложены else None
         выбор.append((op, лучший))
         if лучший is None:
@@ -1943,6 +2055,8 @@ def plan(
             кадр_не_принят += 1
         if лучший is not None and лучший.ban_state == BAN_FORBIDS:
             вход_запрещён += 1
+        if лучший is not None and лучший.life_state == LIFE_RETIRED:
+            уже_снят += 1
         строка_о_проверенных = rival_line(лучший, предложены)
         if строка_о_проверенных.startswith(RIVAL_MARK):
             вытеснено_ценой += 1
@@ -1970,6 +2084,8 @@ def plan(
                 # потому не попадают в показанные — одна строка на шаг.
                 "banned_input": banned_line(предложены),
                 "banned_count": sum(1 for c in предложены if c.ban_state == BAN_FORBIDS),
+                "retired_count": sum(1 for c in предложены if c.life_state == LIFE_RETIRED),
+                "announced_count": sum(1 for c in предложены if c.life_state == LIFE_ANNOUNCED),
                 # Почему выбран этот, а не следующий за ним. Считается из того
                 # же ключа, по которому произошёл отбор (Е2), а не пишется
                 # рядом словами, которые с отбором разъедутся.
@@ -2039,7 +2155,8 @@ def plan(
             f"проверенный вытеснен ценой {вытеснено_ценой}, "
             f"проверенных нет вовсе {без_проверенных}, "
             f"кадр не принимают {кадр_не_принят}, "
-            f"вход запрещён {вход_запрещён}"
+            f"вход запрещён {вход_запрещён}, "
+            f"уже снятых выбрано {уже_снят}"
         ),
         "brief": brief,
         "budget": строка_бюджета,
@@ -2098,6 +2215,8 @@ def _candidate_row(c: Candidate | None) -> dict | None:
         "fit_note": c.fit_note,
         "ban_state": c.ban_state,
         "ban_note": c.ban_note,
+        "life_state": c.life_state,
+        "life_note": c.life_note,
         "evidence": [
             {
                 "attribute": e.attribute,
@@ -2163,6 +2282,9 @@ def render(итог: dict) -> str:
         по_входу = выбран.get("ban_state") or ""
         if по_входу and по_входу != BAN_UNKNOWN:
             строки.append(f"      вход шага: {по_входу} — {выбран.get('ban_note', '')}")
+        по_службе = выбран.get("life_state") or ""
+        if по_службе and по_службе != LIFE_LIVE:
+            строки.append(f"      срок службы: {по_службе} — {выбран.get('life_note', '')}")
         if s.get("banned_input"):
             строки.append(f"      {s['banned_input']}")
         по_кадру = выбран.get("fit_state") or ""
