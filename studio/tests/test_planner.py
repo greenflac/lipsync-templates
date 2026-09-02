@@ -901,7 +901,10 @@ class КонецСлужбы(unittest.TestCase):
         self.assertIn("предупреждение", нота)
         # И в ключе это НЕ отказ: модель ещё отвечает.
         предупреждён = pn.Candidate("м", (), 0, 0, 0, "", life_state=состояние)
-        self.assertLess(pn.blocked_rank(предупреждён), pn.BAN_ORDER[pn.BAN_FORBIDS])
+        # Сравнивается СТРОГОСТЬ (первое число составного ранга), а не сам ранг:
+        # второе число — сколько препятствий снято прямо, и к отказу оно не
+        # относится.
+        self.assertLess(pn.blocked_rank(предупреждён)[0], pn.BAN_ORDER[pn.BAN_FORBIDS])
 
     def test_признаков_снятия_нет(self) -> None:
         состояние, _ = pn.life_stance(list(НЕ_ЗАПРЕТЫ), СЕГОДНЯ)
@@ -924,8 +927,9 @@ class КонецСлужбы(unittest.TestCase):
         запрещён = pn.Candidate("а", (), 0, 0, 0, "", ban_state="вход ЗАПРЕЩЁН")
         снят = pn.Candidate("б", (), 0, 0, 0, "", life_state="снята: срок прошёл")
         чистый = pn.Candidate("в", (), 0, 0, 0, "")
-        self.assertEqual(pn.blocked_rank(запрещён), pn.blocked_rank(снят))
-        self.assertLess(pn.blocked_rank(чистый), pn.blocked_rank(снят))
+        # Строгость одна и та же: любая одна причина невозможности достаточна.
+        self.assertEqual(pn.blocked_rank(запрещён)[0], pn.blocked_rank(снят)[0])
+        self.assertLess(pn.blocked_rank(чистый)[0], pn.blocked_rank(снят)[0])
 
     def test_снятая_уходит_вниз_и_названа(self) -> None:
         свои = [
@@ -963,6 +967,125 @@ class КонецСлужбы(unittest.TestCase):
         self.assertEqual(шаг["retired_count"], 0)
         self.assertEqual(шаг["banned_input"], "")
         self.assertIn("срок службы: снятие объявлено, срок впереди", pn.render(итог))
+
+
+class ВыходШага(unittest.TestCase):
+    """Симметрия: проверяется не только что модель ПРИНИМАЕТ, но и что ВЫДАЁТ.
+
+    Найдено прогоном через MCP 2026-09-02: шаг «озвучка» объявляет
+    `produces: аудио` и получал `pixverse-lipsync`, которая отдаёт видео —
+    перечень голосов в её схеме есть, потому что TTS у неё внутренний. Якорь
+    сработал на внутренней детали, а выход не смотрел никто.
+    """
+
+    def test_отдаёт_нужный_вид(self) -> None:
+        свои = [
+            факт("м", "produces_outputs", "аудио", "portal"),
+            факт("м", "architecture", "tts text-to-speech", "vendor"),
+        ]
+        состояние, нота = pn.output_stance(свои, ("аудио",))
+        # Литерал (Т2): текст положения — часть контракта.
+        self.assertEqual(состояние, "отдаёт нужный вид")
+        self.assertIn("аудио", нота)
+
+    def test_нужного_вида_не_отдаёт(self) -> None:
+        свои = [факт("pixverse-lipsync", "produces_outputs", "видео", "portal")]
+        состояние, нота = pn.output_stance(свои, ("аудио",))
+        self.assertEqual(состояние, "нужного вида НЕ отдаёт")
+        self.assertIn("аудио", нота)
+        self.assertIn("видео", нота)
+        self.assertIn("example.invalid", нота)
+
+    def test_выход_не_записан_это_не_отдаёт(self) -> None:
+        # И5: молчание не разрешение. Записан выход у 44 моделей из 543.
+        свои = [факт("м", "architecture", "tts text-to-speech", "vendor")]
+        состояние, нота = pn.output_stance(свои, ("аудио",))
+        self.assertEqual(состояние, "выход не записан")
+        self.assertIn("НЕ «отдаёт»", нота)
+
+    def test_несколько_видов_через_запятую(self) -> None:
+        свои = [факт("м", "produces_outputs", "видео, аудио", "portal")]
+        self.assertEqual(pn.output_kinds(свои), {"видео", "аудио"})
+        состояние, _ = pn.output_stance(свои, ("аудио",))
+        self.assertEqual(состояние, "отдаёт нужный вид")
+
+    def test_липсинк_удовлетворяется_видео(self) -> None:
+        # РЕШЕНИЕ, названное вслух: `видео_с_липсинком` — имя артефакта ПЛАНА,
+        # заведённое, чтобы валидатор ловил разрыв между шагами. Схема вендора
+        # отвечает на другой вопрос — какой ФАЙЛ выйдет, — и выйдет видеофайл.
+        свои = [факт("м", "produces_outputs", "видео", "portal")]
+        состояние, _ = pn.output_stance(свои, ("видео_с_липсинком",))
+        self.assertEqual(состояние, "отдаёт нужный вид")
+
+    def test_фоновый_звук_удовлетворяется_аудио(self) -> None:
+        свои = [факт("м", "produces_outputs", "аудио", "portal")]
+        состояние, _ = pn.output_stance(свои, ("фоновый_звук",))
+        self.assertEqual(состояние, "отдаёт нужный вид")
+
+    def test_каждый_артефакт_плана_имеет_вид_носителя(self) -> None:
+        # Артефакт, который шаг ПРОИЗВОДИТ, обязан быть отображён в вид: иначе
+        # он молча сравнивался бы сам с собой и никогда не совпал бы со схемой.
+        производимые = {a for op in pn.OPERATIONS for a in op.produces}
+        self.assertTrue(производимые <= set(pn.OUTPUT_KINDS), производимые - set(pn.OUTPUT_KINDS))
+
+    def test_шкалы_трёх_причин_совпадают(self) -> None:
+        # `blocked_rank` берёт максимум из трёх: разъехавшиеся шкалы дали бы
+        # бессмысленное число.
+        self.assertEqual(sorted(pn.OUT_ORDER.values()), sorted(pn.BAN_ORDER.values()))
+        self.assertEqual(pn.OUT_ORDER["нужного вида НЕ отдаёт"], pn.BAN_ORDER["вход ЗАПРЕЩЁН"])
+
+    def test_не_тот_выход_это_та_же_ось(self) -> None:
+        не_тот = pn.Candidate("а", (), 0, 0, 0, "", out_state="нужного вида НЕ отдаёт")
+        запрещён = pn.Candidate("б", (), 0, 0, 0, "", ban_state="вход ЗАПРЕЩЁН")
+        молчун = pn.Candidate("в", (), 0, 0, 0, "")
+        self.assertEqual(pn.blocked_rank(не_тот), pn.blocked_rank(запрещён))
+        self.assertLess(pn.blocked_rank(молчун), pn.blocked_rank(не_тот))
+
+    def test_не_отдающий_уходит_вниз_и_назван(self) -> None:
+        свои = [
+            факт("отдаёт-видео", "produces_outputs", "видео", "portal"),
+            факт("отдаёт-видео", "architecture", "tts text-to-speech", "vendor"),
+            факт("отдаёт-звук", "produces_outputs", "аудио", "portal"),
+            факт("отдаёт-звук", "architecture", "tts text-to-speech", "vendor"),
+        ]
+        итог = pn.plan("нужна озвучка по тексту", facts=свои, today=СЕГОДНЯ)
+        шаг = итог["steps"][0]
+        self.assertEqual(шаг["step"], "озвучка")
+        self.assertEqual(шаг["chosen"]["model"], "отдаёт-звук")
+        self.assertEqual(шаг["wrong_output_count"], 1)
+        self.assertIn("ВОСПОЛЬЗОВАТЬСЯ НЕЛЬЗЯ", шаг["banned_input"])
+        self.assertIn("нужного вида НЕ отдаёт", шаг["banned_input"])
+        self.assertIn("отдаёт-видео", шаг["banned_input"])
+        self.assertIn("выход не тот 0", итог["note"])
+
+    def test_нужный_вид_отказа_не_даёт(self) -> None:
+        # НЕГАТИВНЫЙ КОНТРОЛЬ, первая сторона: шаг, которому нужен тот же вид,
+        # что модель отдаёт, отказа получать не должен.
+        свои = [
+            факт("отдаёт-звук", "produces_outputs", "аудио", "portal"),
+            факт("отдаёт-звук", "architecture", "tts text-to-speech", "vendor"),
+        ]
+        итог = pn.plan("нужна озвучка по тексту", facts=свои, today=СЕГОДНЯ)
+        шаг = итог["steps"][0]
+        self.assertEqual(шаг["wrong_output_count"], 0)
+        self.assertEqual(шаг["banned_input"], "")
+        self.assertEqual(шаг["chosen"]["out_state"], "отдаёт нужный вид")
+
+    def test_молчащий_выход_ни_отсекается_ни_годится(self) -> None:
+        # НЕГАТИВНЫЙ КОНТРОЛЬ, вторая сторона: кандидат без записанного выхода
+        # не должен ни отсекаться, ни считаться подходящим.
+        свои = [факт("молчит", "architecture", "tts text-to-speech", "vendor")]
+        итог = pn.plan("нужна озвучка по тексту", facts=свои, today=СЕГОДНЯ)
+        шаг = итог["steps"][0]
+        self.assertEqual(шаг["chosen"]["model"], "молчит")
+        self.assertEqual(шаг["wrong_output_count"], 0)
+        self.assertEqual(шаг["banned_input"], "")
+        self.assertEqual(шаг["chosen"]["out_state"], "выход не записан")
+        молчун = pn.Candidate("м", (), 0, 0, 0, "", out_state="выход не записан")
+        годный = pn.Candidate("г", (), 0, 0, 0, "", out_state="отдаёт нужный вид")
+        плохой = pn.Candidate("п", (), 0, 0, 0, "", out_state="нужного вида НЕ отдаёт")
+        self.assertLess(pn.blocked_rank(годный), pn.blocked_rank(молчун))
+        self.assertLess(pn.blocked_rank(молчун), pn.blocked_rank(плохой))
 
 
 class КлючиЗаказчика(unittest.TestCase):
@@ -1212,7 +1335,7 @@ class ВытесненныйЦеной(unittest.TestCase):
         слабый = self._к("тоже-проверенный", 1, "цена не записана")
         сказано = pn.rival_line(выбран, [выбран, слабый, сильный])
         # Литералы (Т2): текст пометки — часть контракта.
-        self.assertTrue(сказано.startswith("ПРОВЕРЕННЫЙ ЕСТЬ, НО ЦЕНА ЕГО ОТОДВИНУЛА"))
+        self.assertTrue(сказано.startswith("ПРОВЕРЕННЫЙ ЕСТЬ, НО ВЫБРАН НЕ ОН"))
         self.assertIn("проверенный", сказано)
         # Назван СИЛЬНЕЙШИЙ из проверенных, а не первый попавшийся.
         self.assertNotIn("тоже-проверенный", сказано)
@@ -1284,7 +1407,7 @@ class ВытесненныйЦеной(unittest.TestCase):
         )
         шаг = итог["steps"][0]
         self.assertEqual(шаг["chosen"]["model"], "дешёвый-lipsync")
-        self.assertTrue(шаг["proven_rival"].startswith("ПРОВЕРЕННЫЙ ЕСТЬ, НО ЦЕНА ЕГО ОТОДВИНУЛА"))
+        self.assertTrue(шаг["proven_rival"].startswith("ПРОВЕРЕННЫЙ ЕСТЬ, НО ВЫБРАН НЕ ОН"))
         self.assertIn("проверенный-lipsync", шаг["proven_rival"])
 
     def test_числа_вытеснения_стоят_в_ноте(self) -> None:
