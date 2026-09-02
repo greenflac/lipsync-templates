@@ -473,3 +473,83 @@ class ТелоТреда(unittest.TestCase):
 
     def test_инверсия_без_знака_вопроса_всё_равно_вопрос(self):
         self.assertEqual(hf.наблюдение("Can we get bf16 weights for the 5B model at 720p"), "")
+
+    def test_порог_дословного_совпадает_с_гейтом_ремесла(self):
+        """Е1: два места знают одно число — расхождение обязано краснеть.
+
+        Ожидаемое — литерал (Т2), а не импорт из проверяемого модуля.
+        """
+        import re as _re
+        from pathlib import Path as _Path
+
+        текст = (_Path(__file__).resolve().parents[3] / "scripts" / "check_craft.py").read_text(
+            encoding="utf-8"
+        )
+        найдено = _re.search(r"VERBATIM_MAX_WORDS\s*=\s*(\d+)", текст)
+        self.assertIsNotNone(найдено)
+        self.assertEqual(hf.ДОСЛОВНО_СЛОВ, 15)
+        self.assertEqual(int(найдено.group(1)), 15)
+
+    def test_длинная_цитата_не_записывается_вовсе(self):
+        """Чужой абзац не режется по слову: обрезок — уже не слова источника."""
+        длинное = " ".join(f"слово{i}" for i in range(30))
+        строка = dict(
+            Заявки.СТРОКА,
+            license_name="",
+            license="",
+            licences=[],
+            observations=[
+                {
+                    "num": 7,
+                    "title": "t",
+                    "status": "open",
+                    "author": "kto-to",
+                    "sign": "провал",
+                    "attribute": "failure_mode",
+                    "observation": длинное,
+                }
+            ],
+        )
+        self.assertEqual([z[1] for z in hf.заявки(строка)], ["adoption"])
+
+    def test_короткое_наблюдение_проходит(self):
+        """Вторая половина контроля: без неё прошёл бы фильтр, режущий всё."""
+        коротко = "On a 3090 at 720p the mouth desyncs after six seconds."
+        строка = dict(
+            Заявки.СТРОКА,
+            license_name="",
+            license="",
+            licences=[],
+            observations=[
+                {
+                    "num": 7,
+                    "title": "t",
+                    "status": "open",
+                    "author": "kto-to",
+                    "sign": "провал",
+                    "attribute": "failure_mode",
+                    "observation": коротко,
+                }
+            ],
+        )
+        по = {z[1]: z[2] for z in hf.заявки(строка)}
+        self.assertEqual(по["failure_mode"], коротко)
+
+    def test_ник_автора_никуда_не_пишется(self):
+        """Персональные данные не нужны ни одному ответу."""
+        строка = dict(
+            Заявки.СТРОКА,
+            observations=[
+                {
+                    "num": 7,
+                    "title": "t",
+                    "status": "open",
+                    "author": "dzft3w",
+                    "sign": "провал",
+                    "attribute": "failure_mode",
+                    "observation": "On a 3090 it desyncs after six seconds.",
+                }
+            ],
+        )
+        for заявка in hf.заявки(строка):
+            self.assertNotIn("dzft3w", " ".join(str(x) for x in заявка))
