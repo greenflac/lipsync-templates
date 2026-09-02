@@ -49,7 +49,16 @@
     5. `цена`           — даже НИЖНЯЯ известная граница цены выше заложенного
        бюджета. Из блюпринта дословно. Нижняя, а не средняя: превышение снизу
        — единственное утверждение о цене, которое нельзя опровергнуть более
-       дешёвым тарифом, о котором мы не знаем.
+       дешёвым тарифом, о котором мы не знаем. Цену из прозы разбирает
+       `studio/pricing.py` и никто больше (Е1): собственный разборщик этого
+       модуля брал ПЕРВОЕ число строки и звал его долларами, отчего «FLUX.2
+       [pro]: $0.03…» становилось ценой 2.0, «50% lower price» — ценой 50.0, а
+       «40 credits/s» — ценой 40.0. ИЗМЕРЕНО 2026-09-02 прогоном обоих
+       разборщиков по живой базе: 45 строк из 82 разбирались неверно, и «не
+       смогли» прежний оракул не сказал ни разу. Цена в кредитах, в процентах
+       или за неизвестную единицу — ТРЕТИЙ исход этого класса, а не число:
+       бюджет назван в долларах за шаг, и сравнивать его с кредитами вендора
+       или с ценой за миллион токенов значит воспроизводить тот же дефект.
 
     6. `устарел`        — модель снята площадкой, или самое свежее утверждение
        о ней старше порога. Блюпринта в этом месте нет; класс взят из того, что
@@ -85,7 +94,6 @@
 from __future__ import annotations
 
 import json
-import re
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
@@ -94,11 +102,13 @@ from typing import Iterable, Mapping, Sequence
 from lipsync.fork_identity import FAIL, PASS, UNMEASURED
 
 from studio import factaxis as fa
+from studio import pricing
 from studio.selfrag.facts import Fact
 
 __all__ = [
     "AMBIENT_ARTEFACTS",
     "BUDGET_TOLERANCE",
+    "BUDGET_UNIT",
     "CLASSES",
     "CLASS_APPLICABILITY",
     "CLASS_CONTRADICTION",
@@ -126,6 +136,7 @@ __all__ = [
     "USE_COMMERCIAL",
     "USE_RESEARCH",
     "classes_fired",
+    "comparable_prices",
     "facts_for",
     "load_controls",
     "outcome_of",
@@ -226,6 +237,16 @@ PRICE_MARKERS: tuple[str, ...] = ("price", "cost", "цена", "стоимост
 #: строгое», и он сторожится мутацией в обе стороны.
 BUDGET_TOLERANCE = 0.0
 
+#: Единица, в которой заявлен бюджет шага (`Step.budget_usd`). КОНСТАНТА-РЕШЕНИЕ,
+#: ВЫБРАНО = "usd" по имени самого поля: бюджет называет человек, и называет он
+#: его в долларах. Всё, что разобралось в ДРУГОЙ единице — кредиты вендора,
+#: процент скидки, — с этим числом не сравнивается вообще: сравнение разных
+#: единиц и было тем дефектом, ради которого оракул переписан (ИЗМЕРЕНО
+#: 2026-09-02: 45 ценовых строк живой базы из 82 разбирались неверно, и ни на
+#: одной прежний оракул не сказал «не смогли»). Список известных единиц и
+#: список «за что» ИМПОРТИРУЮТСЯ из `studio/pricing.py` (Е1), а не повторяются.
+BUDGET_UNIT = "usd"
+
 #: Через сколько дней самое свежее утверждение о модели перестаёт годиться в
 #: опору плана. ВЫБРАНО = 180 из наблюдения этого проекта: лимиты моделей
 #: меняются месячным темпом (это записано первым абзацем инструкции сервера),
@@ -266,8 +287,6 @@ KIND_MUTANT = "мутант"
 KIND_HEALTHY = "чужак"
 
 DEFAULT_CONTROLS_PATH = Path(__file__).with_name("knowledge") / "pipeline_controls.jsonl"
-
-_NUMBER = re.compile(r"[-+]?\d+(?:[.,]\d+)?")
 
 
 @dataclass(frozen=True)
@@ -342,17 +361,6 @@ def _has_marker(text: str, markers: Sequence[str]) -> str:
         if m in low:
             return m
     return ""
-
-
-def _price_of(value: str) -> float | None:
-    """Число долларов из прозы о цене. `None` — из строки числа не достать."""
-    m = _NUMBER.search(value)
-    if not m:
-        return None
-    try:
-        return float(m.group(0).replace(",", "."))
-    except ValueError:
-        return None
 
 
 def _age_days(fact: Fact, today: date) -> int | None:
@@ -449,23 +457,67 @@ def probe_licence(step: Step, свои: Sequence[Fact]) -> Probe:
     )
 
 
+def comparable_prices(
+    свои: Sequence[Fact],
+) -> tuple[list[tuple[Fact, pricing.Price]], list[tuple[Fact, pricing.Price]]]:
+    """Ценовые строки модели, разобранные и РАЗДЕЛЁННЫЕ на сравнимые с бюджетом и нет.
+
+    Вынесено из `probe_price` отдельной функцией (Т5): развилка «это число можно
+    поставить рядом с бюджетом» — та самая, которая молча деградировала, и она
+    обязана быть достижима тестом без сборки целого шага.
+
+    Сравнимо ровно то, у чего сошлись ОБА: единица (`BUDGET_UNIT`) и «за что»
+    (`pricing.PER`). Единица без «за что» не годится: `$14 per 1,000 requests` —
+    честные доллары, но поставить их рядом с бюджетом одного шага значит снова
+    сложить разное, только теперь молча и с виду законно.
+    """
+    сравнимые: list[tuple[Fact, pricing.Price]] = []
+    прочие: list[tuple[Fact, pricing.Price]] = []
+    for f in свои:
+        if not _has_marker(f.attribute, PRICE_MARKERS):
+            continue
+        цена = pricing.parse(f.value, f.attribute)
+        годна = (
+            цена.outcome == "годно"
+            and цена.amount is not None
+            and цена.unit == BUDGET_UNIT
+            and цена.per in pricing.PER
+        )
+        (сравнимые if годна else прочие).append((f, цена))
+    return сравнимые, прочие
+
+
 def probe_price(step: Step, свои: Sequence[Fact]) -> Probe:
-    """Дороже ли бюджета САМАЯ ДЕШЁВАЯ известная цена."""
+    """Дороже ли бюджета САМАЯ ДЕШЁВАЯ цена, ВЫРАЖЕННАЯ В ЕДИНИЦЕ БЮДЖЕТА.
+
+    Три исхода, и третий тут не декоративный (Р1). Прежний оракул брал ПЕРВОЕ
+    число строки и объявлял его долларами: `FLUX.2 [pro]: $0.03…` давало 2.0,
+    «50% lower price» давало 50.0, «40 credits/s» давало 40.0 — 45 строк живой
+    базы из 82 разбирались неверно, и «не смогли» он не сказал НИ РАЗУ
+    (ИЗМЕРЕНО 2026-09-02, прогон обоих разборщиков по базе).
+
+    Числа печатаются рядом с исходом всегда (Е3): сколько строк о цене нашлось,
+    сколько из них сравнимо с бюджетом и сколько отложено как несравнимое.
+    Иначе «цена в бюджете» по одной строке из шести читается как проверенное.
+    """
     if step.budget_usd is None:
         return Probe(
             CLASS_PRICE, False, False, PASS, "бюджет шага не заявлен — сравнивать не с чем"
         )
-    цены = [(f, _price_of(f.value)) for f in свои if _has_marker(f.attribute, PRICE_MARKERS)]
-    известные = [(f, c) for f, c in цены if c is not None]
-    if not известные:
+    сравнимые, прочие = comparable_prices(свои)
+    счёт = f"строк о цене {len(сравнимые) + len(прочие)}, сравнимых с бюджетом {len(сравнимые)}"
+    if not сравнимые:
+        причины = "; ".join(f"{f.attribute}={ц.unit or '?'}/{ц.per or '?'}" for f, ц in прочие[:3])
         return Probe(
             CLASS_PRICE,
             True,
             False,
             UNMEASURED,
-            f"бюджет заявлен ({step.budget_usd}), а цены в базе нет ни одной разбираемой",
+            f"бюджет заявлен ({step.budget_usd} {BUDGET_UNIT}), а {счёт}: "
+            f"сравнить не смогли ({причины or 'ценовых строк нет вовсе'})",
         )
-    факт, нижняя = min(известные, key=lambda пара: пара[1])
+    факт, дешёвая = min(сравнимые, key=lambda пара: пара[1].amount or 0.0)
+    нижняя = дешёвая.amount or 0.0
     потолок = step.budget_usd * (1.0 + BUDGET_TOLERANCE)
     if нижняя > потолок:
         return Probe(
@@ -473,11 +525,27 @@ def probe_price(step: Step, свои: Sequence[Fact]) -> Probe:
             True,
             True,
             CLASS_OUTCOME[CLASS_PRICE],
-            f"нижняя известная цена {нижняя} выше потолка {потолок} "
-            f"({факт.attribute}, {факт.source_url})",
+            f"нижняя известная цена {нижняя} {BUDGET_UNIT} за {дешёвая.per} выше потолка "
+            f"{потолок} ({факт.attribute}, {факт.source_url}); {счёт}",
+        )
+    условные = [f for f, ц in сравнимые if ц.conditional]
+    if условные:
+        return Probe(
+            CLASS_PRICE,
+            True,
+            False,
+            UNMEASURED,
+            f"нижняя цена {нижняя} {BUDGET_UNIT} в потолок {потолок} укладывается, но она "
+            f"УСЛОВНАЯ ({условные[0].attribute}: {условные[0].value[:60]}): настоящая цена "
+            f"выше названной, и на сколько — из строки не следует; {счёт}",
         )
     return Probe(
-        CLASS_PRICE, True, False, PASS, f"нижняя известная цена {нижняя} при потолке {потолок}"
+        CLASS_PRICE,
+        True,
+        False,
+        PASS,
+        f"нижняя известная цена {нижняя} {BUDGET_UNIT} за {дешёвая.per} при потолке "
+        f"{потолок}; {счёт}",
     )
 
 
