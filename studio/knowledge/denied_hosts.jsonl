@@ -376,3 +376,7 @@
 {"host": "docs.x.ai", "url": "https://docs.x.ai/docs/models", "state": "open", "first_seen": "2026-08-31"}
 {"host": "docs.voyageai.com", "url": "https://docs.voyageai.com/docs/embeddings", "state": "open", "first_seen": "2026-08-31"}
 {"host": "platform.minimax.io", "url": "https://platform.minimax.io/docs/guides/video-generation", "state": "open", "first_seen": "2026-08-31"}
+{"host": "vidofy.ai", "url": "https://vidofy.ai/", "reason": "Tunnel connection failed: 403 Forbidden", "why_wanted": "checking whether a search hit is readable", "incidental": true, "state": "refused", "first_seen": "2026-09-02"}
+{"host": "docs.qingque.cn", "url": "https://docs.qingque.cn/", "reason": "Tunnel connection failed: 403 Forbidden", "why_wanted": "refreshing the reachability map; nobody asked for this host", "incidental": true, "state": "refused", "first_seen": "2026-09-02"}
+{"host": "support.reddithelp.com", "url": "https://support.reddithelp.com/", "reason": "Tunnel connection failed: 403 Forbidden", "why_wanted": "refreshing the reachability map; nobody asked for this host", "incidental": true, "state": "refused", "first_seen": "2026-09-02"}
+{"host": "www.redditinc.com", "url": "https://www.redditinc.com/", "reason": "Tunnel connection failed: 403 Forbidden", "why_wanted": "refreshing the reachability map; nobody asked for this host", "incidental": true, "state": "refused", "first_seen": "2026-09-02"}
