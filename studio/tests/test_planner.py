@@ -20,8 +20,12 @@
 
 from __future__ import annotations
 
+import tempfile
 import unittest
 from datetime import date
+from pathlib import Path
+
+from PIL import Image
 
 from studio import planner as pn
 from studio import pricing
@@ -384,6 +388,311 @@ class ЦенаВОтборе(unittest.TestCase):
     def test_ни_строки_о_цене(self) -> None:
         состояние, _ = pn.price_stance(list(ЗДОРОВЫЕ), pn.budget_from("бюджет 1 доллар"))
         self.assertEqual(состояние, "цена не записана")
+
+
+#: Настоящий креатив владельца: вертикальный кадр 1536x2752. На нём и найден
+#: дефект — замеры креатива были украшением, до отбора кандидата не доезжали.
+СЕЛФИ = Path(__file__).resolve().parents[2] / "assets" / "fork_client_selfie_f.png"
+
+#: Модели с записанными пределами кадра: одна берёт 4K, одна упирается в 1280,
+#: одна написана так, что разобрать нельзя. Т3: края и середина.
+ПРЕДЕЛЫ: tuple[Fact, ...] = (
+    факт("берёт-4k", "max_resolution", "4K", "vendor"),
+    факт("берёт-4k", "architecture", "image-to-video i2v", "vendor"),
+    факт("не-берёт", "max_resolution", "1280x720", "vendor"),
+    факт("не-берёт", "architecture", "image-to-video i2v", "vendor"),
+    факт("не-разобрать", "max_resolution", "up to 4MP output", "vendor"),
+    факт("не-разобрать", "architecture", "image-to-video i2v", "vendor"),
+    факт("молчит", "architecture", "image-to-video i2v", "vendor"),
+)
+
+
+class ЗамерКреатива(unittest.TestCase):
+    """Т5: кадр меряется отдельно от плана, и «не смогли» здесь настоящее."""
+
+    def test_креатив_не_подан(self) -> None:
+        кадр, нота = pn.frame_of("")
+        self.assertIsNone(кадр)
+        self.assertIn("не подан", нота)
+
+    def test_файла_нет_третий_исход(self) -> None:
+        # Не исключение и не «принимает»: названная причина.
+        кадр, нота = pn.frame_of("/нет/такого/файла.png")
+        self.assertIsNone(кадр)
+        self.assertTrue(нота)
+
+    def test_настоящий_креатив_измерен(self) -> None:
+        self.assertTrue(СЕЛФИ.is_file(), СЕЛФИ)
+        кадр, нота = pn.frame_of(str(СЕЛФИ))
+        # Литералы (Т2): стороны файла владельца, а не импорт из модуля.
+        self.assertEqual(кадр, (1536, 2752))
+        self.assertIn("1536x2752", нота)
+
+    def test_меряет_тот_же_прибор_что_analyse_creative(self) -> None:
+        # Е1: своего измерителя нет. Если поле выдачи `analyse_creative`
+        # поедет, оно обязано поехать здесь в тот же миг, а не молча.
+        from studio.mcp import creative as _creative
+
+        итог = _creative.analyse(str(СЕЛФИ))
+        замеры = итог["parts"]["look"]["measurements"]
+        кадр, _ = pn.frame_of(str(СЕЛФИ))
+        self.assertEqual(кадр, (int(замеры["width"]), int(замеры["height"])))
+
+
+class КадрПротивПредела(unittest.TestCase):
+    """Четыре положения по кадру, и «предел не записан» — не «принимает»."""
+
+    def test_кадр_не_подан_положение_пустое(self) -> None:
+        состояние, _ = pn.fit_stance(list(ПРЕДЕЛЫ), None)
+        self.assertEqual(состояние, "")
+
+    def test_предела_нет_вовсе(self) -> None:
+        свои = [f for f in ПРЕДЕЛЫ if f.model == "молчит"]
+        состояние, нота = pn.fit_stance(свои, (1536, 2752))
+        # Литерал (Т2): текст положения — часть контракта.
+        self.assertEqual(состояние, "предел кадра не записан")
+        self.assertIn("0", нота)
+
+    def test_кадр_принимается(self) -> None:
+        свои = [f for f in ПРЕДЕЛЫ if f.model == "берёт-4k"]
+        состояние, нота = pn.fit_stance(свои, (1536, 2752))
+        self.assertEqual(состояние, "кадр принимается")
+        # Требование владельца: креатив, предел и ИСХОДНАЯ строка источника.
+        self.assertIn("1536x2752", нота)
+        self.assertIn("max_resolution", нота)
+        self.assertIn("example.invalid", нота)
+
+    def test_кадр_не_принимается(self) -> None:
+        свои = [f for f in ПРЕДЕЛЫ if f.model == "не-берёт"]
+        состояние, нота = pn.fit_stance(свои, (1536, 2752))
+        self.assertEqual(состояние, "кадр НЕ принимается")
+        self.assertIn("1536x2752", нота)
+        self.assertIn("1280", нота)
+
+    def test_предел_записан_но_не_разобран(self) -> None:
+        свои = [f for f in ПРЕДЕЛЫ if f.model == "не-разобрать"]
+        состояние, _ = pn.fit_stance(свои, (1536, 2752))
+        self.assertEqual(состояние, "предел записан, но не разобран")
+
+    def test_неразобранная_строка_не_даёт_отказа(self) -> None:
+        # Сильное утверждение «ни один режим не берёт этот кадр» требует, чтобы
+        # неразобранных строк не осталось: неразобранная оставляет место режиму,
+        # которого мы не прочли.
+        свои = [
+            факт("м", "max_resolution", "1280x720", "vendor"),
+            факт("м", "resolution_note", "up to 4MP output", "vendor"),
+        ]
+        состояние, _ = pn.fit_stance(свои, (1536, 2752))
+        self.assertEqual(состояние, "предел записан, но не разобран")
+
+    def test_один_принимающий_режим_решает(self) -> None:
+        # Строки модели описывают разные режимы: если хоть один берёт кадр,
+        # модель его берёт. Брать строжайшую строку значило бы отвергать модель
+        # за то, что у неё есть ещё и мелкий режим.
+        свои = [
+            факт("м", "max_resolution", "4K", "vendor"),
+            факт("м", "resolution_enum", "1280x720", "vendor"),
+        ]
+        состояние, _ = pn.fit_stance(свои, (1536, 2752))
+        self.assertEqual(состояние, "кадр принимается")
+
+    def test_разрешение_обучения_пределом_не_считается(self) -> None:
+        свои = [факт("м", "training_resolution", "512x512", "vendor")]
+        self.assertEqual([f.attribute for f in pn.limit_facts(свои)], [])
+        состояние, _ = pn.fit_stance(свои, (1536, 2752))
+        self.assertEqual(состояние, "предел кадра не записан")
+
+    def test_положений_ровно_четыре_и_названы_литералами(self) -> None:
+        self.assertEqual(
+            sorted(pn.FIT_ORDER),
+            sorted(
+                [
+                    "кадр принимается",
+                    "предел записан, но не разобран",
+                    "предел кадра не записан",
+                    "кадр НЕ принимается",
+                ]
+            ),
+        )
+
+    def test_порядок_положений_по_кадру(self) -> None:
+        def к(имя: str, состояние: str) -> pn.Candidate:
+            return pn.Candidate(имя, (), 0, 1, 0, "", anchored=1, fit_state=состояние)
+
+        # ИМЕНА НАРОЧНО В ОБРАТНОМ АЛФАВИТНОМ ПОРЯДКЕ к ожидаемому. Первая
+        # версия этого теста называла их «а-принимает»…«г-не-принимает», и
+        # алфавит сам давал нужный ответ: мутация «четыре положения сливаются в
+        # одно» не покраснила НИ ОДИН тест (Т1, 2026-09-02). Тест, который
+        # проходит и без проверяемой развилки, не сторожит ничего.
+        порядок = sorted(
+            [
+                к("а-не-принимает", "кадр НЕ принимается"),
+                к("б-не-записан", "предел кадра не записан"),
+                к("в-не-разобран", "предел записан, но не разобран"),
+                к("г-принимает", "кадр принимается"),
+            ],
+            key=pn.by_evidence,
+        )
+        self.assertEqual(
+            [c.model for c in порядок],
+            ["г-принимает", "в-не-разобран", "б-не-записан", "а-не-принимает"],
+        )
+
+    def test_кадр_старше_цены(self) -> None:
+        # Модель, которая кадра не принимает, не запустится вовсе; модель дороже
+        # потолка запустится и сделает работу, просто дорого.
+        дешёвый_но_мелкий = pn.Candidate(
+            "а-мелкий",
+            (),
+            9,
+            9,
+            0,
+            "",
+            anchored=9,
+            fit_state="кадр НЕ принимается",
+            price_state="в бюджете",
+        )
+        дорогой_но_берёт = pn.Candidate(
+            "я-берёт",
+            (),
+            0,
+            0,
+            0,
+            "",
+            anchored=1,
+            fit_state="кадр принимается",
+            price_state="дороже бюджета",
+        )
+        порядок = sorted([дешёвый_но_мелкий, дорогой_но_берёт], key=pn.by_evidence)
+        self.assertEqual([c.model for c in порядок], ["я-берёт", "а-мелкий"])
+
+    def test_без_кадра_порядок_не_меняется_вовсе(self) -> None:
+        # НЕГАТИВНЫЙ КОНТРОЛЬ (а): без креатива не должно измениться ни строки,
+        # ни порядка.
+        без = pn.plan("оживить селфи клиента", facts=list(ПРЕДЕЛЫ), today=СЕГОДНЯ)
+        шаг = без["steps"][0]
+        self.assertEqual(шаг["chosen"]["fit_state"], "")
+        for а in шаг["alternatives"]:
+            self.assertEqual(а["fit_state"], "")
+        self.assertIsNone(без["creative"]["width"])
+        self.assertNotIn("      кадр:", pn.render(без))
+
+    def test_с_кадром_не_принимающий_уходит_вниз(self) -> None:
+        # НЕГАТИВНЫЙ КОНТРОЛЬ (б), первая половина: отказ обязан быть виден и
+        # обязан быть последним.
+        with_ = pn.plan(
+            "оживить селфи клиента",
+            facts=list(ПРЕДЕЛЫ),
+            creative=str(СЕЛФИ),
+            today=СЕГОДНЯ,
+        )
+        шаг = with_["steps"][0]
+        self.assertEqual(шаг["chosen"]["model"], "берёт-4k")
+        self.assertEqual(шаг["chosen"]["fit_state"], "кадр принимается")
+        # Проверяется ВЕСЬ порядок, а не три показанных: `alternatives` короче
+        # набора по `CANDIDATES_SHOWN`, и «последний из показанных» — не то же
+        # самое, что «последний из найденных».
+        весь = pn.candidates_for(
+            next(o for o in pn.OPERATIONS if o.name == "оживление"),
+            FactIndex(facts=list(ПРЕДЕЛЫ)),
+            None,
+            None,
+            (1536, 2752),
+        )
+        self.assertEqual([c.model for c in весь][-1], "не-берёт")
+        self.assertNotIn("не-берёт", [а["model"] for а in шаг["alternatives"]])
+        # Отвергнутый уходит в конец и потому НЕ попадает в показанные — но
+        # молчать о нём нельзя: одна строка на шаг называет его поимённо.
+        напечатано = pn.render(with_)
+        self.assertIn("КАДР ОТВЁРГ КАНДИДАТОВ", напечатано)
+        self.assertIn("не-берёт", напечатано)
+        self.assertIn("1536x2752", напечатано)
+        self.assertIn("1280", шаг["rejected_by_frame"])
+
+    def test_кадр_который_влезает_всем_не_даёт_ни_отказа_ни_шума(self) -> None:
+        # НЕГАТИВНЫЙ КОНТРОЛЬ (б), вторая половина: на маленьком кадре ни одна
+        # модель не отвергается, и прибор об этом молчит вместо того, чтобы
+        # находить проблему там, где её нет.
+        мелкий = Path(tempfile.mkdtemp()) / "мелкий.png"
+        Image.new("RGB", (64, 64), (128, 128, 128)).save(мелкий)
+        итог = pn.plan(
+            "оживить селфи клиента",
+            facts=list(ПРЕДЕЛЫ),
+            creative=str(мелкий),
+            today=СЕГОДНЯ,
+        )
+        шаг = итог["steps"][0]
+        состояния = [шаг["chosen"]["fit_state"]] + [а["fit_state"] for а in шаг["alternatives"]]
+        self.assertNotIn("кадр НЕ принимается", состояния)
+        self.assertIn("кадр не принимают 0", итог["note"])
+        # И ни одной строки об отказе: находить беду там, где её нет, — шум.
+        self.assertEqual(шаг["rejected_by_frame"], "")
+        self.assertNotIn("КАДР ОТВЁРГ", pn.render(итог))
+
+
+class ОтвергнутыеКадром(unittest.TestCase):
+    """Т5: строка об отвергнутых кадром считается без базы и без плана."""
+
+    @staticmethod
+    def _к(имя: str, состояние: str) -> pn.Candidate:
+        return pn.Candidate(имя, (), 0, 1, 0, "", anchored=1, fit_state=состояние, fit_note="нота")
+
+    def test_отвергать_некого_молчит(self) -> None:
+        свои = [self._к("а", "кадр принимается"), self._к("б", "предел кадра не записан")]
+        self.assertEqual(pn.frame_rejects_line(свои), "")
+
+    def test_один_отвергнутый_назван(self) -> None:
+        свои = [self._к("а", "кадр принимается"), self._к("б", "кадр НЕ принимается")]
+        сказано = pn.frame_rejects_line(свои)
+        self.assertTrue(сказано.startswith("КАДР ОТВЁРГ КАНДИДАТОВ"))
+        self.assertIn("б", сказано)
+        self.assertNotIn("и ещё", сказано)
+
+    def test_остальные_числом_а_не_списком(self) -> None:
+        свои = [self._к(и, "кадр НЕ принимается") for и in ("а", "б", "в")]
+        сказано = pn.frame_rejects_line(свои)
+        self.assertIn("и ещё 2", сказано)
+        self.assertNotIn("в", сказано.split(" — ")[0].replace("КАДР ОТВЁРГ КАНДИДАТОВ", ""))
+
+
+class КлючиЗаказчика(unittest.TestCase):
+    """`CUSTOMER_KEYS` — сколько первых полей ключа приходят СНАРУЖИ."""
+
+    def test_их_ровно_столько_сколько_названо(self) -> None:
+        # Литералы (Т2): два первых поля — кадр и цена.
+        self.assertEqual(pn.CUSTOMER_KEYS, 2)
+        self.assertEqual(
+            list(pn.KEY_FIELDS[: pn.CUSTOMER_KEYS]),
+            ["принимает ли кадр", "положение по цене"],
+        )
+
+    def test_ни_кадр_ни_цена_не_решают_кто_доказан(self) -> None:
+        # Регрессия 2026-09-02: `proven` роняла один первый ключ, кадр встал
+        # перед ценой — и цена вернулась в выбор вытесненного молча.
+        слабый_но_удобный = pn.Candidate(
+            "а-удобный",
+            (),
+            1,
+            1,
+            0,
+            "",
+            anchored=1,
+            fit_state="кадр принимается",
+            price_state="в бюджете",
+        )
+        сильный_но_неудобный = pn.Candidate(
+            "я-сильный",
+            (),
+            5,
+            5,
+            0,
+            "",
+            anchored=5,
+            fit_state="кадр НЕ принимается",
+            price_state="дороже бюджета",
+        )
+        порядок = pn.proven([слабый_но_удобный, сильный_но_неудобный])
+        self.assertEqual([c.model for c in порядок], ["я-сильный", "а-удобный"])
 
 
 class ПереводЗаЧто(unittest.TestCase):
@@ -798,6 +1107,25 @@ class Контракт(unittest.TestCase):
         оживление = next(op for op in pn.OPERATIONS if op.name == "оживление")
         имена = [c.model for c in pn.candidates_for(оживление, индекс)]
         self.assertNotIn("*", имена)
+
+    def test_отбор_строк_предела_совпадает_со_скриптом(self) -> None:
+        """DEBT(2026-09-02) под охраной: два места знают, где лежит предел кадра.
+
+        `scripts/` не пакет, импортировать оттуда в библиотеку значило бы
+        городить возню с путями в рабочем коде, поэтому подстрока и исключение
+        ПОВТОРЕНЫ в `studio/planner.py`. Повтор есть повтор (Е1), и настоящий
+        признак дубля — «при изменении одного второе обязано измениться» —
+        обеспечивается здесь: тест читает тот файл и краснеет, если разошлись.
+        """
+        путь = Path(__file__).resolve().parents[2] / "scripts" / "creative_fit.py"
+        self.assertTrue(путь.is_file(), путь)
+        текст = путь.read_text(encoding="utf-8")
+        # Литералы (Т2): и подстрока, и исключение набраны здесь, а не взяты
+        # из проверяемого модуля — иначе обе половины поехали бы вместе.
+        self.assertEqual(pn.LIMIT_ATTRIBUTE_MARKER, "resolution")
+        self.assertEqual(pn.LIMIT_ATTRIBUTES_EXCLUDED, frozenset({"training_resolution"}))
+        self.assertIn('"resolution" in ф.attribute', текст)
+        self.assertIn('КРОМЕ: frozenset[str] = frozenset({"training_resolution"})', текст)
 
     def test_контрольный_набор_читается_целиком(self) -> None:
         # ГЛАВНОЕ здесь — равенство двух чисел: строка, которую загрузчик

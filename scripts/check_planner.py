@@ -119,6 +119,29 @@ def run(path: Path = pn.DEFAULT_BRIEFS_PATH) -> dict:
                     f"перевод «за что»: {'есть' if есть else 'нет'}, "
                     f"ждали {'есть' if ждали_перевод else 'нет'}"
                 )
+        # Кадр: три ожидания, и пустое — тоже ожидание (без креатива не должно
+        # измениться ни строки, ни порядка).
+        if "expect_fit" in row:
+            состояния = [
+                str((s.get("chosen") or {}).get("fit_state") or "")
+                for s in итог["steps"]
+                if s.get("chosen")
+            ]
+            отказы = [str(s.get("rejected_by_frame") or "") for s in итог["steps"]]
+            ждали_кадр = str(row["expect_fit"])
+            если_кадр = {
+                "принимает": lambda: pn.FIT_IN in состояния,
+                "отвергнуты": lambda: any(t for t in отказы) and pn.FIT_IN in состояния,
+                "": lambda: состояния == [""] * len(состояния) and not any(отказы),
+            }
+            годен_кадр = если_кадр.get(ждали_кадр)
+            if годен_кадр is None:
+                беды.append(f"expect_fit={ждали_кадр!r} — такого положения нет")
+            elif not годен_кадр():
+                беды.append(
+                    f"кадр: состояния {состояния}, отказов {sum(1 for t in отказы if t)}, "
+                    f"ждали {ждали_кадр!r}"
+                )
         if "expect_budget" in row:
             снято = (итог.get("budget") or {}).get("amount")
             if снято != row["expect_budget"]:
@@ -228,6 +251,34 @@ def run(path: Path = pn.DEFAULT_BRIEFS_PATH) -> dict:
             if "credits" in нота and pn.CONVERTED_MARK in нота:
                 кредиты_переведены.append(f"{c['id']}/{s['step']} ({выбран['model']})")
 
+    # КАДР, числом по всем брифам разом, и негативный контроль в обе стороны:
+    # без креатива не должно быть НИ ОДНОГО непустого положения по кадру, а с
+    # креативом отвергнутый кандидат обязан быть назван, а не тихо уехать вниз.
+    кадр_измерен = 0
+    кадр_принят = 0
+    кадр_отверг = 0
+    кадр_без_креатива: list[str] = []
+    отказ_без_строки: list[str] = []
+    for c in случаи:
+        подан = bool((c["plan"].get("creative") or {}).get("width"))
+        if подан:
+            кадр_измерен += 1
+        for s in c["plan"]["steps"]:
+            выбран = s["chosen"]
+            if выбран is None:
+                continue
+            по_кадру = str(выбран.get("fit_state") or "")
+            if not подан:
+                if по_кадру or s.get("rejected_by_frame"):
+                    кадр_без_креатива.append(f"{c['id']}/{s['step']}")
+                continue
+            if по_кадру == pn.FIT_IN:
+                кадр_принят += 1
+            if по_кадру == pn.FIT_OVER and not s.get("rejected_by_frame"):
+                отказ_без_строки.append(f"{c['id']}/{s['step']}")
+            if s.get("rejected_by_frame"):
+                кадр_отверг += 1
+
     молчащие = [c for c in случаи if not c["steps"]]
     заговорившие = [c for c in случаи if c["steps"]]
     исходы = {c["outcome"] for c in случаи}
@@ -254,6 +305,11 @@ def run(path: Path = pn.DEFAULT_BRIEFS_PATH) -> dict:
         "rival_none_at_all": нет_проверенных,
         "rival_line_missing": строка_пропущена,
         "rival_line_spurious": строка_лишняя,
+        "frame_measured": кадр_измерен,
+        "frame_accepted": кадр_принят,
+        "frame_rejected_steps": кадр_отверг,
+        "frame_without_creative": кадр_без_креатива,
+        "frame_reject_unspoken": отказ_без_строки,
         "per_converted": переводов,
         "converted_unmarked": перевод_без_пометки,
         "credits_converted": кредиты_переведены,
@@ -296,6 +352,17 @@ def verdict(итог: dict) -> tuple[int, list[str]]:
         )
     for где in итог["rival_line_spurious"]:
         беды.append(f"выбранный сам проверен, а строка о вытесненном всё равно напечатана: {где}")
+    for где in итог["frame_without_creative"]:
+        беды.append(f"креатив не подан, а кадр всё равно повлиял на отбор: {где}")
+    for где in итог["frame_reject_unspoken"]:
+        беды.append(f"кадр отверг кандидата и об этом не сказано ни строки: {где}")
+    if not итог["frame_measured"]:
+        беды.append("ни на одном брифе креатив не измерен: ветка кадра не проверена вовсе")
+    if not итог["frame_rejected_steps"]:
+        беды.append(
+            f"ни на одном шаге кадр никого не отверг: ветка «{pn.REJECTED_BY_FRAME_MARK}» "
+            "не проверена вовсе"
+        )
     for где in итог["converted_unmarked"]:
         беды.append(f"цена переведена и не названа переведённой: {где}")
     for где in итог["credits_converted"]:
@@ -338,6 +405,13 @@ def render(итог: dict) -> str:
             f"{итог['candidates_without_applicability']} (все с пометкой: "
             f"{итог['candidates_unmarked'] == 0}), без доказательства "
             f"{итог['candidates_without_evidence']}"
+        ),
+        (
+            f"креатив измерен на {итог['frame_measured']} брифе(ах), "
+            f"кадр принят на {итог['frame_accepted']} шаг(ах), "
+            f"отвергнуты на {итог['frame_rejected_steps']}, "
+            f"влияние без креатива {len(итог['frame_without_creative'])}, "
+            f"отказ без строки {len(итог['frame_reject_unspoken'])}"
         ),
         (
             f"«за что» переведено на {итог['per_converted']} шаг(ах), "

@@ -36,6 +36,12 @@
 проверка единицы в `to_budget_per` и передача потолка валидатору). Итог: 45
 мутантов, промолчали на 0.
 
+ПЯТЫЙ ЗАХОД 2026-09-02: добавлено двенадцать мутантов на константы поданного
+кадра (`FIT_ORDER`, `LIMIT_ATTRIBUTE_MARKER`, `LIMIT_ATTRIBUTES_EXCLUDED`,
+тексты положений, `REJECTED_BY_FRAME_MARK`, `CUSTOMER_KEYS`, место кадра в
+ключе и правило сведения строк в `fit_stance`). Итог: 57 мутантов, промолчали
+на 0.
+
 ЗДОРОВЫЙ ПРОГОН ПЕЧАТАЕТСЯ ПЕРВОЙ СТРОКОЙ, и это не украшение. Первые заходы
 второй и третьей серий ОБА показали `ЗДОРОВЫЙ | тесты rc=1`: таблица мутаций
 строилась поверх красного и не значила ничего. Причина оба раза была одна —
@@ -105,14 +111,14 @@ MUTANTS = [
     ),
     (
         "studio/planner.py",
-        "return (цена, -c.applicability, -c.anchored,",
-        "return (цена, -c.anchored, -c.applicability,",
+        "return (кадр, цена, -c.applicability, -c.anchored,",
+        "return (кадр, цена, -c.anchored, -c.applicability,",
         "by_evidence: применимость больше не первый ключ порядка",
     ),
     (
         "studio/planner.py",
-        "return (цена, -c.applicability, -c.anchored,",
-        "return (цена, c.applicability, -c.anchored,",
+        "return (кадр, цена, -c.applicability, -c.anchored,",
+        "return (кадр, цена, c.applicability, -c.anchored,",
         "by_evidence: применимость перевёрнута (измеренное вниз)",
     ),
     (
@@ -190,8 +196,8 @@ MUTANTS = [
     ),
     (
         "studio/planner.py",
-        "    цена = PRICE_ORDER.get(c.price_state, 0)\n    return (цена, -c.applicability,",
-        "    цена = PRICE_ORDER.get(c.price_state, 0)\n    return (-c.applicability, цена,",
+        "    return (кадр, цена, -c.applicability,",
+        "    return (кадр, -c.applicability, цена,",
         "by_evidence: цена перестаёт быть старшим ключом при названном потолке",
     ),
     (
@@ -267,7 +273,7 @@ MUTANTS = [
     ),
     (
         "studio/planner.py",
-        "    свои.sort(key=lambda c: by_evidence(c)[1:])",
+        "    свои.sort(key=lambda c: by_evidence(c)[CUSTOMER_KEYS:])",
         "    свои.sort(key=by_evidence)",
         "proven: цена возвращается в выбор вытесненного (назовёт того же, кого подняла)",
     ),
@@ -331,6 +337,79 @@ MUTANTS = [
         "    пошаговый = бюджет.known and bool(set(бюджет.per or DEFAULT_PER) & set(DEFAULT_PER))",
         "    пошаговый = бюджет.known",
         "потолок за секунду снова уходит в бюджет ШАГА валидатору",
+    ),
+    # --- константы поданного кадра против предела модели, заведены 2026-09-02 ---
+    (
+        "studio/planner.py",
+        "    FIT_IN: 0,\n    FIT_UNPARSED: 1,\n    FIT_ABSENT: 2,",
+        "    FIT_IN: 2,\n    FIT_UNPARSED: 1,\n    FIT_ABSENT: 0,",
+        "FIT_ORDER -> слабее: незаписанный предел обгоняет проверенное согласие",
+    ),
+    (
+        "studio/planner.py",
+        "    FIT_IN: 0,\n    FIT_UNPARSED: 1,\n    FIT_ABSENT: 2,",
+        "    FIT_IN: 0,\n    FIT_UNPARSED: 0,\n    FIT_ABSENT: 0,",
+        "FIT_ORDER -> строже: четыре положения по кадру сливаются в одно",
+    ),
+    (
+        "studio/planner.py",
+        'LIMIT_ATTRIBUTE_MARKER = "resolution"',
+        'LIMIT_ATTRIBUTE_MARKER = "max_resolution"',
+        "LIMIT_ATTRIBUTE_MARKER -> строже: native_resolution и прочие перестают считаться",
+    ),
+    (
+        "studio/planner.py",
+        'LIMIT_ATTRIBUTE_MARKER = "resolution"',
+        'LIMIT_ATTRIBUTE_MARKER = "o"',
+        "LIMIT_ATTRIBUTE_MARKER -> слабее: пределом кадра становится почти всё",
+    ),
+    (
+        "studio/planner.py",
+        'LIMIT_ATTRIBUTES_EXCLUDED: frozenset[str] = frozenset({"training_resolution"})',
+        "LIMIT_ATTRIBUTES_EXCLUDED: frozenset[str] = frozenset()",
+        "LIMIT_ATTRIBUTES_EXCLUDED -> слабее: разрешение ОБУЧЕНИЯ снова считается пределом",
+    ),
+    (
+        "studio/planner.py",
+        'FIT_ABSENT = "предел кадра не записан"',
+        'FIT_ABSENT = "кадр принимается"',
+        "FIT_ABSENT -> слабее: «не знаем» печатается тем же текстом, что «принимает»",
+    ),
+    (
+        "studio/planner.py",
+        'FIT_OVER = "кадр НЕ принимается"',
+        'FIT_OVER = "кадр вне записанного предела"',
+        "FIT_OVER -> строже: другая формулировка",
+    ),
+    (
+        "studio/planner.py",
+        'REJECTED_BY_FRAME_MARK = "КАДР ОТВЁРГ КАНДИДАТОВ"',
+        'REJECTED_BY_FRAME_MARK = "есть и другие кандидаты"',
+        "REJECTED_BY_FRAME_MARK -> слабее: строка перестаёт называть, что случилось",
+    ),
+    (
+        "studio/planner.py",
+        "CUSTOMER_KEYS = 2",
+        "CUSTOMER_KEYS = 1",
+        "CUSTOMER_KEYS 2 -> 1 (цена возвращается в выбор вытесненного)",
+    ),
+    (
+        "studio/planner.py",
+        "CUSTOMER_KEYS = 2",
+        "CUSTOMER_KEYS = 3",
+        "CUSTOMER_KEYS 2 -> 3 (применимость выключается из выбора вытесненного)",
+    ),
+    (
+        "studio/planner.py",
+        "    return (кадр, цена, -c.applicability,",
+        "    return (цена, кадр, -c.applicability,",
+        "by_evidence: кадр перестаёт быть старше цены",
+    ),
+    (
+        "studio/planner.py",
+        "    if приняли:\n        return FIT_IN,",
+        "    if приняли and not отвергли:\n        return FIT_IN,",
+        "fit_stance -> строже: один мелкий режим отменяет крупный",
     ),
 ]
 
