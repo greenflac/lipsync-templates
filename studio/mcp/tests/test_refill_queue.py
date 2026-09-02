@@ -295,3 +295,94 @@ class ОпросИндексовПоУмолчанию(unittest.TestCase):
         читается как свежесть, которой нет."""
         self.assertIsNone(refill._дней_назад("позавчера"))
         self.assertIsNone(refill._дней_назад(""))
+
+
+class ИсточникИзменился(unittest.TestCase):
+    """Наблюдение раньше догадки.
+
+    Возраст факта — догадка о том, что источник мог поменяться; разошедшийся
+    отпечаток — наблюдение, что он поменялся. Поэтому `источник изменился`
+    стоит в очереди ВЫШЕ протухшего вендорского.
+    """
+
+    def _журнал(self, записи: list[dict]) -> Path:
+        путь = Path(tempfile.mkdtemp()) / "vendor_pages.jsonl"
+        путь.write_text(
+            "// шапка\n" + "".join(json.dumps(з, ensure_ascii=False) + "\n" for з in записи),
+            encoding="utf-8",
+        )
+        return путь
+
+    def _запись(self, отпечаток: str, способ: str = "сп-1", дата: str = "2026-09-01") -> dict:
+        return {
+            "url": "https://vendor.test/pricing",
+            "fingerprint": отпечаток,
+            "method": способ,
+            "claims": 8,
+            "seen_on": дата,
+        }
+
+    def test_отпечаток_разошёлся_это_работа(self):
+        строки = refill.changed_work(self._журнал([self._запись("aaa"), self._запись("bbb")]))
+        self.assertEqual(len(строки), 1, строки)
+        self.assertEqual(строки[0]["reason"], refill.CHANGED_SOURCE)
+        self.assertIn("8", строки[0]["detail"], "число утверждений на странице — в строке")
+
+    def test_отпечаток_прежний_работы_нет(self):
+        self.assertEqual(
+            refill.changed_work(self._журнал([self._запись("aaa"), self._запись("aaa")])), []
+        )
+
+    def test_одна_запись_это_не_изменение(self):
+        """Иначе первый же прогон канала завалил бы очередь семьюдесятью
+        «изменилось», ни одно из которых не наблюдалось."""
+        self.assertEqual(refill.changed_work(self._журнал([self._запись("aaa")])), [])
+
+    def test_разные_способы_не_сравниваются(self):
+        """Отпечатки, снятые разными правилами, не «отличаются» — они посчитаны
+        иначе. Сравнив их, очередь получила бы смену правила как смену всех
+        страниц разом."""
+        строки = refill.changed_work(
+            self._журнал([self._запись("aaa", "сп-старый"), self._запись("bbb", "сп-новый")])
+        )
+        self.assertEqual(строки, [])
+
+    def test_изменение_идёт_раньше_протухшего(self):
+        порядок = refill.order(
+            [
+                {"reason": refill.STALE_VENDOR, "model": "a"},
+                {"reason": refill.CHANGED_SOURCE, "model": "z"},
+            ]
+        )
+        self.assertEqual(порядок[0]["reason"], refill.CHANGED_SOURCE)
+
+
+class ОчередьПортала(unittest.TestCase):
+    def _файл(self, payload: dict) -> Path:
+        путь = Path(tempfile.mkdtemp()) / "portal_poll.json"
+        путь.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+        return путь
+
+    def test_имена_портала_попадают_в_очередь(self):
+        строки = refill.portal_work(
+            self._файл(
+                {
+                    "portal": "fal.ai",
+                    "partial": False,
+                    "new_families": [{"family": "veed-lipsync-v2", "task": "Lipsync"}],
+                }
+            )
+        )
+        self.assertEqual([с["model"] for с in строки], ["veed-lipsync-v2"])
+        self.assertEqual(строки[0]["reason"], refill.NEW_FAMILY)
+
+    def test_неполный_опрос_строк_не_даёт(self):
+        """Подмешать неполную очередь значит выдать пробел опроса за отсутствие
+        работы — третий исход, свёрнутый в первый."""
+        строки = refill.portal_work(
+            self._файл({"partial": True, "new_families": [{"family": "x", "task": "y"}]})
+        )
+        self.assertEqual(строки, [])
+
+    def test_файла_нет_строк_нет_и_прогон_цел(self):
+        self.assertEqual(refill.portal_work(Path(tempfile.mkdtemp()) / "нет.json"), [])

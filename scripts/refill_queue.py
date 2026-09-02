@@ -49,15 +49,26 @@ FACTS = ROOT / "studio" / "knowledge" / "model_facts.jsonl"
 #: хвост очереди, и ни один тест этого не видел: тесты порядка подавали в
 #: `order()` литералы, набранные в самом тесте, то есть проверяли копию
 #: (найдено независимой проверкой 2026-08-31, правило Е1).
+#: Страница ИЗМЕНИЛАСЬ — не «постарела», а именно изменилась, и это видел
+#: прибор (`scripts/recheck_vendor.py`). Отдельная причина, а не разновидность
+#: протухшего: у протухшего есть только возраст, то есть догадка, что источник
+#: мог поменяться; здесь есть свидетельство, что он поменялся.
+CHANGED_SOURCE = "источник изменился"
 STALE_VENDOR = "протухший вендорский факт"
 ASKED_UNKNOWN = "спросили — не знаем"
 NEW_FAMILY = "новое семейство"
 NEW_VERSION = "новая версия известного семейства"
 STALE_OTHER = "протухший факт прочих тиров"
 
-#: ВЫБРАНО 2026-08-31. Меньшее число — раньше в очереди. Обоснование каждой
-#: ступени — в докстроке модуля; переставить их молча нельзя, тест держит.
+#: ВЫБРАНО 2026-08-31, дополнено 2026-09-02. Меньшее число — раньше в очереди.
+#: Обоснование каждой ступени — в докстроке модуля; переставить их молча
+#: нельзя, тест держит.
+#:
+#: `CHANGED_SOURCE` встал ВЫШЕ протухшего вендорского нарочно, и это не вкус:
+#: возраст факта — догадка о том, что источник мог поменяться, а изменившийся
+#: отпечаток — наблюдение, что он поменялся. Наблюдение раньше догадки.
 PRIORITY: dict[str, int] = {
+    CHANGED_SOURCE: 0,
     STALE_VENDOR: 1,
     ASKED_UNKNOWN: 2,
     NEW_FAMILY: 3,
@@ -178,6 +189,83 @@ def discovered_work(payload: dict[str, Any] | None) -> list[dict[str, Any]]:
     return found
 
 
+#: Журнал отпечатков вендорских страниц и очередь портала — то, что производят
+#: каналы, заведённые 2026-09-02. Читаются отсюда, а не пересчитываются: сходить
+#: в сеть за очередью значило бы сделать очередь недоступной без сети.
+СТРАНИЦЫ = ROOT / "studio" / "knowledge" / "vendor_pages.jsonl"
+ПОРТАЛ = ROOT / "studio" / "knowledge" / "portal_poll.json"
+
+
+def changed_work(path: Path | None = None) -> list[dict[str, Any]]:
+    """Страницы, чей отпечаток разошёлся с предыдущим. Журнал: сравниваются
+    ДВЕ последние записи одного адреса одного и того же способа.
+
+    Одна запись — сравнивать не с чем (основание только заведено), и это НЕ
+    строка работы: иначе первый же прогон канала завалил бы очередь семьюдесятью
+    «изменилось», ни одно из которых не наблюдалось.
+    """
+    журнал = path or СТРАНИЦЫ
+    if not журнал.is_file():
+        return []
+    по_адресу: dict[str, list[dict[str, Any]]] = {}
+    for строка in журнал.read_text(encoding="utf-8").splitlines():
+        строка = строка.strip()
+        if not строка or строка.startswith("//"):
+            continue
+        try:
+            запись = json.loads(строка)
+        except ValueError:
+            continue
+        url = str(запись.get("url") or "")
+        if url:
+            по_адресу.setdefault(url, []).append(запись)
+    работа: list[dict[str, Any]] = []
+    for url, записи in по_адресу.items():
+        свои = [з for з in записи if з.get("method") == записи[-1].get("method")]
+        if len(свои) < 2 or свои[-1].get("fingerprint") == свои[-2].get("fingerprint"):
+            continue
+        работа.append(
+            {
+                "reason": CHANGED_SOURCE,
+                "model": url.split("/")[2] if "//" in url else url,
+                "detail": (
+                    f"утверждений на странице {свои[-1].get('claims', '?')}, "
+                    f"прежде виделась {свои[-2].get('seen_on', 'без даты')}"
+                ),
+                "where": url,
+            }
+        )
+    return работа
+
+
+def portal_work(path: Path | None = None) -> list[dict[str, Any]]:
+    """Имена с портала, которых база не знает. Неполный опрос строк не даёт.
+
+    Неполная очередь — третий исход у самого канала (`poll_portal.py`), и
+    подмешивать её сюда значило бы выдать пробел опроса за отсутствие работы.
+    """
+    файл = path or ПОРТАЛ
+    if not файл.is_file():
+        return []
+    try:
+        снято = json.loads(файл.read_text(encoding="utf-8"))
+    except ValueError:
+        return []
+    if снято.get("partial"):
+        return []
+    return [
+        {
+            "reason": NEW_FAMILY,
+            "model": str(строка.get("family", "")),
+            "detail": f"продаётся на {снято.get('portal', 'портале')}, {строка.get('task', '')}"[
+                :90
+            ],
+            "where": ", ".join((строка.get("examples") or [])[:2]),
+        }
+        for строка in снято.get("new_families") or []
+    ]
+
+
 def order(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Очередь: по приоритету причины, внутри причины — по имени модели.
 
@@ -292,11 +380,19 @@ def main(argv: list[str]) -> int:
     asked = missed_work()
     stale = stale_work()
     fresh = discovered_work(payload)
-    rows = order(asked + stale + fresh)
+    changed = changed_work()
+    portal = portal_work()
+    rows = order(asked + stale + fresh + changed + portal)
+    # ИСТОЧНИК, КОТОРЫЙ МОЛЧИТ, НАЗЫВАЕТСЯ ПОИМЁННО. Пустая очередь по вине
+    # ненайденного файла и пустая очередь по отсутствию работы — разные вещи,
+    # и до 2026-09-02 два новых канала не значились здесь вовсе: их молчание
+    # было бы неотличимо от их отсутствия.
     sources = {
         "журнал вопросов": bool(misses.load()),
         "факты с датами": bool(stale) or bool(facts_mod.load_facts(FACTS)),
         "опрос индексов": payload is not None,
+        "отпечатки вендорских страниц": СТРАНИЦЫ.is_file(),
+        "опрос портала": ПОРТАЛ.is_file(),
     }
     if args.json:
         print(json.dumps({"queue": rows, "sources": sources}, ensure_ascii=False, indent=2))
