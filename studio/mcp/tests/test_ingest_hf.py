@@ -749,3 +749,117 @@ class КодИПрикидка(unittest.TestCase):
         назвавший команду И то, что вышло, остаётся свидетелем."""
         текст = "Running it at 512x512 on my 3060 takes 40 seconds per frame and the lips desync."
         self.assertNotEqual(hf.наблюдение(текст), "")
+
+
+class Скорость(unittest.TestCase):
+    """Владелец назвал скорость прямо: агент следит за ценой И СКОРОСТЬЮ.
+
+    ИЗМЕРЕНО 2026-09-02: во всей базе 77 моделей с ценой и ПЯТЬ со скоростью,
+    из 477. При этом практики пишут о ней постоянно — в заходе по репозиториям
+    Wan попалось «Each iteration for a video of 5 seconds took about 65 minutes
+    with my setup», и канал положил это в `observed_behaviour`, то есть туда,
+    где ни один вопрос о скорости его не найдёт.
+
+    Ожидаемое — литералы с живого следа (Т2).
+    """
+
+    СКОРОСТЬ_НАСТОЯЩАЯ = (
+        "Each iteration for a video of 5 seconds took about 65 minutes with my setup.",
+        "Rendering a 5s clip takes 40 seconds per frame on a 3060.",
+        "The model runs in 12 minutes for a 5-second clip.",
+        "I get about 3.5 it/s on a 4090 at 512x512 with 30 steps.",
+    )
+    НЕ_СКОРОСТЬ = (
+        # Длина ролика, а не время прогона.
+        "It generates a 5 second video at 720p.",
+        # Частота кадров РЕЗУЛЬТАТА — свойство ролика.
+        "Output is 24 fps at 720p.",
+        # Момент, когда началась беда: секунды идут по ролику, а не по счёту.
+        "Around 10 seconds in, the glitching starts and the output breaks on my RTX 3090.",
+    )
+
+    def test_отчёт_о_времени_прогона_это_скорость(self):
+        for текст in self.СКОРОСТЬ_НАСТОЯЩАЯ:
+            self.assertTrue(hf.про_скорость(текст), текст)
+
+    def test_длина_ролика_и_частота_кадров_скоростью_не_считаются(self):
+        """Половина контроля, ради которой признак и сужался: чужое число,
+        записанное как наша производительность, — это выдуманный факт."""
+        for текст in self.НЕ_СКОРОСТЬ:
+            self.assertFalse(hf.про_скорость(текст), текст)
+
+    def test_ставка_обходится_без_отдельного_времени(self):
+        """`3.5 it/s` — единица сама несёт время. Найдено своей же проверкой:
+        первая редакция требовала «число + единица времени» и такую строку
+        теряла."""
+        self.assertTrue(hf.про_скорость("about 3.5 it/s here"))
+
+    def test_отчёт_о_поломке_остаётся_поломкой(self):
+        """Поймано разбором собственного улова глазами (П3), 2026-09-02.
+
+        «I often get videos with this screen distortion... takes 2 minutes»
+        уехало в `generation_time`: поломка стала невидимой для вопроса о
+        поломках И неверной как скорость. Из трёх находок захода такой была
+        одна — треть. У отчёта О ПОЛОМКЕ главное поломка, время в нём —
+        обстоятельство.
+        """
+        текст = (
+            "I often get videos with this screen distortion and unwanted spots appear, "
+            "and the whole thing takes 2 minutes on my card."
+        )
+        self.assertTrue(hf.про_скорость(текст), "время в тексте есть")
+        self.assertEqual(hf.знак(текст), "провал")
+        # Проверяется РЕШЕНИЕ ОБ АТРИБУТЕ, а не две его половины по
+        # отдельности: первая редакция теста сверяла именно половины, и
+        # мутация «скорость перебивает всё» прошла молча.
+        найдено = self._наблюдения(текст)
+        self.assertEqual([н["attribute"] for н in найдено], ["failure_mode"])
+
+    def _наблюдения(self, текст: str) -> list:
+        тело = {
+            "events": [
+                {
+                    "type": "comment",
+                    "data": {"latest": {"raw": текст}, "author": {"name": "кто-то"}},
+                }
+            ]
+        }
+        найдено, _, _ = hf.наблюдения_модели(
+            "x/y",
+            get=lambda url: (
+                ("ok", json.dumps({"count": 1, "discussions": [{"num": 1, "title": "t"}]}).encode())
+                if url.endswith("/discussions")
+                else ("ok", json.dumps(тело).encode())
+            ),
+        )
+        return найдено
+
+    def test_скорость_перебивает_знак(self):
+        """Отчёт о времени идёт в `generation_time`, под каким бы знаком ни
+        шёл, иначе вопрос о скорости его не найдёт."""
+        тело = {
+            "events": [
+                {
+                    "type": "comment",
+                    "data": {
+                        "latest": {
+                            "raw": (
+                                "Works great on my 4090, but each iteration for a 5 second "
+                                "video took about 65 minutes with my setup."
+                            )
+                        },
+                        "author": {"name": "кто-то"},
+                    },
+                }
+            ]
+        }
+        найдено, счёт, _ = hf.наблюдения_модели(
+            "x/y",
+            get=lambda url: (
+                ("ok", json.dumps({"count": 1, "discussions": [{"num": 1, "title": "t"}]}).encode())
+                if url.endswith("/discussions")
+                else ("ok", json.dumps(тело).encode())
+            ),
+        )
+        self.assertEqual([н["attribute"] for н in найдено], ["generation_time"])
+        self.assertEqual([н["sign"] for н in найдено], ["удача"], "знак обязан сохраниться")
