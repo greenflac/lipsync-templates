@@ -863,3 +863,106 @@ class Скорость(unittest.TestCase):
         )
         self.assertEqual([н["attribute"] for н in найдено], ["generation_time"])
         self.assertEqual([н["sign"] for н in найдено], ["удача"], "знак обязан сохраниться")
+
+
+class СводкаСкорости(unittest.TestCase):
+    """Длинный отчёт о скорости пересказывается ЧИСЛАМИ, а не выбрасывается.
+
+    Правило «чужая проза длиннее 15 слов не коммитится» верное, но оно молча
+    съедало ровно лучшие отчёты: ИЗМЕРЕНО 2026-09-02, из четырёх найденных за
+    заход отчётов о скорости записался ОДИН, три ушли по длине. Числа не
+    проза: время прогона, разрешение и карта — факты, и они пересказываются
+    нашими словами со ссылкой на источник.
+
+    Ожидаемое — литералы (Т2), тексты сняты с живого следа.
+    """
+
+    def test_время_прогона_а_не_длина_ролика(self):
+        """Поймано собственной проверкой на первой редакции: сводка выдавала
+        «5 seconds» — длину ролика вместо времени счёта."""
+        текст = "Each iteration for a video of 5 seconds took about 65 minutes with my setup."
+        self.assertEqual(hf.сводка_скорости(текст), "65 minutes")
+
+    def test_условия_прогона_попадают_в_сводку(self):
+        текст = (
+            "Got this running on a GTX 1650 (4 GB VRAM, laptop GPU) --- turns out you don't "
+            "need much VRAM! Test at 768×512 (took ~27 minutes total)."
+        )
+        self.assertEqual(hf.сводка_скорости(текст), "27 minutes; 768x512; GTX 1650 4 GB")
+
+    def test_ставка_это_уже_факт(self):
+        self.assertEqual(
+            hf.сводка_скорости("I get about 3.5 it/s on a 4090 at 512x512 with 30 steps."),
+            "3.5 it/s; 512x512; 4090",
+        )
+
+    def test_память_берётся_только_у_своей_карты(self):
+        """СОБСТВЕННАЯ ЛОЖЬ, пойманная чтением записанного (П3, 2026-09-02).
+
+        Сводка выдала «GTX1070 39 GB», потому что в конце того же отчёта
+        стояло «you gotta download this whole repo, its around 39 gb» — размер
+        РЕПОЗИТОРИЯ. У GTX 1070 восемь гигабайт, и такой строки не написал
+        никто: её сочинил канал. Обещание продукта — не врать, значит поле,
+        которое нельзя привязать к своему числу, не пишется вовсе.
+        """
+        текст = (
+            "i did this with gtx1070 and if u wonder about perfomance its kinda good "
+            "actually, around 4.7 it/s and takes around 1.5 minutes to generate 896x1152 "
+            "image. so first of all you gotta download this whole repo, its around 39 gb."
+        )
+        self.assertEqual(hf.сводка_скорости(текст), "4.7 it/s; 896x1152; GTX1070")
+
+    def test_память_рядом_с_картой_записывается(self):
+        """Вторая половина (И5): без неё правило «никогда не писать память»
+        тоже дало бы ноль лжи — и ноль пользы."""
+        self.assertEqual(
+            hf.сводка_скорости("On a 4090 24GB it takes 30 seconds per clip."),
+            "30 seconds; 4090 24 GB",
+        )
+
+    def test_без_чисел_сводки_нет(self):
+        """Половина контроля (И5): отчёт со словом «takes» и без единого числа
+        ничего не измеряет, и придумывать за него нельзя."""
+        self.assertEqual(hf.сводка_скорости("It takes forever on my card, no idea how long."), "")
+
+    def test_длинный_отчёт_о_скорости_записывается_сводкой(self):
+        строка = dict(
+            Заявки.СТРОКА,
+            observations=[
+                {
+                    "num": 112,
+                    "title": "t",
+                    "status": "open",
+                    "author": "кто-то",
+                    "sign": "неясно",
+                    "attribute": "generation_time",
+                    "observation": (
+                        "Got this running on a GTX 1650 (4 GB VRAM, laptop GPU) --- turns out "
+                        "you don't need much VRAM! Test at 768×512 (took ~27 minutes total)."
+                    ),
+                }
+            ],
+        )
+        по = {z[1]: z[2] for z in hf.заявки(строка)}
+        self.assertEqual(по["generation_time"], "27 minutes; 768x512; GTX 1650 4 GB")
+
+    def test_длинное_НЕ_про_скорость_выбрасывается_и_считается(self):
+        """Р2: молчаливая потеря — это «ноль нарушений при нуле проверок»
+        наоборот. Выброшенное считается и печатается."""
+        строка = dict(
+            Заявки.СТРОКА,
+            observations=[
+                {
+                    "num": 7,
+                    "title": "t",
+                    "status": "open",
+                    "author": "кто-то",
+                    "sign": "провал",
+                    "attribute": "failure_mode",
+                    "observation": " ".join(["слово"] * 40),
+                }
+            ],
+        )
+        заявлено = hf.заявки(строка)
+        self.assertNotIn("failure_mode", {z[1] for z in заявлено})
+        self.assertEqual(строка["dropped_long"], 1)
