@@ -277,6 +277,7 @@ async def main() -> None:
         "fetch_url",
         "measurement_proposals",
         "model_advice",
+        "plan_pipeline",
         "probe_model_limit",
         "propose_measurement",
         "reachable_hosts",

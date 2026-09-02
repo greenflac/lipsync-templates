@@ -1,4 +1,4 @@
-"""The MCP server the owner talks to in chat. Fourteen tools, seven of which write.
+"""The MCP server the owner talks to in chat. Fifteen tools, seven of which write.
 
 THE NUMBERS IN THIS LINE ARE GATED, NOT PROSE
 
@@ -68,7 +68,7 @@ from typing import Any
 
 from mcp.server.mcpserver import MCPServer
 
-from studio import knowledge
+from studio import knowledge, planner
 from studio.selfrag.facts import STALE_AFTER_DAYS  # noqa: E402
 from studio.mcp import advice, contract, creative, fetch, misses, probe, proposal, search
 from studio.mcp import lipsync_prompt as lp
@@ -374,6 +374,55 @@ def analyse_creative(path: str, frames_dir: str = "") -> str:
         directory = Path(frames_dir.strip())
         frames = [str(p) for p in sorted(directory.glob("*")) if p.is_file()]
     return _json(creative.analyse(path, frames=frames))
+
+
+@server.tool()
+def plan_pipeline(brief: str, creative: str = "", budget_usd: float = 0.0) -> str:
+    """Build a PIPELINE from what the customer said, then judge it immediately.
+
+    This is the tool for "here is the job, what do I run" — the question that
+    comes before every other tool here. It derives the studio's own operations
+    from the brief, proposes a model for each from the FACT BASE, and hands the
+    whole plan to the pipeline validator (`studio/pipeline.py`, seven failure
+    classes) without re-deciding anything the validator already decides.
+
+    :param brief: the customer's own words. Russian is expected — the brief is
+        matched against the operations vocabulary, and the models are then
+        matched against the base in ENGLISH, which is the language the base is
+        written in.
+    :param creative: a ready-made creative, if there is one. Only its extension
+        is read here — a video means the plan's video comes from the customer
+        rather than from a step. Point `analyse_creative` at the same file for
+        what is actually in the pixels.
+    :param budget_usd: a per-step ceiling, if the customer named one. Left at 0
+        the price class does not fire and says so; it is never treated as "free".
+
+    THREE OUTCOMES, and the third is the one to read. `could not measure` means
+    either that no operation could be derived from the brief at all, or that a
+    derived step has no candidate in the base. A step with no candidate stays
+    EMPTY: a default model is never substituted, because an invented step goes
+    into production and comes back a week later. `fail` returns the plan AND
+    the class the validator named — a refusal without a plan gives you nothing
+    to fix.
+
+    EVERY CANDIDATE CARRIES WHAT IT WAS CHOSEN BY: the attribute, the value,
+    the source tier, the date, and the KIND of evidence on the second axis
+    (schema / claim / measurement / witness). A model the base knows only from
+    a vendor schema comes back marked `применимость не измерена` — applicability
+    not measured — in the answer itself, not in a footnote. Read that mark
+    before you quote a model to anybody: it is the difference between "the API
+    accepts this input" and "somebody ran it and the result held".
+
+    Prices are not invented. A step whose model has no comparable price line
+    says `цена не записана`.
+    """
+    return _json(
+        planner.plan(
+            brief,
+            creative=creative,
+            budget_usd=budget_usd if budget_usd > 0 else None,
+        )
+    )
 
 
 @server.tool()
