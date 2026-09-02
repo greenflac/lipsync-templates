@@ -63,6 +63,7 @@ from studio.selfrag.facts import (
 
 __all__ = [
     "advise",
+    "brief",
     "claims_found",
     "gap_reason",
     "REASONS",
@@ -963,6 +964,76 @@ def withdraw(
 #: 1 бенчмарк) именно такая, то есть 43% очереди — работа впустую. Остальные
 #: 28 — цены площадок и вендорские спеки, и они протухают по-настоящему.
 PUBLISHED_TIERS: frozenset[str] = frozenset({TIER_PAPER, TIER_BENCHMARK})
+
+
+#: Сколько источников назвать поимённо в краткой выдаче. ВЫБРАНО 1: у краткой
+#: формы одна работа — дать СРАВНИМЫЕ величины по кандидатам, а разбор
+#: источников делается по полной выдаче того кандидата, который прошёл отбор.
+КРАТКО_ИСТОЧНИКОВ = 1
+
+
+def brief(model: str, attribute: str = "", *, path: Path | None = None) -> dict:
+    """Та же выдача, но в размере, который не съедает ответ пользователю.
+
+    ЗАЧЕМ. ИЗМЕРЕНО 2026-09-02: полный ответ по `minimax-h3` — 23 751 символ,
+    около 10 тысяч токенов, и почти весь объём в двух местах: `claims` 17 214
+    и `class_findings` 4 394. Инструкция сервера велит спросить базу о КАЖДОМ
+    кандидате перед сравнением — это правильное правило, но пять кандидатов
+    стоят 30–50 тысяч токенов, и на сам ответ места остаётся мало.
+
+    Краткая форма — ВИД на полную, а не второй ответ (Е1): она строится из неё
+    же, поэтому разойтись они не могут. Выбрасывается только то, что нужно для
+    РАЗБОРА одного кандидата, и остаётся то, что нужно для СРАВНЕНИЯ многих:
+    исход, причина, значения, лучшая ступень, спорность, свежесть и число
+    источников.
+
+    Что НЕ выбрасывается ни при каких условиях: третий исход и его причина,
+    отметка о споре источников и колонка применимости. Ради экономии нельзя
+    терять ровно то, чем этот инструмент отличается от памяти модели.
+    """
+    полный = advise(model, attribute, path=path)
+    кратко: dict = {
+        ключ: полный[ключ]
+        for ключ in ("outcome", "checked", "violations", "unmeasured", "reason", "note")
+        if ключ in полный
+    }
+    доступность = полный.get("availability") or {}
+    кратко["availability"] = {
+        "outcome": доступность.get("outcome"),
+        "note": доступность.get("note"),
+    }
+    сжатые: dict = {}
+    for атрибут, разбор in (полный.get("claims") or {}).items():
+        источники = [
+            и for строка in (разбор.get("claims") or []) for и in (строка.get("sources") or [])
+        ]
+        сжатые[атрибут] = {
+            "outcome": разбор.get("outcome"),
+            "values": разбор.get("values")
+            or [строка.get("value") for строка in (разбор.get("claims") or [])],
+            "best_tier": min(
+                (строка.get("best_tier", "") for строка in (разбор.get("claims") or [])),
+                key=lambda t: TIERS.index(t) if t in TIERS else len(TIERS),
+                default="",
+            ),
+            "sources": len(источники),
+            "newest": max((str(и.get("stated_on") or "") for и in источники), default=""),
+            "read_first_hand": any(и.get("read_directly") for и in источники),
+            "example_url": ([и.get("url") for и in источники] or [""])[:КРАТКО_ИСТОЧНИКОВ],
+        }
+    кратко["claims"] = сжатые
+    кратко["failure_modes"] = [
+        строка.get("value") if isinstance(строка, dict) else строка
+        for строка in (полный.get("failure_modes") or [])
+    ]
+    кратко["contested"] = полный.get("contested")
+    кратко["class_findings_total"] = полный.get("class_findings_total")
+    кратко["class_findings_note"] = полный.get("class_findings_note")
+    кратко["full_answer"] = (
+        "это КРАТКАЯ форма: разбор источников, ноты и находки о классе лежат в "
+        "полной выдаче — позовите тот же инструмент без `brief`"
+    )
+    return кратко
 
 
 def stale(*, days: int = STALE_AFTER_DAYS, path: Path | None = None) -> dict:

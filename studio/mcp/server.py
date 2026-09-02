@@ -135,9 +135,11 @@ _INDEX: Any = None
 #:     сборка индекса        1.2 с → 171.4 с на 13 438 записях
 #:
 #: Три минуты платятся ОДИН РАЗ на процесс, а не на запрос: индекс строится
-#: здесь однажды и живёт в памяти. Кэш эмбеддингов сегодня сработать не может
-#: (см. DEBT у `DELETE FROM vectors` в studio/knowledge.py), и когда его
-#: починят, эти три минуты станут секундами без правок здесь.
+#: здесь однажды и живёт в памяти. С 2026-09-02 это уже НЕ три минуты: кэш
+#: векторов ключится хешем текста (`VECTOR_CACHE_PATH` в studio/knowledge.py),
+#: и вторая сборка ИЗМЕРЕНА в 3.0 с против 160.3 с. Строки выше оставлены как
+#: запись о том, чем это было: три минуты платил первый вызов пользователя
+#: после каждого старта, и клиенты успевали отвалиться по таймауту.
 #:
 #: Значение по умолчанию НЕ трогается в самой библиотеке нарочно: `build_index`
 #: без аргумента обязан остаться быстрым и офлайновым, иначе каждый тест полезет
@@ -180,7 +182,9 @@ def _json(payload: Any) -> str:
     return json.dumps(payload, ensure_ascii=False, indent=2, default=str)
 
 
-def advise_and_note(model: str, attribute: str = "", *, log: Path | None = None) -> dict:
+def advise_and_note(
+    model: str, attribute: str = "", *, log: Path | None = None, brief: bool = False
+) -> dict:
     """Проконсультировать и записать, что вопрос БЫЛ задан.
 
     Вынесено из инструмента (правило Т5): развилка внутри `@server.tool()`
@@ -194,6 +198,9 @@ def advise_and_note(model: str, attribute: str = "", *, log: Path | None = None)
     # видеть одну и ту же строку, иначе «атрибут задан» решается двумя
     # способами и они расходятся на пробельном входе.
     attribute = str(attribute or "").strip()
+    # Журнал вопросов ведётся по ПОЛНОМУ разбору, а краткая форма — вид на
+    # него: иначе покрытие считалось бы двумя разными способами в зависимости
+    # от того, как спросили, и знаменатель разъехался бы (Е1).
     answer = advice.advise(model, attribute)
     misses.note_question(
         model,
@@ -203,11 +210,11 @@ def advise_and_note(model: str, attribute: str = "", *, log: Path | None = None)
         note=str(answer.get("note") or "")[:200],
         path=log,
     )
-    return answer
+    return advice.brief(model, attribute) if brief else answer
 
 
 @server.tool()
-def model_advice(model: str, attribute: str = "") -> str:
+def model_advice(model: str, attribute: str = "", brief: bool = False) -> str:
     """What is known about a generation model, with every source and its date.
 
     Call this before answering any question about what a model can do. Returns
@@ -217,8 +224,17 @@ def model_advice(model: str, attribute: str = "") -> str:
 
     :param model: e.g. "kling-3.0", "veo-3.1", "flux-2".
     :param attribute: one attribute such as "max_seconds"; empty for everything.
+    :param brief: SHORTLISTING several candidates? Ask with `brief=True`. The
+        full answer is 23 751 characters for `minimax-h3` (MEASURED
+        2026-09-02) — about ten thousand tokens — and this instruction tells
+        you to ask about EVERY candidate you compare, so five of them can cost
+        more than the answer you are writing. The brief form is 21-31% of that
+        and keeps what a COMPARISON needs: the outcome, the reason, the values,
+        the best tier, whether sources disagree, how fresh they are and how
+        many there were. Read one candidate in full once the shortlist is
+        down to it. The default is unchanged: no argument, full answer.
     """
-    return _json(advise_and_note(model, attribute))
+    return _json(advise_and_note(model, attribute, brief=brief))
 
 
 @server.tool()

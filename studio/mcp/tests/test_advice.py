@@ -1047,3 +1047,72 @@ class ДатаПубликацииНеИзнос(unittest.TestCase):
         out = advice.stale(path=self.база())
         self.assertIn("a paper does not rot", out["note"])
         self.assertIn("fresh measurement of the model", out["note"])
+
+
+class КраткаяФорма(unittest.TestCase):
+    """Полный ответ по `minimax-h3` — 23 751 символ, около 10 тысяч токенов
+    (ИЗМЕРЕНО 2026-09-02), а инструкция сервера велит спросить базу о КАЖДОМ
+    кандидате перед сравнением. Пять кандидатов стоят дороже самого ответа.
+
+    Краткая форма — ВИД на полную (Е1), поэтому разойтись они не могут.
+    Проверяется здесь ровно то, ради чего она заведена, и то, что ей запрещено
+    терять.
+    """
+
+    def test_краткая_заметно_меньше_полной(self):
+        полная = json.dumps(advice.advise("minimax-h3"), ensure_ascii=False)
+        краткая = json.dumps(advice.brief("minimax-h3"), ensure_ascii=False)
+        self.assertLess(len(краткая) * 2, len(полная), "экономия меньше половины — не стоит формы")
+
+    def test_исход_и_причина_те_же(self):
+        """Вид не имеет права судить иначе, чем то, на что он смотрит."""
+        for имя in ("minimax-h3", "kling-3.0", "latentsync-1.6"):
+            полная = advice.advise(имя)
+            краткая = advice.brief(имя)
+            self.assertEqual(краткая["outcome"], полная["outcome"], имя)
+            self.assertEqual(краткая.get("reason"), полная.get("reason"), имя)
+
+    def test_спор_источников_в_краткой_виден(self):
+        """Ради экономии нельзя потерять ровно то, чем инструмент отличается
+        от памяти модели: `kling-3.0` спорит о max_seconds, 10 против 15."""
+        краткая = advice.brief("kling-3.0")
+        self.assertEqual(краткая["claims"]["max_seconds"]["outcome"], "fail")
+        self.assertEqual(sorted(краткая["claims"]["max_seconds"]["values"]), ["10", "15"])
+
+    def test_ось_доступности_остаётся_отдельной(self):
+        краткая = advice.brief("latentsync-1.6")
+        self.assertEqual(краткая["availability"]["outcome"], "could not measure")
+
+    def test_у_каждого_атрибута_есть_ступень_и_свежесть(self):
+        """Сравнение без ступени и даты — это сравнение впечатлений."""
+        for атрибут, разбор in advice.brief("minimax-h3")["claims"].items():
+            self.assertTrue(разбор["best_tier"], атрибут)
+            self.assertTrue(разбор["newest"], атрибут)
+            self.assertGreaterEqual(разбор["sources"], 1, атрибут)
+
+    def test_список_спорных_переносится_целиком(self):
+        """Дыра, найденная мутацией: `contested` можно было выбросить, и ни
+        один тест не замечал. А это верхний список того, о чём база спорит, —
+        первое, на что смотрят при отборе кандидатов."""
+        for имя in ("kling-3.0", "minimax-h3"):
+            self.assertEqual(advice.brief(имя)["contested"], advice.advise(имя)["contested"], имя)
+
+    def test_сервер_отдаёт_именно_краткую(self):
+        """Вторая дыра оттуда же: `brief=True` мог молча вернуть полную, и
+        тесты на самой функции этого не видели — проверялась библиотека, а
+        зовут инструмент (Т5)."""
+        from studio.mcp import server
+
+        полная = server.advise_and_note("minimax-h3", log=Path(tempfile.mkdtemp()) / "m.jsonl")
+        краткая = server.advise_and_note(
+            "minimax-h3", log=Path(tempfile.mkdtemp()) / "m.jsonl", brief=True
+        )
+        self.assertIn("full_answer", краткая)
+        self.assertNotIn("full_answer", полная)
+        self.assertLess(
+            len(json.dumps(краткая, ensure_ascii=False, default=str)) * 2,
+            len(json.dumps(полная, ensure_ascii=False, default=str)),
+        )
+
+    def test_краткая_говорит_что_она_краткая(self):
+        self.assertIn("КРАТКАЯ", advice.brief("minimax-h3")["full_answer"])
