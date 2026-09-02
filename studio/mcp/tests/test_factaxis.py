@@ -135,23 +135,34 @@ class Ортогональность(unittest.TestCase):
 
 
 class ИсходШага(unittest.TestCase):
-    def шаг(self, факты):
-        return fa.step_verdict("шаг", "убийственное требование", fa.mark_all(факты))
+    """Исход выносится ПРО ЗАДАННОЕ требование, а не про модель вообще.
+
+    Требования здесь подобраны так, чтобы делить строки: `лимит` относится к
+    строкам о секундах и разрешении, `текст` — к строкам о тексте. Требование,
+    не относящееся ни к чему из поданного, — отдельный случай ниже.
+    """
+
+    def шаг(self, факты, требование="lipsync 15 seconds"):
+        return fa.step_verdict("шаг", требование, fa.mark_all(факты))
 
     def test_только_схема_это_не_смогли(self):
         """Главное требование пункта: вендор принимает вход ≠ результат держится."""
         v = self.шаг(
-            [факт("kling-3.0", "max_seconds", "15"), факт("kling-3.0", "max_resolution", "4K")]
+            [
+                факт("kling-3.0", "max_seconds", "15 seconds"),
+                факт("kling-3.0", "max_resolution", "4K, 15 seconds at most"),
+            ]
         )
         self.assertEqual(v["outcome"], UNMEASURED_)
         self.assertEqual(v["checked"], 2)
         self.assertEqual(v["violations"], 0)
+        self.assertEqual(v["off_topic"], 0)
 
     def test_схема_плюс_вендорская_проза_всё_ещё_не_смогли(self):
         v = self.шаг(
             [
-                факт("kling-3.0", "max_seconds", "15"),
-                факт("kling-3.0", "limitation", "лица плывут", tier="vendor"),
+                факт("kling-3.0", "max_seconds", "15 seconds"),
+                факт("kling-3.0", "limitation", "lipsync drifts", tier="vendor"),
             ]
         )
         self.assertEqual(v["outcome"], UNMEASURED_)
@@ -159,11 +170,11 @@ class ИсходШага(unittest.TestCase):
     def test_свидетельство_даёт_годно(self):
         v = self.шаг(
             [
-                факт("kling-3.0", "max_seconds", "15"),
+                факт("kling-3.0", "max_seconds", "15 seconds"),
                 факт(
                     "kling-3.0",
                     "text_rendering",
-                    "текст дошёл",
+                    "lipsync held for 15 seconds",
                     tier="operator",
                     witnessed="запустили и посмотрели",
                 ),
@@ -173,7 +184,7 @@ class ИсходШага(unittest.TestCase):
 
     def test_отрицательное_наблюдение_это_не_годно_а_не_годно(self):
         """Свидетельство бывает против шага, и сворачивать его в «годно» нельзя."""
-        v = self.шаг([факт("infinitetalk", "failure_mode", "уносит соседей", tier="probe")])
+        v = self.шаг([факт("infinitetalk", "failure_mode", "lipsync drift", tier="probe")])
         self.assertEqual(v["outcome"], FAIL_)
         self.assertEqual(v["violations"], 1)
 
@@ -187,18 +198,92 @@ class ИсходШага(unittest.TestCase):
     def test_неразмеченное_считается_третьим_исходом_а_не_молчит(self):
         v = self.шаг(
             [
-                факт("kling-3.0", "max_seconds", "15"),
-                факт("flux-2", "hex_color_control", "точно", tier="vendor"),
+                факт("kling-3.0", "max_seconds", "15 seconds"),
+                факт("flux-2", "hex_color_control", "lipsync hex", tier="vendor"),
             ]
         )
         self.assertEqual(v["checked"], 1)
         self.assertEqual(v["unmeasured"], 1)
 
 
+class ТребованиеРешает(unittest.TestCase):
+    """ГЛАВНОЕ ЗДЕСЬ. До 2026-09-02 требование принималось параметром,
+    возвращалось эхом и не читалось ни разу: на одном наборе фактов «губы
+    держат синхрон», «вылечить рак» и пустая строка давали один и тот же
+    исход. Прибор отвечал на вопрос «что вообще известно про модель», а выдавал
+    это за ответ на «годится ли она ДЛЯ ЭТОГО».
+    """
+
+    ОТРИЦАТЕЛЬНОЕ = факт(
+        "infinitetalk",
+        "failure_mode",
+        "In V2V lipsync the sampler rebuilds the entire frame, so people who are NOT the "
+        "audio target visibly drift",
+        tier="probe",
+    )
+    ПОЛОЖИТЕЛЬНОЕ = факт(
+        "nano-banana-edit",
+        "text_rendering",
+        "держит заранее отрисованный текст, поданный картинкой",
+        tier="operator",
+        witnessed="подан кадр с Pillow-текстом, текст дошёл неискажённым",
+    )
+
+    def test_относящееся_требование_и_чужое_дают_разные_исходы(self):
+        """Негативный контроль прибора (И5): он обязан РАЗЛИЧАТЬ, а не краснеть."""
+        размечено = fa.mark_all([self.ОТРИЦАТЕЛЬНОЕ])
+        своё = fa.step_verdict("шаг", "V2V lipsync не должен уносить молчащих", размечено)
+        чужое = fa.step_verdict("шаг", "вылечить рак", размечено)
+        self.assertEqual(своё["outcome"], FAIL_)
+        self.assertEqual(чужое["outcome"], UNMEASURED_)
+        self.assertNotEqual(своё["outcome"], чужое["outcome"])
+
+    def test_чужое_требование_не_превращает_свидетельство_в_годно(self):
+        """Вторая половина: отбросив строку как чужую, нельзя зачесть её в плюс."""
+        размечено = fa.mark_all([self.ПОЛОЖИТЕЛЬНОЕ])
+        своё = fa.step_verdict("шаг", "заранее отрисованный текст доходит", размечено)
+        чужое = fa.step_verdict("шаг", "вылечить рак", размечено)
+        self.assertEqual(своё["outcome"], PASS_)
+        self.assertEqual(чужое["outcome"], UNMEASURED_)
+
+    def test_пустое_требование_это_третий_исход_а_не_подходит_всё(self):
+        размечено = fa.mark_all([self.ПОЛОЖИТЕЛЬНОЕ, self.ОТРИЦАТЕЛЬНОЕ])
+        v = fa.step_verdict("шаг", "", размечено)
+        self.assertEqual(v["outcome"], UNMEASURED_)
+        self.assertEqual(v["checked"], 0)
+        self.assertEqual(v["off_topic"], 2)
+
+    def test_отброшенные_строки_печатаются_числом_а_не_молчат(self):
+        """Р2: узкий ответ, поданный как полный, — это то же враньё числом."""
+        размечено = fa.mark_all([self.ПОЛОЖИТЕЛЬНОЕ, self.ОТРИЦАТЕЛЬНОЕ])
+        v = fa.step_verdict("шаг", "V2V lipsync не должен уносить молчащих", размечено)
+        self.assertEqual(v["outcome"], FAIL_)
+        self.assertEqual(v["off_topic"], 1)
+
+    def test_relates_делит_строки_и_не_теряет_ни_одной(self):
+        размечено = fa.mark_all([self.ПОЛОЖИТЕЛЬНОЕ, self.ОТРИЦАТЕЛЬНОЕ])
+        относятся, мимо = fa.relates("V2V lipsync уносит молчащих", размечено)
+        self.assertEqual(len(относятся), 1)
+        self.assertEqual(len(мимо), 1)
+        self.assertEqual(относятся[0].fact.attribute, "failure_mode")
+
+    def test_порог_отношения_это_ручка_и_она_сторожится(self):
+        """Т1 на RELEVANCE_FLOOR: поднятый до непроходимого порог гасит исход."""
+        размечено = fa.mark_all([self.ОТРИЦАТЕЛЬНОЕ])
+        обычный = fa.step_verdict("шаг", "V2V lipsync уносит молчащих", размечено)
+        задранный = fa.step_verdict("шаг", "V2V lipsync уносит молчащих", размечено, floor=99.0)
+        опущенный = fa.step_verdict("шаг", "вылечить рак", размечено, floor=0.0)
+        self.assertEqual(обычный["outcome"], FAIL_)
+        self.assertEqual(задранный["outcome"], UNMEASURED_)
+        # Порог в ноль НЕ делает чужое требование своим: общих слов нет вовсе,
+        # и вес такой строки не «мал», а отсутствует.
+        self.assertEqual(опущенный["outcome"], UNMEASURED_)
+
+
 class МутацияКолонки(unittest.TestCase):
     """Переворот одной строки обязан менять исход. В обе стороны (Т1)."""
 
-    СХЕМА = факт("kling-3.0", "max_seconds", "15", tier="vendor")
+    СХЕМА = факт("kling-3.0", "max_seconds", "15 seconds", tier="vendor")
     СВИДЕТЕЛЬ = факт(
         "nano-banana-edit",
         "text_rendering",
@@ -209,7 +294,7 @@ class МутацияКолонки(unittest.TestCase):
     )
 
     def test_схему_пометили_свидетельством_и_шаг_позеленел(self):
-        было = fa.step_verdict("шаг", "требование", fa.mark_all([self.СХЕМА]))
+        было = fa.step_verdict("шаг", "15 seconds одним прогоном", fa.mark_all([self.СХЕМА]))
         self.assertEqual(было["outcome"], UNMEASURED_)
         подмена = {
             fa.axis_key(self.СХЕМА.model, self.СХЕМА.attribute, self.СХЕМА.source_url): (
@@ -218,36 +303,40 @@ class МутацияКолонки(unittest.TestCase):
                 "мутация теста",
             )
         }
-        стало = fa.step_verdict("шаг", "требование", fa.mark_all([self.СХЕМА], подмена))
+        стало = fa.step_verdict(
+            "шаг", "15 seconds одним прогоном", fa.mark_all([self.СХЕМА], подмена)
+        )
         self.assertEqual(стало["outcome"], PASS_)
 
     def test_единственного_свидетеля_пометили_схемой_и_шаг_упал_в_не_смогли(self):
-        было = fa.step_verdict("шаг", "требование", fa.mark_all([self.СВИДЕТЕЛЬ]))
+        было = fa.step_verdict("шаг", "текст доходит неискажённым", fa.mark_all([self.СВИДЕТЕЛЬ]))
         self.assertEqual(было["outcome"], PASS_)
         подмена = {
             fa.axis_key(
                 self.СВИДЕТЕЛЬ.model, self.СВИДЕТЕЛЬ.attribute, self.СВИДЕТЕЛЬ.source_url
             ): ("schema", "ВЫБРАНО", "мутация теста")
         }
-        стало = fa.step_verdict("шаг", "требование", fa.mark_all([self.СВИДЕТЕЛЬ], подмена))
+        стало = fa.step_verdict(
+            "шаг", "текст доходит неискажённым", fa.mark_all([self.СВИДЕТЕЛЬ], подмена)
+        )
         self.assertEqual(стало["outcome"], UNMEASURED_)
 
 
 class Рендерер(unittest.TestCase):
     """Ветки, печатающей рекомендацию с одной колонкой, быть не должно."""
 
-    def верни(self, факты):
-        return fa.render(fa.step_verdict("шаг", "требование", fa.mark_all(факты)))
+    def верни(self, факты, требование="lipsync 15 seconds"):
+        return fa.render(fa.step_verdict("шаг", требование, fa.mark_all(факты)))
 
     def test_обе_колонки_на_месте_при_каждом_исходе(self):
         случаи = [
-            [факт("kling-3.0", "max_seconds", "15")],
-            [факт("infinitetalk", "failure_mode", "уносит", tier="probe")],
+            [факт("kling-3.0", "max_seconds", "15 seconds")],
+            [факт("infinitetalk", "failure_mode", "lipsync уносит", tier="probe")],
             [
                 факт(
                     "nano-banana-edit",
                     "text_rendering",
-                    "держит",
+                    "lipsync 15 seconds держит",
                     tier="operator",
                     witnessed="запустили и посмотрели",
                 )
@@ -260,12 +349,18 @@ class Рендерер(unittest.TestCase):
             self.assertIn("применимость:", текст)
 
     def test_пустая_применимость_печатается_значением(self):
-        текст = self.верни([факт("kling-3.0", "max_seconds", "15")])
+        текст = self.верни([факт("kling-3.0", "max_seconds", "15 seconds")])
         self.assertIn("нет свидетельства", текст)
 
     def test_счётчики_печатаются_рядом(self):
-        текст = self.верни([факт("kling-3.0", "max_seconds", "15")])
-        self.assertIn("проверено 1, нарушений 0, не смогли 0", текст)
+        текст = self.верни([факт("kling-3.0", "max_seconds", "15 seconds")])
+        self.assertIn("проверено 1, нарушений 0, не смогли 0, не относится к требованию 0", текст)
+
+    def test_отброшенное_как_чужое_печатается_рядом_со_счётчиками(self):
+        """Узкий ответ, поданный как полный, читается как ответ на весь вопрос."""
+        текст = self.верни([факт("kling-3.0", "max_seconds", "15 seconds")], "вылечить рак")
+        self.assertIn("проверено 0, нарушений 0, не смогли 1, не относится к требованию 1", текст)
+        self.assertIn("ни одна строка не относится к требованию", текст)
 
     def test_исход_печатается_по_русски(self):
         текст = self.верни([])
