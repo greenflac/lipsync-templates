@@ -1303,3 +1303,49 @@ class ПрочитаннаяБазаНеОтстаёт(unittest.TestCase):
         assert self.путь.stat().st_size != снимок.st_size, "правка изменила размер файла"
         итог = advice.advise("test-model", attribute="resolution", path=self.путь)
         assert итог["claims"]["resolution"]["values"] == ["720p"], итог["claims"]
+
+
+class КраткаяФормаНеПечатаетДважды(unittest.TestCase):
+    """Полный ответ дописывает ноту доступности в главную ноту нарочно:
+    доступность — отдельная ось и обязана называться там, где читают. В
+    КРАТКОЙ форме та же строка едет рядом, в поле `availability`, и повтор
+    тратит ровно то, ради чего краткая форма заведена.
+
+    ИЗМЕРЕНО 2026-09-02 на сравнении пяти кандидатов по цене: 11181 символ, из
+    них 1168 (10%) — эта нота во второй раз.
+    """
+
+    def test_повтор_вырезан(self) -> None:
+        нота = advice.nota_bez_dostupnosti(
+            "1 attribute answered. Availability says 'could not measure': ХВОСТ ПРО РЕЕСТР",
+            "ХВОСТ ПРО РЕЕСТР",
+            {"outcome": "could not measure"},
+        )
+        self.assertNotIn("ХВОСТ ПРО РЕЕСТР", нота)
+        self.assertIn("availability", нота)
+
+    def test_вердикт_второй_оси_остаётся(self) -> None:
+        """Выбросить вердикт вместе с нотой значило бы спрятать вторую ось из
+        строки, которую читают первой."""
+        нота = advice.nota_bez_dostupnosti(
+            "Availability is a SEPARATE axis, and it says 'could not measure': ХВОСТ",
+            "ХВОСТ",
+            {"outcome": "could not measure"},
+        )
+        self.assertIn("could not measure", нота)
+
+    def test_вердикт_не_дублируется(self) -> None:
+        """Поймано чтением своей же выдачи: первая правка дописывала вердикт
+        ещё раз и давала «says 'could not measure': 'could not measure'»."""
+        нота = advice.nota_bez_dostupnosti(
+            "says 'could not measure': ХВОСТ", "ХВОСТ", {"outcome": "could not measure"}
+        )
+        self.assertEqual(нота.count("could not measure"), 1, нота)
+
+    def test_полная_форма_ноту_сохраняет(self) -> None:
+        """Вторая половина (И5): режется ВИД, а не ответ. В полной форме нота
+        доступности остаётся целиком — там она и должна быть."""
+        полный = advice.advise("kling-3.0", attribute="price")
+        хвост = str((полный.get("availability") or {}).get("note") or "")
+        if хвост:
+            self.assertIn(хвост, str(полный.get("note") or ""))
