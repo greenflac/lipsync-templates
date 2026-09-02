@@ -3,17 +3,61 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-echo "== ruff check"
+# ДЛИТЕЛЬНОСТЬ ШАГА ПЕЧАТАЕТСЯ. Правило дома П2 требует этого прямым текстом
+# («дешёвые проверки раньше дорогих, длительность шагов печатается»), и до
+# 2026-09-02 гейт его же и нарушал: 58 шагов, ни одной цифры. Пока прогон
+# стоил полминуты, это было терпимо; сегодня он вырос до 91 с локально и 216 с
+# в CI, и вопрос «какой шаг столько ест» стало нечем задать.
+#
+# ИМЕНА ЗДЕСЬ ЛАТИНИЦЕЙ, В ОТЛИЧИЕ ОТ ОСТАЛЬНОГО КОДА ПРОЕКТА: bash не
+# принимает кириллицу в имени переменной и молча разбирает `ШАГ=""` как имя
+# КОМАНДЫ. Это уже ловилось сегодня на `.githooks/pre-push` — и повторилось
+# здесь через шесть часов, потому что правило было записано в комментарии
+# ТОГО файла, а не там, где пишут следующий скрипт.
+#
+# Время печатается ПОСЛЕ шага, отдельной строкой: держать его до конца шага
+# значило бы потерять при падении, то есть ровно там, где оно нужнее всего.
+_step_start=""
+_step_name=""
+_all_start=$(date +%s)
+_marks=""
+
+_close_step() {
+  [ -z "$_step_name" ] && return 0
+  local sec=$(( $(date +%s) - _step_start ))
+  _marks="${_marks}${sec} ${_step_name}"$'\n'
+  if [ "$sec" -ge 3 ]; then echo "   ($sec с)"; fi
+  return 0
+}
+
+step() {
+  _close_step
+  _step_name="$1"
+  _step_start=$(date +%s)
+  echo "== $1"
+}
+
+# Итог печатается ВСЕГДА, в том числе при падении: время, потраченное до
+# провала, — часть отчёта о провале (П2), а не украшение успеха.
+_time_summary() {
+  _close_step
+  echo
+  echo "время: всего $(( $(date +%s) - _all_start )) с; самые дорогие шаги:"
+  printf '%s' "$_marks" | sort -rn | head -5 | sed 's/^/   /'
+}
+trap _time_summary EXIT
+
+step "ruff check"
 ruff check lipsync/
 
-echo "== ruff format"
+step "ruff format"
 ruff format --check lipsync/
 
-echo "== mypy"
+step "mypy"
 python -c "import mypy" 2>/dev/null || { echo "FAIL: mypy is not installed"; exit 1; }
 python -m mypy lipsync/ --ignore-missing-imports
 
-echo "== tests"
+step "tests"
 python -m unittest discover -s lipsync/tests -t .
 
 # The Self-RAG prompt engineer. Gated here rather than described in a document,
@@ -24,16 +68,16 @@ python -m unittest discover -s lipsync/tests -t .
 # suite needs httpx2, which requirements-dev.txt does not pin, so adding it here
 # would turn a missing dependency into a red build for everybody. That gap is
 # reported to the owner of requirements-dev.txt rather than papered over.
-echo "== ruff check (selfrag)"
+step "ruff check (selfrag)"
 ruff check studio/selfrag/
 
-echo "== ruff format (selfrag)"
+step "ruff format (selfrag)"
 ruff format --check studio/selfrag/
 
-echo "== mypy (selfrag)"
+step "mypy (selfrag)"
 MYPYPATH=. python -m mypy --explicit-package-bases studio/selfrag/ --ignore-missing-imports
 
-echo "== tests (selfrag)"
+step "tests (selfrag)"
 python -m unittest discover -s studio/selfrag/tests -t .
 
 # The calibration path, named module by module rather than by directory.
@@ -44,49 +88,49 @@ python -m unittest discover -s studio/selfrag/tests -t .
 # cost something — a commit landed with the `verify()` invariant failing in two
 # tests and CI stayed green, because the gate could not see the file
 # (OBSERVED 2026-08-26). Gate what can be gated; report the rest.
-echo "== ruff check (calibration)"
+step "ruff check (calibration)"
 ruff check studio/prompt_templates.py studio/tests/test_prompt_templates.py \
     studio/tests/test_calibration_contract.py
 
-echo "== ruff format (calibration)"
+step "ruff format (calibration)"
 ruff format --check studio/prompt_templates.py studio/tests/test_prompt_templates.py \
     studio/tests/test_calibration_contract.py
 
-echo "== mypy (calibration)"
+step "mypy (calibration)"
 MYPYPATH=. python -m mypy --explicit-package-bases studio/prompt_templates.py \
     studio/tests/test_prompt_templates.py studio/tests/test_calibration_contract.py \
     --ignore-missing-imports
 
-echo "== tests (calibration)"
+step "tests (calibration)"
 python -m unittest studio.tests.test_prompt_templates studio.tests.test_calibration_contract
 
 # The retriever's own suite. Named individually for the same reason as the two
 # above: studio/tests/ as a whole needs httpx2 for test_app.py, and this file
 # needs nothing beyond the standard library. It was ungated until 2026-08-27,
 # and the provenance defect it now covers had been sitting in the loader.
-echo "== tests (knowledge)"
+step "tests (knowledge)"
 python -m unittest studio.tests.test_knowledge
 
-echo "== ruff check (lint)"
+step "ruff check (lint)"
 ruff check studio/template_lint.py studio/tests/test_template_lint.py \
     studio/tests/test_lint_contract.py studio/fixtures/lint_control_set.py
 
-echo "== ruff format (lint)"
+step "ruff format (lint)"
 ruff format --check studio/template_lint.py studio/tests/test_template_lint.py \
     studio/tests/test_lint_contract.py studio/fixtures/lint_control_set.py
 
-echo "== mypy (lint)"
+step "mypy (lint)"
 MYPYPATH=. python -m mypy --explicit-package-bases studio/template_lint.py \
     studio/tests/test_template_lint.py studio/tests/test_lint_contract.py \
     studio/fixtures/lint_control_set.py --ignore-missing-imports
 
-echo "== tests (lint)"
+step "tests (lint)"
 python -m unittest studio.tests.test_template_lint studio.tests.test_lint_contract
 
 # The retriever scored against its gold set, with the negative controls that
 # make the score mean anything. Exit code 2 is "could not measure" and is a
 # red build here on purpose: a corpus that vanished must not read as green.
-echo "== selfrag retrieval eval"
+step "selfrag retrieval eval"
 python -m studio.selfrag --state :memory: eval
 
 # The chat agent: the MCP server the owner talks to, its contract gate, its
@@ -96,16 +140,16 @@ python -m studio.selfrag --state :memory: eval
 # script is the gate, it runs `unittest discover`, and pytest is not pinned in
 # requirements-dev.txt. Test functions the runner cannot collect are tests that
 # do not exist, and this repository has already paid for that once.
-echo "== ruff check (mcp)"
+step "ruff check (mcp)"
 ruff check studio/mcp/
 
-echo "== ruff format (mcp)"
+step "ruff format (mcp)"
 ruff format --check studio/mcp/
 
-echo "== mypy (mcp)"
+step "mypy (mcp)"
 MYPYPATH=. python -m mypy --explicit-package-bases studio/mcp/ --ignore-missing-imports
 
-echo "== tests (mcp)"
+step "tests (mcp)"
 python -m unittest discover -s studio/mcp/tests -t .
 
 # The server has to actually start and speak the protocol. Importing it proves
@@ -122,13 +166,13 @@ python -m unittest discover -s studio/mcp/tests -t .
 # found three real defects on 2026-08-27 — a corpus colour added to a palette the
 # owner had already filled, saturation refused even when corroborated, and an
 # empty intent that asked no questions at all. Exit 1 on any case.
-echo "== blind control set (mcp)"
+step "blind control set (mcp)"
 python studio/mcp/fixtures/blind_control_set.py
 
 # The reading pass, asserted rather than trusted. Reads the fact file only --
 # no network, so this stays honest in CI: it fails if a claim scripts/read_sources.py
 # withdrew has come back, or if a reading it recorded has been edited away.
-echo "== reading pass still applied"
+step "reading pass still applied"
 python scripts/read_sources.py --check
 
 # The harvest, asserted rather than trusted. Reads the fact file and the
@@ -140,7 +184,7 @@ python scripts/read_sources.py --check
 # Does every declared vendor still have a way in that needs no whitelist
 # entry? Red here means a vendor really has been walled off -- which is
 # the only kind of access request worth making.
-echo "== every vendor family has an open route"
+step "every vendor family has an open route"
 python - <<'PY'
 import sys
 from studio.mcp import routes
@@ -149,10 +193,10 @@ print(out["note"])
 sys.exit(0 if out["outcome"] == "pass" else 1)
 PY
 
-echo "== whitelist request classifies every refusal"
+step "whitelist request classifies every refusal"
 python scripts/whitelist_request.py --check > /dev/null
 
-echo "== model ids still merged"
+step "model ids still merged"
 python scripts/merge_model_ids.py --check
 
 # Одна модель — один ответ, каким бы написанием ни спросили. ИЗМЕРЕНО
@@ -166,17 +210,17 @@ python scripts/merge_model_ids.py --check
 # сломать её может любой потребитель, заведший свою нормализацию: их было
 # три. Негативный контроль двусторонний (И5) — пять пар РАЗНЫХ моделей
 # обязаны остаться разными, подсадной дубль обязан быть замечен. Сети нет.
-echo "== имена моделей: одно имя — одна модель"
+step "имена моделей: одно имя — одна модель"
 python scripts/check_model_names.py --check
 
-echo "== harvest still applied (capability)"
+step "harvest still applied (capability)"
 python scripts/ingest_harvest.py --check
 
-echo "== harvest still applied (applicability)"
+step "harvest still applied (applicability)"
 python scripts/ingest_harvest.py --check \
   --path studio/knowledge/harvest_2026-08-27_applicability.jsonl
 
-echo "== verified class findings still applied"
+step "verified class findings still applied"
 python scripts/ingest_harvest.py --check \
   --path studio/knowledge/class_findings_2026-08-27_verified.jsonl
 
@@ -184,7 +228,7 @@ python scripts/ingest_harvest.py --check \
 # repository stores a RETELLING WITH A LINK, never a third party's prose. The
 # rule held on the first harvest because four agents each remembered it — which
 # is precisely why it is a gate now (rule C7).
-echo "== knowledge lane: source, tier, and no copied prose"
+step "knowledge lane: source, tier, and no copied prose"
 python scripts/check_craft.py --check
 
 # The validator bench hands a creative to a reader with its origin cut away.
@@ -192,7 +236,7 @@ python scripts/check_craft.py --check
 # name and the prompt. If the strip stops stripping, every number the bench
 # produces afterwards is a lie about the agent's ability and nothing downstream
 # would notice — so it is re-proved here on every build (rule C7).
-echo "== validator bench: the answer is cut off the picture"
+step "validator bench: the answer is cut off the picture"
 python scripts/validator.py check
 
 # Adding non-Kling video beside Kling video reopens the leak that has bitten
@@ -213,7 +257,7 @@ python scripts/validator.py check
 # локально стоял, гейт и зеркало CI зелёные, настоящий CI упал на первом же
 # тесте, которому пакет понадобился. Зеркало этого поймать не может — оно
 # повторяет КОД, а не набор пакетов, и это его честный предел.
-echo "== сторонние импорты объявлены в requirements"
+step "сторонние импорты объявлены в requirements"
 python scripts/check_declared_deps.py --check
 
 # Канал, отвечающий одинаково на любой вход, несёт ноль бит о входе, и ни одна
@@ -225,7 +269,7 @@ python scripts/check_declared_deps.py --check
 # правдива (тир paper, со ссылками) — и именно поэтому мимо всех гейтов: правда
 # не есть релевантность. Этот случай занесён в KNOWN_INVARIANT как долг с датой
 # и объяснением, гейт краснеет на НОВЫХ. Сети здесь нет.
-echo "== каналы: выдача зависит от входа"
+step "каналы: выдача зависит от входа"
 python scripts/check_channel_signal.py --check
 
 # Абляция 2026-08-31 показала: перемешай имена моделей между настоящими фактами
@@ -236,23 +280,23 @@ python scripts/check_channel_signal.py --check
 # ровно одного: проверка применялась при ЗАПИСИ факта и никогда к тем, что уже
 # стоят, — а факт попадает в базу и мимо record: правкой файла, слиянием,
 # переносом при канонизации имени.
-echo "== атрибуция: URL вендорского факта подтверждает вендорство модели"
+step "атрибуция: URL вендорского факта подтверждает вендорство модели"
 python scripts/check_attribution.py --check
 
-echo "== пропущенные тесты: данных нет или кто-то выключил"
+step "пропущенные тесты: данных нет или кто-то выключил"
 python scripts/check_skips.py --check
 
-echo "== измеренные числа: схема и потолок на хэндоф"
+step "измеренные числа: схема и потолок на хэндоф"
 python scripts/check_measured.py --check
 
 # Покрытие мерится не запасом («сколько моделей в базе»), а долей РЕАЛЬНО
 # заданных вопросов, которые база закрыла. Знаменатель живёт в журнале, и
 # битая строка в нём — это молча съехавший знаменатель, то есть ровно тот
 # класс дефекта, который на этом проекте стоил больше всего. Сети здесь нет.
-echo "== журнал вопросов: схема строк и знаменатель покрытия"
+step "журнал вопросов: схема строк и знаменатель покрытия"
 python scripts/refill_queue.py --check
 
-echo "== validator bench: does the shape of the file give away the source"
+step "validator bench: does the shape of the file give away the source"
 set +e
 python scripts/check_sheet_shape.py --check
 SHAPE=$?
@@ -263,7 +307,7 @@ if [ "$SHAPE" = "1" ]; then
 fi
 [ "$SHAPE" = "2" ] && echo "(банка нет на диске — сравнивать нечего, это не провал)"
 
-echo "== mcp server handshake"
+step "mcp server handshake"
 python - <<'PY'
 import asyncio, sys
 from studio.mcp.server import server
@@ -325,7 +369,7 @@ PY
 # Правило словами отменяется под сроком, гейт виден в диффе (Ц7). Здесь же
 # обратный контроль: подсадные обязаны отсеяться, а здоровая запись — пройти,
 # иначе «утечек нет» будет означать «гейт не пропускает вообще ничего».
-echo "== каталог: подсадные не доехали до базы фактов"
+step "каталог: подсадные не доехали до базы фактов"
 python scripts/check_catalog.py --check
 
 # Вторая ось у факта. Лестница тиров одномерна и ставит `vendor` первым, а
@@ -337,7 +381,7 @@ python scripts/check_catalog.py --check
 # Гейт держит негативный контроль (И5): три контрольных шага обязаны дать три
 # РАЗНЫХ исхода, и шаг, чьё требование закрыто только схемой, — «не смогли».
 # Сети здесь нет.
-echo "== вторая ось: род факта и вычисленный исход шага"
+step "вторая ось: род факта и вычисленный исход шага"
 python scripts/check_fact_axis.py --check
 # Журнал против таблицы. Несколько файлов объявлены append-only СЛОВАМИ в
 # собственных докстрингах, и слова не удержали: до этого сторожа история несла
@@ -353,10 +397,10 @@ python scripts/check_fact_axis.py --check
 # форме. Прибор различает реплику человека и вендорскую спецификацию ПО ХОСТУ,
 # а не по длине, и молчит на нашей собственной ноте любой длины. Пол стоит на
 # измеренном: новое краснеет, накопленное печатается числом. Сети здесь нет.
-echo "== чужая проза и имена в знании"
+step "чужая проза и имена в знании"
 python scripts/check_verbatim.py --check
 
-echo "== журналы: дописано, а не переписано"
+step "журналы: дописано, а не переписано"
 python scripts/check_append_only.py --check
 
 # Карта достижимости: отказ — измерение с датой, а не свойство хоста. Гейт без
@@ -365,7 +409,7 @@ python scripts/check_append_only.py --check
 # 2026-09-02: из 214 записанных отказов 18 отвечали сегодня, включая
 # docs.mistral.ai, docs.cohere.com и api-docs.deepseek.com — перворучные
 # вендорские источники, которые шапка routes.py считала закрытыми и обходила.
-echo "== карта достижимости не старше горизонта"
+step "карта достижимости не старше горизонта"
 python scripts/reprobe_hosts.py --check
 
 # Опрос портала: очередь имён, которых база не знает ни одной строкой.
@@ -374,7 +418,7 @@ python scripts/reprobe_hosts.py --check
 # ИЗМЕРЕНО 2026-09-02: fal.ai продаёт 22 липсинк-модели по слову `lipsync`, и
 # 18 из них база не знала ни одной строкой. Неполный опрос — третий исход, а не
 # короткая очередь: пробел в ней неотличим от отсутствия модели на портале.
-echo "== опрос портала: что продаётся и чего база не знает"
+step "опрос портала: что продаётся и чего база не знает"
 python scripts/poll_portal.py --check
 
 # Канал Civitai: прибор гоняется по фикстурам, снятым с живого API, и обязан
@@ -383,7 +427,7 @@ python scripts/poll_portal.py --check
 # наблюдений выписаны в скрипте, а не сведены к «больше нуля»: просевший с
 # трёх до одного канал остаётся зелёным у любой проверки вида «хоть что-то».
 # Сети здесь нет.
-echo "== канал Civitai: наблюдение практика, права и негативный контроль"
+step "канал Civitai: наблюдение практика, права и негативный контроль"
 python scripts/ingest_civitai.py --check
 
 # Валидатор-2: он принимает ПАЙПЛАЙН, а не факт. Разрыв между шагами (выход
@@ -394,7 +438,7 @@ python scripts/ingest_civitai.py --check
 # краснеет, если мутант прошёл, чужак отвергнут, класс остался без посева или
 # различённых исходов меньше трёх. Исход шага НЕ пересчитывается: он берётся у
 # studio/factaxis.py (Е1). Сети здесь нет.
-echo "== валидатор-2: пайплайн, семь классов, мутанты и здоровые чужаки"
+step "валидатор-2: пайплайн, семь классов, мутанты и здоровые чужаки"
 python scripts/check_pipeline.py --check
 
 # Планировщик: ПЛАН ИЗ БРИФА, тут же прогнанный через валидатор-2 выше.
@@ -434,10 +478,10 @@ python scripts/check_pipeline.py --check
 # `max_resolution` встречался один раз — как строка доказательства, не как
 # проверка. Гейт держит ПОЛ разбора: разбор, переставший понимать «720p»,
 # отвечал бы «не записано» там, где записано. Сети здесь нет.
-echo "== разрешение из прозы: пол разбора"
+step "разрешение из прозы: пол разбора"
 python scripts/creative_fit.py --check
 
-echo "== tests (разрешение)"
+step "tests (разрешение)"
 python -m unittest studio.tests.test_resolution
 
 # МУТАЦИИ КАНАЛОВ И РАЗБОРЩИКОВ. За 2026-09-02 я прогнал руками полсотни
@@ -451,7 +495,7 @@ python -m unittest studio.tests.test_resolution
 # причины были настоящими — исключение `portal_license` оказалось
 # НЕНАБЛЮДАЕМЫМ (его держала приставка), а вторая мутация промахнулась мимо
 # кода, переформатированного ruff. Сети здесь нет.
-echo "== мутации каналов: константы-решения под охраной"
+step "мутации каналов: константы-решения под охраной"
 python scripts/mutate_channels.py
 
 # МУТАЦИИ ПЛАНИРОВЩИКА — САМЫЙ БОЛЬШОЙ НАБОР В ПРОЕКТЕ (82 мутанта) И САМЫЙ
@@ -474,13 +518,13 @@ else
   echo "   прогнать здесь: CI=true bash scripts/check  или  python scripts/mutate_planner.py"
 fi
 
-echo "== заголовок ответа против базы: пять вопросов"
+step "заголовок ответа против базы: пять вопросов"
 python scripts/check_headline.py --check
 
-echo "== планировщик: план из брифа и пометка о неизмеренной применимости"
+step "планировщик: план из брифа и пометка о неизмеренной применимости"
 python scripts/check_planner.py --check
 
-echo "== tests (планировщик)"
+step "tests (планировщик)"
 python -m unittest studio.tests.test_planner
 
 # Канал сбора писал в базу ЗАГОЛОВОК треда вместо находки из его тела: 183
@@ -491,7 +535,7 @@ python -m unittest studio.tests.test_planner
 # все на живой базе: массовый заход обязан быть осуждён (ИЗМЕРЕНО 158 из 181),
 # 20 ручных записей того же канала обязаны пройти, и прочие каналы тоже — иначе
 # «мусора нет» означало бы «прибор бракует всю базу». Сети и гита здесь нет.
-echo "== сбор: находка или заголовок треда"
+step "сбор: находка или заголовок треда"
 python scripts/check_harvest_quality.py --check
 
 # Хук остановки «названо, но не спрошено». Инструкция сервера требует звать
@@ -516,8 +560,8 @@ python scripts/check_harvest_quality.py --check
 # третий («разобрать не смогли»: `torch-2.4`) не сворачивается ни в один из
 # первых. «Нет в базе» здесь НЕ значит «не существует», и это сторожится
 # отдельным случаем контроля: формулировка «не искали» — часть контракта.
-echo "== хук остановки: названо без запроса"
+step "хук остановки: названо без запроса"
 python scripts/stop_named_not_asked.py --check
 
-echo "== tests (хук остановки)"
+step "tests (хук остановки)"
 python -m unittest studio.tests.test_named_not_asked
