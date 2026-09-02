@@ -559,17 +559,17 @@ PRICE_ASKED = "price"
 #: исключение из неё. КОНСТАНТЫ-РЕШЕНИЯ, и обе — ПОВТОР того, что уже стоит в
 #: `scripts/creative_fit.py` (`пределы()` и `КРОМЕ`).
 #:
-#: DEBT(2026-09-02): повтор сознательный и объяснимый — `scripts/` не пакет, и
-#: импортировать оттуда в библиотеку значило бы городить возню с путями внутри
-#: рабочего кода. Но повтор есть повтор (Е1), поэтому защита не словами:
-#: `Контракт.test_отбор_строк_предела_совпадает_со_скриптом` ЧИТАЕТ тот файл и
-#: краснеет, если списки разошлись. Настоящий признак дубля — «при изменении
-#: одного второе обязано измениться» — тем самым обеспечен.
+#: DEBT(2026-09-02) ЗАКРЫТ В ТОТ ЖЕ ДЕНЬ. Долг был записан так: подстрока и
+#: исключение повторены здесь и в `scripts/creative_fit.py`, потому что
+#: `scripts/` не пакет и импортировать оттуда в библиотеку нельзя. Верно — но
+#: копировать было и не нужно: тот же вопрос («какое имя атрибута отвечает на
+#: вопрос о разрешении») решает семья `studio/selfrag/attrfamily.py`, а она
+#: лежит в пакете. Оба места теперь спрашивают её, и знание стало одним (Е1).
 #:
-#: `training_resolution` исключён поимённо: это разрешение ОБУЧЕНИЯ, а не
-#: предел входа, и сравнивать с ним креатив значит отвечать не на тот вопрос.
+#: Имена оставлены ради читаемости кода и тестов, но значения БЕРУТСЯ У СЕМЬИ,
+#: а не набраны заново: разъехаться им теперь нечем.
 LIMIT_ATTRIBUTE_MARKER = "resolution"
-LIMIT_ATTRIBUTES_EXCLUDED: frozenset[str] = frozenset({"training_resolution"})
+LIMIT_ATTRIBUTES_EXCLUDED: frozenset[str] = frozenset(af.СЕМЬИ[LIMIT_ATTRIBUTE_MARKER]["кроме"])
 
 #: ЧЕТЫРЕ положения кандидата относительно поданного кадра — той же формы, что
 #: четыре положения по цене, и по той же причине. «Предел не записан» НЕ есть
@@ -1131,16 +1131,16 @@ def frame_of(creative: str) -> tuple[tuple[int, int] | None, str]:
 def limit_facts(facts: Sequence[Fact]) -> list[Fact]:
     """Строки, в которых записан ПРЕДЕЛ КАДРА модели.
 
-    Отбор по подстроке, а не списком имён: вендоры заводят новые
-    (`native_resolution`, `resolution_tiers`, `resolutions_vertex`), и список
-    отставал бы молча. `training_resolution` выброшен поимённо — разрешение
-    обучения не есть предел входа.
+    Какое имя отвечает на вопрос о разрешении, решает семья
+    `studio/selfrag/attrfamily.py` — та же, из которой этот ответ берёт
+    `model_advice` и `scripts/creative_fit.py`. Отбор там по подстроке, а не
+    списком имён: вендоры заводят новые (`native_resolution`,
+    `resolution_tiers`, `resolutions_vertex`), и список отставал бы молча;
+    `training_resolution` выброшен поимённо — разрешение обучения не есть
+    предел входа.
     """
-    return [
-        f
-        for f in facts
-        if LIMIT_ATTRIBUTE_MARKER in f.attribute and f.attribute not in LIMIT_ATTRIBUTES_EXCLUDED
-    ]
+    подходят = set(af.expand(LIMIT_ATTRIBUTE_MARKER, [f.attribute for f in facts]))
+    return [f for f in facts if f.attribute in подходят]
 
 
 def fit_stance(facts: Sequence[Fact], frame: tuple[int, int] | None) -> tuple[str, str]:

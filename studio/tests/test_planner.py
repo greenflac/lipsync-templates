@@ -1108,24 +1108,31 @@ class Контракт(unittest.TestCase):
         имена = [c.model for c in pn.candidates_for(оживление, индекс)]
         self.assertNotIn("*", имена)
 
-    def test_отбор_строк_предела_совпадает_со_скриптом(self) -> None:
-        """DEBT(2026-09-02) под охраной: два места знают, где лежит предел кадра.
+    def test_отбор_строк_предела_идёт_из_одного_места(self) -> None:
+        """DEBT(2026-09-02) ЗАКРЫТ, и тест переписан под то, что стало.
 
-        `scripts/` не пакет, импортировать оттуда в библиотеку значило бы
-        городить возню с путями в рабочем коде, поэтому подстрока и исключение
-        ПОВТОРЕНЫ в `studio/planner.py`. Повтор есть повтор (Е1), и настоящий
-        признак дубля — «при изменении одного второе обязано измениться» —
-        обеспечивается здесь: тест читает тот файл и краснеет, если разошлись.
+        Долг был записан так: подстрока и исключение повторены в
+        `studio/planner.py` и `scripts/creative_fit.py`, потому что `scripts/`
+        не пакет. Верно — но копировать было и не нужно: тот же вопрос решает
+        семья `studio/selfrag/attrfamily.py`, и она лежит в пакете. Оба места
+        спрашивают её, и разъехаться им теперь нечем.
+
+        Сторожится не совпадение двух копий, а ОТСУТСТВИЕ второй копии:
+        значения берутся у семьи, и подмена семьи меняет обе стороны разом.
         """
-        путь = Path(__file__).resolve().parents[2] / "scripts" / "creative_fit.py"
-        self.assertTrue(путь.is_file(), путь)
-        текст = путь.read_text(encoding="utf-8")
-        # Литералы (Т2): и подстрока, и исключение набраны здесь, а не взяты
-        # из проверяемого модуля — иначе обе половины поехали бы вместе.
+        # Литералы (Т2): ожидаемое набрано здесь, а не взято из проверяемого
+        # модуля — иначе обе половины поехали бы вместе.
         self.assertEqual(pn.LIMIT_ATTRIBUTE_MARKER, "resolution")
         self.assertEqual(pn.LIMIT_ATTRIBUTES_EXCLUDED, frozenset({"training_resolution"}))
-        self.assertIn('"resolution" in ф.attribute', текст)
-        self.assertIn('КРОМЕ: frozenset[str] = frozenset({"training_resolution"})', текст)
+        # Планировщик и семья отбирают ОДНИ И ТЕ ЖЕ имена — на живой базе, а
+        # не на выдуманном списке.
+        from studio.selfrag import attrfamily
+        from studio.selfrag.facts import load_facts
+
+        свои = {ф.attribute for ф in pn.limit_facts(load_facts())}
+        семья = set(attrfamily.expand("resolution", [ф.attribute for ф in load_facts()]))
+        self.assertEqual(свои, семья)
+        self.assertNotIn("training_resolution", свои, "разрешение обучения — не предел входа")
 
     def test_контрольный_набор_читается_целиком(self) -> None:
         # ГЛАВНОЕ здесь — равенство двух чисел: строка, которую загрузчик

@@ -37,7 +37,7 @@
 мутантов, промолчали на 0.
 
 ПЯТЫЙ ЗАХОД 2026-09-02: добавлено двенадцать мутантов на константы поданного
-кадра (`FIT_ORDER`, `LIMIT_ATTRIBUTE_MARKER`, `LIMIT_ATTRIBUTES_EXCLUDED`,
+кадра (`FIT_ORDER`, `LIMIT_ATTRIBUTE_MARKER`, исключение семьи `resolution`,
 тексты положений, `REJECTED_BY_FRAME_MARK`, `CUSTOMER_KEYS`, место кадра в
 ключе и правило сведения строк в `fit_stance`). Итог: 57 мутантов, промолчали
 на 0.
@@ -364,10 +364,16 @@ MUTANTS = [
         "LIMIT_ATTRIBUTE_MARKER -> слабее: пределом кадра становится почти всё",
     ),
     (
-        "studio/planner.py",
-        'LIMIT_ATTRIBUTES_EXCLUDED: frozenset[str] = frozenset({"training_resolution"})',
-        "LIMIT_ATTRIBUTES_EXCLUDED: frozenset[str] = frozenset()",
-        "LIMIT_ATTRIBUTES_EXCLUDED -> слабее: разрешение ОБУЧЕНИЯ снова считается пределом",
+        # МУТИРУЕТСЯ ТАМ, ГДЕ ЗНАЧЕНИЕ ТЕПЕРЬ ЖИВЁТ. До закрытия DEBT этот
+        # мутант правил литерал в `studio/planner.py`; после того как оба
+        # места стали спрашивать семью, литерала там нет, правка ни на что не
+        # влияла и мутант ПРОМОЛЧАЛ — не потому, что тест пропал, а потому,
+        # что мутация промахнулась мимо решения. Мутант, бьющий по копии,
+        # проверяет копию.
+        "studio/selfrag/attrfamily.py",
+        '"кроме": ("training_resolution",),',
+        '"кроме": (),',
+        "семья resolution -> слабее: разрешение ОБУЧЕНИЯ снова считается пределом",
     ),
     (
         "studio/planner.py",
