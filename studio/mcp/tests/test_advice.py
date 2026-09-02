@@ -1097,6 +1097,18 @@ class КраткаяФорма(unittest.TestCase):
         for имя in ("kling-3.0", "minimax-h3"):
             self.assertEqual(advice.brief(имя)["contested"], advice.advise(имя)["contested"], имя)
 
+    def test_умолчание_сервера_это_краткая_форма(self):
+        """Решение владельца 2026-09-02. Проверяется НАПЕЧАТАННОЕ инструментом,
+        а не библиотека: правило, которое агент не может себе позволить, он
+        перестаёт исполнять, и цена справки — часть контракта."""
+        from studio.mcp import server
+
+        по_умолчанию = server.model_advice("minimax-h3")
+        целиком = server.model_advice("minimax-h3", full=True)
+        self.assertIn("full_answer", по_умолчанию)
+        self.assertNotIn("full_answer", целиком)
+        self.assertLess(len(по_умолчанию) * 2, len(целиком))
+
     def test_сервер_отдаёт_именно_краткую(self):
         """Вторая дыра оттуда же: `brief=True` мог молча вернуть полную, и
         тесты на самой функции этого не видели — проверялась библиотека, а

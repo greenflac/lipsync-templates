@@ -88,7 +88,10 @@ server = MCPServer(
         "outside, say that you have not, rather than recommending from inside. "
         "AND GROUND IT: call `model_advice` on every candidate you are about to "
         "compare, not only on the one you like, and say what the base knows, at "
-        "which tier, and whether anybody read the source. This is enforced, not "
+        "which tier, and whether anybody read the source. It answers in the "
+        "comparison form by default, which is a fifth of the size, so asking "
+        "about five candidates is affordable; add `full=True` for the one you "
+        "settle on, to read the sources themselves. This is enforced, not "
         "asked: the Stop hook `scripts/stop_named_not_asked.py` refuses to end a "
         "turn that recommends a model name the session never passed to "
         "`model_advice`, and prints which names. A vendor schema proves "
@@ -214,27 +217,30 @@ def advise_and_note(
 
 
 @server.tool()
-def model_advice(model: str, attribute: str = "", brief: bool = False) -> str:
-    """What is known about a generation model, with every source and its date.
+def model_advice(model: str, attribute: str = "", full: bool = False) -> str:
+    """What is known about a generation model: values, tiers, dates, disputes.
 
-    Call this before answering any question about what a model can do. Returns
-    the registry's conservative answer, every recorded claim with its tier and
-    URL, the known failure modes, and — as `fail` — any attribute whose sources
-    disagree. It never resolves a disagreement for you.
+    Call this before answering any question about what a model can do. It never
+    resolves a disagreement for you: sources that disagree come back as `fail`
+    with both sides.
 
     :param model: e.g. "kling-3.0", "veo-3.1", "flux-2".
     :param attribute: one attribute such as "max_seconds"; empty for everything.
-    :param brief: SHORTLISTING several candidates? Ask with `brief=True`. The
-        full answer is 23 751 characters for `minimax-h3` (MEASURED
-        2026-09-02) — about ten thousand tokens — and this instruction tells
-        you to ask about EVERY candidate you compare, so five of them can cost
-        more than the answer you are writing. The brief form is 21-31% of that
-        and keeps what a COMPARISON needs: the outcome, the reason, the values,
-        the best tier, whether sources disagree, how fresh they are and how
-        many there were. Read one candidate in full once the shortlist is
-        down to it. The default is unchanged: no argument, full answer.
+    :param full: every source with its URL, note and reading mark, plus the
+        class-level findings. Ask for it when you are down to ONE candidate and
+        want to read the evidence. The default is the comparison form.
+
+    WHY THE DEFAULT IS THE SHORT FORM. MEASURED 2026-09-02: the full answer for
+    `minimax-h3` is 23 751 characters — about ten thousand tokens — and this
+    server's own instruction tells you to ask about EVERY candidate you
+    compare. Five candidates cost more than the answer you are writing, and an
+    assistant that cannot afford the rule stops following it. The short form is
+    21-31% of that and keeps what a comparison needs: outcome, reason, values,
+    best tier, whether sources disagree, how fresh they are, how many there
+    were. Nothing that distinguishes this base from your memory is dropped —
+    the third outcome, the dispute and the availability axis are all in it.
     """
-    return _json(advise_and_note(model, attribute, brief=brief))
+    return _json(advise_and_note(model, attribute, brief=not full))
 
 
 @server.tool()
