@@ -320,10 +320,51 @@ def refused_hosts(path: Path | None = None) -> dict[str, list[str]]:
             latest[str(row["host"])] = row
     groups: dict[str, list[str]] = collections.defaultdict(list)
     for host, row in latest.items():
-        if row.get("state") != "refused":
+        # ОТСУТСТВУЮЩИЙ `state` ЗНАЧИТ `refused`, и это конвенция самого
+        # журнала (`fetch.STATE_REFUSED` — значение по умолчанию): все строки
+        # до 2026-08-27 писались без поля, потому что других состояний не
+        # было. Здесь стояло `row.get("state") != "refused"`, и такие строки
+        # молча выпадали из заявки — ИЗМЕРЕНО 2026-09-02: 2 домена (google.com,
+        # wan.video) не попадали в неё вообще, а не «попадали не туда».
+        if str(row.get("state", "refused")) != "refused":
             continue
         groups[registrable(host)].append(host)
     return dict(groups)
+
+
+def incidental_domains(path: Path | None = None) -> set[str]:
+    """Домены, чей последний отказ помечен `incidental` ФЛАГОМ, а не словами.
+
+    Прежде это решалось поиском подстроки «search hit is readable» в тексте
+    причины. Текст причины пишут разные места разными словами: обновление
+    карты достижимости говорит «refreshing the reachability map; nobody asked
+    for this host», и такой хост не попадал ни в одну корзину — ни в заявку,
+    ни в исключения. Флаг рядом с текстом есть у каждой такой строки, и Е2
+    велит верить свидетельству, а не формулировке.
+    """
+    latest: dict[str, dict] = {}
+    for line in (path or DENIED).read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            row = json.loads(line)
+        except ValueError:
+            continue
+        host = str(row.get("host") or "")
+        if not host:
+            continue
+        # Непроходной отказ старше непроходного: строка, за которой стоит
+        # настоящий вопрос, перебивает мазок массового прощупывания, в каком бы
+        # порядке они ни легли, — то же правило, что в `fetch.wanted`.
+        kept = latest.get(host)
+        if kept is None or not row.get("incidental", False):
+            latest[host] = row
+    return {
+        registrable(host)
+        for host, row in latest.items()
+        if row.get("incidental", False) and str(row.get("state", "refused")) == "refused"
+    }
 
 
 #: Why a host was first opened, as the log recorded it. This is EVIDENCE about
@@ -374,8 +415,13 @@ def _report(groups: dict[str, list[str]], only: str = "") -> int:
     # engine showed us once is not wanted at all.
     reasons = wanted_reasons()
     cited = sorted(d for d in groups if d not in known and WANT_CITED in reasons.get(d, ""))
+    мазком = incidental_domains()
     incidental = sorted(
-        d for d in groups if d not in known and WANT_INCIDENTAL in reasons.get(d, "")
+        d
+        for d in groups
+        if d not in known
+        and d not in cited
+        and (d in мазком or WANT_INCIDENTAL in reasons.get(d, ""))
     )
     unclassified = sorted(
         d for d in groups if d not in known and d not in cited and d not in incidental

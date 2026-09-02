@@ -14,6 +14,7 @@ from __future__ import annotations
 import json
 import tempfile
 import unittest
+from datetime import date, timedelta
 from pathlib import Path
 from unittest import mock
 
@@ -31,9 +32,17 @@ TEST_VENDORS = {
 }
 
 
+#: Дата, которую фикстура ставит строке, если строка её не назвала сама.
+#: С 2026-09-02 у отказа есть СРОК: недатированный отказ читается как
+#: `unknown`, а не как вечный отказ, и фикстура без даты проверяла бы уже не то
+#: правило, ради которого написана. Ставить `date.today()` — единственный
+#: способ написать «свежий отказ», не заводя в тестах отдельного календаря.
 def _log(path: Path, rows: list[dict]) -> None:
+    сегодня = date.today().isoformat()
     path.write_text(
-        "\n".join(json.dumps(r, ensure_ascii=False) for r in rows) + "\n", encoding="utf-8"
+        "\n".join(json.dumps({"first_seen": сегодня, **r}, ensure_ascii=False) for r in rows)
+        + "\n",
+        encoding="utf-8",
     )
 
 
@@ -74,6 +83,79 @@ class Reachability(unittest.TestCase):
         so, without anybody editing OPEN_HUBS by hand."""
         _log(self.log, [{"host": "huggingface.co", "state": "refused"}])
         assert routes.reachability("huggingface.co", path=self.log) == routes.REACH_REFUSED
+
+
+class ОтказПротухает(unittest.TestCase):
+    """Отказ — это ИЗМЕРЕНИЕ С ДАТОЙ, а не свойство хоста.
+
+    ИЗМЕРЕНО 2026-09-02: из 214 хостов, чей последний записанный статус
+    `refused`, 18 отвечают сегодня — среди них `docs.mistral.ai`,
+    `docs.cohere.com`, `api-docs.deepseek.com`. Записи было шесть дней. Отказ
+    никогда не перепроверялся, потому что код, увидев `refused`, обходит хост
+    стороной и больше никогда его не спрашивает.
+
+    Обе стороны контроля здесь обязательны (И5): свежий отказ обязан остаться
+    отказом, иначе горизонт — это просто «карту отменили».
+    """
+
+    def setUp(self) -> None:
+        self._dir = tempfile.TemporaryDirectory()
+        self.addCleanup(self._dir.cleanup)
+        self.log = Path(self._dir.name) / "denied.jsonl"
+
+    def _отказ(self, дней_назад: int) -> None:
+        когда = (date.today() - timedelta(days=дней_назад)).isoformat()
+        _log(self.log, [{"host": "shut.test", "state": "refused", "first_seen": когда}])
+
+    def test_свежий_отказ_остаётся_отказом(self) -> None:
+        self._отказ(routes.ГОРИЗОНТ_ДНЕЙ)
+        assert routes.reachability("shut.test", path=self.log) == routes.REACH_REFUSED
+
+    def test_протухший_отказ_читается_как_попробуй(self) -> None:
+        self._отказ(routes.ГОРИЗОНТ_ДНЕЙ + 1)
+        assert routes.reachability("shut.test", path=self.log) == routes.REACH_UNKNOWN
+
+    def test_протухший_отказ_НЕ_становится_открытым(self) -> None:
+        """Третий исход не сворачивается ни в первый, ни во второй (Р1).
+
+        Никто не проверял — значит `unknown`. Записать «открыт» здесь значило
+        бы соврать о том, чего не измеряли.
+        """
+        self._отказ(365)
+        assert routes.reachability("shut.test", path=self.log) != routes.REACH_OPEN
+
+    def test_строка_без_даты_считается_протухшей(self) -> None:
+        """Все строки до 2026-08-27 писались без даты. Отсутствие даты — это
+        не свежесть: недатированный отказ вечен ровно тем способом, ради
+        которого горизонт и заведён."""
+        self.log.write_text(
+            json.dumps({"host": "shut.test", "state": "refused"}) + "\n", encoding="utf-8"
+        )
+        assert routes.reachability("shut.test", path=self.log) == routes.REACH_UNKNOWN
+
+    def test_нечитаемая_дата_считается_протухшей(self) -> None:
+        _log(self.log, [{"host": "shut.test", "state": "refused", "first_seen": "позавчера"}])
+        assert routes.reachability("shut.test", path=self.log) == routes.REACH_UNKNOWN
+
+    def test_у_открытого_срока_нет(self) -> None:
+        """Горизонт стоит только на отказе. Протухший `open` — это не «закрыт»,
+        а та же неизвестность, и превратить его в отказ значило бы закрыть себе
+        хост давностью записи."""
+        _log(self.log, [{"host": "was-open.test", "state": "open", "first_seen": "2020-01-01"}])
+        assert routes.reachability("was-open.test", path=self.log) == routes.REACH_OPEN
+
+    def test_горизонт_считается_днями_а_не_датой_прогона(self) -> None:
+        """`today` подаётся снаружи, иначе тест зеленел бы или краснел от того,
+        какое сегодня число."""
+        _log(self.log, [{"host": "shut.test", "state": "refused", "first_seen": "2026-08-27"}])
+        assert (
+            routes.reachability("shut.test", path=self.log, today="2026-08-29")
+            == routes.REACH_REFUSED
+        )
+        assert (
+            routes.reachability("shut.test", path=self.log, today="2026-09-02")
+            == routes.REACH_UNKNOWN
+        )
 
 
 class Routing(unittest.TestCase):

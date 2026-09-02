@@ -44,6 +44,7 @@ the rest of this package runs on, applied to the network.
 from __future__ import annotations
 
 import json
+from datetime import date
 from pathlib import Path
 
 from lipsync.fork_identity import FAIL, PASS, UNMEASURED
@@ -56,6 +57,8 @@ __all__ = [
     "REACH_OPEN",
     "REACH_REFUSED",
     "REACH_UNKNOWN",
+    "ГОРИЗОНТ_ДНЕЙ",
+    "просрочен",
     "reachability",
     "routes_for",
     "blocked_families",
@@ -105,9 +108,40 @@ OPEN_HUBS: dict[str, str] = {
 }
 
 
-def _denial_states(path: Path | None = None) -> dict[str, str]:
-    """host -> its LAST recorded state in the denial log. Absent hosts absent."""
-    states: dict[str, str] = {}
+#: Через столько дней записанный отказ перестаёт считаться отказом и
+#: становится `unknown`, то есть «попробуй».
+#:
+#: ЗАЧЕМ ГОРИЗОНТ ВООБЩЕ. Отказ записывается один раз и живёт вечно, потому что
+#: код после отказа обходит хост стороной и больше никогда его не спрашивает.
+#: Политика доступа при этом меняется без нашего ведома: владелец открывает
+#: хосты пачками по заявке.
+#:
+#: ИЗМЕРЕНО 2026-09-02, прощупаны все 214 хостов, чей последний записанный
+#: статус — `refused`: 18 из них отвечают сегодня (8.4%), 1 не удалось
+#: измерить, 195 закрыты по-прежнему. Среди открывшихся — docs.mistral.ai,
+#: docs.cohere.com, api-docs.deepseek.com, docs.bfl.ml, docs.anthropic.com,
+#: tongyi.aliyun.com, developer.ideogram.ai, platform.kimi.ai: это ПЕРВОРУЧНЫЕ
+#: вендорские источники, ровно те, ради которых в этом модуле написан обход.
+#: Первые три названы в шапке модуля как «refused» и обходятся через HF —
+#: то есть обход работал по карте, устаревшей на пять дней.
+#:
+#: ВЫБРАНО 3 дня, и число выведено из этого же измерения: ошибка в 8% набралась
+#: за ШЕСТЬ дней, значит горизонт обязан быть короче интервала, на котором
+#: ошибка измерена, иначе он узаконивает уже наблюдавшуюся ложь. Цена ошибки в
+#: другую сторону мала: просроченный отказ читается как `unknown`, а `unknown`
+#: здесь значит «попробуй» — то есть один лишний запрос на хост раз в три дня,
+#: и `scripts/reprobe_hosts.py` проставляет свежую дату разом.
+ГОРИЗОНТ_ДНЕЙ = 3
+
+#: Дата, с которой строка считается свежей, когда даты в ней нет вовсе.
+#: Строки до 2026-08-27 писались без `first_seen`; отсутствие даты — это не
+#: свежесть, поэтому такая строка считается ПРОСРОЧЕННОЙ, а не вечной.
+БЕЗ_ДАТЫ = ""
+
+
+def _denial_states(path: Path | None = None) -> dict[str, tuple[str, str]]:
+    """host -> (его ПОСЛЕДНИЙ статус, дата этой строки). Чужих хостов нет."""
+    states: dict[str, tuple[str, str]] = {}
     target = path or DENIED_PATH
     if not target.is_file():
         return states
@@ -120,12 +154,24 @@ def _denial_states(path: Path | None = None) -> dict[str, str]:
         except ValueError:
             continue
         host, state = str(row.get("host") or ""), str(row.get("state") or "")
+        when = str(row.get("first_seen") or row.get("date") or БЕЗ_ДАТЫ)
         if host and state:
-            states[host] = state
+            states[host] = (state, when)
     return states
 
 
-def reachability(host: str, *, path: Path | None = None) -> str:
+def просрочен(когда: str, *, today: str = "") -> bool:
+    """Строка старше горизонта? Нечитаемая дата — просрочена, а не вечна."""
+    сегодня = today or date.today().isoformat()
+    try:
+        было = date.fromisoformat(когда)
+        сейчас = date.fromisoformat(сегодня)
+    except ValueError:
+        return True
+    return (сейчас - было).days > ГОРИЗОНТ_ДНЕЙ
+
+
+def reachability(host: str, *, path: Path | None = None, today: str = "") -> str:
     """`open`, `refused`, or `unknown` — and `unknown` means try it.
 
     Order matters: a RECORDED refusal wins over this module's hub table, so a
@@ -135,9 +181,11 @@ def reachability(host: str, *, path: Path | None = None) -> str:
     name = str(host or "").strip().lower()
     if not name:
         return REACH_UNKNOWN
-    recorded = _denial_states(path).get(name)
+    recorded, когда = _denial_states(path).get(name, ("", БЕЗ_ДАТЫ))
     if recorded == "refused":
-        return REACH_REFUSED
+        # Просроченный отказ — это НЕ «открыт»: никто не проверял. Это
+        # `unknown`, а `unknown` в этом модуле значит «попробуй».
+        return REACH_UNKNOWN if просрочен(когда, today=today) else REACH_REFUSED
     if recorded == "open" or name in OPEN_HUBS:
         return REACH_OPEN
     return REACH_UNKNOWN
