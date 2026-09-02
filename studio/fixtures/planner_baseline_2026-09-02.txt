@@ -7,20 +7,20 @@
   дубляж-ролика        шагов собрано 0/2; поиск: pass, фактов 2, моделей 2
       cogvideox-5b, indextts-2
   с-нуля-15с           шагов собрано 0/1; поиск: pass, фактов 8, моделей 8
-      clair-obscur-expedition-33-ltx-2, dasiwa-wan-2-2-i2v-14b-synthseduction-v9-lightspeed-gguf, flux-faetastic-details, hunyuan-video-safetensors-new-uncensored-llama, ltx-2-3-all-in-one-workflow-for-rtx-3060-with-12-gb-vram-32-gb-ram, ltx-2-3-enhancers, minimax-h3, wan2-1-14b-fusionx
+      clair-obscur-expedition-33-ltx-2, flux-faetastic-details, hunyuan-video-safetensors-new-uncensored-llama, ltx-2-3-all-in-one-workflow-for-rtx-3060-with-12-gb-vram-32-gb-ram, ltx-2-3-enhancers, minimax-h3, wan-v2.2-14b-speech-to-video, wan2-1-14b-fusionx
   липсинк-без-видео    шагов собрано 0/2; поиск: could not measure, фактов 0, моделей 0
   замена-персонажа     шагов собрано 0/1; поиск: could not measure, фактов 0, моделей 0
   фоли-к-оживлению     шагов собрано 0/2; поиск: could not measure, фактов 0, моделей 0
   сделай-красиво       шагов собрано 0/0; поиск: could not measure, фактов 0, моделей 0
   манипулятор          шагов собрано 0/0; поиск: pass, фактов 1, моделей 1
       indextts-2
-  бюджет-в-брифе       шагов собрано 0/1; поиск: pass, фактов 8, моделей 7
-      eleven_text_to_sound_v2, indextts-2, ltx-2.3, minimax-h3, sora-2-pro, wan-2.2-animate-mix, wan-2.7-t2v
+  бюджет-в-брифе       шагов собрано 0/1; поиск: pass, фактов 8, моделей 8
+      flashhead, flashtalk, indextts-2, infinitalk, latentsync, live-portrait, musetalk, sadtalker
   бюджет-без-единицы   шагов собрано 0/1; поиск: pass, фактов 8, моделей 7
       controlnet-union-sdxl-1.0, eleven_flash_v2_5, eleven_v3, flux-2-flex, flux.2-dev, sulphur-2-base, wan-2.2-animate-move
-  потолок-за-секунду   шагов собрано 0/1; поиск: pass, фактов 8, моделей 7
-      eleven_turbo_v2_5, indextts-2, minimax-h3, minimax-h3-i2v, wan-2.2-animate-mix, wan-2.7-i2v, wan-2.7-t2v
-  минута-против-секунды шагов собрано 0/1; поиск: pass, фактов 6, моделей 6
-      heygen-avatar5-digital-twin, sora-2, veed-fabric-1.0-fast, veo-3.1, wan-2.7-edit-video, wan-2.7-i2v
-  кадр-против-предела  шагов собрано 0/1; поиск: pass, фактов 8, моделей 7
-      chatterbox, krea2-turbo-hd-v1, minimax-h3, minimax-h3-max, seedance-2.5, wan-2.2-animate-move, wan-2.7-t2v
+  потолок-за-секунду   шагов собрано 0/1; поиск: pass, фактов 8, моделей 8
+      bria-video-background-removal-v3, eleven_turbo_v2_5, flashhead, flashtalk, indextts-2, infinitalk, latentsync, live-portrait
+  минута-против-секунды шагов собрано 0/1; поиск: pass, фактов 7, моделей 7
+      heygen-avatar5-digital-twin, sora-2, veed-fabric-1.0-fast, veo-3.1, wan-2.7-edit-video, wan-2.7-i2v, wan-v2.2-14b-speech-to-video
+  кадр-против-предела  шагов собрано 0/1; поиск: pass, фактов 8, моделей 8
+      chatterbox, flashhead, flashtalk, krea2-turbo-hd-v1, minimax-h3, seedance-2.5, wan-2.2-animate-move, wan-2.7-t2v

@@ -453,6 +453,13 @@ def plan_pipeline(brief: str, creative: str = "", budget_usd: float = 0.0) -> st
     Prices are not invented. A step whose model has no comparable price line
     says `цена не записана`.
 
+    AND A MODEL THAT DOES NOT PRODUCE WHAT THE STEP MUST PRODUCE IS RANKED LAST
+    TOO. A lipsync model can carry a list of TTS voices in its schema because
+    its speech synthesis is internal — but what comes out of the endpoint is a
+    video, so it cannot serve a step whose job is to hand the next step an audio
+    track. Inputs and outputs are now checked symmetrically; "no output
+    recorded" is a third answer, not consent (44 models of 543 record one).
+
     AND A MODEL WHOSE OWN VENDOR FORBIDS THE STEP'S INPUT IS RANKED LAST AND
     SAID SO. Some models state outright that they reject human faces on input,
     or take no video at all. That is not a quality complaint you can weigh

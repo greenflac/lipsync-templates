@@ -131,7 +131,13 @@ def run(path: Path = pn.DEFAULT_BRIEFS_PATH) -> dict:
             ждали_кадр = str(row["expect_fit"])
             если_кадр = {
                 "принимает": lambda: pn.FIT_IN in состояния,
-                "отвергнуты": lambda: any(t for t in отказы) and pn.FIT_IN in состояния,
+                # «Отвергнуты» — про ОТКАЗЫ и только про них. Раньше сюда была
+                # подмешана проверка, что выбранный сам влезает; после того как
+                # в ключе появился выход, выбранным законно стал кандидат с
+                # НЕЗАПИСАННЫМ пределом кадра, и ожидание покраснело на верном
+                # поведении. Два разных вопроса в одном ожидании — дефект
+                # ожидания, а не прибора.
+                "отвергнуты": lambda: any(t for t in отказы),
                 "": lambda: состояния == [""] * len(состояния) and not any(отказы),
             }
             годен_кадр = если_кадр.get(ждали_кадр)
@@ -147,6 +153,27 @@ def run(path: Path = pn.DEFAULT_BRIEFS_PATH) -> dict:
             отклонено = sum(int(s.get("banned_count") or 0) for s in итог["steps"])
             if отклонено != int(row["expect_banned"]):
                 беды.append(f"запретом отклонено {отклонено}, ждали {row['expect_banned']}")
+        # Выход шага: подтверждён ли он у выбранного, и отсекал ли кто-то.
+        if "expect_output" in row:
+            выходы = [
+                str((s.get("chosen") or {}).get("out_state") or "")
+                for s in итог["steps"]
+                if s.get("chosen")
+            ]
+            отсечено = sum(int(s.get("wrong_output_count") or 0) for s in итог["steps"])
+            ждали_выход = str(row["expect_output"])
+            если_выход = {
+                "подтверждён": lambda: pn.OUT_YES in выходы,
+                "отсечён": lambda: отсечено > 0,
+                "": lambda: pn.OUT_YES not in выходы and отсечено == 0,
+            }
+            годен_выход = если_выход.get(ждали_выход)
+            if годен_выход is None:
+                беды.append(f"expect_output={ждали_выход!r} — такого положения нет")
+            elif not годен_выход():
+                беды.append(
+                    f"выход: состояния {выходы}, отсечено {отсечено}, ждали {ждали_выход!r}"
+                )
         if "expect_budget" in row:
             снято = (итог.get("budget") or {}).get("amount")
             if снято != row["expect_budget"]:
@@ -289,6 +316,9 @@ def run(path: Path = pn.DEFAULT_BRIEFS_PATH) -> dict:
     # выпадает из показанных), а строка-запрет не смеет печататься доводом.
     запретом_отклонено = 0
     снятых = 0
+    не_тот_выход = 0
+    выход_подтверждён = 0
+    выбран_не_тот: list[str] = []
     объявлено_снятие = 0
     выбран_снятый: list[str] = []
     шагов_с_запретом = 0
@@ -301,6 +331,12 @@ def run(path: Path = pn.DEFAULT_BRIEFS_PATH) -> dict:
             if выбран is None:
                 continue
             снятых += int(s.get("retired_count") or 0)
+            не_тот_выход += int(s.get("wrong_output_count") or 0)
+            выход_шага = str(выбран.get("out_state") or "")
+            if выход_шага == pn.OUT_YES:
+                выход_подтверждён += 1
+            if выход_шага == pn.OUT_NO:
+                выбран_не_тот.append(f"{c['id']}/{s['step']} ({выбран['model']})")
             # Считается по ВСЕМ найденным, а не по выбранному: `sora-2` на
             # живой базе объявлен к снятию И запрещён по входу, поэтому
             # выбранным не бывает никогда — счёт по выбранному показал бы 0 и
@@ -309,7 +345,11 @@ def run(path: Path = pn.DEFAULT_BRIEFS_PATH) -> dict:
             если_объявлено = str(выбран.get("life_state") or "")
             if если_объявлено == pn.LIFE_RETIRED:
                 выбран_снятый.append(f"{c['id']}/{s['step']} ({выбран['model']})")
-            сколько = int(s.get("banned_count") or 0) + int(s.get("retired_count") or 0)
+            сколько = (
+                int(s.get("banned_count") or 0)
+                + int(s.get("retired_count") or 0)
+                + int(s.get("wrong_output_count") or 0)
+            )
             запретом_отклонено += сколько
             if сколько:
                 шагов_с_запретом += 1
@@ -351,6 +391,9 @@ def run(path: Path = pn.DEFAULT_BRIEFS_PATH) -> dict:
         "rival_line_spurious": строка_лишняя,
         "banned_candidates": запретом_отклонено,
         "retired_candidates": снятых,
+        "wrong_output_candidates": не_тот_выход,
+        "output_confirmed": выход_подтверждён,
+        "chosen_wrong_output": выбран_не_тот,
         "shutdown_announced": объявлено_снятие,
         "chosen_is_retired": выбран_снятый,
         "steps_with_ban": шагов_с_запретом,
@@ -404,6 +447,16 @@ def verdict(итог: dict) -> tuple[int, list[str]]:
         )
     for где in итог["rival_line_spurious"]:
         беды.append(f"выбранный сам проверен, а строка о вытесненном всё равно напечатана: {где}")
+    for где in итог["chosen_wrong_output"]:
+        беды.append(f"ВЫБРАНА модель, которая нужного шагу вида не отдаёт: {где}")
+    if not итог["wrong_output_candidates"]:
+        беды.append(
+            f"ни на одном шаге выход не отсёк кандидата: ветка «{pn.OUT_NO}» не проверена вовсе"
+        )
+    if not итог["output_confirmed"]:
+        беды.append(
+            f"ни у одного выбранного выход не подтверждён: ветка «{pn.OUT_YES}» не проверена вовсе"
+        )
     for где in итог["chosen_is_retired"]:
         беды.append(f"ВЫБРАНА модель, у которой срок службы уже прошёл: {где}")
     if not итог["shutdown_announced"]:
@@ -475,6 +528,11 @@ def render(итог: dict) -> str:
             f"{итог['candidates_without_applicability']} (все с пометкой: "
             f"{итог['candidates_unmarked'] == 0}), без доказательства "
             f"{итог['candidates_without_evidence']}"
+        ),
+        (
+            f"по выходу: не тот вид у {итог['wrong_output_candidates']} кандидат(ов), "
+            f"выход подтверждён у {итог['output_confirmed']} выбранных, "
+            f"выбран не тот {len(итог['chosen_wrong_output'])}"
         ),
         (
             f"по концу службы: уже снятых {итог['retired_candidates']}, "

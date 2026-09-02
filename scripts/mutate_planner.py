@@ -49,6 +49,10 @@
 Тем же заходом добавлено шесть мутантов на константы КОНЦА СЛУЖБЫ
 (`LIFE_ORDER`, `blocked_rank`, `LIFE_RETIRED`, развилка в `life_stance`).
 
+Тем же заходом добавлено восемь мутантов на константы ВЫХОДА шага
+(`OUT_ORDER`, `OUTPUT_KINDS`, `OUTPUT_ATTRIBUTE`, составное значение
+`blocked_rank` и развилка совпадения вида в `output_stance`).
+
 ЗДОРОВЫЙ ПРОГОН ПЕЧАТАЕТСЯ ПЕРВОЙ СТРОКОЙ, и это не украшение. Первые заходы
 второй и третьей серий ОБА показали `ЗДОРОВЫЙ | тесты rc=1`: таблица мутаций
 строилась поверх красного и не значила ничего. Причина оба раза была одна —
@@ -167,8 +171,8 @@ MUTANTS = [
     (
         "scripts/check_planner.py",
         'TODAY = "2026-09-02"',
-        'TODAY = "2025-07-01"',
-        "TODAY -> раньше (2025-07-01): база перестаёт быть старой",
+        'TODAY = "2026-09-25"',
+        "TODAY -> 2026-09-25: объявленное снятие sora-2 (24.09) становится состоявшимся",
     ),
     (
         "scripts/check_planner.py",
@@ -256,20 +260,20 @@ MUTANTS = [
     ),
     (
         "studio/planner.py",
-        'RIVAL_MARK = "ПРОВЕРЕННЫЙ ЕСТЬ, НО ЦЕНА ЕГО ОТОДВИНУЛА"',
+        'RIVAL_MARK = "ПРОВЕРЕННЫЙ ЕСТЬ, НО ВЫБРАН НЕ ОН"',
         'RIVAL_MARK = "есть и другие кандидаты"',
         "RIVAL_MARK -> слабее: пометка перестаёт называть, что именно случилось",
     ),
     (
         "studio/planner.py",
-        'RIVAL_MARK = "ПРОВЕРЕННЫЙ ЕСТЬ, НО ЦЕНА ЕГО ОТОДВИНУЛА"',
+        'RIVAL_MARK = "ПРОВЕРЕННЫЙ ЕСТЬ, НО ВЫБРАН НЕ ОН"',
         'RIVAL_MARK = "ПРОВЕРЕННЫЙ КАНДИДАТ ВЫТЕСНЕН ЦЕНОЙ"',
         "RIVAL_MARK -> строже: другая формулировка",
     ),
     (
         "studio/planner.py",
         'NO_RIVAL_MARK = "ПРОВЕРЕННЫХ НЕТ ВОВСЕ"',
-        'NO_RIVAL_MARK = "ПРОВЕРЕННЫЙ ЕСТЬ, НО ЦЕНА ЕГО ОТОДВИНУЛА"',
+        'NO_RIVAL_MARK = "ПРОВЕРЕННЫЙ ЕСТЬ, НО ВЫБРАН НЕ ОН"',
         "NO_RIVAL_MARK -> слабее: два разных положения печатаются одним текстом",
     ),
     (
@@ -489,8 +493,8 @@ MUTANTS = [
     ),
     (
         "studio/planner.py",
-        "        if c.applicability >= RIVAL_MIN_APPLICABILITY and blocked_rank(c) < BAN_ORDER[BAN_FORBIDS]",
-        "        if c.applicability >= RIVAL_MIN_APPLICABILITY",
+        "        and blocked_rank(c)[0] < BAN_ORDER[BAN_FORBIDS]",
+        "        and True",
         "proven -> слабее: невозможный кандидат снова зовётся вытесненным",
     ),
     # --- константы конца службы, заведены 2026-09-02 той же осью ---
@@ -508,14 +512,14 @@ MUTANTS = [
     ),
     (
         "studio/planner.py",
-        "    return max(BAN_ORDER.get(c.ban_state, 0), LIFE_ORDER.get(c.life_state, 0))",
-        "    return BAN_ORDER.get(c.ban_state, 0)",
+        "        LIFE_ORDER.get(c.life_state, 0),\n        OUT_ORDER.get(c.out_state, 0),",
+        "        OUT_ORDER.get(c.out_state, 0),",
         "blocked_rank -> слабее: конец службы выпадает из оси невозможного",
     ),
     (
         "studio/planner.py",
-        "    return max(BAN_ORDER.get(c.ban_state, 0), LIFE_ORDER.get(c.life_state, 0))",
-        "    return min(BAN_ORDER.get(c.ban_state, 0), LIFE_ORDER.get(c.life_state, 0))",
+        "    return (max(ступени), -sum(1 for ш in ступени if ш == 0))",
+        "    return (min(ступени), -sum(1 for ш in ступени if ш == 0))",
         "blocked_rank -> слабее: одной причины невозможности перестаёт хватать",
     ),
     (
@@ -529,6 +533,55 @@ MUTANTS = [
         'LIFE_RETIRED = "снята: срок прошёл"',
         'LIFE_RETIRED = "снятие объявлено, срок впереди"',
         "LIFE_RETIRED -> слабее: отказ печатается словами предупреждения",
+    ),
+    # --- константы ВЫХОДА шага, заведены 2026-09-02 той же осью ---
+    (
+        "studio/planner.py",
+        "    OUT_YES: 0,\n    OUT_UNKNOWN: 1,\n    OUT_NO: 2,",
+        "    OUT_YES: 0,\n    OUT_UNKNOWN: 2,\n    OUT_NO: 1,",
+        "OUT_ORDER -> слабее: незаписанный выход хуже неподходящего",
+    ),
+    (
+        "studio/planner.py",
+        "    OUT_YES: 0,\n    OUT_UNKNOWN: 1,\n    OUT_NO: 2,",
+        "    OUT_YES: 0,\n    OUT_UNKNOWN: 0,\n    OUT_NO: 0,",
+        "OUT_ORDER -> строже: три положения по выходу сливаются в одно",
+    ),
+    (
+        "studio/planner.py",
+        '    ARTEFACT_LIPSYNCED: "видео",',
+        '    ARTEFACT_LIPSYNCED: "видео_с_липсинком",',
+        "OUTPUT_KINDS -> строже: липсинк перестаёт удовлетворяться видом «видео»",
+    ),
+    (
+        "studio/planner.py",
+        '    ARTEFACT_AUDIO: "аудио",',
+        '    ARTEFACT_AUDIO: "видео",',
+        "OUTPUT_KINDS -> слабее: звук объявлен видом «видео»",
+    ),
+    (
+        "studio/planner.py",
+        'OUT_UNKNOWN = "выход не записан"',
+        'OUT_UNKNOWN = "отдаёт нужный вид"',
+        "OUT_UNKNOWN -> слабее: молчание схемы печатается как согласие",
+    ),
+    (
+        "studio/planner.py",
+        'OUTPUT_ATTRIBUTE = "produces_outputs"',
+        'OUTPUT_ATTRIBUTE = "accepts_inputs"',
+        "OUTPUT_ATTRIBUTE -> вход выдаётся за выход",
+    ),
+    (
+        "studio/planner.py",
+        "    return (max(ступени), -sum(1 for ш in ступени if ш == 0))",
+        "    return (max(ступени), 0)",
+        "blocked_rank -> слабее: подтверждённое препятствие перестаёт различаться",
+    ),
+    (
+        "studio/planner.py",
+        "    if свои & нужно:",
+        "    if свои or нужно:",
+        "output_stance -> слабее: совпадение вида перестаёт требоваться",
     ),
 ]
 
