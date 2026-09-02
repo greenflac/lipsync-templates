@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import unittest
 
+from studio.mcp import contract
 from studio.mcp.contract import BANDS, gate
 
 # The engine's bands as of 2026-08-27, written out rather than imported. If the
@@ -83,3 +84,59 @@ class ContractGate(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ЧужойЯзык(unittest.TestCase):
+    """Найдено чтением собственной выдачи (П3, 2026-09-02).
+
+    На промпте «женщина говорит в камеру, тёплый янтарный свет, матовая
+    кожа» прибор отвечал `fail` со словами «words 0, corpus band 9..67» и
+    `leak: []`. Оба числа — неправда: слова движок считает по `[A-Za-z]`, а
+    запретную зону сверяет с английским списком, поэтому «женщина» он не
+    видит. Опаснее всего сочетание: почини кто-нибудь только счётчик слов —
+    и промпт, называющий субъекта, получил бы `pass`.
+    """
+
+    РУССКИЙ_С_СУБЪЕКТОМ = "женщина говорит в камеру, тёплый янтарный свет, матовая кожа"
+    АНГЛИЙСКИЙ_ЧИСТЫЙ = (
+        "warm amber light, matte skin, muted colours, shallow depth of field, soft falloff"
+    )
+
+    def test_кириллица_это_не_смогли_а_не_нарушение(self) -> None:
+        out = contract.gate(self.РУССКИЙ_С_СУБЪЕКТОМ)
+        self.assertEqual(out["outcome"], "could not measure")
+        self.assertEqual(out["checked"], 0)
+        self.assertEqual(out["unmeasured"], 3)
+
+    def test_и_сказано_что_именно_не_проверено(self) -> None:
+        """Пустой `leak` обязан быть объяснён словами, иначе он читается как
+        «чисто» — а это ровно то «уверенно и неверно», против чего пакет."""
+        нота = contract.gate(self.РУССКИЙ_С_СУБЪЕКТОМ)["note"]
+        self.assertIn("не латиницей", нота)
+        self.assertIn("НЕ ПРОВЕРЕНЫ", нота)
+
+    def test_английский_судится_как_прежде(self) -> None:
+        """Вторая половина контроля (И5): без неё правило «ничего не судить»
+        тоже дало бы ноль ложных срабатываний."""
+        self.assertEqual(contract.gate(self.АНГЛИЙСКИЙ_ЧИСТЫЙ)["outcome"], "pass")
+        плохой = "a woman talking to camera, warm amber light, matte skin, muted colours, film"
+        self.assertEqual(contract.gate(плохой)["leak"], ["woman"])
+
+    def test_текст_без_букв_судится(self) -> None:
+        """«720p, 24 fps» — не чужой язык, а промпт без слов, и ноль слов там
+        честный ноль. Свернуть эти два случая значило бы прятать нарушение
+        полосы за «не смогли»."""
+        self.assertEqual(contract.gate("720p, 24 fps, 1.85:1")["outcome"], "fail")
+
+    def test_английский_с_парой_русских_слов_ещё_судится(self) -> None:
+        """Граница выбрана широкой: пока латиницы больше половины, прибор
+        отвечает за свои слова."""
+        смесь = "warm amber light, matte skin, muted colours, shallow depth of field, свет"
+        self.assertEqual(contract.gate(смесь)["outcome"], "pass")
+
+    def test_доля_латиницы_считается_по_буквам_а_не_по_символам(self) -> None:
+        """Т2: ожидаемое — литералы. Цифры и запятые долю не размывают."""
+        self.assertEqual(contract._латиницы("abc"), 1.0)
+        self.assertEqual(contract._латиницы("абв"), 0.0)
+        self.assertEqual(contract._латиницы("ab вг"), 0.5)
+        self.assertEqual(contract._латиницы("720, 24"), 1.0)
