@@ -1349,3 +1349,66 @@ class КраткаяФормаНеПечатаетДважды(unittest.TestCase
         хвост = str((полный.get("availability") or {}).get("note") or "")
         if хвост:
             self.assertIn(хвост, str(полный.get("note") or ""))
+
+
+class СнятиеВидноВОтвете(unittest.TestCase):
+    """Реестр держит СЕМЬ карточек, база — 505 моделей. Для остальных 498
+    запись о снятии лежала рядовой строкой среди прочих, и порекомендовать уже
+    отключённую модель было нечему помешать.
+
+    ИЗМЕРЕНО 2026-09-02 на живой базе: 6 строк у 5 моделей, и у двух
+    (`imagen-4`, `imagen-4.0`) срок УЖЕ ПРОШЁЛ.
+    """
+
+    def setUp(self) -> None:
+        self._dir = tempfile.TemporaryDirectory()
+        self.addCleanup(self._dir.cleanup)
+        self.путь = Path(self._dir.name) / "facts.jsonl"
+
+    def _записать(self, значение: str, атрибут: str = "availability") -> None:
+        self.путь.write_text(
+            json.dumps(
+                {
+                    "model": "test-model",
+                    "attribute": атрибут,
+                    "value": значение,
+                    "source_url": "https://some-magazine.test/review",
+                    "tier": "blog",
+                    "stated_on": "2026-08-01",
+                },
+                ensure_ascii=False,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+
+    def test_снятая_модель_названа_в_ноте(self) -> None:
+        """Поле, которого никто не читает, — тот же дефект, что честная деталь
+        при неверном заголовке."""
+        self._записать("DISCONTINUED on Vertex AI with discontinuation date June 30, 2026")
+        итог = advice.advise("test-model", path=self.путь)
+        self.assertIn("СНЯТА С ОБСЛУЖИВАНИЯ", итог["note"])
+        self.assertIn("2026-06-30", итог["note"])
+
+    def test_объявленное_снятие_отличимо_от_состоявшегося(self) -> None:
+        """Модель, которую отключат через три недели, ещё отвечает. Свести два
+        положения в одно значило бы либо выбросить рабочую, либо промолчать о
+        том, что пайплайн скоро встанет."""
+        self._записать("the API is deprecated with a hard shutdown on 2099-01-01")
+        итог = advice.advise("test-model", path=self.путь)
+        self.assertIn("ОБЪЯВЛЕНО СНЯТИЕ", итог["note"])
+        self.assertNotIn("СНЯТА С ОБСЛУЖИВАНИЯ", итог["note"])
+
+    def test_живая_модель_ноту_не_получает(self) -> None:
+        """Негативный контроль (И5): пометка обязана молчать там, где снятия
+        нет, иначе её перестанут читать."""
+        self._записать("1080p", "max_resolution")
+        итог = advice.advise("test-model", path=self.путь)
+        self.assertNotIn("СНЯТ", итог["note"])
+        self.assertEqual(итог["lifecycle"], [])
+
+    def test_краткая_форма_снятие_несёт(self) -> None:
+        self._записать("DISCONTINUED on Vertex AI with discontinuation date June 30, 2026")
+        кратко = advice.brief("test-model", path=self.путь)
+        self.assertTrue(кратко["lifecycle"], кратко)
+        self.assertIn("СНЯТА С ОБСЛУЖИВАНИЯ", кратко["note"])

@@ -45,6 +45,7 @@ from typing import Any
 
 from lipsync.fork_identity import FAIL, PASS, UNMEASURED
 
+from studio import lifecycle as _lifecycle
 from studio.selfrag import attrfamily, registry, source_hosts
 from studio.selfrag.facts import (
     DEFAULT_FACTS_PATH,
@@ -420,6 +421,28 @@ def advise(model: str, attribute: str = "", *, path: Path | None = None) -> dict
         if verdict["outcome"] == FAIL:
             contested.append(attr)
 
+    # СНЯТА ЛИ МОДЕЛЬ С ОБСЛУЖИВАНИЯ — ПО БАЗЕ, А НЕ ПО РЕЕСТРУ. Реестр держит
+    # семь карточек, база — 505 моделей, и для остальных 498 запись о снятии
+    # лежала рядовой строкой среди прочих. ИЗМЕРЕНО 2026-09-02: таких строк 6 у
+    # 5 моделей, и у двух (`imagen-4`, `imagen-4.0`) срок УЖЕ ПРОШЁЛ. Отдать
+    # такую модель в сравнение значит послать человека платить за 404.
+    #
+    # Правила разбора и их негативный контроль — `studio/lifecycle.py`.
+    lifecycle = [
+        {
+            "attribute": fact.attribute,
+            "value": fact.value,
+            "source_url": fact.source_url,
+            "tier": fact.tier,
+            **_lifecycle.разобрать(str(fact.value), fact.attribute).as_dict(),
+        }
+        # По ВСЕМ написаниям имени: `imagen-4` и `imagen-4.0` — одна модель в
+        # двух карманах, и снятие записано у обоих по-разному.
+        for fact in store.facts
+        if fact.model in set(store.spellings(name))
+        and _lifecycle.разобрать(str(fact.value), fact.attribute).outcome != _lifecycle.ГОДНО
+    ]
+
     failures = [
         {
             "value": fact.value,
@@ -545,6 +568,7 @@ def advise(model: str, attribute: str = "", *, path: Path | None = None) -> dict
             "class_findings_note": class_findings_note,
             "card_vs_base": card_vs_base,
             "contested": [],
+            "lifecycle": lifecycle,
         }
 
     checked = len(claims) + (1 if live["card"] is not None else 0)
@@ -564,6 +588,7 @@ def advise(model: str, attribute: str = "", *, path: Path | None = None) -> dict
             "class_findings_note": class_findings_note,
             "card_vs_base": card_vs_base,
             "contested": contested,
+            "lifecycle": lifecycle,
         }
 
     if contested:
@@ -586,6 +611,7 @@ def advise(model: str, attribute: str = "", *, path: Path | None = None) -> dict
             "class_findings_note": class_findings_note,
             "card_vs_base": card_vs_base,
             "contested": contested,
+            "lifecycle": lifecycle,
         }
 
     if not claims:
@@ -608,6 +634,7 @@ def advise(model: str, attribute: str = "", *, path: Path | None = None) -> dict
             "class_findings_note": class_findings_note,
             "card_vs_base": card_vs_base,
             "contested": [],
+            "lifecycle": lifecycle,
         }
 
     unmeasured = sum(1 for v in claims.values() if v["outcome"] == UNMEASURED)
@@ -629,7 +656,22 @@ def advise(model: str, attribute: str = "", *, path: Path | None = None) -> dict
     # выносит вердикт о знании — но остаётся видимой, и `fail` от неё
     # (модель снята с обслуживания) выше по функции по-прежнему главнее
     # всего: платить за 404 нельзя, даже зная про модель всё.
-    axis = f" Availability is a SEPARATE axis, and it says {live['outcome']!r}: {live['note']}"
+    # СНЯТИЕ НАЗЫВАЕТСЯ В НОТЕ, А НЕ ТОЛЬКО ПОЛЕМ. Поле, которого никто не
+    # читает, — тот же дефект, что честная деталь при неверном заголовке:
+    # именно за него сегодня заведён `scripts/check_headline.py`.
+    снято = [с for с in lifecycle if с["outcome"] == _lifecycle.НЕ_ГОДНО]
+    впереди = [с for с in lifecycle if с["outcome"] == _lifecycle.НЕ_СМОГЛИ]
+    жизнь = ""
+    if снято:
+        когда = снято[0]["when"] or "без даты"
+        жизнь = f" СНЯТА С ОБСЛУЖИВАНИЯ ({когда}), по записи базы: {снято[0]['attribute']}."
+    elif впереди:
+        когда = впереди[0]["when"] or "срок не назван"
+        жизнь = f" ОБЪЯВЛЕНО СНЯТИЕ ({когда}), по записи базы: {впереди[0]['attribute']}."
+
+    axis = (
+        жизнь + f" Availability is a SEPARATE axis, and it says {live['outcome']!r}: {live['note']}"
+    )
     if unmeasured == len(claims):
         why = gap_reason(claims)
         gap_note = (
@@ -662,6 +704,7 @@ def advise(model: str, attribute: str = "", *, path: Path | None = None) -> dict
             "class_findings_note": class_findings_note,
             "card_vs_base": card_vs_base,
             "contested": [],
+            "lifecycle": lifecycle,
         }
 
     return {
@@ -688,6 +731,7 @@ def advise(model: str, attribute: str = "", *, path: Path | None = None) -> dict
         "class_findings_note": class_findings_note,
         "card_vs_base": card_vs_base,
         "contested": [],
+        "lifecycle": lifecycle,
     }
 
 
@@ -1093,6 +1137,10 @@ def brief(model: str, attribute: str = "", *, path: Path | None = None) -> dict:
             # price, ответили price_per_minute» значит вернуть дефект туда,
             # где его читают чаще всего.
             "asked_as",
+            # Снятие едет и в краткую форму: она стоит по умолчанию, и потерять
+            # в ней «модель уже отключена» значит вернуть дефект туда, где его
+            # читают чаще всего.
+            "lifecycle",
         )
         if ключ in полный
     }
