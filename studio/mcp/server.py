@@ -411,6 +411,16 @@ def plan_pipeline(brief: str, creative: str = "", budget_usd: float = 0.0) -> st
     chosen candidate differed from the runner-up on. Read it before assuming the
     choice was close.
 
+    AND `proven_rival`, which is the line to read first when a ceiling is in
+    play. A named ceiling can lift models nobody has ever measured above models
+    somebody has, and the ones with evidence then fall out of the shortlist
+    entirely — every visible line still true, the impression false. So the step
+    says, in one line: either that a proven candidate exists and price pushed it
+    down (naming it and what it lost on), or — in different words, never the
+    same silence — that not one of the candidates found has measured
+    applicability at all. When the chosen candidate is itself proven, the line
+    is absent, because then it would be noise.
+
     THREE OUTCOMES, and the third is the one to read. `could not measure` means
     either that no operation could be derived from the brief at all, or that a
     derived step has no candidate in the base. A step with no candidate stays

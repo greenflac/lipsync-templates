@@ -89,6 +89,21 @@ def run(path: Path = pn.DEFAULT_BRIEFS_PATH) -> dict:
             беды.append(f"классы {итог['classes']} не содержат {нет}")
         # Потолок, вычитанный ИЗ БРИФА. `null` в ожидании — это тоже ожидание,
         # и оно сильнее прочих: выдуманный бюджет хуже отсутствующего.
+        # Строка о проверенных кандидатах: три положения, три разных ожидания.
+        # Пустое ожидание — тоже ожидание: строка там была бы шумом.
+        if "expect_rival" in row:
+            строки_о_проверенных = [str(s.get("proven_rival") or "") for s in итог["steps"]]
+            ждали_строку = str(row["expect_rival"])
+            если = {
+                "вытеснен": lambda t: t.startswith(pn.RIVAL_MARK),
+                "нет": lambda t: t.startswith(pn.NO_RIVAL_MARK),
+                "": lambda t: t == "",
+            }
+            годен = если.get(ждали_строку)
+            if годен is None:
+                беды.append(f"expect_rival={ждали_строку!r} — такого положения нет")
+            elif not any(годен(t) for t in строки_о_проверенных):
+                беды.append(f"строка о проверенных: {строки_о_проверенных}, ждали {ждали_строку!r}")
         if "expect_budget" in row:
             снято = (итог.get("budget") or {}).get("amount")
             if снято != row["expect_budget"]:
@@ -151,6 +166,28 @@ def run(path: Path = pn.DEFAULT_BRIEFS_PATH) -> dict:
                         f"({a.get('price_state')}) — по цене он старше"
                     )
 
+    # СТРОКА О ПРОВЕРЕННЫХ, проверенная структурно на всех брифах разом.
+    # Два требования, и оба в обе стороны (И5): у непроверенного выбранного
+    # строка ОБЯЗАНА быть, у проверенного — обязана отсутствовать.
+    вытеснен = нет_проверенных = 0
+    строка_пропущена: list[str] = []
+    строка_лишняя: list[str] = []
+    for c in случаи:
+        for s in c["plan"]["steps"]:
+            выбран = s["chosen"]
+            if выбран is None:
+                continue
+            про_проверенных = str(s.get("proven_rival") or "")
+            if выбран["applicability"] == 0:
+                if not про_проверенных:
+                    строка_пропущена.append(f"{c['id']}/{s['step']} ({выбран['model']})")
+                elif про_проверенных.startswith(pn.RIVAL_MARK):
+                    вытеснен += 1
+                elif про_проверенных.startswith(pn.NO_RIVAL_MARK):
+                    нет_проверенных += 1
+            elif про_проверенных:
+                строка_лишняя.append(f"{c['id']}/{s['step']} ({выбран['model']})")
+
     молчащие = [c for c in случаи if not c["steps"]]
     заговорившие = [c for c in случаи if c["steps"]]
     исходы = {c["outcome"] for c in случаи}
@@ -173,6 +210,10 @@ def run(path: Path = pn.DEFAULT_BRIEFS_PATH) -> dict:
         "steps_with_ceiling": шагов_с_потолком,
         "price_order_broken": цена_нарушена,
         "why_not_next_printed": почему_не_сосед,
+        "rival_displaced": вытеснен,
+        "rival_none_at_all": нет_проверенных,
+        "rival_line_missing": строка_пропущена,
+        "rival_line_spurious": строка_лишняя,
     }
 
 
@@ -206,6 +247,22 @@ def verdict(итог: dict) -> tuple[int, list[str]]:
         )
     for строка in итог["price_order_broken"]:
         беды.append(f"порядок по цене нарушен — {строка}")
+    for где in итог["rival_line_missing"]:
+        беды.append(
+            f"выбран кандидат без измеренной применимости, а о проверенных не сказано: {где}"
+        )
+    for где in итог["rival_line_spurious"]:
+        беды.append(f"выбранный сам проверен, а строка о вытесненном всё равно напечатана: {где}")
+    if not итог["rival_displaced"]:
+        беды.append(
+            "ни на одном шаге цена не вытеснила проверенного кандидата: ветка "
+            f"«{pn.RIVAL_MARK}» не проверена вовсе"
+        )
+    if not итог["rival_none_at_all"]:
+        беды.append(
+            "ни на одном шаге не сказано, что проверенных нет вовсе: ветка "
+            f"«{pn.NO_RIVAL_MARK}» не проверена вовсе"
+        )
     if итог["candidates"] > 1 and not итог["why_not_next_printed"]:
         беды.append("ни у одного шага не напечатано, почему выбран этот, а не сосед")
     if итог["candidates_without_evidence"]:
@@ -229,6 +286,12 @@ def render(итог: dict) -> str:
             f"{итог['candidates_without_applicability']} (все с пометкой: "
             f"{итог['candidates_unmarked'] == 0}), без доказательства "
             f"{итог['candidates_without_evidence']}"
+        ),
+        (
+            f"проверенный вытеснен ценой на {итог['rival_displaced']} шаг(ах), "
+            f"проверенных нет вовсе на {итог['rival_none_at_all']}, "
+            f"строка пропущена {len(итог['rival_line_missing'])}, "
+            f"лишняя {len(итог['rival_line_spurious'])}"
         ),
         (
             f"шагов с вычитанным потолком {итог['steps_with_ceiling']}, "
