@@ -48,6 +48,8 @@ from typing import Any, Iterable
 
 from lipsync.fork_identity import FAIL, PASS, UNMEASURED
 
+from studio.mcp import advice
+
 STORE = Path(__file__).resolve().parents[1] / "knowledge" / "misses.jsonl"
 
 #: Исход одного вопроса, теми же тремя значениями, что и везде (правило Р1).
@@ -127,12 +129,11 @@ def evidence(answer: dict[str, Any], attribute: str = "") -> int:
     целиком, только через пробел. Нормализует вход ОДНО место — `advise_and_note`
     (найдено независимой проверкой 2026-08-31).
     """
-    claims = answer.get("claims") or {}
-    found = 0
-    if isinstance(claims, dict):
-        for verdict in claims.values():
-            if isinstance(verdict, dict):
-                found += int(verdict.get("checked") or 0)
+    # Считает ОДНА функция на обе стороны (правило Е1). Пока «сколько
+    # нашлось» считалось здесь, а вердикт `advise` смотрел на реестр
+    # доступности, журнал видел свидетельство там, где вердикт говорил
+    # «не смогли»: 457 моделей из 466 на живой базе, ИЗМЕРЕНО 2026-09-02.
+    found = advice.claims_found(answer.get("claims") or {})
     # Только то, что относится к ЭТОЙ модели. `class_findings` сюда не входят
     # нарочно: это ремесленные находки по классу задач, одни и те же 12 из 171
     # для любого имени, включая выдуманное. Поймано негативным контролем (И5):

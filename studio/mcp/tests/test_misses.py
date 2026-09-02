@@ -309,3 +309,77 @@ class UnknownNameStillPointsSomewhere(unittest.TestCase):
 
         note = advice.advise("h3-max")["note"]
         self.assertIn("under that exact name", note)
+
+
+class EvidenceAndVerdictAgree(unittest.TestCase):
+    """Журнал и вердикт считают ОДНО «сколько нашлось» — и не могут разойтись.
+
+    До 2026-09-02 они расходились массово: `evidence` видела свидетельство там,
+    где `advise` уже сказал «не смогли», потому что вердикт выносился по
+    реестру доступности (7 имён), а свидетельство считалось по базе фактов
+    (466 имён). ИЗМЕРЕНО на живой базе до правки: 457 моделей из 466.
+
+    Ожидаемые значения — ЛИТЕРАЛЫ (правило Т2).
+    """
+
+    def setUp(self):
+        self._dir = tempfile.TemporaryDirectory()
+        self.addCleanup(self._dir.cleanup)
+        self.tmp = Path(self._dir.name)
+
+    def _base(self, rows):
+        path = self.tmp / "facts.jsonl"
+        path.write_text(
+            "\n".join(json.dumps(r, ensure_ascii=False) for r in rows) + "\n", encoding="utf-8"
+        )
+        return path
+
+    def _fact(self, **over):
+        row = {
+            "model": "test-model",
+            "attribute": "max_seconds",
+            "value": "10",
+            "source_url": "https://example.test/a",
+            "tier": "vendor",
+            "stated_on": "2026-08-01",
+            "note": "",
+            "fix": "",
+        }
+        row.update(over)
+        return row
+
+    def test_no_evidence_means_the_verdict_cannot_be_an_answer(self):
+        """Негативный контроль: где нечего предъявить — там «не смогли»."""
+        from studio.mcp import advice
+
+        path = self._base([self._fact()])
+        for name, attribute in [
+            ("зззнесуществующая-модель-9000", ""),
+            ("test-model", "выдуманный-атрибут"),
+        ]:
+            out = advice.advise(name, attribute, path=path)
+            self.assertEqual(misses.evidence(out, attribute), 0, name)
+            self.assertEqual(out["outcome"], "could not measure", name)
+
+    def test_a_pass_always_has_evidence_behind_it(self):
+        from studio.mcp import advice
+
+        path = self._base([self._fact()])
+        out = advice.advise("test-model", "max_seconds", path=path)
+        self.assertEqual(out["outcome"], "pass")
+        self.assertEqual(misses.evidence(out, "max_seconds"), 1)
+
+    def test_the_bottom_rung_is_evidence_of_reading_not_of_a_fact(self):
+        """Свидетельство есть, а вердикт «не смогли» — и это не расхождение.
+
+        Блоговый источник ЗАПИСАН (журнал его видит и в очередь модель не
+        гонит), но факта не устанавливает. Два разных вопроса — два разных
+        числа, и склеивать их нельзя.
+        """
+        from studio.mcp import advice
+
+        path = self._base([self._fact(tier="blog", source_url="https://blog.test/a")])
+        out = advice.advise("test-model", "max_seconds", path=path)
+        self.assertEqual(out["outcome"], "could not measure")
+        self.assertEqual(out["reason"], "sources_blog_only")
+        self.assertEqual(misses.evidence(out, "max_seconds"), 1)

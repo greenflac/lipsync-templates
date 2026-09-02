@@ -60,6 +60,9 @@ from studio.selfrag.facts import (
 
 __all__ = [
     "advise",
+    "claims_found",
+    "gap_reason",
+    "REASONS",
     "record",
     "withdraw",
     "stale",
@@ -77,6 +80,74 @@ __all__ = [
 #: an answer needs the strongest few and the count of the rest, not all of
 #: them. Not measured — measure it when somebody reports the answer is thin.
 CLASS_FINDINGS_SHOWN = 12
+
+#: ПОЧЕМУ ответ такой, машиночитаемо и рядом с нотой.
+#:
+#: Заведено 2026-09-02, потому что три РАЗНЫХ положения дел печатались одним
+#: исходом `could not measure` и одинаково читались: имени нет в базе вовсе;
+#: имя набрано с опечаткой, а база держит соседнее; модель база знает, а
+#: спрошенного атрибута про неё никто не записывал. Пользователь получал
+#: «не смогли» и не мог понять, искать ли источник, переспросить ли другим
+#: именем или спросить другой атрибут. Нота это иногда объясняла словами;
+#: слова нельзя ни сгруппировать, ни сосчитать.
+REASON_NO_MODEL_NAMED = "no_model_named"
+REASON_MODEL_UNKNOWN = "model_unknown"
+REASON_NAME_MAYBE_MISTYPED = "name_maybe_mistyped"
+REASON_NOTHING_RECORDED = "nothing_recorded"
+REASON_ATTRIBUTE_UNKNOWN = "attribute_unknown"
+REASON_SOURCES_BLOG_ONLY = "sources_blog_only"
+REASON_SOURCES_DISAGREE = "sources_disagree"
+REASON_MODEL_UNUSABLE = "model_unusable"
+REASON_ANSWERED = "answered"
+
+#: Весь словарь причин. Список — не украшение: он делает состав причин
+#: проверяемым тестом, а не памятью читающего.
+REASONS: tuple[str, ...] = (
+    REASON_NO_MODEL_NAMED,
+    REASON_MODEL_UNKNOWN,
+    REASON_NAME_MAYBE_MISTYPED,
+    REASON_NOTHING_RECORDED,
+    REASON_ATTRIBUTE_UNKNOWN,
+    REASON_SOURCES_BLOG_ONLY,
+    REASON_SOURCES_DISAGREE,
+    REASON_MODEL_UNUSABLE,
+    REASON_ANSWERED,
+)
+
+
+def claims_found(claims: object) -> int:
+    """Сколько записанных источников стоит за этими утверждениями.
+
+    ОДНО место, где считается «сколько нашлось» (правило Е1): отсюда это берёт
+    и вердикт `advise`, и журнал вопросов через `misses.evidence`. Пока число
+    считали порознь, вердикт мог сказать «нечем ответить» о том же ответе, в
+    котором журнал видел свидетельство, — и именно это расхождение стоило
+    пяти сессий сбора (ИЗМЕРЕНО 2026-09-02 на живой базе: 999 пар
+    «модель.атрибут» из 1236 имели утверждение с исходом `pass` и получали от
+    `advise` исход `could not measure`).
+
+    Считается `checked` каждого утверждения — число НАЙДЕННЫХ источников, а не
+    число опрошенных атрибутов: `advise("flux-2", "выдуманный-атрибут")`
+    возвращает `checked 2` при нуле найденного.
+    """
+    if not isinstance(claims, dict):
+        return 0
+    found = 0
+    for verdict in claims.values():
+        if isinstance(verdict, dict):
+            found += int(verdict.get("checked") or 0)
+    return found
+
+
+def gap_reason(claims: object) -> str:
+    """Почему на вопрос нечем ответить: не записано ничего или всё на нижней ступени.
+
+    Развилка вынесена функцией (правило Т5): от неё зависит, что пользователь
+    сделает дальше — пойдёт искать источник вообще или пойдёт искать источник
+    ПОКРЕПЧЕ блога, а это разная работа.
+    """
+    return REASON_SOURCES_BLOG_ONLY if claims_found(claims) else REASON_ATTRIBUTE_UNKNOWN
+
 
 IDENTITY_TIERS: tuple[str, ...] = (TIER_VENDOR, TIER_PORTAL, TIER_BLOG)
 
@@ -231,6 +302,7 @@ def advise(model: str, attribute: str = "", *, path: Path | None = None) -> dict
             "checked": 0,
             "violations": 0,
             "unmeasured": 1,
+            "reason": REASON_NO_MODEL_NAMED,
             "note": "no model was named, so nothing was looked up",
             "availability": None,
             "claims": {},
@@ -328,6 +400,11 @@ def advise(model: str, attribute: str = "", *, path: Path | None = None) -> dict
         # и верхняя нота отвечала «нет ни в реестре, ни в базе». Формально про
         # эту строку — верно; по существу — нет, и читают именно её.
         neighbours = store.near(name)
+        # Два РАЗНЫХ положения дел, и до 2026-09-02 они печатались одинаково:
+        # база не знает такого имени вовсе — и база знает соседнее имя, то
+        # есть спрашивавший, вероятнее всего, опечатался. Первое лечится
+        # поиском источника, второе — повторным вопросом. Нота их различала
+        # словами, ответ — ничем.
         hint = (
             f" The base does hold {', '.join(neighbours)} — if that is the same "
             "model under another name, ask again by that id."
@@ -345,6 +422,8 @@ def advise(model: str, attribute: str = "", *, path: Path | None = None) -> dict
                 "nothing being wrong. Search the web and call `record` to put it "
                 "there." + hint
             ),
+            "reason": REASON_NAME_MAYBE_MISTYPED if neighbours else REASON_MODEL_UNKNOWN,
+            "near": list(neighbours),
             "availability": live,
             "claims": {},
             # The class findings come back even here. They are true of the
@@ -366,6 +445,7 @@ def advise(model: str, attribute: str = "", *, path: Path | None = None) -> dict
             "checked": checked,
             "violations": 1,
             "unmeasured": len(contested),
+            "reason": REASON_MODEL_UNUSABLE,
             "note": f"the model itself is unusable: {live['note']}",
             "availability": live,
             "claims": claims,
@@ -388,6 +468,7 @@ def advise(model: str, attribute: str = "", *, path: Path | None = None) -> dict
                 "returned with its URL and its date; nothing here votes, "
                 "averages or takes the newest."
             ),
+            "reason": REASON_SOURCES_DISAGREE,
             "availability": live,
             "claims": claims,
             "failure_modes": failures,
@@ -408,6 +489,8 @@ def advise(model: str, attribute: str = "", *, path: Path | None = None) -> dict
                 f"the registry has a card for {name!r} but the fact base holds no "
                 "claim about it, so there is nothing to cite. " + str(live["note"])
             ),
+            "reason": REASON_NOTHING_RECORDED,
+            "known_attributes": list(store.attributes(name)),
             "availability": live,
             "claims": {},
             "failure_modes": failures,
@@ -419,16 +502,49 @@ def advise(model: str, attribute: str = "", *, path: Path | None = None) -> dict
         }
 
     unmeasured = sum(1 for v in claims.values() if v["outcome"] == UNMEASURED)
-    if live["outcome"] == UNMEASURED or unmeasured == len(claims):
+
+    # ДВЕ ОСИ, И ОНИ БОЛЬШЕ НЕ ПОДМЕНЯЮТ ДРУГ ДРУГА.
+    #
+    # Здесь стояло `live["outcome"] == UNMEASURED or ...`, и из-за этого
+    # вердикт о ЗНАНИИ выносился по реестру ДОСТУПНОСТИ. В реестре семь имён;
+    # в базе фактов 466. ИЗМЕРЕНО 2026-09-02 на живой базе до правки: 457
+    # моделей из 466 получали `could not measure` при непустом свидетельстве,
+    # а по парам «модель.атрибут» — 999 из 1236 при утверждении с исходом
+    # `pass`. Пользователь получал «не знаю» поверх готового ответа вендора:
+    # `seedance-2.5.max_seconds` вернуло `could not measure` со значением
+    # `'30'` из вендорского источника в руках.
+    #
+    # Доступность не исчезла и не должна: она отдельная ось («знаем ли мы»
+    # против «можно ли этим воспользоваться») и по-прежнему едет целиком в
+    # `availability`, а её собственный вердикт называется в ноте. Она НЕ
+    # выносит вердикт о знании — но остаётся видимой, и `fail` от неё
+    # (модель снята с обслуживания) выше по функции по-прежнему главнее
+    # всего: платить за 404 нельзя, даже зная про модель всё.
+    axis = f" Availability is a SEPARATE axis, and it says {live['outcome']!r}: {live['note']}"
+    if unmeasured == len(claims):
+        why = gap_reason(claims)
+        gap_note = (
+            f"nothing is recorded about {'.'.join(filter(None, (name, attribute)))}"
+            if why == REASON_ATTRIBUTE_UNKNOWN
+            else (
+                f"{unmeasured} of {len(claims)} attribute(s) rest on blog-tier or "
+                "stale sources only, and repetition is not corroboration"
+            )
+        )
         return {
             "outcome": UNMEASURED,
             "checked": checked,
             "violations": 0,
             "unmeasured": max(unmeasured, 1),
             "note": (
-                f"{unmeasured} of {len(claims)} attribute(s) rest on blog-tier or "
-                f"stale sources. {live['note']}"
+                f"{gap_note}. The model itself IS in the fact base, so this is a "
+                "gap in what was recorded, not an unknown name." + axis
             ),
+            "reason": why,
+            # Что о модели ЕСТЬ. Без этого «не смогли» на опечатку в атрибуте
+            # неотличимо от «не смогли» на настоящий пробел, и спрашивавшему
+            # нечем сделать следующий шаг.
+            "known_attributes": list(store.attributes(name)),
             "availability": live,
             "claims": claims,
             "failure_modes": failures,
@@ -445,8 +561,10 @@ def advise(model: str, attribute: str = "", *, path: Path | None = None) -> dict
         "violations": 0,
         "unmeasured": unmeasured,
         "note": (
-            f"{len(claims)} attribute(s) answered, {unmeasured} of them only weakly. {live['note']}"
+            f"{len(claims)} attribute(s) answered from {claims_found(claims)} recorded "
+            f"source(s), {unmeasured} of them only weakly." + axis
         ),
+        "reason": REASON_ANSWERED,
         "availability": live,
         "claims": claims,
         "failure_modes": failures,

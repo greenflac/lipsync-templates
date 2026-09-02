@@ -179,7 +179,12 @@ class Consultant(unittest.TestCase):
             ],
         )
         out = advice.advise("test-model", path=path)
-        assert out["outcome"] in {"pass", "could not measure"}
+        # Было `in {"pass", "could not measure"}` — допуск, написанный вокруг
+        # дефекта: имени нет в реестре доступности, и вердикт о знании до
+        # 2026-09-02 падал в «не смогли» при двух согласных источниках выше
+        # блога. Допуск снят вместе с дефектом; тест, разрешающий оба исхода,
+        # не сторожит ни одного.
+        assert out["outcome"] == "pass"
         assert out["contested"] == []
 
     def test_blog_only_claims_never_reach_pass(self) -> None:
@@ -720,3 +725,174 @@ class TheCardAndTheBaseAreCompared(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class VerdictFollowsEvidence(unittest.TestCase):
+    """Вердикт о ЗНАНИИ выносится по свидетельству, а не по реестру доступности.
+
+    ДЕФЕКТ, РАДИ КОТОРОГО ЭТОТ КЛАСС НАПИСАН (воспроизведён 2026-09-02 на живой
+    базе до правки): `advise` спрашивал `registry.availability`, в котором
+    СЕМЬ имён, и если имени там нет — отдавал `could not measure` независимо от
+    того, что записано в базе фактов, где 466 имён. ИЗМЕРЕНО: 457 моделей из
+    466 получали «не смогли» при непустом свидетельстве; по парам
+    «модель.атрибут» — 999 из 1236 при утверждении с исходом `pass`.
+    Наблюдаемый пример: `seedance-2.5.max_seconds` возвращал `could not
+    measure`, держа в руках значение `'30'` из вендорского источника.
+
+    Ожидаемые значения — ЛИТЕРАЛЫ (правило Т2). Ступени берутся с обоих краёв
+    лестницы и из середины (правило Т3): `vendor` — верх, `operator` —
+    середина, `blog` — нижняя ступень, которая факта не устанавливает.
+    """
+
+    def setUp(self) -> None:
+        self._dir = tempfile.TemporaryDirectory()
+        self.addCleanup(self._dir.cleanup)
+        self.tmp = Path(self._dir.name)
+        patcher = mock.patch.dict(source_hosts.VENDOR_SOURCES, TEST_VENDOR_SOURCES, clear=False)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def _base(self, rows: list[dict]) -> Path:
+        path = self.tmp / "facts.jsonl"
+        _write(path, rows)
+        return path
+
+    def test_the_registry_does_not_know_this_name_and_that_is_the_setup(self) -> None:
+        """Половина условия опыта: имени в реестре доступности нет.
+
+        Без этой проверки следующий тест доказывает не то: он мог бы позеленеть
+        просто потому, что имя в реестре ЕСТЬ.
+        """
+        from studio.selfrag import registry
+
+        self.assertEqual(registry.availability("test-model")["outcome"], "could not measure")
+        self.assertIsNone(registry.availability("test-model")["card"])
+
+    def test_a_vendor_value_stands_even_when_the_registry_never_heard_the_name(self) -> None:
+        path = self._base([_fact(value="10", tier="vendor")])
+        out = advice.advise("test-model", "max_seconds", path=path)
+        self.assertEqual(out["outcome"], "pass")
+        self.assertEqual(out["reason"], "answered")
+        self.assertEqual(out["claims"]["max_seconds"]["values"], ["10"])
+
+    def test_the_middle_of_the_ladder_answers_too(self) -> None:
+        path = self._base([_fact(value="10", tier="operator", source_url="https://ops.test/a")])
+        out = advice.advise("test-model", "max_seconds", path=path)
+        self.assertEqual(out["outcome"], "pass")
+        self.assertEqual(out["reason"], "answered")
+
+    def test_the_registry_stays_a_visible_axis_of_its_own(self) -> None:
+        """Ось доступности не выносит вердикт — но и не исчезает."""
+        path = self._base([_fact(value="10", tier="vendor")])
+        out = advice.advise("test-model", "max_seconds", path=path)
+        self.assertEqual(out["availability"]["outcome"], "could not measure")
+        self.assertIn("SEPARATE axis", out["note"])
+        self.assertIn("not in the registry", out["note"])
+
+    def test_a_model_that_cannot_be_called_is_fail_no_matter_what_is_known(self) -> None:
+        """Знать про модель всё и заплатить за 404 — разные вещи."""
+        path = self._base([_fact(value="10", tier="vendor")])
+        dead = {
+            "outcome": "fail",
+            "checked": 1,
+            "violations": 1,
+            "unmeasured": 0,
+            "note": "test-model is retired",
+            "card": object(),
+        }
+        with mock.patch.object(advice.registry, "availability", return_value=dead):
+            out = advice.advise("test-model", "max_seconds", path=path)
+        self.assertEqual(out["outcome"], "fail")
+        self.assertEqual(out["reason"], "model_unusable")
+
+    # --- негативный контроль, обе стороны (правило И5) ---
+
+    def test_an_invented_name_is_still_could_not_measure(self) -> None:
+        path = self._base([_fact(value="10", tier="vendor")])
+        out = advice.advise("зззнесуществующая-модель-9000", path=path)
+        self.assertEqual(out["outcome"], "could not measure")
+        self.assertEqual(out["reason"], "model_unknown")
+        self.assertEqual(out["checked"], 0)
+        self.assertEqual(out["claims"], {})
+
+    def test_an_empty_base_is_still_could_not_measure(self) -> None:
+        path = self.tmp / "empty.jsonl"
+        path.write_text("", encoding="utf-8")
+        out = advice.advise("test-model", "max_seconds", path=path)
+        self.assertEqual(out["outcome"], "could not measure")
+        self.assertEqual(out["checked"], 0)
+
+    def test_the_bottom_rung_alone_never_becomes_an_answer(self) -> None:
+        path = self._base(
+            [
+                _fact(value="10", tier="blog", source_url="https://blog.test/a"),
+                _fact(value="10", tier="blog", source_url="https://blog.test/b"),
+            ]
+        )
+        out = advice.advise("test-model", "max_seconds", path=path)
+        self.assertEqual(out["outcome"], "could not measure")
+        self.assertEqual(out["reason"], "sources_blog_only")
+
+    # --- три «не смогли» обязаны быть различимы пользователем ---
+
+    def test_the_three_could_not_measure_cases_are_told_apart(self) -> None:
+        """Модели нет / имя набрано с опечаткой / атрибута нет — разная работа дальше."""
+        path = self._base([_fact(value="10", tier="vendor")])
+        unknown = advice.advise("nope-9000", path=path)
+        mistyped = advice.advise("testmodel", path=path)
+        gap = advice.advise("test-model", "выдуманный-атрибут", path=path)
+
+        for out in (unknown, mistyped, gap):
+            self.assertEqual(out["outcome"], "could not measure")
+        self.assertEqual(unknown["reason"], "model_unknown")
+        self.assertEqual(mistyped["reason"], "name_maybe_mistyped")
+        self.assertEqual(gap["reason"], "attribute_unknown")
+        self.assertEqual(len({unknown["reason"], mistyped["reason"], gap["reason"]}), 3)
+
+        self.assertEqual(unknown["near"], [], "выдуманному имени сосед не предлагается")
+        self.assertEqual(mistyped["near"], ["test-model"])
+        self.assertEqual(gap["known_attributes"], ["max_seconds"], "чем спрашивать вместо")
+
+    def test_every_reason_returned_is_one_of_the_declared_words(self) -> None:
+        path = self._base([_fact(value="10", tier="vendor")])
+        declared = {
+            "no_model_named",
+            "model_unknown",
+            "name_maybe_mistyped",
+            "nothing_recorded",
+            "attribute_unknown",
+            "sources_blog_only",
+            "sources_disagree",
+            "model_unusable",
+            "answered",
+        }
+        self.assertEqual(set(advice.REASONS), declared, "словарь причин закреплён литералом")
+        for args in [(""), ("test-model",), ("nope-9000",), ("test-model", "max_seconds")]:
+            call = (args,) if isinstance(args, str) else args
+            self.assertIn(advice.advise(*call, path=path)["reason"], declared)
+
+    def test_an_unnamed_model_says_so_in_its_own_words(self) -> None:
+        self.assertEqual(advice.advise("")["reason"], "no_model_named")
+        self.assertEqual(advice.advise("")["outcome"], "could not measure")
+
+    def test_contested_sources_keep_their_own_reason(self) -> None:
+        """Эта ветка работала образцово и обязана остаться нетронутой."""
+        path = self._base(
+            [
+                _fact(value="10", tier="vendor", source_url="https://example.test/a"),
+                _fact(value="15", tier="paper", source_url="https://example.test/b"),
+            ]
+        )
+        out = advice.advise("test-model", "max_seconds", path=path)
+        self.assertEqual(out["outcome"], "fail")
+        self.assertEqual(out["reason"], "sources_disagree")
+        self.assertEqual(sorted(out["claims"]["max_seconds"]["values"]), ["10", "15"])
+
+    def test_found_sources_are_counted_not_asked_ones(self) -> None:
+        """`claims_found` считает НАЙДЕННОЕ: у выдуманного атрибута это ноль."""
+        path = self._base([_fact(value="10", tier="vendor")])
+        real = advice.advise("test-model", "max_seconds", path=path)
+        invented = advice.advise("test-model", "выдуманный-атрибут", path=path)
+        self.assertEqual(advice.claims_found(real["claims"]), 1)
+        self.assertEqual(advice.claims_found(invented["claims"]), 0)
+        self.assertEqual(advice.claims_found(None), 0)
