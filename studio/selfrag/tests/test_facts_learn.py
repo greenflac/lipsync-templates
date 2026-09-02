@@ -79,6 +79,44 @@ class Facts(unittest.TestCase):
         self.assertEqual(store.claims("k", "failure_mode")["outcome"], PASS)
         self.assertEqual(store.contested(), [])
 
+    def test_two_snapshots_of_a_counter_are_not_a_disagreement(self) -> None:
+        """Найдено чтением ОТВЕТА, который получает пользователь (П3).
+
+        `advise("latentsync-1.6")` возвращал `fail` — «источники расходятся», —
+        и расходящиеся значения были «111 260 скачиваний» (снято 2026-08-31) и
+        «более 100 тыс. скачиваний» (2026-09-02). Они не расходятся: 111 260 и
+        ЕСТЬ больше ста тысяч. Счётчик скачиваний только растёт, поэтому два
+        снимка в разные дни — два наблюдения одного растущего числа.
+
+        ИЗМЕРЕНО 2026-09-02 на живой базе: из 30 моделей с исходом `fail`
+        шестнадцать падали на одном `adoption`. После правки таких 14, и ни
+        одна не падает на принятости.
+        """
+        counter = FactStore(
+            [
+                fact("k", "adoption", "более 100 тыс. скачиваний", TIER_VENDOR),
+                fact("k", "adoption", "111 260 скачиваний, 78 лайков", TIER_VENDOR),
+            ]
+        )
+        self.assertEqual(counter.claims("k", "adoption")["outcome"], PASS)
+        self.assertEqual(counter.contested(), [])
+
+    def test_a_counter_does_not_make_capability_unfalsifiable(self) -> None:
+        """Вторая половина (И5): послабление дано ПРИНЯТОСТИ, а не всему.
+
+        Ровно те же две строки, но про потолок длительности, обязаны остаться
+        противоречием — иначе правило читается как «никогда не спорить», и
+        расхождение о числе, по которому считают бюджет, утонет.
+        """
+        same_shape = FactStore(
+            [
+                fact("k", "max_seconds", "более 100", TIER_VENDOR),
+                fact("k", "max_seconds", "111", TIER_VENDOR),
+            ]
+        )
+        self.assertEqual(same_shape.claims("k", "max_seconds")["outcome"], FAIL)
+        self.assertEqual(same_shape.contested(), [("k", "max_seconds")])
+
     def test_two_limitations_are_a_list_and_two_durations_are_a_dispute(self) -> None:
         """The negative control on the list rule, and the reason it is narrow.
 

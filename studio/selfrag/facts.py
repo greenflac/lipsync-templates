@@ -280,6 +280,26 @@ MULTI_VALUED: frozenset[str] = frozenset(
         "expander_evidence",
         "retrieval_grounding",
         "expands_internally",
+        # Added 2026-09-02, and this one was found by READING THE ANSWER a user
+        # gets rather than by counting rows (rule П3). `advise("latentsync-1.6")`
+        # returns `fail` — "sources disagree" — and the two disagreeing values
+        # are '111 260 скачиваний, 78 лайков' snapshotted on 2026-08-31 and
+        # 'более 100 тыс. скачиваний' on 2026-09-02. They do not disagree:
+        # 111 260 IS more than 100 thousand. A download counter only grows, so
+        # two snapshots at two dates are two observations of one rising number,
+        # never a contradiction — and the model's WHOLE verdict was sinking to
+        # `fail` over it.
+        #
+        # MEASURED 2026-09-02 across the live base: 30 models answer `fail`,
+        # and 16 of them — more than half — fail on `adoption` ALONE. Nothing
+        # about their capability is in dispute; the counter moved.
+        #
+        # This does not make adoption unfalsifiable, because the value written
+        # is a MAGNITUDE ("более 100 тыс. скачиваний") and not a live number:
+        # that decision was made on 2026-08-31 after counters produced 62 false
+        # contested pairs. What is dropped here is only the claim that two
+        # magnitudes measured on different days argue with each other.
+        "adoption",
     }
 )
 
