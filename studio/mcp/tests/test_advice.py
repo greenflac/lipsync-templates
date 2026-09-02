@@ -1101,10 +1101,15 @@ class КраткаяФорма(unittest.TestCase):
         """Решение владельца 2026-09-02. Проверяется НАПЕЧАТАННОЕ инструментом,
         а не библиотека: правило, которое агент не может себе позволить, он
         перестаёт исполнять, и цена справки — часть контракта."""
-        from studio.mcp import server
+        from studio.mcp import misses, server
 
-        по_умолчанию = server.model_advice("minimax-h3")
-        целиком = server.model_advice("minimax-h3", full=True)
+        # Журнал вопросов НЕ трогается тестом. Поймано хуком остановки сразу
+        # после первого прогона: 16 строк «спросили minimax-h3» упали в живой
+        # `misses.jsonl` от моих же проверок. Журнал — знаменатель покрытия, и
+        # тест, который в него пишет, подделывает метрику проекта.
+        with mock.patch.object(misses, "note_question", lambda *a, **k: None):
+            по_умолчанию = server.model_advice("minimax-h3")
+            целиком = server.model_advice("minimax-h3", full=True)
         self.assertIn("full_answer", по_умолчанию)
         self.assertNotIn("full_answer", целиком)
         self.assertLess(len(по_умолчанию) * 2, len(целиком))
