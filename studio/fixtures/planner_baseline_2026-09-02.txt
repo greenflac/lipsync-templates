@@ -1,5 +1,5 @@
-брифов в файле 8, разобрано 8
-шагов плана ожидается 10, собрано репозиторием 0
+брифов в файле 10, разобрано 10
+шагов плана ожидается 13, собрано репозиторием 0
 негативных контролей 2, на скольких поиск фактов всё равно ответил: 1
 
   оживить-фото         шагов собрано 0/3; поиск: pass, фактов 8, моделей 8
@@ -8,9 +8,13 @@
       cogvideox-5b, indextts-2
   с-нуля-15с           шагов собрано 0/1; поиск: pass, фактов 8, моделей 8
       clair-obscur-expedition-33-ltx-2, dasiwa-wan-2-2-i2v-14b-synthseduction-v9-lightspeed-gguf, flux-faetastic-details, hunyuan-video-safetensors-new-uncensored-llama, ltx-2-3-all-in-one-workflow-for-rtx-3060-with-12-gb-vram-32-gb-ram, ltx-2-3-enhancers, minimax-h3, wan2-1-14b-fusionx
-  липсинк-без-видео    шагов собрано 0/1; поиск: could not measure, фактов 0, моделей 0
+  липсинк-без-видео    шагов собрано 0/2; поиск: could not measure, фактов 0, моделей 0
   замена-персонажа     шагов собрано 0/1; поиск: could not measure, фактов 0, моделей 0
   фоли-к-оживлению     шагов собрано 0/2; поиск: could not measure, фактов 0, моделей 0
   сделай-красиво       шагов собрано 0/0; поиск: could not measure, фактов 0, моделей 0
   манипулятор          шагов собрано 0/0; поиск: pass, фактов 1, моделей 1
       indextts-2
+  бюджет-в-брифе       шагов собрано 0/1; поиск: pass, фактов 8, моделей 7
+      eleven_text_to_sound_v2, indextts-2, ltx-2.3, minimax-h3, sora-2-pro, wan-2.2-animate-mix, wan-2.7-t2v
+  бюджет-без-единицы   шагов собрано 0/1; поиск: pass, фактов 8, моделей 7
+      controlnet-union-sdxl-1.0, eleven_flash_v2_5, eleven_v3, flux-2-flex, flux.2-dev, sulphur-2-base, wan-2.2-animate-move

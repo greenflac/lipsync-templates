@@ -87,6 +87,12 @@ def run(path: Path = pn.DEFAULT_BRIEFS_PATH) -> dict:
         нет = [k for k in (row.get("expect_classes") or ()) if k not in итог["classes"]]
         if нет:
             беды.append(f"классы {итог['classes']} не содержат {нет}")
+        # Потолок, вычитанный ИЗ БРИФА. `null` в ожидании — это тоже ожидание,
+        # и оно сильнее прочих: выдуманный бюджет хуже отсутствующего.
+        if "expect_budget" in row:
+            снято = (итог.get("budget") or {}).get("amount")
+            if снято != row["expect_budget"]:
+                беды.append(f"бюджет из брифа {снято}, ждали {row['expect_budget']}")
         случаи.append(
             {
                 "id": str(row["id"]),
@@ -117,6 +123,34 @@ def run(path: Path = pn.DEFAULT_BRIEFS_PATH) -> dict:
                 if выбран["mark"] != pn.NOT_MEASURED_MARK:
                     без_пометки += 1
 
+    # ПОРЯДОК ПО ЦЕНЕ, проверенный на всех брифах разом. Требование прямое:
+    # кандидат с незаписанной ценой не должен молча обходить того, чья цена
+    # измерена и в потолок укладывается. Проверяется структурно — по рангу
+    # `planner.PRICE_ORDER` у выбранного против каждого из показанных рядом.
+    цена_нарушена: list[str] = []
+    шагов_с_потолком = 0
+    почему_не_сосед = 0
+    for c in случаи:
+        потолок_есть = (c["plan"].get("budget") or {}).get("amount") is not None
+        for s in c["plan"]["steps"]:
+            выбран = s["chosen"]
+            if выбран is None:
+                continue
+            if s.get("why_not_next"):
+                почему_не_сосед += 1
+            if not потолок_есть:
+                continue
+            шагов_с_потолком += 1
+            мой = pn.PRICE_ORDER.get(выбран.get("price_state", ""), 0)
+            for a in s["alternatives"]:
+                чужой = pn.PRICE_ORDER.get(a.get("price_state", ""), 0)
+                if чужой < мой:
+                    цена_нарушена.append(
+                        f"{c['id']}/{s['step']}: выбран {выбран['model']} "
+                        f"({выбран.get('price_state')}), а рядом {a['model']} "
+                        f"({a.get('price_state')}) — по цене он старше"
+                    )
+
     молчащие = [c for c in случаи if not c["steps"]]
     заговорившие = [c for c in случаи if c["steps"]]
     исходы = {c["outcome"] for c in случаи}
@@ -136,6 +170,9 @@ def run(path: Path = pn.DEFAULT_BRIEFS_PATH) -> dict:
         "candidates_without_applicability": без_применимости,
         "candidates_unmarked": без_пометки,
         "candidates_without_evidence": без_доказательства,
+        "steps_with_ceiling": шагов_с_потолком,
+        "price_order_broken": цена_нарушена,
+        "why_not_next_printed": почему_не_сосед,
     }
 
 
@@ -162,6 +199,15 @@ def verdict(итог: dict) -> tuple[int, list[str]]:
             f"кандидатов без применимости {итог['candidates_without_applicability']}, "
             f"из них БЕЗ ПОМЕТКИ «{pn.NOT_MEASURED_MARK}» {итог['candidates_unmarked']}"
         )
+    if not итог["steps_with_ceiling"]:
+        беды.append(
+            "ни на одном брифе потолок не был вычитан: разборщик бюджета не проверен "
+            "(негативного контроля мало — нужен и вход, где он срабатывает)"
+        )
+    for строка in итог["price_order_broken"]:
+        беды.append(f"порядок по цене нарушен — {строка}")
+    if итог["candidates"] > 1 and not итог["why_not_next_printed"]:
+        беды.append("ни у одного шага не напечатано, почему выбран этот, а не сосед")
     if итог["candidates_without_evidence"]:
         беды.append(
             f"кандидатов без единой строки доказательства {итог['candidates_without_evidence']}: "
@@ -183,6 +229,11 @@ def render(итог: dict) -> str:
             f"{итог['candidates_without_applicability']} (все с пометкой: "
             f"{итог['candidates_unmarked'] == 0}), без доказательства "
             f"{итог['candidates_without_evidence']}"
+        ),
+        (
+            f"шагов с вычитанным потолком {итог['steps_with_ceiling']}, "
+            f"нарушений порядка по цене {len(итог['price_order_broken'])}, "
+            f"строк «почему не сосед» {итог['why_not_next_printed']}"
         ),
         "",
     ]

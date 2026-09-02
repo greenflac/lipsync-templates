@@ -20,6 +20,17 @@
   один тест. Заведён класс `ГраницыПечати`.
 
 После правок: 18 мутантов, промолчали на 0.
+
+ВТОРОЙ ЗАХОД 2026-09-02, после починки цены и бюджета: добавлено десять
+мутантов на новые константы-решения (`DEFAULT_PER`, `PRICE_ORDER`, `_MONEY`,
+`BUDGET_CUES`, `PRICE_ASKED` и место цены в ключе отбора). Итог: 28 мутантов,
+промолчали на 0.
+
+ЗДОРОВЫЙ ПРОГОН ПЕЧАТАЕТСЯ ПЕРВОЙ СТРОКОЙ, и это не украшение: первый заход
+второй серии показал `ЗДОРОВЫЙ | тесты rc=1`, то есть таблица мутаций строилась
+поверх красного и не значила ничего (в контрольном наборе стало 10 брифов, а
+литерал в тесте остался 8). Без этой строки таблица «все покраснели» читалась
+бы как успех.
 """
 
 import shutil
@@ -81,14 +92,14 @@ MUTANTS = [
     ),
     (
         "studio/planner.py",
-        "return (-c.applicability, -c.anchored,",
-        "return (-c.anchored, -c.applicability,",
+        "return (цена, -c.applicability, -c.anchored,",
+        "return (цена, -c.anchored, -c.applicability,",
         "by_evidence: применимость больше не первый ключ порядка",
     ),
     (
         "studio/planner.py",
-        "return (-c.applicability, -c.anchored,",
-        "return (c.applicability, -c.anchored,",
+        "return (цена, -c.applicability, -c.anchored,",
+        "return (цена, c.applicability, -c.anchored,",
         "by_evidence: применимость перевёрнута (измеренное вниз)",
     ),
     (
@@ -138,6 +149,71 @@ MUTANTS = [
         'TODAY = "2026-09-02"',
         'TODAY = "2027-09-02"',
         "TODAY -> позже: вся база становится старше порога",
+    ),
+    # --- константы цены и бюджета, заведённые 2026-09-02 ---
+    (
+        "studio/planner.py",
+        'DEFAULT_PER: tuple[str, ...] = ("run", "generation")',
+        'DEFAULT_PER: tuple[str, ...] = ("second",)',
+        "DEFAULT_PER -> «за секунду» (потолок шага читается как посекундный)",
+    ),
+    (
+        "studio/planner.py",
+        'DEFAULT_PER: tuple[str, ...] = ("run", "generation")',
+        "DEFAULT_PER: tuple[str, ...] = ()",
+        "DEFAULT_PER -> пусто (сравнивается с любым «за что», как было до починки)",
+    ),
+    (
+        "studio/planner.py",
+        "    PRICE_IN: 0,\n    PRICE_INCOMPARABLE: 1,\n    PRICE_ABSENT: 2,",
+        "    PRICE_IN: 2,\n    PRICE_INCOMPARABLE: 1,\n    PRICE_ABSENT: 0,",
+        "PRICE_ORDER -> слабее: незаписанная цена обгоняет уложившуюся в бюджет",
+    ),
+    (
+        "studio/planner.py",
+        "    PRICE_IN: 0,\n    PRICE_INCOMPARABLE: 1,\n    PRICE_ABSENT: 2,",
+        "    PRICE_IN: 0,\n    PRICE_INCOMPARABLE: 0,\n    PRICE_ABSENT: 0,",
+        "PRICE_ORDER -> строже: четыре положения сливаются в одно",
+    ),
+    (
+        "studio/planner.py",
+        "    цена = PRICE_ORDER.get(c.price_state, 0)\n    return (цена, -c.applicability,",
+        "    цена = PRICE_ORDER.get(c.price_state, 0)\n    return (-c.applicability, цена,",
+        "by_evidence: цена перестаёт быть старшим ключом при названном потолке",
+    ),
+    (
+        "studio/planner.py",
+        r'    r"\$\s*(\d+(?:[.,]\d+)?)"'
+        "\n"
+        r'    r"|(\d+(?:[.,]\d+)?)\s*(?:\$|доллар\w*|долл\.?|usd|бакс\w*)",',
+        r'    r"\$\s*(\d+(?:[.,]\d+)?)"' "\n" r'    r"|(\d+(?:[.,]\d+)?)",',
+        "_MONEY -> слабее: любое число становится бюджетом (единица не нужна)",
+    ),
+    (
+        "studio/planner.py",
+        r'    r"\$\s*(\d+(?:[.,]\d+)?)"'
+        "\n"
+        r'    r"|(\d+(?:[.,]\d+)?)\s*(?:\$|доллар\w*|долл\.?|usd|бакс\w*)",',
+        r'    r"\$\s*(\d+(?:[.,]\d+)?)",',
+        "_MONEY -> строже: деньги только со значком $, слово «доллар» не считается",
+    ),
+    (
+        "studio/planner.py",
+        'BUDGET_CUES: tuple[str, ...] = (\n    "бюджет",',
+        'BUDGET_CUES: tuple[str, ...] = (\n    "бюджет-нет-такого-слова",',
+        "BUDGET_CUES -> строже: «бюджет 50» больше не отличим от молчания",
+    ),
+    (
+        "studio/planner.py",
+        'PRICE_ASKED = "price"',
+        'PRICE_ASKED = "generation_time"',
+        "PRICE_ASKED -> другая семья: ценой считается скорость",
+    ),
+    (
+        "studio/planner.py",
+        'PRICE_ASKED = "price"',
+        'PRICE_ASKED = "price_per_second_usd"',
+        "PRICE_ASKED -> одно имя вместо семьи: восемнадцать имён снова невидимы",
     ),
 ]
 

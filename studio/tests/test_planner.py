@@ -242,6 +242,168 @@ class Цена(unittest.TestCase):
         ]
         self.assertIn("usd", pn.cheapest_price(свои))
 
+    def test_относительная_цена_ценой_не_считается(self) -> None:
+        # `price_relative = "50% lower"` проходит подстроечный фильтр
+        # валидатора (`pipeline.PRICE_MARKERS` содержит "price") и ценой НЕ
+        # является: разборщик однажды прочёл эту строку как 50.0. Отбор имён
+        # делает `studio/selfrag/attrfamily.py`, и он её выбрасывает.
+        свои = list(ЗДОРОВЫЕ) + [
+            факт("тестовая-i2v", "price_relative", "50% lower price per character", "vendor"),
+            факт("тестовая-i2v", "storage_cost", "$0.01 per GB per month", "vendor"),
+        ]
+        self.assertEqual([f.attribute for f in pn.price_facts(свои)], [])
+
+
+class РазборБюджета(unittest.TestCase):
+    """Т5: потолок разбирается из фразы заказчика, и не выдумывается (И5)."""
+
+    def test_единица_названа_числом_и_словом(self) -> None:
+        b = pn.budget_from("нужен липсинк, бюджет 0.5 доллара")
+        self.assertEqual(b.amount, 0.5)
+        self.assertEqual(b.unit, "usd")
+        self.assertEqual(b.outcome, "pass")
+
+    def test_доллар_значком_и_запятой(self) -> None:
+        b = pn.budget_from("нужен липсинк, бюджет $0,05 за секунду")
+        self.assertEqual(b.amount, 0.05)
+        self.assertEqual(b.per, ("second",))
+
+    def test_за_что_названо_словами(self) -> None:
+        b = pn.budget_from("не дороже 2 долларов за ролик")
+        self.assertEqual(b.amount, 2.0)
+        self.assertEqual(sorted(b.per), ["generation", "run"])
+
+    def test_за_что_не_названо_принимается_за_прогон(self) -> None:
+        b = pn.budget_from("бюджет 1 доллар")
+        # Литерал (Т2): «за прогон шага» — это то, куда уходит число.
+        self.assertEqual(sorted(b.per), ["generation", "run"])
+        self.assertIn("за прогон шага", b.note)
+
+    def test_число_без_единицы_третий_исход(self) -> None:
+        # И5, негативный контроль: 50 чего — из брифа не следует.
+        b = pn.budget_from("оживить фото клиента, бюджет 50")
+        self.assertIsNone(b.amount)
+        self.assertEqual(b.outcome, "could not measure")
+        self.assertIn("бюджет", b.note)
+
+    def test_бюджета_нет_вовсе(self) -> None:
+        b = pn.budget_from("оживить фото клиента, 10 секунд")
+        self.assertIsNone(b.amount)
+        self.assertEqual(b.outcome, "could not measure")
+
+    def test_два_третьих_исхода_различимы(self) -> None:
+        # «сказано, но нечитаемо» и «не сказано» — РАЗНЫЕ ноты: человеку в них
+        # отвечают разное. Свернуть их в одну значит потерять, что переспросить.
+        сказано = pn.budget_from("бюджет ограничен")
+        молчание = pn.budget_from("оживить фото")
+        self.assertNotEqual(сказано.note, молчание.note)
+
+    def test_число_длительности_не_бюджет(self) -> None:
+        # Негативный контроль на разборщик: «15 секунд» и «10 секунд» — числа,
+        # но не деньги, и потолком стать не должны.
+        for бриф in ("с нуля: видео 15 секунд", "оживить фото, 10 секунд, крупный план"):
+            self.assertIsNone(pn.budget_from(бриф).amount, бриф)
+
+
+class ЦенаВОтборе(unittest.TestCase):
+    """Четыре положения по цене и их порядок. Т5: ключ достижим без базы."""
+
+    @staticmethod
+    def _к(имя: str, состояние: str, применимость: int = 0) -> pn.Candidate:
+        return pn.Candidate(
+            model=имя,
+            evidence=(),
+            applicability=применимость,
+            capability=1,
+            unresolved=0,
+            price="",
+            anchored=1,
+            price_state=состояние,
+        )
+
+    def test_положений_ровно_четыре_и_они_названы_литералами(self) -> None:
+        self.assertEqual(
+            sorted(pn.PRICE_ORDER),
+            sorted(
+                [
+                    "в бюджете",
+                    "цена записана, но с бюджетом несравнима",
+                    "цена не записана",
+                    "дороже бюджета",
+                ]
+            ),
+        )
+
+    def test_в_бюджете_впереди_незаписанной_цены(self) -> None:
+        # Главное требование: кандидат с НЕЗАПИСАННОЙ ценой не обходит того,
+        # чья цена измерена и в потолок укладывается, — даже имея больше
+        # строк применимости.
+        дешёвый = self._к("а-дешёвый", "в бюджете", применимость=0)
+        немой = self._к("б-немой", "цена не записана", применимость=5)
+        порядок = sorted([немой, дешёвый], key=pn.by_evidence)
+        self.assertEqual([c.model for c in порядок], ["а-дешёвый", "б-немой"])
+
+    def test_записанная_но_несравнимая_впереди_незаписанной(self) -> None:
+        # Это и был второй дефект: два РАЗНЫХ состояния печатались одинаково.
+        есть = self._к("а-есть-число", "цена записана, но с бюджетом несравнима")
+        нет = self._к("б-нет-строки", "цена не записана")
+        порядок = sorted([нет, есть], key=pn.by_evidence)
+        self.assertEqual([c.model for c in порядок], ["а-есть-число", "б-нет-строки"])
+
+    def test_дороже_бюджета_последний_но_не_выброшен(self) -> None:
+        дорогой = self._к("а-дорогой", "дороже бюджета", применимость=9)
+        немой = self._к("я-немой", "цена не записана", применимость=0)
+        порядок = sorted([дорогой, немой], key=pn.by_evidence)
+        self.assertEqual([c.model for c in порядок], ["я-немой", "а-дорогой"])
+
+    def test_без_потолка_цена_не_решает_ничего(self) -> None:
+        # Потолка нет — поле пустое у всех, и порядок возвращается к доводам.
+        измерен = self._к("я-измерен", "", применимость=3)
+        нет = self._к("а-нет", "", применимость=0)
+        порядок = sorted([нет, измерен], key=pn.by_evidence)
+        self.assertEqual([c.model for c in порядок], ["я-измерен", "а-нет"])
+
+    def test_положение_считается_по_записанной_цене(self) -> None:
+        свои = [
+            факт("м", "price_per_run_usd", "$0.10 per run", "vendor"),
+            факт("м", "license", "apache-2.0", "vendor"),
+        ]
+        дёшево = pn.budget_from("бюджет 1 доллар за ролик")
+        дорого = pn.budget_from("бюджет 0.01 доллара за ролик")
+        self.assertEqual(pn.price_stance(свои, дёшево)[0], "в бюджете")
+        self.assertEqual(pn.price_stance(свои, дорого)[0], "дороже бюджета")
+
+    def test_другое_за_что_несравнимо_а_не_дороже(self) -> None:
+        # $/секунда против потолка «за ролик» — сравнить НЕЛЬЗЯ, и это третий
+        # исход, а не отказ и не проход.
+        свои = [факт("м", "price_per_second_usd", "$0.05 per second", "vendor")]
+        состояние, _ = pn.price_stance(свои, pn.budget_from("бюджет 1 доллар за ролик"))
+        self.assertEqual(состояние, "цена записана, но с бюджетом несравнима")
+
+    def test_ни_строки_о_цене(self) -> None:
+        состояние, _ = pn.price_stance(list(ЗДОРОВЫЕ), pn.budget_from("бюджет 1 доллар"))
+        self.assertEqual(состояние, "цена не записана")
+
+
+class ПочемуНеСосед(unittest.TestCase):
+    """Строка «почему выбран этот, а не соседний» считается из самого ключа."""
+
+    def test_называется_первое_разошедшееся_поле(self) -> None:
+        первый = pn.Candidate("а", (), 3, 1, 0, "", anchored=5)
+        второй = pn.Candidate("б", (), 1, 1, 0, "", anchored=5)
+        сказано = pn.why_not(первый, второй)
+        self.assertIn("строк применимости", сказано)
+        self.assertIn("3 против 1", сказано)
+
+    def test_поля_ключа_и_имена_совпадают_числом(self) -> None:
+        c = pn.Candidate("а", (), 0, 0, 0, "")
+        self.assertEqual(len(pn.by_evidence(c)), len(pn.KEY_FIELDS))
+
+    def test_неразличимые_названы_неразличимыми(self) -> None:
+        a = pn.Candidate("одинаково", (), 1, 1, 0, "", anchored=1)
+        сказано = pn.why_not(a, a)
+        self.assertIn("неразличимы", сказано)
+
 
 class ТриИсхода(unittest.TestCase):
     """Р1: годно / не годно / не смогли, и каждый достижим."""
@@ -359,7 +521,7 @@ class Контракт(unittest.TestCase):
 
     def test_контрольный_набор_читается_целиком(self) -> None:
         self.assertEqual(pn.rows_in(), len(pn.briefs()))
-        self.assertEqual(len(pn.briefs()), 8)
+        self.assertEqual(len(pn.briefs()), 10)
 
 
 if __name__ == "__main__":

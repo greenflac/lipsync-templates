@@ -394,8 +394,22 @@ def plan_pipeline(brief: str, creative: str = "", budget_usd: float = 0.0) -> st
         is read here — a video means the plan's video comes from the customer
         rather than from a step. Point `analyse_creative` at the same file for
         what is actually in the pixels.
-    :param budget_usd: a per-step ceiling, if the customer named one. Left at 0
-        the price class does not fire and says so; it is never treated as "free".
+    :param budget_usd: a per-step ceiling, if you have one to pass. Left at 0
+        the ceiling is read out of the BRIEF itself — "бюджет 0.5 доллара",
+        "не дороже 2 долларов за ролик" — and the currency must be named: a
+        bare number is reported as unreadable rather than guessed at. Nothing
+        is ever treated as "free".
+
+    WHEN A CEILING IS KNOWN, PRICE IS THE SENIOR SORT KEY, because the money is
+    the customer's decision and not the tool's. Each candidate comes back in one
+    of four positions — in budget / price recorded but not comparable to the
+    ceiling / no price recorded at all / over budget — and the middle two are
+    both "could not compare", kept apart on purpose: one of them has a number
+    you can read, the other has nothing. With no ceiling, price sorts nothing.
+
+    Each step also carries `why_not_next`: which field of the selection key the
+    chosen candidate differed from the runner-up on. Read it before assuming the
+    choice was close.
 
     THREE OUTCOMES, and the third is the one to read. `could not measure` means
     either that no operation could be derived from the brief at all, or that a
