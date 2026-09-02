@@ -31,6 +31,11 @@
 `NO_RIVAL_MARK`, порядок выбора вытесненного и сама развилка `rival_line`).
 Итог: 37 мутантов, промолчали на 0.
 
+ЧЕТВЁРТЫЙ ЗАХОД 2026-09-02: добавлено восемь мутантов на константы перевода
+«за что» (`SECONDS_IN_MINUTE` в обе стороны, `PER_CONVERSION`, `CONVERTED_MARK`,
+проверка единицы в `to_budget_per` и передача потолка валидатору). Итог: 45
+мутантов, промолчали на 0.
+
 ЗДОРОВЫЙ ПРОГОН ПЕЧАТАЕТСЯ ПЕРВОЙ СТРОКОЙ, и это не украшение. Первые заходы
 второй и третьей серий ОБА показали `ЗДОРОВЫЙ | тесты rc=1`: таблица мутаций
 строилась поверх красного и не значила ничего. Причина оба раза была одна —
@@ -277,6 +282,55 @@ MUTANTS = [
         '    if chosen is None or chosen.measured:\n        return ""',
         '    if chosen is None or not chosen.measured:\n        return ""',
         "rival_line -> строже: строка молчит ровно там, где она и нужна",
+    ),
+    # --- константы перевода «за что», заведены 2026-09-02 ---
+    (
+        "studio/planner.py",
+        "SECONDS_IN_MINUTE = 60.0",
+        "SECONDS_IN_MINUTE = 1.0",
+        "SECONDS_IN_MINUTE 60 -> 1 (слабее: минута равна секунде)",
+    ),
+    (
+        "studio/planner.py",
+        "SECONDS_IN_MINUTE = 60.0",
+        "SECONDS_IN_MINUTE = 3600.0",
+        "SECONDS_IN_MINUTE 60 -> 3600 (строже: минута равна часу)",
+    ),
+    (
+        "studio/planner.py",
+        '    if price.amount is None or price.unit != BUDGET_UNIT:\n        return None, ""',
+        '    if price.amount is None:\n        return None, ""',
+        "to_budget_per -> слабее: единица перестаёт проверяться (кредиты как доллары)",
+    ),
+    (
+        "studio/planner.py",
+        '    ("minute", "second"): 1.0 / SECONDS_IN_MINUTE,\n    ("second", "minute"): SECONDS_IN_MINUTE,',
+        "",
+        "PER_CONVERSION -> строже: таблица пуста, перевода нет вовсе",
+    ),
+    (
+        "studio/planner.py",
+        '    ("minute", "second"): 1.0 / SECONDS_IN_MINUTE,',
+        '    ("minute", "second"): 1.0 / SECONDS_IN_MINUTE,\n    ("1000_chars", "second"): 1.0,',
+        "PER_CONVERSION -> слабее: заведена пара, у которой множитель не определение",
+    ),
+    (
+        "studio/planner.py",
+        'CONVERTED_MARK = "ПЕРЕВЕДЕНО НАМИ"',
+        'CONVERTED_MARK = "пересчитано"',
+        "CONVERTED_MARK -> слабее: пометка перестаёт называть, кто посчитал",
+    ),
+    (
+        "studio/planner.py",
+        'CONVERTED_MARK = "ПЕРЕВЕДЕНО НАМИ"',
+        'CONVERTED_MARK = "ПОСЧИТАНО ПЛАНИРОВЩИКОМ"',
+        "CONVERTED_MARK -> строже: другая формулировка",
+    ),
+    (
+        "studio/planner.py",
+        "    пошаговый = бюджет.known and bool(set(бюджет.per or DEFAULT_PER) & set(DEFAULT_PER))",
+        "    пошаговый = бюджет.known",
+        "потолок за секунду снова уходит в бюджет ШАГА валидатору",
     ),
 ]
 
