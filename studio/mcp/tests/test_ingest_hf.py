@@ -1057,3 +1057,94 @@ class ПоломкаБезЖелеза(unittest.TestCase):
         Отчёт об удаче без железа ничего не сообщает — «works great» не факт."""
         self.assertFalse(hf.поломка_без_железа("It works great with the model and the workflow."))
         self.assertEqual(hf.наблюдение("It works great with the model and the workflow."), "")
+
+
+class ЧеловекНеПонялЭтоНеПоломка(unittest.TestCase):
+    """Поймано чтением собственной выдачи (П3) на живом заходе 2026-09-02.
+
+    В базу ушло `pocket-tts-without-voice-cloning / failure_mode` со словами
+    «I failed to find what advantage without-voice-cloning provides over the
+    plain pocket-tts model». Знак провала есть, часть системы названа, девять
+    слов — все три условия сошлись, и модель получила поломку, которой у неё
+    нет. Такая строка хуже мусора: её прочитают как отчёт о дефекте.
+    """
+
+    def test_не_нашёл_смысла_это_не_поломка(self) -> None:
+        assert not hf.поломка_без_железа(
+            "I failed to find what advantage without-voice-cloning provides "
+            "over the plain pocket-tts model."
+        )
+
+    def test_не_понял_поведения_это_не_поломка(self) -> None:
+        assert not hf.поломка_без_железа(
+            "I could not understand why the model outputs are different from the demo page"
+        )
+
+    def test_не_смог_запустить_это_поломка(self) -> None:
+        """Вторая половина (И5): различает не первое лицо, а глагол ПОСЛЕ
+        провала. «failed to run» — поломка, «failed to find» — не нашёл, и
+        сузить правило до «любое I failed» значит выбросить настоящие отчёты."""
+        assert hf.поломка_без_железа(
+            "I failed to run the model on my GPU because of an out of memory error today"
+        )
+
+    def test_чужой_отчёт_о_поломке_не_задет(self) -> None:
+        assert hf.поломка_без_железа(
+            "The temporal and spatial upscalers fail to load when placed "
+            "inside models/upscale_models"
+        )
+
+
+class ОднаОговоркаОднаСтрока(unittest.TestCase):
+    """Поймано там же: у LTX-Video два файла лицензии, оба со словами
+    «research only», и за один заход в базу ушли ДВЕ строки с одним ключом.
+
+    Первая догадка («повтор прочитается как подтверждение») проверена и
+    неверна: вторая строка вытесняет первую, база отвечает «from 1 source(s)».
+    Настоящая потеря — нота: вытеснение оставляет имя ТОЛЬКО последнего файла,
+    и знание «оговорка стоит в двух файлах» пропадает, хотя именно оно
+    отвечает, нельзя ли обойти лицензию, взяв другой файл."""
+
+    def _строка(self, licences: list[dict]) -> list[tuple[str, str, str, str, str]]:
+        row = {
+            "model_id": "Lightricks/LTX-Video",
+            "card_url": "https://huggingface.co/Lightricks/LTX-Video",
+            "license_url": "https://huggingface.co/Lightricks/LTX-Video/tree/main",
+            "licences": licences,
+            "downloads": 1,
+            "likes": 1,
+            "threads": [],
+        }
+        return [з for з in hf.заявки(row) if з[1] == "license_restriction"]
+
+    def test_два_файла_одна_оговорка_одна_строка(self) -> None:
+        строки = self._строка(
+            [
+                {"file": "LICENSE.txt", "chars": 100, "flags": ["только для исследований"]},
+                {"file": "LICENSE.md", "chars": 120, "flags": ["только для исследований"]},
+            ]
+        )
+        assert len(строки) == 1, строки
+
+    def test_имена_файлов_не_теряются(self) -> None:
+        """Схлопнуть значит потерять, если не сказать, что схлопнули: читающий
+        ноту должен видеть, что оговорка стоит в двух файлах, а не в одном."""
+        нота = self._строка(
+            [
+                {"file": "LICENSE.txt", "chars": 100, "flags": ["только для исследований"]},
+                {"file": "LICENSE.md", "chars": 120, "flags": ["только для исследований"]},
+            ]
+        )[0][4]
+        assert "LICENSE.txt" in нота and "LICENSE.md" in нота, нота
+        assert "2 файлах" in нота, нота
+
+    def test_разные_оговорки_остаются_разными(self) -> None:
+        """Вторая половина (И5): схлопывание идёт по ОГОВОРКЕ, а не по модели.
+        Две разные оговорки в двух файлах — два разных факта."""
+        строки = self._строка(
+            [
+                {"file": "LICENSE.txt", "chars": 100, "flags": ["только для исследований"]},
+                {"file": "OPENRAIL.md", "chars": 120, "flags": ["некоммерческая оговорка"]},
+            ]
+        )
+        assert len(строки) == 2, строки
