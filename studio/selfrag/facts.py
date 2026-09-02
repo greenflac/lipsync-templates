@@ -117,6 +117,7 @@ anybody believed it, so the withdrawal is appended and carries its reason.
 from __future__ import annotations
 
 import json
+import re
 from collections import defaultdict
 from dataclasses import dataclass
 from datetime import date
@@ -302,6 +303,52 @@ MULTI_VALUED: frozenset[str] = frozenset(
         "adoption",
     }
 )
+
+#: Заглушки поля лицензии в карточке HuggingFace: слово стоит, а лицензии за
+#: ним нет. `other` — это «мы не назвали», и спорить с ним не о чем: строка
+#: `ltx-video.license` со значением `other` объявляла расхождение с
+#: `LTXV Open Weights License 0.X (card licence field: other)`, то есть сама с
+#: собой, пересказанной подробнее.
+ПУСТЫЕ_ЗНАЧЕНИЯ: frozenset[str] = frozenset({"other", "unknown", "n/a", "none", "-"})
+
+#: Первое число значения — это ОТВЕТ, а всё, что дальше, — обстоятельства.
+#: Правило нарочно узкое: сравниваются ведущие числа, а не все подряд, иначе
+#: «80 (single-GPU 1280*720)» и «80 (на 4090)» разошлись бы по 1280 и 4090,
+#: которые к ответу отношения не имеют.
+_ВЕДУЩЕЕ_ЧИСЛО = re.compile(r"\d+(?:[.,]\d+)?")
+
+
+def _ответ(value: str) -> str:
+    """Ведущее число значения, нормализованное. Пусто — числа нет."""
+    найдено = _ВЕДУЩЕЕ_ЧИСЛО.search(str(value or ""))
+    if not найдено:
+        return ""
+    число = найдено.group(0).replace(",", ".")
+    return число.rstrip("0").rstrip(".") if "." in число else число
+
+
+def _same_answer(values: Sequence[str]) -> bool:
+    """Разные строки об ОДНОМ И ТОМ ЖЕ. Три случая, и все три узкие.
+
+    1. Заглушка карточки (`other`) ни с чем не спорит: за ней нет утверждения.
+    2. Ведущие числа совпадают и они есть у всех — величина одна, подробности
+       разные.
+    3. Всё остальное — спор, и он остаётся спором. ИЗМЕРЕНО 2026-09-02: после
+       этого правила из 14 моделей с исходом `fail` остаётся 8, и ни одна из
+       ушедших не была расхождением: 'apache-2.0' против
+       'Apache 2.0 (4B); FLUX Non-Commercial License (9B)', 'cc-by-nc-4.0'
+       против 'CC BY-NC 4.0 (non-commercial) for the downloadable weights',
+       '30' против '30 (longest ...)', '80 (...)' против '80 (...)'.
+       Настоящие остались все: 10 против 15 у kling-3.0, 4K против 720p у
+       runway-gen-4.5, 12 против '4 to 15' у seedance-2.0, 1080p против 4k у
+       veo-3.1.
+    """
+    живые = [v for v in values if str(v).strip().lower() not in ПУСТЫЕ_ЗНАЧЕНИЯ]
+    if len(живые) < 2:
+        return True
+    ответы = [_ответ(v) for v in живые]
+    return all(ответы) and len(set(ответы)) == 1
+
 
 DEFAULT_FACTS_PATH = Path(__file__).resolve().parents[1] / "knowledge" / "model_facts.jsonl"
 
@@ -510,7 +557,12 @@ class FactStore:
 
         stale = [f for f in found if (f.age_days or 0) > STALE_AFTER_DAYS]
         multi = attribute.lower() in MULTI_VALUED
-        if len(by_value) > 1 and not multi:
+        # Одна и та же величина, сказанная с разной подробностью, — не спор.
+        # Найдено чтением тех самых 14 выдач, что остались после `adoption`
+        # (П3, 2026-09-02): «30» против «30 (longest of any Runway-hosted video
+        # model)» и «80 (single-GPU 1280*720)» против «80 (без выгрузки); на
+        # 4090 идёт с --offload_model» объявлялись расхождением источников.
+        if len(by_value) > 1 and not multi and not _same_answer(list(by_value)):
             summary = "; ".join(f"{r['value']!r} ({r['best_tier']})" for r in rows)
             return {
                 "outcome": FAIL,

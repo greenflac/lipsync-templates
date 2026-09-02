@@ -15,6 +15,7 @@ from studio.selfrag.corpus import load_corpus
 from studio.selfrag.facts import (
     TIER_BLOG,
     TIER_PAPER,
+    TIER_PORTAL,
     TIER_VENDOR,
     Fact,
     FactStore,
@@ -116,6 +117,105 @@ class Facts(unittest.TestCase):
         )
         self.assertEqual(same_shape.claims("k", "max_seconds")["outcome"], FAIL)
         self.assertEqual(same_shape.contested(), [("k", "max_seconds")])
+
+    def test_one_value_told_in_more_detail_is_not_a_disagreement(self) -> None:
+        """Найдено чтением тех выдач, что остались после починки принятости (П3).
+
+        «30» и «30 (longest of any Runway-hosted video model in the spec)» —
+        одно и то же число с примечанием, а инструмент объявлял их
+        расхождением источников и топил вердикт модели в `fail`.
+        """
+        detail = FactStore(
+            [
+                fact("k", "max_seconds", "30", TIER_VENDOR),
+                fact("k", "max_seconds", "30 (longest of any model in the spec)", TIER_PORTAL),
+            ]
+        )
+        self.assertEqual(detail.claims("k", "max_seconds")["outcome"], PASS)
+
+        # То же в другой форме: одно число, разные обстоятельства вокруг него.
+        vram = FactStore(
+            [
+                fact("k", "min_vram_gb", "80 (single-GPU 1280*720 command)", TIER_VENDOR),
+                fact(
+                    "k", "min_vram_gb", "80 (без выгрузки); на 4090 с --offload_model", TIER_VENDOR
+                ),
+            ]
+        )
+        self.assertEqual(vram.claims("k", "min_vram_gb")["outcome"], PASS)
+
+    def test_different_numbers_are_still_a_disagreement(self) -> None:
+        """Вторая половина (И5), и она дороже первой.
+
+        Если бы правило смотрело на ВСЕ числа значения, «80 (1280*720)» и
+        «80 (на 4090)» разошлись бы по 1280 и 4090. Если бы оно смотрело
+        слишком широко — утонули бы настоящие споры. Здесь оба живых случая:
+        10 против 15 у kling-3.0 и 12 против «4 to 15» у seedance-2.0.
+        """
+        duration = FactStore(
+            [
+                fact("k", "max_seconds", "10", TIER_BLOG),
+                fact("k", "max_seconds", "15", TIER_VENDOR),
+            ]
+        )
+        self.assertEqual(duration.claims("k", "max_seconds")["outcome"], FAIL)
+
+        range_vs_number = FactStore(
+            [
+                fact("k", "max_seconds", "12", TIER_BLOG),
+                fact("k", "max_seconds", "4 to 15", TIER_PORTAL),
+            ]
+        )
+        self.assertEqual(range_vs_number.claims("k", "max_seconds")["outcome"], FAIL)
+
+    def test_words_without_numbers_are_judged_as_words(self) -> None:
+        """Без чисел правило молчит и спор остаётся спором: '4K' против '720p'
+        различаются числами, а 'MoE, сжатие 16x16x4' против 'MoE, two 14B
+        experts' — тоже, и обе пары обязаны остаться расхождением."""
+        resolution = FactStore(
+            [
+                fact("k", "max_resolution", "4K", TIER_BLOG),
+                fact("k", "max_resolution", "720p", TIER_VENDOR),
+            ]
+        )
+        self.assertEqual(resolution.claims("k", "max_resolution")["outcome"], FAIL)
+
+    def test_a_decimal_is_part_of_the_answer(self) -> None:
+        """Дыра, найденная мутацией: выбрось дробную часть из разбора числа —
+        и «2.5 секунды» сольётся с «2.9 секунды» в одно значение. Ни один тест
+        этого не замечал, потому что живые пары различались целой частью."""
+        decimals = FactStore(
+            [
+                fact("k", "max_seconds", "2.5", TIER_VENDOR),
+                fact("k", "max_seconds", "2.9", TIER_PORTAL),
+            ]
+        )
+        self.assertEqual(decimals.claims("k", "max_seconds")["outcome"], FAIL)
+
+    def test_the_card_placeholder_argues_with_nobody(self) -> None:
+        """`other` в поле лицензии карточки HuggingFace — это «мы не назвали».
+
+        Строка `ltx-video.license` со значением `other` объявляла расхождение
+        с «LTXV Open Weights License 0.X (card licence field: other)», то есть
+        сама с собой, пересказанной подробнее.
+        """
+        placeholder = FactStore(
+            [
+                fact("k", "license", "other", TIER_VENDOR),
+                fact("k", "license", "LTXV Open Weights License 0.X (field: other)", TIER_VENDOR),
+            ]
+        )
+        self.assertEqual(placeholder.claims("k", "license")["outcome"], PASS)
+
+    def test_two_real_licences_still_disagree(self) -> None:
+        """И5 к предыдущему: заглушка не спорит, а две НАЗВАННЫЕ лицензии — да."""
+        real = FactStore(
+            [
+                fact("k", "license", "apache-2.0", TIER_VENDOR),
+                fact("k", "license", "cc-by-nc-4.0", TIER_VENDOR),
+            ]
+        )
+        self.assertEqual(real.claims("k", "license")["outcome"], FAIL)
 
     def test_two_limitations_are_a_list_and_two_durations_are_a_dispute(self) -> None:
         """The negative control on the list rule, and the reason it is narrow.
