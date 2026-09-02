@@ -261,6 +261,11 @@ EXCLUDED: dict[str, str] = {
     "the-decoder.com": "media",
     "filmthreat.com": "media",
     "redditinc.com": "media",
+    # Справочный центр Reddit: правила площадки, а не разговор практиков.
+    # Открылся один раз при проверке достижимости и ни одного факта не несёт;
+    # к `media` отнесён по той же причине, что и redditinc.com — это сайт
+    # компании о себе, а не источник наблюдений о моделях.
+    "reddithelp.com": "media",
     "emergentmind.com": "media",
     "chatpaper.ai": "media",
     "andlukyane.com": "media",
