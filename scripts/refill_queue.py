@@ -127,6 +127,31 @@ def missed_work(path: Path | None = None) -> list[dict[str, Any]]:
     ]
 
 
+#: Прогон опроса индексов, который лежит в знании. ЗАЧЕМ УМОЛЧАНИЕ: без него
+#: очередь при каждом обычном запуске печатала «молчат: опрос индексов», хотя
+#: файл лежал рядом и был свежим (снят 2026-08-31, 763 записи, оба канала
+#: ответили). Третий исход, который выдаётся ВСЕГДА, перестаёт быть сигналом:
+#: читатель привыкает и не замечает дня, когда канал замолчит по-настоящему.
+#: Молчание осталось молчанием — но теперь оно означает «файла нет», а не
+#: «флаг не передали».
+ОПРОС_ПО_УМОЛЧАНИЮ = (
+    Path(__file__).resolve().parents[1] / "studio" / "knowledge" / "catalog_poll.json"
+)
+
+
+def _дней_назад(когда: str) -> int | None:
+    """Возраст прогона в днях. Нечитаемая дата — None, а не ноль.
+
+    Печатается рядом с очередью: свежесть опроса и его наличие — разные вещи,
+    и «канал ответил» месячной давности читается как сегодняшний, если возраст
+    не назвать.
+    """
+    try:
+        return (date.today() - date.fromisoformat(когда)).days
+    except ValueError:
+        return None
+
+
 def discovered_work(payload: dict[str, Any] | None) -> list[dict[str, Any]]:
     """Находки опроса индексов, если прогон сохранён. Нет прогона — нет строк."""
     if not payload:
@@ -234,7 +259,11 @@ def main(argv: list[str]) -> int:
     parser.add_argument(
         "--discovered",
         type=Path,
-        help="сохранённый прогон discover_models.py --json; без него канал молчит",
+        default=ОПРОС_ПО_УМОЛЧАНИЮ,
+        help=(
+            "сохранённый прогон discover_models.py --json; по умолчанию берётся "
+            f"{ОПРОС_ПО_УМОЛЧАНИЮ.name} из знания, если он там есть"
+        ),
     )
     parser.add_argument("--limit", type=int, default=20, help="сколько строк печатать")
     parser.add_argument("--json", action="store_true")
@@ -251,6 +280,14 @@ def main(argv: list[str]) -> int:
     payload: dict[str, Any] | None = None
     if args.discovered and args.discovered.exists():
         payload = json.loads(args.discovered.read_text(encoding="utf-8"))
+        снято = str(payload.get("polled_on") or "")
+        возраст = _дней_назад(снято)
+        print(
+            f"  опрос индексов: снят {снято or 'без даты'}"
+            + (f", {возраст} дн. назад" if возраст is not None else "")
+            + f", каналов ответило {payload.get('channels_answered', '?')}"
+            f" из {payload.get('channels_asked', '?')}"
+        )
 
     asked = missed_work()
     stale = stale_work()
