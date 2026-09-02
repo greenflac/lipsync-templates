@@ -65,21 +65,11 @@ from studio.selfrag.facts import load_facts  # noqa: E402
 ОЧЕРЕДЬ = Path(__file__).resolve().parents[1] / "studio" / "knowledge" / "portal_poll.json"
 
 
-def имя_модели(идентификатор: str) -> str:
-    """`fal-ai/sync-lipsync/v3` -> `sync-lipsync-v3`.
-
-    Префикс вендора на портале не часть имени модели, а слэши — разделители
-    пути. Приводится к той же форме, в какой имена лежат в базе, иначе разница
-    посчитается между двумя написаниями одного и того же (это уже стоило
-    девяти дублей, см. `studio/selfrag/modelnames.py`).
-    """
-    путь = str(идентификатор or "").strip().strip("/")
-    if not путь:
-        return ""
-    куски = путь.split("/")
-    if куски and куски[0] in ("fal-ai", "fal"):
-        куски = куски[1:]
-    return "-".join(к for к in куски if к)
+#: Имя модели из идентификатора портала. Е1: живёт в `modelnames`, потому что
+#: тот же портал читает и канал записи цен (`scripts/ingest_portal.py`), а
+#: разница между базой и порталом считается ПО ИМЕНИ — разъехавшись, два
+#: написания одного превратились бы в выдуманную работу.
+имя_модели = modelnames.from_portal_id
 
 
 def спросить(слово: str, страница: int) -> tuple[str, dict[str, Any] | None]:
