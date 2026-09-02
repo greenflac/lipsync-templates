@@ -990,3 +990,60 @@ class КарточкаЭтоДанные(unittest.TestCase):
         своим текстом, а не выбрасывается."""
         self.assertEqual(advice._card_as_dict("что-то"), {"repr": "что-то"})
         self.assertIsNone(advice._card_as_dict(None))
+
+
+class ДатаПубликацииНеИзнос(unittest.TestCase):
+    """Найдено чтением очереди «протухшего» (П3, 2026-09-02).
+
+    Из 49 строк, объявленных протухшими, 21 оказалась СТАТЬЁЙ или бенчмарком,
+    и первая — arXiv:2103.00020 от 2021 года. Статья говорит сегодня ровно то
+    же, что и в день публикации; «поищи в сети и запиши, что найдёшь» для неё —
+    работа, которую нельзя сделать. Очередь, где такой работы 43%, читают по
+    диагонали, а вместе с ней по диагонали читают и 28 строк, которые
+    действительно протухли: цены площадок и вендорские спеки.
+    """
+
+    def база(self) -> Path:
+        каталог = tempfile.mkdtemp()
+        файл = Path(каталог) / "facts.jsonl"
+        строки = [
+            {
+                "model": "м",
+                "attribute": "failure_mode",
+                "value": "статья 2021 года",
+                "source_url": "https://arxiv.org/abs/2103.00020",
+                "tier": "paper",
+                "stated_on": "2021-02-26",
+            },
+            {
+                "model": "м",
+                "attribute": "price_per_second_usd",
+                "value": "0.06",
+                "source_url": "https://fal.ai/models/x",
+                "tier": "portal",
+                "stated_on": "2024-01-01",
+            },
+        ]
+        файл.write_text(
+            "".join(json.dumps(r, ensure_ascii=False) + "\n" for r in строки), encoding="utf-8"
+        )
+        return файл
+
+    def test_статья_не_попадает_в_очередь_перечитывания(self):
+        out = advice.stale(path=self.база())
+        self.assertEqual([r["tier"] for r in out["stale"]], ["portal"])
+        self.assertEqual([r["tier"] for r in out["published_and_old"]], ["paper"])
+
+    def test_цена_площадки_протухает_по_настоящему(self):
+        """Вторая половина (И5): правило обязано оставить в очереди то, что
+        действительно стареет, иначе оно просто выключает сторожа."""
+        out = advice.stale(path=self.база())
+        self.assertEqual(out["outcome"], "fail")
+        self.assertEqual(out["violations"], 1)
+
+    def test_старая_статья_не_прячется_молча(self):
+        """Не выброшена, а отделена, и в ноте сказано, что с ней делать:
+        измерять модель, а не перечитывать статью."""
+        out = advice.stale(path=self.база())
+        self.assertIn("a paper does not rot", out["note"])
+        self.assertIn("fresh measurement of the model", out["note"])

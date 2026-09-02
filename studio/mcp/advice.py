@@ -49,8 +49,10 @@ from studio.selfrag.facts import (
     DEFAULT_FACTS_PATH,
     STALE_AFTER_DAYS,
     TIERS,
+    TIER_BENCHMARK,
     TIER_BLOG,
     TIER_OPERATOR,
+    TIER_PAPER,
     TIER_PORTAL,
     TIER_VENDOR,
     Fact,
@@ -953,6 +955,16 @@ def withdraw(
     }
 
 
+#: Тиры, у которых дата — это ДАТА ПУБЛИКАЦИИ, а не срок годности. Статья и
+#: бенчмарк опубликованы однажды и говорят одно и то же всегда; «поищи в сети и
+#: запиши, что найдёшь» для них — работа, которую нельзя сделать.
+#:
+#: ИЗМЕРЕНО 2026-09-02: из 49 строк, объявленных протухшими, 21 (20 статей и
+#: 1 бенчмарк) именно такая, то есть 43% очереди — работа впустую. Остальные
+#: 28 — цены площадок и вендорские спеки, и они протухают по-настоящему.
+PUBLISHED_TIERS: frozenset[str] = frozenset({TIER_PAPER, TIER_BENCHMARK})
+
+
 def stale(*, days: int = STALE_AFTER_DAYS, path: Path | None = None) -> dict:
     """Which claims are old enough to need a fresh look on the web.
 
@@ -973,6 +985,7 @@ def stale(*, days: int = STALE_AFTER_DAYS, path: Path | None = None) -> dict:
 
     old: list[dict] = []
     undated: list[dict] = []
+    published: list[dict] = []
     for fact in facts:
         age = fact.age_days
         row = {
@@ -987,9 +1000,23 @@ def stale(*, days: int = STALE_AFTER_DAYS, path: Path | None = None) -> dict:
         if age is None:
             undated.append(row)
         elif age > days:
-            old.append(row)
+            # ДАТА ПУБЛИКАЦИИ — НЕ ИЗНОС. Найдено чтением выдачи (П3,
+            # 2026-09-02): из 49 «протухших» строк 21 оказалась СТАТЬЁЙ или
+            # бенчмарком, и первая — arXiv:2103.00020 от 2021 года. Статья
+            # сегодня говорит ровно то же, что и в день публикации; «поищи в
+            # сети и запиши, что найдёшь» для неё — работа, которую нельзя
+            # сделать. А очередь, где такой работы 43%, читается по диагонали,
+            # и вместе с ней по диагонали читаются 28 строк, которые ДЕЙСТВИТЕЛЬНО
+            # протухли: цены площадок и вендорские спеки.
+            #
+            # Не выброшено, а ОТДЕЛЕНО: статья 2021 года о модели, которая с тех
+            # пор изменилась, вводит в заблуждение по-настоящему. Но лечится это
+            # не перечитыванием статьи, а измерением модели, и в ноте сказано
+            # именно так.
+            (published if fact.tier in PUBLISHED_TIERS else old).append(row)
 
     old.sort(key=lambda row: -(row["age_days"] or 0))
+    published.sort(key=lambda row: -(row["age_days"] or 0))
     if old or undated:
         return {
             "outcome": FAIL,
@@ -999,10 +1026,16 @@ def stale(*, days: int = STALE_AFTER_DAYS, path: Path | None = None) -> dict:
             "note": (
                 f"{len(old)} claim(s) older than {days} days and {len(undated)} "
                 f"with no date at all, out of {len(facts)} checked. Search the "
-                "web for these and call `record` with what you find."
+                "web for these and call `record` with what you find. "
+                f"Separately, {len(published)} claim(s) rest on a PUBLISHED "
+                "source (paper or benchmark) older than that: a paper does not "
+                "rot, so re-reading it changes nothing. If one of those models "
+                "has moved since, the answer is a fresh measurement of the "
+                "model, not a fresh reading of the paper."
             ),
             "stale": old,
             "undated": undated,
+            "published_and_old": published,
         }
 
     return {
@@ -1010,7 +1043,16 @@ def stale(*, days: int = STALE_AFTER_DAYS, path: Path | None = None) -> dict:
         "checked": len(facts),
         "violations": 0,
         "unmeasured": 0,
-        "note": f"all {len(facts)} claim(s) are within {days} days",
+        "note": (
+            f"all {len(facts)} claim(s) are within {days} days"
+            + (
+                f"; {len(published)} rest on a published source older than that, "
+                "which is a date and not decay"
+                if published
+                else ""
+            )
+        ),
         "stale": [],
         "undated": [],
+        "published_and_old": published,
     }
