@@ -271,6 +271,13 @@ MUTANTS: list[tuple[str, str, str, str, str]] = [
         "страницы: случайный класс HuggingFace снова в отпечатке",
         "studio.mcp.tests.test_recheck_vendor",
     ),
+    (
+        "scripts/refill_queue.py",
+        '                + (f" [сверено с источником {сверено}]" if сверено else ""),',
+        '                + "",',
+        "очередь: сверка с источником перестала показываться читателю",
+        "studio.mcp.tests.test_refill_queue",
+    ),
     # --- разрешение: предел кадра ------------------------------------------
     (
         "studio/resolution.py",
