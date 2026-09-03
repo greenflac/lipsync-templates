@@ -227,6 +227,7 @@ from typing import Mapping, Sequence
 
 from lipsync.fork_identity import FAIL, PASS, UNMEASURED
 
+from studio import duration as dur
 from studio import factaxis as fa
 from studio import lifecycle as life
 from studio import pipeline as pl
@@ -887,10 +888,12 @@ BLOCKED_MARK = "ВОСПОЛЬЗОВАТЬСЯ НЕЛЬЗЯ"
 BAN_EVIDENCE_LABEL = "ЗАПРЕТ НА ВХОД, а не довод"
 
 #: Сколько ПЕРВЫХ полей ключа — это ЖЁСТКИЕ ОГРАНИЧЕНИЯ, а не наши доводы о
-#: качестве модели. КОНСТАНТА-РЕШЕНИЕ, ВЫБРАНО = 3: запрет на вход, кадр, цена.
-#: Все три отвечают на вопрос «можно ли вообще», а не «насколько хорошо», все
-#: три старше наших доводов в отборе — и все три обязаны выключаться там, где
-#: спрашивают «кто лучше всех ДОКАЗАН» (`proven`).
+#: качестве модели. КОНСТАНТА-РЕШЕНИЕ, ВЫБРАНО = 4: запрет на вход, кадр,
+#: длительность, цена. Все четыре отвечают на вопрос «можно ли вообще», а не
+#: «насколько хорошо», все четыре старше наших доводов в отборе — и все
+#: четыре обязаны выключаться там, где спрашивают «кто лучше всех ДОКАЗАН»
+#: (`proven`). Длительность встала сюда 2026-09-03 и подвинула число с 3 на 4:
+#: ролик длиннее предела не выйдет вовсе.
 #:
 #: Имя менялось: было `CUSTOMER_KEYS` (кадр и цена приходят от заказчика).
 #: Запрет на вход приходит не от заказчика, а из базы, поэтому имя стало по
@@ -900,11 +903,12 @@ BAN_EVIDENCE_LABEL = "ЗАПРЕТ НА ВХОД, а не довод"
 #: роняла ровно один первый ключ, и когда перед ценой встал кадр, цена молча
 #: вернулась в выбор вытесненного кандидата — то есть вытесненным начинал
 #: называться тот, кого цена и подняла наверх. Число здесь, а не срез по месту.
-CONSTRAINT_KEYS = 3
+CONSTRAINT_KEYS = 4
 
 KEY_FIELDS: tuple[str, ...] = (
     "нельзя ли этим воспользоваться",
     "принимает ли кадр",
+    "влезает ли по длительности",
     "положение по цене",
     "строк применимости",
     "утверждений по якорям операции",
@@ -1328,6 +1332,11 @@ class Candidate:
     #: сравнивали и предел не записан.
     fit_state: str = ""
     fit_note: str = ""
+    #: Одно из ПЯТИ положений по длительности (`duration.DUR_ORDER`) и нота.
+    #: Пятое — «не спрашивали»: оно про бриф, а не про модель, и лечится
+    #: вопросом заказчику, а не сбором.
+    dur_state: str = dur.DUR_NOT_ASKED
+    dur_note: str = ""
     #: Одно из трёх положений относительно ВХОДА ШАГА (`BAN_ORDER`) и нота.
     #: Пустая строка невозможна: вход у шага есть всегда, и молчание базы —
     #: это `BAN_UNKNOWN`, а не отсутствие ответа.
@@ -1852,6 +1861,25 @@ def life_stance(facts: Sequence[Fact], today: date | None = None) -> tuple[str, 
     return LIFE_LIVE, f"признаков снятия нет ни в одной из {len(facts)} строк"
 
 
+#: Имя семьи, которой спрашивается длительность. ИМЯ, а не список имён: под
+#: ним `studio/selfrag/attrfamily.py` держит девять записанных атрибутов
+#: (`max_seconds`, `duration_range_seconds`, `max_duration_ms` и прочие).
+#: Второй список здесь означал бы второй способ узнать известное (Е1).
+DURATION_ASKED = "max_seconds"
+
+
+def duration_stance(facts: Sequence[Fact], wanted: dur.Запрос) -> tuple[str, str]:
+    """Влезает ли ролик заказчика в предел модели. Пять положений (см. `dur`).
+
+    Разбора здесь нет и измерителя нет (Е1): длительность из брифа читает
+    `studio.duration.просят`, предел из строк — он же. Здесь только выбор
+    строк по семье атрибутов и передача их разборщику.
+    """
+    имена = af.expand(DURATION_ASKED, sorted({f.attribute for f in facts}))
+    строки = [(f.attribute, f.value) for f in facts if f.attribute in имена]
+    return (lambda p: (p.состояние, p.нота))(dur.влезает(wanted, dur.предел_из_строк(строки)))
+
+
 def fit_stance(facts: Sequence[Fact], frame: tuple[int, int] | None) -> tuple[str, str]:
     """Где кандидат относительно поданного кадра: одно из четырёх положений и нота.
 
@@ -2068,10 +2096,16 @@ def by_evidence(c: Candidate) -> tuple:
     """
     запрет = blocked_rank(c)
     кадр = FIT_ORDER.get(c.fit_state, 0)
+    # Длительность стоит рядом с кадром и по той же причине: ролик длиннее
+    # предела не выйдет вовсе, а модель дороже потолка выйдет, просто дорого.
+    # Невозможное старше нежелательного. ИЗМЕРЕНО 2026-09-03: на ролике 30 с
+    # из 19 кандидатов с записанным пределом работу сделают ДВА.
+    длительность = dur.DUR_ORDER.get(c.dur_state, 0)
     цена = PRICE_ORDER.get(c.price_state, 0)
     return (
         запрет,
         кадр,
+        длительность,
         цена,
         -c.applicability,
         -c.anchored,
@@ -2104,9 +2138,16 @@ def why_not(chosen: Candidate, neighbour: Candidate) -> str:
 
 def _поле(c: Candidate, i: int) -> str:
     """Значение i-го поля ключа ЧЕЛОВЕЧЕСКИМИ словами, а не числом из кортежа."""
+    # ЭТОТ КОРТЕЖ ОБЯЗАН ИДТИ В НОГУ С `KEY_FIELDS`, и это стерегёт тест:
+    # 2026-09-03 длительность встала в ключ третьим полем, а сюда её не
+    # вписали — и строка «почему не сосед» назвала правильное поле с ЧУЖИМ
+    # значением («строк применимости (5 против 5)» при 3 против 1). Поймано
+    # собственным тестом, но только потому, что он сверял ЧИСЛА, а не факт
+    # печати.
     значения = (
         f"{c.ban_state or '—'} / {c.life_state or '—'} / {c.out_state or '—'}",
         c.fit_state or "не считалось",
+        c.dur_state or "не считалось",
         c.price_state or "не считалось",
         f"{c.applicability}",
         f"{c.anchored}",
@@ -2237,6 +2278,7 @@ def candidates_for(
     budget: Budget | None = None,
     frame: tuple[int, int] | None = None,
     today: date | None = None,
+    wanted: dur.Запрос | None = None,
 ) -> list[Candidate]:
     """Кандидаты на операцию: модели, о которых база говорит СЛОВАМИ ОПЕРАЦИИ.
 
@@ -2279,6 +2321,7 @@ def candidates_for(
     for f in index.facts:
         по_имени.setdefault(fold(f.model), []).append(f)
 
+    wanted = wanted if wanted is not None else dur.Запрос(None, "длительность не спрашивали")
     найдены: list[Candidate] = []
     for имя, свои in по_модели.items():
         строки, применимость, способность, не_смогли = evidence_for(
@@ -2299,6 +2342,7 @@ def candidates_for(
         все = по_имени.get(fold(имя), [])
         положение, нота = price_stance(все, потолок)
         по_кадру, нота_кадра = fit_stance(все, frame)
+        по_длительности, нота_длительности = duration_stance(все, wanted)
         по_входу, нота_входа = ban_stance(все, step_inputs(op), op.requires)
         по_службе, нота_службы = life_stance(все, today)
         по_выходу, нота_выхода = output_stance(все, op.produces)
@@ -2316,6 +2360,8 @@ def candidates_for(
                 price_note=нота,
                 fit_state=по_кадру,
                 fit_note=нота_кадра,
+                dur_state=по_длительности,
+                dur_note=нота_длительности,
                 ban_state=по_входу,
                 ban_note=нота_входа,
                 life_state=по_службе,
@@ -2404,6 +2450,9 @@ def plan(
         бюджет = из_брифа
 
     операции = derive(brief)
+    # Длительность ролика читается ОДИН раз на план, а не на каждый шаг:
+    # заказчик называет её про весь ролик, и разбор её тут же и живёт (Е1).
+    длительность = dur.просят(brief)
     есть = inputs_of(brief, creative)
     # Замыкание по нехватке: заказчик называет не все шаги, потому что для
     # него это одна работа. Добавленные шаги помечаются (см. `замкнуть`).
@@ -2442,7 +2491,7 @@ def plan(
     вытеснено_ценой = 0
     без_проверенных = 0
     for op in операции:
-        предложены = candidates_for(op, индекс, overrides, бюджет, кадр, today)
+        предложены = candidates_for(op, индекс, overrides, бюджет, кадр, today, длительность)
         лучший = предложены[0] if предложены else None
         выбор.append((op, лучший))
         if лучший is None:
@@ -2481,6 +2530,9 @@ def plan(
                 "requires": list(op.requires),
                 "produces": list(op.produces),
                 "input_of_plan": подменено,
+                # Длительность ролика против предела модели: пять положений,
+                # и «не записан» нигде не значит «подойдёт».
+                "duration_asked": длительность.нота,
                 "chosen": _candidate_row(лучший),
                 "alternatives": [_candidate_row(c) for c in предложены[1:CANDIDATES_SHOWN]],
                 "candidates_found": len(предложены),
@@ -2494,6 +2546,10 @@ def plan(
                 # потому не попадают в показанные — одна строка на шаг.
                 "banned_input": banned_line(предложены),
                 "banned_count": sum(1 for c in предложены if c.ban_state == BAN_FORBIDS),
+                # Сколько кандидатов ролик перерос. Печатается всегда, даже
+                # нулём: «никого не отодвинули» и «не считали» — разные
+                # новости, и первая читается только рядом со второй.
+                "too_long_count": sum(1 for c in предложены if c.dur_state == dur.DUR_OVER),
                 "retired_count": sum(1 for c in предложены if c.life_state == LIFE_RETIRED),
                 "wrong_output_count": sum(1 for c in предложены if c.out_state == OUT_NO),
                 "announced_count": sum(1 for c in предложены if c.life_state == LIFE_ANNOUNCED),
@@ -2625,6 +2681,8 @@ def _candidate_row(c: Candidate | None) -> dict | None:
         "price_note": c.price_note,
         "fit_state": c.fit_state,
         "fit_note": c.fit_note,
+        "dur_state": c.dur_state,
+        "dur_note": c.dur_note,
         "ban_state": c.ban_state,
         "ban_note": c.ban_note,
         "life_state": c.life_state,

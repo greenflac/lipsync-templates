@@ -72,6 +72,37 @@ ROOT = Path(__file__).resolve().parents[1]
 
 MUTANTS = [
     # (файл, что заменить, на что, подпись)
+    # --- ось длительности (заведена 2026-09-03) ----------------------------
+    (
+        "studio/duration.py",
+        "    if предел.секунды + 1e-9 >= запрос.секунды:",
+        "    if True:",
+        "длительность -> слабее: любой ролик объявляется влезающим",
+    ),
+    (
+        "studio/duration.py",
+        "    if предел.секунды + 1e-9 >= запрос.секунды:",
+        "    if предел.секунды > запрос.секунды:",
+        "длительность -> строже: ролик ровно на пределе объявляется длинным",
+    ),
+    (
+        "studio/duration.py",
+        "    DUR_IN: 0,",
+        "    DUR_IN: 3,",
+        "длительность -> слабее: подтверждённое согласие теряет старшинство",
+    ),
+    (
+        "studio/duration.py",
+        "        мс = МИЛЛИСЕКУНДЫ.search(текст) or (",
+        "        мс = None or (",
+        "длительность -> слабее: миллисекунды читаются как секунды",
+    ),
+    (
+        "studio/planner.py",
+        "    длительность = dur.DUR_ORDER.get(c.dur_state, 0)",
+        "    длительность = 0",
+        "длительность выключается из ключа отбора вовсе",
+    ),
     # --- список входов из схемы эндпоинта (заведён 2026-09-03) -------------
     (
         "studio/planner.py",
@@ -232,8 +263,8 @@ MUTANTS = [
     ),
     (
         "studio/planner.py",
-        "        кадр,\n        цена,\n        -c.applicability,",
-        "        кадр,\n        -c.applicability,\n        цена,",
+        "        длительность,\n        цена,\n        -c.applicability,",
+        "        длительность,\n        -c.applicability,\n        цена,",
         "by_evidence: цена перестаёт быть старшим ключом при названном потолке",
     ),
     (
@@ -431,20 +462,20 @@ MUTANTS = [
     ),
     (
         "studio/planner.py",
-        "CONSTRAINT_KEYS = 3",
-        "CONSTRAINT_KEYS = 2",
-        "CONSTRAINT_KEYS 3 -> 2 (цена возвращается в выбор вытесненного)",
-    ),
-    (
-        "studio/planner.py",
-        "CONSTRAINT_KEYS = 3",
         "CONSTRAINT_KEYS = 4",
-        "CONSTRAINT_KEYS 3 -> 4 (применимость выключается из выбора вытесненного)",
+        "CONSTRAINT_KEYS = 3",
+        "CONSTRAINT_KEYS 4 -> 3 (цена возвращается в выбор вытесненного)",
     ),
     (
         "studio/planner.py",
-        "        запрет,\n        кадр,\n        цена,",
-        "        запрет,\n        цена,\n        кадр,",
+        "CONSTRAINT_KEYS = 4",
+        "CONSTRAINT_KEYS = 5",
+        "CONSTRAINT_KEYS 4 -> 5 (применимость выключается из выбора вытесненного)",
+    ),
+    (
+        "studio/planner.py",
+        "        запрет,\n        кадр,\n        длительность,",
+        "        запрет,\n        длительность,\n        кадр,",
         "by_evidence: кадр перестаёт быть старше цены",
     ),
     (
@@ -624,7 +655,15 @@ def run(cmd: list[str]) -> tuple[int, str]:
 
 def main() -> int:
     clean()
-    базовый_т = run([sys.executable, "-m", "unittest", "studio.tests.test_planner"])
+    базовый_т = run(
+        [
+            sys.executable,
+            "-m",
+            "unittest",
+            "studio.tests.test_planner",
+            "studio.tests.test_duration",
+        ]
+    )
     базовый_г = run([sys.executable, "scripts/check_planner.py", "--check"])
     print(
         f"ЗДОРОВЫЙ | тесты rc={базовый_т[0]} {базовый_т[1]} | гейт rc={базовый_г[0]} {базовый_г[1]}"
@@ -642,7 +681,15 @@ def main() -> int:
             continue
         путь.write_text(было.replace(старое, новое, 1), encoding="utf-8")
         clean()
-        тк, тс = run([sys.executable, "-m", "unittest", "studio.tests.test_planner"])
+        тк, тс = run(
+            [
+                sys.executable,
+                "-m",
+                "unittest",
+                "studio.tests.test_planner",
+                "studio.tests.test_duration",
+            ]
+        )
         гк, гс = run([sys.executable, "scripts/check_planner.py", "--check"])
         путь.write_text(было, encoding="utf-8")
         clean()
