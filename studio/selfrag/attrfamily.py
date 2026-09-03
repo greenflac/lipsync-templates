@@ -136,6 +136,36 @@ from __future__ import annotations
         "подстроки": ("output", "produces"),
         "кроме": (),
     },
+    # СЕМЬЯ ПРЕДЕЛА ТЕКСТА. Заведена 2026-09-03 тем же системным замером, что
+    # и входы: 28 моделей записывают, сколько текста в них влезает, и ни на
+    # один естественный вопрос об этом продукт не отвечал.
+    #
+    # ЗАКРЫТЫЙ СПИСОК, А НЕ ПОДСТРОКА, И ЭТО НЕГАТИВНЫЙ КОНТРОЛЬ (И5). Рядом в
+    # базе лежат `text_rendering`, `text_rendering_non_latin`,
+    # `text_normalization_default`, `ratio_enum_text_to_video` — все содержат
+    # «text» и НЕ отвечают на «сколько текста влезает»; `character_orientation`
+    # содержит «character» и говорит про поворот; `long_context_surcharge` —
+    # деньги. Подстрочная семья втянула бы все шесть.
+    #
+    # `max_output_tokens_recommended` СЮДА НЕ ВХОДИТ НАРОЧНО: это предел
+    # ВЫХОДА, а вход и выход в этом модуле — разные вопросы (см. семьи
+    # `accepts_inputs` и `produces_outputs`). Держать одно правило на входе и
+    # другое здесь значило бы иметь два разных представления об одном.
+    "text_limit": {
+        "prefixes": (),
+        "exact": (
+            "character_limit",
+            "max_text_length",
+            "context_window_tokens",
+            "prompt_length_limit",
+            "text_input_limit",
+            "keyterms_limit",
+            "max_prompt_length",
+            "max_script_characters",
+        ),
+        "подстроки": (),
+        "кроме": (),
+    },
     "license": {
         # Приставкой и хвостом: вендоры и каналы заводят имена сами
         # (`license_restriction`, `license_excluded_territories`,
@@ -256,6 +286,12 @@ from __future__ import annotations
     "входы": "accepts_inputs",
     "что принимает": "accepts_inputs",
     "outputs": "produces_outputs",
+    "text_limit": "text_limit",
+    "character_limit": "text_limit",
+    "max_text_length": "text_limit",
+    "context_window": "text_limit",
+    "предел текста": "text_limit",
+    "сколько текста": "text_limit",
     "output": "produces_outputs",
     "выход": "produces_outputs",
     "что отдаёт": "produces_outputs",

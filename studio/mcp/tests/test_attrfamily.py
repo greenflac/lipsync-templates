@@ -326,3 +326,52 @@ class ВходИВыходРазныеВопросы(unittest.TestCase):
             ("что отдаёт", "produces_outputs"),
         ):
             self.assertEqual(ждём, attrfamily.семья(слово), f"слово {слово} не доводит")
+
+
+class ПределТекстаНеЛюбоеСловоПроТекст(unittest.TestCase):
+    """Сколько текста влезает в модель. 28 моделей это записывают."""
+
+    ОТВЕЧАЮТ = (
+        "character_limit",
+        "max_text_length",
+        "context_window_tokens",
+        "prompt_length_limit",
+        "text_input_limit",
+        "keyterms_limit",
+        "max_prompt_length",
+        "max_script_characters",
+    )
+    #: Имена, которые ЛЕЖАТ РЯДОМ и на этот вопрос не отвечают. Т2 — литералы.
+    #: Подстрочная семья по «text» или «character» втянула бы все шесть.
+    ШУМ = (
+        "text_rendering",
+        "text_rendering_non_latin",
+        "text_normalization_default",
+        "ratio_enum_text_to_video",
+        "character_orientation",
+        "long_context_surcharge",
+    )
+
+    def test_записанные_пределы_отвечают(self) -> None:
+        self.assertEqual(
+            sorted(self.ОТВЕЧАЮТ), sorted(attrfamily.expand("предел текста", list(self.ОТВЕЧАЮТ)))
+        )
+
+    def test_слова_про_текст_пределом_не_становятся(self) -> None:
+        self.assertEqual([], attrfamily.expand("предел текста", list(self.ШУМ)))
+
+    def test_предел_выхода_это_другой_вопрос(self) -> None:
+        """Вход и выход в этом модуле разведены; держать одно правило во входах
+        и другое здесь значило бы иметь два представления об одном."""
+        self.assertEqual([], attrfamily.expand("предел текста", ["max_output_tokens_recommended"]))
+
+    def test_цена_за_символы_это_не_предел(self) -> None:
+        """Правило занятых приставок работает и здесь: `price_per_1000_chars`
+        отвечает на вопрос о ДЕНЬГАХ."""
+        self.assertEqual(
+            [], attrfamily.expand("предел текста", ["price_per_1000_chars", "price_per_token"])
+        )
+
+    def test_слова_вопроса_доводят_до_семьи(self) -> None:
+        for слово in ("предел текста", "сколько текста", "character_limit", "context_window"):
+            self.assertEqual("text_limit", attrfamily.семья(слово), f"слово {слово} не доводит")

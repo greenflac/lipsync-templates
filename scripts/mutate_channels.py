@@ -132,6 +132,21 @@ MUTANTS: list[tuple[str, str, str, str, str]] = [
         "занятые приставки: список пуст — цена снова отвечает на вопрос о входе",
         "studio.mcp.tests.test_attrfamily",
     ),
+    # --- предел текста (заведён 2026-09-03) ---------------------------------
+    (
+        "studio/selfrag/attrfamily.py",
+        '            "character_limit",\n            "max_text_length",',
+        '            "max_text_length",',
+        "предел текста: character_limit выпал — 10 строк снова не отвечают на вопрос",
+        "studio.mcp.tests.test_attrfamily",
+    ),
+    (
+        "studio/selfrag/attrfamily.py",
+        '        "подстроки": (),',
+        '        "подстроки": ("text", "character"),',
+        "предел текста: семья ловит подстрокой — text_rendering отвечает на «сколько влезает»",
+        "studio.mcp.tests.test_attrfamily",
+    ),
     # --- приставка версии в имени модели (заведена 2026-09-03) --------------
     (
         "studio/selfrag/modelnames.py",
