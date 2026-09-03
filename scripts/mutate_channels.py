@@ -428,6 +428,42 @@ MUTANTS: list[tuple[str, str, str, str, str]] = [
         "очередь: промахи не пересчитываются по нынешней базе",
         "studio.mcp.tests.test_refill_queue",
     ),
+    # --- голден-сет задач (заведён 2026-09-03) ------------------------------
+    (
+        "scripts/check_golden.py",
+        '    провалы = [с for с in строки if с["исход"] == FAIL and с["ждём"] == СТОРОЖ]',
+        '    провалы = [с for с in строки if с["исход"] == FAIL]',
+        "голден: провал цели снова красит гейт — набор выключат на второй день",
+        "studio.mcp.tests.test_golden",
+    ),
+    (
+        "scripts/check_golden.py",
+        '    цели_открыты = [с for с in строки if с["исход"] == FAIL and с["ждём"] == ЦЕЛЬ]',
+        "    цели_открыты = []",
+        "голден: невзятая цель перестаёт считаться — работа впереди исчезает из отчёта",
+        "studio.mcp.tests.test_golden",
+    ),
+    (
+        "scripts/check_golden.py",
+        '    if задача.get("оценка") != МАШИННО:',
+        "    if False:",
+        "голден: «смотрится глазами» сворачивается в машинную проверку",
+        "studio.mcp.tests.test_golden",
+    ),
+    (
+        "scripts/check_golden.py",
+        "            if прошло == len(соседи):",
+        "            if False:",
+        "голден: холостая проверка перестаёт ловиться — набор не может не пройти",
+        "studio.mcp.tests.test_golden",
+    ),
+    (
+        "scripts/check_golden.py",
+        "    raise KeyError(вид)",
+        "    return True",
+        "голден: опечатка в виде проверки молча считается пройденной",
+        "studio.mcp.tests.test_golden",
+    ),
 ]
 
 
