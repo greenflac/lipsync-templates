@@ -10,6 +10,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import tempfile
+from types import SimpleNamespace
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -147,10 +148,6 @@ class ЧтоБерётсяВОбход(unittest.TestCase):
         self.assertEqual(rv.открытые_хосты(путь), {"vendor.test"})
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class ТелоСкриптаНеТекстСтраницы(unittest.TestCase):
     """ИЗМЕРЕНО на живом втором прогоне: канал объявил изменившимися 12 страниц
     из 68 за десять минут — заведомо ложно. Диагноз снят сравнением страницы с
@@ -220,3 +217,94 @@ class ОтпечатокЧужогоСпособаЭтоНеИзменение(u
     def test_способ_едет_в_журнал(self):
         строка = self._обойти({})["строки"][0]
         self.assertEqual(строка["method"], rv.СПОСОБ)
+
+
+class ТриПоложенияХоста(unittest.TestCase):
+    """Р1 на карте достижимости. До 2026-09-03 положений было два: `open` и
+    всё остальное. Хост, который ни разу не отказывал, в карту не попадал —
+    карта строилась из ОТКАЗОВ, — и канал молча пропускал ровно те хосты, что
+    всегда работали: 348 вендорских утверждений из 624, то есть 56%.
+    """
+
+    def _карта(self, строки: list[dict]) -> Path:
+        путь = Path(tempfile.mkdtemp()) / "denied_hosts.jsonl"
+        путь.write_text(
+            "\n".join(json.dumps(с, ensure_ascii=False) for с in строки) + "\n",
+            encoding="utf-8",
+        )
+        return путь
+
+    def test_три_положения_различимы(self):
+        путь = self._карта(
+            [
+                {"host": "открытый.test", "state": "open"},
+                {"host": "закрытый.test", "state": "refused"},
+            ]
+        )
+        карта = rv.состояние_хостов(путь)
+        self.assertEqual(rv.положение("открытый.test", карта), "открыт")
+        self.assertEqual(rv.положение("закрытый.test", карта), "закрыт")
+        # Хоста нет в карте — это НЕ «закрыт». Ровно на этом слипании канал
+        # и не видел huggingface.co.
+        self.assertEqual(rv.положение("незнакомый.test", карта), "не записан")
+
+    def test_не_записан_не_равен_закрыт(self):
+        """Литералами (Т2): если эти две строки когда-нибудь совпадут,
+        различие исчезнет молча."""
+        self.assertNotEqual(rv.НЕ_ЗАПИСАН, rv.ЗАКРЫТ)
+        self.assertNotEqual(rv.НЕ_ЗАПИСАН, rv.ОТКРЫТ)
+
+    def test_последняя_строка_журнала_по_прежнему_побеждает(self):
+        путь = self._карта(
+            [{"host": "х.test", "state": "refused"}, {"host": "х.test", "state": "open"}]
+        )
+        self.assertEqual(rv.положение("х.test", rv.состояние_хостов(путь)), "открыт")
+
+
+class КудаКаналИдёт(unittest.TestCase):
+    """Цели обхода и то, что осталось за бортом, — с числами (Р2)."""
+
+    def _факт(self, url: str, tier: str = "vendor"):
+        return SimpleNamespace(tier=tier, source_url=url)
+
+    def test_хост_вне_карты_это_цель_а_не_пропуск(self):
+        """ИЗМЕРЕНО 2026-09-03: так канал не видел huggingface.co — 275
+        утверждений, больше трети вендорского тира."""
+        цели, мимо = rv.адреса(
+            факты=[self._факт("https://новый.test/страница")],
+            карта={},
+        )
+        self.assertEqual(цели, {"https://новый.test/страница": 1})
+        self.assertEqual(мимо["закрыт"], {})
+
+    def test_закрытый_политикой_хост_в_цели_не_попадает(self):
+        """Ц3: закрытое не обходится ни запросом, ни зеркалом — оно
+        называется отдельной строкой с числом утверждений за ним."""
+        цели, мимо = rv.адреса(
+            факты=[self._факт("https://нельзя.test/а"), self._факт("https://нельзя.test/б")],
+            карта={"нельзя.test": "закрыт"},
+        )
+        self.assertEqual(цели, {})
+        self.assertEqual(мимо["закрыт"], {"нельзя.test": 2})
+
+    def test_открытый_хост_цель(self):
+        цели, _ = rv.адреса(
+            факты=[self._факт("https://можно.test/а")],
+            карта={"можно.test": "открыт"},
+        )
+        self.assertEqual(цели, {"https://можно.test/а": 1})
+
+    def test_число_утверждений_едет_вместе_с_адресом(self):
+        цели, _ = rv.адреса(
+            факты=[self._факт("https://х.test/а"), self._факт("https://х.test/а")],
+            карта={},
+        )
+        self.assertEqual(цели, {"https://х.test/а": 2})
+
+    def test_чужой_тир_не_берётся(self):
+        цели, _ = rv.адреса(факты=[self._факт("https://х.test/а", tier="paper")], карта={})
+        self.assertEqual(цели, {})
+
+
+if __name__ == "__main__":
+    unittest.main()
