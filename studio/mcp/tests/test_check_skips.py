@@ -27,6 +27,15 @@ class DataAbsentIsNotTheSameAsSwitchedOff(unittest.TestCase):
         assert honest == [REAL]
         assert off == []
 
+    def test_причина_из_studio_tests_тоже_данных_нет(self) -> None:
+        """Дословная причина двух пропусков в `studio/tests`, снятая с прогона
+        2026-09-02, когда каталог впервые попал под этот сторож. Литерал (Т2):
+        импортированная из проверяемого модуля, она переехала бы вместе с ним."""
+        причина = "the prompt fixtures are not on this machine"
+        honest, off = skips.classify([причина])
+        assert honest == [причина]
+        assert off == []
+
     def test_ANY_other_reason_is_a_switched_off_test(self) -> None:
         """Т7: ретрай и выключение — машинные способы превратить «не смогли» в
         «прошло». Причина, которой нет в списке, красит гейт."""
@@ -74,6 +83,30 @@ class TheSkipLineIsParsedFromUnittestOutput(unittest.TestCase):
     def test_double_quotes_are_read_too(self) -> None:
         line = 'test_x (mod.Case.test_x) ... skipped "нет весов"'
         assert skips._SKIPPED.findall(line) == ["нет весов"]
+
+
+class ЗаКакимиНаборамиСледим(unittest.TestCase):
+    """Список наборов раньше стоял литералом и разъехался с гейтом молча:
+    `studio/tests` гейт перебирал, а сторож пропусков про него не знал — 503
+    теста и два пропуска в них никем не сторожились (ИЗМЕРЕНО 2026-09-02)."""
+
+    def test_наборы_взяты_из_самого_гейта(self) -> None:
+        # Ожидаемое — литерал (Т2): импорт из проверяемого модуля переехал бы
+        # вместе с ошибкой.
+        self.assertEqual(
+            sorted(skips.SUITES),
+            [
+                "lipsync/tests",
+                "studio/mcp/tests",
+                "studio/selfrag/tests",
+                "studio/tests",
+            ],
+        )
+
+    def test_каждый_набор_существует_в_дереве(self) -> None:
+        корень = Path(__file__).resolve().parents[3]
+        for набор in skips.SUITES:
+            self.assertTrue((корень / набор).is_dir(), набор)
 
 
 if __name__ == "__main__":

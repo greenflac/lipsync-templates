@@ -80,14 +80,12 @@ MYPYPATH=. python -m mypy --explicit-package-bases studio/selfrag/ --ignore-miss
 step "tests (selfrag)"
 python -m unittest discover -s studio/selfrag/tests -t .
 
-# The calibration path, named module by module rather than by directory.
+# The calibration path. Lint and types are still named file by file (they are
+# per-module tools); the tests below are gated by directory.
 #
-# `studio/tests/` as a whole still cannot be gated: test_app.py needs httpx2,
-# which requirements-dev.txt does not pin. But the calibration modules need
-# nothing beyond the standard library, and leaving them ungated had already
-# cost something — a commit landed with the `verify()` invariant failing in two
-# tests and CI stayed green, because the gate could not see the file
-# (OBSERVED 2026-08-26). Gate what can be gated; report the rest.
+# Leaving these ungated had already cost something — a commit landed with the
+# `verify()` invariant failing in two tests and CI stayed green, because the
+# gate could not see the file (OBSERVED 2026-08-26).
 step "ruff check (calibration)"
 ruff check studio/prompt_templates.py studio/tests/test_prompt_templates.py \
     studio/tests/test_calibration_contract.py
@@ -101,16 +99,28 @@ MYPYPATH=. python -m mypy --explicit-package-bases studio/prompt_templates.py \
     studio/tests/test_prompt_templates.py studio/tests/test_calibration_contract.py \
     --ignore-missing-imports
 
-step "tests (calibration)"
-python -m unittest studio.tests.test_prompt_templates studio.tests.test_calibration_contract
+# Т6, ИЗМЕРЕНО 2026-09-02: гейт называл модули studio/tests поимённо, и семи
+# файлов не называл никто — 127 тестов, которые существуют и никогда не
+# гонялись гейтом: test_app, test_jobs, test_ledger, test_lifecycle,
+# test_store, test_style, test_vector_cache. Среди них тесты модуля,
+# написанного в тот же день. Поимённый список — это второй способ узнать,
+# какие тесты есть (Е1), и он разъехался молча: «не запускалось» выглядело
+# как «прошло». Мешал перебору один недостающий __init__.py и один
+# незаявленный пакет (httpx2, см. requirements-dev.txt); оба заведены.
+step "tests (studio/tests целиком)"
+python -m unittest discover -s studio/tests -t .
 
-# The retriever's own suite. Named individually for the same reason as the two
-# above: studio/tests/ as a whole needs httpx2 for test_app.py, and this file
-# needs nothing beyond the standard library. It was ungated until 2026-08-27,
-# and the provenance defect it now covers had been sitting in the loader.
-step "tests (knowledge)"
-python -m unittest studio.tests.test_knowledge
+# Ц7: правило «завёл тест — впиши его в гейт» словами не держится, и не
+# держалось: семь файлов существовали и не гонялись. Проверка перечисляет
+# файлы тестов в дереве и требует, чтобы каждый был достижим — перебором
+# каталога или поимённым списком. Свой негативный контроль печатает первой
+# строкой: «нарушений 0» без него может значить «ничего не искали».
+step "тесты, которых гейт не запускает"
+python scripts/check_tests_gated.py
 
+# The template lint. Its tests run in the directory sweep above; what is named
+# here is lint and types. The suite was ungated until 2026-08-27, and the
+# provenance defect it now covers had been sitting in the loader.
 step "ruff check (lint)"
 ruff check studio/template_lint.py studio/tests/test_template_lint.py \
     studio/tests/test_lint_contract.py studio/fixtures/lint_control_set.py
@@ -123,9 +133,6 @@ step "mypy (lint)"
 MYPYPATH=. python -m mypy --explicit-package-bases studio/template_lint.py \
     studio/tests/test_template_lint.py studio/tests/test_lint_contract.py \
     studio/fixtures/lint_control_set.py --ignore-missing-imports
-
-step "tests (lint)"
-python -m unittest studio.tests.test_template_lint studio.tests.test_lint_contract
 
 # The retriever scored against its gold set, with the negative controls that
 # make the score mean anything. Exit code 2 is "could not measure" and is a
@@ -481,9 +488,6 @@ python scripts/check_pipeline.py --check
 step "разрешение из прозы: пол разбора"
 python scripts/creative_fit.py --check
 
-step "tests (разрешение)"
-python -m unittest studio.tests.test_resolution
-
 # МУТАЦИИ КАНАЛОВ И РАЗБОРЩИКОВ. За 2026-09-02 я прогнал руками полсотни
 # мутаций по семи модулям и каждый раз писал в коммит «промолчал ноль». Это
 # правда на момент прогона: завтра кто-нибудь переставит константу, тесты
@@ -524,9 +528,6 @@ python scripts/check_headline.py --check
 step "планировщик: план из брифа и пометка о неизмеренной применимости"
 python scripts/check_planner.py --check
 
-step "tests (планировщик)"
-python -m unittest studio.tests.test_planner
-
 # Канал сбора писал в базу ЗАГОЛОВОК треда вместо находки из его тела: 183
 # строки, средняя длина значения 62 знака против 178 у ручного разбора того же
 # канала, и две из них — ПОЛОЖИТЕЛЬНЫЕ отзывы, записанные как failure_mode
@@ -563,5 +564,3 @@ python scripts/check_harvest_quality.py --check
 step "хук остановки: названо без запроса"
 python scripts/stop_named_not_asked.py --check
 
-step "tests (хук остановки)"
-python -m unittest studio.tests.test_named_not_asked

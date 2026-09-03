@@ -14,6 +14,12 @@ mypy==1.19.1
 types-requests==2.33.0.20260712
 # Studio web layer — pinned to what was installed and measured on 2026-08-25.
 fastapi==0.141.1
+# TestClient у Starlette требует httpx2 и называет его в тексте ошибки; сам
+# fastapi его не тянет. Пакет приезжал транзитивно через mcp — то есть
+# studio/tests зависел от чужого пина, и это ровно форма imageio-ffmpeg выше.
+# ИЗМЕРЕНО 2026-09-02 в чистом venv: снял httpx2 — test_app падает с
+# «requires the httpx2 package», вернул — 503 теста studio/tests зелены.
+httpx2==2.12.0
 uvicorn==0.52.4
 python-multipart==0.0.32
 # The chat agent (studio/mcp) — pinned to what was installed and measured on 2026-08-27.

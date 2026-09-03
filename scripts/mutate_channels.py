@@ -86,6 +86,53 @@ MUTANTS: list[tuple[str, str, str, str, str]] = [
         "синоним `cost` убран",
         "studio.mcp.tests.test_attrfamily",
     ),
+    # --- достижимость тестов гейтом ----------------------------------------
+    # Дефект, ради которого проверка написана: гейт называл модули поимённо,
+    # и семь файлов не назывался никто. Мутации бьют по обеим сторонам —
+    # проверка, ставшая слепой, и проверка, кричащая на здоровом дереве.
+    (
+        "scripts/check_tests_gated.py",
+        "    if путь.match(ОБРАЗЕЦ):\n        for к in корни:",
+        "    if True:\n        for к in корни:",
+        "достижимость: образец имени файла перестал что-либо значить",
+        "studio.mcp.tests.test_tests_gated",
+    ),
+    (
+        "scripts/check_tests_gated.py",
+        '    if модуль(путь, корень) in модули:\n        return "назван поимённо"',
+        '    if False:\n        return "назван поимённо"',
+        "достижимость: поимённый список гейта перестал считаться",
+        "studio.mcp.tests.test_tests_gated",
+    ),
+    (
+        "scripts/check_tests_gated.py",
+        '        if not (текущий / "__init__.py").is_file():\n            return False',
+        "        if False:\n            return False",
+        "достижимость: разорванная цепочка пакетов сходит за достижимость",
+        "studio.mcp.tests.test_tests_gated",
+    ),
+    (
+        "scripts/check_tests_gated.py",
+        '            if any(часть in {".claude", "__pycache__", "node_modules"} for часть in путь.parts):',
+        "            if False:",
+        "достижимость: чужая рабочая копия считается нашими тестами (Ц2)",
+        "studio.mcp.tests.test_tests_gated",
+    ),
+    # --- сторож пропущенных тестов -----------------------------------------
+    (
+        "scripts/check_skips.py",
+        "SUITES = _наборы()",
+        'SUITES = ("lipsync/tests", "studio/mcp/tests", "studio/selfrag/tests")',
+        "пропуски: список наборов снова литерал и снова мимо studio/tests",
+        "studio.mcp.tests.test_check_skips",
+    ),
+    (
+        "scripts/check_skips.py",
+        '    "the prompt fixtures are not on this machine",\n',
+        "",
+        "пропуски: честная причина «фикстур нет» стала выключенным тестом",
+        "studio.mcp.tests.test_check_skips",
+    ),
     # --- разрешение: предел кадра ------------------------------------------
     (
         "studio/resolution.py",

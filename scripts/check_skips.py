@@ -31,6 +31,7 @@
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import re
 import subprocess
 import sys
@@ -42,9 +43,26 @@ from lipsync.fork_identity import FAIL, PASS, UNMEASURED  # noqa: E402
 
 REPO = Path(__file__).resolve().parents[1]
 
-#: Наборы, которые гейт и так гоняет. Список явный: «найти все тесты» однажды
-#: подхватило бы чужой каталог и объявило его пропуски нашими.
-SUITES = ("lipsync/tests", "studio/mcp/tests", "studio/selfrag/tests")
+
+#: Наборы, которые гейт и так гоняет. Раньше список стоял здесь литералом —
+#: и разъехался с гейтом молча: `studio/tests` гейт перебирать начал, а сюда
+#: его никто не вписал, и два пропуска в нём никем не сторожились. Это Е1:
+#: второй способ узнать, что гоняет гейт, обязан читать сам гейт, а не память
+#: автора. Чужой каталог сюда не попадёт по той же причине — берутся ровно
+#: корни `unittest discover`, названные в `scripts/check`.
+def _наборы() -> tuple[str, ...]:
+    спец = importlib.util.spec_from_file_location(
+        "check_tests_gated", REPO / "scripts" / "check_tests_gated.py"
+    )
+    if not (спец and спец.loader):  # pragma: no cover — файл рядом, в дереве
+        return ()
+    модуль = importlib.util.module_from_spec(спец)
+    спец.loader.exec_module(модуль)
+    гейт = REPO / "scripts" / "check"
+    return tuple(модуль.корни_перебора(модуль.строки_гейта(гейт)))
+
+
+SUITES = _наборы()
 
 #: Причины, по которым пропуск — честное «не смогли», а не выключенный тест.
 #: Каждая строка ищется как подстрока в тексте причины. ВЫБРАНО по единственной
@@ -54,6 +72,9 @@ ABSENT_DATA = (
     "no buffalo_l weights",
     "numpy not installed",
     "rewriter missing",
+    # studio/tests: индекс собирается из фикстур промптов, которых в CI нет.
+    # Найдено 2026-09-02, когда каталог наконец попал под этот сторож.
+    "the prompt fixtures are not on this machine",
 )
 
 _SKIPPED = re.compile(r"\.\.\. skipped ['\"](.+?)['\"]")
