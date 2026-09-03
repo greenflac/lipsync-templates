@@ -261,3 +261,68 @@ class ПоведениеМоделиПодЛюбымИменем(unittest.TestCa
     def test_семья_поведения_не_перетекает_в_цену_и_лицензию(self):
         подошли = attrfamily.expand("observed_behaviour", ["price", "license", "max_seconds"])
         self.assertEqual([], подошли)
+
+
+class ВходИВыходРазныеВопросы(unittest.TestCase):
+    """Семьи входа и выхода. Заведены системным замером 2026-09-03: из 287 имён
+    базы семьями достижимы были 62, и на естественный вопрос «inputs» продукт
+    отвечал «ничего не записано» при 92 строках `requires_inputs`."""
+
+    ЗАПИСАНО = (
+        "accepts_inputs",
+        "requires_inputs",
+        "accepts_images",
+        "accepts_input_video",
+        "input_modalities",
+        "reference_images",
+        "produces_outputs",
+        "output_formats",
+        "price_per_input_second",
+        "price_per_million_input_usd",
+        "price_per_output_second",
+        "license_restriction",
+        "max_seconds",
+    )
+
+    def test_вопрос_о_входе_доводит_до_записанных_имён(self) -> None:
+        подошли = attrfamily.expand("inputs", list(self.ЗАПИСАНО))
+        self.assertEqual(
+            [
+                "accepts_images",
+                "accepts_input_video",
+                "accepts_inputs",
+                "input_modalities",
+                "reference_images",
+                "requires_inputs",
+            ],
+            sorted(подошли),
+        )
+
+    def test_выход_отдельный_вопрос_а_не_тот_же(self) -> None:
+        """«Что принимает» и «что отдаёт» — разные вопросы. Ответить на один
+        другим значило бы солгать тем же способом, от которого семьи заведены."""
+        вход = set(attrfamily.expand("inputs", list(self.ЗАПИСАНО)))
+        выход = set(attrfamily.expand("outputs", list(self.ЗАПИСАНО)))
+        self.assertEqual(set(), вход & выход)
+        self.assertEqual({"output_formats", "produces_outputs"}, выход)
+
+    def test_чужая_приставка_сильнее_своей_подстроки(self) -> None:
+        """И5: `price_per_input_second` содержит «input», и без этого правила
+        семья входов отвечала бы на «что принимает модель» ценой в долларах."""
+        подошли = attrfamily.expand("inputs", ["price_per_input_second", "accepts_inputs"])
+        self.assertEqual(["accepts_inputs"], подошли)
+
+    def test_семья_с_приставкой_берёт_своё_веткой_приставки(self) -> None:
+        """Ценовая семья отбирает свои имена приставкой, и правило занятых
+        приставок ей не мешает: ветка приставки стоит раньше подстрочной."""
+        подошли = attrfamily.expand("price", ["price_per_input_second", "accepts_inputs"])
+        self.assertEqual(["price_per_input_second"], подошли)
+
+    def test_слова_вопроса_доводят_до_семей(self) -> None:
+        for слово, ждём in (
+            ("вход", "accepts_inputs"),
+            ("что принимает", "accepts_inputs"),
+            ("выход", "produces_outputs"),
+            ("что отдаёт", "produces_outputs"),
+        ):
+            self.assertEqual(ждём, attrfamily.семья(слово), f"слово {слово} не доводит")

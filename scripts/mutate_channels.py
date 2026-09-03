@@ -98,10 +98,39 @@ MUTANTS: list[tuple[str, str, str, str, str]] = [
     ),
     (
         "studio/mcp/contract.py",
-        '            f"names the subject ({\', \'.join(leak)}): the look is the prompt\'s "',
-        '            f"words: ({\', \'.join(leak)}): the look is the prompt\'s "',
+        "            f\"names the subject ({', '.join(leak)}): the look is the prompt's \"",
+        "            f\"words: ({', '.join(leak)}): the look is the prompt's \"",
         "голден: проверялка промта бракует, но перестаёт называть причину",
         "studio.mcp.tests.test_golden",
+    ),
+    # --- семьи входа и выхода (заведены 2026-09-03 системным замером) -------
+    (
+        "studio/selfrag/attrfamily.py",
+        '        "подстроки": ("input", "accepts", "reference"),',
+        '        "подстроки": ("accepts",),',
+        "вход: 92 строки requires_inputs снова не отвечают на вопрос «inputs»",
+        "studio.mcp.tests.test_attrfamily",
+    ),
+    (
+        "studio/selfrag/attrfamily.py",
+        '        "подстроки": ("output", "produces"),',
+        '        "подстроки": ("output", "produces", "input", "accepts"),',
+        "выход: «что отдаёт» отвечает тем же, что «что принимает»",
+        "studio.mcp.tests.test_attrfamily",
+    ),
+    (
+        "studio/selfrag/attrfamily.py",
+        "                and not any(и.lower().startswith(п) for п in занятые)",
+        "                and True",
+        "чужая приставка: на «что принимает модель» отвечает цена в долларах",
+        "studio.mcp.tests.test_attrfamily",
+    ),
+    (
+        "studio/selfrag/attrfamily.py",
+        '    return tuple(sorted({п for правило in СЕМЬИ.values() for п in правило.get("prefixes", ())}))',
+        "    return ()",
+        "занятые приставки: список пуст — цена снова отвечает на вопрос о входе",
+        "studio.mcp.tests.test_attrfamily",
     ),
     # --- приставка версии в имени модели (заведена 2026-09-03) --------------
     (
