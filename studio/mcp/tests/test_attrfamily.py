@@ -203,3 +203,61 @@ class РазрешениеПодЛюбымИменем(unittest.TestCase):
     def test_семьи_не_перетекают(self):
         self.assertEqual(attrfamily.expand("resolution", ["max_seconds"]), [])
         self.assertEqual(attrfamily.expand("max_seconds", ["max_resolution"]), [])
+
+
+class ПоведениеМоделиПодЛюбымИменем(unittest.TestCase):
+    """Семья поведения. Заведена по находке голден-сета 2026-09-03: вопрос
+    «на что жалуются практики» получал «ничего не записано» при тринадцати
+    живых строках ровно об этом в базе."""
+
+    ЗАПИСАНО = (
+        "observed_behaviour",
+        "failure_mode",
+        "degrades_when",
+        "limitation",
+        "artifact_taxonomy",
+        "metric_blind_spot",
+        "lipsync_identity_failure_mode",
+        "upscale_artifacts",
+        "fvd_blind_spot_spatial_bias",
+    )
+    #: Имена, которые ЛЕЖАТ РЯДОМ В БАЗЕ и поведением не являются: это числа
+    #: API. Т2 — литералы, а не выборка из проверяемого модуля.
+    ЧИСЛА_API = (
+        "character_limit",
+        "prompt_length_limit",
+        "text_input_limit",
+        "file_size_limits",
+        "upload_limits",
+        "concurrency_limits",
+        "keyterms_limit",
+        "input_image_limits",
+    )
+
+    def test_родственные_имена_отвечают_на_вопрос_о_поведении(self):
+        подошли = attrfamily.expand("observed_behaviour", list(self.ЗАПИСАНО))
+        self.assertEqual(sorted(self.ЗАПИСАНО), sorted(подошли))
+
+    def test_спрошенное_имя_стоит_первым(self):
+        подошли = attrfamily.expand("observed_behaviour", ["failure_mode", "observed_behaviour"])
+        self.assertEqual("observed_behaviour", подошли[0])
+
+    def test_числа_api_поведением_не_становятся(self):
+        """И5, негативный контроль семьи: семья, ловящая подстроку «limit»,
+        ответила бы на «на что жалуются» строкой «character_limit = 5000»."""
+        подошли = attrfamily.expand("observed_behaviour", list(self.ЧИСЛА_API))
+        self.assertEqual([], подошли)
+
+    def test_параметры_модели_поведением_не_становятся(self):
+        подошли = attrfamily.expand("observed_behaviour", ["strength", "cloning_strength"])
+        self.assertEqual([], подошли)
+
+    def test_слова_вопроса_доводят_до_семьи(self):
+        for слово in ("проблемы", "жалобы", "issues", "problems", "behaviour", "применимость"):
+            self.assertEqual(
+                "observed_behaviour", attrfamily.семья(слово), f"слово {слово} не доводит"
+            )
+
+    def test_семья_поведения_не_перетекает_в_цену_и_лицензию(self):
+        подошли = attrfamily.expand("observed_behaviour", ["price", "license", "max_seconds"])
+        self.assertEqual([], подошли)

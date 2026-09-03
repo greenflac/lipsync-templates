@@ -86,6 +86,28 @@ MUTANTS: list[tuple[str, str, str, str, str]] = [
         "синоним `cost` убран",
         "studio.mcp.tests.test_attrfamily",
     ),
+    # --- семья поведения (заведена 2026-09-03 по находке голден-сета) -------
+    (
+        "studio/selfrag/attrfamily.py",
+        '"подстроки": ("failure_mode", "blind_spot", "artifact"),',
+        '"подстроки": ("blind_spot", "artifact"),',
+        "поведение: «на что жалуются» снова не видит failure_mode — 388 строк мимо",
+        "studio.mcp.tests.test_attrfamily",
+    ),
+    (
+        "studio/selfrag/attrfamily.py",
+        '        "подстроки": ("failure_mode", "blind_spot", "artifact"),',
+        '        "подстроки": ("failure_mode", "blind_spot", "artifact", "limit"),',
+        "поведение: подстрока «limit» — и character_limit=5000 отвечает на «на что жалуются»",
+        "studio.mcp.tests.test_attrfamily",
+    ),
+    (
+        "studio/selfrag/attrfamily.py",
+        '    "проблемы": "observed_behaviour",',
+        "",
+        "поведение: слово владельца «проблемы» перестаёт доводить до семьи",
+        "studio.mcp.tests.test_attrfamily",
+    ),
     # --- достижимость тестов гейтом ----------------------------------------
     # Дефект, ради которого проверка написана: гейт называл модули поимённо,
     # и семь файлов не назывался никто. Мутации бьют по обеим сторонам —

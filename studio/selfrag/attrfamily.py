@@ -78,6 +78,43 @@ from __future__ import annotations
         # обязано исключаться поимённо.
         "кроме": ("price_relative",),
     },
+    # СЕМЬЯ ПОВЕДЕНИЯ. Заведена 2026-09-03 по находке голден-сета: на вопрос
+    # «на что жалуются практики» (`observed_behaviour`) про latentsync ответ
+    # был «ничего не записано», а база в этот момент держала о нём ТРИНАДЦАТЬ
+    # живых строк ровно об этом — `failure_mode`, `degrades_when`,
+    # `limitation`, `artifact_taxonomy`, `metric_blind_spot`. Данные собраны,
+    # потребитель смотрит не туда, молчание читается как отсутствие. Это
+    # четвёртый случай того же класса за два дня, и первый, который нашёл не
+    # человек, а набор задач.
+    #
+    # ИЗМЕРЕНО на живой базе: `failure_mode` 388 строк, `observed_behaviour`
+    # 253, `limitation` 119, `metric_blind_spot` 76, `degrades_when` 59,
+    # `artifact_taxonomy` 23.
+    #
+    # `exact` ПЛЮС УЗКИЕ ПОДСТРОКИ, И ПОДСТРОКИ «limit» СРЕДИ НИХ НЕТ — это и
+    # есть негативный контроль семьи (И5). Рядом в базе лежат `character_limit`,
+    # `prompt_length_limit`, `text_input_limit`, `file_size_limits`,
+    # `upload_limits`, `concurrency_limits`, `keyterms_limit`,
+    # `input_image_limits`: это ЧИСЛА API, а не поведение. Семья, ловящая
+    # подстроку «limit», ответила бы на «на что жалуются» строкой
+    # «character_limit = 5000», и это выглядело бы как ответ.
+    #
+    # Подстроки взяты те, что не встречаются ни в одном имени-числе:
+    # `failure_mode` (ловит `lipsync_identity_failure_mode`), `blind_spot`
+    # (ловит `fvd_blind_spot_spatial_bias` и `metric_blind_spots_...`),
+    # `artifact` (ловит `upscale_artifacts`).
+    "observed_behaviour": {
+        "prefixes": (),
+        # В `exact` только то, чего НЕ ловит подстрока. Сначала здесь лежали
+        # ещё `failure_mode`, `artifact_taxonomy` и `metric_blind_spot` — и
+        # мутация, убирающая любое из них, НЕ КРАСИЛА НИЧЕГО: их держала
+        # подстрока, а поимённый список был поясом поверх подтяжек. Заслон,
+        # который нельзя нарушить наблюдаемо, — не заслон (тот же разбор, что
+        # у `portal_license` в семье лицензии).
+        "exact": ("observed_behaviour", "degrades_when", "limitation"),
+        "подстроки": ("failure_mode", "blind_spot", "artifact"),
+        "кроме": (),
+    },
     "license": {
         # Приставкой и хвостом: вендоры и каналы заводят имена сами
         # (`license_restriction`, `license_excluded_territories`,
@@ -176,6 +213,16 @@ from __future__ import annotations
     "latency": "generation_time",
     "generation_speed": "generation_time",
     "скорость": "generation_time",
+    # Слова, которыми про поведение спрашивают на самом деле. «Применимость» —
+    # наше внутреннее слово, «проблемы» — слово владельца из постановки задачи.
+    "behaviour": "observed_behaviour",
+    "behavior": "observed_behaviour",
+    "problems": "observed_behaviour",
+    "issues": "observed_behaviour",
+    "проблемы": "observed_behaviour",
+    "жалобы": "observed_behaviour",
+    "наблюдения": "observed_behaviour",
+    "применимость": "observed_behaviour",
     "duration": "max_seconds",
     "max_duration": "max_seconds",
     "длительность": "max_seconds",
