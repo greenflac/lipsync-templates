@@ -38,6 +38,8 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from types import SimpleNamespace
+from typing import cast
 import time
 from pathlib import Path
 
@@ -212,6 +214,16 @@ def run(path: Path = pn.DEFAULT_BRIEFS_PATH) -> dict:
     # кандидат с незаписанной ценой не должен молча обходить того, чья цена
     # измерена и в потолок укладывается. Проверяется структурно — по рангу
     # `planner.PRICE_ORDER` у выбранного против каждого из показанных рядом.
+    #
+    # СРАВНИВАЕТСЯ ТОЛЬКО ПРИ РАВНЫХ СТАРШИХ КЛЮЧАХ, И ЭТО ПОЧИНКА 2026-09-03.
+    # Раньше проверка смотрела на цену ОДНУ, а в ключе планировщика перед ней
+    # стоят два поля: «нельзя ли этим воспользоваться» (`blocked_rank`) и
+    # «принимает ли кадр». Пока фикстуры не давали шага, где старший ключ
+    # различает кандидатов, дыра не проявлялась. Проявилась на дописанном шаге
+    # озвучки: выбран `elevenlabs-tts-eleven-v3` с `blocked_rank == (1, -2)`
+    # против `eleven_v3` с `(1, -1)` — то есть у выбранного ПОДТВЕРЖДЕНО на
+    # одно препятствие больше, и он законно старше, хотя по цене младше.
+    # Проверка, требующая не того порядка, что модуль, — это не проверка.
     цена_нарушена: list[str] = []
     шагов_с_потолком = 0
     почему_не_сосед = 0
@@ -227,8 +239,11 @@ def run(path: Path = pn.DEFAULT_BRIEFS_PATH) -> dict:
                 continue
             шагов_с_потолком += 1
             мой = pn.PRICE_ORDER.get(выбран.get("price_state", ""), 0)
+            мои_старшие = старшие_ключи(выбран)
             for a in s["alternatives"]:
                 чужой = pn.PRICE_ORDER.get(a.get("price_state", ""), 0)
+                if старшие_ключи(a) != мои_старшие:
+                    continue
                 if чужой < мой:
                     цена_нарушена.append(
                         f"{c['id']}/{s['step']}: выбран {выбран['model']} "
@@ -409,6 +424,26 @@ def run(path: Path = pn.DEFAULT_BRIEFS_PATH) -> dict:
         "converted_unmarked": перевод_без_пометки,
         "credits_converted": кредиты_переведены,
     }
+
+
+def старшие_ключи(строка: dict) -> tuple:
+    """Поля ключа планировщика, стоящие ПЕРЕД ценой, по строке кандидата.
+
+    Считаются теми же функциями планировщика (Е1): второй способ вычислить
+    порядок разъехался бы с первым, а именно на разъезде эта проверка и
+    погорела. `blocked_rank` берёт `Candidate`, поэтому подставляется лёгкая
+    заглушка с тремя полями, из которых он и считает.
+    """
+
+    заглушка = cast(
+        "pn.Candidate",
+        SimpleNamespace(
+            ban_state=str(строка.get("ban_state", "")),
+            life_state=str(строка.get("life_state", "")),
+            out_state=str(строка.get("out_state", "")),
+        ),
+    )
+    return (pn.blocked_rank(заглушка), pn.FIT_ORDER.get(строка.get("fit_state", ""), 0))
 
 
 def verdict(итог: dict) -> tuple[int, list[str]]:
