@@ -44,6 +44,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from lipsync.fork_identity import FAIL, PASS, UNMEASURED  # noqa: E402
 from studio import planner  # noqa: E402
 from studio.mcp import advice  # noqa: E402
+from studio.mcp import server as mcp_server  # noqa: E402
 
 НАБОР = Path(__file__).resolve().parents[1] / "studio" / "knowledge" / "golden_tasks.jsonl"
 
@@ -163,6 +164,36 @@ def неизвестные_виды(набор: list[dict[str, Any]]) -> list[st
     return sorted(в for в in виды if в not in ВИДЫ)
 
 
+#: Инструменты сервера, которые НЕ ходят в сеть и НИЧЕГО НЕ ПИШУТ. Список
+#: закрытый, и это не осторожность, а два разных запрета:
+#:
+#:   сеть   — набор гоняется в гейте, а гейт не ходит в сеть (Т4). `search_web`,
+#:            `fetch_url`, `probe_model_limit`, `reachable_hosts` сюда не входят;
+#:   запись — `record_model_fact`, `withdraw_model_fact`, `propose_measurement`
+#:            меняют живые журналы. Набор задач, который на каждом прогоне
+#:            дописывает базу, к третьему дню меряет собственные следы.
+#:
+#: ИЗМЕРЕНО 2026-09-03: у сервера 15 инструментов, набор трогал 2. Эти пять
+#: доводят охват до 7 из 15, и вслух названо, почему остальные восемь не здесь.
+ИНСТРУМЕНТЫ: tuple[str, ...] = (
+    "analyse_creative",
+    "check_lipsync_prompt",
+    "stale_model_facts",
+    "blocked_hosts",
+    "measurement_proposals",
+)
+
+
+def _зов(имя: str, аргументы: dict[str, Any]) -> dict[str, Any]:
+    """Вызов инструмента сервера по имени — только из закрытого списка."""
+    if имя not in ИНСТРУМЕНТЫ:
+        raise KeyError(f"инструмент {имя!r} не в списке офлайновых: {ИНСТРУМЕНТЫ}")
+    орудие = getattr(mcp_server, имя)
+    # У инструмента MCP настоящая функция лежит в `.fn`; вызывать обёртку
+    # напрямую нельзя, а второй копии этого знания в наборе не заводится (Е1).
+    return json.loads(getattr(орудие, "fn", орудие)(**аргументы))
+
+
 def ответ(задача: dict[str, Any]) -> tuple[dict[str, Any], str]:
     """Ответ продукта и его ПЕЧАТНАЯ форма.
 
@@ -173,6 +204,9 @@ def ответ(задача: dict[str, Any]) -> tuple[dict[str, Any], str]:
     if задача["канал"] == "plan":
         итог = planner.plan(вход["brief"], creative=вход.get("creative", ""))
         return итог, planner.render(итог)
+    if задача["канал"] == "tool":
+        итог = _зов(вход["tool"], вход.get("args", {}))
+        return итог, json.dumps(итог, ensure_ascii=False)
     итог = advice.advise(вход["model"], вход["attribute"])
     return итог, json.dumps(итог, ensure_ascii=False)
 

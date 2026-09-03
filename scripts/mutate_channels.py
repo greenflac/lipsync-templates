@@ -86,6 +86,23 @@ MUTANTS: list[tuple[str, str, str, str, str]] = [
         "синоним `cost` убран",
         "studio.mcp.tests.test_attrfamily",
     ),
+    # --- голден-сет как сторож продукта (заведён 2026-09-03) ----------------
+    # Мутанты бьют по ПРОДУКТУ, а не по набору: если голден-сет не краснеет от
+    # подмены в продукте, он сторожит сам себя и ничего больше.
+    (
+        "studio/mcp/fetch.py",
+        '"question; ask the policy owner rather than routing around them."',
+        '"question."',
+        "голден: ответ про закрытые хосты перестаёт называть Ц3 — обход на усмотрение читателя",
+        "studio.mcp.tests.test_golden",
+    ),
+    (
+        "studio/mcp/contract.py",
+        '            f"names the subject ({\', \'.join(leak)}): the look is the prompt\'s "',
+        '            f"words: ({\', \'.join(leak)}): the look is the prompt\'s "',
+        "голден: проверялка промта бракует, но перестаёт называть причину",
+        "studio.mcp.tests.test_golden",
+    ),
     # --- приставка версии в имени модели (заведена 2026-09-03) --------------
     (
         "studio/selfrag/modelnames.py",
