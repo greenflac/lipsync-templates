@@ -86,6 +86,21 @@ MUTANTS: list[tuple[str, str, str, str, str]] = [
         "синоним `cost` убран",
         "studio.mcp.tests.test_attrfamily",
     ),
+    # --- приставка версии в имени модели (заведена 2026-09-03) --------------
+    (
+        "studio/selfrag/modelnames.py",
+        '    low = ПРИСТАВКА_ВЕРСИИ.sub("", low)\n',
+        "",
+        "имена: sync-lipsync-v2 снова не та же модель, что sync-lipsync-2",
+        "studio.selfrag.tests.test_modelnames",
+    ),
+    (
+        "studio/selfrag/modelnames.py",
+        'ПРИСТАВКА_ВЕРСИИ = re.compile(r"(?:(?<=[-_./ ])|^)v(?=\\d)")',
+        'ПРИСТАВКА_ВЕРСИИ = re.compile(r"v(?=\\d)")',
+        "имена: `v` ловится где угодно — wav2lip превращается в wa2lip",
+        "studio.selfrag.tests.test_modelnames",
+    ),
     # --- семья поведения (заведена 2026-09-03 по находке голден-сета) -------
     (
         "studio/selfrag/attrfamily.py",
@@ -279,7 +294,7 @@ MUTANTS: list[tuple[str, str, str, str, str]] = [
         # и мутант бил по первой, а подпись говорила про вторую. Прибор,
         # который не обещает, что именно он мерит, мерит не то.
         '            if ответ.get("truncated"):\n                обрезаны.append(url)',
-        '            if False:\n                обрезаны.append(url)',
+        "            if False:\n                обрезаны.append(url)",
         "страницы: обрезанный на потолке ответ снова считается страницей",
         "studio.mcp.tests.test_recheck_vendor",
     ),

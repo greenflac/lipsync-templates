@@ -163,3 +163,42 @@ class СклейкаНаЧтении(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ПриставкаВерсии(unittest.TestCase):
+    """`sync-lipsync-v2` и `sync-lipsync-2` — одна модель.
+
+    Т2: пары написаны литералами. Найдено 2026-09-03 при заходе за целью
+    голден-сета: цена одной и той же модели с одного и того же адреса лежала
+    под двумя именами, и вопрос об одном из них не видел строк другого.
+    """
+
+    #: Одна модель под двумя написаниями. Все семь пар взяты из живой базы.
+    ОДНА_И_ТА_ЖЕ = (
+        ("sync-lipsync-2", "sync-lipsync-v2"),
+        ("sync-lipsync-3-image-to-video", "sync-lipsync-v3-image-to-video"),
+        ("ideogram-3", "ideogram-v3"),
+        ("wan-2.7-edit-video", "wan-v2.7-edit-video"),
+        ("flux-pro-1.1-ultra", "flux-pro-v1.1-ultra"),
+        ("bytedance-omnihuman-1.5", "bytedance-omnihuman-v1.5"),
+        ("wan-2.2-14b-animate-replace", "wan-v2.2-14b-animate-replace"),
+    )
+
+    #: `v` ВНУТРИ СЛОВА, а не в начале звена: это часть имени, а не версия.
+    #: Правило, ловящее `v` перед цифрой где угодно, превратило бы `wav2lip` —
+    #: самую известную липсинк-модель базы — в `wa2lip` (И5). Найдено мутацией:
+    #: первая редакция этого контроля сторожила `s2v`/`t2v`/`i2v`, где `v` стоит
+    #: ПОСЛЕ цифры, слабое правило их не трогает, и мутант молчал.
+    ВНУТРИ_СЛОВА = ("wav2lip", "proteusv0.3")
+
+    def test_приставка_версии_склеивает(self) -> None:
+        for а, б in self.ОДНА_И_ТА_ЖЕ:
+            self.assertEqual(fold(а), fold(б), f"{а} и {б} остались разными")
+
+    def test_буква_внутри_слова_не_срезается(self) -> None:
+        self.assertEqual("wav2lip", fold("wav2lip"))
+        self.assertEqual("proteusv03", fold("proteusv0.3"))
+
+    def test_разные_модели_остались_разными(self) -> None:
+        self.assertNotEqual(fold("eleven_v3"), fold("eleven_v3_conversational"))
+        self.assertNotEqual(fold("flux-2-klein-4b"), fold("flux-2-klein-9b"))

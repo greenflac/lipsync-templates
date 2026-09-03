@@ -39,6 +39,8 @@ seedance2_5/seedance-2.5, wan-2.2-t2v-a14b/wan2.2-t2v-a14b.
 
 from __future__ import annotations
 
+import re
+
 from collections import defaultdict
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
@@ -65,6 +67,30 @@ __all__ = [
 #: сделать все находки о классе безымянными.
 KEPT_SYMBOLS = "*"
 
+#: Буква `v` ПЕРЕД номером версии, стоящая в начале звена имени: `sync-lipsync-v2`
+#: и `sync-lipsync-2` — одна модель, и обе записи есть в живой базе с одной и
+#: той же ценой с одного и того же адреса.
+#:
+#: ИЗМЕРЕНО 2026-09-03 на живой базе: правило склеивает СЕМЬ новых групп, и все
+#: семь — одна модель под двумя написаниями:
+#:
+#:     ideogram-3 / ideogram-v3                 flux-pro-1.1-ultra / flux-pro-v1.1-ultra
+#:     wan-2.7-edit-video / wan-v2.7-…          bytedance-omnihuman-1.5 / …-v1.5
+#:     sync-lipsync-2 / sync-lipsync-v2         wan-2.2-14b-animate-replace / wan-v2.2-…
+#:     sync-lipsync-3-image-to-video / sync-lipsync-v3-image-to-video
+#:
+#: НАЧАЛО ЗВЕНА, А НЕ ЛЮБОЕ МЕСТО, И ЭТО НЕГАТИВНЫЙ КОНТРОЛЬ (И5). Правило,
+#: ловящее `v` перед цифрой ГДЕ УГОДНО, превратило бы `wav2lip` — самую
+#: известную липсинк-модель в этой базе — в `wa2lip`. Проверено перебором живых
+#: имён: внутри слова `v` перед цифрой встречается ровно у трёх — `wav2lip`,
+#: `proteusv0.3`, `pornmasterpro_noobv3vae`.
+#:
+#: ПЕРВАЯ РЕДАКЦИЯ ЭТОГО КОММЕНТАРИЯ НАЗЫВАЛА ДРУГОЙ ПРИМЕР — `s2v`, `t2v`,
+#: `i2v`, — и он был НЕВЕРЕН: там `v` стоит в конце и цифра перед ним, а не
+#: после, так что слабое правило их не трогает. Мутация это и показала: мутант
+#: «`v` ловится где угодно» ПРОМОЛЧАЛ, потому что тест сторожил не тот случай.
+ПРИСТАВКА_ВЕРСИИ = re.compile(r"(?:(?<=[-_./ ])|^)v(?=\d)")
+
 #: ВЫБРАНО, перенесено из `facts.NEAR_MIN_SHARED` без изменения значения:
 #: сколько знаков общего начала делают подсказку подсказкой. Три знака (`gen`)
 #: цепляют половину базы, и это проверяется тестом с обеих сторон.
@@ -87,6 +113,7 @@ def fold(name: str) -> str:
     против `eleven_v3_conversational` обязаны остаться разными).
     """
     low = " ".join(str(name or "").split()).strip().lower()
+    low = ПРИСТАВКА_ВЕРСИИ.sub("", low)
     return "".join(ch for ch in low if ch.isalnum() or ch in KEPT_SYMBOLS)
 
 
