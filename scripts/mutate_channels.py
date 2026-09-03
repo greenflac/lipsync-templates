@@ -299,6 +299,20 @@ MUTANTS: list[tuple[str, str, str, str, str]] = [
         "страницы: не влезшая и во второй потолок снова считается прочитанной",
         "studio.mcp.tests.test_recheck_vendor",
     ),
+    (
+        "scripts/refill_queue.py",
+        '            str(r.get("сверено") or ""),',
+        '            "",',
+        "очередь: свежесть сверки перестала решать порядок внутри причины",
+        "studio.mcp.tests.test_refill_queue",
+    ),
+    (
+        "scripts/refill_queue.py",
+        '                "сверено": сверено,',
+        '                "сверено": "",',
+        "очередь: дата сверки не доезжает до сортировки",
+        "studio.mcp.tests.test_refill_queue",
+    ),
     # --- разрешение: предел кадра ------------------------------------------
     (
         "studio/resolution.py",
