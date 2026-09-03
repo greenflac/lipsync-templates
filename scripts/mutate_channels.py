@@ -243,6 +243,13 @@ MUTANTS: list[tuple[str, str, str, str, str]] = [
         "очередь: знание ищется по адресу эндпоинта вместо имени модели",
         "studio.mcp.tests.test_refill_queue",
     ),
+    (
+        "scripts/refill_queue.py",
+        '        if прочитано.get(url, "") >= str(свои[-1].get("seen_on") or ""):',
+        '        if прочитано.get(url, "") <= str(свои[-1].get("seen_on") or ""):',
+        "очередь: перечитанное ДО изменения засчитывается как сделанное",
+        "studio.mcp.tests.test_refill_queue",
+    ),
     # --- разрешение: предел кадра ------------------------------------------
     (
         "studio/resolution.py",

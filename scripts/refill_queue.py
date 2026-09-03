@@ -38,6 +38,15 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from studio.mcp import misses  # noqa: E402
 from studio.selfrag import facts as facts_mod
 from studio.selfrag import modelnames  # noqa: E402
+
+import importlib.util as _iu  # noqa: E402
+
+_спец = _iu.spec_from_file_location(
+    "mark_reread", Path(__file__).resolve().parent / "mark_reread.py"
+)
+assert _спец and _спец.loader
+reread = _iu.module_from_spec(_спец)
+_спец.loader.exec_module(reread)
 from studio.mcp import advice  # noqa: E402
 from studio.selfrag.facts import STALE_AFTER_DAYS, TIER_VENDOR  # noqa: E402
 
@@ -229,7 +238,9 @@ def discovered_work(payload: dict[str, Any] | None) -> list[dict[str, Any]]:
 ПОРТАЛ = ROOT / "studio" / "knowledge" / "portal_poll.json"
 
 
-def changed_work(path: Path | None = None) -> list[dict[str, Any]]:
+def changed_work(
+    path: Path | None = None, перечитаны: dict[str, str] | None = None
+) -> tuple[list[dict[str, Any]], int]:
     """Страницы, чей отпечаток разошёлся с предыдущим. Журнал: сравниваются
     ДВЕ последние записи одного адреса одного и того же способа.
 
@@ -239,7 +250,14 @@ def changed_work(path: Path | None = None) -> list[dict[str, Any]]:
     """
     журнал = path or СТРАНИЦЫ
     if not журнал.is_file():
-        return []
+        return [], 0
+    # ПЕРЕЧИТАННОЕ ИЗ ОЧЕРЕДИ УХОДИТ. Канал говорит «страница изменилась»,
+    # человек сверяет утверждения за ней — и очередь предлагает ту же страницу
+    # завтра, потому что о перечитывании не знает ничего. ИЗМЕРЕНО 2026-09-03:
+    # 11 страниц перечитаны, 56 утверждений сверены, очередь показывала те же
+    # 11. Дата факта при этом НЕ двигается: перечитывание — наше действие, а
+    # `stated_on` принадлежит источнику (`scripts/mark_reread.py`).
+    прочитано = перечитаны if перечитаны is not None else reread.последнее()
     по_адресу: dict[str, list[dict[str, Any]]] = {}
     for строка in журнал.read_text(encoding="utf-8").splitlines():
         строка = строка.strip()
@@ -253,9 +271,15 @@ def changed_work(path: Path | None = None) -> list[dict[str, Any]]:
         if url:
             по_адресу.setdefault(url, []).append(запись)
     работа: list[dict[str, Any]] = []
+    сделано = 0
     for url, записи in по_адресу.items():
         свои = [з for з in записи if з.get("method") == записи[-1].get("method")]
         if len(свои) < 2 or свои[-1].get("fingerprint") == свои[-2].get("fingerprint"):
+            continue
+        # Перечитано ПОСЛЕ того, как изменение увидели, — работа сделана.
+        # Раньше — не считается: читали прежнюю страницу.
+        if прочитано.get(url, "") >= str(свои[-1].get("seen_on") or ""):
+            сделано += 1
             continue
         работа.append(
             {
@@ -268,7 +292,7 @@ def changed_work(path: Path | None = None) -> list[dict[str, Any]]:
                 "where": url,
             }
         )
-    return работа
+    return работа, сделано
 
 
 def уже_знаем(строка: dict[str, Any], известные: set[str]) -> bool:
@@ -509,11 +533,16 @@ def main(argv: list[str]) -> int:
     asked = missed_work()
     stale = stale_work()
     fresh = discovered_work(payload)
-    changed = changed_work()
+    changed, перечитанных = changed_work()
     portal, портальных_уже_знаем = portal_work()
     # Возрастные строки несут рядом наблюдение об источнике: возраст —
     # догадка, отпечаток — свидетельство, и читающему видно оба.
     состояния = состояние_источников()
+    if перечитанных:
+        print(
+            f"  изменившихся страниц уже перечитано: {перечитанных} — "
+            "в очередь НЕ взяты: утверждения за ними сверены"
+        )
     if портальных_уже_знаем:
         print(
             f"  семейств с портала уже в базе: {портальных_уже_знаем} — "

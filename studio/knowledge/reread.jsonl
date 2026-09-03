@@ -1,0 +1,14 @@
+// Перечитанные страницы: НАШЕ действие, а не дата источника.
+// `stated_on` у фактов этим не двигается — см. шапку scripts/mark_reread.py.
+// Журнал: строки дописываются, прежние не трогаются.
+{"url": "https://elevenlabs.io/docs/eleven-creative/voices/voice-cloning/professional-voice-cloning.md", "on": "2026-09-03", "checked": 4, "confirmed": 2, "corrected": 2, "added": 1, "note": "срок обучения: вендор называет 3-6 ч в FAQ и 6-24 ч в описании шага; слоты по тарифам уточнены legacy-планами"}
+{"url": "https://elevenlabs.io/docs/eleven-creative/voices/voice-cloning/professional-voice-cloning", "on": "2026-09-03", "checked": 1, "confirmed": 1, "corrected": 0, "added": 0, "note": ""}
+{"url": "https://elevenlabs.io/docs/product-guides/voices/voice-cloning/professional-voice-cloning", "on": "2026-09-03", "checked": 3, "confirmed": 3, "corrected": 0, "added": 0, "note": ""}
+{"url": "https://elevenlabs.io/docs/product-guides/voices/voice-cloning/instant-voice-cloning", "on": "2026-09-03", "checked": 2, "confirmed": 2, "corrected": 0, "added": 0, "note": ""}
+{"url": "https://elevenlabs.io/docs/eleven-creative/voices/voice-cloning/instant-voice-cloning.md", "on": "2026-09-03", "checked": 6, "confirmed": 6, "corrected": 0, "added": 0, "note": "«клон невоспроизводим» подтверждено другими словами: «Each clone will sound slightly different, even when you use the same audio»"}
+{"url": "https://elevenlabs.io/docs/overview/capabilities/image-video/avatars.md", "on": "2026-09-03", "checked": 3, "confirmed": 3, "corrected": 0, "added": 2, "note": "новое: форма цены (кредиты за генерацию) и смена lip-sync модели до генерации"}
+{"url": "https://elevenlabs.io/docs/overview/capabilities/text-to-speech/best-practices.md", "on": "2026-09-03", "checked": 4, "confirmed": 4, "corrected": 0, "added": 0, "note": "про <break>-теги запись оказалась полной: «v3 also does not support SSML break tags at all» стоит во второй половине значения"}
+{"url": "https://elevenlabs.io/docs/best-practices/prompting/normalization.md", "on": "2026-09-03", "checked": 1, "confirmed": 1, "corrected": 0, "added": 1, "note": "новое: у v3 произношением управляет IPA между косыми чертами"}
+{"url": "https://elevenlabs.io/docs/models", "on": "2026-09-03", "checked": 1, "confirmed": 1, "corrected": 0, "added": 0, "note": ""}
+{"url": "https://elevenlabs.io/docs/models.md", "on": "2026-09-03", "checked": 17, "confirmed": 17, "corrected": 0, "added": 2, "note": "новое: очередь при пределе одновременных запросов добавляет ~50 мс; eleven_turbo_v2 тоже снят"}
+{"url": "https://platform.minimax.io/docs/guides/video-generation", "on": "2026-09-03", "checked": 14, "confirmed": 14, "corrected": 0, "added": 5, "note": "новое: H3 Max берёт только T2V/I2V (референсы coming soon), быстрее H3 без числа, соавтор fal.ai, тариф Pay-as-you-go"}
