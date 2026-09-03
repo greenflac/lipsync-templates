@@ -480,6 +480,19 @@ def plan_pipeline(brief: str, creative: str = "", budget_usd: float = 0.0) -> st
     vendor's decision and is recorded nowhere), and neither is per-image against
     per-megapixel, or per-1000-chars against per-token. Those stay "could not
     compare", which is an answer, not a failure.
+
+    THE `question` FIELD IS FOR YOU TO ASK, NOT TO ANSWER. Some briefs cannot
+    be planned because one fact is missing from them, not because the words are
+    unknown: "нужен вертикальный ролик для маркетплейса" does not say whether
+    anything has been filmed. When that happens the plan comes back with
+    `reason: "нужен_ответ_заказчика"` and one question in `question` — put that
+    question to the customer verbatim and call this tool again with their
+    answer folded into the brief. Do NOT pick an option yourself and do not
+    guess: the field exists precisely because the guess is what the owner
+    refused. The field is present on EVERY answer (null when there is nothing
+    to ask), and a question may also arrive beside a plan that WAS built — then
+    the steps stand as measured and the question only names what is still
+    undecided.
     """
     return _json(
         planner.plan(

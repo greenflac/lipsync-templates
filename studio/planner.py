@@ -223,10 +223,11 @@ import re
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
-from typing import Mapping, Sequence
+from typing import Iterable, Mapping, Sequence
 
 from lipsync.fork_identity import FAIL, PASS, UNMEASURED
 
+from studio import clarify
 from studio import duration as dur
 from studio import factaxis as fa
 from studio import lifecycle as life
@@ -308,6 +309,7 @@ __all__ = [
     "OPERATIONS",
     "REASONS",
     "REASON_NO_CANDIDATES",
+    "REASON_NEED_ANSWER",
     "REASON_NO_STEPS",
     "REASON_PLAN_REFUSED",
     "REASON_PLAN_STANDS",
@@ -1027,6 +1029,12 @@ except Exception:  # pragma: no cover
     VIDEO_SUFFIXES = frozenset({".mp4", ".mov", ".webm", ".mkv", ".m4v", ".avi"})
 
 REASON_NO_STEPS = "шаги_не_выведены"
+#: Шагов нет, но развилка НАЗВАНА: продукт знает, чего именно не хватает в
+#: брифе, и спрашивает об этом (`studio/clarify.py`). Отдельная причина, а не
+#: `шаги_не_выведены`: «мы не поняли» и «нам не хватает одного сведения» —
+#: разные ответы заказчику, и свернуть их в один значило бы отдать вопрос,
+#: который у нас уже есть, обратно в молчание.
+REASON_NEED_ANSWER = "нужен_ответ_заказчика"
 REASON_NO_CANDIDATES = "шаг_без_кандидатов"
 REASON_PLAN_REFUSED = "валидатор_отверг"
 REASON_PLAN_UNCONFIRMED = "план_не_подтверждён"
@@ -1037,6 +1045,7 @@ REASON_PLAN_STANDS = "план_подтверждён"
 #: `studio/mcp/advice.py::REASONS`, где она уже оправдала себя).
 REASONS: tuple[str, ...] = (
     REASON_NO_STEPS,
+    REASON_NEED_ANSWER,
     REASON_NO_CANDIDATES,
     REASON_PLAN_REFUSED,
     REASON_PLAN_UNCONFIRMED,
@@ -1454,6 +1463,27 @@ def замкнуть(
             имена.add(имя)
 
     return [оп for оп in OPERATIONS if оп.name in имена], добавлены
+
+
+def вопрос_по_плану(
+    brief: str, операции: Sequence[Operation], есть: Iterable[str]
+) -> clarify.Вопрос | None:
+    """Один вопрос заказчику по УЖЕ СОБРАННОМУ плану — или None.
+
+    Развилка вынесена из точки входа (Т5) и вызывается ПОСЛЕ `замкнуть`:
+    дописанный шаг закрывает нехватку сам, и спрашивать о ней второй раз
+    значило бы переспрашивать решённое.
+
+    Имена артефактов передаются в `clarify` параметрами: словарь артефактов
+    живёт здесь, и второй его копии там не заводится (Е1).
+    """
+    return clarify.спросить(
+        brief,
+        sorted({а for оп in операции for а in оп.produces}),
+        sorted(есть),
+        артефакт_видео=ARTEFACT_VIDEO,
+        артефакт_аудио=ARTEFACT_AUDIO,
+    )
 
 
 def inputs_of(brief: str, creative: str = "") -> frozenset[str]:
@@ -2526,18 +2556,27 @@ def plan(
     # Замыкание по нехватке: заказчик называет не все шаги, потому что для
     # него это одна работа. Добавленные шаги помечаются (см. `замкнуть`).
     операции, дописаны = замкнуть(операции, есть)
+    вопрос = вопрос_по_плану(brief, операции, есть)
     if not операции:
         return {
             "outcome": UNMEASURED,
-            "reason": REASON_NO_STEPS,
+            "reason": REASON_NEED_ANSWER if вопрос else REASON_NO_STEPS,
             "checked": 0,
             "violations": 0,
             "unmeasured": 1,
             "note": (
-                "ни одна из операций студии не выводится из этого брифа: "
-                f"словарь знает {len(OPERATIONS)} операций, совпало 0. "
-                "План не собирается — пустой шаг честнее выдуманного"
+                (
+                    "план не собирается, пока не назван один недостающий "
+                    f"признак: {вопрос.текст}"
+                )
+                if вопрос
+                else (
+                    "ни одна из операций студии не выводится из этого брифа: "
+                    f"словарь знает {len(OPERATIONS)} операций, совпало 0. "
+                    "План не собирается — пустой шаг честнее выдуманного"
+                )
             ),
+            "question": вопрос.row() if вопрос else None,
             "brief": brief,
             "budget": _budget_row(бюджет),
             "creative": _creative_row(creative, кадр, про_кадр),
@@ -2698,6 +2737,10 @@ def plan(
             f"выход не тот {выход_не_тот}"
         ),
         "brief": brief,
+        # Вопрос НЕ меняет исход и не отменяет выведенных шагов: план,
+        # собранный не весь, остаётся тем, что измерено, а вопрос — строкой
+        # «чего мы не знаем» рядом с ним.
+        "question": вопрос.row() if вопрос else None,
         "budget": строка_бюджета,
         "creative": _creative_row(creative, кадр, про_кадр),
         "steps": строки_шагов,
@@ -2795,6 +2838,15 @@ def render(итог: dict) -> str:
             f"не смогли {итог['unmeasured']}"
         ),
     ]
+    # Вопрос — сразу под исходом, до креатива и бюджета: читателю, у которого
+    # план пуст или собран не весь, это единственная строка, по которой он
+    # может что-то сделать.
+    вопрос = итог.get("question") or {}
+    if вопрос:
+        строки.append(
+            f"ВОПРОС [{вопрос.get('axis')}]: {вопрос.get('text')} "
+            f"({' / '.join(вопрос.get('options') or [])}) — {вопрос.get('why')}"
+        )
     креатив = итог.get("creative") or {}
     if креатив.get("path"):
         строки.append(
