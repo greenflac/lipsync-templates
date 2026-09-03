@@ -121,6 +121,31 @@ REASONS: tuple[str, ...] = (
 )
 
 
+def sources_behind(claims: object) -> int:
+    """Сколько РАЗНЫХ страниц стоит за ответом — не сколько строк.
+
+    `claims_found` считает НАЙДЕННЫЕ УТВЕРЖДЕНИЯ, и это правильное число для
+    вердикта «есть ли чем ответить». Но в ноте оно стояло со словом
+    «source(s)», и восемь атрибутов с одной страницы читались как восемь
+    источников: `advise("minimax-h3-max")` печатал «8 attribute(s) answered
+    from 8 recorded source(s)», хотя страница была ОДНА (ИЗМЕРЕНО 2026-09-03).
+
+    Счёт по строкам обещает подтверждение, которого никто не давал. Здесь —
+    по адресам, и оба числа печатаются рядом, потому что отвечают на разные
+    вопросы: «сколько записано» и «сколькими независимыми страницами».
+    """
+    if not isinstance(claims, dict):
+        return 0
+    адреса: set[str] = set()
+    for verdict in claims.values():
+        if not isinstance(verdict, dict):
+            continue
+        for строка in verdict.get("claims") or []:
+            for источник in (строка or {}).get("sources") or []:
+                адреса.add(str((источник or {}).get("url") or ""))
+    return len(адреса)
+
+
 def claims_found(claims: object) -> int:
     """Сколько записанных источников стоит за этими утверждениями.
 
@@ -714,7 +739,8 @@ def advise(model: str, attribute: str = "", *, path: Path | None = None) -> dict
         "unmeasured": unmeasured,
         "note": (
             f"{len(claims)} attribute(s) answered from {claims_found(claims)} recorded "
-            f"source(s), {unmeasured} of them only weakly."
+            f"statement(s) across {sources_behind(claims)} source(s), "
+            f"{unmeasured} of them only weakly."
             # Разворот спрошенного слова называется в ноте, а не только в
             # ключах: читают ноту, и «спросил price — получил price_per_minute»
             # обязано быть видно там же, где ответ.

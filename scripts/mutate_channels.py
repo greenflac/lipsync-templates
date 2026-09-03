@@ -221,6 +221,13 @@ MUTANTS: list[tuple[str, str, str, str, str]] = [
         "заголовок: в него снова идёт алфавитно первое, а не самое свежее чтение",
         "studio.selfrag.tests.test_source_count",
     ),
+    (
+        "studio/mcp/advice.py",
+        '                адреса.add(str((источник or {}).get("url") or ""))',
+        "                адреса.add(str(len(адреса)))",
+        "источники: страницы снова считаются по строкам, а не по адресам",
+        "studio.mcp.tests.test_advice",
+    ),
     # --- разрешение: предел кадра ------------------------------------------
     (
         "studio/resolution.py",

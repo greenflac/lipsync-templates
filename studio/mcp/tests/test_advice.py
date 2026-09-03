@@ -1412,3 +1412,39 @@ class СнятиеВидноВОтвете(unittest.TestCase):
         кратко = advice.brief("test-model", path=self.путь)
         self.assertTrue(кратко["lifecycle"], кратко)
         self.assertIn("СНЯТА С ОБСЛУЖИВАНИЯ", кратко["note"])
+
+
+class СколькоСтраницЗаОтветом(unittest.TestCase):
+    """`claims_found` считает УТВЕРЖДЕНИЯ, `sources_behind` — СТРАНИЦЫ. Пока в
+    ноте стояло первое со словом «source(s)», восемь атрибутов с одной
+    страницы читались как восемь источников (ИЗМЕРЕНО 2026-09-03 на
+    `minimax-h3-max`). Счёт по строкам обещает подтверждение, которого никто
+    не давал."""
+
+    def _утв(self, *адреса: str) -> dict:
+        return {
+            "attr": {
+                "checked": len(адреса),
+                "claims": [{"value": "v", "sources": [{"url": а} for а in адреса]}],
+            }
+        }
+
+    def test_одна_страница_дважды_это_один_источник(self) -> None:
+        c = self._утв("https://а.test/x", "https://а.test/x")
+        self.assertEqual(advice.claims_found(c), 2)
+        self.assertEqual(advice.sources_behind(c), 1)
+
+    def test_две_страницы_это_два_источника(self) -> None:
+        """И5: починка не должна схлопывать настоящее подтверждение."""
+        c = self._утв("https://а.test/x", "https://б.test/y")
+        self.assertEqual(advice.sources_behind(c), 2)
+
+    def test_пусто_это_ноль_а_не_ошибка(self) -> None:
+        self.assertEqual(advice.sources_behind({}), 0)
+        self.assertEqual(advice.sources_behind(None), 0)
+
+    def test_нота_печатает_оба_числа(self) -> None:
+        """Оба числа рядом: они отвечают на разные вопросы, и одно вместо
+        другого — это и был дефект."""
+        о = advice.advise("minimax-h3-max")
+        self.assertIn("recorded statement(s) across", о["note"])
