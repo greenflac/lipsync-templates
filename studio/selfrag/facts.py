@@ -222,6 +222,39 @@ CLASS_SUFFIX = "*"
 
 BREAKAGE_ATTRIBUTES: tuple[str, ...] = ("failure_mode", "limitation", "degrades_when")
 
+
+def _source_count(facts: Sequence[Fact]) -> int:
+    """Сколько РАЗНЫХ страниц стоит за утверждением, а не сколько строк.
+
+    ИЗМЕРЕНО 2026-09-03 на живой базе: у 88 пар (модель, атрибут) одна и та же
+    страница даёт несколько строк — 147 лишних, — и «from N source(s)» считало
+    их разными источниками. Одна страница, прочитанная дважды (или назвавшая
+    три отказа сразу), — это ОДИН источник; иначе счёт источников обещает
+    подтверждение, которого никто не давал, и ровно от этого написана строчка
+    «blogs quoting each other are one source» двумя ветками ниже.
+
+    Число ЗНАЧЕНИЙ печатается отдельно (`shape`) и не сливается с этим.
+    """
+    return len({str(f.source_url or "") for f in facts})
+
+
+def _newest(rows: Sequence[dict]) -> dict:
+    """Строка с самой свежей датой источника — она и идёт в заголовок.
+
+    Когда два чтения одной страницы признаны ОДНИМ ответом (разной
+    подробности), в заголовок шёл алфавитно первый, то есть обычно прежний.
+    ИЗМЕРЕНО 2026-09-03: `elevenlabs-pvc.plan_slots` показывал «Scale 3» после
+    того, как страница уточнила, что на legacy Scale слот один. Деталь в
+    выдаче была верна, заголовок — нет; это тот самый класс дефекта, ради
+    которого заведён `scripts/check_headline.py`.
+    """
+
+    def дата(row: dict) -> str:
+        return max((str(s.get("stated_on") or "") for s in row["sources"]), default="")
+
+    return max(rows, key=дата)
+
+
 MULTI_VALUED: frozenset[str] = frozenset(
     {
         # Added 2026-09-01 with the body-reading harvest, and MEASURED before
@@ -590,14 +623,16 @@ class FactStore:
                 "unmeasured": len(found),
                 "note": (
                     f"{model}.{attribute}: {len(rows)} value(s) recorded, but every "
-                    f"source is blog tier ({len(found)} of them). Repetition is not "
-                    "corroboration: blogs quoting each other are one source."
+                    f"source is blog tier ({_source_count(found)} of them). Repetition "
+                    "is not corroboration: blogs quoting each other are one source."
                 ),
                 "claims": rows,
                 "values": sorted(by_value),
             }
-        shape = f"{len(rows)} value(s)" if multi else f"{rows[0]['value']!r}"
-        note = f"{model}.{attribute}: {shape}, from {len(found)} source(s), best tier {best}"
+        shape = f"{len(rows)} value(s)" if multi else f"{_newest(rows)['value']!r}"
+        note = (
+            f"{model}.{attribute}: {shape}, from {_source_count(found)} source(s), best tier {best}"
+        )
         if stale:
             note += f"; {len(stale)} source(s) older than {STALE_AFTER_DAYS} days"
         # Counted and printed, never folded into the verdict: the ladder says

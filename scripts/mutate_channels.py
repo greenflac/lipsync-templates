@@ -206,6 +206,21 @@ MUTANTS: list[tuple[str, str, str, str, str]] = [
         "страницы: третье положение хоста слилось со вторым",
         "studio.mcp.tests.test_recheck_vendor",
     ),
+    # --- счёт источников и выбор значения в заголовок ----------------------
+    (
+        "studio/selfrag/facts.py",
+        '    return len({str(f.source_url or "") for f in facts})',
+        "    return len(facts)",
+        "источники: одна страница, прочитанная дважды, снова два источника",
+        "studio.selfrag.tests.test_source_count",
+    ),
+    (
+        "studio/selfrag/facts.py",
+        "    return max(rows, key=дата)",
+        "    return rows[0]",
+        "заголовок: в него снова идёт алфавитно первое, а не самое свежее чтение",
+        "studio.selfrag.tests.test_source_count",
+    ),
     # --- разрешение: предел кадра ------------------------------------------
     (
         "studio/resolution.py",
