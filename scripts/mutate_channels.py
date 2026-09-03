@@ -250,6 +250,27 @@ MUTANTS: list[tuple[str, str, str, str, str]] = [
         "очередь: перечитанное ДО изменения засчитывается как сделанное",
         "studio.mcp.tests.test_refill_queue",
     ),
+    (
+        "scripts/recheck_vendor.py",
+        '        if ответ.get("truncated"):',
+        "        if False:",
+        "страницы: обрезанный на потолке ответ снова считается страницей",
+        "studio.mcp.tests.test_recheck_vendor",
+    ),
+    (
+        "scripts/recheck_vendor.py",
+        "            if если_второй is None or если_второй != свежий:",
+        "            if False:",
+        "страницы: второе чтение перестало сверяться — шум снова изменение",
+        "studio.mcp.tests.test_recheck_vendor",
+    ),
+    (
+        "scripts/recheck_vendor.py",
+        '    re.compile(r"hf-sanitized-[a-z0-9]{8,}", re.I),',
+        "    re.compile(r'НЕ-ВСТРЕТИТСЯ-НИКОГДА'),",
+        "страницы: случайный класс HuggingFace снова в отпечатке",
+        "studio.mcp.tests.test_recheck_vendor",
+    ),
     # --- разрешение: предел кадра ------------------------------------------
     (
         "studio/resolution.py",

@@ -306,5 +306,121 @@ class КудаКаналИдёт(unittest.TestCase):
         self.assertEqual(цели, {})
 
 
+class ОбрезанныйОтветНеСтраница(unittest.TestCase):
+    """ИЗМЕРЕНО 2026-09-03 на `kling.ai/quickstart/text-to-video-prompt-guide`:
+    ответ 200, ровно 400 000 байт, `truncated: True`, и в них один
+    открывающий `<style>` без закрывающего — то есть сплошной CSS. Отпечаток
+    такого куска стабилен, и канал говорил бы «страница не менялась» про
+    таблицу стилей, пока три утверждения за ней стареют."""
+
+    def test_обрезанный_не_даёт_отпечатка_и_идёт_в_третий_исход(self):
+        ответы = {
+            "https://целая.test/a": {"outcome": "pass", "text": "<h1>текст</h1>"},
+            "https://обрезанная.test/b": {
+                "outcome": "pass",
+                "truncated": True,
+                "text": '<style>@charset "UTF-8";:root{--x:1}',
+            },
+        }
+        прежний = rv.fetch.fetch
+        rv.fetch.fetch = lambda url, **kw: ответы[url]
+        try:
+            итог = rv.обойти({u: 1 for u in ответы}, {})
+        finally:
+            rv.fetch.fetch = прежний
+        self.assertEqual([с["url"] for с in итог["строки"]], ["https://целая.test/a"])
+        self.assertEqual(итог["обрезаны"], ["https://обрезанная.test/b"])
+        вердикт = rv.свести(итог, 2)
+        self.assertEqual(вердикт["unmeasured"], 2, "обрезанная + заведённое основание")
+
+    def test_необрезанный_отпечаток_снимается(self):
+        """Негативный контроль (И5): починка не смеет глушить целые страницы."""
+        прежний = rv.fetch.fetch
+        rv.fetch.fetch = lambda url, **kw: {"outcome": "pass", "text": "<h1>текст</h1>"}
+        try:
+            итог = rv.обойти({"https://целая.test/a": 1}, {})
+        finally:
+            rv.fetch.fetch = прежний
+        self.assertEqual(len(итог["строки"]), 1)
+        self.assertEqual(итог["обрезаны"], [])
+
+
+class СтраницаСравниваетсяСамаССобой(unittest.TestCase):
+    """Список известного шума — это память о хостах, которые уже подводили;
+    новый хост приносит свой. ИЗМЕРЕНО 2026-09-03: HuggingFace подставляет своё
+    имя класса на каждый запрос (`hf-sanitized-<случайное>`), и канал объявил
+    изменившимися 74 страницы из 214 — почти все ложно. Теперь на расхождении
+    делается второй запрос: два свежих чтения, разошедшихся между собой, — это
+    «нестабильна», а не «вендор что-то поменял»."""
+
+    def _канал(self, ответы: list[dict]):
+        очередь = list(ответы)
+
+        def подмена(url, **kw):
+            return очередь.pop(0)
+
+        return подмена
+
+    def test_два_чтения_разошлись_это_не_изменение(self):
+        прежний = rv.fetch.fetch
+        rv.fetch.fetch = self._канал(
+            [{"outcome": "pass", "text": "<p>раз</p>"}, {"outcome": "pass", "text": "<p>два</p>"}]
+        )
+        try:
+            итог = rv.обойти(
+                {"https://шумит.test/a": 3},
+                {
+                    "https://шумит.test/a": {
+                        "fingerprint": "прежний",
+                        "method": rv.СПОСОБ,
+                        "seen_on": "2026-09-02",
+                    }
+                },
+            )
+        finally:
+            rv.fetch.fetch = прежний
+        self.assertEqual(итог["изменились"], [])
+        self.assertEqual(итог["нестабильны"], ["https://шумит.test/a"])
+        self.assertEqual(итог["строки"], [], "отпечаток нестабильной страницы не записывается")
+
+    def test_два_чтения_сошлись_это_изменение(self):
+        """Негативный контроль (И5): починка не смеет глушить настоящие
+        изменения — иначе канал перестаёт работать целиком."""
+        прежний = rv.fetch.fetch
+        rv.fetch.fetch = self._канал(
+            [
+                {"outcome": "pass", "text": "<p>новое</p>"},
+                {"outcome": "pass", "text": "<p>новое</p>"},
+            ]
+        )
+        try:
+            итог = rv.обойти(
+                {"https://менялась.test/a": 3},
+                {
+                    "https://менялась.test/a": {
+                        "fingerprint": "прежний",
+                        "method": rv.СПОСОБ,
+                        "seen_on": "2026-09-02",
+                    }
+                },
+            )
+        finally:
+            rv.fetch.fetch = прежний
+        self.assertEqual([с["url"] for с in итог["изменились"]], ["https://менялась.test/a"])
+        self.assertEqual(итог["нестабильны"], [])
+
+    def test_имя_класса_huggingface_вычищается(self):
+        """Дословно с живой страницы `black-forest-labs/FLUX.1-dev`, и форма
+        здесь важна: класс приходит НЕ атрибутом тега (тот бы снялся вместе с
+        тегом), а внутри экранированного JSON в теле страницы. Первый вариант
+        этого теста был написан тегом — и мутация «убрать образец» молчала,
+        потому что работу делал очиститель тегов."""
+        шаблон = "текст &quot;classnames&quot;:&quot;hf-sanitized hf-sanitized-{}&quot; текст"
+        self.assertEqual(
+            rv.отпечаток(шаблон.format("1uctzfwuvqirhkdmmcnlx")),
+            rv.отпечаток(шаблон.format("l7v71eqxhylxdbqrekv9t")),
+        )
+
+
 if __name__ == "__main__":
     unittest.main()
