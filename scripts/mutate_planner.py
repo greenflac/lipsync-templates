@@ -72,6 +72,31 @@ ROOT = Path(__file__).resolve().parents[1]
 
 MUTANTS = [
     # (файл, что заменить, на что, подпись)
+    # --- список входов из схемы эндпоинта (заведён 2026-09-03) -------------
+    (
+        "studio/planner.py",
+        "        if not нет_в_списке:",
+        "        if True:",
+        "список входов -> слабее: любой список объявляет вход принятым",
+    ),
+    (
+        "studio/planner.py",
+        "        if неполон:",
+        "        if False:",
+        "список входов -> строже: неполный список начинает запрещать",
+    ),
+    (
+        "studio/planner.py",
+        '    ARTEFACT_SELFIE: "изображение",',
+        '    ARTEFACT_SELFIE: "изображение",\n    ARTEFACT_REFERENCE: "изображение",',
+        "список входов -> слабее: референс объявлен картинкой, хотя бывает роликом",
+    ),
+    (
+        "studio/planner.py",
+        "    по_списку, почему = input_list_stance(facts, declared if declared is not None else requires)",
+        "    по_списку, почему = input_list_stance(facts, requires)",
+        "список входов -> строже: читается дополненный набор входов вместо объявленного",
+    ),
     (
         "studio/planner.py",
         'NOT_MEASURED_MARK = "применимость не измерена"',

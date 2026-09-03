@@ -1650,6 +1650,70 @@ def allows_in(fact: Fact, requires: Sequence[str]) -> bool:
     )
 
 
+#: Имя атрибута со СПИСКОМ видов входа и перевод его слов в артефакты плана.
+#: Заведено 2026-09-03, и до этого дня 46 таких строк в базе не читал никто:
+#: `allows_in` понимал только форму «accepts_… = yes», а канал схем пишет
+#: список («аудио, изображение, текст»). Именно этим объяснялась измеренная
+#: бесполезность связки «шагу нужен вход X → модель принимает X»: данные
+#: были, читателя не было.
+#:
+#: Перевод НЕПОЛОН намеренно: `референс` и `бриф` сюда не попадают. Референс
+#: бывает и картинкой и роликом, а текст задания принимает кто угодно —
+#: обещать по ним запрет значило бы вычёркивать годные модели за то, чего они
+#: не запрещали.
+INPUT_LIST_ATTRIBUTE = "accepts_inputs"
+INPUT_LIST_WORDS: dict[str, str] = {
+    ARTEFACT_AUDIO: "аудио",
+    ARTEFACT_VIDEO: "видео",
+    ARTEFACT_SELFIE: "изображение",
+}
+
+#: Пометка канала схем о том, что список входов собран не целиком. Такой
+#: список НЕ запрещает: отсутствие вида в неполном перечне — это «не знаем»,
+#: а не «не принимает» (Р1). ИЗМЕРЕНО 2026-09-03: из 46 строк помечена 1.
+INPUT_LIST_INCOMPLETE = "НЕПОЛОН"
+
+
+def input_list_stance(facts: Sequence[Fact], requires: Sequence[str]) -> tuple[str, str]:
+    """Что говорит СПИСОК принимаемых входов про вход этого шага.
+
+    Три исхода, и третий здесь не декоративный:
+
+        разрешён   вид входа стоит в списке;
+        запрещён   список полон и вида в нём НЕТ — эндпоинт такого поля не
+                   имеет, то есть работу физически не примет;
+        не сказано списка нет вовсе, он помечен неполным, или артефакт шага
+                   не переводится в слова списка (`референс`, `бриф`).
+    """
+    строки = [f for f in facts if f.attribute == INPUT_LIST_ATTRIBUTE]
+    if not строки:
+        return BAN_UNKNOWN, ""
+    нужные = [(а, INPUT_LIST_WORDS[а]) for а in requires if а in INPUT_LIST_WORDS]
+    if not нужные:
+        return BAN_UNKNOWN, ""
+    for факт in строки:
+        виды = {к.strip().lower() for к in str(факт.value).split(",") if к.strip()}
+        неполон = INPUT_LIST_INCOMPLETE in (факт.note or "")
+        нет_в_списке = [а for а, слово in нужные if слово not in виды]
+        if not нет_в_списке:
+            слова = ", ".join(с for _, с in нужные)
+            return BAN_ALLOWED, (
+                f"вход принимается по схеме: {INPUT_LIST_ATTRIBUTE}={факт.value[:70]} "
+                f"(шагу нужны: {слова}) ({факт.source_url})"
+            )
+        if неполон:
+            return BAN_UNKNOWN, (
+                f"списка входов не хватает на «{нет_в_списке[0]}», но он помечен неполным: "
+                f"{факт.note[-60:]} — это не запрет"
+            )
+        return BAN_FORBIDS, (
+            f"шагу нужен вход «{нет_в_списке[0]}», а схема эндпоинта такого поля не имеет: "
+            f"{INPUT_LIST_ATTRIBUTE}={факт.value[:70]} [{факт.tier}, "
+            f"{факт.stated_on or 'даты нет'}] ({факт.source_url})"
+        )
+    return BAN_UNKNOWN, ""
+
+
 def step_inputs(op: Operation) -> tuple[str, ...]:
     """Входы шага ДЛЯ ПРОВЕРКИ ЗАПРЕТА: объявленные артефакты плюс лицо.
 
@@ -1662,7 +1726,9 @@ def step_inputs(op: Operation) -> tuple[str, ...]:
     return tuple(op.requires)
 
 
-def ban_stance(facts: Sequence[Fact], requires: Sequence[str]) -> tuple[str, str]:
+def ban_stance(
+    facts: Sequence[Fact], requires: Sequence[str], declared: Sequence[str] | None = None
+) -> tuple[str, str]:
     """Запрещает ли база вход ЭТОГО шага. Три исхода, и главный из них третий.
 
     `BAN_UNKNOWN` — не «разрешено». Отсутствие запрета в базе не есть
@@ -1685,13 +1751,28 @@ def ban_stance(facts: Sequence[Fact], requires: Sequence[str]) -> tuple[str, str
             f"{факт.attribute}={факт.value[:90]} [{факт.tier}, {факт.stated_on or 'даты нет'}] "
             f"({факт.source_url}); строк-запретов {len(запреты)}"
         )
+    # Список видов входа из схемы эндпоинта: он умеет и запрещать, и разрешать,
+    # поэтому стоит сразу после фразовых запретов — но НЕ выше их: фраза
+    # «human faces cannot be uploaded» сужает любой список, а не спорит с ним.
+    # СПИСОК СХЕМЫ ЧИТАЕТСЯ ПО ОБЪЯВЛЕННЫМ ВХОДАМ ШАГА, А НЕ ПО ДОПОЛНЕННЫМ.
+    # `step_inputs` дописывает `селфи` там, где вход несёт живое лицо, — это
+    # про ЛИЦО В КАДРЕ, а не про файл-картинку на входе эндпоинта. Прочитав
+    # дополненный набор, канал требовал бы от липсинк-модели поля для
+    # изображения и запрещал бы `latentsync`, который принимает ровно то, что
+    # шагу нужно: аудио и видео. Поймано прогоном фикстур владельца, до
+    # коммита.
+    по_списку, почему = input_list_stance(facts, declared if declared is not None else requires)
+    if по_списку == BAN_FORBIDS:
+        return BAN_FORBIDS, почему
     разрешения = [f for f in facts if allows_in(f, requires)]
     if разрешения:
         f = разрешения[0]
         return BAN_ALLOWED, (
             f"вход принимается прямо: {f.attribute}={f.value[:70]} ({f.source_url})"
         )
-    return BAN_UNKNOWN, (
+    if по_списку == BAN_ALLOWED:
+        return BAN_ALLOWED, почему
+    return BAN_UNKNOWN, ((почему + "; ") if почему else "") + (
         f"о запрете на вход ({', '.join(requires)}) в базе не сказано ни строки "
         f"из {len(facts)}: это НЕ разрешение"
     )
@@ -2218,7 +2299,7 @@ def candidates_for(
         все = по_имени.get(fold(имя), [])
         положение, нота = price_stance(все, потолок)
         по_кадру, нота_кадра = fit_stance(все, frame)
-        по_входу, нота_входа = ban_stance(все, step_inputs(op))
+        по_входу, нота_входа = ban_stance(все, step_inputs(op), op.requires)
         по_службе, нота_службы = life_stance(все, today)
         по_выходу, нота_выхода = output_stance(все, op.produces)
         найдены.append(
