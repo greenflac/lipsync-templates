@@ -228,6 +228,21 @@ MUTANTS: list[tuple[str, str, str, str, str]] = [
         "источники: страницы снова считаются по строкам, а не по адресам",
         "studio.mcp.tests.test_advice",
     ),
+    # --- очередь: снимок опроса против состояния базы ----------------------
+    (
+        "scripts/refill_queue.py",
+        "    новые = [с for с in все if not уже_знаем(с, имена)]",
+        "    новые = list(все)",
+        "очередь: снова предлагает семейства, которые база уже знает",
+        "studio.mcp.tests.test_refill_queue",
+    ),
+    (
+        "scripts/refill_queue.py",
+        "        if modelnames.from_portal_id(эндпоинт) in известные:",
+        "        if эндпоинт in известные:",
+        "очередь: знание ищется по адресу эндпоинта вместо имени модели",
+        "studio.mcp.tests.test_refill_queue",
+    ),
     # --- разрешение: предел кадра ------------------------------------------
     (
         "studio/resolution.py",

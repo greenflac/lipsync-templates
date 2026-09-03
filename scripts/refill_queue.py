@@ -36,7 +36,8 @@ from typing import Any
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from studio.mcp import misses  # noqa: E402
-from studio.selfrag import facts as facts_mod  # noqa: E402
+from studio.selfrag import facts as facts_mod
+from studio.selfrag import modelnames  # noqa: E402
 from studio.mcp import advice  # noqa: E402
 from studio.selfrag.facts import STALE_AFTER_DAYS, TIER_VENDOR  # noqa: E402
 
@@ -270,32 +271,62 @@ def changed_work(path: Path | None = None) -> list[dict[str, Any]]:
     return работа
 
 
-def portal_work(path: Path | None = None) -> list[dict[str, Any]]:
-    """Имена с портала, которых база не знает. Неполный опрос строк не даёт.
+def уже_знаем(строка: dict[str, Any], известные: set[str]) -> bool:
+    """Знает ли база это семейство — по имени модели, а не по имени семейства.
 
-    Неполная очередь — третий исход у самого канала (`poll_portal.py`), и
-    подмешивать её сюда значило бы выдать пробел опроса за отсутствие работы.
+    Имя в базе выводится из адреса эндпоинта тем же разборщиком, что и при
+    записи (`modelnames.from_portal_id`, Е1): семейство `ai-avatar` попадает
+    в базу как `ai-avatar-multi`, и сравнение по имени семейства не нашло бы
+    ничего.
+    """
+    for адрес in строка.get("examples") or []:
+        эндпоинт = str(адрес).split("/models/")[-1]
+        if modelnames.from_portal_id(эндпоинт) in известные:
+            return True
+    return str(строка.get("family", "")) in известные
+
+
+def portal_work(
+    path: Path | None = None, известные: set[str] | None = None
+) -> tuple[list[dict[str, Any]], int]:
+    """Имена с портала, которых база НЕ ЗНАЕТ, и сколько отсеяно как известные.
+
+    Неполный опрос строк не даёт: неполная очередь — третий исход у самого
+    канала (`poll_portal.py`), и подмешивать её сюда значило бы выдать пробел
+    опроса за отсутствие работы.
+
+    СНИМОК ОПРОСА — НЕ СОСТОЯНИЕ БАЗЫ, И ЭТО ИЗМЕРЕНО. Файл опроса пишется
+    один раз и не меняется, когда семейство собрано; очередь читала его
+    дословно и 2026-09-03 предлагала 37 строк работы, из которых сделаны были
+    ВСЕ 37. Очередь, где каждая строка сделана, учит себя не открывать —
+    ровно как канал, который кричит двести раз (см. `recheck_vendor`).
+    Отсеянное печатается числом (Р2), а не пропадает молча.
     """
     файл = path or ПОРТАЛ
     if not файл.is_file():
-        return []
+        return [], 0
     try:
         снято = json.loads(файл.read_text(encoding="utf-8"))
     except ValueError:
-        return []
+        return [], 0
     if снято.get("partial"):
-        return []
-    return [
-        {
-            "reason": NEW_FAMILY,
-            "model": str(строка.get("family", "")),
-            "detail": f"продаётся на {снято.get('portal', 'портале')}, {строка.get('task', '')}"[
-                :90
-            ],
-            "where": ", ".join((строка.get("examples") or [])[:2]),
-        }
-        for строка in снято.get("new_families") or []
-    ]
+        return [], 0
+    имена = известные if известные is not None else {ф.model for ф in facts_mod.load_facts(FACTS)}
+    все = снято.get("new_families") or []
+    новые = [с for с in все if not уже_знаем(с, имена)]
+    return (
+        [
+            {
+                "reason": NEW_FAMILY,
+                "model": str(строка.get("family", "")),
+                "detail": f"продаётся на {снято.get('portal', 'портале')}, "
+                f"{строка.get('task', '')}"[:90],
+                "where": ", ".join((строка.get("examples") or [])[:2]),
+            }
+            for строка in новые
+        ],
+        len(все) - len(новые),
+    )
 
 
 #: Что журнал отпечатков знает о странице. Три состояния, и третье — самое
@@ -479,10 +510,15 @@ def main(argv: list[str]) -> int:
     stale = stale_work()
     fresh = discovered_work(payload)
     changed = changed_work()
-    portal = portal_work()
+    portal, портальных_уже_знаем = portal_work()
     # Возрастные строки несут рядом наблюдение об источнике: возраст —
     # догадка, отпечаток — свидетельство, и читающему видно оба.
     состояния = состояние_источников()
+    if портальных_уже_знаем:
+        print(
+            f"  семейств с портала уже в базе: {портальных_уже_знаем} — "
+            "в очередь НЕ взяты: работа сделана"
+        )
     rows = order(с_состоянием_источника(stale, состояния) + asked + fresh + changed + portal)
     # ИСТОЧНИК, КОТОРЫЙ МОЛЧИТ, НАЗЫВАЕТСЯ ПОИМЁННО. Пустая очередь по вине
     # ненайденного файла и пустая очередь по отсутствию работы — разные вещи,

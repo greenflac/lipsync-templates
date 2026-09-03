@@ -365,28 +365,73 @@ class ОчередьПортала(unittest.TestCase):
         return путь
 
     def test_имена_портала_попадают_в_очередь(self):
-        строки = refill.portal_work(
+        строки, отсеяно = refill.portal_work(
             self._файл(
                 {
                     "portal": "fal.ai",
                     "partial": False,
                     "new_families": [{"family": "veed-lipsync-v2", "task": "Lipsync"}],
                 }
-            )
+            ),
+            известные=set(),
         )
         self.assertEqual([с["model"] for с in строки], ["veed-lipsync-v2"])
         self.assertEqual(строки[0]["reason"], refill.NEW_FAMILY)
+        self.assertEqual(отсеяно, 0)
+
+    def test_семейство_которое_база_уже_знает_в_очередь_не_идёт(self):
+        """СНИМОК ОПРОСА — НЕ СОСТОЯНИЕ БАЗЫ. Файл опроса пишется один раз и не
+        меняется, когда семейство собрано. ИЗМЕРЕНО 2026-09-03: очередь
+        предлагала 37 строк, из которых сделаны были ВСЕ 37. Очередь, где
+        каждая строка сделана, учит себя не открывать."""
+        строки, отсеяно = refill.portal_work(
+            self._файл(
+                {
+                    "portal": "fal.ai",
+                    "partial": False,
+                    "new_families": [{"family": "veed-lipsync-v2", "task": "Lipsync"}],
+                }
+            ),
+            известные={"veed-lipsync-v2"},
+        )
+        self.assertEqual(строки, [])
+        self.assertEqual(отсеяно, 1)
+
+    def test_знание_ищется_по_имени_МОДЕЛИ_а_не_семейства(self):
+        """Семейство `ai-avatar` попадает в базу как `ai-avatar-multi`:
+        сравнение по имени семейства не нашло бы ничего, и очередь предлагала
+        бы собранное. Имя выводится тем же разборщиком, что и при записи."""
+        строки, отсеяно = refill.portal_work(
+            self._файл(
+                {
+                    "portal": "fal.ai",
+                    "partial": False,
+                    "new_families": [
+                        {
+                            "family": "ai-avatar",
+                            "task": "Avatar",
+                            "examples": ["https://fal.ai/models/fal-ai/ai-avatar/multi"],
+                        }
+                    ],
+                }
+            ),
+            известные={"ai-avatar-multi"},
+        )
+        self.assertEqual((строки, отсеяно), ([], 1))
 
     def test_неполный_опрос_строк_не_даёт(self):
         """Подмешать неполную очередь значит выдать пробел опроса за отсутствие
         работы — третий исход, свёрнутый в первый."""
-        строки = refill.portal_work(
-            self._файл({"partial": True, "new_families": [{"family": "x", "task": "y"}]})
+        строки, _ = refill.portal_work(
+            self._файл({"partial": True, "new_families": [{"family": "x", "task": "y"}]}),
+            известные=set(),
         )
         self.assertEqual(строки, [])
 
     def test_файла_нет_строк_нет_и_прогон_цел(self):
-        self.assertEqual(refill.portal_work(Path(tempfile.mkdtemp()) / "нет.json"), [])
+        self.assertEqual(
+            refill.portal_work(Path(tempfile.mkdtemp()) / "нет.json", известные=set()), ([], 0)
+        )
 
 
 class СостояниеИсточникаРядомСВозрастом(unittest.TestCase):
