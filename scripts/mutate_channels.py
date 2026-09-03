@@ -278,6 +278,13 @@ MUTANTS: list[tuple[str, str, str, str, str]] = [
         "очередь: сверка с источником перестала показываться читателю",
         "studio.mcp.tests.test_refill_queue",
     ),
+    (
+        "scripts/refill_queue.py",
+        '            bool(r.get("не кандидат")),',
+        "            False,",
+        "очередь: строки, которые никуда не доедут, снова наверху",
+        "studio.mcp.tests.test_refill_queue",
+    ),
     # --- разрешение: предел кадра ------------------------------------------
     (
         "studio/resolution.py",

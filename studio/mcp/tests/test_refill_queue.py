@@ -648,3 +648,48 @@ class СвереноСИсточникомРядомСВозрастом(unittes
             )
         )
         self.assertEqual([с["model"] for с in строки], ["a", "b"])
+
+
+class ДоедетЛиРаботаДоПлана(unittest.TestCase):
+    """ИЗМЕРЕНО 2026-09-03: из 13 показанных строк «протухший факт прочих
+    тиров» кандидатом не бывает НИ ОДНА модель — это Civitai-LoRA и чужие
+    эмбеддеры, попавшие в базу попутно. Работа по ним верна и никуда не
+    доедет: план такую модель не увидит."""
+
+    def test_строка_помечается_и_уходит_вниз(self):
+        строки = refill.order(
+            refill.с_пометкой_кандидата(
+                [
+                    {"reason": refill.STALE_VENDOR, "model": "я-кандидат", "detail": "x"},
+                    {"reason": refill.STALE_VENDOR, "model": "а-мимо", "detail": "y"},
+                ],
+                {"я-кандидат"},
+            )
+        )
+        self.assertEqual([с["model"] for с in строки], ["я-кандидат", "а-мимо"])
+        self.assertIn("не бывает кандидатом", строки[1]["detail"])
+        self.assertNotIn("не бывает кандидатом", строки[0]["detail"])
+
+    def test_пометка_не_выбрасывает_строку(self):
+        """«Не кандидат сегодня» — не «не понадобится никогда». Решать за
+        читателя, что ему не нужно, очередь не вправе."""
+        строки = refill.с_пометкой_кандидата(
+            [{"reason": refill.STALE_VENDOR, "model": "мимо", "detail": ""}], set()
+        )
+        self.assertEqual(len(строки), 1)
+
+    def test_причина_старше_пометки(self):
+        """Порядок причин решает первым: изменившийся источник важнее того,
+        доедет ли протухшая строка до плана."""
+        строки = refill.order(
+            refill.с_пометкой_кандидата(
+                [
+                    {"reason": refill.STALE_VENDOR, "model": "кандидат", "detail": ""},
+                    {"reason": refill.CHANGED_SOURCE, "model": "мимо", "detail": ""},
+                ],
+                {"кандидат"},
+            )
+        )
+        self.assertEqual(
+            [с["reason"] for с in строки], [refill.CHANGED_SOURCE, refill.STALE_VENDOR]
+        )
