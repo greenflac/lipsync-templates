@@ -422,5 +422,64 @@ class СтраницаСравниваетсяСамаССобой(unittest.Test
         )
 
 
+class ОбрезанноеПереспрашивается(unittest.TestCase):
+    """ИЗМЕРЕНО 2026-09-03 на `kling.ai/quickstart/text-to-video-prompt-guide`:
+    при потолке 400 000 приходит ровно потолок и в нём один сплошной CSS — ни
+    одного слова гида; при 1 600 000 страница приходит целиком (839 711 байт)
+    и все пять слов записанного скелета промпта на месте. Объявлять такую
+    страницу непрочитанной значило бы терять её навсегда."""
+
+    def _канал(self, ответы: list[dict]):
+        очередь = list(ответы)
+
+        def подмена(url, **kw):
+            от = очередь.pop(0)
+            от = dict(от)
+            от["_потолок"] = kw.get("max_bytes")
+            следы.append(от["_потолок"])
+            return от
+
+        следы: list = []
+        подмена.следы = следы  # type: ignore[attr-defined]
+        return подмена
+
+    def test_второй_запрос_с_большим_потолком_спасает_страницу(self):
+        канал = self._канал(
+            [
+                {"outcome": "pass", "truncated": True, "text": "<style>css"},
+                {"outcome": "pass", "text": "<h1>тело статьи</h1>"},
+            ]
+        )
+        прежний = rv.fetch.fetch
+        rv.fetch.fetch = канал
+        try:
+            итог = rv.обойти({"https://толстая.test/a": 3}, {})
+        finally:
+            rv.fetch.fetch = прежний
+        self.assertEqual([с["url"] for с in итог["строки"]], ["https://толстая.test/a"])
+        self.assertEqual(итог["обрезаны"], [])
+        self.assertEqual(итог["добрано"], 1)
+        self.assertEqual(канал.следы[1], rv.ПОТОЛОК_ПОВТОРА, "второй запрос — с большим потолком")
+
+    def test_не_влезла_и_во_второй_это_третий_исход(self):
+        """Лестница из потолков означала бы, что канал сам решает, сколько
+        чужого трафика занять. Переспрос ровно один."""
+        канал = self._канал(
+            [
+                {"outcome": "pass", "truncated": True, "text": "<style>css"},
+                {"outcome": "pass", "truncated": True, "text": "<style>css ещё"},
+            ]
+        )
+        прежний = rv.fetch.fetch
+        rv.fetch.fetch = канал
+        try:
+            итог = rv.обойти({"https://огромная.test/a": 3}, {})
+        finally:
+            rv.fetch.fetch = прежний
+        self.assertEqual(итог["обрезаны"], ["https://огромная.test/a"])
+        self.assertEqual(итог["строки"], [])
+        self.assertEqual(len(канал.следы), 2, "переспрос ровно один, лестницы нет")
+
+
 if __name__ == "__main__":
     unittest.main()

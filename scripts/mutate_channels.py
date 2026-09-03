@@ -285,6 +285,20 @@ MUTANTS: list[tuple[str, str, str, str, str]] = [
         "очередь: строки, которые никуда не доедут, снова наверху",
         "studio.mcp.tests.test_refill_queue",
     ),
+    (
+        "scripts/recheck_vendor.py",
+        "            ответ = fetch.fetch(url, max_bytes=ПОТОЛОК_ПОВТОРА)",
+        "            ответ = fetch.fetch(url)",
+        "страницы: переспрос идёт с тем же потолком — толстая страница потеряна",
+        "studio.mcp.tests.test_recheck_vendor",
+    ),
+    (
+        "scripts/recheck_vendor.py",
+        '            if ответ.get("truncated"):\n                обрезаны.append(url)',
+        "            if False:\n                обрезаны.append(url)",
+        "страницы: не влезшая и во второй потолок снова считается прочитанной",
+        "studio.mcp.tests.test_recheck_vendor",
+    ),
     # --- разрешение: предел кадра ------------------------------------------
     (
         "studio/resolution.py",
