@@ -131,6 +131,13 @@ def read_intent(intent: str) -> dict:
     # она делается. Дверь НЕ добавляет словаря: каждая подстановка ведёт к
     # слову, которое в списках движка уже есть (`studio/ruwords.py`).
     text, подставлено = ruwords.подставить(str(intent or ""))
+    # ДОГАДКИ СЧИТАЮТСЯ ОТДЕЛЬНО И В ТЕКСТ НЕ ИДУТ. «синий» — не именно indigo,
+    # и выбрать оттенок за заказчика нельзя; но и промолчать нельзя: без этого
+    # поле палитры оказывалось ПУСТЫМ, и её заполнял корпус — заказчик писал
+    # «синий», а получал indigo, crimson и amber. Догадка тут не решает, а
+    # ПОРОЖДАЕТ ВОПРОС (решение владельца от 2026-09-03: спросить, а не угадать).
+    _, догадки = ruwords.для_поиска(str(intent or ""))
+    догадки = {ру: анг for ру, анг in догадки.items() if ру not in подставлено}
     found = structure_from_text(text)
 
     saturation = ""
@@ -150,6 +157,7 @@ def read_intent(intent: str) -> dict:
         # кто написал «мягкий», должен видеть, что это прочитано как `soft`, и
         # иметь возможность поправить.
         "translated": dict(sorted(подставлено.items())),
+        "guessed": dict(sorted(догадки.items())),
     }
 
 
@@ -239,8 +247,18 @@ def write(intent: str, examples: Sequence[Any]) -> dict:
     # two-colour palette, not a vacancy.
     colours = list(named["palette"])
     palette_sources: list[str] = []
+    # Цвет, названный ПРИБЛИЗИТЕЛЬНО. «синий» есть в догадках и нет в
+    # переводах: indigo — оттенок, которого заказчик не выбирал. Раньше такой
+    # цвет просто не считался названным, поле оставалось пустым, и палитру
+    # набирал корпус: сказано «синий» — получено «indigo, crimson и amber».
+    # Теперь это НЕ вакансия, а вопрос.
+    цветные_догадки = sorted(
+        {анг for анг in (named.get("guessed") or {}).values() if анг in PALETTE_WORDS}
+    )
     if colours:
         chosen["palette"] = {"value": colours, "from": "owner", "record_ids": []}
+    elif цветные_догадки:
+        pass
     else:
         for row in _supported(votes["palette"], limit=PALETTE_WIDTH):
             colours.append(row["value"])
@@ -331,6 +349,24 @@ def write(intent: str, examples: Sequence[Any]) -> dict:
                     f"You named {len(named['palette'])} colours "
                     f"({', '.join(named['palette'])}) and the engine takes "
                     f"{PALETTE_WIDTH}. Which {PALETTE_WIDTH}?"
+                ),
+            }
+        )
+    elif цветные_догадки:
+        # Заказчик цвет НАЗВАЛ, просто приблизительно. Спрашивать «какие
+        # цвета?» здесь было бы глухотой: он уже ответил. Вопрос уточняет
+        # оттенок и называет, из чего именно мы выбираем.
+        unresolved.append(
+            {
+                "slot": "palette",
+                "ask": (
+                    "You named a colour approximately ("
+                    + ", ".join(
+                        f"{ру} ~ {анг}" for ру, анг in sorted((named.get("guessed") or {}).items())
+                    )
+                    + "); the engine takes exact shades. Which of: "
+                    + ", ".join(PALETTE_WORDS)
+                    + "?"
                 ),
             }
         )

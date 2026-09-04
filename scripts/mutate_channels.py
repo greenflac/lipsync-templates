@@ -184,9 +184,30 @@ MUTANTS: list[tuple[str, str, str, str, str]] = [
         # нельзя (Т4). Одна строка проводки сторожится обзором, а не тестом, и
         # это сказано вслух, а не спрятано.
         "studio/mcp/server.py",
-        "    запрос, _ = ruwords.подставить(intent)\n    return запрос",
+        "    запрос, _ = ruwords.для_поиска(intent)\n    return запрос",
         "    return intent",
         "русская дверь: запрос корпуса снова идёт по-русски — примеров 1 вместо 30",
+        "studio.mcp.tests.test_ruwords",
+    ),
+    (
+        "studio/ruwords.py",
+        '    "синий": "indigo",',
+        "",
+        "догадки: «синий» снова считается точным переводом и едет в промт",
+        "studio.mcp.tests.test_ruwords",
+    ),
+    (
+        "studio/mcp/lipsync_prompt.py",
+        "    elif цветные_догадки:\n        pass",
+        "    elif False:\n        pass",
+        "догадки: приблизительный цвет снова вакансия — палитру наберёт корпус",
+        "studio.mcp.tests.test_ruwords",
+    ),
+    (
+        "studio/mcp/lipsync_prompt.py",
+        "    догадки = {ру: анг for ру, анг in догадки.items() if ру not in подставлено}",
+        "    догадки = {}",
+        "догадки: приблизительный цвет перестаёт замечаться вовсе",
         "studio.mcp.tests.test_ruwords",
     ),
     # --- предел текста (заведён 2026-09-03) ---------------------------------

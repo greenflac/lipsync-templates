@@ -520,7 +520,11 @@ def запрос_корпуса(intent: str) -> str:
     MEASURED 2026-09-04 on six Russian intents: 1 corpus example before, 30
     after. The Russian words STAY in the query; the English ones are appended.
     """
-    запрос, _ = ruwords.подставить(intent)
+    # ПОИСК ХОДИТ С ДОГАДКАМИ, ПРОМТ — БЕЗ НИХ. «синий» не именно indigo, и в
+    # промте такой оттенок был бы выбран за заказчика; в поиске неверная
+    # догадка стоит одного слота примера. Разделение и его цена записаны в
+    # `studio/ruwords.py` и, раньше нас, в `studio/selfrag/pipeline.py`.
+    запрос, _ = ruwords.для_поиска(intent)
     return запрос
 
 
