@@ -132,6 +132,21 @@ MUTANTS: list[tuple[str, str, str, str, str]] = [
         "занятые приставки: список пуст — цена снова отвечает на вопрос о входе",
         "studio.mcp.tests.test_attrfamily",
     ),
+    # --- заголовок опроса портала (заведён 2026-09-03) ----------------------
+    (
+        "scripts/poll_portal.py",
+        '    if опрос["answered"] >= опрос["asked"]:\n        return заголовок',
+        "    if True:\n        return заголовок",
+        "портал: «база не знает 0» снова печатается одинаково на неполном обходе",
+        "studio.mcp.tests.test_poll_portal",
+    ),
+    (
+        "scripts/poll_portal.py",
+        '    if опрос["answered"] >= опрос["asked"]:\n        return заголовок',
+        "    if False:\n        return заголовок",
+        "портал: оговорка о неполноте лепится и к полному обходу",
+        "studio.mcp.tests.test_poll_portal",
+    ),
     # --- предел текста (заведён 2026-09-03) ---------------------------------
     (
         "studio/selfrag/attrfamily.py",
