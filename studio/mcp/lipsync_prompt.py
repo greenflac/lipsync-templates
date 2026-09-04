@@ -58,6 +58,7 @@ from lipsync.fork_style_prompt import PALETTE_WIDTH, SATURATION_WORDS, compose
 # resolves to the .py file. mypy resolves the other way and cannot see these
 # names, hence the ignore. The collision predates this package and belongs to
 # whoever owns those two paths; it is reported, not worked around.
+from studio import ruwords
 from studio.knowledge import (  # type: ignore[attr-defined]
     CARD_VALUE_KEY_LIGHT,
     LIGHT_WORDS,
@@ -123,7 +124,13 @@ def read_intent(intent: str) -> dict:
     >>> read_intent("muted ivory, low-key light, matte")["palette"]
     ['ivory']
     """
-    text = str(intent or "").lower()
+    # РУССКОЕ НАМЕРЕНИЕ ПРОХОДИТ ЧЕРЕЗ ДВЕРЬ К АНГЛИЙСКИМ СЛОВАМ СПИСКОВ.
+    # ИЗМЕРЕНО 2026-09-04: на шести русских намерениях заполнялось 4 слота
+    # карточки из 24, на тех же самых по-английски — 23 из 24. Весь остальной
+    # продукт говорит по-русски, и половина его была недоступна тому, для кого
+    # она делается. Дверь НЕ добавляет словаря: каждая подстановка ведёт к
+    # слову, которое в списках движка уже есть (`studio/ruwords.py`).
+    text, подставлено = ruwords.подставить(str(intent or ""))
     found = structure_from_text(text)
 
     saturation = ""
@@ -138,6 +145,11 @@ def read_intent(intent: str) -> dict:
         "texture": sorted(found["texture"]),
         "mood": sorted(found["mood"]),
         "saturation": saturation,
+        # ЧТО ПОДСТАВЛЕНО — ЧАСТЬ ОТВЕТА, А НЕ ВНУТРЕННЕЕ ДЕЛО. Подстановка, о
+        # которой не сказано, — второй способ узнать, что понял продукт: тот,
+        # кто написал «мягкий», должен видеть, что это прочитано как `soft`, и
+        # иметь возможность поправить.
+        "translated": dict(sorted(подставлено.items())),
     }
 
 
@@ -366,6 +378,7 @@ def write(intent: str, examples: Sequence[Any]) -> dict:
             "card": None,
             "chosen": chosen,
             "unresolved": unresolved,
+            "translated": named.get("translated") or {},
             "gate": gate(""),
         }
 
@@ -393,6 +406,7 @@ def write(intent: str, examples: Sequence[Any]) -> dict:
             "card": card,
             "chosen": chosen,
             "unresolved": [],
+            "translated": named.get("translated") or {},
             "gate": verdict,
         }
 
@@ -405,10 +419,23 @@ def write(intent: str, examples: Sequence[Any]) -> dict:
         "note": (
             f"4 of 4 card slots filled, {len(from_corpus)} corpus record(s) "
             f"consulted; {verdict['note']}"
+            # ПОДСТАНОВКА НАЗЫВАЕТСЯ В НОТЕ, а не только полем: тот, кто
+            # написал «мягкий», обязан видеть, что это прочитано как `soft`, и
+            # мочь поправить. Молчаливая подстановка — второй способ узнать,
+            # что понял продукт.
+            + (
+                "; прочитано по-русски: "
+                + ", ".join(
+                    f"{ру} -> {анг}" for ру, анг in sorted((named.get("translated") or {}).items())
+                )
+                if named.get("translated")
+                else ""
+            )
         ),
         "prompt": built["prompt"],
         "card": card,
         "chosen": chosen,
         "unresolved": [],
+        "translated": named.get("translated") or {},
         "gate": verdict,
     }

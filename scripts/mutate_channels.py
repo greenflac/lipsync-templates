@@ -147,6 +147,35 @@ MUTANTS: list[tuple[str, str, str, str, str]] = [
         "портал: оговорка о неполноте лепится и к полному обходу",
         "studio.mcp.tests.test_poll_portal",
     ),
+    # --- русская дверь к спискам движка (заведена 2026-09-04) ---------------
+    (
+        "studio/ruwords.py",
+        "            if any(н <= начало < к for н, к in занято):\n                continue",
+        "            if False:\n                continue",
+        "русская дверь: длинная основа не съедает место — «золотой час» даст и свет, и палитру",
+        "studio.mcp.tests.test_ruwords",
+    ),
+    (
+        "studio/ruwords.py",
+        'for совпадение in re.finditer(r"(?<![а-яё])" + re.escape(основа), низ):',
+        "for совпадение in re.finditer(re.escape(основа), низ):",
+        "русская дверь: основа ловится внутри чужого слова — «незерновой» даст зерно",
+        "studio.mcp.tests.test_ruwords",
+    ),
+    (
+        "studio/ruwords.py",
+        '    return низ + " " + " ".join(sorted(set(подставлено.values()))), подставлено',
+        '    return " ".join(sorted(set(подставлено.values()))), подставлено',
+        "русская дверь: слова заказчика стираются подстановкой",
+        "studio.mcp.tests.test_ruwords",
+    ),
+    (
+        "studio/mcp/lipsync_prompt.py",
+        '        "translated": dict(sorted(подставлено.items())),',
+        '        "translated": {},',
+        "русская дверь: подстановка снова молчаливая — не видно, что понял продукт",
+        "studio.mcp.tests.test_ruwords",
+    ),
     # --- предел текста (заведён 2026-09-03) ---------------------------------
     (
         "studio/selfrag/attrfamily.py",
