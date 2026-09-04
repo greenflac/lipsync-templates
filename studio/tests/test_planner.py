@@ -184,6 +184,45 @@ class ПометкаОНеизмеренном(unittest.TestCase):
         self.assertTrue(первая.matched)
 
 
+class ПоискПоОбъявленнойФорме(unittest.TestCase):
+    """Второй канал поиска кандидатов: по форме, а не по словам о модели.
+
+    ЗАЧЕМ ОН ЕСТЬ (ИЗМЕРЕНО 2026-09-04): моделей с применимостью в базе 49, а
+    якорный канал видел девять — у остальных нет строк, где стоит якорное слово
+    операции. `omnihuman-1` несёт семь наблюдений и ни одного слова `i2v`, зато
+    несёт машинную запись «принимает аудио и изображение, отдаёт видео».
+    """
+
+    @staticmethod
+    def _схема(имя: str, принимает: str, отдаёт: str) -> list[Fact]:
+        return [
+            факт(имя, "accepts_inputs", принимает, "portal"),
+            факт(имя, "produces_outputs", отдаёт, "portal"),
+        ]
+
+    def _операция(self, requires: tuple[str, ...], produces: tuple[str, ...]) -> pn.Operation:
+        for op in pn.OPERATIONS:
+            if tuple(op.produces) == produces and tuple(op.requires) == requires:
+                return op
+        self.fail(f"в OPERATIONS нет операции {requires} -> {produces}")
+
+    def test_модель_с_нужной_формой_находится(self) -> None:
+        оп = self._операция(("селфи",), ("видео",))
+        по_имени = {"м": self._схема("м", "изображение, аудио", "видео")}
+        self.assertIn("м", pn.declared_shape_hits(оп, по_имени))
+
+    def test_модель_без_нужного_входа_не_находится(self) -> None:
+        """Строгость канала: совпасть обязаны ОБА конца, иначе это перечисление."""
+        оп = self._операция(("селфи",), ("видео",))
+        по_имени = {"м": self._схема("м", "текст", "видео")}
+        self.assertEqual({}, pn.declared_shape_hits(оп, по_имени))
+
+    def test_модель_с_чужим_выходом_не_находится(self) -> None:
+        оп = self._операция(("селфи",), ("видео",))
+        по_имени = {"м": self._схема("м", "изображение", "аудио")}
+        self.assertEqual({}, pn.declared_shape_hits(оп, по_имени))
+
+
 class ПорядокКандидатов(unittest.TestCase):
     """Т5: ключ порядка достижим отдельно от сортировки и от базы."""
 
