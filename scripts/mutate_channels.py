@@ -814,6 +814,53 @@ MUTANTS: list[tuple[str, str, str, str, str]] = [
         "сторож имён: семейное имя перестало опознаваться",
         "studio.tests.test_named_not_asked",
     ),
+    # === РАМКА КАДРА (lipsync/fork_plan.py) ===============================
+    # Пороги, по которым кадр объявляется годным для форка: ошибка режет лицо
+    # заказчику, и видно это только глазами.
+    (
+        "lipsync/fork_plan.py",
+        "CENTRE_TOL = 0.08",
+        "CENTRE_TOL = 1.0",
+        "рамка: лицо у самого края считается центрированным",
+        "lipsync.tests.test_fork_plan",
+    ),
+    (
+        "lipsync/fork_plan.py",
+        "WIDTH_MAX = 0.72",
+        "WIDTH_MAX = 0.01",
+        "строже: любой кадр объявлен слишком широким",
+        "lipsync.tests.test_fork_plan",
+    ),
+    # === ПРИЁМКА ВХОДА (lipsync/fork_intake.py) ===========================
+    (
+        "lipsync/fork_intake.py",
+        "PHOTO_PEOPLE_EXPECTED = 1",
+        "PHOTO_PEOPLE_EXPECTED = 9",
+        "приёмка: на селфи ждут девятерых",
+        "lipsync.tests.test_fork_intake",
+    ),
+    (
+        "lipsync/fork_intake.py",
+        "ORPHAN_WRIST_WARN = 0.10",
+        "ORPHAN_WRIST_WARN = 1.1",
+        "приёмка: осиротевшее запястье больше не поводом для предупреждения",
+        "lipsync.tests.test_fork_intake",
+    ),
+    # === СВЕДЕНИЕ ГОТОВОГО (lipsync/fork_finish.py) =======================
+    (
+        "lipsync/fork_finish.py",
+        "DIM_MULTIPLE = 2",
+        "DIM_MULTIPLE = 1",
+        "сведение: нечётный размер кадра перестал выравниваться",
+        "lipsync.tests.test_fork_finish",
+    ),
+    (
+        "lipsync/fork_finish.py",
+        "BIAS_GAIN_MIN = 1.05",
+        "BIAS_GAIN_MIN = 0.0",
+        "сведение: любое усиление считается достаточным",
+        "lipsync.tests.test_fork_finish",
+    ),
     # === МАРШРУТЫ ДОЧИТЫВАНИЯ (studio/mcp/routes.py) ======================
     (
         "studio/mcp/routes.py",
