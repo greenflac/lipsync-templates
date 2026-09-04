@@ -123,6 +123,7 @@ __all__ = [
     "Control",
     "DEFAULT_CONTROLS_PATH",
     "DEPRECATION_MARKERS",
+    "CONDITIONAL_LICENCE_MARKERS",
     "FORBIDDING_LICENCE_MARKERS",
     "KIND_HEALTHY",
     "KIND_MUTANT",
@@ -224,6 +225,26 @@ FORBIDDING_LICENCE_MARKERS: tuple[str, ...] = (
     "research purposes",
     "cc-by-nc",
     "некоммерч",
+)
+
+#: Формулировки, при которых запрет коммерции УСЛОВЕН: он снимается тарифом, а
+#: не свойством модели. ВЫБРАНО по условиям ElevenLabs, прочитанным 2026-09-04:
+#: «Free User … may only use the Services for non-commercial purposes; … Paid
+#: User … may use the Services for commercial purposes». Строка несёт ОБА
+#: маркера — и запрещающий, и снимающий запрет.
+#:
+#: ЗАЧЕМ ОТДЕЛЬНЫЙ СПИСОК, А НЕ ПРАВКА ЗАПРЕЩАЮЩЕГО. Без него валидатор
+#: сворачивал такую лицензию в «не годно», то есть утверждал «лицензия
+#: запрещает коммерческое применение» — а она его РАЗРЕШАЕТ на платном тарифе.
+#: Это ровно Р1: два исхода там, где их три. Тариф заказчика нам неизвестен и
+#: измерить его нечем, поэтому честный исход — третий, с названным условием.
+#: Список закрытый и короткий по той же причине, что и запрещающий: широкий
+#: снимал бы настоящие запреты.
+CONDITIONAL_LICENCE_MARKERS: tuple[str, ...] = (
+    "paid subscription",
+    "paid plan",
+    "paid user",
+    "платн",
 )
 
 #: Куски имени атрибута, по которым строка опознаётся как строка О ЦЕНЕ.
@@ -451,15 +472,32 @@ def probe_licence(step: Step, свои: Sequence[Fact]) -> Probe:
         )
     for f in строки:
         маркер = _has_marker(f.value, FORBIDDING_LICENCE_MARKERS)
-        if маркер:
+        if not маркер:
+            continue
+        условие = _has_marker(f.value, CONDITIONAL_LICENCE_MARKERS)
+        if условие:
+            # ТРЕТИЙ ИСХОД, А НЕ «НЕ ГОДНО». Строка несёт и запрет, и то, чем он
+            # снимается: запрет висит на бесплатном тарифе, а не на модели.
+            # Сказать здесь «не годно» значит утверждать, что лицензия запрещает
+            # коммерцию, — это неправда о платном тарифе. Чем тариф заказчика
+            # проверить, у нас нет, поэтому исход третий, а условие названо.
             return Probe(
                 CLASS_LICENCE,
                 True,
                 True,
-                CLASS_OUTCOME[CLASS_LICENCE],
-                f"лицензия {step.model} содержит «{маркер}», а применение заявлено как "
-                f"{step.use} ({f.source_url})",
+                UNMEASURED,
+                f"лицензия {step.model} содержит «{маркер}», но запрет условный: "
+                f"он снимается «{условие}». Тариф заказчика неизвестен — "
+                f"проверить не смогли ({f.source_url})",
             )
+        return Probe(
+            CLASS_LICENCE,
+            True,
+            True,
+            CLASS_OUTCOME[CLASS_LICENCE],
+            f"лицензия {step.model} содержит «{маркер}», а применение заявлено как "
+            f"{step.use} ({f.source_url})",
+        )
     return Probe(
         CLASS_LICENCE, True, False, PASS, f"лицензий прочитано: {len(строки)}, запрета нет"
     )

@@ -159,6 +159,58 @@ class СемьКлассов(unittest.TestCase):
         self.assertEqual(отчёт["classes"], [])
         self.assertEqual(отчёт["outcome"], "pass")
 
+    #: Формулировка запрета плюс РОВНО ОДНО условие, снимающее его. По одной
+    #: строке на каждый маркер списка: фикстура с двумя условиями сразу — это
+    #: слабый тест, и на этой же ветке он уже дважды позволял выкинуть маркер
+    #: незаметно (сосед по строке продолжал ловить).
+    УСЛОВНЫЕ_ЛИЦЕНЗИИ = {
+        "paid subscription": (
+            "Free users may only use the Services for non-commercial purposes; "
+            "commercial use requires a paid subscription"
+        ),
+        "paid plan": ("non-commercial on the free tier; commercial use available on a paid plan"),
+        "paid user": (
+            "a Free User may only use the Services for non-commercial purposes; "
+            "a Paid User may use the Services for commercial purposes"
+        ),
+        "платн": "некоммерческое использование бесплатно; коммерческое — на платном тарифе",
+    }
+
+    def test_условный_запрет_это_третий_исход_а_не_не_годно(self):
+        """Р1 на живой строке: запрет висит на ТАРИФЕ, а не на модели.
+
+        Прочитано 2026-09-04 в условиях ElevenLabs — вендора двух из пяти
+        моделей, которые продукт выбирает. Сказать здесь «не годно» значит
+        утверждать, что лицензия запрещает коммерцию: на платном тарифе это
+        неправда. Тариф заказчика измерить нечем, поэтому исход третий, а
+        условие обязано быть НАЗВАНО — иначе третий исход неотличим от «база
+        молчит».
+
+        Каждый маркер проверяется ОДИН: см. комментарий к фикстуре.
+        """
+        for маркер, лицензия in self.УСЛОВНЫЕ_ЛИЦЕНЗИИ.items():
+            with self.subTest(маркер):
+                факты = здоровые("модель-а", licence=лицензия)
+                отчёт = исход([шаг(requires=["селфи"])], факты)
+                self.assertEqual(отчёт["classes"], ["лицензия"])
+                self.assertEqual(отчёт["outcome"], "could not measure")
+                (проба,) = [p for p in отчёт["steps"][0]["probes"] if p["class"] == "лицензия"]
+                self.assertIn(маркер, проба["note"].lower())
+                self.assertIn("условный", проба["note"])
+
+    def test_безусловный_запрет_остался_не_годно(self):
+        """Негативный контроль к предыдущему (И5): послабление не поехало шире."""
+        факты = здоровые("модель-а", licence="non-commercial use only")
+        отчёт = исход([шаг(requires=["селфи"])], факты)
+        self.assertEqual(отчёт["outcome"], "fail")
+
+    def test_платный_тариф_без_запрета_не_зажигает_класс(self):
+        """Вторая половина контроля: одно слово «paid» ничего не решает."""
+        факты = здоровые("модель-а", licence="Paid plan required; commercial use allowed")
+        отчёт = исход([шаг(requires=["селфи"])], факты)
+        self.assertEqual(отчёт["classes"], [])
+        self.assertEqual(отчёт["outcome"], "pass")
+
     def test_лицензия_неизвестна_это_не_смогли_а_не_годно(self):
         факты = [
             факт("модель-а", "price_per_image_usd", "0.039"),

@@ -730,6 +730,20 @@ MUTANTS: list[tuple[str, str, str, str, str]] = [
     ),
     (
         "studio/pipeline.py",
+        '    "paid subscription",',
+        '    "не-встречается-нигде",',
+        "условный запрет снова сворачивается в «не годно» (Р1)",
+        "studio.mcp.tests.test_pipeline",
+    ),
+    (
+        "studio/pipeline.py",
+        '    "paid plan",\n    "paid user",',
+        '    "paid plan",\n    "paid user",\n    "commercial",',
+        "шире: любой запрет объявлен условным",
+        "studio.mcp.tests.test_pipeline",
+    ),
+    (
+        "studio/pipeline.py",
         '    "research purposes",',
         '    "commercial",',
         "шире: разрешительная лицензия читается как запрет",
