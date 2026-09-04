@@ -814,6 +814,49 @@ MUTANTS: list[tuple[str, str, str, str, str]] = [
         "сторож имён: семейное имя перестало опознаваться",
         "studio.tests.test_named_not_asked",
     ),
+    # === МАРШРУТЫ ДОЧИТЫВАНИЯ (studio/mcp/routes.py) ======================
+    (
+        "studio/mcp/routes.py",
+        "ГОРИЗОНТ_ДНЕЙ = 3",
+        "ГОРИЗОНТ_ДНЕЙ = 3650",
+        "очередь: горизонт растянут на десять лет — срочное перестало быть срочным",
+        "studio.mcp.tests.test_routes",
+    ),
+    (
+        "studio/mcp/routes.py",
+        "ГОРИЗОНТ_ДНЕЙ = 3",
+        "ГОРИЗОНТ_ДНЕЙ = 0",
+        "строже: в очередь не попадает ничего",
+        "studio.mcp.tests.test_routes",
+    ),
+    # === ТИР ПО ХОЗЯИНУ СТРАНИЦЫ (studio/selfrag/source_hosts.py) =========
+    # Кто написал страницу — вендор или пользователь площадки: от этого зависит
+    # тир факта, то есть его вес во всех сравнениях.
+    (
+        "studio/selfrag/source_hosts.py",
+        # МУТАЦИЯ ПЕРЕПИСАНА: первая редакция подставляла
+        # `frozenset() or frozenset({...})`, что по-питоновски равно исходному
+        # множеству. Мутант был НЕ-ОПЕРАЦИЕЙ, и его молчание не значило ничего.
+        '    {"discussions", "issues", "community", "forum", "comments", "pull"}',
+        '    {"issues", "community", "forum", "comments", "pull"}',
+        "тир: обсуждение на странице модели перестало понижаться до blog",
+        "studio.selfrag.tests.test_source_hosts",
+    ),
+    # === СВЕДЕНИЕ ВИДЕО (lipsync/fork_video.py) ===========================
+    (
+        "lipsync/fork_video.py",
+        "FRAME_COUNT_TOLERANCE = 1",
+        "FRAME_COUNT_TOLERANCE = 1000",
+        "сведение: расхождение в тысячу кадров считается совпадением",
+        "lipsync.tests.test_fork_video",
+    ),
+    (
+        "lipsync/fork_video.py",
+        "FPS_TOLERANCE = 0.01",
+        "FPS_TOLERANCE = 100.0",
+        "сведение: любая частота кадров совпадает с любой",
+        "lipsync.tests.test_fork_video",
+    ),
     # === ДОКАЗАТЕЛЬСТВО ИЗ КОРПУСА (studio/selfrag/evidence.py) ============
     (
         "studio/selfrag/evidence.py",
