@@ -175,13 +175,13 @@ def _house_shape(chk: Check, out: Any, where: str) -> None:
     "G1",
     "gate",
     "A clean mid-band prompt (24 words, 5 clauses, no subject word) "
-    "breaks none of the three checks, so it must PASS with three checks run.",
+    "breaks none of the five checks, so it must PASS with five checks run.",
 )
 def g1(chk: Check) -> None:
     out = _gate()(MID_PROMPT)
     _house_shape(chk, out, "gate")
     chk.eq(out.get("outcome"), PASS, "outcome on a clean mid-band prompt")
-    chk.eq(out.get("checked"), 3, "checked (the contract declares three checks)")
+    chk.eq(out.get("checked"), 5, "checked (the contract declares five checks)")
     chk.eq(out.get("violations"), 0, "violations on a clean prompt")
     chk.eq(out.get("leak"), [], "leak on a prompt with no subject word")
 

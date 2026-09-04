@@ -31,9 +31,15 @@ class ContractGate(unittest.TestCase):
     def test_a_clean_look_prompt_passes_and_says_how_many_checks_ran(self) -> None:
         out = gate(CLEAN)
         assert out["outcome"] == "pass"
-        assert out["checked"] == 3
+        # FIVE, not three, since 2026-09-04: the gate also asks the studio's own
+        # banned-topic list and looks for instructions addressed to the reader.
+        # The number is asserted because "pass" means nothing without it — a
+        # gate that quietly stops running a check keeps saying pass.
+        assert out["checked"] == 5
         assert out["violations"] == 0
         assert out["leak"] == []
+        assert out["banned"] == []
+        assert out["injection"] == []
 
     def test_naming_the_subject_fails_and_names_every_word_found(self) -> None:
         out = gate("a woman with long hair wearing a red dress, soft light, matte finish")

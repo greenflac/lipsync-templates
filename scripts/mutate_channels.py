@@ -726,6 +726,28 @@ MUTANTS: list[tuple[str, str, str, str, str]] = [
         "поиск: к запросу относится любая запись корпуса",
         "studio.tests.test_knowledge",
     ),
+    # === СУД НАД ПРОМПТОМ ИЗ ЛЮБОГО ИСТОЧНИКА (studio/mcp/contract.py) ====
+    (
+        "studio/mcp/contract.py",
+        "    banned = banned_topics(text)",
+        "    banned = []",
+        "промпт: запретные темы студии снова не спрашиваются",
+        "studio.mcp.tests.test_contract_topics",
+    ),
+    (
+        "studio/mcp/contract.py",
+        "    указания = [о for о in ЧУЖИЕ_УКАЗАНИЯ if о in text.lower()]",
+        "    указания = []",
+        "промпт: указание читателю снова проезжает",
+        "studio.mcp.tests.test_contract_topics",
+    ),
+    (
+        "studio/mcp/contract.py",
+        '    "ignore all previous",\n    "ignore previous instructions",',
+        '    "ignore previous instructions",',
+        "промпт: самый частый оборот выпал из списка",
+        "studio.mcp.tests.test_contract_topics",
+    ),
     # === СКВОЗНОЙ ПРОГОН ФОРКА (lipsync/fork_e2e.py) ======================
     # 12 констант-решений: пороги приёмки готового ролика. Ошибка тут пропускает
     # брак В ВЫДАЧУ ЗАКАЗЧИКУ, а не в базу.
