@@ -814,6 +814,39 @@ MUTANTS: list[tuple[str, str, str, str, str]] = [
         "сторож имён: семейное имя перестало опознаваться",
         "studio.tests.test_named_not_asked",
     ),
+    # === ВЕБ-ПОТОК СТУДИИ (studio/app.py) =================================
+    # Имена стадий — константы-решения самого продукта: по ним решается, что
+    # заказчику показать и что ему уже можно запускать.
+    (
+        "studio/app.py",
+        "    if stage in (STAGE_FRAME_SHOWN, STAGE_CONSENTED, STAGE_VIDEO_RUNNING, STAGE_DONE):",
+        "    if stage in (STAGE_FRAME_SHOWN, STAGE_CONSENTED, STAGE_VIDEO_RUNNING):",
+        "поток: завершённая сессия выпала из разрешённых стадий",
+        "studio.tests.test_stage_outcomes",
+    ),
+    (
+        "studio/app.py",
+        '    if str(session.get("stage")) not in (STAGE_CONSENTED, STAGE_VIDEO_RUNNING, STAGE_DONE):',
+        '    if str(session.get("stage")) not in (STAGE_VIDEO_RUNNING, STAGE_DONE):',
+        "поток: согласие заказчика перестало пускать дальше",
+        "studio.tests.test_app",
+    ),
+    # === ОЦЕНКА СЛЕПОГО НАБОРА (scripts/score_validation.py) ==============
+    (
+        "scripts/score_validation.py",
+        "MIN_ANSWERED = 20",
+        "MIN_ANSWERED = 0",
+        "оценка: слепой набор из нуля ответов считается набором",
+        "studio.mcp.tests.test_score_validation",
+    ),
+    # === ВЫБОР УСТРОЙСТВА (lipsync/device.py) =============================
+    (
+        "lipsync/device.py",
+        'INSIGHTFACE_GPU_DEVICES = ("cuda",)',
+        "INSIGHTFACE_GPU_DEVICES = ()",
+        "устройство: видеокарта перестала считаться видеокартой",
+        "lipsync.tests.test_device",
+    ),
     # === РАМКА КАДРА (lipsync/fork_plan.py) ===============================
     # Пороги, по которым кадр объявляется годным для форка: ошибка режет лицо
     # заказчику, и видно это только глазами.
