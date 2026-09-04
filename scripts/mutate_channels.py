@@ -726,6 +726,101 @@ MUTANTS: list[tuple[str, str, str, str, str]] = [
         "поиск: к запросу относится любая запись корпуса",
         "studio.tests.test_knowledge",
     ),
+    # === СКВОЗНОЙ ПРОГОН ФОРКА (lipsync/fork_e2e.py) ======================
+    # 12 констант-решений: пороги приёмки готового ролика. Ошибка тут пропускает
+    # брак В ВЫДАЧУ ЗАКАЗЧИКУ, а не в базу.
+    (
+        "lipsync/fork_e2e.py",
+        "MIN_SCENE_S = 3.0",
+        "MIN_SCENE_S = 0.0",
+        "приёмка: сцена нулевой длины считается сценой",
+        "lipsync.tests.test_fork_e2e",
+    ),
+    (
+        "lipsync/fork_e2e.py",
+        "MAX_CUTS_OUT = 0",
+        "MAX_CUTS_OUT = 99",
+        "приёмка: склейки в выдаче перестали быть браком",
+        "lipsync.tests.test_fork_e2e",
+    ),
+    (
+        "lipsync/fork_e2e.py",
+        "STYLE_MARGIN_MIN = 0.05",
+        "STYLE_MARGIN_MIN = 0.0",
+        "приёмка: запас по стилю перестал требоваться",
+        "lipsync.tests.test_fork_e2e",
+    ),
+    # === ЛИНТЕР ШАБЛОНА (studio/template_lint.py) =========================
+    (
+        "studio/template_lint.py",
+        "REPETITION_MIN_WORD_LETTERS = 3",
+        "REPETITION_MIN_WORD_LETTERS = 99",
+        "линтер: повтор слова перестал замечаться вовсе",
+        "studio.tests.test_template_lint",
+    ),
+    (
+        "studio/template_lint.py",
+        "CROSS_ELEMENT_MIN_CHARS = 4",
+        "CROSS_ELEMENT_MIN_CHARS = 1",
+        "линтер: совпадение в один знак объявлено повтором между элементами",
+        "studio.tests.test_template_lint",
+    ),
+    # === СТОРОЖ «НАЗВАНО, НО НЕ СПРОШЕНО» (studio/named_not_asked.py) =====
+    # Тот самый хук, который не даёт закончить ход с именем модели, о котором
+    # не спрашивали базу.
+    (
+        "studio/named_not_asked.py",
+        "FAMILY_MIN = 3",
+        "FAMILY_MIN = 99",
+        "сторож имён: семейное имя перестало опознаваться",
+        "studio.tests.test_named_not_asked",
+    ),
+    # === ПЕРЕПИСЫВАТЕЛЬ ЗАПРОСА (studio/selfrag/rewriter.py) ==============
+    (
+        "studio/selfrag/rewriter.py",
+        "MAX_ROUNDS = 2",
+        "MAX_ROUNDS = 99",
+        "переписывание: кругов столько, сколько захочется",
+        "studio.selfrag.tests.test_rewriter",
+    ),
+    (
+        "studio/selfrag/rewriter.py",
+        "MIN_INTENT_CONTENT_WORDS = 2",
+        "MIN_INTENT_CONTENT_WORDS = 0",
+        "переписывание: намерение из нуля слов считается намерением",
+        "studio.selfrag.tests.test_rewriter",
+    ),
+    (
+        "studio/selfrag/rewriter.py",
+        "GIBBERISH_SHARE = 0.50",
+        "GIBBERISH_SHARE = 1.1",
+        "переписывание: набор букв больше не опознаётся (Р1)",
+        "studio.selfrag.tests.test_rewriter",
+    ),
+    (
+        "studio/selfrag/rewriter.py",
+        "CUE_SHARE = 0.30",
+        "CUE_SHARE = 0.0",
+        "переписывание: любая строка объявлена подсказкой",
+        "studio.selfrag.tests.test_rewriter",
+    ),
+    # === ОЦЕНЩИК КАЧЕСТВА СБОРА (scripts/check_harvest_quality.py) ========
+    # Пороги прибора, который судит ДРУГОЙ прибор: ошибка здесь бесшумна
+    # вдвойне, потому что оба выглядят зелёными.
+    (
+        "scripts/check_harvest_quality.py",
+        "ПОТОЛОК_ЛОЖНЫХ_РУЧНЫХ = 0",
+        "ПОТОЛОК_ЛОЖНЫХ_РУЧНЫХ = 99",
+        "оценщик сбора: ручной разбор можно браковать сколько угодно",
+        "studio.mcp.tests.test_harvest_quality",
+    ),
+    (
+        "scripts/check_harvest_quality.py",
+        "ПОЛ_ОСУЖДЕНИЯ = 0.80",
+        "ПОЛ_ОСУЖДЕНИЯ = 0.0",
+        "оценщик сбора: пол осуждения перестал что-либо требовать",
+        "studio.mcp.tests.test_harvest_quality",
+    ),
     # === ОЦЕНКА ОТВЕТА (studio/selfrag/reflect.py) ========================
     (
         "studio/selfrag/reflect.py",
