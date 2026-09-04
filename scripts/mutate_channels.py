@@ -807,6 +807,20 @@ MUTANTS: list[tuple[str, str, str, str, str]] = [
     ),
     (
         "studio/pipeline.py",
+        "        if v not in длинное:\n            return True\n    return False",
+        "        if v != длинное:\n            return True\n    return False",
+        "спор снова объявляется по многословности, а не по существу",
+        "studio.mcp.tests.test_pipeline",
+    ),
+    (
+        "studio/pipeline.py",
+        "    живые = sorted({v for v in значения if v})\n    if len(живые) < 2:\n        return False",
+        "    живые = sorted({v for v in значения if v})\n    if len(живые) < 99:\n        return False",
+        "шире: спора не бывает вовсе",
+        "studio.mcp.tests.test_pipeline",
+    ),
+    (
+        "studio/pipeline.py",
         "    CLASS_NO_MODEL: UNMEASURED,",
         "    CLASS_NO_MODEL: FAIL,",
         "незнание базы выдаётся за свидетельство против модели (Р1)",

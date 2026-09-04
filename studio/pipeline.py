@@ -636,6 +636,32 @@ def probe_stale(step: Step, свои: Sequence[Fact], today: date) -> Probe:
     )
 
 
+def _really_apart(значения: set[str]) -> bool:
+    """Расходятся ли значения ПО СУЩЕСТВУ, а не по многословности.
+
+    ДЕФЕКТ, ВОСПРОИЗВЕДЁН 2026-09-04: на `hunyuan-video` класс «противоречие»
+    сработал на паре «tencent hunyuan community license (card licence field:
+    other / tencent-hunyuan-community)» и «tencent-hunyuan-community». Это ОДНА
+    лицензия, названная подробно и коротко, и валидатор остановил на ней шесть
+    шагов. Спор, которого нет, стоит ровно столько же, сколько пропущенный
+    спор: читатель перестаёт верить классу.
+
+    Правило узкое НАМЕРЕННО: значения считаются одним и тем же, только если
+    одно ЦЕЛИКОМ содержится в другом как последовательность знаков. Числа так
+    не сходятся (`12` не лежит в `4 to 15`), и настоящий спор о длительности,
+    ради которого класс и заведён, остаётся спором — это проверяется тестом с
+    обеих сторон.
+    """
+    живые = sorted({v for v in значения if v})
+    if len(живые) < 2:
+        return False
+    длинное = живые[-1] if len(живые[-1]) >= len(живые[0]) else живые[0]
+    for v in живые:
+        if v not in длинное:
+            return True
+    return False
+
+
 def probe_contradiction(step: Step, свои: Sequence[Fact]) -> Probe:
     """Расходятся ли источники в решающем атрибуте.
 
@@ -647,7 +673,7 @@ def probe_contradiction(step: Step, свои: Sequence[Fact]) -> Probe:
         имя = _norm(f.attribute)
         if имя in CONTRADICTION_ATTRIBUTES:
             по_атрибуту.setdefault(имя, set()).add(_norm(f.value))
-    спорные = sorted(имя for имя, значения in по_атрибуту.items() if len(значения) > 1)
+    спорные = sorted(имя for имя, значения in по_атрибуту.items() if _really_apart(значения))
     if спорные:
         первый = спорные[0]
         стороны = sorted(по_атрибуту[первый])

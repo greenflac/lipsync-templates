@@ -268,6 +268,43 @@ class СемьКлассов(unittest.TestCase):
         self.assertIn("10", нота)
         self.assertIn("15", нота)
 
+    def test_одна_лицензия_подробно_и_коротко_это_не_спор(self):
+        """Дефект 2026-09-04: спор, которого нет, стоит как пропущенный спор.
+
+        На `hunyuan-video` класс сработал на паре «tencent hunyuan community
+        license (card licence field: other / tencent-hunyuan-community)» и
+        «tencent-hunyuan-community» — одна лицензия, названная подробно и
+        коротко, — и остановил шесть шагов третьим исходом.
+        """
+        факты = [
+            факт("модель-а", "license", "tencent-hunyuan-community"),
+            факт(
+                "модель-а",
+                "license",
+                "tencent hunyuan community license "
+                "(card licence field: other / tencent-hunyuan-community)",
+                url="https://example.test/b",
+            ),
+            *здоровые("модель-а")[1:],
+        ]
+        отчёт = исход([шаг(requires=["селфи"])], факты)
+        self.assertNotIn("противоречие", отчёт["classes"])
+
+    def test_настоящий_спор_о_длительности_остался_спором(self):
+        """Негативный контроль (И5): послабление не съело класс целиком.
+
+        Пара снята с живой базы: одна страница `seedance2-video.com` даёт и
+        `12`, и `4 to 15`. Числа не содержатся одно в другом, и спор остаётся.
+        """
+        факты = [
+            факт("модель-а", "max_seconds", "12"),
+            факт("модель-а", "max_seconds", "4 to 15", url="https://example.test/b"),
+            *здоровые("модель-а"),
+        ]
+        отчёт = исход([шаг(requires=["селфи"])], факты)
+        self.assertIn("противоречие", отчёт["classes"])
+        self.assertEqual(отчёт["outcome"], "could not measure")
+
     def test_расхождение_в_нерешающем_атрибуте_не_останавливает_план(self):
         факты = здоровые("модель-а") + [
             факт("модель-а", "best_for", "портреты", url="https://vendor.test/a"),
