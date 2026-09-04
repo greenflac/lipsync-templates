@@ -482,6 +482,16 @@ def plan_pipeline(brief: str, creative: str = "", budget_usd: float = 0.0) -> st
     per-megapixel, or per-1000-chars against per-token. Those stay "could not
     compare", which is an answer, not a failure.
 
+    `pipeline_price` ANSWERS "WHAT WILL THIS COST" — AND USUALLY ANSWERS "WE
+    CANNOT ADD IT UP", WHICH IS THE POINT. It sums ONLY prices in the same unit
+    and per the same thing; anything else is listed separately, because a total
+    with a third of its terms missing reads as complete unless you say so. Two
+    numbers travel with it: `steps_priced` and `steps_without_price`. The
+    outcome drops to "не смогли" the moment ANY step lacks a price, even when
+    the steps that do have one added up cleanly — a sum over one step out of
+    three is a lower bound, not a price. Quote the bound AND the missing steps;
+    quoting the bound alone is how a customer hears a number that is not true.
+
     THE `question` FIELD IS FOR YOU TO ASK, NOT TO ANSWER. Some briefs cannot
     be planned because one fact is missing from them, not because the words are
     unknown: "нужен вертикальный ролик для маркетплейса" does not say whether
