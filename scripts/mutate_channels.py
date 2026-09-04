@@ -32,6 +32,7 @@
 
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 import sys
@@ -664,6 +665,21 @@ MUTANTS: list[tuple[str, str, str, str, str]] = [
 ]
 
 
+#: Файл-замок. Два мутационных прогона в одном дереве подменяют исходники друг
+#: другу, и вердикт становится случайным в ОБЕ стороны: прибор может покраснеть
+#: на здоровом коде и — что хуже — ПОЗЕЛЕНЕТЬ на мутанте, если тесты успели
+#: прочитать файл до подмены. ИЗМЕРЕНО 2026-09-04: 2 прогона из 5 красные,
+#: каждый раз с другими тестами, все они поодиночке зелёные, `git status` чист.
+ЗАМОК = ROOT / ".mutate.lock"
+
+
+def _занято() -> str:
+    """Кто ещё мутирует это дерево. Пустая строка — никто."""
+    if ЗАМОК.exists():
+        return ЗАМОК.read_text(encoding="utf-8").strip() or "неизвестный прогон"
+    return ""
+
+
 def clean() -> None:
     for d in ROOT.rglob("__pycache__"):
         shutil.rmtree(d, ignore_errors=True)
@@ -678,6 +694,19 @@ def run(тесты: str) -> tuple[int, str]:
 
 
 def main() -> int:
+    если_занято = _занято()
+    if если_занято:
+        print(f"ОТКАЗ: дерево уже мутирует {если_занято}. Два прогона портят друг другу исходники.")
+        print(f"Если прогон оборвался, снимите замок: rm {ЗАМОК}")
+        return 2
+    ЗАМОК.write_text(f"pid {os.getpid()}", encoding="utf-8")
+    try:
+        return _прогон()
+    finally:
+        ЗАМОК.unlink(missing_ok=True)
+
+
+def _прогон() -> int:
     clean()
     наборы = sorted({м[4] for м in MUTANTS})
     здоровые = {н: run(н) for н in наборы}
@@ -704,9 +733,15 @@ def main() -> int:
             continue
         путь.write_text(было.replace(старое, новое, 1), encoding="utf-8")
         clean()
-        код, _ = run(тесты)
-        путь.write_text(было, encoding="utf-8")
-        clean()
+        try:
+            код, _ = run(тесты)
+        finally:
+            # ВОЗВРАТ В `finally`, А НЕ ПРЯМОЙ СТРОКОЙ. Скрипт правит ИСХОДНИКИ
+            # В РАБОЧЕМ ДЕРЕВЕ, и прерывание оставляло мутацию в файле
+            # НАСОВСЕМ. ИЗМЕРЕНО 2026-09-04: в дереве нашлась подмена из
+            # оборванного прогона, и заметил её `git status`, а не гейт.
+            путь.write_text(было, encoding="utf-8")
+            clean()
         print(f"{подпись:64} | rc={код}  | {'тесты' if код else 'НИКТО — константу не сторожат'}")
         if код == 0:
             молчали.append(подпись)

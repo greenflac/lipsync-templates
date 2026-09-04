@@ -35,3 +35,4 @@ studio/knowledge/civitai_prompts.jsonl
 # legal clearance on record covers collecting and using the material, not
 # republishing it under this repository's licence.
 assets/drivings/
+.mutate.lock

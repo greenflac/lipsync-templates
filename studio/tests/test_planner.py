@@ -1942,3 +1942,22 @@ class ЦенаВсегоПайплайна(unittest.TestCase):
         self.assertIsNotNone(разобрана)
         self.assertIn("0.4", словами)
         self.assertEqual(0.4, разобрана.amount)
+
+    def test_ключи_нижней_границы_строковые(self) -> None:
+        """Ответ инструмента уезжает через json.dumps, где ключ обязан быть
+        строкой. ВОСПРОИЗВЕДЕНО 2026-09-04: кортежный ключ ронял
+        `plan_pipeline` на КАЖДОМ брифе, где у шага находилась годная цена.
+        """
+        import json
+
+        свои = list(ЗДОРОВЫЕ) + [
+            факт("тестовый-липсинк", "architecture", "lipsync talking-head", "vendor"),
+            факт("тестовый-липсинк", "license", "apache-2.0", "vendor"),
+            факт("тестовый-липсинк", "price_per_run_usd", "$0.4 per run", "portal"),
+        ]
+        итог = pn.plan("сделай липсинк", facts=свои, today=СЕГОДНЯ)
+        нижняя = итог["pipeline_price"]["lower_bound"]
+        self.assertTrue(нижняя, "цена не нашлась — тест перестал воспроизводить случай")
+        for ключ in нижняя:
+            self.assertIsInstance(ключ, str)
+        json.dumps(итог["pipeline_price"])  # не должно бросать
