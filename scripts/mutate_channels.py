@@ -726,6 +726,65 @@ MUTANTS: list[tuple[str, str, str, str, str]] = [
         "поиск: к запросу относится любая запись корпуса",
         "studio.tests.test_knowledge",
     ),
+    # === ОЦЕНКА ОТВЕТА (studio/selfrag/reflect.py) ========================
+    (
+        "studio/selfrag/reflect.py",
+        "MAX_ACTIONS = 2",
+        "MAX_ACTIONS = 99",
+        "оценка: список правок разрастается вместо двух главных",
+        "studio.selfrag.tests.test_slot_and_actions",
+    ),
+    (
+        "studio/selfrag/reflect.py",
+        "MAX_ACTIONS = 2",
+        "MAX_ACTIONS = 0",
+        "строже: правки не показываются вовсе",
+        "studio.selfrag.tests.test_slot_and_actions",
+    ),
+    # === ФОРМА ЗАПРОСА (studio/selfrag/spec.py) ===========================
+    (
+        "studio/selfrag/spec.py",
+        "SLOT_MAX = 120",
+        "SLOT_MAX = 100000",
+        "запрос: в слот влезает целая страница",
+        "studio.selfrag.tests.test_slot_and_actions",
+    ),
+    (
+        "studio/selfrag/spec.py",
+        "SLOT_MAX = 120",
+        "SLOT_MAX = 5",
+        "строже: обычная фраза в слот больше не влезает",
+        "studio.selfrag.tests.test_retrieval_spec",
+    ),
+    (
+        "studio/selfrag/spec.py",
+        "REFERENCE_MODES: frozenset[str] = frozenset({MODE_I2V, MODE_EDIT})",
+        "REFERENCE_MODES: frozenset[str] = frozenset({MODE_I2V})",
+        "запрос: правка кадра перестала быть режимом с референсом",
+        "studio.selfrag.tests.test_retrieval_spec",
+    ),
+    # === ПРОМТ СТИЛЯ (lipsync/fork_style_prompt.py) =======================
+    (
+        "lipsync/fork_style_prompt.py",
+        "WORDS_MIN = 9",
+        "WORDS_MIN = 0",
+        "промт стиля: пустой промт снова годится",
+        "lipsync.tests.test_fork_style_prompt",
+    ),
+    (
+        "lipsync/fork_style_prompt.py",
+        "WORDS_MAX = 67",
+        "WORDS_MAX = 6700",
+        "промт стиля: простыня принимается как промт",
+        "lipsync.tests.test_fork_style_prompt",
+    ),
+    (
+        "lipsync/fork_style_prompt.py",
+        "CLAUSES_MAX = 13",
+        "CLAUSES_MAX = 1",
+        "строже: обычный промт объявлен слишком сложным",
+        "lipsync.tests.test_fork_style_prompt",
+    ),
     # === КАНАЛ HUGGINGFACE (scripts/ingest_hf.py) =========================
     # 25 констант-решений — больше, чем у любого модуля репозитория. Решают,
     # что из обсуждений практиков вообще станет фактом.
