@@ -220,8 +220,27 @@ class TheOperatorDecides(unittest.TestCase):
         assert "nobody authorised" in out["note"]
         assert self.facts.read_text(encoding="utf-8").strip() == ""
 
+    def test_a_DECLINE_is_itself_a_decision(self) -> None:
+        """Refusing to pay is a decision, and the ledger must accept it.
+
+        Found 2026-09-04 by mutation: dropping `declined` from `DECISIONS` went
+        unnoticed. The test below *calls* decline and then checks that a result
+        is refused — but a refused result is exactly what an INVALID decision
+        also produces, so the assertion held either way. An owner saying "no"
+        would have been recorded as a malformed request, and nothing would have
+        told anyone.
+        """
+        out = proposal.decide(self.proposal_id, "declined", operator="owner", path=self.ledger)
+        assert out["outcome"] == PASS, out["note"]
+        assert out["state"] == "declined"
+
     def test_a_result_after_a_DECLINE_is_still_refused(self) -> None:
-        proposal.decide(self.proposal_id, "declined", operator="owner", path=self.ledger)
+        assert (
+            proposal.decide(self.proposal_id, "declined", operator="owner", path=self.ledger)[
+                "outcome"
+            ]
+            == PASS
+        )
         out = proposal.record_result(
             self.proposal_id,
             "0.19",

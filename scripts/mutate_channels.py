@@ -52,6 +52,7 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
+from urllib.parse import quote, unquote
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -686,6 +687,91 @@ MUTANTS: list[tuple[str, str, str, str, str]] = [
     # заимствует ИСХОД шага. `pipeline.CLASS_OUTCOME` решает, чем кончится
     # план, `factaxis.APPLICABILITY` — считается ли строка свидетельством.
     # Константа, переставленная здесь, красит красное зелёным по всей выдаче.
+    # === РАЗБОР КРЕАТИВА (studio/mcp/creative.py) ==========================
+    # Пороги, по которым кадр заказчика описывается словами. Ошибка здесь не
+    # видна числом: продукт уверенно скажет «высокий ключ» о тёмном кадре.
+    (
+        "studio/mcp/creative.py",
+        "HIGH_KEY_MEAN = 170.0",
+        "HIGH_KEY_MEAN = 0.0",
+        "креатив: любой кадр объявлен светлым",
+        "studio.mcp.tests.test_creative",
+    ),
+    (
+        "studio/mcp/creative.py",
+        "LOW_KEY_MEAN = 85.0",
+        "LOW_KEY_MEAN = 255.0",
+        "креатив: любой кадр объявлен тёмным",
+        "studio.mcp.tests.test_creative",
+    ),
+    (
+        "studio/mcp/creative.py",
+        "MUTED_CHROMA = 40.0",
+        "MUTED_CHROMA = 255.0",
+        "креатив: любая палитра объявлена приглушённой",
+        "studio.mcp.tests.test_creative",
+    ),
+    (
+        "studio/mcp/creative.py",
+        "SATURATED_CHROMA = 120.0",
+        "SATURATED_CHROMA = 0.0",
+        "креатив: любая палитра объявлена насыщенной",
+        "studio.mcp.tests.test_creative",
+    ),
+    (
+        "studio/mcp/creative.py",
+        "DOMINANT_COLOURS = 3",
+        "DOMINANT_COLOURS = 1",
+        "строже: палитра сворачивается до одного слова",
+        "studio.mcp.tests.test_creative",
+    ),
+    # === ЗАЯВКА НА ДЕНЬГИ ВЛАДЕЛЬЦА (studio/mcp/proposal.py) ==============
+    # Взят первым из очереди R7 не по числу констант, а по цене ошибки: это
+    # единственный модуль, через который продукт просит ДЕНЬГИ. Порог, ниже
+    # которого заявка считается пустой, и список состояний решают, что
+    # владельцу вообще покажут.
+    (
+        "studio/mcp/proposal.py",
+        "MIN_TEST_CHARS = 60",
+        "MIN_TEST_CHARS = 0",
+        "заявка: однострочное «попробуйте kling и посмотрите» снова проходит",
+        "studio.mcp.tests.test_proposal",
+    ),
+    (
+        "studio/mcp/proposal.py",
+        "MIN_TEST_CHARS = 60",
+        "MIN_TEST_CHARS = 600",
+        "строже: осмысленное описание замера объявлено пустым",
+        "studio.mcp.tests.test_proposal",
+    ),
+    (
+        "studio/mcp/proposal.py",
+        "MIN_BASIS_CHARS = 12",
+        "MIN_BASIS_CHARS = 0",
+        "заявка: откуда взята цена, можно не объяснять",
+        "studio.mcp.tests.test_proposal",
+    ),
+    (
+        "studio/mcp/proposal.py",
+        "MIN_DECIDES_CHARS = 20",
+        "MIN_DECIDES_CHARS = 0",
+        "заявка: что решит результат, можно не писать",
+        "studio.mcp.tests.test_proposal",
+    ),
+    (
+        "studio/mcp/proposal.py",
+        "MIN_TASK_CHARS = 8",
+        "MIN_TASK_CHARS = 0",
+        "заявка: задача может быть не названа вовсе",
+        "studio.mcp.tests.test_proposal",
+    ),
+    (
+        "studio/mcp/proposal.py",
+        "DECISIONS: tuple[str, ...] = (STATE_APPROVED, STATE_DECLINED)",
+        "DECISIONS: tuple[str, ...] = (STATE_APPROVED,)",
+        "заявка: отказ владельца перестал быть решением",
+        "studio.mcp.tests.test_proposal",
+    ),
     (
         "scripts/check_mutants_cover.py",
         "        if isinstance(место, (ast.If, ast.While, ast.IfExp)):",
@@ -976,11 +1062,80 @@ MUTANTS: list[tuple[str, str, str, str, str]] = [
 ЗАМОК = ROOT / ".mutate.lock"
 
 
+#: Куда кладётся ЦЕЛЫЙ исходник перед подменой. Не дифф и не строка — файл:
+#: восстановление обязано работать, когда о прогоне не осталось ничего, кроме
+#: этого каталога.
+#:
+#: ЗАЧЕМ, ЕСЛИ ВОЗВРАТ И ТАК СТОИТ В `finally`. ИЗМЕРЕНО 2026-09-04: рабочий
+#: процесс сессии был убит сигналом посреди прогона, `finally` не исполнился, и
+#: в дереве осталась подмена `цели_открыты = []` в `scripts/check_golden.py` —
+#: то есть ПРИБОР, считающий регрессы голден-сета, молча перестал их считать.
+#: Заметил это `git diff`, а не гейт: гейт был зелёным на изувеченном приборе.
+#: `finally` защищает от исключения, но не от `SIGKILL`; файл-копия защищает от
+#: обоих, потому что переживает смерть процесса.
+СЛЕПОК = ROOT / ".mutate.backup"
+
+
+def _слепок_для(файл: str) -> Path:
+    """Имя слепка — ЗАКОДИРОВАННЫЙ путь, а не путь с заменёнными косыми.
+
+    Первая редакция меняла `/` на `__` и обратно. Она разъезжается на любом
+    пути, где `__` уже есть (`__init__.py`, и на нём же тест это и поймал):
+    обратная замена превращала имя в чужой путь, и возврат писал бы файл НЕ
+    ТУДА. Прибор, который в аварии портит соседний файл, хуже отсутствующего.
+    """
+    return СЛЕПОК / quote(файл, safe="")
+
+
+def отложить(файл: str, текст: str) -> None:
+    СЛЕПОК.mkdir(exist_ok=True)
+    _слепок_для(файл).write_text(текст, encoding="utf-8")
+
+
+def забыть(файл: str) -> None:
+    _слепок_для(файл).unlink(missing_ok=True)
+    if СЛЕПОК.exists() and not any(СЛЕПОК.iterdir()):
+        СЛЕПОК.rmdir()
+
+
+def вернуть_недовосстановленное() -> list[str]:
+    """Слепки, оставшиеся от оборванного прогона: вернуть и назвать.
+
+    Молча восстановить — почти так же плохо, как не восстановить: следующий
+    читатель не узнает, что дерево побывало изувеченным. Возвращается список
+    имён, и он печатается.
+    """
+    if not СЛЕПОК.exists():
+        return []
+    вернули: list[str] = []
+    for слепок in sorted(СЛЕПОК.iterdir()):
+        файл = unquote(слепок.name)
+        (ROOT / файл).write_text(слепок.read_text(encoding="utf-8"), encoding="utf-8")
+        слепок.unlink()
+        вернули.append(файл)
+    if not any(СЛЕПОК.iterdir()):
+        СЛЕПОК.rmdir()
+    return вернули
+
+
 def _занято() -> str:
-    """Кто ещё мутирует это дерево. Пустая строка — никто."""
-    if ЗАМОК.exists():
-        return ЗАМОК.read_text(encoding="utf-8").strip() or "неизвестный прогон"
-    return ""
+    """Кто ещё мутирует это дерево. Пустая строка — никто.
+
+    ЗАМОК ОТ ЖИВОГО ПРОГОНА, А НЕ ОТ ПОКОЙНИКА. Оборванный прогон оставлял
+    замок навсегда, и следующий запуск отказывался работать, пока человек не
+    снимет файл руками. Теперь записан pid, и мёртвый pid замком не считается.
+    """
+    if not ЗАМОК.exists():
+        return ""
+    запись = ЗАМОК.read_text(encoding="utf-8").strip()
+    номер = "".join(з for з in запись if з.isdigit())
+    if номер:
+        try:
+            os.kill(int(номер), 0)
+        except OSError:
+            ЗАМОК.unlink(missing_ok=True)
+            return ""
+    return запись or "неизвестный прогон"
 
 
 def clean() -> None:
@@ -1002,6 +1157,9 @@ def main() -> int:
         print(f"ОТКАЗ: дерево уже мутирует {если_занято}. Два прогона портят друг другу исходники.")
         print(f"Если прогон оборвался, снимите замок: rm {ЗАМОК}")
         return 2
+    вернули = вернуть_недовосстановленное()
+    for файл in вернули:
+        print(f"ВОССТАНОВЛЕНО из слепка оборванного прогона: {файл}")
     ЗАМОК.write_text(f"pid {os.getpid()}", encoding="utf-8")
     try:
         return _прогон()
@@ -1034,6 +1192,7 @@ def _прогон() -> int:
             print(f"{подпись:64} | НЕ НАЙДЕНО в {файл}")
             молчали.append(f"{подпись} (строка не найдена — правило переписали?)")
             continue
+        отложить(файл, было)
         путь.write_text(было.replace(старое, новое, 1), encoding="utf-8")
         clean()
         try:
@@ -1044,6 +1203,7 @@ def _прогон() -> int:
             # НАСОВСЕМ. ИЗМЕРЕНО 2026-09-04: в дереве нашлась подмена из
             # оборванного прогона, и заметил её `git status`, а не гейт.
             путь.write_text(было, encoding="utf-8")
+            забыть(файл)
             clean()
         print(f"{подпись:64} | rc={код}  | {'тесты' if код else 'НИКТО — константу не сторожат'}")
         if код == 0:
