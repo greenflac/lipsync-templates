@@ -202,3 +202,25 @@ class ПриставкаВерсии(unittest.TestCase):
     def test_разные_модели_остались_разными(self) -> None:
         self.assertNotEqual(fold("eleven_v3"), fold("eleven_v3_conversational"))
         self.assertNotEqual(fold("flux-2-klein-4b"), fold("flux-2-klein-9b"))
+
+    def test_таблица_имён_склеивает_площадку_с_репозиторием(self) -> None:
+        """Т1: строка таблицы — решение об идентичности, и она под тестом.
+
+        Разбор 2026-09-04: `infinitalk` (площадка fal, 7 строк, есть схема, нет
+        применимости) и `infinitetalk` (репозиторий MeiGen-AI, 12 строк, есть
+        применимость, нет схемы) — одна модель. Из-за разъезда написаний
+        планировщик выбирал её вслепую: наблюдения лежали под именем, которого
+        он не видел.
+        """
+        self.assertEqual(fold("infinitalk"), fold("infinitetalk"))
+        self.assertEqual(fold("InfiniTalk"), fold("infinitetalk"))
+
+    def test_таблица_не_склеила_соседнюю_модель(self) -> None:
+        """Негативный контроль к таблице (И5), и он не формальный.
+
+        Поле `about` в схеме fal называет эндпоинт словом «MultiTalk» — имя
+        СОСЕДНЕЙ модели той же лаборатории, у которой свой репозиторий и свои
+        наблюдения. Склеить её сюда значило бы приписать модели чужое, а это
+        худшее, что умеет этот продукт.
+        """
+        self.assertNotEqual(fold("multitalk"), fold("infinitetalk"))

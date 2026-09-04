@@ -862,6 +862,20 @@ MUTANTS: list[tuple[str, str, str, str, str]] = [
         "studio.mcp.tests.test_factaxis",
     ),
     (
+        "studio/selfrag/modelnames.py",
+        '    "infinitalk": "infinitetalk",',
+        "",
+        "таблица имён: площадка и репозиторий снова разъехались",
+        "studio.selfrag.tests.test_modelnames",
+    ),
+    (
+        "studio/selfrag/modelnames.py",
+        '    "infinitalk": "infinitetalk",',
+        '    "infinitalk": "infinitetalk",\n    "multitalk": "infinitetalk",',
+        "шире: соседняя модель приписана к чужим наблюдениям",
+        "studio.selfrag.tests.test_modelnames",
+    ),
+    (
         "studio/factaxis.py",
         "RELEVANCE_FLOOR = SCORE_FLOOR",
         "RELEVANCE_FLOOR = 0.0",
