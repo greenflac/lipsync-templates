@@ -70,6 +70,7 @@ from mcp.server.mcpserver import MCPServer
 
 from studio import knowledge, planner
 from studio.selfrag.facts import STALE_AFTER_DAYS  # noqa: E402
+from studio import ruwords
 from studio.mcp import advice, contract, creative, fetch, misses, probe, proposal, search
 from studio.mcp import lipsync_prompt as lp
 
@@ -509,6 +510,20 @@ def stale_model_facts(days: int = STALE_AFTER_DAYS) -> str:
     return _json(advice.stale(days=days))
 
 
+def запрос_корпуса(intent: str) -> str:
+    """The query the corpus is actually searched with.
+
+    Lifted out of the tool body (T5): a branch inside an entry point cannot be
+    tested without running the entry point, and this one's entry point loads a
+    sentence-transformer — which a test is not allowed to do (T4, no network).
+
+    MEASURED 2026-09-04 on six Russian intents: 1 corpus example before, 30
+    after. The Russian words STAY in the query; the English ones are appended.
+    """
+    запрос, _ = ruwords.подставить(intent)
+    return запрос
+
+
 @server.tool()
 def write_lipsync_prompt(intent: str) -> str:
     """Write a lipsync style prompt from the owner's words plus the corpus.
@@ -523,8 +538,18 @@ def write_lipsync_prompt(intent: str) -> str:
     :param intent: the owner's own words, e.g. "muted ivory and slate,
         low-key light, matte".
     """
+    # THE CORPUS IS ENGLISH, AND THE OWNER WRITES RUSSIAN. `retrieve` says so
+    # itself — "no prompt example matched — the prompt corpus is English" — and
+    # counts it as could-not-measure rather than hiding it. That honesty does
+    # not fetch a single precedent, though: MEASURED 2026-09-04, a Russian
+    # intent consulted 0 corpus records while the same intent in English
+    # consulted 5. The query goes through the same door as the card slots
+    # (`studio/ruwords.py`): the Russian words STAY in the query and the
+    # English ones are appended, so a precedent can match without the owner's
+    # own words being thrown away.
+    запрос = запрос_корпуса(intent)
     found = knowledge.retrieve(  # type: ignore[attr-defined]
-        intent, k=lp.DEFAULT_K, index=_index()
+        запрос, k=lp.DEFAULT_K, index=_index()
     )
     result = lp.write(intent, found.get("examples", ()))
     result["retrieval"] = {
@@ -532,6 +557,10 @@ def write_lipsync_prompt(intent: str) -> str:
         "examples": len(found.get("examples", ())),
         "below_floor": found.get("below_floor"),
         "note": found.get("note"),
+        # What the query was actually asked with, when it differs from what the
+        # owner typed. A search run on words the caller never wrote is a second
+        # way to know what was asked, unless it is said out loud.
+        "asked_with": запрос if запрос != str(intent or "").lower() else "",
     }
     return _json(result)
 
