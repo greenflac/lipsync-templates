@@ -726,6 +726,82 @@ MUTANTS: list[tuple[str, str, str, str, str]] = [
         "поиск: к запросу относится любая запись корпуса",
         "studio.tests.test_knowledge",
     ),
+    # === КАНАЛ HUGGINGFACE (scripts/ingest_hf.py) =========================
+    # 25 констант-решений — больше, чем у любого модуля репозитория. Решают,
+    # что из обсуждений практиков вообще станет фактом.
+    (
+        "scripts/ingest_hf.py",
+        "МИН_ДЛИНА_НАБЛЮДЕНИЯ = 40",
+        "МИН_ДЛИНА_НАБЛЮДЕНИЯ = 0",
+        "hf: реплика в два слова снова становится наблюдением",
+        "studio.mcp.tests.test_ingest_hf",
+    ),
+    (
+        "scripts/ingest_hf.py",
+        "МИН_ДЛИНА_НАБЛЮДЕНИЯ = 40",
+        "МИН_ДЛИНА_НАБЛЮДЕНИЯ = 400",
+        "строже: осмысленный отчёт практика объявлен слишком коротким",
+        "studio.mcp.tests.test_ingest_hf",
+    ),
+    (
+        "scripts/ingest_hf.py",
+        "LICENCE_MIN_CHARS = 400",
+        "LICENCE_MIN_CHARS = 0",
+        "hf: обрывок вместо текста лицензии считается лицензией",
+        "studio.mcp.tests.test_ingest_hf",
+    ),
+    (
+        "scripts/ingest_hf.py",
+        "FOREIGN_TEXT_SHARE = 0.2",
+        "FOREIGN_TEXT_SHARE = 1.1",
+        "hf: разбор перестал отказываться от чужого языка (Р1)",
+        "studio.mcp.tests.test_ingest_hf",
+    ),
+    (
+        "scripts/ingest_hf.py",
+        "ДОСЛОВНО_СЛОВ = 15",
+        "ДОСЛОВНО_СЛОВ = 1",
+        "hf: цитата практика сворачивается до одного слова",
+        "studio.mcp.tests.test_ingest_hf",
+    ),
+    # === КАТАЛОГ ПЛОЩАДОК (studio/mcp/catalog.py) =========================
+    (
+        "studio/mcp/catalog.py",
+        "FOREVER_YEAR = 2090",
+        "FOREVER_YEAR = 2026",
+        "каталог: «снята навсегда» стало значить «снята в этом году»",
+        "studio.mcp.tests.test_catalog",
+    ),
+    (
+        "studio/mcp/catalog.py",
+        'GENERATOR_TYPES = frozenset({"text-to-video", "image-to-video", "text-to-image"})',
+        'GENERATOR_TYPES = frozenset({"text-to-video"})',
+        "каталог: две трети генераторов перестали быть генераторами",
+        "studio.mcp.tests.test_catalog_types",
+    ),
+    # === СЛОВАРЬ СТИЛЯ (studio/style.py) ==================================
+    # Границы того, что продукт вообще принимает от заказчика.
+    (
+        "studio/style.py",
+        "PALETTE_MAX = 4",
+        "PALETTE_MAX = 99",
+        "стиль: палитра из девяноста слов принимается как палитра",
+        "studio.tests.test_style",
+    ),
+    (
+        "studio/style.py",
+        "PALETTE_MIN = 1",
+        "PALETTE_MIN = 3",
+        "строже: одно слово палитры перестало быть палитрой",
+        "studio.tests.test_style",
+    ),
+    (
+        "studio/style.py",
+        "TEXT_MAX = 2000",
+        "TEXT_MAX = 20",
+        "строже: обычный бриф объявлен слишком длинным",
+        "studio.tests.test_style",
+    ),
     # === СЕМЬИ ВОПРОСОВ, ЗАВЕДЁННЫЕ ПО ЗАМЕРУ НЕДОСТИЖИМОСТИ (R3) =========
     (
         "studio/selfrag/attrfamily.py",
