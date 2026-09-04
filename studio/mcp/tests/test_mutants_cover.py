@@ -71,6 +71,50 @@ class ЧитаемыеТаблицы(unittest.TestCase):
         self.assertIn("studio/planner.py", пути)
         self.assertIn("studio/pipeline.py", пути)
 
+    def test_считаются_только_файлы_из_репозитория(self) -> None:
+        """Знаменатель обязан совпадать с тем, что увидит CI.
+
+        Потолок — число; посчитанное по рабочему дереву, оно включало бы файлы,
+        которых у читателя нет, и ратчет краснел бы в CI на ровном месте. Тот
+        же класс ошибки, что «13 316 промптов» на пустом клоне.
+        """
+        import subprocess
+
+        из_гита = {
+            с
+            for с in subprocess.run(
+                ["git", "ls-files", "studio", "lipsync", "scripts"],
+                cwd=c.ROOT,
+                capture_output=True,
+                text=True,
+            ).stdout.split()
+            if с.endswith(".py")
+        }
+        self.assertTrue(из_гита, "git не ответил — проверка бессмысленна")
+        лишние = [
+            str(п.relative_to(c.ROOT))
+            for п in c.модули()
+            if str(п.relative_to(c.ROOT)) not in из_гита
+        ]
+        self.assertEqual([], лишние, "прибор считает файлы, которых нет в репозитории")
+
+    def test_чужой_файл_в_дереве_в_знаменатель_НЕ_попадает(self) -> None:
+        """И5: проверка выше молчит, пока в дереве нет лишних файлов.
+
+        На чистом дереве отсутствие лишних верно ПО ПУСТОЙ ПРИЧИНЕ, и мутация
+        «считать по дереву» её не красит. Поэтому лишний файл создаётся здесь —
+        с константой-решением, чтобы он попал бы в счёт, если бы фильтра не
+        было.
+        """
+        чужой = c.ROOT / "studio" / "__не_в_репозитории__.py"
+        чужой.write_text(
+            "ПОРОГ = 5\n\n\ndef f(x):\n    if x > ПОРОГ:\n        return 1\n    return 0\n",
+            encoding="utf-8",
+        )
+        self.addCleanup(lambda: чужой.unlink(missing_ok=True))
+        имена = [str(п.relative_to(c.ROOT)) for п in c.модули()]
+        self.assertNotIn("studio/__не_в_репозитории__.py", имена)
+
     def test_счёт_идёт_по_живому_дереву(self) -> None:
         итог = c.свести()
         self.assertGreater(итог["checked"], 50, "модулей с решениями подозрительно мало")

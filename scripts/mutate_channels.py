@@ -1179,6 +1179,13 @@ MUTANTS: list[tuple[str, str, str, str, str]] = [
     ),
     (
         "scripts/check_mutants_cover.py",
+        "            if из_гита is not None and имя not in из_гита:",
+        "            if False:",
+        "R7: знаменатель снова считается по рабочему дереву, а не по репозиторию",
+        "studio.mcp.tests.test_mutants_cover",
+    ),
+    (
+        "scripts/check_mutants_cover.py",
         "        if isinstance(место, (ast.If, ast.While, ast.IfExp)):",
         "        if False:",
         "R7: ветвление перестало делать константу решающей — долг занижен",

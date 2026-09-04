@@ -32,6 +32,7 @@ from __future__ import annotations
 import argparse
 import ast
 import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -88,12 +89,36 @@ def решающие_константы(исходник: str) -> set[str]:
     return решают
 
 
+def _в_репозитории() -> set[str] | None:
+    """Файлы, которые ЕСТЬ У ЧИТАТЕЛЯ, а не только у меня. None — git не ответил.
+
+    ЗАЧЕМ. Знаменатель, посчитанный по рабочему дереву, включает файлы, которых
+    в репозитории нет, и тогда потолок — число, верное там, где я стою, и
+    неверное там, где стоит читатель. Ровно этот класс ошибки за 2026-09-04
+    встретился трижды: цена «13 316 промптов» на пустом клоне, наличие корпуса,
+    и вот теперь собственный ратчет. Прибор обязан считать по тому же
+    множеству, что увидит CI.
+    """
+    готово = subprocess.run(
+        ["git", "ls-files", "studio", "lipsync", "scripts"],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+    )
+    if готово.returncode != 0:
+        return None
+    return {с for с in готово.stdout.split() if с.endswith(".py")}
+
+
 def модули() -> list[Path]:
+    из_гита = _в_репозитории()
     найдены = []
     for каталог in ("studio", "lipsync", "scripts"):
         for путь in (ROOT / каталог).rglob("*.py"):
-            если = str(путь.relative_to(ROOT))
-            if any(к.strip("/") in если.split("/") for к in ("tests", "fixtures")):
+            имя = str(путь.relative_to(ROOT))
+            if any(к.strip("/") in имя.split("/") for к in ("tests", "fixtures")):
+                continue
+            if из_гита is not None and имя not in из_гита:
                 continue
             найдены.append(путь)
     return sorted(найдены)
