@@ -1417,6 +1417,13 @@ MUTANTS: list[tuple[str, str, str, str, str]] = [
     ),
     (
         "studio/selfrag/modelnames.py",
+        '    "fluxkontextdev": "flux1kontextdev",',
+        '    "fluxkontextdev": "flux1dev",',
+        "таблица имён: правка кадра склеена с базовой моделью",
+        "studio.selfrag.tests.test_modelnames",
+    ),
+    (
+        "studio/selfrag/modelnames.py",
         '    "bytedanceomnihuman": "omnihuman1",',
         "",
         "таблица имён: лаборатория впереди снова делает другую модель",

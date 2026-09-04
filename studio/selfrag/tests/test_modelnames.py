@@ -219,6 +219,23 @@ class ПриставкаВерсии(unittest.TestCase):
         self.assertEqual(fold("bytedance-omnihuman"), fold("omnihuman-1"))
         self.assertEqual(fold("bytedance-omnihuman-v1.5"), fold("omnihuman-1.5"))
 
+    def test_площадка_роняет_версию_семейства_из_слага(self) -> None:
+        """`fal-ai/flux/dev` — это FLUX.1 [dev]; версия семейства в слаг не попала.
+
+        Свидетельство машинное: у первого вход `текст` -> `изображение`, у
+        второго `изображение, текст` -> `изображение` — ровно то, чем эти две
+        модели различаются в документации вендора.
+        """
+        self.assertEqual(fold("flux-dev"), fold("flux.1-dev"))
+        self.assertEqual(fold("flux-kontext-dev"), fold("flux.1-kontext-dev"))
+
+    def test_соседи_по_семейству_flux_остались_разными(self) -> None:
+        """И5, и здесь он дороже прочих: склеить `dev` с `kontext-dev` значило
+        бы приписать модели чужие наблюдения о правке кадра."""
+        self.assertNotEqual(fold("flux.1-dev"), fold("flux.1-kontext-dev"))
+        self.assertNotEqual(fold("flux-dev"), fold("flux-kontext-dev"))
+        self.assertNotEqual(fold("flux.1-dev"), fold("flux-2-dev"))
+
     def test_версии_одной_модели_остались_разными(self) -> None:
         """Склейка по лаборатории не смеет склеить ВЕРСИИ (И5).
 
