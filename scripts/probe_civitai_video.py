@@ -72,8 +72,8 @@ version_ids = version_ids[:60]
 print(f"версий с видео найдено: {len(version_ids)}")
 
 total = with_model = 0
-keyhits = collections.Counter()
-bases = collections.Counter()
+keyhits: collections.Counter[str] = collections.Counter()
+bases: collections.Counter[str] = collections.Counter()
 for vid in version_ids:
     d = get(f"https://civitai.com/api/v1/model-versions/{vid}")
     for item in d.get("images", []):

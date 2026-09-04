@@ -233,7 +233,15 @@ def _capture_headers(sink: list[dict]):
 
     requests.get = lambda *a, **k: note(real_get(*a, **k))  # type: ignore[assignment]
     requests.post = lambda *a, **k: note(real_post(*a, **k))  # type: ignore[assignment]
-    return lambda: (setattr(requests, "get", real_get), setattr(requests, "post", real_post))
+    def вернуть_как_было() -> None:
+        """Восстановить настоящие вызовы. Раньше стоял `lambda`, собиравший
+        КОРТЕЖ ИЗ ДВУХ `setattr`, каждый из которых возвращает `None`, —
+        значение выбрасывалось, и читать это как «функция что-то вернула»
+        было нечего."""
+        requests.get = real_get  # type: ignore[assignment]
+        requests.post = real_post  # type: ignore[assignment]
+
+    return вернуть_как_было
 
 
 def run(plan: list[dict]) -> list[dict]:

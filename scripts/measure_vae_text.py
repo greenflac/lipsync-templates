@@ -70,19 +70,33 @@ WIDTH_RATIO = 1.30
 OVERSHOOT_RATIO = 4.0
 
 
+def _таблица_квантования(image: Image.Image) -> "np.ndarray":
+    """Таблица квантования JPEG числами.
+
+    Атрибут есть только у JPEG-снимка, и проверке типов это неизвестно:
+    `Image.open` обещает базовый класс. Сужаем явно — на PNG здесь нужен
+    отказ, а не молчаливый `getattr`, иначе сравнение поедет на другом
+    кодеке и никто не заметит.
+    """
+    tables = getattr(image, "quantization", None)
+    if not tables:
+        raise TypeError(f"ждали JPEG с таблицей квантования, пришло {image.format!r}")
+    return np.asarray(tables[0], dtype=np.float64)
+
+
 def jpeg_quality(path: Path) -> int:
     """The file's real quality, from its quantization tables.
 
     Guessing this is how a comparison gets rigged: pick a low quality for the
     control and the suspect looks damaged by the model rather than by the coder.
     """
-    table = np.array(Image.open(path).quantization[0], float)
+    table = _таблица_квантования(Image.open(path))
     probe = Image.new("RGB", (64, 64), (128, 128, 128))
     best, best_gap = 75, None
     for candidate in range(30, 101):
         buffer = io.BytesIO()
         probe.save(buffer, "JPEG", quality=candidate)
-        other = np.array(Image.open(io.BytesIO(buffer.getvalue())).quantization[0], float)
+        other = _таблица_квантования(Image.open(io.BytesIO(buffer.getvalue())))
         gap = float(np.abs(other - table).sum())
         if best_gap is None or gap < best_gap:
             best, best_gap = candidate, gap
@@ -134,6 +148,7 @@ def stroke_thickness(image: Image.Image, box: tuple[int, int, int, int]) -> floa
 def _render(quality: int, cap_px: int) -> Image.Image:
     canvas = Image.new("L", (900, 200), 245)
     draw = ImageDraw.Draw(canvas)
+    font: ImageFont.FreeTypeFont | ImageFont.ImageFont
     try:
         font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", cap_px)
     except OSError:  # pragma: no cover - depends on the machine's fonts

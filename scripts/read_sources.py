@@ -52,6 +52,7 @@ from merge_model_ids import ATTRIBUTE_MERGES  # noqa: E402
 from studio.mcp import advice  # noqa: E402
 from studio.selfrag.facts import (  # noqa: E402
     DEFAULT_FACTS_PATH,
+    Fact,
     claim_key,
     load_facts,
 )
@@ -923,7 +924,7 @@ WITHDRAWN: tuple[dict[str, str], ...] = (
 )
 
 
-def _standing() -> dict[tuple[str, str, str, str], object]:
+def _standing() -> dict[tuple[str, str, str, str], Fact]:
     """Every claim the base currently asserts, keyed the way `record` keys them."""
     return {
         claim_key(f.model, f.attribute, f.value, f.source_url): f
@@ -1028,7 +1029,15 @@ def main(argv: list[str]) -> int:
 
     print(f"== withdrawing {len(WITHDRAWN)} claim(s) their own page does not make")
     for row in WITHDRAWN:
-        out = advice.withdraw(**row)
+        # ПОЛЯ НАЗВАНЫ ЯВНО, А НЕ РАСПАКОВАНЫ ЗВЁЗДОЧКОЙ. `advice.withdraw`
+        # принимает пять позиционных и `path` только по ключу; `**row` уезжал
+        # в него вслепую, и проверка типов показала это первой же строкой:
+        # «Argument 1 … expected Path | None». Пока ключи словаря совпадали с
+        # именами параметров, оно работало; переименование параметра сломало бы
+        # прибор молча.
+        out = advice.withdraw(
+            row["model"], row["attribute"], row["value"], row["source_url"], row["reason"]
+        )
         label = f"{row['model']}.{row['attribute']}"
         if out["outcome"] == PASS:
             applied += 1
@@ -1043,13 +1052,23 @@ def main(argv: list[str]) -> int:
         entry = dict(entry)
         replaces = entry.pop("replaces", None)
         if replaces is not None:
-            old_value, reason = replaces  # type: ignore[misc]
+            # Пара распаковывается ЧЕРЕЗ ЯВНЫЕ СТРОКИ, а не кортежем с
+            # `type: ignore`: молчаливое подавление проверки скрывало, что тип
+            # значения здесь неизвестен, и следующая правка узнала бы об этом
+            # от пользователя, а не от прибора.
+            if not (isinstance(replaces, tuple) and len(replaces) == 2):
+                raise TypeError(
+                    f"'replaces' ждёт пару (старое значение, причина), "
+                    f"а в записи {entry.get('model')!r} лежит {replaces!r}"
+                )
+            old_value = str(replaces[0])
+            reason = str(replaces[1])
             gone = advice.withdraw(
                 str(entry["model"]),
                 str(entry["attribute"]),
-                str(old_value),
+                old_value,
                 str(entry["source_url"]),
-                str(reason),
+                reason,
             )
             if gone["outcome"] == PASS:
                 applied += 1

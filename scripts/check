@@ -156,6 +156,18 @@ ruff format --check studio/mcp/
 step "mypy (mcp)"
 MYPYPATH=. python -m mypy --explicit-package-bases studio/mcp/ --ignore-missing-imports
 
+# Приборы гейта — тоже код, и до сих пор их типы не проверял никто: на
+# 2026-09-04 здесь лежало 36 ошибок в 8 файлах, среди них настоящая —
+# `advice.withdraw(**row)` подавал словарь в подпись, первый именованный
+# параметр которой `path`. Флаг `--no-namespace-packages` обязателен и не
+# косметика: рядом лежат модуль `studio/knowledge.py` и каталог с данными
+# `studio/knowledge/`, и в режиме namespace-пакетов проверка выбирает
+# каталог, тогда как импорт в рантайме выбирает модуль — обычный модуль
+# сильнее namespace-пакета. Без флага получаем 13 выдуманных ошибок о
+# «нет атрибута» в `eval_corpus.py`.
+step "mypy (scripts)"
+MYPYPATH=. python -m mypy --no-namespace-packages scripts/ --ignore-missing-imports
+
 step "tests (mcp)"
 python -m unittest discover -s studio/mcp/tests -t .
 

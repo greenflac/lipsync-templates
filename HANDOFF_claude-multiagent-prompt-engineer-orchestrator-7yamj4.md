@@ -301,3 +301,38 @@ SyncNet этого не видит». Это оговорка о МЕТРИКЕ 
 Т1: планировщик 107 мутантов, промолчали на 0. Набор: 44 задачи.
 `bash scripts/check` EXIT=0.
 
+
+## Спринт 1, шаг «mypy на scripts/» — закрыт (2026-09-04)
+
+ИЗМЕРЕНО: было 36 ошибок типов в 8 файлах, стало 0 на 60 файлах.
+Команда шага гейта (59-й шаг, было 58):
+`MYPYPATH=. python -m mypy --no-namespace-packages scripts/ --ignore-missing-imports`
+
+Настоящий дефект, который проверка нашла: `read_sources.py` вызывал
+`advice.withdraw(**row)`, где первый именованный параметр подписи — `path`.
+
+`--no-namespace-packages` обязателен и не косметика: рядом лежат модуль
+`studio/knowledge.py` и каталог данных `studio/knowledge/`. Рантайм берёт
+модуль (обычный модуль сильнее namespace-пакета — проверено
+`python -c "import studio.knowledge as K; print(K.__file__)"`), mypy в режиме
+namespace брал каталог и выдумывал 13 ошибок «нет атрибута» в `eval_corpus.py`.
+Это Е1-дефект в самом репозитории: одно имя на две сущности. Не чинил —
+переименование каталога трогает десятки путей к данным, отдельная работа.
+
+И5 негативный контроль шага: дописал в `scripts/planner_baseline.py`
+`def _негативный_контроль() -> int: return "строка"` — шаг покраснел
+(`Incompatible return value type (got "str", expected "int")`), после
+восстановления `Success`. То есть шаг умеет сказать «нет».
+
+Приёмы, которыми чинил (не глушением проверки):
+- `planner_baseline.py`: цикл с `assert isinstance` вместо `sum(...)` по
+  `dict[str, object]` и двух `type: ignore[call-overload]`.
+- `build_casebank.py`: три `float(report['bytes'])` заменены на `_мегабайты()`,
+  которая на нечисле бросает TypeError вслух.
+- `measure_vae_text.py`: `_таблица_квантования()` отказывает на не-JPEG вместо
+  `getattr`; иначе сравнение поехало бы на другом кодеке молча.
+
+DEBT(2026-09-04): каталог `studio/knowledge/` и модуль `studio/knowledge.py`
+делят имя; гейт обходит это флагом, а не починкой.
+
+Гейт после правки: `bash scripts/check` EXIT=0, 59 шагов.

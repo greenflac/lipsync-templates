@@ -74,6 +74,19 @@ CLOSED_MODELS = frozenset(
 SKIPS: dict[str, int] = collections.defaultdict(int)
 
 
+def _мегабайты(report: dict) -> float:
+    """Размер очищенного файла числом.
+
+    Отчёт чистки — словарь со смешанными значениями, и `float(report["bytes"])`
+    проверке типов неизвестен: она честно говорит «пришёл object». Сужаем здесь,
+    один раз, вместо трёх молчаливых приведений по месту.
+    """
+    размер = report["bytes"]
+    if not isinstance(размер, (int, float)):
+        raise TypeError(f"'bytes' в отчёте чистки ждали числом, пришло {размер!r}")
+    return float(размер) / 1e6
+
+
 def _skip(reason: str, case_id: str = "") -> None:
     """Записать пропуск и назвать его вслух. Тихий `continue` — это ноль в отчёте."""
     SKIPS[reason] += 1
@@ -168,7 +181,8 @@ def build_kling(count: int) -> list[dict]:
             }
         )
         print(
-            f"  {cid}  {a.get('kling_version')}  {row.get('type')}  {report['bytes'] / 1e6:.1f} МБ"
+            f"  {cid}  {a.get('kling_version')}  {row.get('type')}  "
+            f"{_мегабайты(report):.1f} МБ"
         )
     return made
 
@@ -319,7 +333,7 @@ def build_civitai(count: int) -> list[dict]:
             )
             per_family[family] += 1
             taken += 1
-            print(f"  {cid}  {base:26} {report['bytes'] / 1e6:.1f} МБ")
+            print(f"  {cid}  {base:26} {_мегабайты(report):.1f} МБ")
     print(f"  собрано по семействам: {dict(sorted(per_family.items()))}")
     return made
 
@@ -372,7 +386,7 @@ def build_openfake(count: int) -> list[dict]:
                     },
                 }
             )
-            print(f"  {cid}  {model:18} {report['bytes'] / 1e6:.2f} МБ")
+            print(f"  {cid}  {model:18} {_мегабайты(report):.2f} МБ")
     return made
 
 

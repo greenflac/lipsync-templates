@@ -88,10 +88,24 @@ def measure(path: Path = BRIEFS) -> dict:
                 "expect_steps": list(row.get("expect_steps") or ()),
             }
         )
-    ждали = sum(len(c["expect_steps"]) for c in случаи)
-    собрано = sum(c["steps_built"] for c in случаи)
-    молчащие = [c for c in случаи if not c["expect_steps"]]
-    заговорил = [c for c in молчащие if c["facts_found"]]
+    # ЯВНОЕ ПРИВЕДЕНИЕ, А НЕ МОЛЧАЛИВАЯ АРИФМЕТИКА ПО `object`. Строки случая
+    # собраны в словарь со смешанными значениями, и `sum` по ним проверке типов
+    # неизвестен: она честно сказала «Sized ожидался, пришёл object».
+    ждали = 0
+    собрано = 0
+    молчащие: list[dict[str, object]] = []
+    заговорил: list[dict[str, object]] = []
+    for c in случаи:
+        ожидания = c["expect_steps"]
+        assert isinstance(ожидания, list)
+        шаги = c["steps_built"]
+        assert isinstance(шаги, int)
+        ждали += len(ожидания)
+        собрано += шаги
+        if not ожидания:
+            молчащие.append(c)
+            if c["facts_found"]:
+                заговорил.append(c)
     return {
         "rows_in_file": rows_in(path),
         "briefs": len(случаи),
