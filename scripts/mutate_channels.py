@@ -731,6 +731,13 @@ MUTANTS: list[tuple[str, str, str, str, str]] = [
     # снова пообещать оценённый корпус, и никто не заметит.
     (
         "studio/mcp/tests/test_skill_claims.py",
+        "        описание = _описание()",
+        '        описание = ""',
+        "сторож обещаний: описание больше не читается вовсе",
+        "studio.mcp.tests.test_skill_claims",
+    ),
+    (
+        "studio/mcp/tests/test_skill_claims.py",
         'ОБЕЩАНИЕ_ОЦЕНКИ = ("run and rated", "actually rated", "оценённых промптов")',
         'ОБЕЩАНИЕ_ОЦЕНКИ = ("не-встречается-нигде",)',
         "сторож обещаний: список оборотов опустел",

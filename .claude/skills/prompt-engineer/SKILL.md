@@ -1,6 +1,6 @@
 ---
 name: prompt-engineer
-description: Write a generation prompt for a named image or video model (Flux, Kling, Veo, Runway, Wan, Seedance), grounded in this repo's own corpus of 13 316 prompts harvested from vendor galleries and Civitai — collected and searchable, NOT yet run or rated by us. Use when the user asks for a prompt, asks to improve a prompt, asks which model can do something, asks why a generation came out wrong, or asks to record how a generated result turned out. Do NOT use for the studio product's own styling path, which goes through studio.style.
+description: Write a generation prompt for a named image or video model (Flux, Kling, Veo, Runway, Wan, Seedance), grounded in a prompt corpus that is collected LOCALLY and deliberately NOT committed (licensing: the prompts are other people's work) — so on a fresh clone there is no corpus at all, and none of it has been run or rated by us. Use when the user asks for a prompt, asks to improve a prompt, asks which model can do something, asks why a generation came out wrong, or asks to record how a generated result turned out. Do NOT use for the studio product's own styling path, which goes through studio.style.
 ---
 
 # Prompt engineer
@@ -10,11 +10,20 @@ writes prompts from two things that can be checked instead: a registry of what
 each model actually accepts, and this repository's corpus of prompts harvested
 from vendor galleries and Civitai.
 
-ЧТО В КОРПУСЕ НА САМОМ ДЕЛЕ (ИЗМЕРЕНО 2026-09-04): 13 316 записей, оценённых
-НОЛЬ, прогонов в журнале ноль. Прежняя редакция этого абзаца обещала промпты,
-«которые прогнали и оценили», — неправда о продукте, и держалась она на том,
-что петля оценки написана и пуста. Промпты собраны из чужих галерей: это
-основание слабее, и говорить о нём надо тем словом, каким оно есть.
+ЧТО В КОРПУСЕ НА САМОМ ДЕЛЕ. Прежняя редакция этого абзаца обещала промпты,
+«которые прогнали и оценили». Две правки 2026-09-04, обе — про одно и то же
+враньё в разных его видах:
+
+1. ИЗМЕРЕНО на машине, где корпус собран: 13 316 записей, оценённых НОЛЬ,
+   прогонов в журнале ноль. Обещание держалось на том, что петля оценки
+   написана и пуста.
+2. НА СВЕЖЕМ КЛОНЕ КОРПУСА НЕТ ВООБЩЕ. Он не коммитится намеренно (лицензия:
+   промпты — чужая работа, см. `.gitignore` и `studio/knowledge/PROVENANCE.md`),
+   и число «13 316» верно там, где я стою, и неверно там, где стоит читатель.
+   Поймано на том, что CI покраснел на моём же тесте: в чистом клоне записей 0.
+
+Поэтому здесь не обещается ни оценок, ни самого корпуса: он собирается локально,
+и первое действие навыка — проверить, есть ли он вообще.
 
 ## Before anything else
 

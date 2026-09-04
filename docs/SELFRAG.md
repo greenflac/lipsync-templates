@@ -5,8 +5,12 @@ shaped the way that vendor's own guide asks for, grounded in prompts harvested
 into your corpus, graded against a rule table before it ships, and recorded so
 the next run knows how this one went.
 
-MEASURED 2026-09-04: the corpus holds 13 316 harvested prompts, of which ZERO
-are rated, and the run journal is empty. The sentence above used to say the
+MEASURED 2026-09-04, on the machine where the corpus was collected: 13 316
+harvested prompts, of which ZERO are rated, and the run journal is empty. ON A
+FRESH CLONE THERE IS NO CORPUS AT ALL — it is deliberately not committed
+(licensing: the prompts are other people's work; see `.gitignore` and
+`studio/knowledge/PROVENANCE.md`). Both numbers are true where they are true,
+and saying which is which is the whole point. The sentence above used to say the
 prompts "were actually run and rated" — untrue about this product. The replay
 loop that would rate them exists and has never been fed; until it has, the
 grounding is "somebody published this prompt", not "this prompt worked".
