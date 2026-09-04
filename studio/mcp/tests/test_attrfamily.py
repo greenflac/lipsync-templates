@@ -375,3 +375,59 @@ class ПределТекстаНеЛюбоеСловоПроТекст(unittest.
     def test_слова_вопроса_доводят_до_семьи(self) -> None:
         for слово in ("предел текста", "сколько текста", "character_limit", "context_window"):
             self.assertEqual("text_limit", attrfamily.семья(слово), f"слово {слово} не доводит")
+
+
+class СемьиЗаведённыеПоЗамеруНедостижимости(unittest.TestCase):
+    """Пять семей, закрывших 400 строк базы, и их негативные контроли.
+
+    ИЗМЕРЕНО 2026-09-04: до них недостижимо 594 строки из 2099 (28.3%), после —
+    194 (9.2%) при пороге R3 в 10%. Одна только `adoption` держала 256 строк:
+    «насколько это популярно» спросить было НЕЧЕМ.
+    """
+
+    def test_популярность_спрашивается_и_по_русски(self) -> None:
+        записаны = ["adoption", "price_per_second"]
+        for слово in ("adoption", "популярность", "downloads"):
+            self.assertEqual(["adoption"], attrfamily.expand(слово, записаны), слово)
+
+    def test_вопрос_о_лице_приносит_и_плохую_новость(self) -> None:
+        """Спросивший «держит ли лицо» обязан узнать, что оно НЕ держится."""
+        записаны = ["holds_identity", "lipsync_identity_failure_mode", "price"]
+        итог = attrfamily.expand("лицо", записаны)
+        self.assertIn("holds_identity", итог)
+        self.assertIn("lipsync_identity_failure_mode", итог)
+        self.assertNotIn("price", итог)
+
+    def test_бренд_площадки_на_вопрос_о_лице_не_отвечает(self) -> None:
+        """И5 у семьи лица: `product_identity` — про бренд, а не про кадр."""
+        self.assertEqual([], attrfamily.expand("лицо", ["product_identity"]))
+
+    def test_снята_ли_модель_спрашивается_пятью_именами(self) -> None:
+        """Блюпринт называл эту дыру самой опасной: канал специально собирает
+        «снята ли», а спросить это было нечем."""
+        записаны = ["availability", "status", "end_of_life", "lifecycle", "deprecation"]
+        self.assertEqual(sorted(записаны), sorted(attrfamily.expand("снята", записаны)))
+
+    def test_насыщение_бенчмарка_не_выдаётся_за_оценку(self) -> None:
+        """И5 у семьи бенчмарка, и это главный её заслон.
+
+        `faithfulness_benchmark_saturation` говорит, что бенчмарк НАСЫТИЛСЯ, —
+        это утверждение ПРОТИВ числа, а не число. Подстрока «benchmark»
+        затянула бы его, и на вопрос «что у неё на бенчмарках» пришёл бы ответ,
+        отвечающий на другой вопрос.
+        """
+        записаны = ["benchmark_score", "faithfulness_benchmark_saturation"]
+        self.assertEqual(["benchmark_score"], attrfamily.expand("бенчмарк", записаны))
+
+    def test_железо_собрано_одной_семьёй(self) -> None:
+        записаны = ["min_vram_gb", "runs_on", "parameter_count", "price"]
+        итог = attrfamily.expand("железо", записаны)
+        self.assertEqual(["min_vram_gb", "parameter_count", "runs_on"], sorted(итог))
+
+    def test_цена_не_течёт_ни_в_одну_новую_семью(self) -> None:
+        """Сквозной негативный контроль: цена — самая частая приставка базы, и
+        любая широкая подстрока тянет её первой."""
+        for слово in ("популярность", "лицо", "снята", "бенчмарк", "железо", "языки"):
+            self.assertNotIn(
+                "price_per_second_usd", attrfamily.expand(слово, ["price_per_second_usd"]), слово
+            )

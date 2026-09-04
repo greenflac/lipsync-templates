@@ -248,6 +248,78 @@ from __future__ import annotations
         # модель в реальное время. Оба отвечают на «как быстро».
         "exact": ("generation_time", "latency", "latency_penalty", "realtime_dubbing"),
     },
+    # === ПЯТЬ СЕМЕЙ, ЗАВЕДЁННЫХ 2026-09-04 ПО ЗАМЕРУ НЕДОСТИЖИМОСТИ =======
+    #
+    # ИЗМЕРЕНО: 594 строки базы из 2099 (28.3%) не достаёт НИ ОДИН вопрос, и
+    # 256 из них — один атрибут `adoption`. Критерий релиза R3 требует ниже
+    # 10%. Ниже — семьи, закрывающие голову этого списка; у каждой назван
+    # негативный контроль, потому что семья без него собирает похожее, а не
+    # отвечающее.
+    # СКОЛЬКО ЛЮДЕЙ ЭТИМ ПОЛЬЗУЕТСЯ. Самая крупная дыра базы: 256 строк, и
+    # спросить их было нечем. Приставка, а не подстрока: `adoption` — цельное
+    # слово, и ловить им «adopt» внутри чужого имени незачем.
+    "adoption": {
+        "prefixes": ("adoption",),
+        "exact": (),
+    },
+    # ДЛЯ ЧЕГО ЭТА МОДЕЛЬ ВООБЩЕ. Поимённо, а не подстрокой: рядом в базе
+    # лежит `product_identity` — это про бренд площадки, а не про то, какую
+    # работу модель делает.
+    "positioning": {
+        "prefixes": ("positioning",),
+        "exact": (),
+    },
+    # ЧТО У НЕЁ НА БЕНЧМАРКАХ. ЗАКРЫТЫЙ СПИСОК, И ЭТО НЕГАТИВНЫЙ КОНТРОЛЬ
+    # (И5): подстрока «benchmark» затянула бы
+    # `faithfulness_benchmark_saturation` — это оговорка о том, что бенчмарк
+    # НАСЫТИЛСЯ, то есть утверждение против числа, а не число. Такая строка
+    # принадлежит семье поведения и приходит по вопросу «на что жалуются».
+    "benchmark_score": {
+        "prefixes": (),
+        "exact": ("benchmark_score",),
+    },
+    # ДЕРЖИТ ЛИ ЛИЦО. Подстрока «identity» НАРОЧНО: спросивший «держит ли
+    # лицо» обязан получить и `lipsync_identity_failure_mode`, и
+    # `identity_drift_in_commercial_models` — плохая новость по этому вопросу
+    # и есть ответ на него. Исключается ровно одно имя: `product_identity` —
+    # оно про бренд площадки и на вопрос о лице не отвечает.
+    "holds_identity": {
+        "prefixes": (),
+        "exact": (),
+        "подстроки": ("identity",),
+        "кроме": ("product_identity",),
+    },
+    # СНЯТА ЛИ МОДЕЛЬ. Блюпринт называл эту дыру самой опасной: канал сбора
+    # специально ходит за «снята ли», а спросить это было нечем. Подстроки
+    # закрытые и все — про срок службы; `status` среди них потому, что база
+    # несёт `status` и `remix_endpoint_status`, и оба отвечают именно на это.
+    "availability": {
+        "prefixes": (),
+        "exact": (),
+        "подстроки": ("avail", "status", "end_of_life", "lifecycle", "deprecat"),
+    },
+    # НА ЧЁМ ПОСТРОЕНА. Подстрока «architect» ловит и `architecture`, и
+    # `architecture_and_license`, и `motion_control_architecture`.
+    "architecture": {
+        "prefixes": (),
+        "exact": (),
+        "подстроки": ("architect",),
+    },
+    # ЧТО НУЖНО, ЧТОБЫ ЗАПУСТИТЬ. Одна семья на три вопроса владельца
+    # («пойдёт ли на моей карте», «сколько весит», «где крутится»), потому что
+    # ответ на них живёт в одной строке карточки модели.
+    "hardware": {
+        "prefixes": (),
+        "exact": (),
+        "подстроки": ("vram", "runs_on", "parameter_count"),
+    },
+    # НА КАКИХ ЯЗЫКАХ. Подстрока «language» ловит `languages`,
+    # `prompt_language`, `language_control`.
+    "languages": {
+        "prefixes": (),
+        "exact": (),
+        "подстроки": ("language",),
+    },
 }
 
 #: Слова, которыми спрашивают то же самое. Спрашивает человек и модель, а не
@@ -274,6 +346,29 @@ from __future__ import annotations
     "жалобы": "observed_behaviour",
     "наблюдения": "observed_behaviour",
     "применимость": "observed_behaviour",
+    # Слова, которыми про эти пять семей спрашивают на самом деле.
+    "popularity": "adoption",
+    "популярность": "adoption",
+    "downloads": "adoption",
+    "используют": "adoption",
+    "для_чего": "positioning",
+    "позиционирование": "positioning",
+    "benchmark": "benchmark_score",
+    "бенчмарк": "benchmark_score",
+    "identity": "holds_identity",
+    "лицо": "holds_identity",
+    "идентичность": "holds_identity",
+    "снята": "availability",
+    "end_of_life": "availability",
+    "deprecated": "availability",
+    "status": "availability",
+    "доступность": "availability",
+    "архитектура": "architecture",
+    "vram": "hardware",
+    "железо": "hardware",
+    "runs_on": "hardware",
+    "parameter_count": "hardware",
+    "языки": "languages",
     "duration": "max_seconds",
     "max_duration": "max_seconds",
     "длительность": "max_seconds",

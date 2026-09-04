@@ -726,6 +726,42 @@ MUTANTS: list[tuple[str, str, str, str, str]] = [
         "поиск: к запросу относится любая запись корпуса",
         "studio.tests.test_knowledge",
     ),
+    # === СЕМЬИ ВОПРОСОВ, ЗАВЕДЁННЫЕ ПО ЗАМЕРУ НЕДОСТИЖИМОСТИ (R3) =========
+    (
+        "studio/selfrag/attrfamily.py",
+        '        "кроме": ("product_identity",),',
+        "",
+        "R3: бренд площадки снова отвечает на вопрос о лице",
+        "studio.mcp.tests.test_attrfamily",
+    ),
+    (
+        "studio/selfrag/attrfamily.py",
+        '        "exact": ("benchmark_score",),',
+        '        "подстроки": ("benchmark",),\n        "exact": (),',
+        "R3: насыщение бенчмарка выдаётся за оценку",
+        "studio.mcp.tests.test_attrfamily",
+    ),
+    (
+        "studio/selfrag/attrfamily.py",
+        '        "подстроки": ("avail", "status", "end_of_life", "lifecycle", "deprecat"),',
+        '        "подстроки": ("avail",),',
+        "R3: «снята ли модель» снова спрашивается одним именем из пяти",
+        "studio.mcp.tests.test_attrfamily",
+    ),
+    (
+        "studio/selfrag/attrfamily.py",
+        '        "подстроки": ("vram", "runs_on", "parameter_count"),',
+        '        "подстроки": ("vram",),',
+        "R3: вопрос о железе перестал доставать половину ответов",
+        "studio.mcp.tests.test_attrfamily",
+    ),
+    (
+        "scripts/check_reachability.py",
+        "ПОТОЛОК_ДОЛИ = 0.10",
+        "ПОТОЛОК_ДОЛИ = 1.0",
+        "R3: потолок недостижимости перестал что-либо запрещать",
+        "studio.mcp.tests.test_reachability",
+    ),
     # === КАЧЕСТВО СБОРА (studio/harvest_quality.py) ========================
     # Двадцать две константы-решения — больше, чем у любого другого модуля
     # продукта. Они решают, попадёт ли строка практика в базу вообще: ошибка
