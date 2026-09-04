@@ -214,6 +214,19 @@ class ПриставкаВерсии(unittest.TestCase):
         """
         self.assertEqual(fold("infinitalk"), fold("infinitetalk"))
         self.assertEqual(fold("InfiniTalk"), fold("infinitetalk"))
+        # Площадка ставит впереди имя лаборатории, статья — нет, и версия
+        # совпадает: `fal-ai/bytedance/omnihuman/v1.5` против `omnihuman-1.5`.
+        self.assertEqual(fold("bytedance-omnihuman"), fold("omnihuman-1"))
+        self.assertEqual(fold("bytedance-omnihuman-v1.5"), fold("omnihuman-1.5"))
+
+    def test_версии_одной_модели_остались_разными(self) -> None:
+        """Склейка по лаборатории не смеет склеить ВЕРСИИ (И5).
+
+        `omnihuman-1` и `omnihuman-1.5` — разные модели с разными наблюдениями,
+        и таблица обязана довести до разных ключей обе стороны.
+        """
+        self.assertNotEqual(fold("omnihuman-1"), fold("omnihuman-1.5"))
+        self.assertNotEqual(fold("bytedance-omnihuman"), fold("bytedance-omnihuman-v1.5"))
 
     def test_таблица_не_склеила_соседнюю_модель(self) -> None:
         """Негативный контроль к таблице (И5), и он не формальный.

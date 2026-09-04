@@ -870,6 +870,20 @@ MUTANTS: list[tuple[str, str, str, str, str]] = [
     ),
     (
         "studio/selfrag/modelnames.py",
+        '    "bytedanceomnihuman": "omnihuman1",',
+        "",
+        "таблица имён: лаборатория впереди снова делает другую модель",
+        "studio.selfrag.tests.test_modelnames",
+    ),
+    (
+        "studio/selfrag/modelnames.py",
+        '    "bytedanceomnihuman15": "omnihuman15",',
+        '    "bytedanceomnihuman15": "omnihuman1",',
+        "версии склеены между собой: 1.5 объявлена первой",
+        "studio.selfrag.tests.test_modelnames",
+    ),
+    (
+        "studio/selfrag/modelnames.py",
         '    "infinitalk": "infinitetalk",',
         '    "infinitalk": "infinitetalk",\n    "multitalk": "infinitetalk",',
         "шире: соседняя модель приписана к чужим наблюдениям",
