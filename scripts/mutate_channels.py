@@ -814,6 +814,96 @@ MUTANTS: list[tuple[str, str, str, str, str]] = [
         "сторож имён: семейное имя перестало опознаваться",
         "studio.tests.test_named_not_asked",
     ),
+    # === ЖУРНАЛ БЕЗ ПЕРЕПИСЫВАНИЯ (studio/appendonly.py) ==================
+    (
+        "studio/appendonly.py",
+        "МЕТКА_УДАЛЁННОГО_НИКА",
+        "МЕТКА_УДАЛЁННОГО_НИКА_ДРУГАЯ",
+        "журнал: метка удалённого ника перестала совпадать",
+        "studio.mcp.tests.test_appendonly",
+    ),
+    # === ПОРОГИ ОЦЕНКИ ПОИСКА (studio/selfrag/evaluate.py) ================
+    (
+        "studio/selfrag/evaluate.py",
+        "RECALL_FLOOR = 0.75",
+        "RECALL_FLOOR = 0.0",
+        "оценка поиска: полнота перестала требоваться",
+        "studio.selfrag.tests.test_floors_bite",
+    ),
+    (
+        "studio/selfrag/evaluate.py",
+        "ABSTENTION_FLOOR = 1.0",
+        "ABSTENTION_FLOOR = 0.0",
+        "оценка поиска: молчать на негативном контроле больше не обязательно",
+        "studio.selfrag.tests.test_floors_bite",
+    ),
+    # === ПРИЁМКА КОРПУСНОЙ СТРОКИ (studio/selfrag/corpus.py) ==============
+    (
+        "studio/selfrag/corpus.py",
+        "RATING_MAX = 10",
+        "RATING_MAX = 100",
+        "корпус: верх оценочной полосы разъехался со шкалой формата",
+        "studio.selfrag.tests.test_corpus_bounds",
+    ),
+    (
+        "studio/selfrag/corpus.py",
+        "RATING_MIN = 1",
+        "RATING_MIN = 2",
+        "корпус: единица перестала быть оценкой",
+        "studio.selfrag.tests.test_corpus_bounds",
+    ),
+    (
+        "studio/selfrag/corpus.py",
+        "PROMPT_MAX_CHARS = 4000",
+        "PROMPT_MAX_CHARS = 400000",
+        "корпус: потолок длины пускает вставленный документ вместо промпта",
+        "studio.selfrag.tests.test_corpus_bounds",
+    ),
+    # === ПОЛЫ РЕТРИВЕРА (studio/selfrag/retrieval.py) =====================
+    (
+        "studio/selfrag/retrieval.py",
+        "MIN_TERM_HITS = 2",
+        "MIN_TERM_HITS = 1",
+        "ретривер: одного общего слова снова хватает, чтобы ответить",
+        "studio.selfrag.tests.test_retrieval_floors",
+    ),
+    (
+        "studio/selfrag/retrieval.py",
+        "RATING_PRIOR_FLOOR = 6",
+        "RATING_PRIOR_FLOOR = 5",
+        "ретривер: середина шкалы поехала на канале рейтинга",
+        "studio.selfrag.tests.test_retrieval_floors",
+    ),
+    # === ОЦЕНЩИК КАЧЕСТВА ПРОМПТА (studio/selfrag/quality.py) =============
+    (
+        "studio/selfrag/quality.py",
+        "MIN_CORPUS = 50",
+        "MIN_CORPUS = 5",
+        "качество: перцентиль по горстке строк выдаётся за стандарт корпуса",
+        "studio.selfrag.tests.test_quality_floors",
+    ),
+    (
+        "studio/selfrag/quality.py",
+        "GOOD_PERCENTILE = 0.10",
+        "GOOD_PERCENTILE = 0.0",
+        "качество: низ распределения опущен до нуля, брак невозможен",
+        "studio.selfrag.tests.test_quality_floors",
+    ),
+    # === АРИФМЕТИКА КАДРОВ (lipsync/framemath.py) =========================
+    (
+        "lipsync/framemath.py",
+        "SECONDS_MIN = 5.0",
+        "SECONDS_MIN = 0.0",
+        "кадры: ролик нулевой длины проходит по нижней границе",
+        "lipsync.tests.test_fork_looper",
+    ),
+    (
+        "lipsync/framemath.py",
+        "SECONDS_MAX = 10.0",
+        "SECONDS_MAX = 1000.0",
+        "кадры: верхняя граница длины перестала действовать",
+        "lipsync.tests.test_fork_looper",
+    ),
     # === ВЕБ-ПОТОК СТУДИИ (studio/app.py) =================================
     # Имена стадий — константы-решения самого продукта: по ним решается, что
     # заказчику показать и что ему уже можно запускать.
