@@ -1,5 +1,20 @@
 #!/usr/bin/env python3
-"""Мутации КАНАЛОВ и разборщиков, заведённых 2026-09-02.
+"""Мутации КАНАЛОВ, разборщиков и ЯДРА ИСХОДА.
+
+С 2026-09-04 набор шире имени файла: к каналам добавлены `studio/pipeline.py`
+(валидатор плана) и `studio/factaxis.py` (ось родов) — два модуля из двадцати,
+у которых гейт заимствует ИСХОД шага, и до этого дня у них не было ни одного
+мутанта. Файл не переименован намеренно: имя стоит в гейте и в трёх отчётах,
+а третий мутационный харнесс — второй способ узнать известное (Е1). Долг
+записан в HANDOFF.
+
+Набор оправдался тем же прогоном: пять мутантов промолчали, и все пять
+оказались разными болезнями — две дыры в тестах (`metric_blind_spot` не
+сторожил никто, хотя на нём стоят ВСЕ 11 отказов планировщика; пол
+относимости не проверялся на строке под полом), одна слабая фикстура (запрет
+лицензии ловился соседом по строке) и две границы данных, названные вслух
+(русских имён атрибутов в живой базе 0 из 284).
+
 
 ЗАЧЕМ ОТДЕЛЬНЫЙ СКРИПТ, А НЕ СТРОКА В ОТЧЁТЕ
 
@@ -662,8 +677,191 @@ MUTANTS: list[tuple[str, str, str, str, str]] = [
         "голден: опечатка в виде проверки молча считается пройденной",
         "studio.mcp.tests.test_golden",
     ),
+    # === ЯДРО ИСХОДА: валидатор пайплайна и ось родов ======================
+    # ЗАЧЕМ ЗДЕСЬ, А НЕ ОТДЕЛЬНЫМ СКРИПТОМ: машинерия уже написана, а третий
+    # харнесс — второй способ узнать известное (Е1). Имя файла после этого
+    # уже́ у́же содержимого; долг записан в HANDOFF.
+    #
+    # ПОЧЕМУ ЭТИ ДВА МОДУЛЯ ПЕРВЫМИ ИЗ ДВАДЦАТИ БЕЗ МУТАНТОВ: у них гейт
+    # заимствует ИСХОД шага. `pipeline.CLASS_OUTCOME` решает, чем кончится
+    # план, `factaxis.APPLICABILITY` — считается ли строка свидетельством.
+    # Константа, переставленная здесь, красит красное зелёным по всей выдаче.
+    (
+        "studio/pipeline.py",
+        "MIN_FACTS_PER_MODEL = 1",
+        "MIN_FACTS_PER_MODEL = 0",
+        "слабее: шаг опирается на модель, о которой база молчит",
+        "studio.mcp.tests.test_pipeline",
+    ),
+    (
+        "studio/pipeline.py",
+        "MIN_FACTS_PER_MODEL = 1",
+        "MIN_FACTS_PER_MODEL = 2",
+        "строже: одного утверждения о модели уже мало",
+        "studio.mcp.tests.test_pipeline",
+    ),
+    (
+        "studio/pipeline.py",
+        'AMBIENT_ARTEFACTS: frozenset[str] = frozenset({"бриф", "селфи", "референс"})',
+        'AMBIENT_ARTEFACTS: frozenset[str] = frozenset({"бриф", "референс"})',
+        "строже: селфи клиента перестало приходить снаружи",
+        "studio.mcp.tests.test_pipeline",
+    ),
+    (
+        "studio/pipeline.py",
+        "PRODUCES_LOOKBACK = 0",
+        "PRODUCES_LOOKBACK = 1",
+        "строже: шаг 3 больше не видит кадр от шага 1",
+        "studio.mcp.tests.test_pipeline",
+    ),
+    (
+        "studio/pipeline.py",
+        'LICENCE_MARKERS: tuple[str, ...] = ("license", "licence", "лиценз")',
+        'LICENCE_MARKERS: tuple[str, ...] = ("license", "licence")',
+        "слабее: русское имя атрибута лицензии не опознаётся",
+        "studio.mcp.tests.test_pipeline",
+    ),
+    (
+        "studio/pipeline.py",
+        '    "non-commercial",\n    "noncommercial",',
+        '    "noncommercial",',
+        "слабее: `non-commercial` больше не запрещает коммерцию",
+        "studio.mcp.tests.test_pipeline",
+    ),
+    (
+        "studio/pipeline.py",
+        '    "research purposes",',
+        '    "commercial",',
+        "шире: разрешительная лицензия читается как запрет",
+        "studio.mcp.tests.test_pipeline",
+    ),
+    (
+        "studio/pipeline.py",
+        'PRICE_MARKERS: tuple[str, ...] = ("price", "cost", "цена", "стоимост")',
+        'PRICE_MARKERS: tuple[str, ...] = ("price", "cost")',
+        "слабее: русская ценовая строка перестала быть ценовой",
+        "studio.mcp.tests.test_pipeline",
+    ),
+    (
+        "studio/pipeline.py",
+        "BUDGET_TOLERANCE = 0.0",
+        "BUDGET_TOLERANCE = 0.25",
+        "слабее: превышение бюджета на четверть считается попаданием",
+        "studio.mcp.tests.test_pipeline",
+    ),
+    (
+        "studio/pipeline.py",
+        "BUDGET_TOLERANCE = 0.0",
+        "BUDGET_TOLERANCE = -0.25",
+        "строже: попадание в бюджет впритык считается промахом",
+        "studio.mcp.tests.test_pipeline",
+    ),
+    (
+        "studio/pipeline.py",
+        'BUDGET_UNIT = "usd"',
+        'BUDGET_UNIT = "credits"',
+        "бюджет человека сравнивается с кредитами вендора",
+        "studio.mcp.tests.test_pipeline",
+    ),
+    (
+        "studio/pipeline.py",
+        "STALE_AFTER_DAYS = 180",
+        "STALE_AFTER_DAYS = 36500",
+        "слабее: столетнее утверждение считается свежим",
+        "studio.mcp.tests.test_pipeline",
+    ),
+    (
+        "studio/pipeline.py",
+        "STALE_AFTER_DAYS = 180",
+        "STALE_AFTER_DAYS = 1",
+        "строже: вчерашнее утверждение считается протухшим",
+        "studio.mcp.tests.test_pipeline",
+    ),
+    (
+        "studio/pipeline.py",
+        '    "deprecated",\n    "retired",',
+        '    "retired",',
+        "слабее: слово `deprecated` больше не значит «снята»",
+        "studio.mcp.tests.test_pipeline",
+    ),
+    (
+        "studio/pipeline.py",
+        '        "max_seconds",\n        "max_duration_seconds",',
+        '        "max_duration_seconds",',
+        "слабее: расхождение по `max_seconds` перестало быть противоречием",
+        "studio.mcp.tests.test_pipeline",
+    ),
+    (
+        "studio/pipeline.py",
+        "    CLASS_NO_MODEL: UNMEASURED,",
+        "    CLASS_NO_MODEL: FAIL,",
+        "незнание базы выдаётся за свидетельство против модели (Р1)",
+        "studio.mcp.tests.test_pipeline",
+    ),
+    (
+        "studio/pipeline.py",
+        "    CLASS_CONTRADICTION: UNMEASURED,",
+        "    CLASS_CONTRADICTION: FAIL,",
+        "противоречие источников решается за человека (Р1)",
+        "studio.mcp.tests.test_pipeline",
+    ),
+    (
+        "studio/pipeline.py",
+        "    CLASS_GAP: FAIL,",
+        "    CLASS_GAP: UNMEASURED,",
+        "разрыв в плане сворачивается в «не смогли» (Р1)",
+        "studio.mcp.tests.test_pipeline",
+    ),
+    (
+        "studio/factaxis.py",
+        "APPLICABILITY: tuple[str, ...] = (KIND_MEASUREMENT, KIND_WITNESS)",
+        "APPLICABILITY: tuple[str, ...] = (KIND_WITNESS,)",
+        "измерение перестало быть применимостью",
+        "studio.mcp.tests.test_factaxis",
+    ),
+    (
+        "studio/factaxis.py",
+        "CAPABILITY: tuple[str, ...] = (KIND_SCHEMA, KIND_CLAIM)",
+        "CAPABILITY: tuple[str, ...] = (KIND_SCHEMA, KIND_CLAIM, KIND_MEASUREMENT)",
+        "измерение засчитано и в способность — колонки слиплись",
+        "studio.mcp.tests.test_factaxis",
+    ),
+    (
+        "studio/factaxis.py",
+        "WITNESS_TIERS: frozenset[str] = frozenset({TIER_PROBE, TIER_OPERATOR})",
+        "WITNESS_TIERS: frozenset[str] = frozenset({TIER_PROBE})",
+        "строже: владелец запустил и увидел — уже не свидетельство",
+        "studio.mcp.tests.test_factaxis",
+    ),
+    (
+        "studio/factaxis.py",
+        "MEASUREMENT_TIERS: frozenset[str] = frozenset({TIER_PAPER, TIER_BENCHMARK})",
+        'MEASUREMENT_TIERS: frozenset[str] = frozenset({TIER_PAPER, TIER_BENCHMARK, "vendor"})',
+        "слабее: вендорская проза о качестве считается измерением",
+        "studio.mcp.tests.test_factaxis",
+    ),
+    (
+        "studio/factaxis.py",
+        '        "metric_blind_spot",\n        "artifact_taxonomy",\n    }\n)',
+        '        "artifact_taxonomy",\n    }\n)',
+        "оговорка о метрике перестала идти против шага",
+        "studio.mcp.tests.test_factaxis",
+    ),
+    (
+        "studio/factaxis.py",
+        "RELEVANCE_FLOOR = SCORE_FLOOR",
+        "RELEVANCE_FLOOR = 0.0",
+        "слабее: к требованию относится любая строка",
+        "studio.mcp.tests.test_factaxis",
+    ),
+    (
+        "studio/factaxis.py",
+        "RELEVANCE_FLOOR = SCORE_FLOOR",
+        "RELEVANCE_FLOOR = 0.9",
+        "строже: к требованию не относится почти ничто",
+        "studio.mcp.tests.test_factaxis",
+    ),
 ]
-
 
 #: Файл-замок. Два мутационных прогона в одном дереве подменяют исходники друг
 #: другу, и вердикт становится случайным в ОБЕ стороны: прибор может покраснеть
