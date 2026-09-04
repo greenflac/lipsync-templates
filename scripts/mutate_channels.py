@@ -687,6 +687,20 @@ MUTANTS: list[tuple[str, str, str, str, str]] = [
     # план, `factaxis.APPLICABILITY` — считается ли строка свидетельством.
     # Константа, переставленная здесь, красит красное зелёным по всей выдаче.
     (
+        "scripts/check_golden.py",
+        '    "search_web": "сеть по определению",\n',
+        "",
+        "R2: инструмент выпал из-под присмотра и никто не заметил",
+        "studio.mcp.tests.test_golden",
+    ),
+    (
+        "scripts/check_golden.py",
+        "        if (провалы or пустые or без_присмотра)",
+        "        if (провалы or пустые)",
+        "R2: инструмент без присмотра перестал красить исход",
+        "studio.mcp.tests.test_golden",
+    ),
+    (
         "studio/pipeline.py",
         "MIN_FACTS_PER_MODEL = 1",
         "MIN_FACTS_PER_MODEL = 0",
