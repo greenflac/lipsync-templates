@@ -234,3 +234,60 @@ class ПриблизительныйЦветСпрашивают(unittest.TestCa
         ответ = write("синий свет", self.ПРИМЕРЫ)
         self.assertIsNone(ответ["card"])
         self.assertNotIn("palette", ответ["chosen"])
+
+
+class ДогадкаЗакрываетВсеЧетыреСлота(unittest.TestCase):
+    """Правило одно на все слоты карточки, а не одно на палитру.
+
+    ИЗМЕРЕНО 2026-09-04: первая редакция закрывала ТОЛЬКО палитру, и
+    «янтарный, свет сзади, матовый, приглушённые цвета» давало
+    `value_key: corpus -> dark` с исходом ГОДНО — заказчик назвал свет
+    приблизительно, получил чужой и не был об этом спрошен.
+    """
+
+    #: Примеры НЕСУТ ПОДСКАЗКУ НАСЫЩЕННОСТИ («desaturated»), иначе дефект не
+    #: воспроизводится: корпус не может заполнить слот, о котором молчит, и
+    #: мутация «брать насыщенность из корпуса» остаётся ненаблюдаемой.
+    ПРИМЕРЫ = tuple(
+        {
+            "text": "a palette of crimson and amber, low-key light, film-grain, "
+            "desaturated restrained colour",
+            "id": f"r{i}",
+        }
+        for i in range(3)
+    )
+
+    def _ответ(self, intent: str):
+        from studio.mcp.lipsync_prompt import write
+
+        return write(intent, self.ПРИМЕРЫ)
+
+    def test_приблизительный_свет_спрашивают_а_не_берут_из_корпуса(self) -> None:
+        ответ = self._ответ("янтарный, свет сзади, матовый, приглушённые цвета")
+        self.assertIsNone(ответ["prompt"])
+        self.assertNotIn("value_key", ответ["chosen"])
+        вопрос = next(с for с in ответ["unresolved"] if с["slot"] == "light")
+        self.assertIn("сзади", вопрос["ask"])
+        self.assertIn("backlit", вопрос["ask"])
+
+    def test_приблизительная_насыщенность_спрашивается_точно(self) -> None:
+        ответ = self._ответ("янтарный, мягкий свет, матовый, блёклые цвета")
+        self.assertIsNone(ответ["prompt"])
+        self.assertNotIn("saturation", ответ["chosen"])
+        вопрос = next(с for с in ответ["unresolved"] if с["slot"] == "saturation")
+        self.assertIn("блёкл", вопрос["ask"])
+
+    def test_всё_названное_точно_даёт_промт(self) -> None:
+        """И5: продукт, который спрашивает всегда, не отвечает никогда."""
+        ответ = self._ответ("янтарный, мягкий свет, матовый, приглушённые цвета")
+        self.assertEqual([], ответ["unresolved"])
+        self.assertIn("amber", ответ["prompt"] or "")
+
+    def test_догадка_попадает_в_свой_слот(self) -> None:
+        """«сзади» — про свет, «блёклый» — про насыщенность. Спрашивать о них
+        одно и то же значило бы не различать слоты."""
+        from studio.mcp.lipsync_prompt import _догадки_по_слотам
+
+        self.assertEqual({"light": ["backlit"]}, _догадки_по_слотам({"сзади": "backlit"}))
+        self.assertEqual({"saturation": ["muted"]}, _догадки_по_слотам({"блёкл": "muted"}))
+        self.assertEqual({"palette": ["indigo"]}, _догадки_по_слотам({"синий": "indigo"}))

@@ -211,6 +211,51 @@ def _supported(rows: Sequence[dict], limit: int = 1) -> list[dict]:
     return [row for row in rows if row["support"] >= MIN_SUPPORT][:limit]
 
 
+#: Слот карточки -> словарь движка, из которого берутся его значения. Нужен,
+#: чтобы приблизительно названное слово попало в СВОЙ слот: «свет сзади» — это
+#: свет, «блёклый» — насыщенность, и спрашивать о них надо разное.
+СЛОВАРИ_СЛОТОВ: dict[str, tuple[str, ...]] = {
+    "palette": tuple(PALETTE_WORDS),
+    "light": tuple(LIGHT_WORDS),
+    "texture": tuple(TEXTURE_WORDS),
+    "saturation": tuple(SATURATION_WORDS),
+}
+
+
+def _догадки_по_слотам(догадки: dict[str, str]) -> dict[str, list[str]]:
+    """Приблизительно названные слова, разложенные по слотам карточки.
+
+    ЗАЧЕМ ОБЩИМ ПОРЯДКОМ, А НЕ ЧЕТЫРЬМЯ ВЕТКАМИ. Первая редакция закрывала
+    ОДИН слот — палитру, потому что там я увидел ущерб глазами. ИЗМЕРЕНО тут же
+    2026-09-04: «янтарный, свет сзади, матовый, приглушённые цвета» давало
+    `value_key: corpus -> dark` и промт с исходом ГОДНО — заказчик назвал свет
+    приблизительно, а получил чужой, и его об этом не спросили. Дефект был не в
+    палитре, а в правиле; чинится правило.
+    """
+    по_слотам: dict[str, list[str]] = {}
+    for анг in догадки.values():
+        for слот, словарь in СЛОВАРИ_СЛОТОВ.items():
+            if анг in словарь:
+                по_слотам.setdefault(слот, []).append(анг)
+    return {слот: sorted(set(значения)) for слот, значения in по_слотам.items()}
+
+
+def _спросить_про_догадку(слот: str, догадки: dict[str, str], свои: list[str]) -> dict:
+    """Вопрос, который НАЗЫВАЕТ и понятое, и точные варианты.
+
+    Спрашивать «какой свет?» у того, кто свет уже назвал, — глухота: он
+    ответил, просто приблизительно.
+    """
+    названо = ", ".join(f"{ру} ~ {анг}" for ру, анг in sorted(догадки.items()) if анг in свои)
+    return {
+        "slot": слот,
+        "ask": (
+            f"You named {слот} approximately ({названо}); the engine takes exact "
+            f"values. Which of: " + ", ".join(СЛОВАРИ_СЛОТОВ[слот]) + "?"
+        ),
+    }
+
+
 def write(intent: str, examples: Sequence[Any]) -> dict:
     """Build a contract-clean lipsync prompt from the owner's words plus the corpus.
 
@@ -252,9 +297,8 @@ def write(intent: str, examples: Sequence[Any]) -> dict:
     # цвет просто не считался названным, поле оставалось пустым, и палитру
     # набирал корпус: сказано «синий» — получено «indigo, crimson и amber».
     # Теперь это НЕ вакансия, а вопрос.
-    цветные_догадки = sorted(
-        {анг for анг in (named.get("guessed") or {}).values() if анг in PALETTE_WORDS}
-    )
+    догадки_слотов = _догадки_по_слотам(named.get("guessed") or {})
+    цветные_догадки = догадки_слотов.get("palette") or []
     if colours:
         chosen["palette"] = {"value": colours, "from": "owner", "record_ids": []}
     elif цветные_догадки:
@@ -273,7 +317,7 @@ def write(intent: str, examples: Sequence[Any]) -> dict:
     # Light -> the engine's three-way value key.
     light_word = named["light"][0] if named["light"] else ""
     light_sources: list[str] = []
-    if not light_word:
+    if not light_word and not догадки_слотов.get("light"):
         top = _supported(votes["light"])
         if top:
             light_word = top[0]["value"]
@@ -290,7 +334,7 @@ def write(intent: str, examples: Sequence[Any]) -> dict:
     # Texture.
     texture = named["texture"][0] if named["texture"] else ""
     texture_sources: list[str] = []
-    if not texture:
+    if not texture and not догадки_слотов.get("texture"):
         top = _supported(votes["texture"])
         if top:
             texture = top[0]["value"]
@@ -318,6 +362,8 @@ def write(intent: str, examples: Sequence[Any]) -> dict:
     saturation_sources: list[str] = []
     if saturation:
         chosen["saturation"] = {"value": saturation, "from": "owner", "record_ids": []}
+    elif догадки_слотов.get("saturation"):
+        pass
     else:
         cues: dict[str, list[str]] = defaultdict(list)
         for item in examples:
@@ -379,21 +425,23 @@ def write(intent: str, examples: Sequence[Any]) -> dict:
         )
     if not value_key:
         unresolved.append(
-            {
-                "slot": "value_key",
-                "ask": "How lit — light, mid or dark?",
-            }
+            _спросить_про_догадку("light", named.get("guessed") or {}, догадки_слотов["light"])
+            if догадки_слотов.get("light")
+            else {"slot": "value_key", "ask": "How lit — light, mid or dark?"}
         )
     if not texture:
         unresolved.append(
-            {
-                "slot": "texture",
-                "ask": "Which surface? One of: " + ", ".join(TEXTURE_WORDS),
-            }
+            _спросить_про_догадку("texture", named.get("guessed") or {}, догадки_слотов["texture"])
+            if догадки_слотов.get("texture")
+            else {"slot": "texture", "ask": "Which surface? One of: " + ", ".join(TEXTURE_WORDS)}
         )
     if not saturation:
         unresolved.append(
-            {
+            _спросить_про_догадку(
+                "saturation", named.get("guessed") or {}, догадки_слотов["saturation"]
+            )
+            if догадки_слотов.get("saturation")
+            else {
                 "slot": "saturation",
                 "ask": "How much colour — " + ", ".join(SATURATION_WORDS) + "?",
             }

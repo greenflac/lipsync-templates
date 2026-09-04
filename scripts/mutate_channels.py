@@ -210,6 +210,27 @@ MUTANTS: list[tuple[str, str, str, str, str]] = [
         "догадки: приблизительный цвет перестаёт замечаться вовсе",
         "studio.mcp.tests.test_ruwords",
     ),
+    (
+        "studio/mcp/lipsync_prompt.py",
+        '    if not light_word and not догадки_слотов.get("light"):',
+        "    if not light_word:",
+        "догадки: приблизительный свет снова берётся из корпуса молча",
+        "studio.mcp.tests.test_ruwords",
+    ),
+    (
+        "studio/mcp/lipsync_prompt.py",
+        '    elif догадки_слотов.get("saturation"):\n        pass',
+        "    elif False:\n        pass",
+        "догадки: приблизительная насыщенность снова берётся из корпуса",
+        "studio.mcp.tests.test_ruwords",
+    ),
+    (
+        "studio/mcp/lipsync_prompt.py",
+        "            if анг in словарь:",
+        "            if True:",
+        "догадки: слово попадает во все слоты сразу — спрашивают не о том",
+        "studio.mcp.tests.test_ruwords",
+    ),
     # --- предел текста (заведён 2026-09-03) ---------------------------------
     (
         "studio/selfrag/attrfamily.py",
