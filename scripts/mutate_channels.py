@@ -814,6 +814,59 @@ MUTANTS: list[tuple[str, str, str, str, str]] = [
         "сторож имён: семейное имя перестало опознаваться",
         "studio.tests.test_named_not_asked",
     ),
+    # === ДОКАЗАТЕЛЬСТВО ИЗ КОРПУСА (studio/selfrag/evidence.py) ============
+    (
+        "studio/selfrag/evidence.py",
+        "CRAFT_SHARE = 0.5",
+        "CRAFT_SHARE = 0.0",
+        "доказательство: любая фраза считается ремесленной",
+        "studio.selfrag.tests.test_evidence",
+    ),
+    (
+        "studio/selfrag/evidence.py",
+        "MIN_PHRASE_WORDS = 3",
+        "MIN_PHRASE_WORDS = 1",
+        "доказательство: одно слово объявлено фразой",
+        "studio.selfrag.tests.test_bounds_literal",
+    ),
+    (
+        "studio/selfrag/evidence.py",
+        "MAX_PHRASE_WORDS = 6",
+        "MAX_PHRASE_WORDS = 60",
+        "доказательство: целое предложение объявлено фразой",
+        "studio.selfrag.tests.test_bounds_literal",
+    ),
+    # === РЕЕСТР КАРТОЧЕК (studio/selfrag/registry.py) ======================
+    (
+        "studio/selfrag/registry.py",
+        "STALE_AFTER_DAYS = 90",
+        "STALE_AFTER_DAYS = 36500",
+        "реестр: столетняя карточка модели считается свежей",
+        "studio.selfrag.tests.test_bounds_literal",
+    ),
+    (
+        "studio/selfrag/registry.py",
+        "STALE_AFTER_DAYS = 90",
+        "STALE_AFTER_DAYS = 1",
+        "строже: вчерашняя карточка объявлена протухшей",
+        "studio.selfrag.tests.test_bounds_literal",
+    ),
+    # === ПОИСК НОВЫХ МОДЕЛЕЙ (scripts/discover_models.py) =================
+    (
+        "scripts/discover_models.py",
+        "DISTINCT_UPLOADERS = 2",
+        "DISTINCT_UPLOADERS = 1",
+        "поиск моделей: одного загрузчика хватает, чтобы счесть модель живой",
+        "studio.mcp.tests.test_discover_models",
+    ),
+    # === ЦИКЛ ПО КАДРАМ (lipsync/fork_looper.py) ==========================
+    (
+        "lipsync/fork_looper.py",
+        "MIN_POSE_COVERAGE = 0.8",
+        "MIN_POSE_COVERAGE = 0.0",
+        "кадры: покрытие позы перестало требоваться",
+        "lipsync.tests.test_fork_looper",
+    ),
     # === ПЕРЕПИСЫВАТЕЛЬ ЗАПРОСА (studio/selfrag/rewriter.py) ==============
     (
         "studio/selfrag/rewriter.py",
