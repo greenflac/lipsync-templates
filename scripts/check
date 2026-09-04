@@ -58,7 +58,14 @@ python -c "import mypy" 2>/dev/null || { echo "FAIL: mypy is not installed"; exi
 python -m mypy lipsync/ --ignore-missing-imports
 
 step "tests"
-python -m unittest discover -s lipsync/tests -t .
+# ЗАПРЕТ СЕТИ ДЕРЖИТ РАННЕР, А НЕ ДОГОВОРЁННОСТЬ (правило Т4, критерий R8).
+# ИЗМЕРЕНО 2026-09-04: запрет держали 16 файлов из 107 своими руками — значит
+# новый тест, открывший сокет, не заметил бы никто. `scripts/run_tests.py`
+# ставит запрет до импорта тестов, сам проверяет его негативным контролем и
+# только потом зовёт `unittest discover`. Прибор оправдался на первом же
+# прогоне: `test_a_string_probe_must_carry_the_sentinel` уходил в настоящий
+# вызов вендорского API — сетевой в тесте и ПЛАТНЫЙ.
+python scripts/run_tests.py lipsync/tests
 
 # The Self-RAG prompt engineer. Gated here rather than described in a document,
 # because a rule that is only written down is a rule that gets skipped under a
@@ -78,7 +85,7 @@ step "mypy (selfrag)"
 MYPYPATH=. python -m mypy --explicit-package-bases studio/selfrag/ --ignore-missing-imports
 
 step "tests (selfrag)"
-python -m unittest discover -s studio/selfrag/tests -t .
+python scripts/run_tests.py studio/selfrag/tests
 
 # The calibration path. Lint and types are still named file by file (they are
 # per-module tools); the tests below are gated by directory.
@@ -108,7 +115,7 @@ MYPYPATH=. python -m mypy --explicit-package-bases studio/prompt_templates.py \
 # как «прошло». Мешал перебору один недостающий __init__.py и один
 # незаявленный пакет (httpx2, см. requirements-dev.txt); оба заведены.
 step "tests (studio/tests целиком)"
-python -m unittest discover -s studio/tests -t .
+python scripts/run_tests.py studio/tests
 
 # Ц7: правило «завёл тест — впиши его в гейт» словами не держится, и не
 # держалось: семь файлов существовали и не гонялись. Проверка перечисляет
@@ -169,7 +176,7 @@ step "mypy (scripts)"
 MYPYPATH=. python -m mypy --no-namespace-packages scripts/ --ignore-missing-imports
 
 step "tests (mcp)"
-python -m unittest discover -s studio/mcp/tests -t .
+python scripts/run_tests.py studio/mcp/tests
 
 # The server has to actually start and speak the protocol. Importing it proves
 # nothing: the tools are registered by decorator at import time, so an import

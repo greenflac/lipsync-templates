@@ -51,7 +51,11 @@ from lipsync.fork_identity import FAIL, PASS, UNMEASURED  # noqa: E402
 #: Как гейт запускает тесты. Обе формы читаются из самого гейта, а не
 #: переписываются сюда (Е1): список, скопированный в проверку, разъедется
 #: с гейтом ровно так же, как гейт разъехался с каталогом.
-ПЕРЕБОР = re.compile(r"unittest\s+discover\s+-s\s+(\S+)")
+#: ДВЕ ФОРМЫ ПЕРЕБОРА, А НЕ ОДНА. С 2026-09-04 гейт зовёт каталоги через
+#: `scripts/run_tests.py`, который держит запрет сети (правило Т4). Прежний
+#: `unittest discover -s ...` оставлен в образце намеренно: он законен при
+#: ручном прогоне, и проверка не должна объявлять его невидимым.
+ПЕРЕБОР = re.compile(r"unittest\s+discover\s+-s\s+(\S+)|run_tests\.py\s+(\S+)")
 ПОИМЁННО = re.compile(r"unittest\s+((?:[\w.]+\s*)+)$", re.M)
 
 #: `unittest discover` берёт по умолчанию `test*.py`. Файл, названный иначе,
@@ -70,13 +74,18 @@ def строки_гейта(путь: Path = ГЕЙТ) -> list[str]:
 
 
 def корни_перебора(строки: list[str]) -> list[str]:
-    return [м.group(1).rstrip("/") for с in строки for м in [ПЕРЕБОР.search(с)] if м]
+    корни: list[str] = []
+    for с in строки:
+        м = ПЕРЕБОР.search(с)
+        if м:
+            корни.append((м.group(1) or м.group(2)).rstrip("/"))
+    return корни
 
 
 def названные_модули(строки: list[str]) -> set[str]:
     имена: set[str] = set()
     for с in строки:
-        if "discover" in с:
+        if "discover" in с or "run_tests.py" in с:
             continue
         м = ПОИМЁННО.search(с.strip())
         if not м:

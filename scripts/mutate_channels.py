@@ -687,6 +687,20 @@ MUTANTS: list[tuple[str, str, str, str, str]] = [
     # план, `factaxis.APPLICABILITY` — считается ли строка свидетельством.
     # Константа, переставленная здесь, красит красное зелёным по всей выдаче.
     (
+        "scripts/run_tests.py",
+        "        raise AssertionError(ОТКАЗ)\n\n    def connect_ex",
+        "        return None\n\n    def connect_ex",
+        "R8: соединение снова разрешено, запрет держится на бумаге",
+        "studio.mcp.tests.test_runner",
+    ),
+    (
+        "scripts/run_tests.py",
+        "    if not сеть_закрыта():",
+        "    if False:",
+        "R8: негативный контроль запрета выключен",
+        "studio.mcp.tests.test_runner",
+    ),
+    (
         "scripts/check_golden.py",
         '    "search_web": "сеть по определению",\n',
         "",

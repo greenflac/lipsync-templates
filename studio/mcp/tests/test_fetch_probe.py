@@ -359,10 +359,19 @@ class Probe(unittest.TestCase):
         assert "no API key" in out["note"]
 
     def test_a_string_probe_must_carry_the_sentinel(self) -> None:
-        out = probe.probe_limit(self.URL, "aspect_ratio", "21:9")
-        assert out["outcome"] == "fail"
-        assert out["sent"] is None
-        ok = probe.probe_limit(self.URL, "aspect_ratio", "absurd-probe:9999")
+        # THE ENVIRONMENT IS CLEARED HERE FOR THE SAME REASON AS IN ITS
+        # NEIGHBOURS, and it was missing. Found 2026-09-04 by the new runner
+        # (`scripts/run_tests.py`), which blocks sockets for the whole suite:
+        # the sentinel value clears the absurdity guard, so with an API key in
+        # the environment this line went on to open a real connection to the
+        # vendor — a network call in a test (rule T4), and a PAID one at that.
+        # Cleared, it stops at "no API key", which is what the assertion below
+        # has always been about: the guard let the sentinel through.
+        with mock.patch.dict("os.environ", {}, clear=True):
+            out = probe.probe_limit(self.URL, "aspect_ratio", "21:9")
+            assert out["outcome"] == "fail"
+            assert out["sent"] is None
+            ok = probe.probe_limit(self.URL, "aspect_ratio", "absurd-probe:9999")
         assert ok["outcome"] != "fail", "the sentinel form must clear the guard"
 
     def test_a_boolean_is_not_a_probe_value(self) -> None:
