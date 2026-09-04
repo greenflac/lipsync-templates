@@ -687,6 +687,27 @@ MUTANTS: list[tuple[str, str, str, str, str]] = [
     # план, `factaxis.APPLICABILITY` — считается ли строка свидетельством.
     # Константа, переставленная здесь, красит красное зелёным по всей выдаче.
     (
+        "scripts/check_mutants_cover.py",
+        "        if isinstance(место, (ast.If, ast.While, ast.IfExp)):",
+        "        if False:",
+        "R7: ветвление перестало делать константу решающей — долг занижен",
+        "studio.mcp.tests.test_mutants_cover",
+    ),
+    (
+        "scripts/check_mutants_cover.py",
+        '    if итог["violations"] > ПОТОЛОК:',
+        "    if False:",
+        "R7: потолок перестал ловить рост долга",
+        "studio.mcp.tests.test_mutants_cover",
+    ),
+    (
+        "scripts/check_mutants_cover.py",
+        '    if итог["violations"] < ПОТОЛОК:',
+        "    if False:",
+        "R7: упавший долг больше не требует опустить потолок",
+        "studio.mcp.tests.test_mutants_cover",
+    ),
+    (
         "scripts/run_tests.py",
         "        raise AssertionError(ОТКАЗ)\n\n    def connect_ex",
         "        return None\n\n    def connect_ex",
