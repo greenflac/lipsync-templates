@@ -1593,10 +1593,7 @@ class ТриИсхода(unittest.TestCase):
             факт("тестовый-видеогенератор", "license", "apache-2.0", "vendor"),
         ]
         звук = next(о for о in pn.OPERATIONS if о.name == "звук_фон")
-        имена = [
-            к.model
-            for к in pn.candidates_for(звук, pn.FactIndex(facts=свои), today=СЕГОДНЯ)
-        ]
+        имена = [к.model for к in pn.candidates_for(звук, pn.FactIndex(facts=свои), today=СЕГОДНЯ)]
         self.assertIn("тестовый-фоли", имена)
         self.assertNotIn("тестовый-видеогенератор", имена)
 
@@ -1894,3 +1891,54 @@ class БезЧегоМодельНеЗапускается(unittest.TestCase):
         ]
         состояние, _ = pn.ban_stance(факты, ["бриф"], ["бриф"])
         self.assertEqual(состояние, "вход ЗАПРЕЩЁН")
+
+
+class ЦенаВсегоПайплайна(unittest.TestCase):
+    """Сколько стоит собранный пайплайн. Никогда одним числом (Е3).
+
+    Заведено 2026-09-04: пошаговые цены план печатал с начала, а вопрос
+    «сколько стоит ЭТО ЦЕЛИКОМ» — тот, с которого начинается разговор о
+    работе, — не отвечался нигде.
+    """
+
+    def test_нет_ни_одной_цены_это_не_ноль(self) -> None:
+        итог = pn.plan("сделай липсинк", facts=list(ЗДОРОВЫЕ), today=СЕГОДНЯ)
+        цена = итог["pipeline_price"]
+        self.assertEqual("не смогли", цена["outcome"])
+        self.assertEqual(0, цена["steps_priced"])
+        self.assertTrue(цена["steps_without_price"])
+        # Ноты сумматора про «слагаемых 0» тут быть НЕ должно: складывать было
+        # нечего, и ноль слагаемых читался бы как «всё известно».
+        self.assertNotIn("неизвестных слагаемых", цена["note"])
+
+    def test_цена_части_шагов_не_становится_ценой_пайплайна(self) -> None:
+        """Сумма по одному шагу из трёх — нижняя граница, а не цена."""
+        свои = list(ЗДОРОВЫЕ) + [
+            факт("тестовый-липсинк", "architecture", "lipsync talking-head", "vendor"),
+            факт("тестовый-липсинк", "license", "apache-2.0", "vendor"),
+            факт("тестовый-липсинк", "price_per_run_usd", "$0.4 per run", "portal"),
+        ]
+        итог = pn.plan("сделай липсинк", facts=свои, today=СЕГОДНЯ)
+        цена = итог["pipeline_price"]
+        self.assertEqual("не смогли", цена["outcome"])
+        self.assertGreaterEqual(цена["steps_priced"], 1)
+        self.assertTrue(цена["steps_without_price"])
+        self.assertIn("шагов с ценой", цена["note"])
+
+    def test_строка_цены_печатается_всегда(self) -> None:
+        """Молчание о цене читается как «нисколько»."""
+        текст = pn.render(pn.plan("сделай липсинк", facts=list(ЗДОРОВЫЕ), today=СЕГОДНЯ))
+        self.assertIn("цена пайплайна:", текст)
+
+    def test_разбор_цены_не_повторяется_вторым_способом(self) -> None:
+        """Е1: сумма берёт РАЗОБРАННУЮ цену кандидата, а не разбирает обратно
+        строку, которую напечатали человеку."""
+        свои = list(ЗДОРОВЫЕ) + [
+            факт("тестовый-липсинк", "architecture", "lipsync talking-head", "vendor"),
+            факт("тестовый-липсинк", "license", "apache-2.0", "vendor"),
+            факт("тестовый-липсинк", "price_per_run_usd", "$0.4 per run", "portal"),
+        ]
+        разобрана, словами = pn.cheapest(свои)
+        self.assertIsNotNone(разобрана)
+        self.assertIn("0.4", словами)
+        self.assertEqual(0.4, разобрана.amount)
