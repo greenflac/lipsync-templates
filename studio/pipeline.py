@@ -103,6 +103,7 @@ from lipsync.fork_identity import FAIL, PASS, UNMEASURED
 
 from studio import factaxis as fa
 from studio import pricing
+from studio import lifecycle
 from studio.selfrag.facts import Fact
 from studio.selfrag.modelnames import fold
 
@@ -597,17 +598,43 @@ def probe_price(step: Step, свои: Sequence[Fact]) -> Probe:
 
 def probe_stale(step: Step, свои: Sequence[Fact], today: date) -> Probe:
     """Снята ли модель, и не старше ли порога самое свежее утверждение о ней."""
+    # СНЯТИЕ РЕШАЕТ РАЗБОР СТРОКИ, А НЕ ПОДСТРОКА В НЕЙ (Е1, исправлено
+    # 2026-09-05). Здесь стоял поиск слов `deprecated`/`sunset`/`retired`/`снят`
+    # в значении ЛЮБОГО атрибута, и он объявлял модель снятой, когда сняли
+    # ПАРАМЕТР, ОДИН ЭНДПОИНТ или когда слово стояло внутри чужого текста.
+    #
+    # ИЗМЕРЕНО на живой базе (2127 строк): маркер срабатывал на 13 строках, а
+    # `studio/lifecycle.py` — прибор, написанный ровно для этого вопроса и с
+    # негативными контролями, — на СЕМИ из них отвечает «признаков снятия нет»:
+    # у runway-aleph2 снят enum соотношения сторон, у sora-2 снят эндпоинт
+    # remix, у gpt-5 сказано «Still callable but superseded», у
+    # stable-diffusion-xl слово `sunset` стоит внутри промпта в README, а у
+    # latentsync слово «снят» стоит в НАШЕМ ЖЕ замере 2026-09-05 о том, что
+    # модель укорачивает ролик. Петля замыкалась на себе: честный замер о
+    # модели начинал эту же модель отвергать.
+    #
+    # `planner.life_stance` спрашивал `lifecycle` уже давно; валидатор искал
+    # подстроку сам. Два судьи об одном вопросе — и решал худший.
     for f in свои:
-        маркер = _has_marker(f.value, DEPRECATION_MARKERS) or _has_marker(
-            f.attribute, DEPRECATION_MARKERS
-        )
-        if маркер:
+        снятие = lifecycle.разобрать(f.value, f.attribute, сегодня=today)
+        if снятие.outcome == lifecycle.НЕ_ГОДНО:
             return Probe(
                 CLASS_STALE,
                 True,
                 True,
                 CLASS_OUTCOME[CLASS_STALE],
-                f"модель объявлена снятой («{маркер}», {f.source_url})",
+                f"модель объявлена снятой ({снятие.note}, {f.source_url})",
+            )
+        if снятие.outcome == lifecycle.НЕ_СМОГЛИ:
+            # Снятие ОБЪЯВЛЕНО, но срок впереди или не назван. Это третий исход:
+            # модель сегодня работает, и вычёркивать её нельзя, а молчать о
+            # предупреждении — тоже.
+            return Probe(
+                CLASS_STALE,
+                True,
+                True,
+                UNMEASURED,
+                f"снятие объявлено, но сегодня модель работает ({снятие.note}, {f.source_url})",
             )
     возрасты = [d for d in (_age_days(f, today) for f in свои) if d is not None]
     if not возрасты:

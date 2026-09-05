@@ -911,6 +911,36 @@ MUTANTS: list[tuple[str, str, str, str, str]] = [
         "знак: «не объявлен» свёрнут в «хорошая новость» при чтении файла",
         "studio.tests.test_sign_is_explicit",
     ),
+    # === СНЯТИЕ МОДЕЛИ РЕШАЕТ РАЗБОР (studio/pipeline.py) =================
+    (
+        "studio/pipeline.py",
+        "        if снятие.outcome == lifecycle.НЕ_ГОДНО:",
+        "        if снятие.outcome != lifecycle.НЕ_ГОДНО:",
+        "снятие: разбор прочитан наоборот — живые модели объявляются снятыми",
+        "studio.tests.test_stale_asks_lifecycle",
+    ),
+    (
+        "studio/pipeline.py",
+        "        if снятие.outcome == lifecycle.НЕ_СМОГЛИ:",
+        "        if False:",
+        "снятие: объявленное впереди снятие замолчано — заказчик узнает от вендора",
+        "studio.tests.test_stale_asks_lifecycle",
+    ),
+    # === КОДЫ ВОЗВРАТА ПРИБОРОВ (scripts/run_tests.py, mutate_planner.py) ==
+    (
+        "scripts/run_tests.py",
+        "    if итог.testsRun == 0:",
+        "    if False:",
+        "раннер: пустой прогон снова считается успехом",
+        "studio.mcp.tests.test_runner",
+    ),
+    (
+        "scripts/mutate_planner.py",
+        "    return 1 if молчали else 0",
+        "    return 0",
+        "мутатор планировщика: промолчавший мутант снова не красит гейт",
+        "studio.mcp.tests.test_mutate_exit_codes",
+    ),
     # === АРИФМЕТИКА КАДРОВ (lipsync/framemath.py) =========================
     (
         "lipsync/framemath.py",

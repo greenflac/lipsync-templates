@@ -134,3 +134,41 @@ class ТриИсхода(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ПустойПрогонНеУспех(unittest.TestCase):
+    """Ноль собранных тестов — третий исход, а не «OK».
+
+    ВОСПРОИЗВЕДЕНО 2026-09-05 независимым аудитом: `wasSuccessful()` на пустом
+    наборе отвечает True, раннер печатал «Ran 0 tests ... OK» и возвращал 0.
+    Это тот самый дефект, ради которого раннер написан: «не запускалось»
+    выглядело как «прошло». Достаточно переименовать файл набора в форму, о
+    которой не знает `discover` (например `advice_checks.py`), — и тесты
+    исчезают из прогона, никого не разбудив.
+    """
+
+    def test_каталог_без_тестов_это_не_смогли(self) -> None:
+        import subprocess
+        import sys
+        import tempfile
+        from pathlib import Path
+
+        корень = Path(__file__).resolve().parents[3]
+        пустой = Path(tempfile.mkdtemp(dir=корень)) / "пусто"
+        пустой.mkdir()
+        (пустой / "__init__.py").write_text("", encoding="utf-8")
+        # Файл с тестом ЕСТЬ, но назван так, что discover его не подберёт —
+        # ровно тот случай из аудита.
+        (пустой / "проверки.py").write_text(
+            "import unittest\n\n\nclass Т(unittest.TestCase):\n    def test_я_есть(self):\n        pass\n",
+            encoding="utf-8",
+        )
+        self.addCleanup(lambda: __import__("shutil").rmtree(пустой.parent, ignore_errors=True))
+        готово = subprocess.run(
+            [sys.executable, "scripts/run_tests.py", str(пустой.relative_to(корень))],
+            cwd=корень,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(готово.returncode, 2, готово.stdout + готово.stderr)
+        self.assertIn("НИ ОДНОГО теста", готово.stdout + готово.stderr)
