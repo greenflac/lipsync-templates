@@ -889,6 +889,28 @@ MUTANTS: list[tuple[str, str, str, str, str]] = [
         "качество: низ распределения опущен до нуля, брак невозможен",
         "studio.selfrag.tests.test_quality_floors",
     ),
+    # === ЗНАК ПРИМЕНИМОСТИ (studio/factaxis.py, studio/selfrag/facts.py) ===
+    (
+        "studio/factaxis.py",
+        "    if fact.contra is not None:\n        return fact.contra",
+        "    if False:\n        return fact.contra",
+        "знак: объявленный знак факта перестал перебивать имя атрибута",
+        "studio.tests.test_sign_is_explicit",
+    ),
+    (
+        "studio/factaxis.py",
+        "    if fact.contra is not None:\n        return fact.contra",
+        "    if fact.contra is None:\n        return bool(fact.contra)",
+        "знак: объявленный знак прочитан наоборот",
+        "studio.tests.test_sign_is_explicit",
+    ),
+    (
+        "studio/selfrag/facts.py",
+        '                        None if row.get("contra") is None else bool(row.get("contra"))',
+        '                        bool(row.get("contra"))',
+        "знак: «не объявлен» свёрнут в «хорошая новость» при чтении файла",
+        "studio.tests.test_sign_is_explicit",
+    ),
     # === АРИФМЕТИКА КАДРОВ (lipsync/framemath.py) =========================
     (
         "lipsync/framemath.py",

@@ -773,6 +773,7 @@ def record(
     fix: str = "",
     read_directly: bool | None = None,
     witnessed: str = "",
+    contra: bool | None = None,
     path: Path | None = None,
 ) -> dict:
     """Write one web finding into the fact base, with who said it and when.
@@ -935,6 +936,11 @@ def record(
         "fix": str(fix or ""),
         "read_directly": None if read_directly is None else bool(read_directly),
         "witnessed": str(witnessed or ""),
+        # ЗНАК, ОБЪЯВЛЕННЫЙ ЯВНО: True — плохая новость, False — хорошая, None —
+        # не объявлен, и тогда его выведут по имени атрибута. Заведено
+        # 2026-09-05 после того, как отрицательный оплаченный замер, записанный
+        # под именем `holds_identity`, сделал план ложно ГОДНЫМ.
+        "contra": None if contra is None else bool(contra),
     }
     target = path or DEFAULT_FACTS_PATH
     key = claim_key(fields["model"], fields["attribute"], fields["value"], fields["source_url"])
@@ -981,12 +987,24 @@ def _as_row(fact: Fact) -> dict:
         "note": fact.note,
         "fix": fact.fix,
         "read_directly": fact.read_directly,
+        "contra": fact.contra,
     }
 
 
 #: What `record` may change about a standing claim. Model, attribute, value and
 #: URL are excluded because changing one of those makes it a different claim.
-MUTABLE_FIELDS: tuple[str, ...] = ("tier", "stated_on", "note", "fix", "read_directly")
+#:
+#: `contra` СТОИТ ЗДЕСЬ НАМЕРЕННО: объявить знак у строки, записанной без него,
+#: — это НОВОЕ знание о ней, и такая запись обязана дописываться, а не считаться
+#: «уже стоит ровно так».
+MUTABLE_FIELDS: tuple[str, ...] = (
+    "tier",
+    "stated_on",
+    "note",
+    "fix",
+    "read_directly",
+    "contra",
+)
 
 
 def _same_claim(standing: Fact, row: dict) -> bool:

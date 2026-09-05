@@ -412,24 +412,37 @@ class Consultant(unittest.TestCase):
         assert [s["read_directly"] for s in sources] == [True]
 
     def test_every_field_a_correction_can_move_is_actually_written(self) -> None:
-        """Each of the five is a correction this session's reading pass made:
+        """Each of the six is a correction some reading pass actually made:
         `read_directly` when a summary became a reading, `stated_on` when a
         page turned out to be dated November 2025 and not the day it was
         harvested, `note` when the reading said something the summary did not,
-        `tier` when a URL's rung changed, `fix` when a failure mode gained one.
+        `tier` when a URL's rung changed, `fix` when a failure mode gained one,
+        and `contra` on 2026-09-05, when a paid measurement came back NEGATIVE
+        and was recorded under a positive attribute name — the validator read it
+        as "applicability closed, not refuted" and called the plan GOOD. Stating
+        the sign on a row that had none is new knowledge about it, so it must be
+        appended rather than counted as "already stands like this".
 
         The names are LITERAL (house rule Т2) and compared against the module's
         list, so dropping one there breaks this rather than sliding past it."""
-        assert advice.MUTABLE_FIELDS == ("tier", "stated_on", "note", "fix", "read_directly")
-        moved: dict[str, tuple[str, str, str, str, bool]] = {
-            # tier, stated_on, note, fix, read_directly
-            "tier": ("probe", "2026-01-05", "", "", False),
-            "stated_on": ("vendor", "2025-11-24", "", "", False),
-            "note": ("vendor", "2026-01-05", "read it", "", False),
-            "fix": ("vendor", "2026-01-05", "", "use 5s", False),
-            "read_directly": ("vendor", "2026-01-05", "", "", True),
+        assert advice.MUTABLE_FIELDS == (
+            "tier",
+            "stated_on",
+            "note",
+            "fix",
+            "read_directly",
+            "contra",
+        )
+        moved: dict[str, tuple[str, str, str, str, bool, bool | None]] = {
+            # tier, stated_on, note, fix, read_directly, contra
+            "tier": ("probe", "2026-01-05", "", "", False, None),
+            "stated_on": ("vendor", "2025-11-24", "", "", False, None),
+            "note": ("vendor", "2026-01-05", "read it", "", False, None),
+            "fix": ("vendor", "2026-01-05", "", "use 5s", False, None),
+            "read_directly": ("vendor", "2026-01-05", "", "", True, None),
+            "contra": ("vendor", "2026-01-05", "", "", False, True),
         }
-        for field, (tier, stated_on, note, fix, read) in moved.items():
+        for field, (tier, stated_on, note, fix, read, contra) in moved.items():
             with self.subTest(field=field):
                 path = self.tmp / f"facts-{field}.jsonl"
                 advice.record(
@@ -442,6 +455,7 @@ class Consultant(unittest.TestCase):
                     note="",
                     fix="",
                     read_directly=False,
+                    contra=None,
                     path=path,
                 )
                 out = advice.record(
@@ -454,6 +468,7 @@ class Consultant(unittest.TestCase):
                     note=note,
                     fix=fix,
                     read_directly=read,
+                    contra=contra,
                     path=path,
                 )
                 assert out["written"] is not None, f"a changed {field} was not written"

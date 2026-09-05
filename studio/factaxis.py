@@ -119,6 +119,7 @@ __all__ = [
     "CAPABILITY",
     "CAPABILITY_HEADER",
     "CONTRA_ATTRIBUTES",
+    "is_contra",
     "DEFAULT_OVERRIDES_PATH",
     "KINDS",
     "KIND_CLAIM",
@@ -503,6 +504,28 @@ def relates(
     return относятся, мимо
 
 
+def is_contra(fact: "Fact") -> bool:
+    """Плохая ли это новость. Знак ФАКТА старше знака ИМЕНИ.
+
+    Три состояния поля `contra` сворачиваются в два ответа, и это не потеря
+    третьего исхода: третий исход здесь — «строка вообще не про применимость»,
+    и он решается осью, а не знаком. Поле отвечает только на вопрос «плохая ли
+    новость», и «не объявлено» честно означает «спросите имя атрибута».
+
+    ЗАЧЕМ ОТДЕЛЬНАЯ ФУНКЦИЯ. Знак спрашивают в двух местах — вердикт шага и
+    отбор кандидатов планировщика, — и два одинаковых правила в двух местах
+    разъезжаются молча (Е1). Мутировать её надо порознь от списка имён.
+
+    ВОСПРОИЗВЕДЕНО 2026-09-05 оплаченным замером: отрицательный результат
+    sync-lipsync записан под именем `holds_identity`, которого нет в
+    `CONTRA_ATTRIBUTES`, и валидатор объявил план ГОДНЫМ. Первое «годно» в
+    проекте оказалось ложным и получено из плохой новости.
+    """
+    if fact.contra is not None:
+        return fact.contra
+    return fact.attribute.lower() in CONTRA_ATTRIBUTES
+
+
 def step_verdict(
     step: str, requirement: str, marked: Sequence[Marked], floor: float = RELEVANCE_FLOOR
 ) -> dict:
@@ -538,7 +561,7 @@ def step_verdict(
     не_смогли = [m for m in относятся if not m.resolved]
     способность = [m for m in размечено if m.kind in CAPABILITY]
     применимость = [m for m in размечено if m.kind in APPLICABILITY]
-    против = [m for m in применимость if m.fact.attribute.lower() in CONTRA_ATTRIBUTES]
+    против = [m for m in применимость if is_contra(m.fact)]
 
     if против:
         исход = FAIL

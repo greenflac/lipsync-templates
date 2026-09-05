@@ -1564,7 +1564,7 @@ def evidence_for(
         ось = fa.axis(m.kind)
         if ось == fa.APPLICABILITY_HEADER:
             применимость += 1
-            if m.fact.attribute.lower() in fa.CONTRA_ATTRIBUTES:
+            if fa.is_contra(m.fact):
                 против += 1
         elif ось == fa.CAPABILITY_HEADER:
             способность += 1
