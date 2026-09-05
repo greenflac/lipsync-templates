@@ -935,6 +935,44 @@ MUTANTS: list[tuple[str, str, str, str, str]] = [
         "деньги: повтор ключа снова выдаётся за оплату — платное видео без списания",
         "studio.tests.test_app",
     ),
+    # === СТОРОЖА ГЕЙТА ПОД МУТАНТАМИ (заведено 2026-09-05 ради R7) ========
+    # Прибор, который никто не сторожит, ослабляется незаметно: его красное
+    # видно, а его ослабление — нет.
+    (
+        "scripts/check_craft.py",
+        "VERBATIM_MAX_WORDS = 15",
+        "VERBATIM_MAX_WORDS = 500",
+        "ремесло: дословная простыня из чужого текста перестала быть простынёй",
+        "studio.mcp.tests.test_check_craft",
+    ),
+    (
+        "scripts/eval_corpus.py",
+        "ADMISSION_MARGIN = 0.10",
+        "ADMISSION_MARGIN = 0.0",
+        "корпус: запас на допуск обнулён — граница перестала быть границей",
+        "studio.mcp.tests.test_eval_corpus",
+    ),
+    (
+        "scripts/eval_corpus.py",
+        "RANKING_MARGIN = 0.05",
+        "RANKING_MARGIN = 1.0",
+        "корпус: запас на порядок раздут — порядок перестал проверяться",
+        "studio.mcp.tests.test_eval_corpus",
+    ),
+    (
+        "scripts/eval_corpus.py",
+        "GOLD_ROWS = 60",
+        "GOLD_ROWS = 1",
+        "корпус: золотой набор из одной строки объявляется набором",
+        "studio.mcp.tests.test_eval_corpus",
+    ),
+    (
+        "scripts/blind_bank.py",
+        '"jfif", "jfif_version", "jfif_unit", "jfif_density", "dpi"',
+        '"jfif", "jfif_version", "jfif_unit", "jfif_density", "dpi", "prompt", "model"',
+        "слепой банк: подсказка в метаданных снова разрешена — валидатор перестаёт быть слепым",
+        "studio.mcp.tests.test_blind_bank",
+    ),
     (
         "scripts/check_mutants_clean.py",
         "        if старое in новое:",

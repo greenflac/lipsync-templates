@@ -232,6 +232,32 @@ def _ranking_baseline(answers: list[list[dict]], gold: list[dict]) -> float:
     return best
 
 
+def судить(real: float, admission: float, ranking: float, wider: int) -> tuple[list[str], bool]:
+    """Оба сравнения с запасом, вынесенные из `report` (Т5).
+
+    Внутри `report` эти две развилки достижимы только через полный индекс, то
+    есть через вход, который меняется вместе с корпусом; ни один тест не мог
+    подменить в них константу, и обе стояли БЕЗ ОХРАНЫ — поймано ратчетом R7
+    2026-09-05.
+
+    Возвращает список бед и то, измеримо ли вообще сравнение порядка: у выдачи
+    длина ровно k по построению, поэтому без пула шире k перемешивать нечего, и
+    это третий исход, а не успех.
+    """
+    беды: list[str] = []
+    if real < admission + ADMISSION_MARGIN:
+        беды.append(
+            f"ADMISSION: real {real:.4f} does not clear random {admission:.4f} "
+            f"by {ADMISSION_MARGIN}"
+        )
+    измеримо = wider > 0
+    if измеримо and real < ranking + RANKING_MARGIN:
+        беды.append(
+            f"RANKING: real {real:.4f} does not clear shuffled {ranking:.4f} by {RANKING_MARGIN}"
+        )
+    return беды, измеримо
+
+
 def report(*, index: K.KnowledgeIndex | None = None) -> dict:
     """Score the shipped retriever against a gold set derived from `index`.
 
@@ -284,17 +310,7 @@ def report(*, index: K.KnowledgeIndex | None = None) -> dict:
     # Считается по ШИРОКОМУ пулу, а не по выдаче: у выдачи длина ровно k по
     # построению, поэтому прежнее `len(a) > DEFAULT_K` было тождественно нулю.
     wider = sum(1 for pool in pools if len(pool) > K.DEFAULT_K)
-    failures = []
-    if real < admission + ADMISSION_MARGIN:
-        failures.append(
-            f"ADMISSION: real {real:.4f} does not clear random {admission:.4f} "
-            f"by {ADMISSION_MARGIN}"
-        )
-    ranking_measurable = wider > 0
-    if ranking_measurable and real < ranking + RANKING_MARGIN:
-        failures.append(
-            f"RANKING: real {real:.4f} does not clear shuffled {ranking:.4f} by {RANKING_MARGIN}"
-        )
+    failures, ranking_measurable = судить(real, admission, ranking, wider)
 
     return {
         "outcome": FAIL if failures else PASS,
