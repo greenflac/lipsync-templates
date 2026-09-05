@@ -431,3 +431,120 @@ class СемьиЗаведённыеПоЗамеруНедостижимости
             self.assertNotIn(
                 "price_per_second_usd", attrfamily.expand(слово, ["price_per_second_usd"]), слово
             )
+
+
+class СемьиЗаведённыеРадиR3(unittest.TestCase):
+    """Тринадцать семей, заведённых 2026-09-05, чтобы довести достижимость базы
+    до 100%. Каждая проверяется С ДВУХ СТОРОН: что она отвечает на свой вопрос
+    и что она НЕ забирает похоже названное чужое (И5). Ожидаемое — литералы
+    (Т2): имена атрибутов написаны руками, а не взяты из `СЕМЬИ`, иначе тест
+    поедет вместе с семьёй и промолчит.
+
+    Входы — настоящие имена из живой базы 2026-09-05, а не выдуманные: семья,
+    проверенная на придуманном имени, меряет мою фантазию.
+    """
+
+    #: Все имена атрибутов живой базы на день заведения семей.
+    ИМЕНА = (
+        "aspect_ratio_enum",
+        "ratio_enum",
+        "aspect_ratios_vertex",
+        "duration_range_seconds",
+        "moderation",
+        "generation_time",
+        "price_per_generation",
+        "fps",
+        "frame_rate",
+        "first_last_frame",
+        "keyframe_conditioning_tradeoff",
+        "native_resolution_and_frames",
+        "voice_controls",
+        "max_audio_seconds",
+        "price_per_audio_second",
+        "speed_range",
+        "editing",
+        "prompt_rule_edit",
+        "extension_constraints",
+        "expands_internally",
+        "expander_evidence",
+        "prompt_skeleton",
+        "max_prompt_length",
+        "arena_rank_vs_prompt_adherence",
+        "min_seconds",
+        "max_seconds",
+        "price_relative",
+        "portal_license",
+        "license_restriction",
+        "training_resolution",
+        "resolution_enum",
+    )
+
+    def полe(self, вопрос: str) -> set[str]:
+        return set(attrfamily.expand(вопрос, list(self.ИМЕНА)))
+
+    def test_пропорции_кадра_не_тянут_длительность_и_модерацию(self):
+        поля = self.полe("aspect_ratio")
+        self.assertIn("aspect_ratio_enum", поля)
+        self.assertIn("ratio_enum", поля)
+        self.assertIn("aspect_ratios_vertex", поля)
+        # Подстрока `ratio` тянула бы всё это — 26 имён вместо 9.
+        self.assertNotIn("duration_range_seconds", поля)
+        self.assertNotIn("moderation", поля)
+        self.assertNotIn("generation_time", поля)
+        self.assertNotIn("price_per_generation", поля)
+
+    def test_частота_кадров_не_тянет_монтаж_и_разрешение(self):
+        поля = self.полe("frame_rate")
+        self.assertIn("fps", поля)
+        self.assertIn("frame_rate", поля)
+        self.assertNotIn("first_last_frame", поля, "это монтаж, а не частота")
+        self.assertNotIn("keyframe_conditioning_tradeoff", поля, "это находка бенчмарка")
+        self.assertNotIn("native_resolution_and_frames", поля, "там разрешение")
+
+    def test_голос_не_тянет_цену_звука(self):
+        поля = self.полe("voice")
+        self.assertIn("voice_controls", поля)
+        self.assertIn("max_audio_seconds", поля)
+        self.assertIn("speed_range", поля, "темп РЕЧИ живёт здесь, а не в скорости")
+        self.assertNotIn("price_per_audio_second", поля, "это цена")
+
+    def test_правка_готового_не_тянет_расширение_ПРОМПТА(self):
+        """Найдено чтением выдачи глазами (П3): префикс `expand` приводил на
+        вопрос «умеет ли править готовое» строку «длина промпта коррелирует с
+        качеством на -0.07». Это про переписывание промпта, а не про продление
+        ролика."""
+        поля = self.полe("editing")
+        self.assertIn("editing", поля)
+        self.assertIn("extension_constraints", поля)
+        self.assertNotIn("expands_internally", поля)
+        self.assertNotIn("expander_evidence", поля)
+        self.assertNotIn("prompt_rule_edit", поля, "это правило написания промпта")
+
+    def test_правило_промпта_забрало_расширение_промпта(self):
+        """Обратная сторона того же: выброшенное из `editing` не потерялось."""
+        поля = self.полe("prompt_rule")
+        self.assertIn("expands_internally", поля)
+        self.assertIn("expander_evidence", поля)
+        self.assertIn("prompt_skeleton", поля)
+        self.assertNotIn("max_prompt_length", поля, "это предел текста")
+        self.assertNotIn("arena_rank_vs_prompt_adherence", поля, "это бенчмарк")
+
+    def test_минимум_длительности_не_смешан_с_максимумом(self):
+        self.assertIn("min_seconds", self.полe("duration_floor"))
+        self.assertNotIn("min_seconds", self.полe("max_seconds"))
+        self.assertNotIn("max_seconds", self.полe("duration_floor"))
+
+    def test_условия_оплаты_забрали_относительную_цену(self):
+        """`price_relative` («на 50% дешевле») исключена из `price` с самого
+        начала: сколько платят, из неё не следует. Но и молчать она не должна."""
+        self.assertIn("price_relative", self.полe("billing"))
+        self.assertNotIn("price_relative", self.полe("price"))
+
+    def test_лицензия_площадки_отвечает_на_вопрос_об_оплате(self):
+        self.assertIn("portal_license", self.полe("billing"))
+
+    def test_разрешение_обучения_не_отвечает_на_вопрос_о_разрешении(self):
+        """Прежнее решение модуля сохранено: `training_resolution` — предел
+        ОБУЧЕНИЯ голоса/модели, а не предел входа."""
+        self.assertNotIn("training_resolution", self.полe("resolution"))
+        self.assertIn("training_resolution", self.полe("image_size"))

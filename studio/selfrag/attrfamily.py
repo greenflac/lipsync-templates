@@ -320,6 +320,309 @@ from __future__ import annotations
         "exact": (),
         "подстроки": ("language",),
     },
+    # === ЗАВЕДЕНО 2026-09-05 РАДИ R3 =======================================
+    # Владелец потребовал довести достижимость базы до 95%: строка, до которой
+    # не доводит ни одно спрашиваемое слово, для продукта не существует.
+    # Было недостижимо 197 строк из 2127 (9.3%) под потолком 10% — то есть
+    # потолок разрешал не уметь спросить каждую одиннадцатую собранную строку.
+    # Каждая семья ниже названа ВОПРОСОМ, который заказчик действительно
+    # задаёт, и у каждой выписан негативный контроль: имя, которое звучит
+    # похоже и в семью НЕ берётся, с причиной (И5).
+    "aspect_ratio": {
+        # «В каких пропорциях кадр» — первый вопрос про вертикальный ролик.
+        # ПРЕФИКС, А НЕ ПОДСТРОКА `ratio`: подстрока тянет `duration_range`,
+        # `moderation`, `generation_time`, `price_per_generation` и
+        # `faithfulness_benchmark_saturation` — 26 имён вместо 9, и на вопрос
+        # о пропорциях пришла бы цена.
+        "prefixes": ("aspect_ratio", "ratio_enum"),
+        "exact": (),
+        "подстроки": (),
+        "кроме": (),
+    },
+    "frame_rate": {
+        # «Сколько кадров в секунду и сколько их всего».
+        # ЗАКРЫТЫЙ СПИСОК: подстрока `frame` тянет `first_last_frame` (это про
+        # монтаж, а не про частоту), `native_resolution_and_frames` (там
+        # разрешение) и `keyframe_conditioning_tradeoff` (находка бенчмарка).
+        "prefixes": (),
+        "exact": (
+            "fps",
+            "frame_rate",
+            "frames_and_fps",
+            "num_frames_range",
+            "max_frames",
+            "keyframes_max",
+        ),
+        "подстроки": (),
+        "кроме": (),
+    },
+    "voice": {
+        # «Что модель умеет с голосом»: клонирование, дикторы, длина дорожки.
+        # `speed_range` живёт ЗДЕСЬ, а не в семье скорости, и это записано в
+        # шапке модуля с самого начала: `0.7-1.2` — темп РЕЧИ, и в ответе на
+        # «как быстро генерит» он был бы числом не про то.
+        # ЗАКРЫТЫЙ СПИСОК ПО ЗВУКУ: подстрока `audio` тянет
+        # `price_per_audio_second`, то есть цену.
+        "prefixes": ("voice_", "tts_"),
+        "exact": (
+            "own_voice_only",
+            "max_speakers",
+            "cloning_strength",
+            "audio_required",
+            "audio_default",
+            "max_audio_seconds",
+            "training_audio_minutes",
+            "stress_control",
+            "text_normalization_default",
+            "speech_timing_guidance",
+            "speed_range",
+        ),
+        "подстроки": (),
+        "кроме": (),
+    },
+    "editing": {
+        # «Умеет ли править готовое и продолжать ролик».
+        # ЗАКРЫТЫЙ СПИСОК ПО `edit`: подстрока тянет `prompt_rule_edit` — это
+        # правило НАПИСАНИЯ промта, оно отвечает на другой вопрос и живёт в
+        # семье `prompt_rule`.
+        # ПРЕФИКС `expand` ОТСЮДА УБРАН ПОСЛЕ ЧТЕНИЯ ВЫДАЧИ ГЛАЗАМИ (П3).
+        # `expands_internally` и `expander_evidence` — это про РАСШИРЕНИЕ
+        # ПРОМПТА (`--use_prompt_extend`, «переписывание в 80-100 слов»), а не
+        # про продление ролика. На вопрос «умеет ли править готовое» приходила
+        # строка «длина промпта коррелирует с качеством на -0.07» — ответ не на
+        # тот вопрос. Семья `prompt_rule` его и забрала.
+        "prefixes": ("extension",),
+        "exact": (
+            "editing",
+            "edit_support",
+            "editing_rule",
+            "editing_reference_syntax",
+            "video_edit_upload_gated",
+            "video_to_video",
+            "first_last_frame",
+            "mask_requirements",
+            "max_total_length_via_extension",
+            "loop_mode",
+            "long_video_method",
+            "segment_duration",
+        ),
+        "подстроки": (),
+        "кроме": (),
+    },
+    "prompt_rule": {
+        # «Как писать промт именно для этой модели» — вопрос, ради которого
+        # продукт и существует.
+        # ЗАКРЫТЫЙ СПИСОК: подстрока `prompt` тянет `max_prompt_length` и
+        # `prompt_length_limit` (это предел текста, семья `text_limit`) и
+        # `arena_rank_vs_prompt_adherence` (это бенчмарк). Разные вопросы.
+        "prefixes": ("prompt_rule", "expand"),
+        "exact": (
+            "prompt_skeleton",
+            "prompt_upsampling",
+            "prompt_upsampling_scope",
+            "negative_prompts",
+            "lipsync_prompt_rule",
+            "dialogue_prompt_rule",
+            "hex_color_control",
+            "steps_and_guidance",
+            "sample_guidance",
+            "safety_tolerance",
+            "expression_intensity_range",
+            "character_orientation",
+            "strength",
+            "controls",
+            "modes",
+            "sync_mode_enum",
+        ),
+        "подстроки": (),
+        "кроме": (),
+    },
+    "limits": {
+        # «Сколько за раз и как часто» — квоты, параллельность, размеры файлов.
+        # НЕ БЕРЁТСЯ `text_limit`: предел ТЕКСТА — свой вопрос и своя семья;
+        # смешать их значило бы на вопрос «сколько роликов за раз» получить
+        # длину промпта.
+        "prefixes": (),
+        "exact": (
+            "concurrency",
+            "concurrency_limits",
+            "upload_limits",
+            "plan_slots",
+            "images_per_request",
+            "max_videos_per_prompt_vertex",
+            "file_size_limits",
+            "max_image_payload",
+            "size_constraints",
+            "result_url_expiry",
+            "probe_discloses_limits",
+            "unsupported_params",
+            "reasoning_effort_levels",
+            "tool_use",
+        ),
+        "подстроки": (),
+        "кроме": (),
+    },
+    "billing": {
+        # «Как за это платят» — не СКОЛЬКО (это семья `price`), а на каких
+        # условиях: план, хранение, порог выручки, доплата за длинный контекст.
+        # `price_relative` попадает СЮДА, а не в `price`, и это то же решение,
+        # что записано в негативном контроле ценовой семьи: «на 50% дешевле» —
+        # сравнение с другой моделью, из него не следует, сколько платят.
+        "prefixes": (),
+        "exact": (
+            "billing_requirement",
+            "storage_cost",
+            "commercial_revenue_threshold",
+            "long_context_surcharge",
+            "search_grounding_price",
+            "price_relative",
+            "probe_blocked_by_balance",
+            "portal_license",
+        ),
+        "подстроки": (),
+        "кроме": (),
+    },
+    "model_identity": {
+        # «Как её позвать» — идентификатор, версия, эндпоинт, снимок.
+        # НЕ БЕРЁТСЯ `availability`: «снята ли модель» — вопрос о том, работает
+        # ли она вообще, и он решает судьбу плана; «как её позвать» — вопрос о
+        # строке в запросе. Слить их значило бы отвечать на первый вторым.
+        # `endpoint_` НЕ ПРЕФИКС: имён с ним ровно два, и они отвечают на разные
+        # вопросы — `endpoint_pinning` («как её позвать», сюда) и
+        # `endpoint_purpose` («что этот эндпоинт делает», в семью умений).
+        "prefixes": ("version_",),
+        "exact": (
+            "endpoint_pinning",
+            "model_id",
+            "model_enum",
+            "underlying_model",
+            "vertex_endpoint_migration",
+            "default_snapshot",
+            "comfyui_node",
+            "provenance",
+            "model_sizes",
+            "knowledge_cutoff",
+            "vae_compression",
+            "images_endpoint_metadata",
+            "authenticated_read_reachable",
+            "prompt_metadata_exposed",
+        ),
+        "подстроки": (),
+        "кроме": (),
+    },
+    "capabilities": {
+        # «Что она вообще умеет и для чего» — рядом с `positioning`, но
+        # отвечает на вопрос о СПИСКЕ умений, а не о нише.
+        # ПРЕФИКС `lipsync` ОТСЮДА УБРАН: он забирал `lipsync_identity_failure_mode`
+        # и `lipsync_artefacts` у семей «держит ли лицо» и «как ведёт себя», то
+        # есть уводил ПЛОХИЕ НОВОСТИ из ответа на вопрос, ради которого их и
+        # записывали. Поймали это чужие тесты, а не мои: сторож семьи поведения
+        # проверяет полный список её имён и потому краснеет на любом уводе.
+        "prefixes": (),
+        "exact": (
+            "lipsync",
+            "lipsync_support",
+            "lipsync_model_selection",
+            "capabilities",
+            "modalities",
+            "modality",
+            "role",
+            "product_identity",
+            "best_for",
+            "summary_line",
+            "text_rendering",
+            "text_rendering_non_latin",
+            "transparent_background",
+            "watermark",
+            "moderation",
+            "consent_gate",
+            "face_requirement",
+            "human_face_restriction",
+            "grounding_search",
+            "retrieval_grounding",
+            "embedding_types",
+            "endpoint_purpose",
+        ),
+        "подстроки": (),
+        "кроме": (),
+    },
+    "image_size": {
+        # «Какого размера картинка на выходе» — отдельно от `resolution`,
+        # которая про видео: `default_short_side` и `upscale_path` бессмысленны
+        # в ответе на вопрос о разрешении ролика.
+        # ПРЕФИКС `upscale` ОТСЮДА УБРАН ПО ТОЙ ЖЕ ПРИЧИНЕ, ЧТО И `lipsync` В
+        # СЕМЬЕ УМЕНИЙ: он забирал `upscale_artifacts` у семьи «как ведёт себя»,
+        # то есть уводил жалобу на артефакты из ответа на вопрос о проблемах.
+        # Два увода за один заход — поэтому дальше в этих семьях только
+        # поимённые списки: префикс дешевле писать и дороже проверять.
+        "prefixes": (),
+        "exact": (
+            "upscale_path",
+            "upscale_mechanism",
+            "size_options",
+            "image_size_options",
+            "sample_image_size_models_vertex",
+            "quality_options",
+            "default_short_side",
+            "training_resolution",
+        ),
+        "подстроки": (),
+        "кроме": (),
+    },
+    "duration_floor": {
+        # «Короче какого предела нельзя» и какие длины вообще бывают. Семья
+        # `max_seconds` отвечает на ПОТОЛОК, и подмешать туда минимум значило
+        # бы отдать на вопрос «сколько максимум» число «сколько минимум».
+        "prefixes": (),
+        "exact": (
+            "min_seconds",
+            "supported_durations",
+            "video_lengths_vertex",
+            "max_script_length",
+            "probe_cannot_settle_duration",
+        ),
+        "подстроки": (),
+        "кроме": (),
+    },
+    "measurement_method": {
+        # «Чем это мерили и насколько мерке верить» — находки о самих
+        # бенчмарках и о протоколе оценки. Отдельно от `benchmark_score`:
+        # там ЧИСЛО, здесь — можно ли этому числу верить.
+        "prefixes": ("vlm_judge",),
+        "exact": (
+            "evaluation_protocol",
+            "arena_rank_vs_prompt_adherence",
+            "faithfulness_benchmark_saturation",
+            "single_vs_multishot_quality_drop",
+            "keyframe_conditioning_tradeoff",
+            "retrieval_quality",
+            "physics_ceiling",
+            "tradeoff",
+            "speed_publication",
+            "training_time_contested",
+        ),
+        "подстроки": (),
+        "кроме": (),
+    },
+    "serving": {
+        # «Где стоит и как быстро отвечает СЛУЖБА» — не модель. Семья
+        # `generation_time` закрыта списком именно потому, что `queue_latency`
+        # и `ttfb_by_region` — про очередь и регион, а не про то, сколько
+        # считается кадр; в ответе на «как быстро генерит» они дали бы число
+        # не про то (это записано в шапке модуля).
+        "prefixes": (),
+        "exact": (
+            "serving_regions",
+            "ttfb_by_region",
+            "queue_latency",
+            "indexing_latency",
+            "rendering_speed",
+            "speed_relative",
+            "training_time",
+        ),
+        "подстроки": (),
+        "кроме": (),
+    },
 }
 
 #: Слова, которыми спрашивают то же самое. Спрашивает человек и модель, а не
