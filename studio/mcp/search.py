@@ -208,7 +208,10 @@ def _gemini(text: str, site: str, count: int) -> dict:
     except urllib.error.URLError as error:
         reason = str(getattr(error, "reason", error))
         if _DENIAL.search(reason):
-            note_denial(url, reason, f"web search for: {text}")
+            # ТЕКСТ ЗАПРОСА СЮДА НЕ ПОПАДАЕТ. Его печатает заказчик, а строка
+            # уезжает в отслеживаемый git-ом файл. Для заявки на открытие ХОСТА
+            # запрос ничего не добавляет: специфичность даёт сам адрес.
+            note_denial(url, reason, "web search hit that did not open")
             return _empty(
                 UNMEASURED,
                 f"the Gemini endpoint is refused by this organisation's egress "
@@ -359,7 +362,7 @@ def search(query: str, *, count: int = 8, site: str = "", check_fetchable: bool 
     except urllib.error.URLError as error:
         reason = str(getattr(error, "reason", error))
         if _DENIAL.search(reason):
-            note_denial(ENDPOINT, reason, f"web search for: {text}")
+            note_denial(ENDPOINT, reason, "web search endpoint refused")
             return _empty(
                 UNMEASURED,
                 f"the search backend is refused by this organisation's egress "

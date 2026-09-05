@@ -820,6 +820,13 @@ MUTANTS: list[tuple[str, str, str, str, str]] = [
         "studio.tests.test_named_not_asked",
     ),
     (
+        "studio/mcp/fetch.py",
+        '        "why_wanted": причина_для_записи(why_wanted),',
+        '        "why_wanted": why_wanted,',
+        "приватность: текст заказчика снова уезжает в репозиторий дословно",
+        "studio.mcp.tests.test_denied_reason_is_safe",
+    ),
+    (
         "studio/app.py",
         "        if not session_id:",
         "        if False:",

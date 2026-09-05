@@ -70,7 +70,15 @@ from typing import Any
 
 from lipsync.fork_identity import FAIL, PASS, UNMEASURED
 
-__all__ = ["fetch", "reachability", "wanted", "note_denial", "DENIED_PATH", "MEASURED_ON"]
+__all__ = [
+    "fetch",
+    "reachability",
+    "wanted",
+    "note_denial",
+    "причина_для_записи",
+    "DENIED_PATH",
+    "MEASURED_ON",
+]
 
 #: When the map in this docstring was measured. A reachability claim with no
 #: date is the same rot the fact base guards against.
@@ -88,6 +96,51 @@ DENIED_PATH = Path(__file__).resolve().parents[1] / "knowledge" / "denied_hosts.
 _DENIAL = re.compile(r"tunnel connection failed:\s*(403|407)", re.I)
 
 _UA = "lipsync-studio-knowledge/1.0 (+https://github.com/greenflac/lipsync-templates)"
+
+
+#: ПОТОЛОК ДЛИНЫ ПРИЧИНЫ. ВЫБРАНО: самая длинная НАСТОЯЩАЯ формулировка в живом
+#: файле — 289 символов (ИЗМЕРЕНО 2026-09-05 на 605 строках, 26 длиннее 200), и
+#: 400 оставляет запас, не превращая строку в текстовое поле.
+ПОТОЛОК_ПРИЧИНЫ = 400
+
+#: Что вырезается из причины перед записью в отслеживаемый git-ом файл.
+#: Почта, телефон и длинная цепочка цифр — то, чем текст заказчика отличается от
+#: нашей формулировки. Список закрытый и намеренно грубый: он не «определяет
+#: персональные данные», он снимает самые узнаваемые их формы.
+_ЛИЧНОЕ = (
+    (re.compile(r"[\w.+-]+@[\w-]+\.[\w.]+"), "<почта>"),
+    (re.compile(r"(?<!\d)(?:\+\d[\d ()-]{8,}\d)(?!\d)"), "<телефон>"),
+    (re.compile(r"(?<!\d)\d{9,}(?!\d)"), "<длинное число>"),
+)
+
+
+def причина_для_записи(текст: str) -> str:
+    """Причина в том виде, в каком её можно положить в репозиторий.
+
+    ЗАЧЕМ. `denied_hosts.jsonl` лежит в git и уезжает в публичный репозиторий, а
+    поле `why_wanted` до 2026-09-05 писалось ДОСЛОВНО — в том числе из
+    `search.py`, где оно строилось как «web search for: {текст запроса}», и из
+    параметра инструмента MCP, который заполняет клиент. То есть текст, который
+    печатал заказчик, мог уехать в коммит.
+
+    ИЗМЕРЕНО 2026-09-05: в живом файле 605 строк, из них с текстом поискового
+    запроса — НОЛЬ. То есть сегодня это ничего не стоило — и ровно поэтому
+    прошло бы дальше. Дыра закрывается В ОДНОМ МЕСТЕ (Е1): здесь, а не в каждом
+    зовущем, иначе следующий зовущий про неё не узнает.
+
+    Отрезание помечается вслух: молча укоротить чужую формулировку значит
+    отдать обрезок за целое.
+    """
+    было = " ".join(str(текст or "").split())
+    стало = было
+    for образец, замена in _ЛИЧНОЕ:
+        стало = образец.sub(замена, стало)
+    вырезано = стало != было
+    if len(стало) > ПОТОЛОК_ПРИЧИНЫ:
+        стало = стало[:ПОТОЛОК_ПРИЧИНЫ] + f" …(обрезано с {len(было)} символов)"
+    if вырезано:
+        стало += " [узнаваемо личное вырезано перед записью в репозиторий]"
+    return стало
 
 
 def _host(url: str) -> str:
@@ -121,7 +174,7 @@ def note_denial(url: str, reason: str, why_wanted: str = "", *, incidental: bool
         "host": host,
         "url": str(url),
         "reason": reason,
-        "why_wanted": why_wanted,
+        "why_wanted": причина_для_записи(why_wanted),
         "incidental": bool(incidental),
         "state": STATE_REFUSED,
         "first_seen": date.today().isoformat(),
