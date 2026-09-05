@@ -1041,8 +1041,8 @@ MUTANTS: list[tuple[str, str, str, str, str]] = [
     ),
     (
         "studio/app.py",
-        '    if str(session.get("stage")) not in (STAGE_CONSENTED, STAGE_VIDEO_RUNNING, STAGE_DONE):',
-        '    if str(session.get("stage")) not in (STAGE_VIDEO_RUNNING, STAGE_DONE):',
+        "    if стадия != STAGE_CONSENTED:",
+        "    if False:",
         "поток: согласие заказчика перестало пускать дальше",
         "studio.tests.test_app",
     ),
