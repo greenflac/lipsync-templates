@@ -859,6 +859,20 @@ MUTANTS: list[tuple[str, str, str, str, str]] = [
     ),
     (
         "studio/app.py",
+        "    attempt = deps.ledger.next_attempt(приставка)",
+        "    attempt = jobs.attempts(session_id, kind) + 1",
+        "деньги: номер попытки снова из памяти процесса — перезапуск даёт бесплатное видео",
+        "studio.tests.test_app",
+    ),
+    (
+        "studio/ledger.py",
+        "        if хвост.isdigit():",
+        "        if True:",
+        "деньги: возврат снова считается попыткой — ключ разошёлся с работой",
+        "studio.tests.test_ledger",
+    ),
+    (
+        "studio/app.py",
         "        if not session_id:",
         "        if False:",
         "доступ: задачу снова отдают тому, кто не назвал сессию",

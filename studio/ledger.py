@@ -114,6 +114,43 @@ def entries(user_id: str, *, db_path: Path | str = DEFAULT_DB_PATH) -> list[dict
         conn.close()
 
 
+def next_attempt(prefix: str, *, db_path: Path | str = DEFAULT_DB_PATH) -> int:
+    """Какой номер попытки СЛЕДУЮЩИЙ, по журналу, а не по памяти процесса.
+
+    ЗАЧЕМ. Номер попытки входит в ключ идемпотентности, и до 2026-09-05 он
+    считался по реестру задач, живущему в памяти процесса. Перезапуск обнулял
+    счёт, ключ повторялся, и `charge` честно отвечал «повтор строки, списания
+    не было» — а веб-слой запускал ПЛАТНУЮ генерацию. Защита от этого стоит с
+    того же дня, но она отказывает в работе; здесь чинится причина: журнал
+    переживает перезапуск, память — нет (Е1: одно знание — одно место, и
+    место это то, где лежат деньги).
+
+    :param prefix: начало ключа, `"<сессия>:<вид>:"`. Считаются строки, чей
+        ключ начинается с него и заканчивается числом — возврат пишется как
+        `"<ключ>:refund"` и попыткой не является.
+
+    Example:
+        >>> next_attempt("s1:video:", db_path=":memory:")
+        1
+    """
+    if not prefix:
+        return 1
+    conn = connect(db_path)
+    try:
+        rows = conn.execute(
+            "SELECT idempotency_key FROM ledger_entries WHERE idempotency_key LIKE ?",
+            (prefix.replace("%", r"\%").replace("_", r"\_") + "%",),
+        ).fetchall()
+    finally:
+        conn.close()
+    номера = []
+    for row in rows:
+        хвост = str(row["idempotency_key"])[len(prefix) :]
+        if хвост.isdigit():
+            номера.append(int(хвост))
+    return (max(номера) + 1) if номера else 1
+
+
 def _replay(conn: sqlite3.Connection, key: str, user_id: str) -> dict | None:
     """Return the verdict of an entry already written under `key`, or None."""
     row = conn.execute("SELECT * FROM ledger_entries WHERE idempotency_key = ?", (key,)).fetchone()

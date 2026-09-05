@@ -297,3 +297,47 @@ class TestJournalShape(LedgerTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class НомерПопыткиИзЖурнала(unittest.TestCase):
+    """Номер попытки входит в ключ идемпотентности, то есть решает про деньги,
+    и место такого знания там же, где деньги (Е1). До 2026-09-05 он считался по
+    реестру задач в ПАМЯТИ процесса: перезапуск обнулял счёт, ключ повторялся,
+    и `charge` отвечал «повтор строки, списания не было».
+
+    Ожидаемое — литералы (Т2), сети нет (Т4).
+    """
+
+    def setUp(self) -> None:
+        self.db = Path(tempfile.mkdtemp()) / "ledger.db"
+        ledger.refund("u1", 100, key="opening", reason="пополнение", db_path=self.db)
+
+    def test_пустой_журнал_даёт_первую_попытку(self):
+        self.assertEqual(1, ledger.next_attempt("s1:video:", db_path=self.db))
+
+    def test_номер_растёт_с_каждой_записанной_попыткой(self):
+        ledger.charge("u1", 10, key="s1:video:1", reason="раз", db_path=self.db)
+        self.assertEqual(2, ledger.next_attempt("s1:video:", db_path=self.db))
+        ledger.charge("u1", 10, key="s1:video:2", reason="два", db_path=self.db)
+        self.assertEqual(3, ledger.next_attempt("s1:video:", db_path=self.db))
+
+    def test_возврат_попыткой_не_считается(self):
+        """Возврат пишется как `<ключ>:refund`. Считать его попыткой значило бы
+        пропустить номер и потерять связь ключа с работой."""
+        ledger.charge("u1", 10, key="s1:video:1", reason="раз", db_path=self.db)
+        ledger.refund("u1", 10, key="s1:video:1:refund", reason="вернули", db_path=self.db)
+        self.assertEqual(2, ledger.next_attempt("s1:video:", db_path=self.db))
+
+    def test_чужая_сессия_и_чужой_вид_не_считаются(self):
+        """Негативный контроль (И5): счётчик, считающий всё подряд, поднимет
+        номер там, где никакой работы не было, и разведёт ключ с делом."""
+        ledger.charge("u1", 10, key="s1:video:1", reason="раз", db_path=self.db)
+        ledger.charge("u1", 1, key="s1:frame:1", reason="кадр", db_path=self.db)
+        ledger.charge("u1", 10, key="s2:video:1", reason="чужая", db_path=self.db)
+        self.assertEqual(2, ledger.next_attempt("s1:video:", db_path=self.db))
+        self.assertEqual(2, ledger.next_attempt("s1:frame:", db_path=self.db))
+        self.assertEqual(2, ledger.next_attempt("s2:video:", db_path=self.db))
+
+    def test_пустая_приставка_не_считает_весь_журнал(self):
+        ledger.charge("u1", 10, key="s1:video:1", reason="раз", db_path=self.db)
+        self.assertEqual(1, ledger.next_attempt("", db_path=self.db))

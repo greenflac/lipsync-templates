@@ -105,6 +105,7 @@ class FakeLedger:
         self.rows: list[dict] = [{"delta": opening, "key": "opening", "reason": "opening"}]
         self.keys: set[str] = {"opening"}
         self.broken = False
+        self.pinned_attempt: int | None = None
 
     def balance(self, _user_id: str) -> int:
         return sum(int(row["delta"]) for row in self.rows)
@@ -119,6 +120,22 @@ class FakeLedger:
         self.keys.add(key)
         self.rows.append({"delta": delta, "key": key, "reason": reason})
         return {"outcome": PASS_, "balance": self.balance("u"), "delta": delta, "key": key}
+
+    def next_attempt(self, prefix: str) -> int:
+        """Как в настоящем журнале: номер выводится из записанных ключей.
+
+        `pinned_attempt` — не удобство теста, а способ показать журнал,
+        ОТСТАВШИЙ от действительности: недоступный, восстановленный из старой
+        копии, любой. Ради этого случая и стоит защита от повтора ключа.
+        """
+        if self.pinned_attempt is not None:
+            return self.pinned_attempt
+        номера = [
+            int(k[len(prefix) :])
+            for k in self.keys
+            if k.startswith(prefix) and k[len(prefix) :].isdigit()
+        ]
+        return (max(номера) + 1) if номера else 1
 
     def charge(self, user_id: str, credits: int, *, key: str, reason: str) -> dict:
         return self._append(-credits, key, reason)
@@ -412,6 +429,36 @@ class MoneyGuard(StudioCase):
         self.assertEqual(reply.status_code, 402)
         self.assertEqual(self.ledger.balance("u1"), 0)
 
+    def test_номер_попытки_переживает_перезапуск(self) -> None:
+        """Номер попытки входит в ключ идемпотентности, то есть решает про
+        деньги. До 2026-09-05 он считался по реестру задач в ПАМЯТИ процесса:
+        перезапуск обнулял счёт, ключ повторялся, и списания не происходило.
+
+        Здесь перезапуск изображён сносом реестра задач при живом журнале.
+        """
+        session_id = self.open_session()
+        self.upload_selfie(session_id)
+        self.set_style(session_id)
+        self.make_frame(session_id)
+        self.client.post("/api/consent", json={"session_id": session_id})
+        первый = self.client.post("/api/video", json={"session_id": session_id})
+        self.assertEqual(первый.json()["idempotency_key"], f"{session_id}:video:1")
+
+        jobs._JOBS.clear()  # перезапуск: реестр задач в памяти потерян
+
+        # Второе видео в той же сессии: новый кадр, новое согласие.
+        self.make_frame(session_id)
+        self.client.post("/api/consent", json={"session_id": session_id})
+        до = self.ledger.balance("u1")
+        второй = self.client.post("/api/video", json={"session_id": session_id})
+
+        # ЭТО И ЕСТЬ ПРОВЕРКА: при счёте по памяти ключ был бы снова `:1`,
+        # `charge` ответил бы «повтор строки», и защита вернула бы «не смогли»
+        # вместо работы — то есть перезапуск ломал бы обычную вторую генерацию.
+        self.assertEqual(второй.json()["outcome"], "pass", второй.text)
+        self.assertEqual(второй.json()["idempotency_key"], f"{session_id}:video:2")
+        self.assertEqual(self.ledger.balance("u1"), до - 10, "и списано по-настоящему")
+
     def test_чужая_сессия_не_получает_задачу(self) -> None:
         """Единственный маршрут, не спрашивавший «чья работа», отдавал
         `session_id` и РЕЗУЛЬТАТ любому, кто назвал идентификатор задачи."""
@@ -472,9 +519,13 @@ class MoneyGuard(StudioCase):
         self.make_frame(session_id)
         self.client.post("/api/consent", json={"session_id": session_id})
         до = self.ledger.balance("u1")
-        # Строка под этим ключом уже есть — ровно то, что видит журнал после
-        # перезапуска, обнулившего номер попытки.
+        # Строка под этим ключом уже есть, а журнал называет номер попытки 1 —
+        # то есть ОТСТАЁТ от собственных записей: восстановлен из старой копии,
+        # прочитан не тот файл, реплика не догнала. С 2026-09-05 номер берётся
+        # из журнала, и обычный перезапуск больше не даёт повтора; защита
+        # остаётся ради случая, когда сам журнал разошёлся с собой.
         self.ledger.keys.add(f"{session_id}:video:1")
+        self.ledger.pinned_attempt = 1
 
         reply = self.client.post("/api/video", json={"session_id": session_id})
 

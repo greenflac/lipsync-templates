@@ -235,8 +235,16 @@ def charge_and_start(
         True
     """
     session_id = session["session_id"]
-    attempt = jobs.attempts(session_id, kind) + 1
-    key = f"{session_id}:{kind}:{attempt}"
+    # НОМЕР ПОПЫТКИ БЕРЁТСЯ ИЗ ЖУРНАЛА, А НЕ ИЗ ПАМЯТИ ПРОЦЕССА (Е1). Он входит
+    # в ключ идемпотентности, то есть решает про деньги, и место такого знания
+    # там же, где деньги. `jobs.attempts` считал по реестру задач, живущему в
+    # памяти: перезапуск обнулял счёт, ключ повторялся, и `charge` отвечал
+    # «повтор строки, списания не было». Защита от этого стоит ниже и остаётся
+    # (журнал может быть недоступен, реестр — потерян иначе), но причина
+    # чинится здесь: журнал переживает перезапуск.
+    приставка = f"{session_id}:{kind}:"
+    attempt = deps.ledger.next_attempt(приставка)
+    key = f"{приставка}{attempt}"
     charged = deps.ledger.charge(
         session["user_id"], credits, key=key, reason=f"{kind} generation, attempt {attempt}"
     )
