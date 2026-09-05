@@ -14,6 +14,8 @@ from __future__ import annotations
 
 import importlib.util
 import os
+import shutil
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -42,6 +44,20 @@ m = _модуль()
 
 class СлепокПереживаетОбрыв(unittest.TestCase):
     def setUp(self) -> None:
+        # КАТАЛОГ СЛЕПКОВ — СВОЙ, ВРЕМЕННЫЙ, А НЕ ЖИВОЙ (исправлено 2026-09-05).
+        #
+        # ВОСПРОИЗВЕДЕНО: гейт прервался посреди мутаций, в живом
+        # `.mutate.backup` остался слепок `scripts/check_golden.py`, и
+        # `test_без_слепков_возвращать_нечего` покраснел — не потому, что
+        # механизм сломан, а потому, что тест смотрел на состояние ДЕРЕВА.
+        # Хуже того, он при этом ВОССТАНАВЛИВАЛ чужой файл посреди чужого
+        # прогона: тест, который лечит дерево, — это второй мутатор, о котором
+        # никто не просил.
+        каталог = Path(tempfile.mkdtemp())
+        живой = m.СЛЕПОК
+        m.СЛЕПОК = каталог
+        self.addCleanup(lambda: setattr(m, "СЛЕПОК", живой))
+        self.addCleanup(lambda: shutil.rmtree(каталог, ignore_errors=True))
         self.путь = КОРЕНЬ / ЖЕРТВА
         self.addCleanup(lambda: self.путь.unlink(missing_ok=True))
         self.addCleanup(lambda: m.забыть(ЖЕРТВА))
