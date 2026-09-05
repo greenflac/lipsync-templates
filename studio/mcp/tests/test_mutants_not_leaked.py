@@ -42,6 +42,41 @@ def _дерево(содержимое: str, каталог: str) -> Path:
     return корень
 
 
+#: Мутант ДРУГОГО КЛАССА: `новое` содержит `старое` целиком. После подмены цель
+#: остаётся в тексте ровно один раз, и вопрос «цела ли цель» отвечает «цела» на
+#: дереве, где мутант уже лежит. Независимая проверка 2026-09-05 нашла 14 таких
+#: в живой таблице и 13 из них — полностью невидимыми; среди них был тот самый
+#: мутант планировщика, который в тот день действительно уехал в коммит.
+#: Дословно с `scripts/mutate_channels.py` (И2: вход сохранён).
+ДОПИСЫВАЮЩИЙ = [
+    ("studio/selfrag/corpus.py", "RATING_MAX = 10", "RATING_MAX = 100", "корпус: верх шкалы")
+]
+
+
+class ДописывающийМутантТожеВиден(unittest.TestCase):
+    def test_дописывающий_мутант_в_дереве_это_не_годно(self) -> None:
+        with tempfile.TemporaryDirectory() as каталог:
+            корень = Path(каталог)
+            путь = корень / "studio/selfrag/corpus.py"
+            путь.parent.mkdir(parents=True, exist_ok=True)
+            путь.write_text("код\nRATING_MAX = 100\nещё\n", encoding="utf-8")
+            итог = проверка.проверить(корень, ДОПИСЫВАЮЩИЙ)
+        self.assertEqual(итог["outcome"], "fail")
+        self.assertEqual(len(итог["утекли"]), 1)
+
+    def test_чистое_дерево_с_дописывающим_мутантом_это_годно(self) -> None:
+        """Негативный контроль (И5): `RATING_MAX = 10` — это цель, а не подмена,
+        и путать их значит краснеть на здоровом дереве."""
+        with tempfile.TemporaryDirectory() as каталог:
+            корень = Path(каталог)
+            путь = корень / "studio/selfrag/corpus.py"
+            путь.parent.mkdir(parents=True, exist_ok=True)
+            путь.write_text("код\nRATING_MAX = 10\nещё\n", encoding="utf-8")
+            итог = проверка.проверить(корень, ДОПИСЫВАЮЩИЙ)
+        self.assertEqual(итог["outcome"], "pass")
+        self.assertEqual(итог["violations"], 0)
+
+
 class УтёкшийМутантНазываетсяВслух(unittest.TestCase):
     def test_применённый_мутант_это_не_годно(self) -> None:
         with tempfile.TemporaryDirectory() as каталог:

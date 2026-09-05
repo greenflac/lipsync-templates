@@ -94,6 +94,12 @@ MUTANTS = [
     # --- вердикт плана (заведено 2026-09-05) -------------------------------
     (
         "studio/planner.py",
+        "    if без_кандидата:\n        return (\n            UNMEASURED,\n            REASON_NO_CANDIDATES,",
+        "    if not без_кандидата:\n        return (\n            UNMEASURED,\n            REASON_NO_CANDIDATES,",
+        "вердикт: из двух третьих исходов шаг без кандидата перестал называться первым",
+    ),
+    (
+        "studio/planner.py",
         '    if отчёт["outcome"] == FAIL:',
         '    if отчёт["outcome"] == FAIL and not без_кандидата:',
         "вердикт: «не смогли» снова перебивает найденное нарушение",

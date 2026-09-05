@@ -814,6 +814,13 @@ MUTANTS: list[tuple[str, str, str, str, str]] = [
         "сторож имён: семейное имя перестало опознаваться",
         "studio.tests.test_named_not_asked",
     ),
+    (
+        "scripts/check_mutants_clean.py",
+        "        if старое in новое:",
+        "        if False:",
+        "мутанты: дописывающий мутант снова невидим — 13 из 354 без охраны",
+        "studio.mcp.tests.test_mutants_not_leaked",
+    ),
     # === ЖУРНАЛ БЕЗ ПЕРЕПИСЫВАНИЯ (studio/appendonly.py) ==================
     (
         "studio/pricing.py",
