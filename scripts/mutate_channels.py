@@ -906,8 +906,8 @@ MUTANTS: list[tuple[str, str, str, str, str]] = [
     ),
     (
         "studio/selfrag/facts.py",
-        '                        None if row.get("contra") is None else bool(row.get("contra"))',
-        '                        bool(row.get("contra"))',
+        '                    contra=(None if row.get("contra") is None else bool(row.get("contra"))),',
+        '                    contra=bool(row.get("contra")),',
         "знак: «не объявлен» свёрнут в «хорошая новость» при чтении файла",
         "studio.tests.test_sign_is_explicit",
     ),
