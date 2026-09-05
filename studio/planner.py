@@ -1747,7 +1747,6 @@ INPUT_LIST_WORDS: dict[str, str] = {
     ARTEFACT_AUDIO: "аудио",
     ARTEFACT_VIDEO: "видео",
     ARTEFACT_SELFIE: "изображение",
-    ARTEFACT_REFERENCE: "изображение",
 }
 
 #: Пометка канала схем о том, что список входов собран не целиком. Такой
