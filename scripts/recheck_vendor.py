@@ -331,7 +331,7 @@ def обойти(цели: dict[str, int], было: dict[str, dict[str, Any]]) 
                 if второй.get("outcome") == PASS and not второй.get("truncated")
                 else None
             )
-            if False:
+            if если_второй is None or если_второй != свежий:
                 нестабильны.append(url)
                 новые.pop()
                 continue

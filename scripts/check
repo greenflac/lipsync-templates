@@ -47,6 +47,14 @@ _time_summary() {
 }
 trap _time_summary EXIT
 
+# ПЕРВЫМ ШАГОМ — САМЫЙ ДЕШЁВЫЙ И САМЫЙ ОБИДНЫЙ (П2). 2026-09-05 в репозиторий
+# уехал снимок убитого мутационного прогона: `if False:` вместо решения в
+# `scripts/recheck_vendor.py`. Гейт это ловил — но через 70 с тестов и под
+# подписью «упал test_recheck_vendor», по которой утечка не читается. Здесь
+# она называется вслух за миллисекунды.
+step "мутанты не утекли в дерево"
+python scripts/check_mutants_clean.py
+
 step "ruff check"
 ruff check lipsync/
 
