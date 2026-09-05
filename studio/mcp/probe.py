@@ -62,6 +62,11 @@ __all__ = ["probe_limit", "ABSURD_MIN", "KEY_ENV"]
 #: can charge for satisfying it. Lowering this is how a probe turns into a bill.
 ABSURD_MIN = 1_000_000
 
+#: Коды, при которых отказ ИЗМЕРЯЕТ предел: сервер разобрал запрос и назвал,
+#: что именно в нём не так. Всё остальное 4xx/5xx — про ключ, адрес, частоту
+#: или самочувствие сервера, и предел модели из них не следует.
+MEASURING_STATUSES: frozenset[int] = frozenset({400, 422})
+
 #: Environment variables searched for a key, in order. Never an argument.
 #:
 #: `KLING_KEY` is first because that is what this environment actually sets.
@@ -211,6 +216,36 @@ def probe_limit(
     # The request is echoed back WITHOUT the Authorization header, which never
     # leaves this function.
     sent = {"url": target, "method": "POST", "body": body}
+
+    # ОТКАЗЫ РАЗНЫЕ ПО РОДУ (исправлено 2026-09-05 по независимому аудиту).
+    #
+    # Здесь ЛЮБОЙ ответ хоста объявлялся `pass` и снабжался `suggested_fact`
+    # с тиром `probe` и ссылкой на вендора. Прогон с подменённым `urlopen`:
+    # HTTPError 401 «invalid api key» давал pass и подсказку записать
+    # вендорский предел. Ассистент, следующий подсказке, кладёт в базу
+    # уверенное и неверное утверждение о модели — с ПРАВИЛЬНОЙ ссылкой на
+    # вендора, то есть в самом убедительном виде.
+    #
+    # 400 и 422 остаются измерением: там сервер разобрал запрос и назвал предел,
+    # ради которого зонд и написан. 401 говорит про КЛЮЧ, 403 про доступ,
+    # 404 про АДРЕС, 429 про частоту, 5xx про самочувствие сервера.
+    if status is not None and status >= 400 and status not in MEASURING_STATUSES:
+        return {
+            "outcome": UNMEASURED,
+            "checked": 1,
+            "violations": 0,
+            "unmeasured": 1,
+            "note": (
+                f"{host} ответил {status} на {field}={absurd_value!r}: это отказ про "
+                "доступ, адрес, частоту или состояние сервера — о пределе модели он "
+                f"не говорит. Ответ: {text[:200]}"
+            ),
+            "sent": sent,
+            "status": status,
+            "response": text,
+            "key_from": key_from,
+            "suggested_fact": None,
+        }
 
     return {
         "outcome": PASS,

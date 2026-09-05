@@ -992,6 +992,28 @@ MUTANTS: list[tuple[str, str, str, str, str]] = [
         "обратная связь: непроверяемая оценка снова поднимает запись в выдаче",
         "studio.selfrag.tests.test_replay_needs_artifact",
     ),
+    # === ДЕНЬГИ ЗАКАЗЧИКА И РОД ОТКАЗА ===================================
+    (
+        "studio/app.py",
+        "    if стадия == STAGE_VIDEO_RUNNING:",
+        "    if False:",
+        "согласие: второй запуск видео по одному согласию снова оплачивается",
+        "studio.tests.test_consent_is_single_use",
+    ),
+    (
+        "studio/app.py",
+        "    if стадия == STAGE_DONE:",
+        "    if False:",
+        "согласие: завершённая работа снова разрешает начать новую за деньги",
+        "studio.tests.test_consent_is_single_use",
+    ),
+    (
+        "studio/mcp/probe.py",
+        "MEASURING_STATUSES: frozenset[int] = frozenset({400, 422})",
+        "MEASURING_STATUSES: frozenset[int] = frozenset(range(400, 600))",
+        "зонд: отказ авторизации снова выдаётся за измерение предела модели",
+        "studio.mcp.tests.test_probe_refusal_kinds",
+    ),
     # === АРИФМЕТИКА КАДРОВ (lipsync/framemath.py) =========================
     (
         "lipsync/framemath.py",

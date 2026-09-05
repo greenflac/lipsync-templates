@@ -367,7 +367,43 @@ def consent_state(session: dict) -> dict:
     frame = frame_state(session)
     if frame["outcome"] != PASS:
         return frame
-    if str(session.get("stage")) not in (STAGE_CONSENTED, STAGE_VIDEO_RUNNING, STAGE_DONE):
+    стадия = str(session.get("stage"))
+    # ОДНО СОГЛАСИЕ — ОДНО ВИДЕО (исправлено 2026-09-05 по независимому аудиту).
+    #
+    # Здесь пропускались стадии `consented`, `video_running` И `done`, и это
+    # значило, что одно согласие открывает НЕОГРАНИЧЕННОЕ число платных
+    # генераций. Прогон: кадр -> согласие -> три подряд POST /api/video: все три
+    # по 200, раннер вызван трижды, баланс 99 -> 69.
+    #
+    # Второе и третье видео шли ещё и БЕЗ ОДОБРЕННОГО КАДРА: кадр берётся из
+    # `last_job_id`, а после первого видео там уже видео-джоба, и в payload
+    # `frame` приходил None. Человек платил за генерацию, которой не показывали
+    # то, на что он соглашался.
+    #
+    # Двойной клик в интерфейсе — обычное дело, и он не должен стоить денег.
+    if стадия == STAGE_VIDEO_RUNNING:
+        return {
+            "outcome": FAIL,
+            "checked": 1,
+            "violations": 1,
+            "unmeasured": 0,
+            "note": (
+                "видео по этому согласию УЖЕ идёт: одно согласие оплачивает одно "
+                "видео, второй запуск — это второй счёт заказчику"
+            ),
+        }
+    if стадия == STAGE_DONE:
+        return {
+            "outcome": FAIL,
+            "checked": 1,
+            "violations": 1,
+            "unmeasured": 0,
+            "note": (
+                "видео по этому согласию УЖЕ сделано: завершённая работа не есть "
+                "разрешение начать новую — нужен новый кадр и новое согласие"
+            ),
+        }
+    if стадия != STAGE_CONSENTED:
         return {
             "outcome": FAIL,
             "checked": 1,
