@@ -138,16 +138,32 @@ def next_attempt(prefix: str, *, db_path: Path | str = DEFAULT_DB_PATH) -> int:
     conn = connect(db_path)
     try:
         rows = conn.execute(
-            "SELECT idempotency_key FROM ledger_entries WHERE idempotency_key LIKE ?",
-            (prefix.replace("%", r"\%").replace("_", r"\_") + "%",),
+            # `ESCAPE` ОБЯЗАТЕЛЕН. Экранирование `%` и `_` без него не работает:
+            # у LIKE в SQLite escape-символа по умолчанию НЕТ, и `\_` значит
+            # «обратный слэш, затем любой символ» — то есть не совпадает ни с
+            # чем. Независимая проверка 2026-09-05 показала это числами: на
+            # сессии с `_` или `%` в имени `next_attempt` возвращал УЖЕ ЗАНЯТЫЙ
+            # номер 1, ключ повторялся, и обычная вторая генерация упиралась в
+            # 409. Сегодня сессии — uuid4 и таких символов не несут; дефект
+            # латентный, а не мёртвый, и сидит он в денежной функции.
+            "SELECT idempotency_key FROM ledger_entries WHERE idempotency_key LIKE ? ESCAPE '\\'",
+            (prefix.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%",),
         ).fetchall()
     finally:
         conn.close()
     номера = []
     for row in rows:
         хвост = str(row["idempotency_key"])[len(prefix) :]
-        if хвост.isdigit():
-            номера.append(int(хвост))
+        # `str.isdigit()` ШИРЕ, ЧЕМ `int()` ЕГО ПОНИМАЕТ: `"²"` проходит первую
+        # проверку и валит вторую, а арабо-индийская «١» проходит обе и молча
+        # считается попыткой. Обе находки независимой проверки. Здесь деньги, и
+        # необработанное исключение в этом месте останавливает работу целиком,
+        # поэтому разбор узкий и явный: только цифры ASCII.
+        if хвост and all("0" <= з <= "9" for з in хвост):
+            try:
+                номера.append(int(хвост))
+            except ValueError:  # pragma: no cover — недостижимо после проверки
+                continue
     return (max(номера) + 1) if номера else 1
 
 

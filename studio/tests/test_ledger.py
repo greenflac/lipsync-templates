@@ -341,3 +341,27 @@ class НомерПопыткиИзЖурнала(unittest.TestCase):
     def test_пустая_приставка_не_считает_весь_журнал(self):
         ledger.charge("u1", 10, key="s1:video:1", reason="раз", db_path=self.db)
         self.assertEqual(1, ledger.next_attempt("", db_path=self.db))
+
+    def test_имя_сессии_со_спецсимволами_LIKE(self):
+        """Независимая проверка 2026-09-05: экранирование `%` и `_` без
+        `ESCAPE` не работает — у LIKE в SQLite escape-символа по умолчанию нет,
+        и `\\_` значит «обратный слэш, затем любой символ». Возвращался УЖЕ
+        ЗАНЯТЫЙ номер 1, и обычная вторая генерация упиралась в 409."""
+        for сессия in ("s_1", "s%2", "s\\3", "обычная"):
+            ledger.charge("u1", 1, key=f"{сессия}:video:1", reason="раз", db_path=self.db)
+            self.assertEqual(2, ledger.next_attempt(f"{сессия}:video:", db_path=self.db), сессия)
+
+    def test_подчёркивание_не_совпадает_с_любым_символом(self):
+        """Негативный контроль (И5) к тому же: без `ESCAPE` приставка `s_1:`
+        совпала бы и с `sX1:`, и счётчик считал бы ЧУЖИЕ строки."""
+        ledger.charge("u1", 1, key="sX1:video:1", reason="чужая", db_path=self.db)
+        self.assertEqual(1, ledger.next_attempt("s_1:video:", db_path=self.db))
+
+    def test_нецифровой_хвост_не_валит_денежную_функцию(self):
+        """`str.isdigit()` шире, чем `int()` его понимает: `"²"` проходит первую
+        проверку и валит вторую, а «١» проходит обе и молча считается попыткой.
+        В денежной функции необработанное исключение останавливает работу."""
+        ledger.charge("u1", 1, key="s4:video:\u00b2", reason="верхний индекс", db_path=self.db)
+        ledger.charge("u1", 1, key="s5:video:\u0661", reason="арабская цифра", db_path=self.db)
+        self.assertEqual(1, ledger.next_attempt("s4:video:", db_path=self.db))
+        self.assertEqual(1, ledger.next_attempt("s5:video:", db_path=self.db))

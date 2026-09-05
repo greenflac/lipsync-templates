@@ -214,3 +214,49 @@ class РучкаПереживаетПерезапуск(unittest.TestCase):
     def test_журнала_нет_это_не_ошибка(self):
         jobs.JOURNAL = Path(tempfile.mkdtemp()) / "нет" / "studio_jobs.jsonl"
         self.assertIsNone(jobs.из_журнала("любой"))
+
+    def test_недоступный_журнал_это_не_отсутствие_задачи(self):
+        """Р1. Независимая проверка 2026-09-05 заняла путь журнала каталогом:
+        настоящая ОПЛАЧЕННАЯ задача после перезапуска получала дословно ответ
+        выдуманного идентификатора — ровно то различие, ради которого журнал и
+        заведён."""
+        каталог = Path(tempfile.mkdtemp()) / "studio_jobs.jsonl"
+        каталог.mkdir(parents=True)  # путь занят каталогом: чтение даст OSError
+        jobs.JOURNAL = каталог
+        прежнее = jobs.из_журнала("любой")
+        self.assertIsNotNone(прежнее)
+        assert прежнее is not None
+        self.assertEqual(прежнее["state"], "journal_unreadable")
+        итог = jobs.status("любой")
+        self.assertEqual(итог["outcome"], "could not measure")
+        self.assertIn("НЕ ПРОЧИТАЛСЯ", итог["note"])
+
+    def test_не_нашли_в_окне_это_не_отсутствие_задачи(self):
+        """Хвост читается ради скорости, но «не нашли в хвосте» — не «не было».
+        Иначе дешёвый ответ соврал бы про оплаченную работу."""
+        путь = Path(tempfile.mkdtemp()) / "studio_jobs.jsonl"
+        jobs.JOURNAL = путь
+        jobs.ОКНО_ЖУРНАЛА = 512
+        путь.write_text('{"job_id": "древняя"}\n' + '{"job_id": "x"}\n' * 200, encoding="utf-8")
+        прежнее = jobs.из_журнала("древняя")
+        self.assertIsNotNone(прежнее)
+        assert прежнее is not None
+        self.assertEqual(прежнее["state"], "journal_unreadable")
+        self.assertIn("раньше окна", прежнее["note"])
+        jobs.ОКНО_ЖУРНАЛА = 8 * 1024 * 1024
+
+    def test_свежая_задача_из_хвоста_находится(self):
+        """Негативный контроль (И5): окно не смеет прятать то, ради чего
+        заведено, — иначе журнал перестанет отвечать вовсе."""
+        путь = Path(tempfile.mkdtemp()) / "studio_jobs.jsonl"
+        jobs.JOURNAL = путь
+        jobs.ОКНО_ЖУРНАЛА = 512
+        путь.write_text(
+            '{"job_id": "x"}\n' * 200 + '{"job_id": "свежая", "request_id": "r-1"}\n',
+            encoding="utf-8",
+        )
+        прежнее = jobs.из_журнала("свежая")
+        self.assertIsNotNone(прежнее)
+        assert прежнее is not None
+        self.assertEqual(прежнее["request_id"], "r-1")
+        jobs.ОКНО_ЖУРНАЛА = 8 * 1024 * 1024

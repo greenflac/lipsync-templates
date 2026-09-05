@@ -858,6 +858,27 @@ MUTANTS: list[tuple[str, str, str, str, str]] = [
         "studio.mcp.tests.test_denied_reason_is_safe",
     ),
     (
+        "studio/app.py",
+        "    except Exception as беда:  # noqa: BLE001 — причина уходит в ответ и в возврат",
+        "    except ZeroDivisionError as беда:",
+        "деньги: работа не запустилась, а списание снова остаётся у нас",
+        "studio.tests.test_app",
+    ),
+    (
+        "studio/app.py",
+        '        if итог.get("outcome") == PASS:',
+        "        if True:",
+        "деньги: неудавшийся возврат снова выглядит как удавшийся",
+        "studio.tests.test_app",
+    ),
+    (
+        "studio/jobs.py",
+        '        return {"job_id": job_id, "state": НЕ_ПРОЧИТАН, "note": f"журнал не прочитался: {беда}"}',
+        "        return None",
+        "ручка: недоступный журнал снова неотличим от «такой задачи не было»",
+        "studio.tests.test_jobs",
+    ),
+    (
         "studio/jobs.py",
         "        if прежнее is not None:",
         "        if False:",
@@ -872,10 +893,25 @@ MUTANTS: list[tuple[str, str, str, str, str]] = [
         "studio.tests.test_app",
     ),
     (
+        # МУТАНТ ЗАМЕНЁН 2026-09-05, И ПРИЧИНА ЗАПИСАНА. Прежний подменял
+        # `if хвост.isdigit():` на `if True:` и краснел — но ИСКЛЮЧЕНИЕМ
+        # (`int('1:refund')`), а не утверждением о номере. Независимая проверка
+        # показала, что мутант того же НАМЕРЕНИЯ без краха (`хвост.split(":")[0]`,
+        # то есть возврат честно считается попыткой) остаётся ЗЕЛЁНЫМ: ключ
+        # возврата несёт тот же номер, максимум не меняется, и заявленного
+        # «номер пропускался бы» не происходит ни при какой правдоподобной
+        # подмене. Красный он получал даром.
         "studio/ledger.py",
+        '        if хвост and all("0" <= з <= "9" for з in хвост):',
         "        if хвост.isdigit():",
-        "        if True:",
-        "деньги: возврат снова считается попыткой — ключ разошёлся с работой",
+        "деньги: денежная функция снова падает на нецифровом хвосте ключа",
+        "studio.tests.test_ledger",
+    ),
+    (
+        "studio/ledger.py",
+        "WHERE idempotency_key LIKE ? ESCAPE '\\\\'",
+        "WHERE idempotency_key LIKE ?",
+        "деньги: LIKE снова без ESCAPE — номер попытки повторяется на чужом имени сессии",
         "studio.tests.test_ledger",
     ),
     (

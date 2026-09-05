@@ -11,6 +11,7 @@ import io
 import socket
 import tempfile
 import unittest
+from unittest import mock
 from dataclasses import asdict, dataclass, is_dataclass
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -435,6 +436,54 @@ class MoneyGuard(StudioCase):
 
         self.assertEqual(reply.status_code, 402)
         self.assertEqual(self.ledger.balance("u1"), 0)
+
+    def test_работа_не_запустилась_деньги_вернулись(self) -> None:
+        """Независимая проверка 2026-09-05 воспроизвела два пути, на которых
+        10 кредитов списаны, работа не идёт и `on_settle` не вызовется никогда:
+        `threading.Thread.start` бросает `RuntimeError` при исчерпании потоков,
+        `store.update` — `sqlite3.Error` при беде с диском. Докстрока обещала
+        «списание без работы, видимое и возвратное»; возвратным его не делал
+        никто, и сессия оставалась заперта в `video_running`.
+        """
+        session_id = self.open_session()
+        self.upload_selfie(session_id)
+        self.set_style(session_id)
+        self.make_frame(session_id)
+        self.client.post("/api/consent", json={"session_id": session_id})
+        до = self.ledger.balance("u1")
+
+        with mock.patch.object(jobs, "submit", side_effect=RuntimeError("нет потоков")):
+            ответ = self.client.post("/api/video", json={"session_id": session_id})
+
+        self.assertEqual(ответ.json()["outcome"], "could not measure")
+        self.assertEqual(self.ledger.balance("u1"), до, "деньги вернулись полностью")
+        self.assertNotIn("job_id", ответ.json())
+
+    def test_неудавшийся_возврат_отправляет_сессию_человеку(self) -> None:
+        """Вердикт возврата выбрасывался в мусор: `refund` умеет ответить
+        «не смогли», и на этом ответе сессия всё равно уезжала назад, как будто
+        деньги вернулись. Измерено: баланс 89 -> 89, строки `:refund` в журнале
+        нет, в записи задачи ни следа, следующая попытка спишет заново."""
+        session_id = self.open_session()
+        self.upload_selfie(session_id)
+        self.set_style(session_id)
+        self.make_frame(session_id)
+        self.client.post("/api/consent", json={"session_id": session_id})
+
+        def сломать_возврат(*_a: object, **_k: object) -> dict:
+            self.ledger.broken = True
+            raise RuntimeError("нет потоков")
+
+        with mock.patch.object(jobs, "submit", side_effect=сломать_возврат):
+            ответ = self.client.post("/api/video", json={"session_id": session_id})
+
+        self.assertEqual(ответ.json()["outcome"], "could not measure")
+        self.assertEqual(self.store.sessions[session_id]["stage"], "needs_review", "сессия ушла человеку")
+        событие = jobs.из_журнала(f"{session_id}:video:1:refund")
+        self.assertIsNotNone(событие, "причина записана в журнал ручек")
+        assert событие is not None
+        self.assertEqual(событие["state"], "refund_failed")
+        self.assertIn("НЕ СДЕЛАН", событие["note"])
 
     def test_номер_попытки_переживает_перезапуск(self) -> None:
         """Номер попытки входит в ключ идемпотентности, то есть решает про

@@ -89,6 +89,8 @@ ROOT = Path(__file__).resolve().parents[1]
     "studio.tests.test_verdict_not_masked",
     # Счётчики и оси, вынесенные из рендера отдельными функциями.
     "studio.tests.test_counters_are_printed",
+    # Отбор по тому, что говорит ЗА модель, а не по объёму написанного.
+    "studio.tests.test_favour_outranks_volume",
 )
 
 MUTANTS = [
@@ -268,15 +270,19 @@ MUTANTS = [
     ),
     (
         "studio/planner.py",
-        "        -c.applicability,\n        -c.anchored,",
-        "        -c.anchored,\n        -c.applicability,",
-        "by_evidence: применимость больше не первый ключ порядка",
+        # ЦЕЛЬ ПЕРЕНАЦЕЛЕНА 2026-09-05: решает теперь число строк ЗА модель, а
+        # общее число стоит следующим и лишь решает ничью. Оба мутанта на нём
+        # ПРОМОЛЧАЛИ на первом же прогоне после правки — не потому, что охрана
+        # ослабла, а потому что они били по полю, которое перестало решать.
+        "        -c.in_favour,\n        -c.applicability,",
+        "        -c.applicability,\n        -c.in_favour,",
+        "by_evidence: объём написанного снова обгоняет сказанное ЗА модель",
     ),
     (
         "studio/planner.py",
-        "        -c.applicability,\n        -c.anchored,",
-        "        c.applicability,\n        -c.anchored,",
-        "by_evidence: применимость перевёрнута (измеренное вниз)",
+        "        -c.in_favour,",
+        "        c.in_favour,",
+        "by_evidence: сказанное ЗА модель перевёрнуто (доводы вниз)",
     ),
     (
         "studio/planner.py",

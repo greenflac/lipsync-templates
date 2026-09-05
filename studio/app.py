@@ -274,29 +274,66 @@ def charge_and_start(
                 "outcome": UNMEASURED,
                 "checked": 0,
                 "unmeasured": 1,
+                # ПРИЧИНА НАЗВАНА ТА, ЧТО ВОЗМОЖНА СЕЙЧАС (Е2). Здесь стояло
+                # «номер попытки начался заново, реестр задач живёт в памяти» —
+                # с тех пор номер берётся из журнала, и этой причины больше не
+                # существует. Независимая проверка 2026-09-05 измерила живую:
+                # восемь одновременных запросов получили ОДИН номер, один
+                # списал, семеро получили 409 — и уходили искать перезапуск,
+                # которого не было. Объяснение, отправляющее человека не туда,
+                # хуже отсутствия объяснения.
                 "note": (
                     f"ключ {key!r} уже записан в журнале: списания НЕ БЫЛО, "
-                    f"баланс {charged.get('balance')} не изменился. Это значит, что "
-                    f"номер попытки начался заново (реестр задач живёт в памяти и "
-                    f"обнуляется при перезапуске), и по нему нельзя решить, шла эта "
-                    f"попытка уже или нет. {kind} НЕ запущен — платная работа под "
-                    f"чужой оплаченной строкой не начинается. Нужен человек: "
-                    f"посмотреть в журнале строку {key!r}"
+                    f"баланс {charged.get('balance')} не изменился. Чаще всего это "
+                    f"значит, что тот же запрос пришёл ВТОРЫМ, пока первый ещё не "
+                    f"дописал строку; реже — что журнал разошёлся сам с собой "
+                    f"(восстановлен из старой копии, прочитан не тот файл). "
+                    f"{kind} НЕ запущен — платная работа под чужой оплаченной "
+                    f"строкой не начинается. Повторить запрос; если повторяется — "
+                    f"нужен человек и строка {key!r} в журнале"
                 ),
             },
             f"{kind} not started, nothing was charged",
         )
 
+    def вернуть(почему: str) -> dict:
+        """Вернуть кредиты и СКАЗАТЬ, чем это кончилось.
+
+        Вердикт возврата раньше выбрасывался в мусор: `refund` умеет ответить
+        «не смогли» (журнал недоступен), и на этом ответе сессия всё равно
+        уезжала назад, как будто деньги вернулись. Независимая проверка
+        2026-09-05 показала это числами: баланс 89 -> 89, строки `:refund` в
+        журнале нет, в записи задачи ни следа, а следующая попытка спишет
+        заново. Неудавшийся возврат — работа для человека, а не тишина.
+        """
+        итог = deps.ledger.refund(
+            session["user_id"],
+            credits,
+            key=f"{key}:refund",
+            reason=почему[:200],
+        )
+        if итог.get("outcome") == PASS:
+            _remember(deps, session_id, stage=stage_back)
+        else:
+            # СЕССИЯ УХОДИТ ЧЕЛОВЕКУ, А ПРИЧИНА — В ЖУРНАЛ РУЧЕК. В схеме сессии
+            # свободного поля нет, и заводить его ради одной строки значило бы
+            # менять чужой модуль; журнал ручек переживает перезапуск и уже
+            # читается тем, кто разбирает деньги.
+            _remember(deps, session_id, stage=STAGE_REVIEW)
+            jobs.записать_событие(
+                f"{key}:refund",
+                session_id,
+                kind,
+                "refund_failed",
+                f"возврат {credits} НЕ СДЕЛАН: {итог.get('outcome')} — "
+                f"{str(итог.get('note') or '')[:120]}",
+            )
+        return итог
+
     def compensate(record: dict) -> None:
         """Give the credits back for a failed job; leave an `unknown` one alone."""
         if record["state"] == jobs.FAILED:
-            deps.ledger.refund(
-                session["user_id"],
-                credits,
-                key=f"{key}:refund",
-                reason=f"{kind} generation failed: {record.get('note', '')}"[:200],
-            )
-            _remember(deps, session_id, stage=stage_back)
+            вернуть(f"{kind} generation failed: {record.get('note', '')}")
             return
         if record["state"] == jobs.UNKNOWN:
             # The provider may have done the work and taken the money. A refund
@@ -306,19 +343,38 @@ def charge_and_start(
             return
         _remember(deps, session_id, stage=stage_done)
 
-    # The stage is written BEFORE the job starts: the job settles on another
-    # thread and writes the stage itself, so a stage written afterwards would
-    # sometimes land on top of the finished one and lose the result.
-    _remember(deps, session_id, stage=stage_running)
-    job_id = jobs.submit(
-        session_id,
-        kind,
-        runner=runner,
-        payload=payload,
-        attempt=attempt,
-        on_settle=compensate,
-    )
-    _remember(deps, session_id, last_job_id=job_id)
+    # ВСЁ МЕЖДУ СПИСАНИЕМ И ЗАПУСКОМ — ПОД ВОЗВРАТОМ. Докстрока обещает, что
+    # крах между ними оставляет «списание без работы, видимое и возвратное»;
+    # возвратным его не делал никто. Независимая проверка 2026-09-05 воспроизвела
+    # два пути: `threading.Thread.start` бросает `RuntimeError` при исчерпании
+    # потоков (под нагрузкой это не гипотетика), и `store.update` бросает
+    # `sqlite3.Error` при беде с диском. В обоих случаях 10 кредитов списаны,
+    # `on_settle` не вызовется никогда, сессия заперта в `video_running`.
+    #
+    # Возврат делается ЗДЕСЬ, а не оставляется человеку: работа не начиналась,
+    # и это тот самый случай, когда возвращать безопасно — в отличие от
+    # `unknown`, где вендор мог уже сделать работу.
+    try:
+        # The stage is written BEFORE the job starts: the job settles on another
+        # thread and writes the stage itself, so a stage written afterwards would
+        # sometimes land on top of the finished one and lose the result.
+        _remember(deps, session_id, stage=stage_running)
+        job_id = jobs.submit(
+            session_id,
+            kind,
+            runner=runner,
+            payload=payload,
+            attempt=attempt,
+            on_settle=compensate,
+        )
+        _remember(deps, session_id, last_job_id=job_id)
+    except Exception as беда:  # noqa: BLE001 — причина уходит в ответ и в возврат
+        вернуть(f"{kind} not started: {type(беда).__name__}: {беда}")
+        return _unmeasured(
+            f"{kind} НЕ запущен: {type(беда).__name__}: {беда}. "
+            f"Списание по ключу {key} возвращено (или, если возврат не удался, "
+            f"сессия отправлена человеку)"
+        )
     return JSONResponse(
         {
             "outcome": PASS,
@@ -655,13 +711,18 @@ def create_app(deps: Deps | None = None) -> FastAPI:
         свой это спрашивает или чужой, и молча выбрать один из ответов значило
         бы решить за того, кто нас об этом не спрашивал.
         """
-        state = jobs.status(job_id)
-        state.pop("thread", None)
+        # ПРОВЕРКА ДОСТУПА ПЕРЕД РАБОТОЙ, А НЕ ПОСЛЕ. `jobs.status` читает
+        # журнал ручек целиком, и на 53 МБ это 0.8 с процессорного времени
+        # (ИЗМЕРЕНО независимой проверкой 2026-09-05). Тот, кто сессию даже не
+        # назвал, оплачивал полное чтение файла ещё до отказа — усилитель отказа
+        # в маршруте, который закрывали именно по доступу.
         if not session_id:
             return _unmeasured(
                 f"job {job_id!r}: не сказано, чья это задача — добавьте "
                 f"?session_id=…; чужую работу этот маршрут не отдаёт"
             )
+        state = jobs.status(job_id)
+        state.pop("thread", None)
         чья = state.get("session_id")
         if чья is not None and чья != session_id:
             return _fail(HTTP_GUARD, f"job {job_id!r} принадлежит другой сессии")
