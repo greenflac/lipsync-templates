@@ -603,3 +603,73 @@ class Константы(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ЗондОбъявленныйНоНеСостоявшийся(unittest.TestCase):
+    """Тир `probe` значит «мы спросили работающий API и он ответил».
+
+    До 2026-09-05 это принималось на слово: достаточно было написать в строке
+    `tier: probe`, и она становилась вторым по силе свидетельством — выше
+    статьи. ИЗМЕРЕНО на живой базе: из 16 строк с этим тиром ТРИ ведут на тред
+    обсуждения `github.com/kijai/ComfyUI-WanVideoWrapper/issues/2048`, то есть
+    чужая жалоба на форуме объявлялась «наблюдением работающей системы».
+
+    Ожидаемое — литералы (Т2), сети нет (Т4). Входы настоящие, скопированы из
+    базы вместе с адресом и тиром.
+    """
+
+    def строка(self, url: str, witnessed: str = "") -> fa.Fact:
+        return fa.Fact(
+            model="infinitetalk",
+            attribute="failure_mode",
+            value="в V2V сэмплер перерисовывает весь кадр",
+            source_url=url,
+            tier="probe",
+            stated_on="2026-09-05",
+            witnessed=witnessed,
+        )
+
+    def test_тред_обсуждения_это_не_состоявшийся_зонд(self):
+        живой = "https://github.com/kijai/ComfyUI-WanVideoWrapper/issues/2048"
+        self.assertFalse(fa.зонд_состоялся(self.строка(живой)))
+        self.assertNotEqual(fa.mark(self.строка(живой)).kind, "witness")
+
+    def test_адрес_апи_это_состоявшийся_зонд(self):
+        """Негативный контроль (И5): правка не смеет обесценить тир целиком —
+        иначе настоящие зонды перестанут отказывать шагам, и «не смогли» будет
+        означать сломанный прибор, а не честный вердикт."""
+        живой = "https://queue.fal.run/fal-ai/latentsync"
+        self.assertTrue(fa.зонд_состоялся(self.строка(живой)))
+        self.assertEqual(fa.mark(self.строка(живой)).kind, "witness")
+
+    def test_witnessed_перевешивает_форму_адреса(self):
+        """Наблюдение, записанное в строке, — самое сильное, что у неё есть, и
+        адрес его не отменяет."""
+        живой = "https://github.com/kijai/ComfyUI-WanVideoWrapper/issues/2048"
+        строка = self.строка(живой, witnessed="один POST, HTTP 429, code 1102")
+        self.assertTrue(fa.зонд_состоялся(строка))
+        self.assertEqual(fa.mark(строка).kind, "witness")
+
+    def test_другие_формы_документа_тоже_не_зонд(self):
+        for адрес in (
+            "https://github.com/x/y/discussions/12",
+            "https://github.com/x/y/blob/main/README.md",
+            "https://example.test/docs/limits.html",
+            "https://example.test/paper.pdf",
+        ):
+            self.assertFalse(fa.зонд_состоялся(self.строка(адрес)), адрес)
+
+    def test_оператор_под_это_правило_не_попадает(self):
+        """Второй негативный контроль: правило про `probe`, и расширять его на
+        `operator` нельзя — там наблюдение обеспечено обязательным `witnessed`,
+        а не формой адреса."""
+        строка = fa.Fact(
+            model="x",
+            attribute="failure_mode",
+            value="v",
+            source_url="https://github.com/x/y/issues/1",
+            tier="operator",
+            stated_on="2026-09-05",
+            witnessed="владелец запустил и увидел",
+        )
+        self.assertEqual(fa.mark(строка).kind, "witness")

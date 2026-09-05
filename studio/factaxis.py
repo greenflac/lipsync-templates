@@ -96,6 +96,7 @@ capability, не applicability»). Структура выигрывает у п
 
 from __future__ import annotations
 
+import re
 import json
 from dataclasses import dataclass
 from pathlib import Path
@@ -143,6 +144,7 @@ __all__ = [
     "mark_all",
     "relates",
     "render",
+    "зонд_состоялся",
     "step_verdict",
 ]
 
@@ -172,6 +174,36 @@ NO_APPLICABILITY = "нет свидетельства"
 #: вендорский API, спрошенный и ответивший; `operator` — владелец запустил и
 #: увидел. Оба взяты ИМЕНАМИ из `facts.py`, а не переписаны строкой (Е1).
 WITNESS_TIERS: frozenset[str] = frozenset({TIER_PROBE, TIER_OPERATOR})
+
+#: ФОРМЫ АДРЕСА, КОТОРЫЕ ГОВОРЯТ «ЭТО ДОКУМЕНТ О СИСТЕМЕ, А НЕ СИСТЕМА».
+#: Тир `probe` значит «мы спросили работающий API и он ответил», и до
+#: 2026-09-05 это принималось на слово: достаточно было написать в строке
+#: `tier: probe`. ИЗМЕРЕНО на живой базе: из 16 строк с этим тиром ТРИ ведут на
+#: тред обсуждения — `github.com/kijai/ComfyUI-WanVideoWrapper/issues/2048`, —
+#: то есть чужая жалоба на форуме шла вторым по силе свидетельством, выше
+#: статьи, и объявлялась «наблюдением работающей системы».
+#:
+#: Список закрытый и по форме адреса: тред, запрос слияния, файл в репозитории,
+#: страница документации. Ни одно из них не отвечает на запрос — все они о нём
+#: рассказывают. Хосты сюда НЕ вписываются: github.com может отдавать и API.
+_ДОКУМЕНТ_О_СИСТЕМЕ = re.compile(
+    r"/(issues|discussions|pull|blob|raw|tree|wiki)/|\.(md|html?|pdf)(\?|#|$)", re.I
+)
+
+
+def зонд_состоялся(fact: Fact) -> bool:
+    """Есть ли у строки тира `probe` признак того, что запрос ДЕЙСТВИТЕЛЬНО был.
+
+    Два признака, и любого достаточно: строка несёт `witnessed` (что запустили
+    и что увидели), либо её адрес не имеет формы документа о системе. Не
+    выполнено ни одного — тир объявлен, а зонд не состоялся, и род выводится
+    дальше по общим правилам: Е2, вердикт следует за свидетельством, а не за
+    ярлыком.
+    """
+    if fact.witnessed.strip():
+        return True
+    return not _ДОКУМЕНТ_О_СИСТЕМЕ.search(str(fact.source_url or ""))
+
 
 #: Тиры, у которых протокол НАЗВАН по определению самой лестницы: `paper` —
 #: «with a method somebody can check», `benchmark` — «an independent
@@ -384,7 +416,7 @@ def mark(
         return Marked(
             fact, KIND_WITNESS, "ИЗМЕРЕНО", "строка несёт witnessed: что запустили и что увидели"
         )
-    if fact.tier in WITNESS_TIERS:
+    if fact.tier in WITNESS_TIERS and (fact.tier != TIER_PROBE or зонд_состоялся(fact)):
         return Marked(
             fact, KIND_WITNESS, "РАСЧЁТ", f"тир {fact.tier}: наблюдение работающей системы"
         )

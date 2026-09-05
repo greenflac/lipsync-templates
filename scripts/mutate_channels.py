@@ -820,6 +820,13 @@ MUTANTS: list[tuple[str, str, str, str, str]] = [
         "studio.tests.test_named_not_asked",
     ),
     (
+        "studio/factaxis.py",
+        "    if fact.tier in WITNESS_TIERS and (fact.tier != TIER_PROBE or зонд_состоялся(fact)):",
+        "    if fact.tier in WITNESS_TIERS:",
+        "свидетельство: объявленный тир зонда снова принимается на слово",
+        "studio.mcp.tests.test_factaxis",
+    ),
+    (
         "studio/selfrag/facts.py",
         "    if not 1 <= месяц <= 12:",
         "    if False:",
