@@ -820,6 +820,13 @@ MUTANTS: list[tuple[str, str, str, str, str]] = [
         "studio.tests.test_named_not_asked",
     ),
     (
+        "studio/selfrag/facts.py",
+        "    if not 1 <= месяц <= 12:",
+        "    if False:",
+        "даты: невозможный месяц идентификатора снова становится датой публикации",
+        "studio.selfrag.tests.test_published_on",
+    ),
+    (
         "studio/pricing.py",
         '        if p.outcome != "годно" or p.amount is None or not p.unit or not p.per:',
         '        if p.outcome != "годно" or p.amount is None or not p.unit:',
