@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import socket
 import threading
+import tempfile
 import unittest
+from pathlib import Path
 
 from studio import jobs
 
@@ -19,6 +21,12 @@ def setUpModule() -> None:
     Creating a socket is left alone because the event loop the test client
     starts needs a local socketpair; reaching *out* is what must be impossible.
     """
+
+    # ЖУРНАЛ РУЧЕК УВОДИТСЯ ВО ВРЕМЕННЫЙ КАТАЛОГ. Иначе прогон дописывает
+    # состояние процесса в файл рабочего дерева: он игнорируется git-ом, но
+    # смешивает тестовые задачи с настоящими, а прибор, пишущий в то же место,
+    # что и продукт, однажды будет прочитан как продукт.
+    jobs.JOURNAL = Path(tempfile.mkdtemp()) / "studio_jobs.jsonl"
 
     def refuse(*_args: object, **_kwargs: object) -> None:
         raise AssertionError("a test tried to reach the network")
@@ -156,3 +164,53 @@ class JobRefusals(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class РучкаПереживаетПерезапуск(unittest.TestCase):
+    """Шапка модуля обещает: идентификатор запроса пишется ДО того, как вызов
+    уходит, — «иначе для замолчавших вызовов ручки не существует, а именно им
+    она и нужна». Обещание не выполнялось: запись жила только в памяти
+    процесса, и перезапуск уносил ручку вместе с задачей.
+
+    Ожидаемое — литералы (Т2), сети нет (Т4).
+    """
+
+    def setUp(self) -> None:
+        jobs.JOURNAL = Path(tempfile.mkdtemp()) / "studio_jobs.jsonl"
+        jobs.reset()
+
+    def test_задача_пережившая_перезапуск_отдаёт_ручку(self):
+        job_id = jobs.submit("s1", "video", runner=lambda **kw: {"video": "a.mp4"})
+        jobs.wait(job_id)
+        ручка = jobs.status(job_id)["request_id"]
+
+        jobs._JOBS.clear()  # перезапуск: память процесса потеряна
+
+        итог = jobs.status(job_id)
+        self.assertEqual(итог["outcome"], "could not measure")
+        self.assertEqual(итог["request_id"], ручка, "ручка та же, что была до перезапуска")
+        self.assertEqual(итог["session_id"], "s1")
+        self.assertIn("вёл ДРУГОЙ процесс", итог["note"])
+        self.assertIn("request_id", итог["note"])
+
+    def test_выдуманный_идентификатор_ручки_не_получает(self):
+        """Негативный контроль (И5): «не знаю» и «знаю, что задача была» —
+        разные ответы, и журнал не смеет превращать первый во второй."""
+        итог = jobs.status("выдуманный")
+        self.assertEqual(итог["outcome"], "could not measure")
+        self.assertIsNone(итог["request_id"])
+        self.assertNotIn("вёл ДРУГОЙ процесс", итог["note"])
+
+    def test_живая_задача_отвечает_из_памяти_а_не_из_журнала(self):
+        """Второй негативный контроль: журнал спрашивается ТОЛЬКО когда памяти
+        нечего сказать. Иначе последняя записанная строка перекрыла бы живой
+        результат, и продукт отдавал бы «не смогли» на готовое видео."""
+        job_id = jobs.submit("s1", "video", runner=lambda **kw: {"video": "a.mp4"})
+        jobs.wait(job_id)
+        итог = jobs.status(job_id)
+        self.assertEqual(итог["state"], "done")
+        self.assertEqual(итог["result"], {"video": "a.mp4"})
+
+    def test_журнала_нет_это_не_ошибка(self):
+        jobs.JOURNAL = Path(tempfile.mkdtemp()) / "нет" / "studio_jobs.jsonl"
+        self.assertIsNone(jobs.из_журнала("любой"))

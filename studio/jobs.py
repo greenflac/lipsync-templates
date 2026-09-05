@@ -17,9 +17,11 @@ stub, so no test can reach the network by forgetting a patch.
 
 from __future__ import annotations
 
+import json
 import threading
 import time
 import uuid
+from pathlib import Path
 from typing import Any, Callable
 
 from lipsync.fork_identity import FAIL, PASS, UNMEASURED
@@ -50,6 +52,68 @@ Settler = Callable[[dict], None]
 _LOCK = threading.RLock()
 _JOBS: dict[str, dict] = {}
 
+#: ЖУРНАЛ РУЧЕК, ПЕРЕЖИВАЮЩИЙ ПЕРЕЗАПУСК. Состояние рядом с деньгами
+#: (`studio_state.sqlite3`), в игнорируемом git-ом месте: это работа процесса,
+#: а не содержимое репозитория.
+#:
+#: ЗАЧЕМ. Шапка этого модуля обещает: идентификатор запроса пишется в запись
+#: ДО того, как вызов уходит, — «иначе для замолчавших вызовов ручки не
+#: существует, а именно им она и нужна». Обещание не выполнялось: запись жила
+#: только в памяти процесса, и перезапуск уносил ручку вместе с задачей. То
+#: есть поле, заведённое ради разбора с человеком, не переживало ровно того
+#: события, ради которого оно заведено.
+#:
+#: Пишется append-only и НИЧЕГО не решает: журнал наблюдает за работой, а не
+#: участвует в ней. Любая ошибка записи проглатывается — упавший диск не смеет
+#: превращать генерацию в отказ.
+JOURNAL = Path("studio_jobs.jsonl")
+
+
+def _записать(record: dict, journal: Path | None = None) -> None:
+    """Дописать состояние задачи в журнал ручек. Молчит при любой беде."""
+    путь = JOURNAL if journal is None else journal
+    строка = {
+        "job_id": record.get("job_id"),
+        "session_id": record.get("session_id"),
+        "kind": record.get("kind"),
+        "attempt": record.get("attempt"),
+        "state": record.get("state"),
+        "request_id": record.get("request_id"),
+        "note": str(record.get("note") or "")[:200],
+        "at": time.time(),
+    }
+    try:
+        путь.parent.mkdir(parents=True, exist_ok=True)
+        with путь.open("a", encoding="utf-8") as файл:
+            файл.write(json.dumps(строка, ensure_ascii=False) + "\n")
+    except OSError:
+        pass
+
+
+def из_журнала(job_id: str, journal: Path | None = None) -> dict | None:
+    """Последнее записанное состояние задачи, которую этот процесс не вёл.
+
+    Возвращает `None`, когда журнала нет или задачи в нём нет: «не знаю» и
+    «знаю, что ничего не было» — разные ответы, и второго у нас нет.
+    """
+    путь = JOURNAL if journal is None else journal
+    try:
+        текст = путь.read_text(encoding="utf-8")
+    except OSError:
+        return None
+    найдено = None
+    for строка in текст.splitlines():
+        строка = строка.strip()
+        if not строка:
+            continue
+        try:
+            row = json.loads(строка)
+        except ValueError:
+            continue
+        if isinstance(row, dict) and row.get("job_id") == job_id:
+            найдено = row
+    return найдено
+
 
 class ProviderSilent(Exception):
     """Raised by a runner that got no answer: the money may already be gone.
@@ -75,7 +139,10 @@ def _write(job_id: str, **fields: Any) -> dict:
     with _LOCK:
         job = _JOBS[job_id]
         job.update(fields)
-        return dict(job)
+        снимок = dict(job)
+    снимок.pop("thread", None)
+    _записать(снимок)
+    return снимок
 
 
 def _settle(job_id: str, on_settle: Settler | None) -> None:
@@ -200,6 +267,9 @@ def submit(
     }
     with _LOCK:
         _JOBS[job_id] = record
+    # Ручка пишется в журнал ДО того, как поток стартовал: снимок, сделанный
+    # после запуска, не существует ровно для тех вызовов, которые падают сразу.
+    _записать(record)
 
     thread = threading.Thread(
         target=_execute,
@@ -240,6 +310,29 @@ def status(job_id: str) -> dict:
     """
     record = _record(job_id)
     if record is None:
+        # ЖУРНАЛ СПРАШИВАЕТСЯ ПРЕЖДЕ, ЧЕМ СКАЗАТЬ «НЕ ЗНАЮ». Раньше ответ на
+        # задачу, которую этот процесс не вёл, был одинаков и для выдуманного
+        # идентификатора, и для настоящей задачи, пережившей перезапуск, — а во
+        # втором случае у нас есть ручка к вендору, и именно ради неё она и
+        # пишется до вызова.
+        прежнее = из_журнала(job_id)
+        if прежнее is not None:
+            return {
+                "job_id": job_id,
+                "state": UNKNOWN,
+                "outcome": UNMEASURED,
+                "result": None,
+                "session_id": прежнее.get("session_id"),
+                "kind": прежнее.get("kind"),
+                "attempt": прежнее.get("attempt"),
+                "request_id": прежнее.get("request_id"),
+                "note": (
+                    f"задачу {job_id!r} вёл ДРУГОЙ процесс: последнее записанное "
+                    f"состояние — {прежнее.get('state')!r}. Деньги за неё списаны, "
+                    f"а результат этому процессу неизвестен. Спрашивать вендора по "
+                    f"request_id {прежнее.get('request_id')!r}; это работа для человека"
+                ),
+            }
         return {
             "job_id": job_id,
             "state": UNKNOWN,

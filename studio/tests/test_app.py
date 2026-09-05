@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import io
 import socket
+import tempfile
 import unittest
 from dataclasses import asdict, dataclass, is_dataclass
 from pathlib import Path
@@ -30,6 +31,12 @@ def setUpModule() -> None:
     Creating a socket is left alone because the event loop the test client
     starts needs a local socketpair; reaching *out* is what must be impossible.
     """
+
+    # ЖУРНАЛ РУЧЕК УВОДИТСЯ ВО ВРЕМЕННЫЙ КАТАЛОГ. Иначе прогон дописывает
+    # состояние процесса в файл рабочего дерева: он игнорируется git-ом, но
+    # смешивает тестовые задачи с настоящими, а прибор, пишущий в то же место,
+    # что и продукт, однажды будет прочитан как продукт.
+    jobs.JOURNAL = Path(tempfile.mkdtemp()) / "studio_jobs.jsonl"
 
     def refuse(*_args: object, **_kwargs: object) -> None:
         raise AssertionError("a test tried to reach the network")

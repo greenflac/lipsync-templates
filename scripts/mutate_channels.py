@@ -858,6 +858,13 @@ MUTANTS: list[tuple[str, str, str, str, str]] = [
         "studio.mcp.tests.test_denied_reason_is_safe",
     ),
     (
+        "studio/jobs.py",
+        "        if прежнее is not None:",
+        "        if False:",
+        "ручка: задача, пережившая перезапуск, снова неотличима от выдуманной",
+        "studio.tests.test_jobs",
+    ),
+    (
         "studio/app.py",
         "    attempt = deps.ledger.next_attempt(приставка)",
         "    attempt = jobs.attempts(session_id, kind) + 1",
