@@ -435,9 +435,19 @@ MUTANTS: list[tuple[str, str, str, str, str]] = [
     ),
     (
         "studio/selfrag/facts.py",
-        "    return max(rows, key=дата)",
+        # ЦЕЛЬ ПЕРЕНАЦЕЛЕНА 2026-09-05: ключ заголовка перестал быть одной
+        # датой. Теперь он тройной — ступень источника, дата, подробность, — и
+        # мутант бьёт по всему ключу целиком.
+        "    return max(rows, key=ключ)",
         "    return rows[0]",
-        "заголовок: в него снова идёт алфавитно первое, а не самое свежее чтение",
+        "заголовок: в него снова идёт первое попавшееся, а не сильнейшее чтение",
+        "studio.selfrag.tests.test_source_count",
+    ),
+    (
+        "studio/selfrag/facts.py",
+        "            -min(ступени) if ступени else -UNKNOWN_TIER_RANK,",
+        "            0,",
+        "заголовок: ступень источника снова не решает — блог обгоняет портал",
         "studio.selfrag.tests.test_source_count",
     ),
     (

@@ -238,6 +238,16 @@ def _source_count(facts: Sequence[Fact]) -> int:
     return len({str(f.source_url or "") for f in facts})
 
 
+def _tier_rank(tier: str) -> int:
+    """Место ступени в лестнице; неизвестная — ниже всех.
+
+    Одно место на всё знание (Е1). До 2026-09-05 это выражение стояло в файле
+    ЧЕТЫРЕЖДЫ дословно, и четвёртое место — заголовок — про лестницу не знало
+    вовсе: в заголовок шла строка блога при живой строке портала рядом.
+    """
+    return TIERS.index(tier) if tier in TIERS else UNKNOWN_TIER_RANK
+
+
 def _newest(rows: Sequence[dict]) -> dict:
     """Строка с самой свежей датой источника — она и идёт в заголовок.
 
@@ -249,10 +259,27 @@ def _newest(rows: Sequence[dict]) -> dict:
     которого заведён `scripts/check_headline.py`.
     """
 
-    def дата(row: dict) -> str:
-        return max((str(s.get("stated_on") or "") for s in row["sources"]), default="")
+    def ключ(row: dict) -> tuple:
+        ступени = [_tier_rank(str(s.get("tier") or "")) for s in row["sources"]]
+        # СТУПЕНЬ ИСТОЧНИКА РЕШАЕТ РАНЬШЕ ДАТЫ, И ЭТО ПОЧИНКА 2026-09-05.
+        # `omnihuman-1.5.max_audio_seconds`: в заголовок шло «30» из БЛОГА,
+        # тогда как в той же группе лежала строка ПОРТАЛА «30s at 1080p, 60s at
+        # 720p» — и рядом печаталось «best tier portal». Заголовок называл
+        # одну ступень, а брал значение с другой (Е2: имя выводится из того,
+        # что исполнилось). Цена ошибки прямая: дорожка в 45 секунд отвергалась
+        # как слишком длинная, хотя на 720p она укладывается.
+        #
+        # При равной ступени и дате берётся САМОЕ ПОДРОБНОЕ чтение: короткое
+        # «30» и подробное «30s at 1080p, 60s at 720p» — это одна величина с
+        # разной подробностью (так их и признал `_same_answer`), и заголовок,
+        # роняющий условие, отвечает на вопрос заказчика половиной ответа.
+        return (
+            -min(ступени) if ступени else -UNKNOWN_TIER_RANK,
+            max((str(s.get("stated_on") or "") for s in row["sources"]), default=""),
+            len(str(row.get("value") or "")),
+        )
 
-    return max(rows, key=дата)
+    return max(rows, key=ключ)
 
 
 MULTI_VALUED: frozenset[str] = frozenset(
@@ -652,13 +679,10 @@ class FactStore:
                     }
                     for f in sorted(
                         facts,
-                        key=lambda f: TIERS.index(f.tier) if f.tier in TIERS else UNKNOWN_TIER_RANK,
+                        key=lambda f: _tier_rank(f.tier),
                     )
                 ],
-                "best_tier": min(
-                    (f.tier for f in facts),
-                    key=lambda t: TIERS.index(t) if t in TIERS else UNKNOWN_TIER_RANK,
-                ),
+                "best_tier": min((f.tier for f in facts), key=lambda t: _tier_rank(str(t))),
             }
             for value, facts in sorted(by_value.items())
         ]
@@ -686,10 +710,7 @@ class FactStore:
                 "values": sorted(by_value),
             }
 
-        best = min(
-            (r["best_tier"] for r in rows),
-            key=lambda t: TIERS.index(t) if t in TIERS else UNKNOWN_TIER_RANK,
-        )
+        best = min((r["best_tier"] for r in rows), key=lambda t: _tier_rank(str(t)))
         if best == TIER_BLOG or best not in TIERS:
             return {
                 "outcome": UNMEASURED,

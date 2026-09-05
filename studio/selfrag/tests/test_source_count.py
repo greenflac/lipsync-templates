@@ -11,6 +11,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from studio.selfrag import facts
 from studio.selfrag.facts import FactStore, load_facts
 
 
@@ -117,3 +118,61 @@ class ВЗаголовокИдётСамоеСвежееЧтение(unittest.Te
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ЗаголовокБерётсяССильнейшейСтупени(unittest.TestCase):
+    """Заголовок называл одну ступень, а брал значение с другой.
+
+    ЖИВОЙ СЛУЧАЙ 2026-09-05: `omnihuman-1.5.max_audio_seconds` отвечал «30» —
+    значением из БЛОГА, — тогда как в той же группе лежала строка ПОРТАЛА
+    «30s at 1080p, 60s at 720p», и рядом печаталось «best tier portal».
+    Цена ошибки прямая: дорожка в 45 секунд отвергалась как слишком длинная,
+    хотя на 720p она укладывается.
+
+    Ожидаемое — литералы (Т2), сети нет (Т4).
+    """
+
+    def строки(self):
+        return [
+            {"value": "30", "sources": [{"tier": "blog", "stated_on": "2026-08-27"}]},
+            {
+                "value": "30s at 1080p, 60s at 720p",
+                "sources": [{"tier": "portal", "stated_on": "2026-08-27"}],
+            },
+        ]
+
+    def test_портал_обгоняет_блог_при_равной_дате(self):
+        self.assertEqual("30s at 1080p, 60s at 720p", facts._newest(self.строки())["value"])
+
+    def test_свежесть_решает_внутри_одной_ступени(self):
+        """Негативный контроль (И5): ступень не смеет отменить дату — иначе
+        вернётся тот дефект, ради которого этот выбор и заводился
+        (`elevenlabs-pvc.plan_slots` показывал устаревшее «Scale 3»)."""
+        строки = [
+            {"value": "Scale 3", "sources": [{"tier": "portal", "stated_on": "2026-08-27"}]},
+            {"value": "Scale 1", "sources": [{"tier": "portal", "stated_on": "2026-09-03"}]},
+        ]
+        self.assertEqual("Scale 1", facts._newest(строки)["value"])
+
+    def test_при_равной_ступени_и_дате_побеждает_подробное(self):
+        """Короткое «30» и подробное «30s at 1080p, 60s at 720p» — одна
+        величина с разной подробностью; заголовок, роняющий условие, отвечает
+        половиной ответа."""
+        строки = [
+            {"value": "30", "sources": [{"tier": "portal", "stated_on": "2026-08-27"}]},
+            {
+                "value": "30s at 1080p, 60s at 720p",
+                "sources": [{"tier": "portal", "stated_on": "2026-08-27"}],
+            },
+        ]
+        self.assertEqual("30s at 1080p, 60s at 720p", facts._newest(строки)["value"])
+
+    def test_неизвестная_ступень_не_обгоняет_названную(self):
+        строки = [
+            {
+                "value": "опечатка в тире",
+                "sources": [{"tier": "protal", "stated_on": "2026-09-04"}],
+            },
+            {"value": "портал", "sources": [{"tier": "portal", "stated_on": "2026-08-27"}]},
+        ]
+        self.assertEqual("портал", facts._newest(строки)["value"])
