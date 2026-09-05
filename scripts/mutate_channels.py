@@ -820,6 +820,13 @@ MUTANTS: list[tuple[str, str, str, str, str]] = [
         "studio.tests.test_named_not_asked",
     ),
     (
+        "studio/pricing.py",
+        '        if p.outcome != "годно" or p.amount is None or not p.unit or not p.per:',
+        '        if p.outcome != "годно" or p.amount is None or not p.unit:',
+        "сумма: цены за РАЗНОЕ снова складываются в одно число",
+        "studio.mcp.tests.test_pricing",
+    ),
+    (
         "studio/mcp/fetch.py",
         '        "why_wanted": причина_для_записи(why_wanted),',
         '        "why_wanted": why_wanted,',

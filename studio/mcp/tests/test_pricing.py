@@ -92,5 +92,34 @@ class Total(unittest.TestCase):
         self.assertIn("не менее", total([parse("0.10", "price_per_second_usd")])["note"])
 
 
+class ЗаЧтоЭтоЧастьВеличины(unittest.TestCase):
+    """«$3 за минуту» и «$0.5 за картинку» не складываются в одно число.
+
+    ИЗМЕРЕНО 2026-09-05 на живой базе: 34 годные цены из 214 не имеют «за
+    что» — каждая шестая. До правки они попадали в общий мешок и суммировались,
+    а рядом печаталось «неизвестных слагаемых 0».
+    """
+
+    def test_цена_без_за_что_не_слагаемое_а_неизвестное(self):
+        сумма = total([parse("0.10", "price_per_second_usd"), parse("$3", "price")])
+        self.assertEqual(сумма["unknown"], 1, "«за что» не выведено — это неизвестное")
+        self.assertIn("неизвестных слагаемых 1", сумма["note"])
+        self.assertNotIn("за ?", сумма["note"])
+
+    def test_две_цены_без_за_что_не_складываются_между_собой(self):
+        сумма = total([parse("$3", "price"), parse("$0.5", "price")])
+        self.assertEqual(сумма["unknown"], 2)
+        self.assertEqual(сумма["outcome"], "не смогли")
+
+    def test_цены_с_одинаковым_за_что_по_прежнему_складываются(self):
+        """Негативный контроль (И5): починка не смеет разучить складывать —
+        иначе продукт перестанет отвечать на вопрос «сколько это стоит»."""
+        сумма = total(
+            [parse("0.10", "price_per_second_usd"), parse("0.20", "price_per_second_usd")]
+        )
+        self.assertEqual(сумма["unknown"], 0)
+        self.assertIn("0.3 usd за second", сумма["note"])
+
+
 if __name__ == "__main__":
     unittest.main()
