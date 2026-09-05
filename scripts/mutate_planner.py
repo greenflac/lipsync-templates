@@ -73,6 +73,25 @@ ROOT = Path(__file__).resolve().parents[1]
 
 MUTANTS = [
     # (файл, что заменить, на что, подпись)
+    # --- знак измеренного (заведено 2026-09-05) ----------------------------
+    (
+        "studio/planner.py",
+        "        sign_rank(c),\n",
+        "",
+        "знак измеренного убран из ключа: спорное измерение снова обгоняет чистое",
+    ),
+    (
+        "studio/planner.py",
+        "    if not c.against:\n        return SIGN_CLEAN",
+        "    if c.against:\n        return SIGN_CLEAN",
+        "знак перевёрнут: плохая новость объявлена чистым измерением",
+    ),
+    (
+        "studio/planner.py",
+        "        return SIGN_SILENT",
+        "        return SIGN_CLEAN",
+        "молчание объявлено чистым измерением: неизмеренный обгоняет измеренного",
+    ),
     # --- обязательные входы (заведены 2026-09-03) --------------------------
     (
         "studio/planner.py",
@@ -283,8 +302,8 @@ MUTANTS = [
     ),
     (
         "studio/planner.py",
-        "        длительность,\n        цена,\n        -c.applicability,",
-        "        длительность,\n        -c.applicability,\n        цена,",
+        "        длительность,\n        цена,\n        sign_rank(c),",
+        "        длительность,\n        sign_rank(c),\n        цена,",
         "by_evidence: цена перестаёт быть старшим ключом при названном потолке",
     ),
     (
@@ -810,6 +829,7 @@ def _прогон() -> int:
             "unittest",
             "studio.tests.test_planner",
             "studio.tests.test_duration",
+            "studio.tests.test_applicability_sign",
         ]
     )
     базовый_г = run([sys.executable, "scripts/check_planner.py", "--check"])
@@ -842,6 +862,10 @@ def _прогон() -> int:
                     # константу не сторожат, а потому, что сторож не приглашён, — и
                     # таблица соврёт в сторону «дефект», не показав его.
                     "studio.tests.test_clarify",
+                    # Знак измеренного (`sign_rank`) сторожит этот набор, и без
+                    # приглашения его мутанты промолчали бы «по причине сторожа,
+                    # а не по причине кода» — та же ловушка, что строкой выше.
+                    "studio.tests.test_applicability_sign",
                 ]
             )
             гк, гс = run([sys.executable, "scripts/check_planner.py", "--check"])

@@ -283,6 +283,12 @@ __all__ = [
     "BUDGET_UNIT",
     "Budget",
     "KEY_FIELDS",
+    "SIGN_AGAINST",
+    "SIGN_CLEAN",
+    "SIGN_MIXED",
+    "SIGN_SILENT",
+    "SIGN_WORDS",
+    "sign_rank",
     "NO_PRICE",
     "NO_RIVAL_MARK",
     "DEFAULT_PER",
@@ -913,6 +919,7 @@ KEY_FIELDS: tuple[str, ...] = (
     "принимает ли кадр",
     "влезает ли по длительности",
     "положение по цене",
+    "знак измеренного: чисто / спорно / только плохое / молчание",
     "строк применимости",
     "утверждений по якорям операции",
     "имя модели несёт якорь",
@@ -1325,6 +1332,11 @@ class Candidate:
     capability: int
     unresolved: int
     price: str
+    #: Сколько строк применимости — ПЛОХИЕ НОВОСТИ (`factaxis.CONTRA_ATTRIBUTES`).
+    #: Заведено 2026-09-05: без знака ключ отбора считал строки штуками, и две
+    #: плохие обгоняли одну хорошую. Знак берётся у `studio/factaxis.py` и
+    #: вторым списком здесь не переписывается (Е1).
+    against: int = 0
     #: Та же цена РАЗОБРАННОЙ. Держится рядом со строкой, а не выводится из
     #: неё: строка — для человека, объект — для суммы пайплайна.
     price_value: "pricing.Price | None" = None
@@ -1375,6 +1387,16 @@ class Candidate:
     def measured(self) -> bool:
         """Есть ли хоть одна строка применимости. Это и есть развилка пометки."""
         return self.applicability > 0
+
+    @property
+    def in_favour(self) -> int:
+        """Строки применимости, которые НЕ плохие новости.
+
+        Отрицательное никогда не вычитается из положительного: одна хорошая
+        строка и одна плохая — это не «ноль», это спор, и спор виден числами
+        порознь (`applicability`, `against`, `in_favour`), а не одной разностью.
+        """
+        return max(0, self.applicability - self.against)
 
     @property
     def mark(self) -> str:
@@ -1523,19 +1545,27 @@ def evidence_for(
     matched: Mapping[int, tuple[str, ...]],
     overrides: dict | None = None,
     requires: Sequence[str] = (),
-) -> tuple[list[Evidence], int, int, int]:
-    """Строки доказательства с их родом по второй оси, и три счётчика.
+) -> tuple[list[Evidence], int, int, int, int]:
+    """Строки доказательства с их родом по второй оси, и ЧЕТЫРЕ счётчика.
 
     Род БЕРЁТСЯ у `studio/factaxis.py` и не выводится вторым способом (Е1);
     неразмеченная строка считается третьим числом, а не приписывается к
     способности «за компанию».
+
+    ЧЕТВЁРТОЕ ЧИСЛО — ЗНАК, и оно добавлено 2026-09-05. Строки применимости
+    делятся на плохие новости (`factaxis.CONTRA_ATTRIBUTES`) и все прочие.
+    Пока считались только штуки, две плохие новости обгоняли одну хорошую, и
+    победитель отбора оказывался тем самым кандидатом, за что его потом
+    отвергал валидатор. Знак берётся у того же модуля, что и род.
     """
     строки: list[Evidence] = []
-    применимость = способность = не_смогли = 0
+    применимость = способность = не_смогли = против = 0
     for m in fa.mark_all(facts, overrides):
         ось = fa.axis(m.kind)
         if ось == fa.APPLICABILITY_HEADER:
             применимость += 1
+            if m.fact.attribute.lower() in fa.CONTRA_ATTRIBUTES:
+                против += 1
         elif ось == fa.CAPABILITY_HEADER:
             способность += 1
         else:
@@ -1553,7 +1583,7 @@ def evidence_for(
                 forbids=bans_in(m.fact, requires),
             )
         )
-    return строки, применимость, способность, не_смогли
+    return строки, применимость, способность, не_смогли, против
 
 
 def budget_from(brief: str) -> Budget:
@@ -1717,6 +1747,7 @@ INPUT_LIST_WORDS: dict[str, str] = {
     ARTEFACT_AUDIO: "аудио",
     ARTEFACT_VIDEO: "видео",
     ARTEFACT_SELFIE: "изображение",
+    ARTEFACT_REFERENCE: "изображение",
 }
 
 #: Пометка канала схем о том, что список входов собран не целиком. Такой
@@ -2300,6 +2331,53 @@ def blocked_rank(c: Candidate) -> tuple[int, int]:
     return (max(ступени), -sum(1 for ш in ступени if ш == 0))
 
 
+#: ЛЕСТНИЦА ЗНАКА ИЗМЕРЕННОГО. Четыре ступени, от лучшей к худшей, и это ОДНО
+#: поле ключа, а не три — по той же причине, что у `blocked_rank`: три похожих
+#: правила в трёх полях разъезжаются молча (Е1).
+#:
+#: ЗАЧЕМ ЗАВЕДЕНА 2026-09-05. Валидатор (`factaxis.step_verdict`) отвергает шаг,
+#: если хоть одна ОТНОСЯЩАЯСЯ строка применимости отрицательна. А отбор до этой
+#: правки считал строки штуками — и ставил первым кандидата со спорным или
+#: целиком плохим измерением, которого сам же валидатор потом заваливал. План
+#: не мог сойтись ни при каком числе оплаченных замеров: чтобы обогнать
+#: latentsync с его двумя строками, чистому кандидату нужно было три.
+#: ИЗМЕРЕНО на живой базе (2118 строк, бриф «Оживи фотографию и сделай липсинк
+#: под мою дорожку»): шаг липсинк — latentsync, за 1 (benchmark_score 94%),
+#: против 1 (metric_blind_spot), исход шага «не годно» по той самой строке.
+#:
+#: ПОРЯДОК СТУПЕНЕЙ — РЕШЕНИЕ, И ОНО НЕ «ЧЕМ ЛУЧШЕ, ТЕМ ВЫШЕ». Молчание стоит
+#: НИЖЕ целиком плохого измерения, и это прежнее решение модуля, сохранённое
+#: намеренно: про модель с записанным провалом валидатор скажет «не годно» и
+#: назовёт класс, а про модель, о которой не записано ничего, — «не смогли», и
+#: читатель не отличит это от «годно». Молчание не лучше плохой новости.
+SIGN_CLEAN = 0
+SIGN_MIXED = 1
+SIGN_AGAINST = 2
+SIGN_SILENT = 3
+
+
+#: Ступень человеческими словами — для строки «почему выбран этот, а не сосед».
+SIGN_WORDS: dict[int, str] = {
+    SIGN_CLEAN: "измерено, плохих новостей нет",
+    SIGN_MIXED: "измерено, но есть плохая новость",
+    SIGN_AGAINST: "измерено, и всё измеренное — плохое",
+    SIGN_SILENT: "не измерено",
+}
+
+
+def sign_rank(c: "Candidate") -> int:
+    """Ступень знака: чисто / спорно / только плохое / молчание.
+
+    Вынесено отдельной функцией из ключа (Т5): это развилка, и мутировать её
+    надо порознь от порядка полей.
+    """
+    if not c.applicability:
+        return SIGN_SILENT
+    if not c.against:
+        return SIGN_CLEAN
+    return SIGN_MIXED if c.in_favour else SIGN_AGAINST
+
+
 def by_evidence(c: Candidate) -> tuple:
     """Ключ порядка кандидатов, вынесенный из сортировки (Т5).
 
@@ -2344,6 +2422,7 @@ def by_evidence(c: Candidate) -> tuple:
         кадр,
         длительность,
         цена,
+        sign_rank(c),
         -c.applicability,
         -c.anchored,
         -int(c.named),
@@ -2386,6 +2465,7 @@ def _поле(c: Candidate, i: int) -> str:
         c.fit_state or "не считалось",
         c.dur_state or "не считалось",
         c.price_state or "не считалось",
+        SIGN_WORDS[sign_rank(c)],
         f"{c.applicability}",
         f"{c.anchored}",
         "да" if c.named else "нет",
@@ -2587,7 +2667,7 @@ def candidates_for(
             for f in все_свои
             if id(f) not in {id(x) for x in свои} and fa.mark(f, overrides).kind in fa.APPLICABILITY
         ]
-        строки, применимость, способность, не_смогли = evidence_for(
+        строки, применимость, способность, не_смогли, против = evidence_for(
             свои_плюс, слова, overrides, step_inputs(op)
         )
         # Строка-ЗАПРЕТ уходит в конец доводов: она не довод. Печатается она
@@ -2615,6 +2695,7 @@ def candidates_for(
                 model=имя,
                 evidence=tuple(строки[:EVIDENCE_SHOWN]),
                 applicability=применимость,
+                against=против,
                 capability=способность,
                 unresolved=не_смогли,
                 price=цена_словами,
@@ -2959,6 +3040,11 @@ def _candidate_row(c: Candidate | None) -> dict | None:
         "model": c.model,
         "mark": c.mark,
         "applicability": c.applicability,
+        # Знак печатается рядом со штуками (П1: счётчик рядом с ручкой). Число,
+        # которое участвует в отборе и не видно в выдаче, нельзя проверить
+        # снаружи — а именно им решается, кого продукт поставил первым.
+        "against": c.against,
+        "in_favour": c.in_favour,
         "capability": c.capability,
         "unresolved": c.unresolved,
         "price": c.price,
