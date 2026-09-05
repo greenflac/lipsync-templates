@@ -967,6 +967,20 @@ MUTANTS: list[tuple[str, str, str, str, str]] = [
         "studio.mcp.tests.test_eval_corpus",
     ),
     (
+        "scripts/check_source_names_model.py",
+        "    if имя == карточка or имя in карточка or карточка in имя:",
+        "    if True:",
+        "источник: утверждение со страницы ЧУЖОЙ модели снова не находится",
+        "studio.mcp.tests.test_source_names_model",
+    ),
+    (
+        "scripts/check_source_names_model.py",
+        "ПОТОЛОК = 10",
+        "ПОТОЛОК = 1000",
+        "источник: потолок чужих карточек перестал что-либо запрещать",
+        "studio.mcp.tests.test_source_names_model",
+    ),
+    (
         "studio/mcp/advice.py",
         '    if прочитано and fetch.закрыт_политикой(fields["source_url"]):',
         "    if False:",

@@ -52,6 +52,9 @@ trap _time_summary EXIT
 # `scripts/recheck_vendor.py`. Гейт это ловил — но через 70 с тестов и под
 # подписью «упал test_recheck_vendor», по которой утечка не читается. Здесь
 # она называется вслух за миллисекунды.
+step "утверждение снято со страницы своей модели"
+python scripts/check_source_names_model.py --check
+
 step "мутанты не утекли в дерево"
 python scripts/check_mutants_clean.py
 
