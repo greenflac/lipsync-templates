@@ -941,6 +941,28 @@ MUTANTS: list[tuple[str, str, str, str, str]] = [
         "мутатор планировщика: промолчавший мутант снова не красит гейт",
         "studio.mcp.tests.test_mutate_exit_codes",
     ),
+    # === ОТВЕТ ЗАКАЗЧИКУ НАЗЫВАЕТ ПРИЧИНУ (studio/planner.py) =============
+    (
+        "studio/planner.py",
+        '        for проба in _сработавшие(итог, s["step"]):',
+        "        for проба in []:",
+        "ответ: причина отказа снова не доходит до блока шага",
+        "studio.tests.test_render_says_why",
+    ),
+    (
+        "studio/planner.py",
+        '            if p.get("fired") and p.get("outcome") == FAIL and p.get("note")',
+        '            if p.get("note")',
+        "ответ: молчание базы печатается как причина отказа",
+        "studio.tests.test_render_says_why",
+    ),
+    (
+        "studio/planner.py",
+        '            f", из них {self.against} о том, где ломается"',
+        '            f", из них {self.against} строк(и)"',
+        "пометка: знак плохих новостей стёрт из витрины",
+        "studio.tests.test_mark_carries_sign",
+    ),
     # === АРИФМЕТИКА КАДРОВ (lipsync/framemath.py) =========================
     (
         "lipsync/framemath.py",
