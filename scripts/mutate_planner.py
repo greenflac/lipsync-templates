@@ -87,6 +87,8 @@ ROOT = Path(__file__).resolve().parents[1]
     "studio.tests.test_applicability_sign",
     # Развилка вердикта, вынесенная из `plan` отдельной функцией.
     "studio.tests.test_verdict_not_masked",
+    # Счётчики и оси, вынесенные из рендера отдельными функциями.
+    "studio.tests.test_counters_are_printed",
 )
 
 MUTANTS = [
@@ -97,6 +99,18 @@ MUTANTS = [
         "    if без_кандидата:\n        return (\n            UNMEASURED,\n            REASON_NO_CANDIDATES,",
         "    if not без_кандидата:\n        return (\n            UNMEASURED,\n            REASON_NO_CANDIDATES,",
         "вердикт: из двух третьих исходов шаг без кандидата перестал называться первым",
+    ),
+    (
+        "studio/planner.py",
+        '    if not части:\n        return ""',
+        '    if True:\n        return ""',
+        "счётчики: отодвинутые кандидаты снова считаются в стол",
+    ),
+    (
+        "studio/planner.py",
+        '    if (выбран.get("ban_state") or "") == BAN_UNKNOWN:',
+        "    if False:",
+        "оси: молчание по запрету входа снова не попадает в план",
     ),
     (
         "studio/planner.py",
