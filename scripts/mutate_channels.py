@@ -963,6 +963,35 @@ MUTANTS: list[tuple[str, str, str, str, str]] = [
         "пометка: знак плохих новостей стёрт из витрины",
         "studio.tests.test_mark_carries_sign",
     ),
+    # === ЦЕНА ЗА МИЛЛИОН И ПУСТОЙ КОРПУС =================================
+    (
+        "studio/pricing.py",
+        '    if за in ("token", "") and _ЗА_МИЛЛИОН.search(текст):',
+        "    if False:",
+        "цена: «за 1M токенов» снова читается как «за токен» — ошибка в миллион раз",
+        "studio.tests.test_price_per_million",
+    ),
+    (
+        "studio/pipeline.py",
+        'PER_NOT_PER_RUN: frozenset[str] = frozenset({"token", "1m_tokens"})',
+        "PER_NOT_PER_RUN: frozenset[str] = frozenset()",
+        "цена: цена за объём текста снова сравнивается с бюджетом одного прогона",
+        "studio.tests.test_price_per_million",
+    ),
+    (
+        "studio/selfrag/pipeline.py",
+        "            if outcome == PASS:\n                outcome = UNMEASURED\n        if avail[",
+        "            if False:\n                outcome = UNMEASURED\n        if avail[",
+        "промпт: сборка без единого прецедента снова объявляется годной",
+        "studio.selfrag.tests.test_empty_corpus_is_not_pass",
+    ),
+    (
+        "studio/selfrag/replay.py",
+        "                \"WHERE artifact IS NOT NULL AND TRIM(artifact) != '' ORDER BY id\"",
+        '                "ORDER BY id"',
+        "обратная связь: непроверяемая оценка снова поднимает запись в выдаче",
+        "studio.selfrag.tests.test_replay_needs_artifact",
+    ),
     # === АРИФМЕТИКА КАДРОВ (lipsync/framemath.py) =========================
     (
         "lipsync/framemath.py",

@@ -542,6 +542,21 @@ class PromptEngineer:
                 outcome = UNMEASURED
         if graded["outcome"] != PASS:
             note_parts.append(f"no usable precedent: {graded['note']}")
+            # A DRAFT WITH NO PRECEDENT IS NOT A PASS (fixed 2026-09-05).
+            #
+            # This branch only appended text while `style`, `availability` and
+            # `fidelity` next to it downgrade the verdict. So a run that found
+            # NOTHING answered `pass`, and the sentence «no usable precedent»
+            # stood right beside the word — which reads as "we checked
+            # everything, there just were no examples".
+            #
+            # That is not an edge case, it is the state of a FRESH CLONE: the
+            # corpus is deliberately not committed (licensing), so anybody who
+            # clones this repository has zero records, and the CLI turns `pass`
+            # into exit 0. The skill promises the opposite in as many words:
+            # "a run with retrieved 0 is a run with no evidence behind it".
+            if outcome == PASS:
+                outcome = UNMEASURED
         if avail["outcome"] == UNMEASURED:
             note_parts.append(avail["note"])
             if outcome == PASS:

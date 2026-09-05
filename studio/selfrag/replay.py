@@ -258,7 +258,21 @@ class ReplayBuffer:
         """Per record id: (good reports, bad reports, reports with no rating)."""
         out: dict[str, tuple[int, int, int]] = {}
         with self._lock:
-            rows = self._conn.execute("SELECT record_id, rating FROM replay ORDER BY id").fetchall()
+            # ТОЛЬКО СТРОКИ С АРТЕФАКТОМ (исправлено 2026-09-05 по независимому
+            # аудиту). Здесь читались ВСЕ строки, включая те, которые `record`
+            # сам объявил непроверяемыми: «nobody can open what this produced,
+            # so the rating is a claim rather than an observation». Десятка без
+            # единого файла давала записи вес 1.2 — плюс 20% к рангу в каждой
+            # следующей выдаче. Код признавал заявку необоснованной и тут же
+            # конвертировал её в приоритет.
+            #
+            # Строка из журнала НЕ пропадает: `stats` по-прежнему её считает и
+            # показывает `with_artifact` рядом с `checked`. Не давать веса — не
+            # то же самое, что стереть.
+            rows = self._conn.execute(
+                "SELECT record_id, rating FROM replay "
+                "WHERE artifact IS NOT NULL AND TRIM(artifact) != '' ORDER BY id"
+            ).fetchall()
         for row in rows:
             good, bad, unrated = out.get(row["record_id"], (0, 0, 0))
             rating = row["rating"]
