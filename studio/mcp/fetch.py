@@ -258,6 +258,41 @@ def _latest_states(rows: list[dict]) -> dict[str, str]:
     return latest
 
 
+def закрыт_политикой(url: str, denied: Path | None = None) -> bool:
+    """Записан ли хост этого адреса ПОСЛЕДНИМ состоянием как отказавший.
+
+    Журнал отказов — журнал СОСТОЯНИЙ: строка `open` снимает прежний отказ, и
+    считать по любому упоминанию значит завышать. Независимая проверка
+    2026-09-05 наступила на это и записала число: «закрыт» без учёта поздних
+    проб дал 983 строки против 1 настоящей — завышение в 983 раза.
+    """
+    host = _host(url)
+    if not host:
+        return False
+    путь = DENIED_PATH if denied is None else путь_или(denied)
+    try:
+        текст = путь.read_text(encoding="utf-8")
+    except OSError:
+        return False
+    состояния: dict[str, str] = {}
+    for строка in текст.splitlines():
+        строка = строка.strip()
+        if not строка:
+            continue
+        try:
+            row = json.loads(строка)
+        except ValueError:
+            continue
+        if isinstance(row, dict) and row.get("host"):
+            состояния[str(row["host"])] = str(row.get("state", STATE_REFUSED))
+    return состояния.get(host, "") == STATE_REFUSED
+
+
+def путь_или(p: Path) -> Path:
+    """Тождество, названное именем: точка подмены для теста."""
+    return p
+
+
 def note_open(url: str) -> dict:
     """Record that a previously-refused host now answers, retiring it from the ask.
 

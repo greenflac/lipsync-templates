@@ -967,6 +967,30 @@ MUTANTS: list[tuple[str, str, str, str, str]] = [
         "studio.mcp.tests.test_eval_corpus",
     ),
     (
+        "studio/mcp/advice.py",
+        '    if прочитано and fetch.закрыт_политикой(fields["source_url"]):',
+        "    if False:",
+        "правда: «я эту страницу открыл» снова не сверяется ни с чем",
+        "studio.mcp.tests.test_read_flag_is_checked",
+    ),
+    (
+        "studio/mcp/probe.py",
+        "    if status is not None and status < 400:",
+        "    if False:",
+        "зонд: принятый абсурдный запрос снова выдаётся за измерение предела",
+        "studio.mcp.tests.test_probe_refusal_kinds",
+    ),
+    (
+        "studio/selfrag/facts.py",
+        # ЦЕЛЬ УТОЧНЕНА СРАЗУ ПОСЛЕ ЗАВЕДЕНИЯ: мутант на самом ВЫРАЖЕНИИ поиска
+        # промолчал, и правильно — разбор ниже снимает запятые групп и без
+        # него. Решает именно разбор, туда мутант и нацелен.
+        '    число = сырое.replace(",", "") if re.search(r",\\d{3}\\b", сырое) else сырое.replace(",", ".")',
+        '    число = сырое.replace(",", ".")',
+        "числа: разделитель тысяч снова читается как десятичная точка — 10 и 10,000 сливаются",
+        "studio.selfrag.tests.test_source_count",
+    ),
+    (
         "scripts/check_burned_marks.py",
         "SUSPICIOUS_SIMILARITY = 0.80",
         "SUSPICIOUS_SIMILARITY = 1.01",

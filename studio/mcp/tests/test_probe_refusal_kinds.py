@@ -55,6 +55,53 @@ def _прогон(код: int, тело: str) -> dict:
             )
 
 
+def _успех(код: int, тело: str) -> dict:
+    """Прогон, где вендор ПРИНЯЛ запрос: не исключение, а обычный ответ."""
+
+    class Ответ:
+        status = код
+
+        def read(self, _n: int = -1) -> bytes:
+            return тело.encode()
+
+        def getcode(self) -> int:
+            return код
+
+        def __enter__(self) -> "Ответ":
+            return self
+
+        def __exit__(self, *_a: object) -> None:
+            return None
+
+    with mock.patch.object(pb, "_key_for", lambda host: ("k", "TEST_KEY")):
+        with mock.patch("urllib.request.urlopen", lambda *_a, **_k: Ответ()):
+            return pb.probe_limit(
+                "https://api.vendor.test/v1/videos",
+                "duration",
+                10_000_000,
+                payload={"model": "m"},
+                why_wanted="предел длительности",
+            )
+
+
+class ПринятыйЗапросЭтоНеИзмерение(unittest.TestCase):
+    """Ниже в коде написано «текст отказа и есть измерение». Для ответа 2xx
+    отказа НЕТ: вендор принял заведомо абсурдное значение. Такой ответ не
+    говорит о пределе ничего и, что хуже, может означать запущенную ПЛАТНУЮ
+    работу. Нашла независимая проверка 2026-09-05: соседний класс (401/403/404
+    как измерение) в тот же день чинили, а эту дверь не закрыли."""
+
+    def test_двести_это_третий_исход_без_подсказки_факта(self) -> None:
+        итог = _успех(200, '{"task_id":"abc","status":"queued"}')
+        self.assertEqual(итог["outcome"], "could not measure")
+        self.assertIsNone(итог["suggested_fact"])
+
+    def test_нота_предупреждает_про_деньги(self) -> None:
+        итог = _успех(200, '{"task_id":"abc"}')
+        self.assertIn("принял", итог["note"])
+        self.assertIn("платную работу", итог["note"])
+
+
 class ОтказыРазныеПоРоду(unittest.TestCase):
     def test_валидация_остаётся_измерением(self) -> None:
         """Негативный контроль (И5): починка не должна отключить сам зонд."""

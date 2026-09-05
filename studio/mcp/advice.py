@@ -46,6 +46,7 @@ from typing import Any
 from lipsync.fork_identity import FAIL, PASS, UNMEASURED
 
 from studio import lifecycle as _lifecycle
+from studio.mcp import fetch
 from studio.selfrag import attrfamily, registry, source_hosts
 from studio.selfrag.facts import (
     DEFAULT_FACTS_PATH,
@@ -928,13 +929,33 @@ def record(
             "written": None,
         }
 
+    # ФЛАГ ЧТЕНИЯ СВЕРЯЕТСЯ СО СВИДЕТЕЛЬСТВОМ (Е2). До 2026-09-05 `read_directly`
+    # не сверялся НИ С ЧЕМ: можно было записать «я эту страницу открыл» про хост,
+    # который в этом окружении закрыт политикой и не открывался ни разу.
+    # Независимая проверка это и сделала — выдуманное утверждение прошло с
+    # исходом `pass`. Журнал отказов у проекта уже есть; здесь он и спрашивается.
+    #
+    # Факт при этом НЕ отвергается: сам он может быть верен, неверно только
+    # утверждение о чтении. Верим свидетельству, а не флагу, и говорим об этом
+    # вслух в ноте — молча переписать чужое утверждение значило бы завести
+    # третий способ соврать.
+    прочитано = None if read_directly is None else bool(read_directly)
+    поправка = ""
+    if прочитано and fetch.закрыт_политикой(fields["source_url"]):
+        прочитано = False
+        поправка = (
+            " [ЗАЯВЛЕНО ЧТЕНИЕ, НО ХОСТ ЗАКРЫТ ПОЛИТИКОЙ: последнее записанное "
+            "состояние хоста — отказ, открыть его в этом окружении было нечем; "
+            "флаг чтения снят]"
+        )
+
     # Annotated because `read_directly` is the one non-string value in the row;
     # without it the whole dict widens and `row["model"]` stops being a str.
     row: dict[str, str | bool | None] = {
         **fields,
-        "note": str(note or ""),
+        "note": str(note or "") + поправка,
         "fix": str(fix or ""),
-        "read_directly": None if read_directly is None else bool(read_directly),
+        "read_directly": прочитано,
         "witnessed": str(witnessed or ""),
         # ЗНАК, ОБЪЯВЛЕННЫЙ ЯВНО: True — плохая новость, False — хорошая, None —
         # не объявлен, и тогда его выведут по имени атрибута. Заведено
