@@ -3,15 +3,657 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-echo "== ruff check"
+# ДЛИТЕЛЬНОСТЬ ШАГА ПЕЧАТАЕТСЯ. Правило дома П2 требует этого прямым текстом
+# («дешёвые проверки раньше дорогих, длительность шагов печатается»), и до
+# 2026-09-02 гейт его же и нарушал: 58 шагов, ни одной цифры. Пока прогон
+# стоил полминуты, это было терпимо; сегодня он вырос до 91 с локально и 216 с
+# в CI, и вопрос «какой шаг столько ест» стало нечем задать.
+#
+# ИМЕНА ЗДЕСЬ ЛАТИНИЦЕЙ, В ОТЛИЧИЕ ОТ ОСТАЛЬНОГО КОДА ПРОЕКТА: bash не
+# принимает кириллицу в имени переменной и молча разбирает `ШАГ=""` как имя
+# КОМАНДЫ. Это уже ловилось сегодня на `.githooks/pre-push` — и повторилось
+# здесь через шесть часов, потому что правило было записано в комментарии
+# ТОГО файла, а не там, где пишут следующий скрипт.
+#
+# Время печатается ПОСЛЕ шага, отдельной строкой: держать его до конца шага
+# значило бы потерять при падении, то есть ровно там, где оно нужнее всего.
+_step_start=""
+_step_name=""
+_all_start=$(date +%s)
+_marks=""
+
+_close_step() {
+  [ -z "$_step_name" ] && return 0
+  local sec=$(( $(date +%s) - _step_start ))
+  _marks="${_marks}${sec} ${_step_name}"$'\n'
+  if [ "$sec" -ge 3 ]; then echo "   ($sec с)"; fi
+  return 0
+}
+
+step() {
+  _close_step
+  _step_name="$1"
+  _step_start=$(date +%s)
+  echo "== $1"
+}
+
+# Итог печатается ВСЕГДА, в том числе при падении: время, потраченное до
+# провала, — часть отчёта о провале (П2), а не украшение успеха.
+_time_summary() {
+  _close_step
+  echo
+  echo "время: всего $(( $(date +%s) - _all_start )) с; самые дорогие шаги:"
+  printf '%s' "$_marks" | sort -rn | head -5 | sed 's/^/   /'
+}
+trap _time_summary EXIT
+
+# ПЕРВЫМ ШАГОМ — САМЫЙ ДЕШЁВЫЙ И САМЫЙ ОБИДНЫЙ (П2). 2026-09-05 в репозиторий
+# уехал снимок убитого мутационного прогона: `if False:` вместо решения в
+# `scripts/recheck_vendor.py`. Гейт это ловил — но через 70 с тестов и под
+# подписью «упал test_recheck_vendor», по которой утечка не читается. Здесь
+# она называется вслух за миллисекунды.
+step "мутанты не утекли в дерево"
+python scripts/check_mutants_clean.py
+
+step "ruff check"
 ruff check lipsync/
 
-echo "== ruff format"
+step "ruff format"
 ruff format --check lipsync/
 
-echo "== mypy"
+step "mypy"
 python -c "import mypy" 2>/dev/null || { echo "FAIL: mypy is not installed"; exit 1; }
 python -m mypy lipsync/ --ignore-missing-imports
 
-echo "== tests"
-python -m unittest discover -s lipsync/tests -t .
+step "tests"
+# ЗАПРЕТ СЕТИ ДЕРЖИТ РАННЕР, А НЕ ДОГОВОРЁННОСТЬ (правило Т4, критерий R8).
+# ИЗМЕРЕНО 2026-09-04: запрет держали 16 файлов из 107 своими руками — значит
+# новый тест, открывший сокет, не заметил бы никто. `scripts/run_tests.py`
+# ставит запрет до импорта тестов, сам проверяет его негативным контролем и
+# только потом зовёт `unittest discover`. Прибор оправдался на первом же
+# прогоне: `test_a_string_probe_must_carry_the_sentinel` уходил в настоящий
+# вызов вендорского API — сетевой в тесте и ПЛАТНЫЙ.
+python scripts/run_tests.py lipsync/tests
+
+# The Self-RAG prompt engineer. Gated here rather than described in a document,
+# because a rule that is only written down is a rule that gets skipped under a
+# deadline and leaves no trace in the diff.
+#
+# Only studio/selfrag is checked, not all of studio/: the rest of the studio
+# suite needs httpx2, which requirements-dev.txt does not pin, so adding it here
+# would turn a missing dependency into a red build for everybody. That gap is
+# reported to the owner of requirements-dev.txt rather than papered over.
+step "ruff check (selfrag)"
+ruff check studio/selfrag/
+
+step "ruff format (selfrag)"
+ruff format --check studio/selfrag/
+
+step "mypy (selfrag)"
+MYPYPATH=. python -m mypy --explicit-package-bases studio/selfrag/ --ignore-missing-imports
+
+step "tests (selfrag)"
+python scripts/run_tests.py studio/selfrag/tests
+
+# The calibration path. Lint and types are still named file by file (they are
+# per-module tools); the tests below are gated by directory.
+#
+# Leaving these ungated had already cost something — a commit landed with the
+# `verify()` invariant failing in two tests and CI stayed green, because the
+# gate could not see the file (OBSERVED 2026-08-26).
+step "ruff check (calibration)"
+ruff check studio/prompt_templates.py studio/tests/test_prompt_templates.py \
+    studio/tests/test_calibration_contract.py
+
+step "ruff format (calibration)"
+ruff format --check studio/prompt_templates.py studio/tests/test_prompt_templates.py \
+    studio/tests/test_calibration_contract.py
+
+step "mypy (calibration)"
+MYPYPATH=. python -m mypy --explicit-package-bases studio/prompt_templates.py \
+    studio/tests/test_prompt_templates.py studio/tests/test_calibration_contract.py \
+    --ignore-missing-imports
+
+# Т6, ИЗМЕРЕНО 2026-09-02: гейт называл модули studio/tests поимённо, и семи
+# файлов не называл никто — 127 тестов, которые существуют и никогда не
+# гонялись гейтом: test_app, test_jobs, test_ledger, test_lifecycle,
+# test_store, test_style, test_vector_cache. Среди них тесты модуля,
+# написанного в тот же день. Поимённый список — это второй способ узнать,
+# какие тесты есть (Е1), и он разъехался молча: «не запускалось» выглядело
+# как «прошло». Мешал перебору один недостающий __init__.py и один
+# незаявленный пакет (httpx2, см. requirements-dev.txt); оба заведены.
+step "tests (studio/tests целиком)"
+python scripts/run_tests.py studio/tests
+
+# Ц7: правило «завёл тест — впиши его в гейт» словами не держится, и не
+# держалось: семь файлов существовали и не гонялись. Проверка перечисляет
+# файлы тестов в дереве и требует, чтобы каждый был достижим — перебором
+# каталога или поимённым списком. Свой негативный контроль печатает первой
+# строкой: «нарушений 0» без него может значить «ничего не искали».
+step "тесты, которых гейт не запускает"
+python scripts/check_tests_gated.py
+
+# The template lint. Its tests run in the directory sweep above; what is named
+# here is lint and types. The suite was ungated until 2026-08-27, and the
+# provenance defect it now covers had been sitting in the loader.
+step "ruff check (lint)"
+ruff check studio/template_lint.py studio/tests/test_template_lint.py \
+    studio/tests/test_lint_contract.py studio/fixtures/lint_control_set.py
+
+step "ruff format (lint)"
+ruff format --check studio/template_lint.py studio/tests/test_template_lint.py \
+    studio/tests/test_lint_contract.py studio/fixtures/lint_control_set.py
+
+step "mypy (lint)"
+MYPYPATH=. python -m mypy --explicit-package-bases studio/template_lint.py \
+    studio/tests/test_template_lint.py studio/tests/test_lint_contract.py \
+    studio/fixtures/lint_control_set.py --ignore-missing-imports
+
+# The retriever scored against its gold set, with the negative controls that
+# make the score mean anything. Exit code 2 is "could not measure" and is a
+# red build here on purpose: a corpus that vanished must not read as green.
+step "selfrag retrieval eval"
+python -m studio.selfrag --state :memory: eval
+
+# The chat agent: the MCP server the owner talks to, its contract gate, its
+# prompt writer and its knowledge consultant.
+#
+# The tests are unittest.TestCase and not pytest functions on purpose: this
+# script is the gate, it runs `unittest discover`, and pytest is not pinned in
+# requirements-dev.txt. Test functions the runner cannot collect are tests that
+# do not exist, and this repository has already paid for that once.
+step "ruff check (mcp)"
+ruff check studio/mcp/
+
+step "ruff format (mcp)"
+ruff format --check studio/mcp/
+
+step "mypy (mcp)"
+MYPYPATH=. python -m mypy --explicit-package-bases studio/mcp/ --ignore-missing-imports
+
+# Приборы гейта — тоже код, и до сих пор их типы не проверял никто: на
+# 2026-09-04 здесь лежало 36 ошибок в 8 файлах, среди них настоящая —
+# `advice.withdraw(**row)` подавал словарь в подпись, первый именованный
+# параметр которой `path`. Флаг `--no-namespace-packages` обязателен и не
+# косметика: рядом лежат модуль `studio/knowledge.py` и каталог с данными
+# `studio/knowledge/`, и в режиме namespace-пакетов проверка выбирает
+# каталог, тогда как импорт в рантайме выбирает модуль — обычный модуль
+# сильнее namespace-пакета. Без флага получаем 13 выдуманных ошибок о
+# «нет атрибута» в `eval_corpus.py`.
+step "mypy (scripts)"
+MYPYPATH=. python -m mypy --no-namespace-packages scripts/ --ignore-missing-imports
+
+step "tests (mcp)"
+python scripts/run_tests.py studio/mcp/tests
+
+# The server has to actually start and speak the protocol. Importing it proves
+# nothing: the tools are registered by decorator at import time, so an import
+# succeeds even when the transport is broken.
+# The fact tiers live in studio/selfrag/facts.py and are covered by the mcp
+# suite above (test_fetch_probe), which studio/mcp depends on: a `probe` tier
+# was added, and adding it surfaced an unrecognised tier reaching `pass` — it
+# sorted worse than `blog`, but the "is this only blogs" check compared by
+# name, so a typo'd tier sailed past.
+#
+# The blind control set: 54 cases written by an agent that was forbidden to read
+# the implementation and judged it from the contracts alone (house rule И1). It
+# found three real defects on 2026-08-27 — a corpus colour added to a palette the
+# owner had already filled, saturation refused even when corroborated, and an
+# empty intent that asked no questions at all. Exit 1 on any case.
+step "blind control set (mcp)"
+python studio/mcp/fixtures/blind_control_set.py
+
+# The reading pass, asserted rather than trusted. Reads the fact file only --
+# no network, so this stays honest in CI: it fails if a claim scripts/read_sources.py
+# withdrew has come back, or if a reading it recorded has been edited away.
+step "reading pass still applied"
+python scripts/read_sources.py --check
+
+# The harvest, asserted rather than trusted. Reads the fact file and the
+# harvest file only -- no network -- and fails if a row is malformed or if the
+# harvest has drifted out of the base.
+# The access request must not silently drop a domain. A refused host in
+# neither a tier nor the exclusions would just vanish from the generated
+# request -- which is exactly how a needed vendor fails to get whitelisted.
+# Does every declared vendor still have a way in that needs no whitelist
+# entry? Red here means a vendor really has been walled off -- which is
+# the only kind of access request worth making.
+step "every vendor family has an open route"
+python - <<'PY'
+import sys
+from studio.mcp import routes
+out = routes.blocked_families()
+print(out["note"])
+sys.exit(0 if out["outcome"] == "pass" else 1)
+PY
+
+step "whitelist request classifies every refusal"
+python scripts/whitelist_request.py --check > /dev/null
+
+step "model ids still merged"
+python scripts/merge_model_ids.py --check
+
+# Одна модель — один ответ, каким бы написанием ни спросили. ИЗМЕРЕНО
+# 2026-09-02: 466 имён базы сворачиваются в 457, девять групп — это одна
+# модель, записанная дважды, и спрашивавший «неудачным» написанием получал
+# половину. `advise("flux-2-klein-9b")` отдавал 2 атрибута и 0 провалов там,
+# где `advise("flux.2-klein-9b")` отдавал 4 и 6, ПРИ ИСХОДЕ pass у обоих.
+# Ни один прежний гейт этого видеть не мог: они судят ОДНУ выдачу, а
+# расхождение есть свойство ПАРЫ выдач на двух написаниях одного имени.
+# Свёртка живёт на чтении (журнал append-only не переписывается), поэтому
+# сломать её может любой потребитель, заведший свою нормализацию: их было
+# три. Негативный контроль двусторонний (И5) — пять пар РАЗНЫХ моделей
+# обязаны остаться разными, подсадной дубль обязан быть замечен. Сети нет.
+step "имена моделей: одно имя — одна модель"
+python scripts/check_model_names.py --check
+
+step "harvest still applied (capability)"
+python scripts/ingest_harvest.py --check
+
+step "harvest still applied (applicability)"
+python scripts/ingest_harvest.py --check \
+  --path studio/knowledge/harvest_2026-08-27_applicability.jsonl
+
+step "verified class findings still applied"
+python scripts/ingest_harvest.py --check \
+  --path studio/knowledge/class_findings_2026-08-27_verified.jsonl
+
+# The knowledge lane. Collected 2026-08-28 under the owner's rule that this
+# repository stores a RETELLING WITH A LINK, never a third party's prose. The
+# rule held on the first harvest because four agents each remembered it — which
+# is precisely why it is a gate now (rule C7).
+step "knowledge lane: source, tier, and no copied prose"
+python scripts/check_craft.py --check
+
+# The validator bench hands a creative to a reader with its origin cut away.
+# MEASURED 2026-08-30: the files carry the whole ComfyUI graph, the checkpoint
+# name and the prompt. If the strip stops stripping, every number the bench
+# produces afterwards is a lie about the agent's ability and nothing downstream
+# would notice — so it is re-proved here on every build (rule C7).
+step "validator bench: the answer is cut off the picture"
+python scripts/validator.py check
+
+# Adding non-Kling video beside Kling video reopens the leak that has bitten
+# this bench twice: something that is not the picture, but correlates with the
+# source. A strip's height follows the clip's aspect ratio, and the two sources
+# no longer share a house format. Red only on a REAL leak; with no bank on disk
+# (it is gitignored, so CI has none) the answer is "не смогли", which is honest
+# and is not a build failure.
+# Адрес для измеренных чисел, и потолок на хэндоф, который он заменил.
+# Правило «факты не в хэндоф» существовало абзацем и не соблюдалось: один
+# хэндоф дорос до 2330 строк и ~39 000 токенов, которые каждая сессия читала
+# целиком ради трёх чисел. То, что обязано выполняться всегда, — это гейт (Ц7).
+# Т6: пропущенный тест — не пройденный. unittest печатает «OK (skipped=12)» и
+# возвращает 0; здесь пропуски пересчитываются и «данных нет» отделяется от
+# «кто-то выключил». Первое печатается числом, второе красит гейт.
+# Необъявленная зависимость работает ровно там, где её случайно поставили.
+# imageio-ffmpeg использовался четырьмя модулями и не был объявлен нигде:
+# локально стоял, гейт и зеркало CI зелёные, настоящий CI упал на первом же
+# тесте, которому пакет понадобился. Зеркало этого поймать не может — оно
+# повторяет КОД, а не набор пакетов, и это его честный предел.
+step "сторонние импорты объявлены в requirements"
+python scripts/check_declared_deps.py --check
+
+# Канал, отвечающий одинаково на любой вход, несёт ноль бит о входе, и ни одна
+# существующая проверка этого увидеть не могла: все они смотрят на ОДНУ выдачу —
+# схему, тир, ссылку, отсутствие чужой прозы, — а инвариантность есть свойство
+# ПАРЫ выдач на несвязанных входах. ПРЕЦЕДЕНТ, ИЗМЕРЕНО 2026-08-31:
+# `advice.advise(model)['class_findings']` отдаёт 12 находок из 171, одни и те же
+# для любого имени модели, включая заведомо выдуманное; перекрытие 1.00. Выдача
+# правдива (тир paper, со ссылками) — и именно поэтому мимо всех гейтов: правда
+# не есть релевантность. Этот случай занесён в KNOWN_INVARIANT как долг с датой
+# и объяснением, гейт краснеет на НОВЫХ. Сети здесь нет.
+step "каналы: выдача зависит от входа"
+python scripts/check_channel_signal.py --check
+
+# Абляция 2026-08-31 показала: перемешай имена моделей между настоящими фактами
+# — и поиск достанет ТЕ ЖЕ тексты, честно принеся испорченную атрибуцию.
+# Заметить подмену оказалось чем: тир решается по URL, и у вендорского факта
+# хост обязан принадлежать вендору ИМЕННО ЭТОЙ модели. Различает наотмашь —
+# 0 нарушений на настоящей базе против 346 из 370 на перемешанной. Не хватало
+# ровно одного: проверка применялась при ЗАПИСИ факта и никогда к тем, что уже
+# стоят, — а факт попадает в базу и мимо record: правкой файла, слиянием,
+# переносом при канонизации имени.
+step "атрибуция: URL вендорского факта подтверждает вендорство модели"
+python scripts/check_attribution.py --check
+
+step "пропущенные тесты: данных нет или кто-то выключил"
+python scripts/check_skips.py --check
+
+step "измеренные числа: схема и потолок на хэндоф"
+python scripts/check_measured.py --check
+
+# Покрытие мерится не запасом («сколько моделей в базе»), а долей РЕАЛЬНО
+# заданных вопросов, которые база закрыла. Знаменатель живёт в журнале, и
+# битая строка в нём — это молча съехавший знаменатель, то есть ровно тот
+# класс дефекта, который на этом проекте стоил больше всего. Сети здесь нет.
+step "журнал вопросов: схема строк и знаменатель покрытия"
+python scripts/refill_queue.py --check
+
+step "validator bench: does the shape of the file give away the source"
+set +e
+python scripts/check_sheet_shape.py --check
+SHAPE=$?
+set -e
+if [ "$SHAPE" = "1" ]; then
+  echo "ПРОВАЛ: форма файла сортирует разборы по источнику"
+  exit 1
+fi
+[ "$SHAPE" = "2" ] && echo "(банка нет на диске — сравнивать нечего, это не провал)"
+
+step "mcp server handshake"
+python - <<'PY'
+import asyncio, sys
+from studio.mcp.server import server
+
+async def main() -> None:
+    tools = sorted(tool.name for tool in await server.list_tools())
+    expected = [
+        "analyse_creative",
+        "blocked_hosts",
+        "check_lipsync_prompt",
+        "fetch_url",
+        "measurement_proposals",
+        "model_advice",
+        "plan_pipeline",
+        "probe_model_limit",
+        "propose_measurement",
+        "reachable_hosts",
+        "record_model_fact",
+        "search_web",
+        "stale_model_facts",
+        "withdraw_model_fact",
+        "write_lipsync_prompt",
+    ]
+    if tools != expected:
+        print(f"FAIL: tools are {tools}, expected {expected}")
+        sys.exit(1)
+    import json
+
+    # The negative control is deliberately INSIDE both bands, so the only rule
+    # that can reject it is the subject guard. An earlier version used a short
+    # phrase, which the word band rejected on its own — it stayed green with
+    # the subject guard disabled and was therefore measuring nothing.
+    dirty = (
+        "a woman in a matte ivory coat, low-key shadowed lighting, "
+        "desaturated restrained colour, film grain, photographic look"
+    )
+    clean = (
+        "a palette of ivory and slate, low-key shadowed lighting, "
+        "desaturated restrained colour, matte, photographic look"
+    )
+    refused = json.loads((await server.call_tool("check_lipsync_prompt", {"prompt": dirty})).content[0].text)
+    allowed = json.loads((await server.call_tool("check_lipsync_prompt", {"prompt": clean})).content[0].text)
+    if refused["outcome"] != "fail" or refused["broke"] != ["subject_zone"]:
+        print(f"FAIL: the subject guard did not fire alone: {refused['outcome']} {refused['broke']}")
+        sys.exit(1)
+    if allowed["outcome"] != "pass":
+        print(f"FAIL: the gate refused a clean prompt: {allowed['note']}")
+        sys.exit(1)
+    print(f"ok: {len(tools)} tools; subject guard refused one prompt and passed its twin")
+
+asyncio.run(main())
+PY
+
+# Каталог площадки — ИНДЕКС, а не источник фактов. Решение владельца
+# 2026-08-31: массового импорта каталогов в model_facts.jsonl не будет.
+# Симуляция такого импорта: применимость 36.6% -> 18.6%, доля tier portal
+# 21% -> 60% базы, 476 моделей, известных только каталогу — метрика покрытия
+# после этого мерит скачанные строки, а не закрытые вопросы.
+# Правило словами отменяется под сроком, гейт виден в диффе (Ц7). Здесь же
+# обратный контроль: подсадные обязаны отсеяться, а здоровая запись — пройти,
+# иначе «утечек нет» будет означать «гейт не пропускает вообще ничего».
+step "каталог: подсадные не доехали до базы фактов"
+python scripts/check_catalog.py --check
+
+# Вторая ось у факта. Лестница тиров одномерна и ставит `vendor` первым, а
+# вендорская страница — список параметров, то есть самый CAPABILITY-образный
+# артефакт, какой бывает: СТРУКТУРА поднимала способность на верх каждого
+# ответа, пока инструкция сервера ПРОЗОЙ толкала в обратную сторону. Структура
+# выигрывает у прозы всегда, поэтому род факта считается, а не подразумевается.
+# ИЗМЕРЕНО 2026-08-31: способность 637, применимость 247 из 969 утверждений.
+# Гейт держит негативный контроль (И5): три контрольных шага обязаны дать три
+# РАЗНЫХ исхода, и шаг, чьё требование закрыто только схемой, — «не смогли».
+# Сети здесь нет.
+step "вторая ось: род факта и вычисленный исход шага"
+python scripts/check_fact_axis.py --check
+# Журнал против таблицы. Несколько файлов объявлены append-only СЛОВАМИ в
+# собственных докстрингах, и слова не удержали: до этого сторожа история несла
+# четыре правки строк НА МЕСТЕ (ИЗМЕРЕНО этим же прибором, обходом истории).
+# Ц7: то, что обязано выполняться всегда, — гейт, а не строка правил.
+# Негативный контроль двусторонний (И5): прибор пускается по истории ДО пола,
+# где нарушения выписаны поимённо, и обязан найти каждое; и по журналу без
+# нарушений за 37 шагов, где обязан промолчать. Сети здесь нет.
+# Чужая проза в закоммиченном знании. Правило «пересказ со ссылкой, никогда
+# чужая проза» жило в одном файле по маске craft_*.jsonl, пока в базе фактов
+# росли цитаты из обсуждений: ИЗМЕРЕНО 2026-09-02 — 356 реплик людей длиннее
+# 15 слов и 246 имён живых лиц. Это И7: дефект был починен по месту, а не по
+# форме. Прибор различает реплику человека и вендорскую спецификацию ПО ХОСТУ,
+# а не по длине, и молчит на нашей собственной ноте любой длины. Пол стоит на
+# измеренном: новое краснеет, накопленное печатается числом. Сети здесь нет.
+step "чужая проза и имена в знании"
+python scripts/check_verbatim.py --check
+
+step "журналы: дописано, а не переписано"
+python scripts/check_append_only.py --check
+
+# Карта достижимости: отказ — измерение с датой, а не свойство хоста. Гейт без
+# сети проверяет не формулу, а её ПОТРЕБИТЕЛЯ: ни одна вендорская семья не
+# должна быть закрыта отказом старше `routes.ГОРИЗОНТ_ДНЕЙ`. ИЗМЕРЕНО
+# 2026-09-02: из 214 записанных отказов 18 отвечали сегодня, включая
+# docs.mistral.ai, docs.cohere.com и api-docs.deepseek.com — перворучные
+# вендорские источники, которые шапка routes.py считала закрытыми и обходила.
+step "карта достижимости не старше горизонта"
+python scripts/reprobe_hosts.py --check
+
+# Опрос портала: очередь имён, которых база не знает ни одной строкой.
+# Гейт без сети — он ПЕРЕСЧИТЫВАЕТ сохранённую очередь по нынешней базе, потому
+# что очередь, снятая вчера, называет работой то, что сегодня уже записано.
+# ИЗМЕРЕНО 2026-09-02: fal.ai продаёт 22 липсинк-модели по слову `lipsync`, и
+# 18 из них база не знала ни одной строкой. Неполный опрос — третий исход, а не
+# короткая очередь: пробел в ней неотличим от отсутствия модели на портале.
+step "опрос портала: что продаётся и чего база не знает"
+python scripts/poll_portal.py --check
+
+# Канал Civitai: прибор гоняется по фикстурам, снятым с живого API, и обязан
+# шевельнуться на описании с разбором настроек и промолчать на описании из
+# ссылок и благодарностей (И5, негативный контроль в обе стороны). Числа
+# наблюдений выписаны в скрипте, а не сведены к «больше нуля»: просевший с
+# трёх до одного канал остаётся зелёным у любой проверки вида «хоть что-то».
+# Сети здесь нет.
+step "канал Civitai: наблюдение практика, права и негативный контроль"
+python scripts/ingest_civitai.py --check
+
+# Валидатор-2: он принимает ПАЙПЛАЙН, а не факт. Разрыв между шагами (выход
+# шага N не является допустимым входом шага N+1) не виден ни одному посшаговому
+# вердикту: каждый шаг по отдельности безупречен. Семь классов провала, у
+# каждого свой посевной мутант, и рядом ЗДОРОВЫЕ ЧУЖАКИ — без них прибор,
+# отвечающий «не годно» на всё, прошёл бы приёмку с идеальным счётом. Гейт
+# краснеет, если мутант прошёл, чужак отвергнут, класс остался без посева или
+# различённых исходов меньше трёх. Исход шага НЕ пересчитывается: он берётся у
+# studio/factaxis.py (Е1). Сети здесь нет.
+step "валидатор-2: пайплайн, семь классов, мутанты и здоровые чужаки"
+python scripts/check_pipeline.py --check
+
+# Планировщик: ПЛАН ИЗ БРИФА, тут же прогнанный через валидатор-2 выше.
+# Владелец описал продукт словами «бот помогает собирать пайплайн», и до
+# 2026-09-02 этого не делал никто: ИЗМЕРЕНО на восьми настоящих брифах —
+# «шагов плана ожидается 10, собрано репозиторием 0»
+# (`scripts/planner_baseline.py`, снимок в studio/fixtures/).
+#
+# Гейт держит негативный контроль в обе стороны (И5), и это здесь не украшение:
+# ЕДИНСТВЕННЫЙ существовавший мост «слова задачи -> база» отвечал на ЧТО УГОДНО.
+# На брифе про промышленный манипулятор он давал исход `pass` и факт про
+# indextts-2; на настоящем вопросе владельца про замену персонажа — ноль
+# находок. Поэтому два входа обязаны дать «не смогли» без единого шага, шесть
+# — собранный план, и ещё один («добавить foley») обязан дать третий исход при
+# НЕПУСТОМ плане: операция студии есть, а моделей под неё база не знает ни
+# одной строкой. Свернуть это в «шагов нет» значило бы спрятать, какой шаг
+# нечем закрыть.
+#
+# Отдельно проверяется главное правило дома: у каждого выбранного кандидата
+# обязаны стоять строки доказательства (значение, тир, дата, род по второй
+# оси), а кандидат, о котором записана только вендорская схема, обязан нести
+# пометку «применимость не измерена» В ВЫДАЧЕ. Модель по умолчанию не
+# подставляется никогда: пустой шаг честнее выдуманного. Сети здесь нет.
+# ВЕРХНЯЯ СТРОКА ОТВЕТА ПРОТИВ ЕГО ЖЕ ТЕЛА И ПРОТИВ БАЗЫ. За 2026-09-02 семь
+# раз нашлось одно и то же: ответ честен в деталях и неверен в заголовке.
+# Гейты выше сторожат внутреннюю согласованность ЗНАНИЯ и ни один не смотрит на
+# строку, которую человек читает первой. Самый дорогой пример дня —
+# model_advice("sync-lipsync-2","price") отвечал «nothing is recorded», а в базе
+# лежало price_per_minute = "$3 per minute": ответ был согласован сам с собой и
+# врал заголовком, потому что цена записана под другим именем.
+#
+# Модели, у которых строка семьи ЕСТЬ, обходятся все до одной — ложный
+# заголовок возможен ровно там. Модели без неё — негативный контроль выборкой:
+# гейт обязан на них молчать. Сети здесь нет.
+# Готовый креатив против пределов моделей. Замеры креатива были украшением:
+# `analyse_creative` отдаёт 1536x2752, а в плане по такому кадру
+# `max_resolution` встречался один раз — как строка доказательства, не как
+# проверка. Гейт держит ПОЛ разбора: разбор, переставший понимать «720p»,
+# отвечал бы «не записано» там, где записано. Сети здесь нет.
+step "разрешение из прозы: пол разбора"
+python scripts/creative_fit.py --check
+
+# МУТАЦИИ КАНАЛОВ И РАЗБОРЩИКОВ. За 2026-09-02 я прогнал руками полсотни
+# мутаций по семи модулям и каждый раз писал в коммит «промолчал ноль». Это
+# правда на момент прогона: завтра кто-нибудь переставит константу, тесты
+# останутся зелёными, и никто не узнает (Ц7). Скрипт краснеет, если хоть один
+# мутант промолчал, и печатает ЗДОРОВЫЙ прогон первой строкой — таблица
+# «все покраснели» поверх уже красного дерева не значит ничего.
+#
+# Он же немедленно оправдался: два мутанта промолчали на первом прогоне, и обе
+# причины были настоящими — исключение `portal_license` оказалось
+# НЕНАБЛЮДАЕМЫМ (его держала приставка), а вторая мутация промахнулась мимо
+# кода, переформатированного ruff. Сети здесь нет.
+# СКОЛЬКО МОДУЛЕЙ С КОНСТАНТАМИ-РЕШЕНИЯМИ ЕЩЁ БЕЗ МУТАНТОВ (критерий R7).
+# Потолок, а не цель: требовать ноль сегодня значило бы держать гейт красным
+# неделю и на второй день его выключить. Рост долга краснеет немедленно,
+# падение — требует опустить потолок, иначе он отрывается от дерева.
+# ИЗМЕРЕНО 2026-09-04: 107 модулей с такими константами, под мутантами 22,
+# без мутантов 85. В блюпринте у R7 стояло «20 модулей» — написано глазами и
+# ошибочно вчетверо.
+# КАКУЮ ДОЛЮ БАЗЫ НЕ ДОСТАЁТ НИ ОДИН ВОПРОС (критерий R3, порог 10%).
+# Строка, до которой не доводит ни одно спрашиваемое слово, для продукта не
+# существует: она собрана, хранится, показывается в отчётах о размере базы — и
+# молчит на вопрос, ради которого её собирали. ИЗМЕРЕНО 2026-09-04: было 594
+# строки из 2099 (28.3%), из них 256 — один атрибут `adoption`; после пяти
+# новых семей 194 (9.2%).
+step "достижимость базы вопросом: доля молчащих строк"
+python scripts/check_reachability.py --check --top 6
+
+step "мутанты: покрытие модулей с константами-решениями"
+python scripts/check_mutants_cover.py --check --top 8
+
+step "мутации каналов и ядра исхода: константы-решения под охраной"
+python scripts/mutate_channels.py
+
+# МУТАЦИИ ПЛАНИРОВЩИКА — САМЫЙ БОЛЬШОЙ НАБОР В ПРОЕКТЕ (82 мутанта) И САМЫЙ
+# МЕДЛЕННЫЙ. ИЗМЕРЕНО 2026-09-02: гейт без него 91 с, он сам 126 с, вместе
+# 3,6 минуты на каждый пуш — а хук перед пушем и так упирается в потолок
+# времени. Гоняется в CI, где время есть, и ПРОПУСКАЕТСЯ локально.
+#
+# Пропуск объявляется вслух (правило Т6: пропущенное — не пройденное). Молча
+# пропущенная проверка через неделю неотличима от несуществующей: набор,
+# который никто не гоняет, гниёт ровно так же, как мутации, что я весь день
+# гонял руками и вписывал в отчёты.
+#
+# CI ставит CI=true сам (GitHub Actions). Локально прогнать целиком:
+#     CI=true bash scripts/check
+# ЗАГОЛОВОК ПЕЧАТАЕТСЯ ЧЕРЕЗ `step`, А НЕ `echo`, И ЭТО ПОЧИНКА ПРИБОРА.
+# Здесь стоял голый `echo "== ..."`, и секундомер этого раздела не видел:
+# он закрывает шаг на СЛЕДУЮЩЕМ `step`, поэтому 108 секунд мутаций
+# планировщика приписывались предыдущему шагу. ИЗМЕРЕНО по логу CI
+# 2026-09-03: строка «116 мутации каналов» при настоящих 8 с у каналов и
+# 05:01:02 -> 05:02:50 у планировщика. Прибор, который врёт о том, что
+# дорого, хуже отсутствующего: по нему принимают решения.
+if [ "${CI:-}" = "true" ]; then
+  # Число мутантов в заголовке НЕ пишется: оно живёт в таблице скрипта и
+# уже разъезжалось (82 в подписи против 91 в наборе). Скрипт печатает
+# своё число сам, последней строкой.
+step "мутации планировщика: полный набор (CI)"
+  python scripts/mutate_planner.py
+else
+  step "мутации планировщика: ПРОПУЩЕНО локально (~150 с) — гоняется в CI"
+  echo "   прогнать здесь: CI=true bash scripts/check  или  python scripts/mutate_planner.py"
+fi
+
+step "заголовок ответа против базы: пять вопросов"
+python scripts/check_headline.py --check
+
+# Вход «с нуля» из задачи владельца: у заказчика нет исходников, и операций он
+# не называет — он называет РЕЗУЛЬТАТ («нужен говорящий аватар»). ИЗМЕРЕНО
+# 2026-09-03: 8 из 10 таких брифов давали ПУСТОЙ план, а два ЧУЖИХ брифа
+# («фотосессия с фотографом», «права на голос актёра») выводили наши операции
+# — то есть продукт молчал там, где работа наша, и обещал работу там, где она
+# не наша. Гейт краснеет на втором: лишний шаг это ложь, пустой план — честное
+# «не знаю». Сети здесь нет.
+# ГОЛДЕН-СЕТ ЗАДАЧ. Условие владельца: набор собирается ДО того, как потрачен
+# бюджет на измерения, иначе деньги покупают ощущение улучшения — его меряют
+# тем же, подо что и подгоняли.
+#
+# ДВЕ РАЗНЫЕ КРАСНОТЫ, И ЭТО ГЛАВНОЕ В ЭТОМ ШАГЕ. Провал СТОРОЖА — регресс,
+# он красит гейт. Провал ЦЕЛИ — работа, которой ещё не сделали: печатается
+# числом и НЕ красит. Без этого различения набор либо весь зелёный (и тогда
+# описывает сделанное, а не нужное), либо весь красный (и тогда его выключат
+# на второй день). Красит ещё и ХОЛОСТАЯ проверка — та, что проходит на любом
+# ответе канала: набор, который не может не пройти, хуже отсутствующего,
+# потому что его показывают. Сети здесь нет.
+# КУДА НАЦЕЛЕНЫ ДЕНЬГИ. Голден-сет собран по условию владельца ДО трат, и
+# первым же вопросом к нему оказался не «что продукт умеет», а «куда смотрит
+# очередь замеров». ИЗМЕРЕНО 2026-09-03: продукт рекомендовал 5 моделей, у 22
+# шагов из 32 применимость не измерена, заявок было 6 на ~$4.25 — и
+# ПЕРЕСЕЧЕНИЕ РАВНЯЛОСЬ НУЛЮ. Деньги, потраченные в том виде, не сдвинули бы
+# ни один план, который продукт выдаёт. Тот же дефект «прибор смотрит не
+# туда», но на уровне трат, где он дороже всего.
+#
+# Заявка на модель, которую планировщик не выбирает, НЕ считается нарушением:
+# это другой приоритет владельца, и она просто печатается. Сети здесь нет.
+step "деньги: заявки на замер против того, что продукт рекомендует"
+python scripts/check_spend_aim.py --check
+
+step "голден-сет задач: сторожа, цели и холостые проверки"
+python scripts/check_golden.py --check
+
+step "бриф: как сказал заказчик — и вывелся ли план"
+python scripts/check_brief_cues.py --check
+
+step "планировщик: план из брифа и пометка о неизмеренной применимости"
+python scripts/check_planner.py --check
+
+# Канал сбора писал в базу ЗАГОЛОВОК треда вместо находки из его тела: 183
+# строки, средняя длина значения 62 знака против 178 у ручного разбора того же
+# канала, и две из них — ПОЛОЖИТЕЛЬНЫЕ отзывы, записанные как failure_mode
+# (ИЗМЕРЕНО владельцем 2026-09-01). Прибор судит записанное утверждение:
+# находка это или предмет письма. Негативный контроль из ТРЁХ половин (И5),
+# все на живой базе: массовый заход обязан быть осуждён (ИЗМЕРЕНО 158 из 181),
+# 20 ручных записей того же канала обязаны пройти, и прочие каналы тоже — иначе
+# «мусора нет» означало бы «прибор бракует всю базу». Сети и гита здесь нет.
+step "сбор: находка или заголовок треда"
+python scripts/check_harvest_quality.py --check
+
+# Хук остановки «названо, но не спрошено». Инструкция сервера требует звать
+# `model_advice` на КАЖДОГО сравниваемого кандидата, а не только на того,
+# который нравится. Правило жило словами и не исполнялось ничем: ИЗМЕРЕНО
+# 2026-09-02 на живом следе сессии — 395 вызовов `model_advice` и 157 блоков
+# ответа, называющих имя, по которому в том же файле не звался никто.
+# Ложное срабатывание здесь опаснее пропуска: голое совпадение по имени
+# краснело бы на 177 блоках из 2560, где имя — предмет инженерного разбора, а
+# не совет. Поэтому гейт держит негативный контроль в обе стороны (И5): три
+# ложных, снятых с живого следа, обязаны молчать, рекомендация без запроса
+# обязана краснеть, нечитаемый след обязан дать «не смогли», а не «годно».
+# Пустой контрольный набор — тоже «не смогли». Сети здесь нет.
+#
+# Второй прибор того же хука: имя, КОТОРОГО БАЗА НЕ ЗНАЕТ. У моделей около
+# пятой части предлагаемых имён не существует (Ц10), и выдуманное звучит так
+# же уверенно, как настоящее. ИЗМЕРЕНО 2026-09-02 на том же следе: в
+# рекомендательной фразе имя вне базы названо ОДИН раз, и оно не выдумано
+# (`Flux.1` лежит в базе как `flux-1-dev`) — отрицательный результат записан
+# (И6), прибор при этом не мёртв: без фильтра фразы он находит 68 имён вне
+# базы, ложных 0 в выборке 14, открытой глазами. Исходов у имени три, и
+# третий («разобрать не смогли»: `torch-2.4`) не сворачивается ни в один из
+# первых. «Нет в базе» здесь НЕ значит «не существует», и это сторожится
+# отдельным случаем контроля: формулировка «не искали» — часть контракта.
+step "хук остановки: названо без запроса"
+python scripts/stop_named_not_asked.py --check
+

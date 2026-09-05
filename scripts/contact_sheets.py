@@ -1,0 +1,153 @@
+#!/usr/bin/env python3
+"""Give a video case a face: a contact sheet the reader can actually look at.
+
+A reader agent cannot watch an mp4. Handing it a path and hoping is not a
+measurement. So every video case gets a strip of frames sampled across the clip,
+and the reader is told the mp4 is there too if it wants more.
+
+The sheet is drawn from the STRIPPED clip, never the original — otherwise the
+strip would be undone at the last step by the very tool meant to present it.
+"""
+
+from __future__ import annotations
+
+import json
+import subprocess
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from lipsync.fork_identity import PASS, UNMEASURED  # noqa: E402
+
+BANK = Path(__file__).resolve().parents[1] / "work" / "casebank"
+
+#: How much of the bottom of every frame to cut away before the reader sees it.
+#: ИЗМЕРЕНО 2026-08-30 and it is not a nicety: Kling burns "KLING AI 1.6" into
+#: the bottom-right of every frame — the model AND the version, in words. The
+#: blind readers found it within ten minutes and answered from it, which makes
+#: the whole Kling half of a bank answerable by reading a caption rather than
+#: the picture. Cropping the strip removes the caption at the cost of a tenth of
+#: the frame; leaving it in would have produced a flattering number about
+#: nothing. ВЫБРАНО 0.12 — measured to clear the mark with room, and small
+#: enough that composition survives.
+WATERMARK_STRIP = 0.12
+
+#: What a JPEG may keep. Anything else is a carrier, whatever it says.
+ALLOWED = frozenset({"jfif", "jfif_version", "jfif_unit", "jfif_density", "dpi"})
+
+#: Frames per sheet. ВЫБРАНО: six across the clip shows motion and still leaves
+#: each frame large enough to judge texture at a glance.
+FRAMES = 6
+
+#: Every frame is centre-cropped SQUARE and scaled to this side, so every sheet
+#: in the bank comes out at exactly the same pixel size.
+#:
+#: ИЗМЕРЕНО 2026-08-31, and the reason is a leak that was caught before a single
+#: reader saw the new bank: with the frame width fixed and the height left to
+#: follow the aspect ratio, the strip's HEIGHT sorted 56 of 56 cases by source
+#: (`scripts/check_sheet_shape.py`). Kling's clips are one house format;
+#: Civitai's are whatever the uploader rendered. Nobody would have had to look
+#: at a pixel.
+#:
+#: A square centre crop is the least destructive normalisation available: a 16:9
+#: crop reduces a vertical clip to a horizontal band and usually loses the
+#: subject, while padding to a fixed canvas moves the same giveaway from the
+#: file header into the black bars. Content IS lost at the edges, and that is
+#: the price of the number meaning anything.
+#: ВЫБРАНО 214 — the height the earlier landscape sheets already had, so the
+#: readers' workload does not change.
+FRAME_SIDE = 214
+
+
+def sheet(clip: Path) -> Path | None:
+    import imageio_ffmpeg
+
+    out = clip.with_name(clip.stem + "_sheet.jpg")
+    probe = subprocess.run(
+        [imageio_ffmpeg.get_ffmpeg_exe(), "-hide_banner", "-i", str(clip)],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    seconds = 5.0
+    for line in probe.stderr.splitlines():
+        if "Duration:" in line:
+            stamp = line.split("Duration:")[1].split(",")[0].strip()
+            h, m, s = stamp.split(":")
+            seconds = int(h) * 3600 + int(m) * 60 + float(s)
+            break
+    step = max(seconds / FRAMES, 0.2)
+    subprocess.run(
+        [
+            imageio_ffmpeg.get_ffmpeg_exe(),
+            "-y",
+            "-loglevel",
+            "error",
+            "-i",
+            str(clip),
+            "-vf",
+            (
+                f"fps=1/{step:.3f},"
+                f"crop=iw:ih*{1 - WATERMARK_STRIP:.3f}:0:0,"
+                "crop='min(iw,ih)':'min(iw,ih)',"
+                f"scale={FRAME_SIDE}:{FRAME_SIDE},tile={FRAMES}x1"
+            ),
+            "-frames:v",
+            "1",
+            "-fflags",
+            "+bitexact",
+            str(out),
+        ],
+        capture_output=True,
+        check=False,
+    )
+    if not (out.is_file() and out.stat().st_size > 5000):
+        return None
+    # ffmpeg's mjpeg encoder writes its own version into a JPEG comment —
+    # `Lavc61.3.100`, identical on every sheet. It does not name the SOURCE, so
+    # it looked harmless. It is not: the OpenFake image cases are written by
+    # PIL and carry no comment at all, so its mere PRESENCE separates a video
+    # case from an image one without the reader looking at a single pixel. A
+    # leak does not have to spell out the answer to spoil the measurement; it
+    # only has to correlate with it. Re-saving through PIL drops it and makes
+    # every case in the bank metadata-identical.
+    from PIL import Image
+
+    from studio.mcp.casebank import _pixels_only
+
+    _pixels_only(Image.open(out)).save(out, "JPEG", quality=88)
+    left = sorted(str(k) for k in (Image.open(out).info or {}) if k not in ALLOWED)
+    if left:
+        return None
+    return out
+
+
+def main() -> int:
+    truth = BANK / "TRUTH.json"
+    if not truth.is_file():
+        print(f"\nпроверено 0\nнарушений 0\nне смогли 1\n\n{UNMEASURED}: нет {truth}")
+        return 2
+    cases = json.loads(truth.read_text(encoding="utf-8"))
+    made = failed = 0
+    for case in cases:
+        if case["media"] != "video":
+            continue
+        clip = BANK.parent.parent / case["path"]
+        if not clip.is_file():
+            failed += 1
+            continue
+        got = sheet(clip)
+        if got:
+            case["sheet"] = str(got.relative_to(BANK.parent.parent))
+            made += 1
+        else:
+            failed += 1
+    truth.write_text(json.dumps(cases, ensure_ascii=False, indent=1), encoding="utf-8")
+    print(f"\nпроверено {made + failed}\nнарушений 0\nне смогли {failed}")
+    print(f"\n{PASS if made else UNMEASURED}: раскадровок сделано {made}, не смогли {failed}")
+    return 0 if made else 2
+
+
+if __name__ == "__main__":
+    sys.exit(main())

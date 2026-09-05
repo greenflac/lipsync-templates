@@ -1,0 +1,481 @@
+"""Render the allowlist request: every host we need, with the question it blocks.
+
+WHY THIS IS A SCRIPT AND NOT A DOCUMENT
+
+A hand-typed list of hosts goes stale the day a host opens, and nobody notices
+because nothing re-checks it. This probes each host NOW, records the refusal
+with its own reason, and renders the request from what actually happened. Run
+it again and a host that has since opened drops off by itself.
+
+Rules it obeys:
+
+- A closed host is never routed around (C3). This asks; it does not work around.
+- Each entry carries the QUESTION it blocks, not just a hostname. "We need
+  arxiv.org" is a weaker request than "10 of our paper-tier facts cite arxiv
+  and not one of them has been read".
+- Hosts swept up by bulk probes stay out (`incidental`); only what is asked
+  for here enters the ask.
+
+Run:  python scripts/allowlist_request.py            # probe and render
+      python scripts/allowlist_request.py --render   # render from what is recorded
+"""
+
+from __future__ import annotations
+
+import sys
+from collections.abc import Sequence
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from studio.mcp import fetch  # noqa: E402
+
+OUT_PATH = Path(__file__).resolve().parents[1] / "docs" / "ALLOWLIST_REQUEST.md"
+
+#: Hosts this environment already permits, MEASURED 2026-08-27. Re-probed on
+#: every run rather than trusted: the point of listing them is so nobody is
+#: asked for access they already have, and a stale list of those is worse than
+#: none.
+ALREADY_OPEN: tuple[str, ...] = (
+    "aiplatform.googleapis.com",
+    "api.fal.ai",
+    "api.github.com",
+    "api.klingai.com",
+    "cloud.google.com",
+    "customsearch.googleapis.com",
+    "discoveryengine.googleapis.com",
+    "files.pythonhosted.org",
+    "generativelanguage.googleapis.com",
+    "github.com",
+    "huggingface.co",
+    "pypi.org",
+    "raw.githubusercontent.com",
+    "searchapi.api.cloud.yandex.net",
+    "storage.googleapis.com",
+)
+
+#: (priority group, host, the question it blocks). Ordered as it should be read:
+#: the narrowing first, then what settles a contradiction, then new capability.
+#:
+#: Every reason below points at something recorded in this repository — a
+#: contested attribute, an unread tier, a corpus with one provenance. A reason
+#: that cannot be checked against the base does not belong here.
+WANTED: tuple[tuple[str, str, str], ...] = (
+    # ---- 1. A narrowing of an existing grant. Cheapest thing to say yes to.
+    (
+        "1. narrowing",
+        "docs.cloud.google.com",
+        "Veo 3.1 duration and negativePrompt. The PARENT cloud.google.com is "
+        "already permitted and open, so this grants no new organisation — it is "
+        "the documentation subdomain of a host you have already allowed.",
+    ),
+    # ---- 2. Hosts that settle a contradiction we cannot settle any other way.
+    (
+        "2. settles a contradiction",
+        "kling.ai",
+        "kling-3.0.max_seconds is CONTESTED in the fact base: 15 (Kuaishou's own "
+        "investor release) against 10 (a blog). MEASURED: the probe channel "
+        "reveals nothing on Kling — duration, aspect_ratio, mode and model_name "
+        "all return the identical code 1201 'value is invalid' and never name the "
+        "allowed set. The vendor's own page is the only remaining route.",
+    ),
+    (
+        "2. settles a contradiction",
+        "help.runwayml.com",
+        "runway-gen-4.5.max_resolution is CONTESTED: 720p against 4K, and the 4K "
+        "claim comes from a review whose own credit table implies 4K is a paid "
+        "tier. Billing a customer against the wrong one is a real cost.",
+    ),
+    (
+        "2. settles a contradiction",
+        "klingai.com",
+        "Kling's other registrable domain. `api.klingai.com` under it is ALREADY "
+        "OPEN and is the API this project calls, while the domain itself and "
+        "`app.klingai.com` are refused — so the vendor whose API we can call is "
+        "one whose site we cannot read. Same contested max_seconds question.",
+    ),
+    (
+        "2. settles a contradiction",
+        "ir.kuaishou.com",
+        "Kuaishou investor relations — the source of the '15 seconds' side of the "
+        "Kling contradiction above. Currently vendor tier and NOT read.",
+    ),
+    # ---- 3. Vendor pages behind facts nobody has ever opened.
+    (
+        "3. vendor pages nobody has read",
+        "docs.bfl.ai",
+        "Flux 2. Three recorded claims cite it — prompt_rule_edit, "
+        "expands_internally, architecture — and all three are marked "
+        "read_directly=false: known only through somebody else's summary.",
+    ),
+    (
+        "3. vendor pages nobody has read",
+        "docs.byteplus.com",
+        "Seedance 2.0 and OmniHuman 1.5: override_parameter (camera_fixed beats "
+        "any camera adjective) and expands_internally. Both unread.",
+    ),
+    (
+        "3. vendor pages nobody has read",
+        "elevenlabs.io",
+        "The professional voice-clone CONSENT GATE and the training-audio "
+        "minutes. This is a legal gate in a product that clones voices; it is "
+        "recorded at vendor tier and has never been read.",
+    ),
+    (
+        "3. vendor pages nobody has read",
+        "help.elevenlabs.io",
+        "The other half of the same consent-gate answer: can a clone be made of "
+        "someone else's voice, and on what evidence of consent.",
+    ),
+    (
+        "3. vendor pages nobody has read",
+        "ai.google.dev",
+        "Google's own model documentation, including the Gemini grounding API "
+        "this agent's web search runs on. The API host is open; the docs are not.",
+    ),
+    (
+        "3. vendor pages nobody has read",
+        "platform.openai.com",
+        "sora-2 is recorded as scheduled to stop 2026-09-24 and the registry "
+        "returns `fail` after that date rather than letting a paid call 404. That "
+        "date is load-bearing and second-hand.",
+    ),
+    # ---- 4. The paper rung, which is entirely unread.
+    (
+        "4. the paper rung",
+        "arxiv.org",
+        "10 of the 47 recorded facts are paper tier and cite arxiv.org. NOT ONE "
+        "has been read — every one is somebody's summary of a paper. The "
+        "Kling-Avatar paper is the only paper-tier source for the avatar route.",
+    ),
+    # ---- 5. New capability: prompts with the results they actually produced.
+    (
+        "5. community corpora",
+        "civitai.com",
+        "Public REST API at /api/v1/. The /images endpoint returns user-submitted "
+        "images WITH their generation metadata — the prompt-and-result pairing "
+        "this project has none of. Today the corpus is 4601 rows under a single "
+        "provenance label, and no prompt this package writes has ever been proven "
+        "by a generation. Requested by the owner by name.",
+    ),
+    (
+        "5. community corpora",
+        "api.civitai.com",
+        "The same API on its own subdomain.",
+    ),
+    (
+        "5. community corpora",
+        "image.civitai.com",
+        "The image CDN. Needed to LOOK at a result rather than only read its "
+        "metadata — a prompt that scores well and looks wrong is the failure this "
+        "catches.",
+    ),
+    (
+        "5. community corpora",
+        "www.reddit.com",
+        "r/comfyui: workflows posted together with the results they produced, and "
+        "the community's own account of what went wrong. Requested by the owner "
+        "by name. NOTE, UNVERIFIED: Reddit's free Data API tier reportedly "
+        "prohibits commercial use without their approval, so this host may need a "
+        "commercial agreement independently of the egress policy.",
+    ),
+    ("5. community corpora", "reddit.com", "The same site without the www prefix."),
+    (
+        "5. community corpora",
+        "oauth.reddit.com",
+        "The authenticated Data API endpoint. The free tier's 100 queries/minute "
+        "applies only to OAuth clients; without it the limit is 10.",
+    ),
+    (
+        "5. community corpora",
+        "old.reddit.com",
+        "The same content as server-rendered HTML rather than a JavaScript app — "
+        "cheaper and steadier to parse than the modern front end.",
+    ),
+    # ---- 6. Platforms already cited by the fact base.
+    (
+        "6. platforms already cited",
+        "fal.ai",
+        "FAL_KEY is set and api.fal.ai is open, but the model pages are not, so "
+        "the platform whose API we can call is one we cannot read. "
+        "wan-2.6-flash.prompt_rule_i2v cites it.",
+    ),
+    (
+        "6. platforms already cited",
+        "wavespeed.ai",
+        "Four recorded facts cite it — best_for for Kling, Veo and Seedance, and "
+        "wan-2.6-flash.max_seconds. All four cite the bare site root, which is a "
+        "separate weakness: nobody can go and check them.",
+    ),
+)
+
+
+#: Suffixes where the registrable domain is three labels, not two. Kept as a
+#: table because no public-suffix list ships offline and none of our hosts
+#: needs one yet — add to it rather than guessing if a `.co.uk` ever appears.
+MULTI_LABEL_SUFFIXES: tuple[str, ...] = ()
+
+
+def registrable(host: str) -> str:
+    """The domain a wildcard would be written against, e.g. `docs.bfl.ai` -> `bfl.ai`."""
+    parts = str(host or "").strip().lower().strip(".").split(".")
+    for suffix in MULTI_LABEL_SUFFIXES:
+        if host.endswith("." + suffix):
+            return ".".join(parts[-(suffix.count(".") + 2) :])
+    return ".".join(parts[-2:]) if len(parts) >= 2 else host
+
+
+#: Where `*.<registrable domain>` is the WRONG ask, and what to ask instead.
+#:
+#: A wildcard is only reasonable where the domain belongs to the vendor we are
+#: asking about. `google.com` does not: it carries Search, Mail, Drive and
+#: everything else Google runs, and we want one documentation subdomain of one
+#: product. Asking for all of it would be asking for far more than the question
+#: needs, which is how a request stops being granted at all.
+WILDCARD_OVERRIDES: dict[str, tuple[tuple[str, ...], str]] = {
+    "google.dev": (
+        ("ai.google.dev",),
+        "NOT `*.google.dev` — `ai.google.dev` is the only host under it this "
+        "project needs, and it is the host itself rather than a subdomain of "
+        "one, so a wildcard buys nothing here and grants Google's other "
+        "developer sites for free.",
+    ),
+    "google.com": (
+        ("*.cloud.google.com",),
+        "NOT `*.google.com` — that is Search, Mail, Drive and everything else "
+        "Google runs. `cloud.google.com` is already permitted and open, so this "
+        "is a wildcard UNDER a host you have already allowed.",
+    ),
+}
+
+
+def wildcard_form(hosts: Sequence[str] | None = None) -> tuple[list[str], list[str]]:
+    """The request as wildcards: (the lines to paste, the notes about them).
+
+    Returned as two lists because the notes must NOT end up inside the code
+    fence — OBSERVED 2026-08-27, they did, and a block that cannot be pasted
+    without editing is a block nobody pastes correctly.
+
+    :param hosts: the hosts STILL refused, from `fetch.wanted()`. `WANTED` is
+        the seed list this generator probes, not the request: once the owner
+        grants a domain it stays in the seed list forever, so building the
+        paste block from it asked for fourteen already-granted domains beside
+        a header saying sixteen hosts — OBSERVED 2026-08-27, the day after the
+        grant landed, and the two halves of one document disagreed. Defaults to
+        `WANTED` only so a caller with nothing measured still gets the seed.
+    """
+    seed = [host for _group, host, _why in WANTED] if hosts is None else list(hosts)
+    by_domain: dict[str, list[str]] = {}
+    for host in seed:
+        by_domain.setdefault(registrable(host), []).append(host)
+
+    lines: list[str] = []
+    notes: list[str] = []
+    for domain in sorted(by_domain):
+        override = WILDCARD_OVERRIDES.get(domain)
+        if override:
+            lines.extend(override[0])
+            notes.append(f"- `{domain}` — {override[1]}")
+            continue
+        # Both forms: a wildcard does not always cover the apex, and for several
+        # of these the apex is itself one of the hosts we asked for.
+        lines.append(f"*.{domain}")
+        lines.append(domain)
+    return lines, notes
+
+
+def main() -> int:
+    render_only = "--render" in sys.argv[1:]
+
+    if not render_only:
+        print(f"probing {len(WANTED)} host(s); a refusal is the point, not a failure\n")
+        for _group, host, why in WANTED:
+            out = fetch.fetch(f"https://{host}/", why_wanted=why, incidental=False)
+            state = "REFUSED" if out["denied"] else out["outcome"]
+            print(f"  {state:16} {host}")
+
+    asked = fetch.wanted()
+    by_host = {row["host"]: row for row in asked.get("hosts", [])}
+
+    # Measured, not remembered: a request that lists a host which is already
+    # open wastes the reader's time and makes the rest look unchecked.
+    print("\nre-measuring what is already open")
+    # The union of the hosts this generator has always known to be open and
+    # every host recorded as granted since. ALREADY_OPEN alone went stale the
+    # moment 21 hosts were granted: the document then said "15 of 15 still
+    # answer" beside a proxy that was answering 41.
+    known_open = sorted(set(ALREADY_OPEN) | set(asked.get("granted", [])))
+    live = fetch.reachability(known_open)
+    open_now = sorted(live.get("open", []))
+    shut_now = sorted(live.get("closed", []))
+
+    wildcard_lines, wildcard_notes = wildcard_form(sorted(by_host))
+
+    if not by_host:
+        # The request was answered. Rendering the paste block anyway would ask
+        # for access we have, which is the exact failure this file exists to
+        # avoid — so the document says what happened instead.
+        granted = asked.get("granted", [])
+        still_shut = [row["host"] for row in asked.get("also_refused", [])]
+        closed = [
+            "# Allowlist request — CLOSED",
+            "",
+            "**Generated by `scripts/allowlist_request.py` — do not hand-edit.**",
+            "",
+            f"Nothing is being asked for. {len(granted)} host(s) that were "
+            "requested now answer, so the request retired itself. Re-run the "
+            "generator if access is withdrawn and it will reassemble.",
+            "",
+            "## Granted",
+            "",
+            "```",
+            *granted,
+            "```",
+            "",
+            "## Still refused, but nobody asked for these",
+            "",
+            "Hosts swept up by bulk probes — search results being tagged with "
+            "whether they open, or the reachability map being re-dated. They are "
+            "listed so no refusal is lost, not as a request.",
+            "",
+            ", ".join(f"`{h}`" for h in still_shut) or "none",
+            "",
+        ]
+        OUT_PATH.parent.mkdir(parents=True, exist_ok=True)
+        OUT_PATH.write_text("\n".join(closed), encoding="utf-8")
+        print(f"\nnothing to ask for; {len(granted)} host(s) granted -> {OUT_PATH}")
+        return 0
+
+    lines = [
+        "# Allowlist request",
+        "",
+        "**Generated by `scripts/allowlist_request.py` — do not hand-edit.**",
+        "Re-run it and a host that has since opened drops off by itself.",
+        "",
+        "Every host below was probed and refused by the egress proxy "
+        "(`Tunnel connection failed: 403`). None was routed around: no mirror, "
+        "no cache, no archive copy, no read-through proxy.",
+        "",
+        f"**{len(by_host)} host(s) asked for.** "
+        f"{len(asked.get('also_refused', []))} further host(s) were refused during "
+        "bulk probes and are deliberately NOT part of this request.",
+        "",
+        "## The list, to paste — wildcards, if the whitelist supports them",
+        "",
+        "```",
+        *wildcard_lines,
+        "```",
+        "",
+        *(
+            ["Two of these are deliberately narrower than the domain suggests:", ""]
+            if wildcard_notes
+            else []
+        ),
+        *wildcard_notes,
+        *([""] if wildcard_notes else []),
+        "**Prefer this form.** The argument for it was made on 2026-08-27, "
+        "the grant was given in that form, and it is now MEASURED rather than "
+        "argued:",
+        "",
+        "- 21 hosts were asked for as wildcards over 14 registrable domains. "
+        "**41 hosts answered afterwards** — the 21, plus 20 sibling subdomains "
+        "nobody had listed: `api.bfl.ai`, `app.klingai.com`, "
+        "`docs.elevenlabs.io`, `developers.reddit.com`, `www.civitai.com`, "
+        "`docs.dev.runwayml.com` and the rest. Every one of those would have "
+        "been another round of this document.",
+        "- The case that made the argument came true: the exact list asked for "
+        "`arxiv.org`, the human-facing site, while arXiv's API is on "
+        "`export.arxiv.org`. The wildcard opened both; the exact grant would "
+        "have left the endpoint we actually use shut. It is now read from.",
+        "- One thing the grant did NOT do: some apexes stayed shut while their "
+        "subdomains opened — `runwayml.com` is refused while "
+        "`docs.dev.runwayml.com` under it answers. So both lines per domain, "
+        "`*.domain` and the bare apex, are still the right ask.",
+        "",
+        "Vendors also spread across more than one registrable domain — Kling "
+        "uses `kling.ai`, `klingai.com` and `kuaishou.com` — so a wildcard is "
+        "per domain, not per vendor, and several vendors need two lines.",
+        "",
+        "## The same list as exact hosts, if wildcards are not available",
+        "",
+        "```",
+        *sorted(by_host),
+        "```",
+        "",
+        "Each one is justified below, grouped so the list can be cut at any "
+        "group boundary and still make sense. The groups are ordered by how "
+        "cheap they are to say yes to, not by how much we want them. This form "
+        "is expected to need revisiting; the wildcard form is not.",
+        "",
+        "## Already open — do not add these",
+        "",
+        f"Re-measured when this file was generated: {len(open_now)} of "
+        f"{len(known_open)} still answer"
+        # Named, not counted, and NOT claimed to be back in the ask unless it
+        # is: a granted host can fail one probe transiently, and a sentence
+        # saying "back in the ask" beside a list that does not contain it is
+        # the prose-versus-list mismatch this file has already produced twice.
+        + (
+            "; "
+            + ", ".join(f"`{h}`" for h in shut_now)
+            + (" did not answer this run" if len(shut_now) == 1 else " did not answer this run")
+            + (
+                " and is in the ask above."
+                if set(shut_now) <= set(by_host)
+                else " — re-run to see whether that was transient."
+            )
+            if shut_now
+            else "."
+        ),
+        "",
+        "```",
+        *open_now,
+        "```",
+        "",
+    ]
+    if shut_now:
+        lines += [
+            "**Regressed** — these used to answer and no longer do, which is worth "
+            "knowing before anything is granted:",
+            "",
+            "```",
+            *shut_now,
+            "```",
+            "",
+        ]
+
+    seen_group = ""
+    for group, host, _why in WANTED:
+        row = by_host.get(host)
+        if row is None:
+            continue
+        if group != seen_group:
+            lines += [f"## {group[3:].capitalize()}", ""]
+            seen_group = group
+        lines += [f"### `{host}`", "", row["why_wanted"], ""]
+
+    extra = [h for h in sorted(by_host) if h not in {w[1] for w in WANTED}]
+    if extra:
+        lines += ["## Recorded earlier, still wanted", ""]
+        for host in extra:
+            lines += [f"### `{host}`", "", by_host[host]["why_wanted"], ""]
+
+    lines += [
+        "## Not part of this request",
+        "",
+        "Hosts refused while a bulk probe swept past them — search results being "
+        "tagged with whether they open, or the reachability map being re-dated. "
+        "Nobody asked for these; they are listed so no refusal is lost.",
+        "",
+        ", ".join(f"`{row['host']}`" for row in asked.get("also_refused", [])) or "none",
+        "",
+    ]
+
+    OUT_PATH.parent.mkdir(parents=True, exist_ok=True)
+    OUT_PATH.write_text("\n".join(lines), encoding="utf-8")
+    print(f"\n{len(by_host)} host(s) in the ask -> {OUT_PATH}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -4,6 +4,17 @@ Provenance is data, not documentation: every record carries its own origin
 fields, so anyone who takes the file sees where it came from without reading
 this page. This page explains the basis.
 
+## Лицензии сторонних артефактов, прочитанные до встраивания (Ц5)
+
+| Артефакт | Лицензия | Чем прочитана | Когда |
+|---|---|---|---|
+| `sentence-transformers` 6.0.0 | Apache-2.0 | `pypi.org/pypi/.../json` → `license_expression` | 2026-08-31 |
+| `sentence-transformers/all-MiniLM-L6-v2` | apache-2.0 | `huggingface.co/api/models/...` → `cardData.license` и тег | 2026-08-31 |
+| `qdrant-client` 1.19.0 | Apache-2.0 | METADATA колеса | 2026-08-28 |
+
+Обе строки для плотного канала читаются одной командой каждая, поэтому проверку
+можно повторить, а не поверить в неё. Коммерческих ограничений ни у одной нет.
+
 ## Sources
 
 | Source | Records | Origin | Basis |
@@ -13,6 +24,7 @@ this page. This page explains the basis.
 | style cards | 522 | derived measurements over a third party's public gallery: palette in our own vocabulary, wordless skeleton, digest, URL | derivative, no wording reproduced |
 | judge verdicts | 528 | our own evaluations | ours |
 | `gallery_prompts.jsonl` | 522 (expected) | prompt wording from the same third-party gallery | owner decision, see DEBT below |
+| `civitai_prompts.jsonl` | grows per run | prompt, negative prompt, generation parameters and the resulting image URL, uploaded to Civitai by the person who ran the generation | owner authorisation 2026-08-27, see below |
 
 ## Format of `gallery_prompts.jsonl`
 
@@ -62,3 +74,151 @@ Consequences to keep in view:
   makes an exact removal possible;
 - this entry exists so the departure stays greppable and does not quietly
   become the norm.
+
+
+## `civitai_prompts.jsonl` — prompts paired with the results they produced
+
+The thing this knowledge base has never had. Everywhere else the wording and
+the image live apart: our own prompts have our own generations, and the gallery
+rows have wording with no result attached. Civitai's uploaders post both.
+
+### Basis
+
+The owner obtained legal clearance and confirmed on 2026-08-27 that the licence
+questions are resolved and there is no outstanding legal risk. Stamped on every
+row as `rights: "owner_authorisation_2026-08-27"`.
+
+What that authorisation is against, so a future reader can check it is still
+the right basis rather than assuming: Civitai's ToS 6.1 grants access "solely
+for your personal, non-commercial use", and 11.4 permits automated access
+through the public API with your own credentials and within rate limits, "or as
+we otherwise authorize in writing". Both were READ first-hand on 2026-08-27 and
+are recorded in `model_facts.jsonl` under `civitai-api.licence`. Per-upload
+model licences (Anima, LTX-derived, Cosmos-derived) carry their own commercial
+restrictions on top and this collector does not read them — it collects images
+and wording, not weights.
+
+### Format
+
+One JSON object per line. Six fields are mandatory and a row missing any of
+them stops the whole write rather than being dropped quietly:
+
+```json
+{"prompt": "<the wording as the uploader wrote it>",
+ "negative_prompt": "<or empty>",
+ "image_url": "https://image.civitai.com/<...>",
+ "width": 1096, "height": 1648, "nsfw_level": 1,
+ "parameters": {"seed": 1, "steps": 28, "sampler": "...", "cfgScale": 7,
+                "Size": "512x768", "Model": "...", "clipSkip": 2},
+ "model_name": "DreamShaper", "base_model": "SD 1.5", "version_id": 128713,
+ "source_url": "https://civitai.com/api/v1/model-versions/128713",
+ "harvested": "2026-08-27",
+ "provenance": "civitai:<uploader>",
+ "rights": "owner_authorisation_2026-08-27"}
+```
+
+### The provenance is the uploader, not the platform
+
+A decision worth stating because it interacts with a rule in `knowledge.py`.
+`MAX_PER_PROVENANCE` admits at most 2 of any 5 retrieved examples from one
+provenance, so that a single source cannot fill an answer. Tagging every row
+`civitai` would make the whole corpus one source and cap it at two records —
+which is the defect already recorded against the gallery rows, repeated.
+
+One Civitai uploader is one author, so the provenance is
+`civitai:<uploader>` and the platform stays recoverable from the prefix: a
+removal request naming Civitai matches every row with one grep, and a request
+naming one uploader matches exactly theirs.
+
+MEASURED on the first real run of 170 pairs: 20 uploaders, the largest holding
+19. That distribution is what the rule needs, and it exists only because the
+walk visits models round-robin — an earlier depth-first walk collected 29 pairs
+from **one** uploader before `summarise` said so.
+
+### What is deliberately dropped, and counted
+
+- images above `nsfw_level` 4 — Civitai's PG, PG-13 and R rungs are kept, X
+  and XXX are not. It was 2 until the owner ruled on 2026-08-31 that R is
+  admissible, on the grounds that the niche carries a lot of advanced craft and
+  this project does not republish the creatives anywhere. MEASURED the same day
+  over 308 prompt-bearing images, so both the ruling and the remaining line
+  have a number: PG 57.1%, PG-13 19.8%, R 14.6%, X 6.2%, XXX 2.3%. The ruling
+  buys 14.6% of the available wording; refusing X and XXX costs 8.5%. On the
+  first real run at the old ceiling, 27 of 210 were dropped here;
+- images whose wording is under three words — 13 of 210;
+- workflow-specific parameters (ADetailer, Hires) that belong to the
+  uploader's tooling rather than to the prompt.
+
+Every one of those is REPORTED in the run's note. "We collected 170" reads very
+differently from "we collected 170 and threw 40 away", and only the second is
+true.
+
+### Two things a run must be pointed at, both MEASURED
+
+**Unfiltered, this collects the wrong models.** Civitai hosts weights, so the
+closed API models this project uses are barely on it. A 750-pair harvest by
+Most Downloaded produced 368 SD 1.5, 127 SDXL 1.0, 71 Illustrious — and
+**zero** rows on any family this project targets. The open-weight families are
+reachable and only a filter reaches them: `--base-model "Flux.1 D"`,
+`"Flux.1 S"`, `"Wan Video 14B t2v"`, `"Qwen"`. One family per run, because the
+API honours only the first `baseModels` parameter.
+
+The filter is CASE-SENSITIVE and an unrecognised name returns `200` with an
+empty list rather than an error, so `"flux.1 d"` silently collects nothing.
+An empty harvest under a filter says so in its own note for that reason.
+
+**The image gate cannot see the checkpoint.** Every collected image is at
+Civitai's PG or PG-13 rung. That says nothing about the model it came from:
+found by looking at a collected row rather than at its metrics, a row passed
+at image level 2 while its checkpoint was named "NSFW MASTER". The model's own
+`nsfw` BOOLEAN reads False for it — the signal is `nsfwLevel`, which on a model
+is a BITMASK of every rung its images span (3 is 1|2, 31 is 1|2|4|8|16).
+
+So the count of rows drawn from checkpoints that publish above the ceiling is
+printed on every run, and `--safe-models-only` skips them. MEASURED on a
+Flux.1 D run: 90 of 100 candidate versions. That proportion is why this is a
+number the owner sees rather than a default somebody chose quietly — the image
+gate is about the data, this is about the product.
+
+### Not committed
+
+`.gitignore` carries the file. This repository is public and its LICENCE clause
+2(d) asserts rights over "the prompts ... contained here" — which, over this
+file, would be a claim on other people's work. Collecting and using it is
+covered; republishing it under this repository's licence is a separate decision
+and not one `git add -A` should be able to take.
+
+
+## Reddit — DROPPED 2026-08-27, and this is the stop condition
+
+The owner dropped it. Rule C9 asks for a stop condition to be written down
+rather than for an attempt to trail off, so here it is, with the measurement
+that made the decision easy.
+
+| endpoint | answer, MEASURED 2026-08-27 |
+|---|---|
+| `www.reddit.com/api/v1/access_token` | `401 {"message": "Unauthorized", "error": 401}` |
+| `www.reddit.com/r/comfyui/hot.json` | 403, a Reddit web page |
+| `oauth.reddit.com/r/comfyui/hot` | 403, Reddit's **"Blocked"** page — identical with and without an `Authorization` header |
+
+The token host behaves like an API. `oauth.reddit.com`, where every
+authenticated read would go, serves the Blocked page regardless of what
+authorisation is presented: an edge block on this caller, decided before any
+credential is examined. So a registered app would probably not have helped from
+this container — strong evidence, not proof, since a valid token was never
+presented.
+
+The collector was written and is now deleted rather than left to rot as code
+nobody can run. What survives is the measurement, as
+`reddit-api.authenticated_read_reachable` in `model_facts.jsonl`, so the next
+agent meets it through `model_advice` before proposing this again.
+
+**Reopen only if** the work moves somewhere Reddit does not block, or a valid
+token is presented to `oauth.reddit.com` and gets something other than the
+Blocked page. Reachability is the condition; the licence question is closed and
+was never the blocker.
+
+The two hosts carrying Reddit's Data API terms — `www.redditinc.com` and
+`support.reddithelp.com` — are withdrawn from the allowlist request for the
+same reason, as `state: "unwanted"` rather than as granted: they are still
+refused, and nobody needs them any more.

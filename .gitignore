@@ -6,3 +6,38 @@ work/
 # Local state written at runtime, never source.
 *.sqlite3
 studio/uploads/
+
+# The operator's own prompt corpus. Private data, named by the product brief;
+# the demo corpus that ships with the code lives in studio/selfrag/fixtures/.
+corpus/
+
+# Harvested third-party gallery wording. NOT committed: this repository is
+# public, and its LICENCE clause 2(d) asserts the copyright holder's rights
+# over "the prompts ... contained here" — which would be a claim over
+# aidsgn.ru's catalogue. Publishing it is the owner's decision to take
+# explicitly, not something a `git add -A` should be able to do by accident.
+# See studio/knowledge/PROVENANCE.md and NOTICE_replacement.md.
+studio/knowledge/gallery_prompts.jsonl
+work/
+
+# Prompt-and-result pairs collected from Civitai. NOT committed, for the same
+# reason as the line above: this repository is public, its LICENCE clause 2(d)
+# asserts rights over "the prompts ... contained here", and these prompts are
+# other people's work. The owner's authorisation covers collecting and using
+# them; republishing them under this repository's licence is a separate
+# decision and not one `git add -A` should be able to take.
+# See studio/mcp/civitai.py and studio/knowledge/PROVENANCE.md.
+studio/knowledge/civitai_prompts.jsonl
+
+# Driving clips. NOT committed, by the owner's decision 2026-08-28, taken with
+# the repository's PUBLIC visibility in view (verified: private=false). These
+# are videos of identifiable people; publishing them cannot be undone, and the
+# legal clearance on record covers collecting and using the material, not
+# republishing it under this repository's licence.
+assets/drivings/
+.mutate.lock
+# Каталог слепков мутационного прогона. ПОПАЛ В КОММИТ 2026-09-05: прогон был
+# убит по таймауту, слепок остался в дереве и уехал вместе с правкой — то есть
+# в репозиторий приехал кусок ИЗУВЕЧЕННОГО исходника под чужим именем. Сам
+# механизм слепков от обрыва защищает, а от коммита защищает эта строка.
+.mutate.backup/

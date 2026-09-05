@@ -245,6 +245,40 @@ def charge_and_start(
         # Neither may let the paid call go out.
         return _by_outcome(HTTP_NO_CREDITS, charged, f"{kind} not started, nothing was charged")
 
+    # ПОВТОР КЛЮЧА — НЕ ОПЛАТА, И ОТВЕТ ВЫВОДИТСЯ ИЗ ТОГО, ЧТО ИСПОЛНИЛОСЬ (Е2).
+    # `charge` на уже записанном ключе честно отвечает `pass` и ставит
+    # `duplicate: True`: журнал ПОВТОРЯЕТ прежнюю строку и НИЧЕГО не списывает.
+    # ИЗМЕРЕНО 2026-09-05: баланс 100 -> 90 после первого списания и 90 после
+    # второго с тем же ключом, `delta` в обоих ответах -10. Здесь этот ответ
+    # читался как «списали» — и наверх уходило `"charged": credits` рядом с
+    # запущенной ПЛАТНОЙ генерацией, за которую не заплатил никто.
+    #
+    # Ключ повторяется, когда `jobs.attempts` начал счёт заново: реестр задач
+    # живёт в памяти процесса, и перезапуск обнуляет номер попытки. То есть это
+    # НЕ отказ пользователю и НЕ его вина — это потерянное нами состояние, по
+    # которому нельзя решить, шла эта попытка уже или нет. Третий исход, а не
+    # первые два: запускать работу под чужой оплаченной строкой нельзя, но и
+    # объявлять её неудачей — врать в другую сторону.
+    if charged.get("duplicate"):
+        return _by_outcome(
+            HTTP_GUARD,
+            {
+                "outcome": UNMEASURED,
+                "checked": 0,
+                "unmeasured": 1,
+                "note": (
+                    f"ключ {key!r} уже записан в журнале: списания НЕ БЫЛО, "
+                    f"баланс {charged.get('balance')} не изменился. Это значит, что "
+                    f"номер попытки начался заново (реестр задач живёт в памяти и "
+                    f"обнуляется при перезапуске), и по нему нельзя решить, шла эта "
+                    f"попытка уже или нет. {kind} НЕ запущен — платная работа под "
+                    f"чужой оплаченной строкой не начинается. Нужен человек: "
+                    f"посмотреть в журнале строку {key!r}"
+                ),
+            },
+            f"{kind} not started, nothing was charged",
+        )
+
     def compensate(record: dict) -> None:
         """Give the credits back for a failed job; leave an `unknown` one alone."""
         if record["state"] == jobs.FAILED:
@@ -367,7 +401,43 @@ def consent_state(session: dict) -> dict:
     frame = frame_state(session)
     if frame["outcome"] != PASS:
         return frame
-    if str(session.get("stage")) not in (STAGE_CONSENTED, STAGE_VIDEO_RUNNING, STAGE_DONE):
+    стадия = str(session.get("stage"))
+    # ОДНО СОГЛАСИЕ — ОДНО ВИДЕО (исправлено 2026-09-05 по независимому аудиту).
+    #
+    # Здесь пропускались стадии `consented`, `video_running` И `done`, и это
+    # значило, что одно согласие открывает НЕОГРАНИЧЕННОЕ число платных
+    # генераций. Прогон: кадр -> согласие -> три подряд POST /api/video: все три
+    # по 200, раннер вызван трижды, баланс 99 -> 69.
+    #
+    # Второе и третье видео шли ещё и БЕЗ ОДОБРЕННОГО КАДРА: кадр берётся из
+    # `last_job_id`, а после первого видео там уже видео-джоба, и в payload
+    # `frame` приходил None. Человек платил за генерацию, которой не показывали
+    # то, на что он соглашался.
+    #
+    # Двойной клик в интерфейсе — обычное дело, и он не должен стоить денег.
+    if стадия == STAGE_VIDEO_RUNNING:
+        return {
+            "outcome": FAIL,
+            "checked": 1,
+            "violations": 1,
+            "unmeasured": 0,
+            "note": (
+                "видео по этому согласию УЖЕ идёт: одно согласие оплачивает одно "
+                "видео, второй запуск — это второй счёт заказчику"
+            ),
+        }
+    if стадия == STAGE_DONE:
+        return {
+            "outcome": FAIL,
+            "checked": 1,
+            "violations": 1,
+            "unmeasured": 0,
+            "note": (
+                "видео по этому согласию УЖЕ сделано: завершённая работа не есть "
+                "разрешение начать новую — нужен новый кадр и новое согласие"
+            ),
+        }
+    if стадия != STAGE_CONSENTED:
         return {
             "outcome": FAIL,
             "checked": 1,
@@ -563,10 +633,30 @@ def create_app(deps: Deps | None = None) -> FastAPI:
         )
 
     @app.get("/api/job/{job_id}")
-    def get_job(job_id: str) -> JSONResponse:
-        """Report one job's state; an unknown id is reported, not raised."""
+    def get_job(job_id: str, session_id: str = "") -> JSONResponse:
+        """Report one job's state; an unknown id is reported, not raised.
+
+        ЗАДАЧА ОТДАЁТСЯ ТОЛЬКО В СВОЮ СЕССИЮ. До 2026-09-05 это был
+        единственный маршрут, не спрашивавший, чья работа: он отдавал
+        `session_id` и РЕЗУЛЬТАТ любому, кто назвал идентификатор задачи.
+        Угадать его трудно (uuid4, 122 бита), но «трудно угадать» — не проверка
+        доступа, а её отсутствие с оговоркой; идентификатор попадает в логи,
+        в адресную строку и в чужую вкладку.
+
+        Не назвали сессию — третий исход, а не отказ и не выдача: мы не знаем,
+        свой это спрашивает или чужой, и молча выбрать один из ответов значило
+        бы решить за того, кто нас об этом не спрашивал.
+        """
         state = jobs.status(job_id)
         state.pop("thread", None)
+        if not session_id:
+            return _unmeasured(
+                f"job {job_id!r}: не сказано, чья это задача — добавьте "
+                f"?session_id=…; чужую работу этот маршрут не отдаёт"
+            )
+        чья = state.get("session_id")
+        if чья is not None and чья != session_id:
+            return _fail(HTTP_GUARD, f"job {job_id!r} принадлежит другой сессии")
         return JSONResponse(state)
 
     @app.get("/", response_class=HTMLResponse)
