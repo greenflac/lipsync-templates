@@ -244,7 +244,10 @@ class HappyPath(StudioCase):
         self.upload_selfie(session_id)
         self.set_style(session_id)
         frame_job = self.make_frame(session_id)
-        self.assertEqual(self.client.get(f"/api/job/{frame_job}").json()["state"], "done")
+        self.assertEqual(
+            self.client.get(f"/api/job/{frame_job}?session_id={session_id}").json()["state"],
+            "done",
+        )
 
         consent = self.client.post("/api/consent", json={"session_id": session_id})
         self.assertEqual(consent.status_code, 200, consent.text)
@@ -409,6 +412,47 @@ class MoneyGuard(StudioCase):
         self.assertEqual(reply.status_code, 402)
         self.assertEqual(self.ledger.balance("u1"), 0)
 
+    def test_чужая_сессия_не_получает_задачу(self) -> None:
+        """Единственный маршрут, не спрашивавший «чья работа», отдавал
+        `session_id` и РЕЗУЛЬТАТ любому, кто назвал идентификатор задачи."""
+        свой = self.open_session()
+        self.upload_selfie(свой)
+        self.set_style(свой)
+        задача = self.make_frame(свой)
+        чужой = self.open_session()
+
+        ответ = self.client.get(f"/api/job/{задача}?session_id={чужой}")
+
+        self.assertEqual(ответ.status_code, 409)
+        self.assertEqual(ответ.json()["outcome"], "fail")
+        self.assertNotIn("result", ответ.json())
+
+    def test_сессия_не_названа_это_третий_исход(self) -> None:
+        """Не знаем, свой спрашивает или чужой. Молча выбрать один из двух
+        ответов значило бы решить за того, кто нас об этом не спрашивал."""
+        свой = self.open_session()
+        self.upload_selfie(свой)
+        self.set_style(свой)
+        задача = self.make_frame(свой)
+
+        ответ = self.client.get(f"/api/job/{задача}")
+
+        self.assertEqual(ответ.json()["outcome"], "could not measure")
+        self.assertNotIn("result", ответ.json())
+
+    def test_своя_сессия_задачу_получает(self) -> None:
+        """Негативный контроль (И5): проверка доступа, отказывающая всем, не
+        отличается от сломанного маршрута."""
+        свой = self.open_session()
+        self.upload_selfie(свой)
+        self.set_style(свой)
+        задача = self.make_frame(свой)
+
+        ответ = self.client.get(f"/api/job/{задача}?session_id={свой}")
+
+        self.assertEqual(ответ.status_code, 200)
+        self.assertEqual(ответ.json()["session_id"], свой)
+
     def test_replayed_key_starts_no_video_and_does_not_claim_a_charge(self) -> None:
         """Повтор ключа — не оплата, и запускать под ним платную работу нельзя.
 
@@ -543,7 +587,7 @@ class Refusals(StudioCase):
                 self.assertEqual(self.client.post(path, json=body).status_code, 404)
 
     def test_unknown_job_id_is_answered_not_raised(self) -> None:
-        reply = self.client.get("/api/job/does-not-exist")
+        reply = self.client.get("/api/job/does-not-exist?session_id=s1")
         self.assertEqual(reply.status_code, 200)
         self.assertEqual(reply.json()["state"], "unknown")
 

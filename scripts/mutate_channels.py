@@ -821,6 +821,20 @@ MUTANTS: list[tuple[str, str, str, str, str]] = [
     ),
     (
         "studio/app.py",
+        "        if not session_id:",
+        "        if False:",
+        "доступ: задачу снова отдают тому, кто не назвал сессию",
+        "studio.tests.test_app",
+    ),
+    (
+        "studio/app.py",
+        "        if чья is not None and чья != session_id:",
+        "        if False:",
+        "доступ: чужая сессия снова получает результат по идентификатору задачи",
+        "studio.tests.test_app",
+    ),
+    (
+        "studio/app.py",
         '    if charged.get("duplicate"):',
         "    if False:",
         "деньги: повтор ключа снова выдаётся за оплату — платное видео без списания",

@@ -633,10 +633,30 @@ def create_app(deps: Deps | None = None) -> FastAPI:
         )
 
     @app.get("/api/job/{job_id}")
-    def get_job(job_id: str) -> JSONResponse:
-        """Report one job's state; an unknown id is reported, not raised."""
+    def get_job(job_id: str, session_id: str = "") -> JSONResponse:
+        """Report one job's state; an unknown id is reported, not raised.
+
+        ЗАДАЧА ОТДАЁТСЯ ТОЛЬКО В СВОЮ СЕССИЮ. До 2026-09-05 это был
+        единственный маршрут, не спрашивавший, чья работа: он отдавал
+        `session_id` и РЕЗУЛЬТАТ любому, кто назвал идентификатор задачи.
+        Угадать его трудно (uuid4, 122 бита), но «трудно угадать» — не проверка
+        доступа, а её отсутствие с оговоркой; идентификатор попадает в логи,
+        в адресную строку и в чужую вкладку.
+
+        Не назвали сессию — третий исход, а не отказ и не выдача: мы не знаем,
+        свой это спрашивает или чужой, и молча выбрать один из ответов значило
+        бы решить за того, кто нас об этом не спрашивал.
+        """
         state = jobs.status(job_id)
         state.pop("thread", None)
+        if not session_id:
+            return _unmeasured(
+                f"job {job_id!r}: не сказано, чья это задача — добавьте "
+                f"?session_id=…; чужую работу этот маршрут не отдаёт"
+            )
+        чья = state.get("session_id")
+        if чья is not None and чья != session_id:
+            return _fail(HTTP_GUARD, f"job {job_id!r} принадлежит другой сессии")
         return JSONResponse(state)
 
     @app.get("/", response_class=HTMLResponse)
