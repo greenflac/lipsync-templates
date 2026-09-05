@@ -409,6 +409,50 @@ class MoneyGuard(StudioCase):
         self.assertEqual(reply.status_code, 402)
         self.assertEqual(self.ledger.balance("u1"), 0)
 
+    def test_replayed_key_starts_no_video_and_does_not_claim_a_charge(self) -> None:
+        """Повтор ключа — не оплата, и запускать под ним платную работу нельзя.
+
+        ИЗМЕРЕНО 2026-09-05 на настоящем журнале: два `charge` с одним ключом
+        дают `outcome=pass`, `delta=-10` ОБА раза, а баланс 100 -> 90 -> 90.
+        Второй ответ — ЭХО первой строки, списания не было. Здесь он читался
+        как «списали», и наверх уходило `"charged": 10` рядом с запущенной
+        платной генерацией, за которую не заплатил никто.
+
+        Ключ повторяется, когда номер попытки начался заново: реестр задач
+        живёт в памяти процесса. Это не отказ пользователю и не его вина —
+        это потерянное нами состояние, поэтому третий исход.
+        """
+        session_id = self.open_session()
+        self.upload_selfie(session_id)
+        self.set_style(session_id)
+        self.make_frame(session_id)
+        self.client.post("/api/consent", json={"session_id": session_id})
+        до = self.ledger.balance("u1")
+        # Строка под этим ключом уже есть — ровно то, что видит журнал после
+        # перезапуска, обнулившего номер попытки.
+        self.ledger.keys.add(f"{session_id}:video:1")
+
+        reply = self.client.post("/api/video", json={"session_id": session_id})
+
+        self.assertEqual(reply.json()["outcome"], "could not measure")
+        self.assertNotIn("job_id", reply.json(), "платная работа НЕ запущена")
+        self.assertNotIn("charged", reply.json(), "и «списали» не сказано")
+        self.assertEqual(self.ledger.balance("u1"), до, "и действительно не списано")
+
+    def test_первое_видео_на_свежем_ключе_по_прежнему_идёт(self) -> None:
+        """Негативный контроль (И5): защита от повтора не смеет останавливать
+        обычную работу — иначе продукт перестанет делать то, за что платят."""
+        session_id = self.open_session()
+        self.upload_selfie(session_id)
+        self.set_style(session_id)
+        self.make_frame(session_id)
+        self.client.post("/api/consent", json={"session_id": session_id})
+
+        reply = self.client.post("/api/video", json={"session_id": session_id})
+
+        self.assertEqual(reply.json()["outcome"], "pass")
+        self.assertEqual(reply.json()["charged"], 10)
+
     def test_unreachable_journal_is_unmeasured_not_a_free_video(self) -> None:
         session_id = self.open_session()
         self.upload_selfie(session_id)

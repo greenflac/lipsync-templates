@@ -154,6 +154,11 @@ from __future__ import annotations
     "text_limit": {
         "prefixes": (),
         "exact": (
+            # `max_script_length` («90000 characters») переехал сюда 2026-09-05:
+            # он лежал в семье нижней границы длительности, а на вопрос о
+            # пределе текста vibevoice отвечал пустотой. Имя-сосед
+            # `max_script_characters` означает ровно то же.
+            "max_script_length",
             "character_limit",
             "max_text_length",
             "context_window_tokens",
@@ -206,6 +211,15 @@ from __future__ import annotations
         # ИЗМЕРЕНО 2026-09-02 через `advise`: строка о длительности записана у
         # 45 моделей, а на вопрос `max_seconds` отвечали 25.
         "exact": (
+            # Переехало сюда 2026-09-05. `video_lengths_vertex` («4, 6 or 8
+            # seconds») лежал в семье НИЖНЕЙ границы, а на вопрос «сколько
+            # секунд» про veo-3.1-generate-001 приходила пустота.
+            "video_lengths_vertex",
+            # ЗАПИСЬ «НЕ СМОГЛИ ИЗМЕРИТЬ» ОТВЕЧАЕТ НА ТОТ ЖЕ ВОПРОС, ЧТО И
+            # ИЗМЕРЕНИЕ (Р1): спросивший «сколько секунд» обязан узнать, что
+            # мерить пробовали и не смогли, — иначе третий исход лежит в базе
+            # и не доезжает до того, кому он адресован.
+            "probe_cannot_settle_duration",
             "max_seconds",
             "max_duration_seconds",
             "max_duration_ms",
@@ -267,7 +281,10 @@ from __future__ import annotations
     # работу модель делает.
     "positioning": {
         "prefixes": ("positioning",),
-        "exact": (),
+        # `tradeoff` = «выше задержка и цена за символ, зато качество» —
+        # сравнительное утверждение о нише. В семье «чем мерили» он отвечал на
+        # вопрос о МЕТОДЕ измерения текстом без единого числа.
+        "exact": ("tradeoff",),
     },
     # ЧТО У НЕЁ НА БЕНЧМАРКАХ. ЗАКРЫТЫЙ СПИСОК, И ЭТО НЕГАТИВНЫЙ КОНТРОЛЬ
     # (И5): подстрока «benchmark» затянула бы
@@ -302,7 +319,11 @@ from __future__ import annotations
     # `architecture_and_license`, и `motion_control_architecture`.
     "architecture": {
         "prefixes": (),
-        "exact": (),
+        # `vae_compression` («video length 4, space 8, channel 16») — устройство
+        # модели, и 2026-09-05 он лежал в семье «как её позвать»: на вопрос об
+        # архитектуре hunyuan-video приходила пустота при записанном факте.
+        # Нашла это независимая проверка чтением значений, а не имён.
+        "exact": ("vae_compression",),
         "подстроки": ("architect",),
     },
     # ЧТО НУЖНО, ЧТОБЫ ЗАПУСТИТЬ. Одна семья на три вопроса владельца
@@ -310,7 +331,11 @@ from __future__ import annotations
     # ответ на них живёт в одной строке карточки модели.
     "hardware": {
         "prefixes": (),
-        "exact": (),
+        # `storage_cost` = «257.5 КБ на страницу в float16» — место на диске, а
+        # не деньги. Слово `cost` в имени без денег в значении — ровно та же
+        # форма, что у документированного `price_relative`; в семье «условия
+        # оплаты» он был единственным ответом и читался как цена.
+        "exact": ("storage_cost",),
         "подстроки": ("vram", "runs_on", "parameter_count"),
     },
     # НА КАКИХ ЯЗЫКАХ. Подстрока «language» ловит `languages`,
@@ -351,7 +376,6 @@ from __future__ import annotations
             "frames_and_fps",
             "num_frames_range",
             "max_frames",
-            "keyframes_max",
         ),
         "подстроки": (),
         "кроме": (),
@@ -402,6 +426,9 @@ from __future__ import annotations
             "first_last_frame",
             "mask_requirements",
             "max_total_length_via_extension",
+            # `keyframes_max` («1-10 images; [seconds, image] pairs pin exact
+            # times») — это раскадровка на входе, а не частота кадров на выходе.
+            "keyframes_max",
             "loop_mode",
             "long_video_method",
             "segment_duration",
@@ -431,7 +458,6 @@ from __future__ import annotations
             "character_orientation",
             "strength",
             "controls",
-            "modes",
             "sync_mode_enum",
         ),
         "подстроки": (),
@@ -457,7 +483,6 @@ from __future__ import annotations
             "probe_discloses_limits",
             "unsupported_params",
             "reasoning_effort_levels",
-            "tool_use",
         ),
         "подстроки": (),
         "кроме": (),
@@ -471,7 +496,6 @@ from __future__ import annotations
         "prefixes": (),
         "exact": (
             "billing_requirement",
-            "storage_cost",
             "commercial_revenue_threshold",
             "long_context_surcharge",
             "search_grounding_price",
@@ -502,10 +526,6 @@ from __future__ import annotations
             "provenance",
             "model_sizes",
             "knowledge_cutoff",
-            "vae_compression",
-            "images_endpoint_metadata",
-            "authenticated_read_reachable",
-            "prompt_metadata_exposed",
         ),
         "подстроки": (),
         "кроме": (),
@@ -524,6 +544,13 @@ from __future__ import annotations
             "lipsync_support",
             "lipsync_model_selection",
             "capabilities",
+            # Переехали 2026-09-05 из «как её позвать» и «лимиты»: это про то,
+            # ЧТО отдаёт эндпоинт и что модель умеет, а не про строку в запросе.
+            "images_endpoint_metadata",
+            "authenticated_read_reachable",
+            "prompt_metadata_exposed",
+            "tool_use",
+            "modes",
             "modalities",
             "modality",
             "role",
@@ -577,9 +604,6 @@ from __future__ import annotations
         "exact": (
             "min_seconds",
             "supported_durations",
-            "video_lengths_vertex",
-            "max_script_length",
-            "probe_cannot_settle_duration",
         ),
         "подстроки": (),
         "кроме": (),
@@ -597,7 +621,6 @@ from __future__ import annotations
             "keyframe_conditioning_tradeoff",
             "retrieval_quality",
             "physics_ceiling",
-            "tradeoff",
             "speed_publication",
             "training_time_contested",
         ),

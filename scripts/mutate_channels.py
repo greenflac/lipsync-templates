@@ -820,6 +820,13 @@ MUTANTS: list[tuple[str, str, str, str, str]] = [
         "studio.tests.test_named_not_asked",
     ),
     (
+        "studio/app.py",
+        '    if charged.get("duplicate"):',
+        "    if False:",
+        "деньги: повтор ключа снова выдаётся за оплату — платное видео без списания",
+        "studio.tests.test_app",
+    ),
+    (
         "scripts/check_mutants_clean.py",
         "        if старое in новое:",
         "        if False:",

@@ -543,6 +543,50 @@ class СемьиЗаведённыеРадиR3(unittest.TestCase):
     def test_лицензия_площадки_отвечает_на_вопрос_об_оплате(self):
         self.assertIn("portal_license", self.полe("billing"))
 
+    def test_двенадцать_уводов_найденных_независимой_проверкой(self):
+        """Проверка 2026-09-05 прочитала ЗНАЧЕНИЯ, а не имена, и нашла 14 строк,
+        где семья отдавала ответ не на свой вопрос. Три были тяжёлыми: правильный
+        вопрос при этом МОЛЧАЛ.
+
+            advise('veo-3.1-generate-001','max_seconds')  -> пусто
+            advise(...,'duration_floor') -> video_lengths_vertex = «4, 6 or 8 s»
+            advise('vibevoice','text_limit') -> пусто
+            advise(...,'duration_floor') -> max_script_length = «90000 characters»
+            advise('hunyuan-video','architecture') -> пусто
+            advise(...,'model_identity') -> vae_compression = «video length 4…»
+
+        Здесь проверяется, что каждое имя лежит там, где на него спросят, и НЕ
+        лежит там, откуда его убрали: увод, починенный только с одной стороны,
+        оставляет ответ не про то на прежнем месте.
+        """
+        переехали = (
+            ("video_lengths_vertex", "max_seconds", "duration_floor"),
+            ("max_script_length", "text_limit", "duration_floor"),
+            ("probe_cannot_settle_duration", "max_seconds", "duration_floor"),
+            ("vae_compression", "architecture", "model_identity"),
+            ("storage_cost", "hardware", "billing"),
+            ("tool_use", "capabilities", "limits"),
+            ("modes", "capabilities", "prompt_rule"),
+            ("images_endpoint_metadata", "capabilities", "model_identity"),
+            ("authenticated_read_reachable", "capabilities", "model_identity"),
+            ("prompt_metadata_exposed", "capabilities", "model_identity"),
+            ("keyframes_max", "editing", "frame_rate"),
+            ("tradeoff", "positioning", "measurement_method"),
+        )
+        имена = [и for и, _, _ in переехали]
+        for имя, куда, откуда in переехали:
+            self.assertIn(имя, attrfamily.expand(куда, имена), f"{имя} не доехал в {куда}")
+            self.assertNotIn(имя, attrfamily.expand(откуда, имена), f"{имя} остался в {откуда}")
+
+    def test_запись_не_смогли_измерить_отвечает_на_свой_вопрос(self):
+        """Р1: спросивший «сколько секунд» обязан узнать, что мерить пробовали
+        и не смогли. Третий исход, лежащий в базе и не доезжающий до того, кому
+        он адресован, — то же молчание, что и отсутствие строки."""
+        self.assertIn(
+            "probe_cannot_settle_duration",
+            attrfamily.expand("max_seconds", ["probe_cannot_settle_duration", "max_seconds"]),
+        )
+
     def test_разрешение_обучения_не_отвечает_на_вопрос_о_разрешении(self):
         """Прежнее решение модуля сохранено: `training_resolution` — предел
         ОБУЧЕНИЯ голоса/модели, а не предел входа."""
