@@ -71,8 +71,33 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 
+#: НАБОРЫ, КОТОРЫЕ ГОНЯЮТСЯ И НА ЗДОРОВОМ ДЕРЕВЕ, И НА КАЖДОМ МУТАНТЕ.
+#: ОДИН СПИСОК, А НЕ ДВА (Е1). До 2026-09-05 их было два, и они уже разъехались:
+#: `test_clarify` гонялся только на мутантах, `test_verdict_not_masked` — только
+#: на здоровом дереве. Мутант, которого не видит ни один прогоняемый набор,
+#: молчит не потому, что константу не сторожат, а потому, что сторож не
+#: приглашён, — и таблица врёт в сторону «дефект». Разъехавшийся в другую
+#: сторону список врёт в сторону «всё хорошо»: здоровый прогон зелёный, потому
+#: что его гоняли не тем набором.
+НАБОРЫ = (
+    "studio.tests.test_planner",
+    "studio.tests.test_duration",
+    "studio.tests.test_clarify",
+    # Знак измеренного (`sign_rank`).
+    "studio.tests.test_applicability_sign",
+    # Развилка вердикта, вынесенная из `plan` отдельной функцией.
+    "studio.tests.test_verdict_not_masked",
+)
+
 MUTANTS = [
     # (файл, что заменить, на что, подпись)
+    # --- вердикт плана (заведено 2026-09-05) -------------------------------
+    (
+        "studio/planner.py",
+        '    if отчёт["outcome"] == FAIL:',
+        '    if отчёт["outcome"] == FAIL and not без_кандидата:',
+        "вердикт: «не смогли» снова перебивает найденное нарушение",
+    ),
     # --- знак измеренного (заведено 2026-09-05) ----------------------------
     (
         "studio/planner.py",
@@ -844,16 +869,7 @@ def main() -> int:
 
 def _прогон() -> int:
     clean()
-    базовый_т = run(
-        [
-            sys.executable,
-            "-m",
-            "unittest",
-            "studio.tests.test_planner",
-            "studio.tests.test_duration",
-            "studio.tests.test_applicability_sign",
-        ]
-    )
+    базовый_т = run([sys.executable, "-m", "unittest", *НАБОРЫ])
     базовый_г = run([sys.executable, "scripts/check_planner.py", "--check"])
     print(
         f"ЗДОРОВЫЙ | тесты rc={базовый_т[0]} {базовый_т[1]} | гейт rc={базовый_г[0]} {базовый_г[1]}"
@@ -873,24 +889,7 @@ def _прогон() -> int:
         путь.write_text(было.replace(старое, новое, 1), encoding="utf-8")
         clean()
         try:
-            тк, тс = run(
-                [
-                    sys.executable,
-                    "-m",
-                    "unittest",
-                    "studio.tests.test_planner",
-                    "studio.tests.test_duration",
-                    # Набор уточняющего вопроса гоняется ЗДЕСЬ ЖЕ. Мутант, которого
-                    # не видит ни один прогоняемый набор, промолчит не потому, что
-                    # константу не сторожат, а потому, что сторож не приглашён, — и
-                    # таблица соврёт в сторону «дефект», не показав его.
-                    "studio.tests.test_clarify",
-                    # Знак измеренного (`sign_rank`) сторожит этот набор, и без
-                    # приглашения его мутанты промолчали бы «по причине сторожа,
-                    # а не по причине кода» — та же ловушка, что строкой выше.
-                    "studio.tests.test_applicability_sign",
-                ]
-            )
+            тк, тс = run([sys.executable, "-m", "unittest", *НАБОРЫ])
             гк, гс = run([sys.executable, "scripts/check_planner.py", "--check"])
         finally:
             # ВОЗВРАТ В `finally`, А НЕ ПРЯМОЙ СТРОКОЙ. Скрипт правит ИСХОДНИКИ
