@@ -70,12 +70,10 @@ class СнятиеРешаетРазбор(unittest.TestCase):
         """Живой случай sora-2: снят remix, сама модель работает."""
         проба = pl.probe_stale(
             _шаг(),
-            [
-                _факт(
-                    "remix_endpoint_status",
-                    "the remix endpoint is deprecated; generation is unaffected",
-                )
-            ],
+            # Текст ЖИВОЙ, из базы, а не выдуманный: разбор различает снятие
+            # с НАЗВАННОЙ ЗАМЕНОЙ («replaced by …») от снятия без замены, и
+            # выдуманная формулировка мерила бы мою фантазию, а не продукт.
+            [_факт("remix_endpoint_status", "deprecated, replaced by /v1/videos/edits")],
             СЕГОДНЯ,
         )
         self.assertNotEqual(проба.outcome, СНЯТА)

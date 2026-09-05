@@ -23,6 +23,7 @@ from datetime import date
 from pathlib import Path
 from unittest import mock
 
+from studio import lifecycle as life
 from studio import pipeline as pl
 from studio import pricing
 from studio.selfrag.facts import Fact
@@ -503,18 +504,29 @@ class МутацииКонстант(unittest.TestCase):
         with mock.patch.object(pl, "STALE_AFTER_DAYS", 36500):
             self.assertEqual(исход(битый, старьё)["outcome"], "pass")
 
-    def test_маркеры_снятия_строже_отвергают_доступную_модель(self):
+    def test_разбор_снятия_строже_отвергает_доступную_модель(self):
+        """Мутируется РАЗБОР, а не список слов.
+
+        До 2026-09-05 здесь мутировался `pipeline.DEPRECATION_MARKERS` —
+        подстрочный список, по которому валидатор судил сам. Список удалён
+        вместе с подстрочным поиском (он объявлял снятыми семь работающих
+        моделей), и мутировать теперь надо то, что действительно решает:
+        `lifecycle.разобрать`. Тест, сторожащий удалённую константу, сторожил
+        бы то, что уже ничего не решает, — и выглядел бы работающим.
+        """
         факты = здоровые("модель-а") + [факт("модель-а", "lifecycle", "generally available")]
         битый = [шаг(requires=["бриф"])]
         self.assertEqual(исход(битый, факты)["outcome"], "pass")
-        with mock.patch.object(pl, "DEPRECATION_MARKERS", ("available",)):
+        снято = life.Снятие(когда="", прошло=True, outcome=life.НЕ_ГОДНО, note="подменено")
+        with mock.patch.object(life, "разобрать", lambda *a, **k: снято):
             self.assertEqual(исход(битый, факты)["classes"], ["устарел"])
 
-    def test_маркеры_снятия_слабее_пропускают_снятую_модель(self):
+    def test_разбор_снятия_слабее_пропускает_снятую_модель(self):
         факты = здоровые("модель-а") + [факт("модель-а", "lifecycle", "deprecated by the platform")]
         битый = [шаг(requires=["бриф"])]
         self.assertEqual(исход(битый, факты)["classes"], ["устарел"])
-        with mock.patch.object(pl, "DEPRECATION_MARKERS", ("retired",)):
+        живо = life.Снятие(когда="", прошло=None, outcome=life.ГОДНО, note="подменено")
+        with mock.patch.object(life, "разобрать", lambda *a, **k: живо):
             self.assertEqual(исход(битый, факты)["outcome"], "pass")
 
     def test_решающие_атрибуты_строже_отвергают_безобидное_расхождение(self):
