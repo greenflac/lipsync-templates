@@ -110,6 +110,34 @@ def similarity(a: np.ndarray, b: np.ndarray) -> float:
     return 0.0 if denom < 1e-6 else float(abs(x @ y) / denom)
 
 
+def судить_углы(медианы: dict[str, tuple[float, int]]) -> tuple[list[str], dict[str, float]]:
+    """Какие углы объявлены наложением. Вынесено из `scan` (Т5).
+
+    Внутри `scan` обе константы — порог схожести и минимум пар — были достижимы
+    только через настоящие картинки на диске, то есть ни один тест не мог их
+    подменить, и обе стояли БЕЗ ОХРАНЫ (поймано ратчетом R7 2026-09-05).
+
+    :param медианы: угол -> (медианная схожесть, сколько пар её дало).
+
+    Угол, у которого пар меньше `MIN_PAIRS`, НЕ судится и в счёт не идёт: одно
+    совпадение неотличимо от закономерности, и объявить его наложением значило
+    бы выдать совпадение за находку.
+    """
+    findings: list[str] = []
+    scores: dict[str, float] = {}
+    for corner, (median, пар) in медианы.items():
+        if пар < MIN_PAIRS:
+            continue
+        scores[corner] = round(median, 3)
+        if median >= SUSPICIOUS_SIMILARITY:
+            findings.append(
+                f"{corner}: медианная схожесть {median:.3f} по {пар} парам — "
+                "в этом углу у не связанных между собой разборов одно и то же, "
+                "то есть наложение, а не содержание"
+            )
+    return findings, scores
+
+
 def scan(paths: list[Path]) -> dict:
     if len(paths) < 3:
         return {
@@ -119,22 +147,15 @@ def scan(paths: list[Path]) -> dict:
             "unmeasured": 1,
             "note": "меньше трёх разборов: одно совпадение неотличимо от закономерности",
         }
-    findings: list[str] = []
-    scores: dict[str, float] = {}
+    медианы: dict[str, tuple[float, int]] = {}
     for corner in CORNERS:
         patches = [p for p in (_corner(path, corner) for path in paths) if p is not None]
         pairs = list(itertools.combinations(range(len(patches)), 2))
-        if len(pairs) < MIN_PAIRS:
+        if not pairs:
             continue
         values = [similarity(patches[i], patches[j]) for i, j in pairs]
-        median = float(np.median(values))
-        scores[corner] = round(median, 3)
-        if median >= SUSPICIOUS_SIMILARITY:
-            findings.append(
-                f"{corner}: медианная схожесть {median:.3f} по {len(pairs)} парам — "
-                "в этом углу у не связанных между собой разборов одно и то же, "
-                "то есть наложение, а не содержание"
-            )
+        медианы[corner] = (float(np.median(values)), len(pairs))
+    findings, scores = судить_углы(медианы)
     return {
         "outcome": FAIL if findings else PASS,
         "checked": len(paths),

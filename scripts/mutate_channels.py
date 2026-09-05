@@ -967,6 +967,20 @@ MUTANTS: list[tuple[str, str, str, str, str]] = [
         "studio.mcp.tests.test_eval_corpus",
     ),
     (
+        "scripts/check_burned_marks.py",
+        "SUSPICIOUS_SIMILARITY = 0.80",
+        "SUSPICIOUS_SIMILARITY = 1.01",
+        "водяной знак: порог схожести недостижим — выжженная марка перестала находиться",
+        "studio.mcp.tests.test_burned_marks_verdict",
+    ),
+    (
+        "scripts/check_burned_marks.py",
+        "MIN_PAIRS = 6",
+        "MIN_PAIRS = 1",
+        "водяной знак: одно совпадение снова считается закономерностью",
+        "studio.mcp.tests.test_burned_marks_verdict",
+    ),
+    (
         "scripts/blind_bank.py",
         '"jfif", "jfif_version", "jfif_unit", "jfif_density", "dpi"',
         '"jfif", "jfif_version", "jfif_unit", "jfif_density", "dpi", "prompt", "model"',
