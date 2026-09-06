@@ -59,7 +59,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from lipsync.fork_identity import FAIL, PASS, UNMEASURED  # noqa: E402
 
-from studio.mcp import civitai  # noqa: E402
+from studio.mcp import casebank, civitai  # noqa: E402
 
 REPO = Path(__file__).resolve().parents[1]
 
@@ -93,7 +93,11 @@ USER_AGENT = "Mozilla/5.0"
 #: Metadata keys that would hand over the answer. Anything outside the JFIF
 #: markers a re-encode writes is treated as a leak, so a new carrier nobody
 #: anticipated fails the gate instead of slipping through a list.
-ALLOWED_INFO_KEYS = frozenset({"jfif", "jfif_version", "jfif_unit", "jfif_density", "dpi"})
+#: Е1: тот же ЕДИНСТВЕННЫЙ список, что у чистки банка. Копий этого знания было
+#: три (здесь, `studio/mcp/casebank.py`, `scripts/contact_sheets.py`), и они
+#: обязаны совпадать: снимок, прошедший одну проверку и не прошедший другую, —
+#: это не проверка, а спор двух списков.
+ALLOWED_INFO_KEYS = casebank.ALLOWED_INFO_KEYS
 
 
 def _rows() -> list[dict]:

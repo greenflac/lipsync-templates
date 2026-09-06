@@ -16,6 +16,7 @@ PNG-чанки отваливаются сами, и первая версия �
 
 from __future__ import annotations
 
+import importlib.util
 import io
 import unittest
 from pathlib import Path
@@ -81,6 +82,33 @@ class ПроисхождениеНеЕдетВместеСоСнимком(unitt
             self.assertTrue(путь.is_file())
             self.assertEqual(итог["bytes"], путь.stat().st_size)
             self.assertEqual((32, 24), Image.open(путь).size)
+
+
+class СписокБезобидныхКлючейОДИННАПРОЕКТ(unittest.TestCase):
+    """Е1 держится ТОЖДЕСТВОМ, а не совпадением значений.
+
+    Копий этого знания было три: `studio/mcp/casebank.py`, `scripts/validator.py`
+    и `scripts/contact_sheets.py`. ИЗМЕРЕНО подменой 2026-09-06: опустошить
+    копию в `contact_sheets` можно было молча — все 1684 теста зелёные. Снимок,
+    прошедший одну проверку и не прошедший другую, — это не проверка, а спор
+    двух списков.
+    """
+
+    def _модуль(self, путь: str):
+        корень = Path(__file__).resolve().parents[3]
+        сп = importlib.util.spec_from_file_location(Path(путь).stem, корень / путь)
+        assert сп and сп.loader
+        м = importlib.util.module_from_spec(сп)
+        сп.loader.exec_module(м)
+        return м
+
+    def test_бенч_берёт_список_у_чистки_банка(self):
+        self.assertIs(
+            casebank.ALLOWED_INFO_KEYS, self._модуль("scripts/validator.py").ALLOWED_INFO_KEYS
+        )
+
+    def test_контактные_листы_берут_его_же(self):
+        self.assertIs(casebank.ALLOWED_INFO_KEYS, self._модуль("scripts/contact_sheets.py").ALLOWED)
 
 
 if __name__ == "__main__":

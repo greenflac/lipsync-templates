@@ -18,6 +18,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from studio.mcp import casebank  # noqa: E402
+
 from lipsync.fork_identity import PASS, UNMEASURED  # noqa: E402
 
 BANK = Path(__file__).resolve().parents[1] / "work" / "casebank"
@@ -34,7 +36,13 @@ BANK = Path(__file__).resolve().parents[1] / "work" / "casebank"
 WATERMARK_STRIP = 0.12
 
 #: What a JPEG may keep. Anything else is a carrier, whatever it says.
-ALLOWED = frozenset({"jfif", "jfif_version", "jfif_unit", "jfif_density", "dpi"})
+#:
+#: Е1: ОДИН список на проект, у того, кто чистит снимки для банка. Здесь стояла
+#: вторая копия, а в `scripts/validator.py` третья; измерено 2026-09-06, что
+#: опустошить эту копию можно было молча (все 1684 теста зелёные) — то есть
+#: любой носитель объявлялся бы утечкой... а дописать в неё `comment` значило
+#: бы наоборот пропустить настоящий носитель, и заметить это было бы нечем.
+ALLOWED = casebank.ALLOWED_INFO_KEYS
 
 #: Frames per sheet. ВЫБРАНО: six across the clip shows motion and still leaves
 #: each frame large enough to judge texture at a glance.
