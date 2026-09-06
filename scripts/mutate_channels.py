@@ -1123,6 +1123,27 @@ MUTANTS: list[tuple[str, str, str, str, str]] = [
         "studio.mcp.tests.test_validator",
     ),
     (
+        "studio/selfrag/fidelity.py",
+        '    + ["palette", "mood"]',
+        '    + ["palette", "mood", "teal", "vermilion", "portrait"]',
+        "верность: содержательные слова записаны в служебные — выдумка перестаёт быть видна",
+        "studio.selfrag.tests.test_fidelity",
+    ),
+    (
+        "studio/verbatim.py",
+        "ДОСЛОВНО_СЛОВ = 15",
+        "ДОСЛОВНО_СЛОВ = 500",
+        "чужая проза: дословная простыня перестала быть простынёй",
+        "studio.mcp.tests.test_verbatim",
+    ),
+    (
+        "studio/verbatim.py",
+        'ПОЛЯ_С_ТЕКСТОМ: tuple[str, ...] = ("value", "note", "witnessed", "fix")',
+        'ПОЛЯ_С_ТЕКСТОМ: tuple[str, ...] = ("value",)',
+        "чужая проза: три поля из четырёх перестали проверяться",
+        "studio.mcp.tests.test_verbatim",
+    ),
+    (
         "studio/selfrag/source_hosts.py",
         '    {"co.uk", "com.cn", "co.jp", "com.au", "com.br", "co.kr", "co.in"}',
         "    set()",

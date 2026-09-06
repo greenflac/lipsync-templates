@@ -46,6 +46,28 @@ class Audit(unittest.TestCase):
         out = audit(REQUEST + ", shot on a 50mm lens, shallow depth of field", [REQUEST])
         self.assertEqual(out["outcome"], PASS)
 
+    def test_a_COLOUR_is_content_and_not_a_format_word(self) -> None:
+        """MEASURED by mutation 2026-09-06: the format-word set could be grown
+        with real content words — `teal`, `amber`, `portrait` — and every test
+        stayed green. That set is what the check subtracts before deciding, so
+        each word added to it is one invention the check can no longer see, and
+        this module exists only to see them.
+
+        The two words that legitimately live there are the assembler's own
+        scaffolding (`palette`, `mood`): "a palette of teal" names a CATEGORY
+        the way "of" does, and the colour after it is content."""
+        out = audit(REQUEST + ", a palette of teal and vermilion", [REQUEST])
+        self.assertEqual(out["outcome"], FAIL)
+        self.assertIn("teal", out["invented"])
+        self.assertIn("vermilion", out["invented"])
+
+    def test_the_scaffolding_words_themselves_stay_invisible(self) -> None:
+        """Negative control (И5) to the test above: the two scaffolding words
+        are why the set is not empty, and reporting them was the observed
+        defect of 2026-08-26 — every assembled prompt claimed an invention that
+        was really a template word."""
+        self.assertEqual([], invented("a palette and a mood", ["a photograph"]))
+
     def test_inflection_does_not_count_as_invention(self) -> None:
         self.assertEqual(invented("reflections and shadows", ["reflection and shadow"]), [])
 
