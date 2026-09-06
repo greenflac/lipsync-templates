@@ -2169,6 +2169,20 @@ MUTANTS: list[tuple[str, str, str, str, str]] = [
         "studio.mcp.tests.test_validator",
     ),
     (
+        "studio/factindex.py",
+        "DEFAULT_K = 8",
+        "DEFAULT_K = 1",
+        "индекс: ответ на требование тихо худеет до одного факта",
+        "studio.mcp.tests.test_factindex",
+    ),
+    (
+        "studio/factindex.py",
+        "SCORE_FLOOR = 0.12",
+        "SCORE_FLOOR = 0.0",
+        "индекс: совпадение одним частым словом снова считается попаданием",
+        "studio.mcp.tests.test_factindex",
+    ),
+    (
         "scripts/run_tests.py",
         "        raise AssertionError(ОТКАЗ)\n\n    def connect_ex",
         "        return None\n\n    def connect_ex",

@@ -130,7 +130,23 @@ class Thresholds(unittest.TestCase):
         self.assertGreater(SCORE_FLOOR, 0)
 
     def test_the_default_answer_fits_a_screen(self):
+        """Верхняя граница. ИЗМЕРЕНО подменой 2026-09-06: НИЖНЮЮ никто не
+        сторожил — `DEFAULT_K = 1` держал все 1650 тестов зелёными, а ответ на
+        требование тихо худел до одного факта. Односторонний сторож — половина
+        сторожа (Т1: мутация в ОБЕ стороны)."""
         self.assertLessEqual(DEFAULT_K, 12)
+        self.assertEqual(8, DEFAULT_K)
+
+    def test_the_default_answer_is_not_a_single_fact(self):
+        """Наблюдаемо, а не только числом: по умолчанию отдаётся больше одного
+        факта, когда их больше одного и они проходят порог."""
+        свой = [
+            факт("a", "observed_behaviour", "шевроны на стене дрожат при панораме"),
+            факт("b", "observed_behaviour", "шевроны разъезжаются на втором плане"),
+            факт("c", "observed_behaviour", "шевроны держатся, если камера стоит"),
+        ]
+        найдено = FactIndex(свой).search("шевроны")
+        self.assertEqual(3, len(найдено))
 
     def test_raising_the_floor_silences_a_weak_match(self):
         """Сторож порога: при высоком поле даже настоящее совпадение отсекается."""
