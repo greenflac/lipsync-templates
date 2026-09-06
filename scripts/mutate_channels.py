@@ -2211,6 +2211,20 @@ MUTANTS: list[tuple[str, str, str, str, str]] = [
         "studio.mcp.tests.test_harvest_rows",
     ),
     (
+        "scripts/score_frozen.py",
+        'FLOOR_TIER = "blog"',
+        'FLOOR_TIER = "vendor"',
+        "балл: блоговые записи снова закрывают вопросы — балл вчетверо без знания",
+        "studio.mcp.tests.test_score_frozen",
+    ),
+    (
+        "scripts/score_frozen.py",
+        '    return ("pass",)',
+        '    return ("pass", "fail")',
+        "балл: незнакомая запись правила трактуется широко — набор ослаблен молча",
+        "studio.mcp.tests.test_score_frozen",
+    ),
+    (
         "scripts/run_tests.py",
         "        raise AssertionError(ОТКАЗ)\n\n    def connect_ex",
         "        return None\n\n    def connect_ex",
