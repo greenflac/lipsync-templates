@@ -47,6 +47,41 @@ STOP = frozenset(
 )
 
 
+#: Во сколько раз доля у верных обязана превысить долю у неверных. ВЫБРАНО:
+#: полуторный перевес на такой выборке — это подсказка, а не признак, и скрипт
+#: говорит об этом вслух в своём же выводе.
+ПЕРЕВЕС = 1.5
+
+
+def перекошенные(
+    hit_words: collections.Counter[str],
+    miss_words: collections.Counter[str],
+    hits: int,
+    misses: int,
+) -> list[tuple[str, int, int, float]]:
+    """Слова, встречающиеся у верных чтений заметно чаще, чем у неверных.
+
+    ВЫНЕСЕНО ИЗ `main` (Т5): развилка жила внутри точки входа и была достижима
+    только через настоящий прогон банка — то есть через файлы, которых в
+    репозитории нет. ИЗМЕРЕНО 2026-09-06: `MIN_MENTIONS = 1` держал все три
+    набора тестов зелёными, а это значит «одно упоминание — уже подсказка», то
+    есть список подсказок, целиком состоящий из совпадений.
+
+    Доли, а не счётчики: слово может быть перекошено только ОТНОСИТЕЛЬНО того,
+    сколько чтений было на каждой стороне.
+    """
+    найдено: list[tuple[str, int, int, float]] = []
+    for word, count in hit_words.most_common(200):
+        against = miss_words[word]
+        if count < MIN_MENTIONS:
+            continue
+        share_hit = count / max(hits, 1)
+        share_miss = against / max(misses, 1)
+        if share_hit > share_miss * ПЕРЕВЕС:
+            найдено.append((word, count, against, round(share_hit - share_miss, 3)))
+    return найдено
+
+
 def main() -> int:
     truth_path, answers_path, score_path = (
         BANK / "TRUTH.json",
@@ -86,17 +121,7 @@ def main() -> int:
         )
         return 2
 
-    shortlist = []
-    for word, count in hit_words.most_common(200):
-        against = miss_words[word]
-        if count < MIN_MENTIONS:
-            continue
-        # Normalise: a word can only be lopsided relative to how many readings
-        # were on each side.
-        share_hit = count / max(hits, 1)
-        share_miss = against / max(misses, 1)
-        if share_hit > share_miss * 1.5:
-            shortlist.append((word, count, against, round(share_hit - share_miss, 3)))
+    shortlist = перекошенные(hit_words, miss_words, hits, misses)
 
     print(f"верных чтений {hits}, неверных {misses}")
     print("\nСЛОВА, ЧАЩЕ ВСТРЕЧАЮЩИЕСЯ У ВЕРНЫХ (это ПОДСКАЗКА, не находка):")
