@@ -209,8 +209,19 @@ IDENTITY_TIERS: tuple[str, ...] = (TIER_VENDOR, TIER_PORTAL, TIER_BLOG)
         "doi.org",
         "sciencedirect.com",
         "nature.com",
+        "aaai.org",
+        "usenix.org",
+        "ecva.net",
+        "semanticscholar.org",
+        "jstor.org",
+        "nih.gov",
     }
 )
+
+#: ЗЕРКАЛА, где статья лежит под своим идентификатором, а сама площадка — не
+#: научная. ИЗМЕРЕНО: 9 живых строк тира `paper` лежат на huggingface.co, все
+#: с идентификатором arxiv в пути.
+ЗЕРКАЛА_СТАТЕЙ: frozenset[str] = frozenset({"huggingface.co"})
 
 #: DOI где угодно в адресе: `dl.acm.org/doi/10.1145/…`, `biorxiv.org/content/10.1101/…`.
 _DOI = re.compile(r"\b10\.\d{4,9}/", re.I)
@@ -254,8 +265,16 @@ def признак_статьи(url: str) -> bool:
     домен = source_hosts.registrable(source_hosts.host_of(адрес))
     if домен in ПЛОЩАДКИ_СТАТЕЙ:
         return True
-    хвост = адрес.split("://", 1)[-1]
-    return bool(_DOI.search(хвост) or _ARXIV.search(хвост))
+    # ТОЛЬКО ПУТЬ, БЕЗ СТРОКИ ЗАПРОСА И ЯКОРЯ. Независимая проверка 2026-09-06:
+    # `blog.example.com/why-video-models-fail?ref=10.1145/3592433` проходил как
+    # статья — чужой хост нёс признак в ЗАПРОСЕ. Форма дефекта одна и та же,
+    # что и у `openreview.net` подстрокой, и чинится она по форме (И7).
+    путь = адрес.split("://", 1)[-1].split("?")[0].split("#")[0]
+    if _DOI.search(путь):
+        return True
+    # Идентификатор arxiv в пути — признак ТОЛЬКО на площадке или её зеркале:
+    # `vendor.example/pricing/2401.12345/` статьёй не является.
+    return домен in ЗЕРКАЛА_СТАТЕЙ and bool(_ARXIV.search(путь))
 
 
 # The ladder is IMPORTED, never restated. It was restated here until
@@ -995,10 +1014,13 @@ def record(
             "unmeasured": 0,
             "note": (
                 f"tier {TIER_PAPER!r} без признака статьи в адресе "
-                f"{fields['source_url']!r}: ни идентификатора arxiv, ни DOI, ни "
-                "OpenReview, ни ACL, ни PDF. По такому адресу статью не "
-                "перепроверить, а ступень метода берётся на слово. Дайте адрес "
-                "самой статьи — или запишите это как другой тир."
+                f"{fields['source_url']!r}: ни известной площадки (arXiv, "
+                "OpenReview, ACL, ACM, IEEE, CVF, Springer, MLR, NeurIPS, AAAI, "
+                "USENIX, bioRxiv), ни DOI в пути, ни идентификатора arxiv. Сам "
+                "по себе PDF признаком НЕ считается: у вендора в PDF лежат "
+                "презентации. По такому адресу статью не перепроверить, а "
+                "ступень метода берётся на слово. Дайте адрес самой статьи — "
+                "или запишите это как другой тир."
             ),
             "written": None,
         }

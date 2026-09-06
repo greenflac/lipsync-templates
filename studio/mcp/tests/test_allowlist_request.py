@@ -23,6 +23,8 @@ assert _SPEC and _SPEC.loader
 gen = importlib.util.module_from_spec(_SPEC)
 _SPEC.loader.exec_module(gen)
 
+from studio.selfrag import source_hosts  # noqa: E402
+
 
 class RegistrableDomain(unittest.TestCase):
     def test_a_subdomain_resolves_to_the_domain_a_wildcard_is_written_against(self) -> None:
@@ -50,6 +52,13 @@ class RegistrableDomain(unittest.TestCase):
         """
         assert gen.registrable("docs.example.co.uk") == "example.co.uk"
         assert gen.registrable("api.y.com.au") == "y.com.au"
+
+    def test_the_parser_IS_the_one_in_source_hosts(self) -> None:
+        """Е1 held by identity, not by behaviour. FOUND 2026-09-06 by the audit:
+        the same-behaviour copy could be put BACK into this generator and every
+        test stayed green — the identity test existed only on the whitelist
+        side. Two copies of a parser are one parser and one bug waiting."""
+        assert gen.registrable is source_hosts.registrable
 
     def test_an_unknown_compound_suffix_falls_back_predictably(self) -> None:
         """Negative control (И5) for a list that is short and honestly partial."""

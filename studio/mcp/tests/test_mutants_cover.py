@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import importlib.util
+import tempfile
 import unittest
 import unittest.mock
 from pathlib import Path
@@ -177,6 +178,53 @@ class ФлагСовпадаетСоСвидетельством(unittest.TestCa
         итог = c.свести(потолок=None)
         свой = c.свести(потолок=итог["violations"] - 1)
         self.assertEqual("fail", свой["outcome"])
+
+
+class НеразобранныйМодульНеИсчезает(unittest.TestCase):
+    """Р2/Е3: неизмеримость печатается числом и влияет на исход.
+
+    Найдено независимой проверкой 2026-09-06 в том же файле, который накануне
+    чинили ради Р2: `SyntaxError` глушился через `continue`, а `unmeasured`
+    стоял литеральным нулём. Половина дерева могла не разобраться, и прибор
+    напечатал бы «проверено 54, нарушений 16, не смогли 0» — а ратчет по этому
+    числу потребовал бы опустить потолок, то есть принять решение по
+    несостоявшемуся измерению.
+    """
+
+    def _дерево(self, тела: dict[str, str]):
+        каталог = Path(tempfile.mkdtemp())
+        пути = []
+        for имя, тело in тела.items():
+            (каталог / имя).write_text(тело, encoding="utf-8")
+            пути.append(каталог / имя)
+        return unittest.mock.patch.multiple(
+            c,
+            модули=lambda: пути,
+            ROOT=каталог,
+            покрытые=lambda: {"есть.py"},
+        )
+
+    ГОДНЫЙ = "ПОРОГ = 5\n\n\ndef f(x):\n    return x > ПОРОГ\n"
+    БИТЫЙ = "def f(:\n"
+
+    def test_неразобранный_считается_числом(self) -> None:
+        with self._дерево({"есть.py": self.ГОДНЫЙ, "битый.py": self.БИТЫЙ}):
+            итог = c.свести(потолок=0)
+        self.assertEqual(1, итог["unmeasured"])
+        self.assertEqual(["битый.py"], итог["не_разобрались"])
+
+    def test_неразобранный_не_даёт_годно(self) -> None:
+        """Долг ровно по потолку, но одно измерение не состоялось — не успех."""
+        with self._дерево({"есть.py": self.ГОДНЫЙ, "битый.py": self.БИТЫЙ}):
+            итог = c.свести(потолок=0)
+        self.assertEqual("fail", итог["outcome"])
+
+    def test_без_битых_исход_прежний(self) -> None:
+        """Негативный контроль (И5): иначе прибор просто всегда красный."""
+        with self._дерево({"есть.py": self.ГОДНЫЙ}):
+            итог = c.свести(потолок=0)
+        self.assertEqual(0, итог["unmeasured"])
+        self.assertEqual("pass", итог["outcome"])
 
 
 class НечегоСчитатьЭтоТретийИсход(unittest.TestCase):

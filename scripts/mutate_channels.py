@@ -1010,7 +1010,7 @@ MUTANTS: list[tuple[str, str, str, str, str]] = [
     ),
     (
         "scripts/check_mutants_cover.py",
-        '        "outcome": "pass" if len(непокрытые) == порог else "fail",',
+        '        "outcome": ("pass" if len(непокрытые) == порог else "fail")',
         '        "outcome": "fail" if непокрытые else "pass",',
         "ратчет: печатается `fail`, а возвращается ноль — флаг против свидетельства",
         "studio.mcp.tests.test_mutants_cover",
@@ -1021,6 +1021,36 @@ MUTANTS: list[tuple[str, str, str, str, str]] = [
         '        usd = float(f"{amount / 100.0:.3g}")',
         "цены: подрезка двоичного хвоста округляет саму цену — ошибка в счёте заказчику",
         "studio.mcp.tests.test_poll_catalogs_prices",
+    ),
+    (
+        "studio/mcp/advice.py",
+        '.split("?")[0].split("#")[0]',
+        "",
+        "ступень: DOI в строке ЗАПРОСА чужого блога снова засчитывается за статью",
+        "studio.mcp.tests.test_paper_tier_is_checkable",
+    ),
+    (
+        "studio/mcp/advice.py",
+        "    return домен in ЗЕРКАЛА_СТАТЕЙ and bool(_ARXIV.search(путь))",
+        "    return bool(_ARXIV.search(путь))",
+        "ступень: идентификатор arxiv на ЛЮБОМ хосте снова признак статьи",
+        "studio.mcp.tests.test_paper_tier_is_checkable",
+    ),
+    (
+        "scripts/check_mutants_cover.py",
+        '        "unmeasured": len(не_разобрались),',
+        '        "unmeasured": 0,',
+        "ратчет: неразобранный модуль снова исчезает — решение по несостоявшемуся измерению",
+        "studio.mcp.tests.test_mutants_cover",
+    ),
+    (
+        "scripts/allowlist_request.py",
+        "registrable = source_hosts.registrable",
+        "def registrable(host: str) -> str:\\n"
+        '    parts = str(host or "").strip().lower().strip(".").split(".")\\n'
+        '    return ".".join(parts[-2:]) if len(parts) >= 2 else ".".join(parts)',
+        "заявка: вторая копия разбора домена вернулась молча — Е1 держится тождеством",
+        "studio.mcp.tests.test_allowlist_request",
     ),
     (
         "studio/selfrag/source_hosts.py",
