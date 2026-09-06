@@ -207,11 +207,17 @@ class TheSample(unittest.TestCase):
         (`studio/knowledge.py`, `scripts/corpus_bundle.py`, `studio/verbatim.py`).
         Свести их к одному объекту не мне — но разъехаться молча они больше не
         могут: имя файла сверяется с собирателем."""
-        from studio import knowledge, verbatim
+        from studio import verbatim
 
         имя = civitai.DEFAULT_OUTPUT_PATH.name
-        self.assertEqual(имя, knowledge.COMMUNITY_PROMPTS_PATH.name)
         self.assertIn(имя, verbatim.НЕ_ПРОВЕРЯЕМ)
+        # `studio/knowledge.py` и `scripts/corpus_bundle.py` сверяются ТЕКСТОМ:
+        # рядом лежит КАТАЛОГ `studio/knowledge/`, и mypy разрешает импорт
+        # `studio.knowledge` в него, а не в модуль. Чтение исходника — честный
+        # способ сверить копию, не заводя восьмой способ импорта.
+        корень = Path(__file__).resolve().parents[3]
+        for файл in ("studio/knowledge.py", "scripts/corpus_bundle.py"):
+            self.assertIn(имя, (корень / файл).read_text(encoding="utf-8"), файл)
 
     def test_an_absent_corpus_is_COULD_NOT_MEASURE(self) -> None:
         with mock.patch.object(bench, "CORPUS", Path("/nowhere/civitai.jsonl")):
