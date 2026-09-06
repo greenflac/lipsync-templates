@@ -1002,6 +1002,27 @@ MUTANTS: list[tuple[str, str, str, str, str]] = [
         "studio.mcp.tests.test_merge_model_ids",
     ),
     (
+        "scripts/check_mutants_cover.py",
+        "    return найдено or None",
+        "    return найдено",
+        "ратчет: дерево без индекса даёт «проверено 0, нарушений 0» и зелёный гейт",
+        "studio.mcp.tests.test_mutants_cover",
+    ),
+    (
+        "scripts/check_mutants_cover.py",
+        '        "outcome": "pass" if len(непокрытые) == порог else "fail",',
+        '        "outcome": "fail" if непокрытые else "pass",',
+        "ратчет: печатается `fail`, а возвращается ноль — флаг против свидетельства",
+        "studio.mcp.tests.test_mutants_cover",
+    ),
+    (
+        "scripts/poll_catalogs.py",
+        '        usd = float(f"{amount / 100.0:.12g}")',
+        '        usd = float(f"{amount / 100.0:.3g}")',
+        "цены: подрезка двоичного хвоста округляет саму цену — ошибка в счёте заказчику",
+        "studio.mcp.tests.test_poll_catalogs_prices",
+    ),
+    (
         "studio/selfrag/source_hosts.py",
         '    {"co.uk", "com.cn", "co.jp", "com.au", "com.br", "co.kr", "co.in"}',
         "    set()",

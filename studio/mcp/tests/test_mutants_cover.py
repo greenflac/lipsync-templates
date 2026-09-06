@@ -121,32 +121,100 @@ class ЧитаемыеТаблицы(unittest.TestCase):
         self.assertEqual(итог["checked"], итог["покрыто"] + итог["violations"])
 
 
+#: ПОТОЛОК ЛИТЕРАЛОМ (Т2). Раньше эти тесты брали `c.ПОТОЛОК ± 1` — то есть
+#: ожидаемое ехало вместе с проверяемым модулем и молчало бы, даже если бы
+#: потолок подняли. Опустился ратчет — эта строка правится руками, и это
+#: правильно: снижение потолка есть решение, а не побочный эффект.
+ПОТОЛОК_ЛИТЕРАЛ = 37
+
+
 class Потолок(unittest.TestCase):
     """Потолок обязан ловить РОСТ долга и требовать снижения при падении."""
 
     def _подменить(self, нарушений: int):
         итог = {
-            "outcome": "fail",
+            "outcome": "pass" if нарушений == ПОТОЛОК_ЛИТЕРАЛ else "fail",
             "checked": 100,
             "violations": нарушений,
             "unmeasured": 0,
             "покрыто": 100 - нарушений,
             "непокрытые": [],
         }
-        return unittest.mock.patch.object(c, "свести", lambda: итог)
+        return unittest.mock.patch.object(c, "свести", lambda *а, **к: итог)
+
+    def test_потолок_ровно_тридцать_семь(self) -> None:
+        """Литерал (Т2): им же пользуются остальные тесты этого класса."""
+        self.assertEqual(ПОТОЛОК_ЛИТЕРАЛ, c.ПОТОЛОК)
 
     def test_рост_долга_краснеет(self) -> None:
-        with self._подменить(c.ПОТОЛОК + 1):
+        with self._подменить(ПОТОЛОК_ЛИТЕРАЛ + 1):
             self.assertEqual(1, c.main(["--check"]))
 
     def test_долг_по_потолку_проходит(self) -> None:
-        with self._подменить(c.ПОТОЛОК):
+        with self._подменить(ПОТОЛОК_ЛИТЕРАЛ):
             self.assertEqual(0, c.main(["--check"]))
 
     def test_упавший_долг_требует_опустить_потолок(self) -> None:
         """Иначе потолок отрывается от дерева и перестаёт ловить рост."""
-        with self._подменить(c.ПОТОЛОК - 1):
+        with self._подменить(ПОТОЛОК_ЛИТЕРАЛ - 1):
             self.assertEqual(1, c.main(["--check"]))
+
+
+class ФлагСовпадаетСоСвидетельством(unittest.TestCase):
+    """Е2: печатаемый исход и код возврата обязаны говорить одно и то же.
+
+    Печаталось `fail` при долге ровно по потолку, а возвращался ноль. Читающий
+    отчёт видел «fail» там, где гейт зелёный, и переставал верить обоим.
+    """
+
+    def test_долг_по_потолку_это_годно(self) -> None:
+        итог = c.свести(потолок=None)
+        свой = c.свести(потолок=итог["violations"])
+        self.assertEqual("pass", свой["outcome"])
+
+    def test_долг_выше_потолка_это_не_годно(self) -> None:
+        """Негативный контроль (И5): исход, всегда равный `pass`, не исход."""
+        итог = c.свести(потолок=None)
+        свой = c.свести(потолок=итог["violations"] - 1)
+        self.assertEqual("fail", свой["outcome"])
+
+
+class НечегоСчитатьЭтоТретийИсход(unittest.TestCase):
+    """Р2: ноль нарушений при нуле проверок — не успех.
+
+    Дерево без индекса (свежая распаковка, worktree без checkout) отвечает на
+    `git ls-files` нулём файлов с кодом 0. Прежний разбор фильтровал по этому
+    ответу ВСЁ и печатал «проверено 0, нарушений 0» с зелёным гейтом.
+    """
+
+    def test_пустой_список_файлов_это_не_смогли(self) -> None:
+        with unittest.mock.patch.object(c, "модули", lambda: []):
+            итог = c.свести()
+        self.assertEqual("could not measure", итог["outcome"])
+        self.assertNotIn("violations", итог)
+
+    def test_и_код_возврата_у_него_свой(self) -> None:
+        """Третий исход не сворачивается ни в первый, ни во второй (Р1)."""
+        with unittest.mock.patch.object(c, "модули", lambda: []):
+            self.assertEqual(2, c.main(["--check"]))
+
+    def test_пустой_ответ_git_не_принимается_за_ответ(self) -> None:
+        class Пусто:
+            returncode = 0
+            stdout = "  \n"
+
+        with unittest.mock.patch.object(c.subprocess, "run", lambda *а, **к: Пусто()):
+            self.assertIsNone(c._в_репозитории())
+
+    def test_настоящий_ответ_git_принимается(self) -> None:
+        """Негативный контроль (И5) к предыдущему."""
+
+        class Есть:
+            returncode = 0
+            stdout = "studio/app.py\nscripts/x.py\nREADME.md\n"
+
+        with unittest.mock.patch.object(c.subprocess, "run", lambda *а, **к: Есть()):
+            self.assertEqual({"studio/app.py", "scripts/x.py"}, c._в_репозитории())
 
 
 if __name__ == "__main__":
