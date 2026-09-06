@@ -96,6 +96,24 @@ class CoverageCounts(unittest.TestCase):
         found = misses.problems(row("kling", "годно"))
         self.assertTrue(any("outcome" in p for p in found))
 
+    def test_the_three_outcomes_are_named_as_literals(self):
+        """Т2 и Р1. ИЗМЕРЕНО подменой 2026-09-06: дописать в набор четвёртый
+        исход можно было МОЛЧА — а набор исходов это правило Р1, записанное
+        данными: четвёртое слово означает четвёртый способ отчитаться, мимо
+        трёх, по которым считаются все знаменатели этого журнала."""
+        self.assertEqual(("pass", "fail", "could not measure"), misses.OUTCOMES)
+
+    def test_every_required_field_is_checked_one_by_one(self):
+        """Список обязательных полей мог бы стоять и не применяться."""
+        for поле in ("model", "asked_on", "outcome"):
+            строка = row("kling-2.6", "pass")
+            del строка[поле]
+            self.assertTrue(any(p.startswith(поле) for p in misses.problems(строка)), поле)
+
+    def test_a_complete_row_has_no_problems(self):
+        """Негативный контроль (И5) к предыдущему."""
+        self.assertEqual([], misses.problems(row("kling-2.6", "pass")))
+
 
 class Queue(unittest.TestCase):
     def test_one_miss_does_not_reach_the_queue(self):

@@ -2183,6 +2183,20 @@ MUTANTS: list[tuple[str, str, str, str, str]] = [
         "studio.mcp.tests.test_factindex",
     ),
     (
+        "studio/mcp/misses.py",
+        "OUTCOMES = (PASS, FAIL, UNMEASURED)",
+        'OUTCOMES = (PASS, FAIL, UNMEASURED, "почти")',
+        "промахи: четвёртый исход дописан — Р1 отменяется данными",
+        "studio.mcp.tests.test_misses",
+    ),
+    (
+        "studio/mcp/misses.py",
+        "    for field in REQUIRED:",
+        "    for field in ():",
+        "промахи: обязательные поля строки журнала не проверяются вовсе",
+        "studio.mcp.tests.test_misses",
+    ),
+    (
         "scripts/run_tests.py",
         "        raise AssertionError(ОТКАЗ)\n\n    def connect_ex",
         "        return None\n\n    def connect_ex",
