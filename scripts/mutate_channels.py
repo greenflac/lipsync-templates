@@ -2225,6 +2225,27 @@ MUTANTS: list[tuple[str, str, str, str, str]] = [
         "studio.mcp.tests.test_score_frozen",
     ),
     (
+        "studio/mcp/casebank.py",
+        'ALLOWED_INFO_KEYS = frozenset({"jfif", "jfif_version", "jfif_unit", "jfif_density", "dpi"})',
+        'ALLOWED_INFO_KEYS = frozenset({"jfif", "jfif_version", "jfif_unit", "jfif_density", "dpi", "comment"})',
+        "банк: комментарий объявлен безобидным — происхождение едет вместе со снимком",
+        "studio.mcp.tests.test_casebank_strip",
+    ),
+    (
+        "studio/mcp/casebank.py",
+        '    blank = Image.new("RGB", source.size)\n    blank.paste(source)\n    return blank',
+        "    return source.copy()",
+        "банк: чистка вернулась к copy() — тот самый носитель снова переживает переупаковку",
+        "studio.mcp.tests.test_casebank_strip",
+    ),
+    (
+        "studio/store.py",
+        'SESSION_FIELDS: tuple[str, ...] = (\n    "template",',
+        "SESSION_FIELDS: tuple[str, ...] = (",
+        "сессия: поле выпало из списка сохраняемых — состояние теряется молча",
+        "studio.tests.test_store",
+    ),
+    (
         "scripts/run_tests.py",
         "        raise AssertionError(ОТКАЗ)\n\n    def connect_ex",
         "        return None\n\n    def connect_ex",
