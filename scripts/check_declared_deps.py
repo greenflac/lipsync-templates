@@ -165,6 +165,26 @@ def undeclared(files: dict[str, str], requirements: str) -> dict[str, list[str]]
     return {k: sorted(v) for k, v in sorted(missing.items())}
 
 
+def развести(
+    found: dict[str, list[str]],
+) -> tuple[dict[str, list[str]], dict[str, list[str]]]:
+    """Необъявленные пакеты на НОВЫЕ и ДАВНИЕ. Вынесено из точки входа (Т5).
+
+    Давние — это записанные отступления (`KNOWN_UNDECLARED`), у каждого назван
+    свой повод. Они идут в «не смогли», а не в «нарушения»: правило заведено
+    позже них, и красить сборку задним числом значило бы держать её красной
+    ради красного. Но и в успех они не сворачиваются — Р1, третий исход, и
+    число печатается рядом (Р2).
+
+    Внутри `main` этот разбор был достижим только через настоящее дерево
+    файлов; список отступлений мог опустеть или разрастись, и ни один тест бы
+    не шевельнулся. Поймано ратчетом R7 2026-09-06.
+    """
+    новые = {k: v for k, v in found.items() if k not in KNOWN_UNDECLARED}
+    давние = {k: v for k, v in found.items() if k in KNOWN_UNDECLARED}
+    return новые, давние
+
+
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--check", action="store_true")
@@ -180,8 +200,7 @@ def main(argv: list[str]) -> int:
         return 2
 
     found = undeclared(files, REQUIREMENTS.read_text(encoding="utf-8"))
-    missing = {k: v for k, v in found.items() if k not in KNOWN_UNDECLARED}
-    old = {k: v for k, v in found.items() if k in KNOWN_UNDECLARED}
+    missing, old = развести(found)
 
     for package, where in missing.items():
         print(f"  НЕ ОБЪЯВЛЕН {package}: {', '.join(where[:3])}{' …' if len(where) > 3 else ''}")

@@ -1,10 +1,19 @@
-"""Необъявленная зависимость: ловится ли, и не ловится ли лишнего.
+"""Необъявленная зависимость: новая беда против записанного отступления.
 
-ЗАЧЕМ. `imageio-ffmpeg` использовался четырьмя модулями и не был объявлен
-нигде. Локально пакет стоял, поэтому и гейт, и зеркало CI были зелёными, а
-настоящий CI упал на первом же тесте, которому пакет понадобился.
+ЗАЧЕМ. `imageio-ffmpeg` использовался ЧЕТЫРЬМЯ модулями и не был объявлен
+нигде. Локально пакет стоял — он приезжает попутно с чужими зависимостями, —
+поэтому и гейт, и зеркало CI были зелёными, а настоящий CI упал на первом же
+тесте, которому пакет понадобился (2026-08-31). Необъявленная зависимость не
+«почти работает»: она работает ровно там, где её случайно поставили.
 
-Фикстуры — исходники строками (Т2), диск и сеть не трогаются (Т4).
+Тот же класс подтвердился 2026-09-06 на свежем контейнере: `mypy` не стоял, и
+гейт остановился на третьем шаге.
+
+Разбор на новые и давние жил ВНУТРИ точки входа и был достижим только через
+настоящее дерево файлов: список отступлений мог опустеть или разрастись, и ни
+один тест бы не шевельнулся. Поймано ратчетом R7.
+
+Ожидаемое — литералы (Т2), сети нет (Т4), файлов на диске не нужно (Т5).
 """
 
 from __future__ import annotations
@@ -18,68 +27,71 @@ _SPEC = importlib.util.spec_from_file_location(
     Path(__file__).resolve().parents[3] / "scripts" / "check_declared_deps.py",
 )
 assert _SPEC and _SPEC.loader
-deps = importlib.util.module_from_spec(_SPEC)
-_SPEC.loader.exec_module(deps)
-
-REQS = "numpy==2.4.6\npillow==12.3.0\n# комментарий\nimageio-ffmpeg==0.6.0\n"
+проверка = importlib.util.module_from_spec(_SPEC)
+_SPEC.loader.exec_module(проверка)
 
 
-class AnUnguardedImportMustBeDeclared(unittest.TestCase):
-    def test_a_top_level_import_of_an_undeclared_package_is_caught(self) -> None:
-        got = deps.undeclared({"m.py": "import nowhere_declared\n"}, REQS)
-        assert got == {"nowhere-declared": ["m.py"]}, got
+class НоваяБедаОтличаетсяОтЗаписанногоОтступления(unittest.TestCase):
+    def test_незнакомый_пакет_это_нарушение(self):
+        новые, давние = проверка.развести({"imageio-ffmpeg": ["studio/mcp/creative.py"]})
+        self.assertEqual(list(новые), ["imageio-ffmpeg"])
+        self.assertEqual(давние, {})
 
-    def test_THE_REAL_MISTAKE_would_have_been_caught(self) -> None:
-        """Ровно то, что я написал 2026-08-31: импорт внутри функции, без
-        `try`. Локально прошло, CI упал."""
-        source = "def make():\n    import imageio_ffmpeg\n    return imageio_ffmpeg\n"
-        assert deps.undeclared({"t.py": source}, "numpy==2.4.6\n") == {"imageio-ffmpeg": ["t.py"]}
+    def test_записанное_отступление_это_третий_исход(self):
+        """`insightface` числится давним с названным поводом («lipsync/**
+        заморожен»). Красить сборку задним числом значило бы держать её
+        красной ради красного — но и в успех оно не сворачивается."""
+        новые, давние = проверка.развести({"insightface": ["lipsync/identity_arcface.py"]})
+        self.assertEqual(новые, {})
+        self.assertEqual(list(давние), ["insightface"])
 
-    def test_a_declared_package_is_NOT_caught(self) -> None:
-        """Негативный контроль (И5): проверка, которая ругается на всё, будет
-        отключена в первый же день."""
-        assert deps.undeclared({"m.py": "import numpy\n"}, REQS) == {}
+    def test_у_каждого_отступления_назван_повод(self):
+        """Отступление без повода — это не отступление, а забытый долг."""
+        for пакет, повод in проверка.KNOWN_UNDECLARED.items():
+            self.assertTrue(повод.strip(), пакет)
 
-    def test_the_import_name_is_mapped_to_the_package_name(self) -> None:
-        """`PIL` ставится как `pillow`. Угадывать по подчёркиваниям значит
-        однажды угадать неверно и промолчать."""
-        assert deps.undeclared({"m.py": "from PIL import Image\n"}, REQS) == {}
+    def test_список_отступлений_ровно_семь_имён(self):
+        """Литерал (Т2). Список обязан только СОКРАЩАТЬСЯ: молча дописать в
+        него новый пакет — это способ пройти гейт, не объявив зависимость."""
+        self.assertEqual(
+            {
+                "creative-eval",
+                "fal-client",
+                "insightface",
+                "mediapipe",
+                "requests",
+                "pyarrow",
+                "pydantic",
+            },
+            set(проверка.KNOWN_UNDECLARED),
+        )
 
+    def test_смешанный_случай_разводится_по_обе_стороны(self):
+        """Е3: частичный результат печатается числами, а не одним флагом."""
+        новые, давние = проверка.развести(
+            {"imageio-ffmpeg": ["a.py"], "pydantic": ["b.py"], "httpx2": ["c.py"]}
+        )
+        self.assertEqual(sorted(новые), ["httpx2", "imageio-ffmpeg"])
+        self.assertEqual(sorted(давние), ["pydantic"])
 
-class AGuardedImportIsOptionalByDesign(unittest.TestCase):
-    def test_an_import_inside_try_except_is_NOT_required(self) -> None:
-        """Так устроены torch, sentence-transformers и pyarrow: отсутствие
-        пакета превращается в честное «не смогли», и объявлять его не нужно."""
-        source = "def probe():\n    try:\n        import torch\n    except Exception:\n        return None\n"
-        assert deps.undeclared({"m.py": source}, REQS) == {}
-
-    def test_the_SAME_package_unguarded_elsewhere_is_still_caught(self) -> None:
-        """Граница проходит по защите, а не по имени пакета: один защищённый
-        импорт не выдаёт индульгенцию всем остальным."""
-        guarded = "def probe():\n    try:\n        import torch\n    except Exception:\n        return None\n"
-        naked = "import torch\n"
-        got = deps.undeclared({"safe.py": guarded, "risky.py": naked}, REQS)
-        assert got == {"torch": ["risky.py"]}, got
-
-
-class OurOwnModulesAreNotPackages(unittest.TestCase):
-    def test_a_sibling_script_is_not_reported_as_a_dependency(self) -> None:
-        """`read_sources` из scripts/ читался как пакет с PyPI — правдоподобно
-        и неверно. Своё определяется по файлам, а не по догадке."""
-        assert "read-sources" not in deps.undeclared({"m.py": "import read_sources\n"}, REQS)
-
-    def test_the_standard_library_is_not_reported(self) -> None:
-        assert deps.undeclared({"m.py": "import json\nimport pathlib\n"}, REQS) == {}
+    def test_ничего_не_найдено_обе_стороны_пусты(self):
+        self.assertEqual(({}, {}), проверка.развести({}))
 
 
-class TheRequirementsParserReadsWhatIsThere(unittest.TestCase):
-    def test_versions_and_comments_are_stripped(self) -> None:
-        assert deps.declared("numpy==2.4.6  # пин\n\nruff>=0.1\n") == {"numpy", "ruff"}
+class ИмпортыСверяютсяСоСписком(unittest.TestCase):
+    def test_объявленный_пакет_не_беда(self):
+        """Негативный контроль (И5): проверка, ругающаяся на всё, не
+        отличается от отсутствия списка."""
+        найдено = проверка.undeclared({"a.py": "import numpy\n"}, "numpy==2.4.6\n")
+        self.assertEqual(найдено, {})
 
-    def test_underscores_and_case_do_not_matter(self) -> None:
-        """`imageio_ffmpeg` в импорте и `imageio-ffmpeg` в requirements — один
-        пакет. Без этого проверка ругалась бы на объявленное."""
-        assert "imageio-ffmpeg" in deps.declared("Imageio_FFmpeg==0.6.0\n")
+    def test_необъявленный_пакет_найден_с_именем_файла(self):
+        найдено = проверка.undeclared({"studio/x.py": "import imageio_ffmpeg\n"}, "numpy==2.4.6\n")
+        self.assertEqual(найдено, {"imageio-ffmpeg": ["studio/x.py"]})
+
+    def test_стандартная_библиотека_и_свои_модули_не_считаются(self):
+        источник = "import json\nimport studio.planner\nfrom scripts import x\n"
+        self.assertEqual({}, проверка.undeclared({"a.py": источник}, ""))
 
 
 if __name__ == "__main__":

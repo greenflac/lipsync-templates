@@ -939,6 +939,20 @@ MUTANTS: list[tuple[str, str, str, str, str]] = [
     # Прибор, который никто не сторожит, ослабляется незаметно: его красное
     # видно, а его ослабление — нет.
     (
+        "scripts/check_declared_deps.py",
+        "    новые = {k: v for k, v in found.items() if k not in KNOWN_UNDECLARED}",
+        "    новые = {}",
+        "зависимости: любая необъявленная снова считается давней — CI падёт на чужой машине",
+        "studio.mcp.tests.test_declared_deps",
+    ),
+    (
+        "scripts/check_declared_deps.py",
+        '    "pydantic": "приезжает попутно с fastapi, поэтому локально всегда есть",',
+        '    "pydantic": "приезжает попутно с fastapi, поэтому локально всегда есть",\n    "httpx2": "дописано молча",',
+        "зависимости: список отступлений дописывается вместо объявления пакета",
+        "studio.mcp.tests.test_declared_deps",
+    ),
+    (
         "scripts/check_headline.py",
         'ПУСТОТА = ("nothing is recorded", "ничего не записано")',
         'ПУСТОТА = ("НЕ-ВСТРЕТИТСЯ-НИКОГДА",)',
