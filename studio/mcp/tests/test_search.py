@@ -336,6 +336,66 @@ class GeminiBackend(unittest.TestCase):
         assert [r["host"] for r in out["results"]] == ["kling.ai", "arxiv.org"]
         assert all(r["url"].startswith("https://redirect.google/") for r in out["results"])
 
+    def test_ANSWER_WITHOUT_A_SINGLE_SOURCE_IS_NOT_A_PASS(self) -> None:
+        """Найдено проверкой продукта 2026-09-06, и это худшее из найденного.
+
+        На «what is two plus two» и на прямое «из своей памяти, без веба» этот
+        инструмент отвечал `pass`, `checked 0`, и сам же писал в ноте «Searches
+        Gemini ran: not reported» — поиска не было ВООБЩЕ. Поле `answer` несло
+        память чужой модели, а нота называла её «the substance».
+
+        Цена названа в инструкции самого сервера: агенту велено после поиска
+        звать `record_model_fact`. Поверив `pass`, он записал бы галлюцинацию в
+        базу фактов под видом веб-находки — то есть отравил бы ровно то, ради
+        чистоты чего весь проект.
+        """
+        пусто = {
+            "candidates": [
+                {
+                    "content": {"parts": [{"text": "Two plus two is four."}]},
+                    "groundingMetadata": {},
+                }
+            ]
+        }
+        with mock.patch.dict("os.environ", GEMINI_CREDS, clear=True):
+            with mock.patch.object(search.urllib.request, "urlopen", return_value=_Response(пусто)):
+                out = search.search("what is two plus two")
+        assert out["outcome"] == "could not measure", out["outcome"]
+        assert out["checked"] == 0
+        assert out["unmeasured"] == 1
+        assert out["results"] == []
+        assert "НИ ОДНОГО ИСТОЧНИКА" in out["note"]
+        # Текст остаётся в выдаче — но названный тем, что он есть.
+        assert out["answer"].startswith("Two plus two")
+
+    def test_A_GROUNDED_ANSWER_IS_STILL_A_PASS(self) -> None:
+        """Негативный контроль (И5) к предыдущему: инструмент, отвечающий «не
+        смогли» всегда, не отличается от отсутствующего инструмента."""
+        with mock.patch.dict("os.environ", GEMINI_CREDS, clear=True):
+            with mock.patch.object(
+                search.urllib.request,
+                "urlopen",
+                return_value=_Response(_grounded(["kling.ai"])),
+            ):
+                with mock.patch.object(search, "_fetchable", return_value=True):
+                    out = search.search("q")
+        assert out["outcome"] == "pass"
+        assert out["checked"] == 1
+        assert out["unmeasured"] == 0
+
+    def test_unmeasured_holds_both_meanings_apart(self) -> None:
+        """Е3: счётчик нечитаемых хостов не смеет затирать «источников нет»."""
+        with mock.patch.dict("os.environ", GEMINI_CREDS, clear=True):
+            with mock.patch.object(
+                search.urllib.request,
+                "urlopen",
+                return_value=_Response(_grounded(["kling.ai", "arxiv.org"])),
+            ):
+                with mock.patch.object(search, "_fetchable", return_value=False):
+                    out = search.search("q")
+        assert out["outcome"] == "pass"
+        assert out["unmeasured"] == 2, "два нечитаемых хоста обязаны быть посчитаны"
+
     def test_a_title_that_is_not_a_domain_yields_no_host(self) -> None:
         with mock.patch.dict("os.environ", GEMINI_CREDS, clear=True):
             with mock.patch.object(
@@ -363,7 +423,19 @@ class GeminiBackend(unittest.TestCase):
         assert out["outcome"] == "could not measure"
         assert out["checked"] == 0
 
-    def test_an_answer_with_no_sources_still_counts_as_unmeasured(self) -> None:
+    def test_an_answer_with_no_sources_is_NOT_a_pass(self) -> None:
+        """ИСХОД ЭТОГО СЛУЧАЯ ИЗМЕНЁН 2026-09-06, и прежний был неправдой.
+
+        Тест назывался «...still counts as unmeasured» и при этом требовал
+        `outcome == pass`: неизмеримость честно считалась ЧИСЛОМ, а вердикт всё
+        равно был успехом. Проверка продукта показала цену — инструмент отвечал
+        `pass` на запрос, где Gemini не сделал ни одного поиска, и агент,
+        которому велено после поиска звать `record_model_fact`, записал бы
+        память чужой модели в базу фактов как веб-находку.
+
+        Текст в выдаче остаётся: он может быть полезен человеку. Вердиктом он
+        не становится (Р2: ноль проверок — не успех).
+        """
         # Text but no citations: something came back, but nothing is checkable.
         payload = {
             "candidates": [
@@ -378,7 +450,7 @@ class GeminiBackend(unittest.TestCase):
                 search.urllib.request, "urlopen", return_value=_Response(payload)
             ):
                 out = search.search("q")
-        assert out["outcome"] == "pass"
+        assert out["outcome"] == "could not measure"
         assert out["checked"] == 0
         assert out["unmeasured"] == 1, "an uncited answer is not a sourced one"
         assert out["answer"] == "a real answer"

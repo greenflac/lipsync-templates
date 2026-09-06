@@ -761,14 +761,14 @@ MUTANTS: list[tuple[str, str, str, str, str]] = [
     # === СУД НАД ПРОМПТОМ ИЗ ЛЮБОГО ИСТОЧНИКА (studio/mcp/contract.py) ====
     (
         "studio/mcp/contract.py",
-        "    banned = banned_topics(text)",
+        '    banned = screen.просеять(text)["banned"]',
         "    banned = []",
         "промпт: запретные темы студии снова не спрашиваются",
         "studio.mcp.tests.test_contract_topics",
     ),
     (
         "studio/mcp/contract.py",
-        "    указания = [о for о in ЧУЖИЕ_УКАЗАНИЯ if о in text.lower()]",
+        "    указания = [о for о in ЧУЖИЕ_УКАЗАНИЯ if о in приведён or о in похоже]",
         "    указания = []",
         "промпт: указание читателю снова проезжает",
         "studio.mcp.tests.test_contract_topics",
@@ -2433,6 +2433,27 @@ MUTANTS: list[tuple[str, str, str, str, str]] = [
         "        состояние = DUR_NOT_ASKED",
         "длительность: вердикт шага снова говорит «не спрашивали» о названном заказчиком",
         "studio.mcp.tests.test_duration_unparsed",
+    ),
+    (
+        "studio/mcp/search.py",
+        '        "outcome": UNMEASURED if без_основания else PASS,',
+        '        "outcome": PASS,',
+        "поиск: ответ без единого источника снова «годно» — память модели пойдёт в базу как находка",
+        "studio.mcp.tests.test_search",
+    ),
+    (
+        "studio/mcp/screen.py",
+        '    низ = привести(текст)\n    похоже = привести_буквы(текст)\n    # `str(... or "")` ВЕЗДЕ',
+        '    низ = " ".join(str(текст or "").lower().split())\n    похоже = низ\n    # `str(... or "")` ВЕЗДЕ',
+        "просев: приведение текста отключено — инъекция обходится двойным пробелом",
+        "studio.mcp.tests.test_screen_customer_words",
+    ),
+    (
+        "studio/mcp/contract.py",
+        "    указания = [о for о in ЧУЖИЕ_УКАЗАНИЯ if о in приведён or о in похоже]",
+        "    указания = [о for о in ЧУЖИЕ_УКАЗАНИЯ if о in text.lower()]",
+        "промпт: проверка снова со своим разбором — две двери, разный ответ на один текст",
+        "studio.mcp.tests.test_screen_customer_words",
     ),
     (
         "scripts/run_tests.py",

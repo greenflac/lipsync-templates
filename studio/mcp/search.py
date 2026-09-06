@@ -252,20 +252,37 @@ def _gemini(text: str, site: str, count: int) -> dict:
             "Nothing was checked, which is not the same as nothing existing.",
         )
 
+    # НОЛЬ ИСТОЧНИКОВ — ЭТО НЕ «ГОДНО», ДАЖЕ КОГДА ТЕКСТ ЕСТЬ.
+    #
+    # Найдено проверкой продукта 2026-09-06. На запрос «what is two plus two»
+    # и на прямое «из своей памяти, без веба» инструмент отвечал `pass`,
+    # `checked 0`, а в ноте сам писал «Searches Gemini ran: not reported» — то
+    # есть поиска НЕ БЫЛО ВООБЩЕ, и ответ нёс ПАМЯТЬ чужой модели, названную
+    # «the substance». Это Р2 в чистом виде: ноль проверок при нуле нарушений
+    # не бывает успехом.
+    #
+    # Цена ошибки названа в инструкции самого сервера: агенту велено после
+    # поиска звать `record_model_fact`. Поверив `pass`, он записал бы в базу
+    # фактов галлюцинацию под видом веб-находки — то есть отравил бы ровно то,
+    # ради чистоты чего весь проект.
+    искали = meta.get("webSearchQueries") or []
+    без_основания = not results
     return {
-        "outcome": PASS,
+        "outcome": UNMEASURED if без_основания else PASS,
         "checked": len(results),
         "violations": 0,
-        "unmeasured": 1 if not results else 0,
+        "unmeasured": 1 if без_основания else 0,
         "note": (
             f"{len(results)} grounded source(s) via Gemini search. URLs are Google "
             "redirect links and the publisher is in the title. "
             + (
-                "The answer text carries the substance; no source list came back. "
-                if not results
+                "НИ ОДНОГО ИСТОЧНИКА НЕ ВЕРНУЛОСЬ: текст ниже — это ответ модели "
+                "по памяти, а не находка в вебе. Записывать его фактом нельзя; "
+                "как основание он не годится. "
+                if без_основания
                 else ""
             )
-            + f"Searches Gemini ran: {meta.get('webSearchQueries') or 'not reported'}."
+            + f"Searches Gemini ran: {искали or 'not reported'}."
         ),
         "results": results,
         "answer": answer.strip(),
@@ -310,6 +327,13 @@ def search(query: str, *, count: int = 8, site: str = "", check_fetchable: bool 
                 if host and host not in seen:
                     seen[host] = _fetchable(host)
                 row["fetchable"] = seen.get(host)
+            # ПРИСВАИВАНИЕ, А НЕ ПРИБАВЛЕНИЕ, И ЭТО ПРОВЕРЕНО. Приёмка
+            # 2026-09-06 сочла, что счётчик нечитаемых хостов затирает сигнал
+            # «источников не вернулось». Проверено подменой: сигналы НЕ
+            # СТАЛКИВАЮТСЯ — эта ветка идёт только при непустом `results`, а
+            # «источников нет» бывает только при пустом. Прибавление здесь
+            # ничего не меняет ни на одном входе, и заводить его значило бы
+            # написать защиту от невозможного и тем сделать вид, что дефект был.
             out["unmeasured"] = sum(1 for r in out["results"] if r["fetchable"] is False)
         return out
 
