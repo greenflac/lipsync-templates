@@ -188,9 +188,30 @@ class TheSample(unittest.TestCase):
         ever and nothing would say why.
 
         The path is now the collector's own constant: two copies of one path
-        are one path and one bug waiting."""
-        self.assertEqual(civitai.DEFAULT_OUTPUT_PATH, bench.CORPUS)
+        are one path and one bug waiting.
+
+        Приёмка 2026-09-06 показала, что первая версия этого теста держала
+        ЗНАЧЕНИЕ, а не связь: `assertEqual` для `Path` — совпадение значений, и
+        вернуть в этот модуль ровно тот литерал, который коммит убирал, можно
+        было при двенадцати зелёных тестах. Держим ТОЖДЕСТВО объекта.
+
+        Второй способ увести банку молча — подменить константу У СОБИРАТЕЛЯ:
+        тогда обе стороны едут вместе. Поэтому имя и каталог названы литералом
+        отдельно (Т2), и оба конца связи закрыты."""
+        self.assertIs(civitai.DEFAULT_OUTPUT_PATH, bench.CORPUS)
         self.assertEqual("civitai_prompts.jsonl", bench.CORPUS.name)
+        self.assertEqual("knowledge", bench.CORPUS.parent.name)
+
+    def test_the_other_copies_of_that_path_still_name_the_same_file(self) -> None:
+        """Е1, остаток: тот же путь живёт ещё в трёх местах у чужого владельца
+        (`studio/knowledge.py`, `scripts/corpus_bundle.py`, `studio/verbatim.py`).
+        Свести их к одному объекту не мне — но разъехаться молча они больше не
+        могут: имя файла сверяется с собирателем."""
+        from studio import knowledge, verbatim
+
+        имя = civitai.DEFAULT_OUTPUT_PATH.name
+        self.assertEqual(имя, knowledge.COMMUNITY_PROMPTS_PATH.name)
+        self.assertIn(имя, verbatim.НЕ_ПРОВЕРЯЕМ)
 
     def test_an_absent_corpus_is_COULD_NOT_MEASURE(self) -> None:
         with mock.patch.object(bench, "CORPUS", Path("/nowhere/civitai.jsonl")):

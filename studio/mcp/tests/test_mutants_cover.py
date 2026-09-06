@@ -190,6 +190,25 @@ class СписокНеПродуктаЖивойАНеДекоративный(u
         self.assertIn("studio/живой.py", найдено)
         self.assertNotIn("studio/tests/test_что_то.py", найдено)
 
+    def test_фильтр_берёт_ИМЕННО_этот_список(self) -> None:
+        """Связь, а не значение. Приёмка 2026-09-06: вернуть второй литерал в
+        место применения (`for к in ("tests", "fixtures")`) можно было при
+        двадцати пяти зелёных тестах — то есть ровно ту болезнь, которую
+        правка чинила. Подменяем САМ список и смотрим, поехало ли поведение."""
+        деревня = Path(tempfile.mkdtemp())
+        (деревня / "studio").mkdir()
+        (деревня / "studio" / "склад").mkdir()
+        тело = "ПОРОГ = 5\n\n\ndef f(x):\n    return x > ПОРОГ\n"
+        (деревня / "studio" / "живой.py").write_text(тело, encoding="utf-8")
+        (деревня / "studio" / "склад" / "спрятан.py").write_text(тело, encoding="utf-8")
+
+        with unittest.mock.patch.multiple(
+            c, ROOT=деревня, _в_репозитории=lambda: None, НЕ_ПРОДУКТ=("склад",)
+        ):
+            найдено = [str(п.relative_to(деревня)) for п in c.модули()]
+        self.assertIn("studio/живой.py", найдено)
+        self.assertNotIn("studio/склад/спрятан.py", найдено)
+
 
 class ФлагСовпадаетСоСвидетельством(unittest.TestCase):
     """Е2: печатаемый исход и код возврата обязаны говорить одно и то же.

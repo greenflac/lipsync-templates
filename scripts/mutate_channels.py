@@ -2148,6 +2148,27 @@ MUTANTS: list[tuple[str, str, str, str, str]] = [
         "studio.mcp.tests.test_mutants_cover",
     ),
     (
+        "scripts/check_mutants_cover.py",
+        '            if any(к in имя.split("/") for к in НЕ_ПРОДУКТ):',
+        '            if any(к in имя.split("/") for к in ("tests", "fixtures")):',
+        "ратчет: фильтр снова взял свой литерал вместо списка — Е1 держится связью, а не значением",
+        "studio.mcp.tests.test_mutants_cover",
+    ),
+    (
+        "scripts/check_measured.py",
+        '    return PASS if (records["checked"] + handoffs["checked"]) else UNMEASURED',
+        "    return PASS",
+        "числа: половина, проверившая ноль, снова зовётся годной",
+        "studio.mcp.tests.test_measured",
+    ),
+    (
+        "studio/mcp/civitai.py",
+        'DEFAULT_OUTPUT_PATH = Path(__file__).resolve().parents[1] / "knowledge" / "civitai_prompts.jsonl"',
+        'DEFAULT_OUTPUT_PATH = Path(__file__).resolve().parents[1] / "НЕТУ" / "civitai_prompts.jsonl"',
+        "бенч: адрес уведён У СОБИРАТЕЛЯ — обе стороны связи едут вместе и молчат",
+        "studio.mcp.tests.test_validator",
+    ),
+    (
         "scripts/run_tests.py",
         "        raise AssertionError(ОТКАЗ)\n\n    def connect_ex",
         "        return None\n\n    def connect_ex",
