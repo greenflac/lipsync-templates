@@ -1009,6 +1009,27 @@ MUTANTS: list[tuple[str, str, str, str, str]] = [
         "studio.mcp.tests.test_declared_deps",
     ),
     (
+        "scripts/check_declared_deps.py",
+        "        if isinstance(node, ast.Try):",
+        "        if isinstance(node, (ast.Try, ast.FunctionDef)):",
+        "зависимости: импорт внутри функции без try снова считается защищённым — тот самый дефект 2026-08-31",
+        "studio.mcp.tests.test_declared_deps",
+    ),
+    (
+        "scripts/check_declared_deps.py",
+        '    "PIL": "pillow",',
+        "",
+        "зависимости: имя импорта не переводится в имя пакета — ругаемся на объявленное",
+        "studio.mcp.tests.test_declared_deps",
+    ),
+    (
+        "scripts/check_declared_deps.py",
+        '        line = line.split("#")[0].strip()',
+        "        line = line.strip()",
+        "зависимости: комментарий в requirements читается как имя пакета",
+        "studio.mcp.tests.test_declared_deps",
+    ),
+    (
         "scripts/check_headline.py",
         'ПУСТОТА = ("nothing is recorded", "ничего не записано")',
         'ПУСТОТА = ("НЕ-ВСТРЕТИТСЯ-НИКОГДА",)',
