@@ -939,6 +939,20 @@ MUTANTS: list[tuple[str, str, str, str, str]] = [
     # Прибор, который никто не сторожит, ослабляется незаметно: его красное
     # видно, а его ослабление — нет.
     (
+        "scripts/merge_model_ids.py",
+        'ATTRIBUTE_MERGES: dict[str, str] = {\n    "licence": "license",\n}',
+        "ATTRIBUTE_MERGES: dict[str, str] = {}",
+        "имена: `licence` снова не сводится к `license` — лицензионный факт выпадает из ответа",
+        "studio.mcp.tests.test_merge_model_ids",
+    ),
+    (
+        "scripts/merge_model_ids.py",
+        '    "elevenlabs-eleven-v3": "eleven_v3",',
+        '    "elevenlabs-eleven-v3": "elevenlabs-eleven-v3",',
+        "имена: написание сводится само к себе — работа выглядит сделанной",
+        "studio.mcp.tests.test_merge_model_ids",
+    ),
+    (
         "scripts/whitelist_request.py",
         'MULTI_PART_SUFFIXES: frozenset[str] = frozenset({"co.uk", "com.cn", "co.jp", "com.au"})',
         "MULTI_PART_SUFFIXES: frozenset[str] = frozenset()",
