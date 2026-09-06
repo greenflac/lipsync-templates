@@ -1053,6 +1053,20 @@ MUTANTS: list[tuple[str, str, str, str, str]] = [
         "studio.mcp.tests.test_allowlist_request",
     ),
     (
+        "studio/measured.py",
+        'ORIGINS = ("ИЗМЕРЕНО", "РАСЧЁТ", "ВЫБРАНО")',
+        'ORIGINS = ("ИЗМЕРЕНО", "РАСЧЁТ", "ВЫБРАНО", "ПРИКИНУТО")',
+        "происхождение: четвёртое происхождение дописано молча — правило И4 отменено данными",
+        "studio.mcp.tests.test_measured",
+    ),
+    (
+        "studio/measured.py",
+        "    for field in REQUIRED:",
+        "    for field in ():",
+        "происхождение: обязательные поля не проверяются вовсе",
+        "studio.mcp.tests.test_measured",
+    ),
+    (
         "studio/selfrag/source_hosts.py",
         '    {"co.uk", "com.cn", "co.jp", "com.au", "com.br", "co.kr", "co.in"}',
         "    set()",

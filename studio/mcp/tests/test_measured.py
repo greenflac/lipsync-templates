@@ -54,6 +54,40 @@ class ANumberNobodyCanRecheckIsARumour(unittest.TestCase):
         assert measured.problems(_good()) == []
 
 
+class ЗакрытыеСпискиИОбязательныеПоляЛитералами(unittest.TestCase):
+    """Т2: сами таблицы, а не только поведение на двух примерах.
+
+    ИЗМЕРЕНО подменой 2026-09-06: дописать в `ORIGINS` четвёртое происхождение
+    («ПРИКИНУТО») можно было МОЛЧА — все тесты оставались зелёными. То же с
+    `REQUIRED`: цикл проверки обязательных полей можно было выключить целиком
+    (`for field in ()`), и ни один тест не краснел. Оба списка — правила И4 и
+    Р1, записанные данными; молча дописанное происхождение отменяет И4.
+    """
+
+    def test_происхождения_ровно_три(self) -> None:
+        self.assertEqual(("ИЗМЕРЕНО", "РАСЧЁТ", "ВЫБРАНО"), measured.ORIGINS)
+
+    def test_исходы_ровно_три(self) -> None:
+        self.assertEqual(("годно", "не годно", "не смогли"), measured.OUTCOMES)
+
+    def test_обязательные_поля_названы_литералом(self) -> None:
+        self.assertEqual(
+            ("id", "subject", "origin", "outcome", "measured_on", "note"), measured.REQUIRED
+        )
+
+    def test_каждое_обязательное_поле_проверяется_поодиночке(self) -> None:
+        """Список литералом мало: он мог бы стоять и не применяться."""
+        for поле in ("id", "subject", "origin", "outcome", "measured_on", "note"):
+            строка = _good()
+            del строка[поле]
+            беды = [п.field for п in measured.problems(строка)]
+            self.assertIn(поле, беды, поле)
+
+    def test_полная_запись_бед_не_даёт(self) -> None:
+        """Негативный контроль (И5) к предыдущему."""
+        self.assertEqual([], measured.problems(_good()))
+
+
 class OriginAndOutcomeAreClosedSets(unittest.TestCase):
     def test_an_origin_outside_I4_is_refused(self) -> None:
         """«ВЫБРАНО», поданное как «ИЗМЕРЕНО», потом никто не решается тронуть —
