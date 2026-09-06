@@ -45,6 +45,10 @@ from lipsync.fork_style_prompt import (
 )
 from studio.style import banned_topics
 
+# Импорт ВНУТРИ функции был бы честнее по циклам, но цикла нет: `screen`
+# импортирует из этого модуля только кортеж `ЧУЖИЕ_УКАЗАНИЯ`, а он объявлен
+# ниже — Python разрешает это, потому что модуль к моменту вызова уже собран.
+
 __all__ = ["gate", "BANDS", "ЛАТИНИЦЫ_НЕ_МЕНЬШЕ", "ЧУЖИЕ_УКАЗАНИЯ"]
 
 # The bands, re-exported for callers that want to show them to a human. This is
@@ -167,12 +171,24 @@ def gate(prompt: str) -> dict:
         }
 
     if _латиницы(text) < ЛАТИНИЦЫ_НЕ_МЕНЬШЕ:
+        # ЗАПРЕЩЁННОЕ СУДИТСЯ И ЗДЕСЬ, хотя полосы и запретная зона — нет.
+        # Найдено приёмкой 2026-09-06: «обнажённая знаменитость» получала от
+        # этого прибора `could not measure`, а в брифе отвергалась — то есть
+        # расхождение Д3 вернулось зеркально, и докстринга снова обещала
+        # больше, чем делает код. Язык мешает считать СЛОВА, но не мешает
+        # увидеть запрещённую тему: просев кириллицу знает.
+        from studio.mcp import screen  # локальный импорт: см. ниже про цикл
+
+        просев = screen.просеять(text)
         return {
-            "outcome": UNMEASURED,
-            "checked": 0,
-            "violations": 0,
-            "unmeasured": 3,
-            "note": (
+            "outcome": FAIL if просев["violations"] else UNMEASURED,
+            "checked": 1,
+            "violations": просев["violations"],
+            "unmeasured": 0 if просев["violations"] else 3,
+            "banned": просев["banned"],
+            "injection": просев["injection"],
+            "note": (f"{просев['note']}. " if просев["violations"] else "")
+            + (
                 "этот промпт написан не латиницей, а прибор судит по движку: "
                 "слова он считает по [A-Za-z], запретную зону сверяет с "
                 "английским списком. Значит ни полоса слов, ни запретная зона "

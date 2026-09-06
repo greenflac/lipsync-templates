@@ -2836,7 +2836,7 @@ def оси_без_ответа(выбран: dict) -> str:
         молчат.append("срок службы")
     if not выбран.get("out_state"):
         молчат.append("выход")
-    if (выбран.get("dur_state") or "") == dur.DUR_NOT_ASKED:
+    if (выбран.get("dur_state") or "") in (dur.DUR_NOT_ASKED, dur.DUR_ASK_UNPARSED):
         молчат.append("длительность")
     return ", ".join(молчат)
 
@@ -3363,7 +3363,7 @@ def render(итог: dict) -> str:
         # (2026-09-03) отодвинул трёх кандидатов на шаге, и в напечатанном
         # плане об этом не было ни слова: счётчик считал, читатель не видел.
         по_длине = выбран.get("dur_state") or ""
-        if по_длине and по_длине != dur.DUR_NOT_ASKED:
+        if по_длине and по_длине != dur.DUR_NOT_ASKED:  # «не разобрана» ПЕЧАТАЕТСЯ
             строки.append(f"      длительность: {по_длине} — {выбран.get('dur_note', '')}")
         молчащие = оси_без_ответа(выбран)
         if молчащие:
