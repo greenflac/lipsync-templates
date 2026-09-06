@@ -939,6 +939,27 @@ MUTANTS: list[tuple[str, str, str, str, str]] = [
     # Прибор, который никто не сторожит, ослабляется незаметно: его красное
     # видно, а его ослабление — нет.
     (
+        "scripts/poll_catalogs.py",
+        'OPENROUTER_NOT_PRICES = frozenset({"overrides"})',
+        "OPENROUTER_NOT_PRICES = frozenset()",
+        "каталог: вложенный объект переопределений снова шумит в счётчике «не разобрано»",
+        "studio.mcp.tests.test_poll_catalogs_prices",
+    ),
+    (
+        "scripts/poll_catalogs.py",
+        '        if key in DEEPINFRA_NOT_PRICES or key.startswith("rate_per_"):',
+        "        if key in DEEPINFRA_NOT_PRICES:",
+        "каталог: множитель к тарифу снова считается неразобранной ценой",
+        "studio.mcp.tests.test_poll_catalogs_prices",
+    ),
+    (
+        "scripts/poll_catalogs.py",
+        '        usd = float(f"{amount / 100.0:.12g}")',
+        '        usd = float(f"{amount:.12g}")',
+        "каталог: центы больше не делятся на сто — цена в СТО раз выше",
+        "studio.mcp.tests.test_poll_catalogs_prices",
+    ),
+    (
         "scripts/merge_model_ids.py",
         'ATTRIBUTE_MERGES: dict[str, str] = {\n    "licence": "license",\n}',
         "ATTRIBUTE_MERGES: dict[str, str] = {}",
