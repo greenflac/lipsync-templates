@@ -2344,6 +2344,27 @@ MUTANTS: list[tuple[str, str, str, str, str]] = [
         "studio.mcp.tests.test_build_casebank",
     ),
     (
+        "scripts/check_fact_axis.py",
+        "    elif len(ложные) < FALSE_PICKUPS_MEASURED:",
+        "    elif False:",
+        "ось: сверка ложных подборов снова «не больше» — потолок можно поднять зелёным",
+        "studio.mcp.tests.test_fact_axis_relevance",
+    ),
+    (
+        "scripts/check_spend_aim.py",
+        "    if not нужны:\n        return UNMEASURED\n",
+        "",
+        "прицел: пустая сверка снова даёт «не годно» — ругань на пустом месте",
+        "studio.mcp.tests.test_spend_aim",
+    ),
+    (
+        "scripts/check_spend_aim.py",
+        '    return {PASS: 0, FAIL: 1, UNMEASURED: 2}[итог["outcome"]]',
+        '    return 1 if итог["outcome"] == FAIL else 0',
+        "прицел: третий исход снова неотличим от успеха по коду возврата",
+        "studio.mcp.tests.test_spend_aim",
+    ),
+    (
         "scripts/run_tests.py",
         "        raise AssertionError(ОТКАЗ)\n\n    def connect_ex",
         "        return None\n\n    def connect_ex",
