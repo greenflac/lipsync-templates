@@ -120,6 +120,32 @@ def check_handoffs(sizes: dict[str, int], limit: int = HANDOFF_MAX_LINES) -> dic
     }
 
 
+def свести_половины(records: dict, handoffs: dict) -> str:
+    """Исход по ДВУМ половинам сразу. Р1: третий исход не сворачивается в первый.
+
+    ЗАЧЕМ (найдено независимой проверкой 2026-09-06). Складывались `checked`
+    обеих половин, и решение принималось по СУММЕ: `PASS if checked else
+    UNMEASURED`. Половина «записи» могла вернуть честное «не смогли» с
+    `checked = 0` — а два хэндофа давали `checked = 2`, и прибор печатал
+    `pass` при «не смогли 1».
+
+    ИЗМЕРЕНО подменой: увести `STORE` на несуществующий файл — база измеренных
+    чисел пропала целиком, — и `check_measured.py --check` возвращал 0 со
+    словами «в measured.jsonl нет ни одной записи — проверять нечего». Ровно
+    тот случай, ради которого этот прибор написан: он сторожит происхождение
+    КАЖДОГО числа проекта и молча переставал сторожить что-либо.
+
+    Теперь неизмеримость ЛЮБОЙ половины даёт третий исход, а нарушение любой —
+    первый: сначала «не годно», потом «не смогли», и только полностью
+    измеренная пара без нарушений — «годно».
+    """
+    if records["violations"] or handoffs["violations"]:
+        return FAIL
+    if records["outcome"] == UNMEASURED or handoffs["outcome"] == UNMEASURED:
+        return UNMEASURED
+    return PASS if (records["checked"] + handoffs["checked"]) else UNMEASURED
+
+
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--check", action="store_true")
@@ -155,7 +181,7 @@ def main(argv: list[str]) -> int:
     checked = records["checked"] + handoffs["checked"]
     violations = records["violations"] + handoffs["violations"]
     unmeasured = records["unmeasured"] + handoffs["unmeasured"]
-    outcome = FAIL if violations else (PASS if checked else UNMEASURED)
+    outcome = свести_половины(records, handoffs)
     print(f"\nпроверено {checked}\nнарушений {violations}\nне смогли {unmeasured}")
     print(f"\n{outcome}: {records['note']}; {handoffs['note']}")
     if not args.check:

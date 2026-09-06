@@ -1144,6 +1144,27 @@ MUTANTS: list[tuple[str, str, str, str, str]] = [
         "studio.mcp.tests.test_verbatim",
     ),
     (
+        "scripts/validator.py",
+        "CORPUS = civitai.DEFAULT_OUTPUT_PATH",
+        '        CORPUS = REPO / "studio" / "knowledge" / "НЕТУ.jsonl"'.strip(),
+        "бенч: адрес банки уехал от собирателя — бенч вечно отвечает «не смогли»",
+        "studio.mcp.tests.test_validator",
+    ),
+    (
+        "scripts/check_measured.py",
+        '    if records["outcome"] == UNMEASURED or handoffs["outcome"] == UNMEASURED:',
+        "    if False:",
+        "числа: неизмеримость одной половины прячется за проверенностью другой",
+        "studio.mcp.tests.test_measured",
+    ),
+    (
+        "scripts/check_mutants_cover.py",
+        'НЕ_ПРОДУКТ = ("tests", "fixtures", ".claude")',
+        "НЕ_ПРОДУКТ = ()",
+        "ратчет: каталоги тестов вернулись в счёт долга — число перестало значить что-либо",
+        "studio.mcp.tests.test_mutants_cover",
+    ),
+    (
         "studio/selfrag/source_hosts.py",
         '    {"co.uk", "com.cn", "co.jp", "com.au", "com.br", "co.kr", "co.in"}',
         "    set()",

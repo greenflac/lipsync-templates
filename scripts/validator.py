@@ -59,8 +59,21 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from lipsync.fork_identity import FAIL, PASS, UNMEASURED  # noqa: E402
 
+from studio.mcp import civitai  # noqa: E402
+
 REPO = Path(__file__).resolve().parents[1]
-CORPUS = REPO / "studio" / "knowledge" / "civitai_prompts.jsonl"
+
+#: ГДЕ ЛЕЖИТ БАНКА — знание СОБИРАТЕЛЯ, а не бенча (Е1). Здесь стоял свой
+#: литерал пути, и независимая проверка 2026-09-06 показала цену: увести его на
+#: несуществующий файл можно МОЛЧА — 2305 тестов зелёные, гейт зелёный, а бенч
+#: с этого мгновения вечно отвечает «не смогли», потому что банка намеренно не
+#: коммитится и «файла нет» неотличимо от «ещё не собрали». Теперь путь берётся
+#: у того, кто его ПИШЕТ, и разъехаться копиям больше негде.
+#:
+# DEBT(2026-09-06): третья копия того же пути живёт в studio/knowledge.py
+# (COMMUNITY_PROMPTS_PATH) и четвёртая в scripts/corpus_bundle.py — их владелец
+# не я, свести их к одному месту тем же способом должен он.
+CORPUS = civitai.DEFAULT_OUTPUT_PATH
 
 #: Deterministic, so the same sample comes back on any machine and a claimed
 #: sign can be re-tested against the same cases.

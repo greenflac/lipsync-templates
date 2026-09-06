@@ -33,6 +33,8 @@ assert _SPEC and _SPEC.loader
 bench = importlib.util.module_from_spec(_SPEC)
 _SPEC.loader.exec_module(bench)
 
+from studio.mcp import civitai  # noqa: E402
+
 
 def _loaded_png(**fields: str) -> bytes:
     meta = PngImagePlugin.PngInfo()
@@ -176,6 +178,19 @@ class TheSample(unittest.TestCase):
             out = bench.sample(20)
         self.assertEqual(6, len(out["cases"]))
         self.assertEqual(69, out["held_out"])
+
+    def test_THE_CORPUS_PATH_IS_THE_COLLECTORS_OWN(self) -> None:
+        """Е1 by identity. FOUND 2026-09-06 by the audit: this module held its
+        own literal path, and moving it to a file that does not exist was
+        SILENT — 2305 tests green, the gate green — because the corpus is
+        deliberately not committed, so "no such file" is indistinguishable from
+        "not collected yet". The bench would answer "could not measure" for
+        ever and nothing would say why.
+
+        The path is now the collector's own constant: two copies of one path
+        are one path and one bug waiting."""
+        self.assertEqual(civitai.DEFAULT_OUTPUT_PATH, bench.CORPUS)
+        self.assertEqual("civitai_prompts.jsonl", bench.CORPUS.name)
 
     def test_an_absent_corpus_is_COULD_NOT_MEASURE(self) -> None:
         with mock.patch.object(bench, "CORPUS", Path("/nowhere/civitai.jsonl")):
