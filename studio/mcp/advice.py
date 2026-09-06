@@ -39,6 +39,7 @@ from __future__ import annotations
 
 import dataclasses
 import json
+import re
 from datetime import date
 from pathlib import Path
 from typing import Any
@@ -182,6 +183,26 @@ def gap_reason(claims: object) -> str:
 
 
 IDENTITY_TIERS: tuple[str, ...] = (TIER_VENDOR, TIER_PORTAL, TIER_BLOG)
+
+#: ПРИЗНАК СТАТЬИ В САМОМ АДРЕСЕ: идентификатор arxiv (в том числе на зеркале),
+#: DOI, OpenReview, ACL Anthology или прямой PDF.
+#:
+#: ЗАЧЕМ. Ступени-МЕТОДЫ (`probe`, `operator`, `paper`, `benchmark`) берутся на
+#: слово: никакой адрес не докажет, что у утверждения есть проверяемый метод.
+#: Независимая проверка каналов 2026-09-05 показала, чем это кончается: три
+#: строки на `probe` оказались чужим тредом обсуждения. Для `probe` дыра
+#: закрыта в тот же день; здесь закрывается для `paper`, у которого признак в
+#: адресе ЕСТЬ — статья почти всегда несёт свой идентификатор.
+#:
+#: ИЗМЕРЕНО на живой базе: из 175 строк тира `paper` признак несут 174. Одна —
+#: репозиторий кода к статье (`github.com/Vchitect/RAPO`); она и есть тот
+#: случай, ради которого проверка написана: содержание научное, а адрес ведёт
+#: не к статье, и по нему статью не перепроверить.
+_ПРИЗНАК_СТАТЬИ = re.compile(
+    r"(?:arxiv\.org/(?:abs|pdf|html)/|/)(?:\d{2})(?:\d{2})\.\d{4,5}"
+    r"|doi\.org/10\.|openreview\.net|aclanthology\.org|\.pdf($|[?#])",
+    re.I,
+)
 
 # The ladder is IMPORTED, never restated. It was restated here until
 # 2026-08-27, and the copy went stale the moment `probe` was added to the real
@@ -907,6 +928,26 @@ def record(
                 ),
                 "written": None,
             }
+
+    # СТУПЕНЬ `paper` ТРЕБУЕТ ПРОВЕРЯЕМОГО АДРЕСА. Отказ, а не понижение: тир
+    # здесь объявляет САМ пишущий, и подменить его молча значило бы решить за
+    # него, чем является его находка. Сказать «дайте адрес статьи» дешевле, чем
+    # потом гадать, статья это была или пересказ.
+    if fields["tier"] == TIER_PAPER and not _ПРИЗНАК_СТАТЬИ.search(fields["source_url"]):
+        return {
+            "outcome": FAIL,
+            "checked": len(fields),
+            "violations": 1,
+            "unmeasured": 0,
+            "note": (
+                f"tier {TIER_PAPER!r} без признака статьи в адресе "
+                f"{fields['source_url']!r}: ни идентификатора arxiv, ни DOI, ни "
+                "OpenReview, ни ACL, ни PDF. По такому адресу статью не "
+                "перепроверить, а ступень метода берётся на слово. Дайте адрес "
+                "самой статьи — или запишите это как другой тир."
+            ),
+            "written": None,
+        }
 
     try:
         stated = date.fromisoformat(fields["stated_on"])

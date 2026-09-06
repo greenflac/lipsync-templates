@@ -982,6 +982,13 @@ MUTANTS: list[tuple[str, str, str, str, str]] = [
     ),
     (
         "studio/mcp/advice.py",
+        '    if fields["tier"] == TIER_PAPER and not _ПРИЗНАК_СТАТЬИ.search(fields["source_url"]):',
+        "    if False:",
+        "ступень: `paper` снова берётся на слово — статью не по чему перепроверить",
+        "studio.mcp.tests.test_paper_tier_is_checkable",
+    ),
+    (
+        "studio/mcp/advice.py",
         '    if прочитано and fetch.закрыт_политикой(fields["source_url"]):',
         "    if False:",
         "правда: «я эту страницу открыл» снова не сверяется ни с чем",
