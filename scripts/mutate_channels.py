@@ -1067,6 +1067,20 @@ MUTANTS: list[tuple[str, str, str, str, str]] = [
         "studio.mcp.tests.test_measured",
     ),
     (
+        "studio/corpus.py",
+        '        "observed_behaviour",\n',
+        "",
+        "корпус: самый частый атрибут молча вынут из применимости — покрытие завышено",
+        "studio.mcp.tests.test_corpus",
+    ),
+    (
+        "studio/corpus.py",
+        'WITNESSED_TIERS = frozenset({"probe", "operator"})',
+        'WITNESSED_TIERS = frozenset({"probe", "operator", "blog"})',
+        "корпус: блог засчитывается за «кто-то это ЗАПУСКАЛ» — заголовочное число врёт",
+        "studio.mcp.tests.test_corpus",
+    ),
+    (
         "studio/selfrag/source_hosts.py",
         '    {"co.uk", "com.cn", "co.jp", "com.au", "com.br", "co.kr", "co.in"}',
         "    set()",

@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import unittest
 
+from studio import corpus
 from studio.corpus import render, snapshot
 from studio.selfrag.facts import Fact
 
@@ -92,6 +93,46 @@ class Composition(unittest.TestCase):
         атрибут, и без этого теста ни один прогон не шевельнётся."""
         s = snapshot([факт("a", "runs_on", tier="blog")])
         self.assertEqual(s.with_applicability, 1)
+
+
+class ОбаНабораЛитераламиЦеликом(unittest.TestCase):
+    """Т2: сами наборы, а не два примера из них.
+
+    ИЗМЕРЕНО подменой 2026-09-06: сторожа сужения были только на ДВА имени
+    (`operator` и `runs_on`). Вынуть из применимости `observed_behaviour` —
+    самый частый атрибут канала, 6 наблюдений из 11 на живом замере — можно
+    было МОЛЧА. И наоборот: дописать `blog` в набор свидетелей тоже молча, а
+    это заголовочное число «кто-то это ЗАПУСКАЛ», ради которого корпус и
+    считается: блог станет свидетельством прогона.
+    """
+
+    def test_применимость_ровно_восемь_имён(self):
+        self.assertEqual(
+            {
+                "observed_behaviour",
+                "failure_mode",
+                "limitation",
+                "degrades_when",
+                "holds_identity",
+                "artifact_taxonomy",
+                "metric_blind_spot",
+                "runs_on",
+            },
+            set(corpus.APPLICABILITY),
+        )
+
+    def test_свидетели_ровно_две_ступени(self):
+        self.assertEqual({"probe", "operator"}, set(corpus.WITNESSED_TIERS))
+
+    def test_наблюдение_практика_это_применимость(self):
+        """Самое частое имя набора — поимённо, а не только числом выше."""
+        s = snapshot([факт("a", "observed_behaviour", tier="blog")])
+        self.assertEqual(s.with_applicability, 1)
+
+    def test_блог_свидетельством_не_становится(self):
+        """Негативный контроль (И5) к набору свидетелей."""
+        s = snapshot([факт("a", tier="blog")])
+        self.assertEqual(s.with_witness, 0)
 
 
 class NeverJustASum(unittest.TestCase):
