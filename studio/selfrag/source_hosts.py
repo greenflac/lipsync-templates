@@ -463,6 +463,39 @@ PORTALS_WHERE_USERS_ARE_THE_POINT: frozenset[str] = frozenset(
 _HOST = re.compile(r"https?://([^/:?#]+)", re.I)
 
 
+#: Суффиксы, под которыми регистрируемый домен — ТРИ метки, а не две.
+#:
+#: ЗАЧЕМ И7. Знание жило В ДВУХ МЕСТАХ, и в одном из них было пустым:
+#: `scripts/whitelist_request.py` знал про `co.uk`, а `scripts/allowlist_request.py`
+#: держал `MULTI_LABEL_SUFFIXES = ()` и на `docs.example.co.uk` возвращал
+#: `co.uk` — то есть заявка просила бы `*.co.uk`, весь британский коммерческий
+#: домен. Заявку с такой строкой отклоняют целиком, вместе со всеми остальными
+#: хостами: заявка принимается по своей САМОЙ СЛАБОЙ строке.
+#:
+#: ИЗМЕРЕНО 2026-09-06: в `docs/ALLOWLIST_REQUEST.md` (151 строка) таких строк
+#: сегодня нет — ни один отказавший хост не сидит под составным суффиксом.
+#: Дефект был латентным, и это его единственная причина не сработать.
+#:
+#: Список ВЫБРАН (И4), а не измерен: полный публичный список суффиксов — это
+#: внешний файл, который надо качать и обновлять. Здесь названы те, что
+#: встречаются у вендоров и площадок этой области.
+MULTI_LABEL_SUFFIXES: frozenset[str] = frozenset(
+    {"co.uk", "com.cn", "co.jp", "com.au", "com.br", "co.kr", "co.in"}
+)
+
+
+def registrable(host: str) -> str:
+    """Домен, против которого пишется звёздочка: `docs.bfl.ai` -> `bfl.ai`.
+
+    ЕДИНСТВЕННЫЙ разбор на весь проект (Е1): два генератора заявок на доступ
+    имели по своей копии, и копии разошлись.
+    """
+    parts = str(host or "").strip().lower().strip(".").split(".")
+    if len(parts) >= 3 and ".".join(parts[-2:]) in MULTI_LABEL_SUFFIXES:
+        return ".".join(parts[-3:])
+    return ".".join(parts[-2:]) if len(parts) >= 2 else ".".join(parts)
+
+
 def host_of(url: str) -> str:
     """The host, lowercased and without a leading `www.`. "" when not a URL."""
     match = _HOST.match(str(url or "").strip())

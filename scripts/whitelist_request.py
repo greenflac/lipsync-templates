@@ -74,6 +74,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from studio.selfrag import source_hosts  # noqa: E402
+
 DENIED = Path(__file__).resolve().parents[1] / "studio" / "knowledge" / "denied_hosts.jsonl"
 
 #: Registrable domains whose own pages ARE the vendor's word on their models.
@@ -289,15 +291,10 @@ TIERS: tuple[tuple[str, str, dict[str, str]], ...] = (
 
 #: Multi-part public suffixes seen in this log. Not a full PSL — a short list
 #: kept honest by `--check`, which fails on anything unclassified.
-MULTI_PART_SUFFIXES: frozenset[str] = frozenset({"co.uk", "com.cn", "co.jp", "com.au"})
-
-
-def registrable(host: str) -> str:
-    """The domain a wildcard should be written against."""
-    parts = str(host or "").strip().lower().split(".")
-    if len(parts) >= 3 and ".".join(parts[-2:]) in MULTI_PART_SUFFIXES:
-        return ".".join(parts[-3:])
-    return ".".join(parts[-2:]) if len(parts) >= 2 else ".".join(parts)
+#: Составной суффикс и разбор домена — в `source_hosts` (Е1): вторая копия
+#: этого знания жила в `scripts/allowlist_request.py` и была пустой.
+MULTI_PART_SUFFIXES = source_hosts.MULTI_LABEL_SUFFIXES
+registrable = source_hosts.registrable
 
 
 def refused_hosts(path: Path | None = None) -> dict[str, list[str]]:

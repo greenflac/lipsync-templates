@@ -27,6 +27,8 @@ assert _SPEC and _SPEC.loader
 заявка = importlib.util.module_from_spec(_SPEC)
 _SPEC.loader.exec_module(заявка)
 
+from studio.selfrag import source_hosts  # noqa: E402
+
 
 class ДоменДляЗвёздочкиБерётсяПоСуффиксу(unittest.TestCase):
     def test_обычный_домен_второго_уровня(self):
@@ -55,10 +57,23 @@ class ДоменДляЗвёздочкиБерётсяПоСуффиксу(unitt
         self.assertEqual("localhost", заявка.registrable("localhost"))
         self.assertEqual("", заявка.registrable(""))
 
-    def test_список_суффиксов_ровно_четыре(self):
-        """Литерал (Т2): список видённых в этом журнале, а не полный PSL.
-        Дописать в него значит расширить то, о чём просят, — это решение."""
-        self.assertEqual({"co.uk", "com.cn", "co.jp", "com.au"}, set(заявка.MULTI_PART_SUFFIXES))
+    def test_список_суффиксов_ровно_семь(self):
+        """Литерал (Т2): выбранный короткий список, а не полный PSL.
+        Дописать в него значит расширить то, о чём просят, — это решение.
+
+        Семь, а не четыре, с 2026-09-06: список переехал в `source_hosts` как
+        ЕДИНСТВЕННОЕ место (Е1). Вторая копия жила в `scripts/allowlist_request.py`
+        и была ПУСТОЙ — тот же дефект вторым местом (И7)."""
+        self.assertEqual(
+            {"co.uk", "com.cn", "co.jp", "com.au", "com.br", "co.kr", "co.in"},
+            set(заявка.MULTI_PART_SUFFIXES),
+        )
+
+    def test_разбор_один_на_оба_генератора_заявок(self):
+        """Е1: два генератора заявок на доступ имели по своей копии разбора, и
+        копии разошлись. Признак настоящего дубля: правка одного ОБЯЗАНА менять
+        второе — здесь это одна и та же функция, а не два похожих текста."""
+        self.assertIs(заявка.registrable, source_hosts.registrable)
 
 
 class ОбеФормыЗаписиОбязательны(unittest.TestCase):

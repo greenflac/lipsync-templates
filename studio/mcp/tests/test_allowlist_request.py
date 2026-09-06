@@ -37,6 +37,24 @@ class RegistrableDomain(unittest.TestCase):
         assert gen.registrable("ai.google.dev") == "google.dev"
         assert gen.registrable("deepmind.google") == "deepmind.google"
 
+    def test_a_compound_suffix_is_not_asked_for_as_a_whole(self) -> None:
+        """FOUND 2026-09-06 by an independent audit, the same defect in its
+        SECOND place (И7). This generator held `MULTI_LABEL_SUFFIXES = ()` and
+        answered `co.uk` for `docs.example.co.uk` — that is a request for all
+        of the UK commercial namespace, and it is THIS generator that writes
+        `docs/ALLOWLIST_REQUEST.md`, the document the owner reads. A request is
+        approved on its weakest line.
+
+        Latent only: no refused host sits under a compound suffix today
+        (MEASURED: no such row in the 151-line document).
+        """
+        assert gen.registrable("docs.example.co.uk") == "example.co.uk"
+        assert gen.registrable("api.y.com.au") == "y.com.au"
+
+    def test_an_unknown_compound_suffix_falls_back_predictably(self) -> None:
+        """Negative control (И5) for a list that is short and honestly partial."""
+        assert gen.registrable("docs.example.co.nz") == "co.nz"
+
 
 class TheBlockAHumanPastes(unittest.TestCase):
     def test_nothing_but_hostnames_reaches_the_paste_block(self) -> None:

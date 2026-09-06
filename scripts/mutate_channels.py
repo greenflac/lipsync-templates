@@ -981,11 +981,18 @@ MUTANTS: list[tuple[str, str, str, str, str]] = [
         "studio.mcp.tests.test_merge_model_ids",
     ),
     (
-        "scripts/whitelist_request.py",
-        'MULTI_PART_SUFFIXES: frozenset[str] = frozenset({"co.uk", "com.cn", "co.jp", "com.au"})',
-        "MULTI_PART_SUFFIXES: frozenset[str] = frozenset()",
+        "scripts/merge_model_ids.py",
+        '    "gpt_image_2": "gpt-image-2",\n',
+        "",
+        "имена: запись таблицы снята молча — модель снова отвечает от половины своих фактов",
+        "studio.mcp.tests.test_merge_model_ids",
+    ),
+    (
+        "studio/selfrag/source_hosts.py",
+        '    {"co.uk", "com.cn", "co.jp", "com.au", "com.br", "co.kr", "co.in"}',
+        "    set()",
         "заявка: составной суффикс не опознаётся — просим весь co.uk вместо одного домена",
-        "studio.mcp.tests.test_whitelist_request",
+        "studio.mcp.tests.test_whitelist_request studio.mcp.tests.test_allowlist_request",
     ),
     (
         "scripts/whitelist_request.py",
@@ -2312,8 +2319,13 @@ def clean() -> None:
 
 
 def run(тесты: str) -> tuple[int, str]:
+    """Модулей может быть несколько через пробел: одна подмена бывает охраной
+    сразу в двух местах — например разбор домена, общий для двух заявок."""
     p = subprocess.run(
-        [sys.executable, "-m", "unittest", тесты], cwd=ROOT, capture_output=True, text=True
+        [sys.executable, "-m", "unittest", *тесты.split()],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
     )
     хвост = (p.stdout + p.stderr).strip().splitlines()
     return p.returncode, (хвост[-1] if хвост else "")

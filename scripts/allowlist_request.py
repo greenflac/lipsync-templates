@@ -29,6 +29,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from studio.mcp import fetch  # noqa: E402
+from studio.selfrag import source_hosts  # noqa: E402
 
 OUT_PATH = Path(__file__).resolve().parents[1] / "docs" / "ALLOWLIST_REQUEST.md"
 
@@ -210,19 +211,9 @@ WANTED: tuple[tuple[str, str, str], ...] = (
 )
 
 
-#: Suffixes where the registrable domain is three labels, not two. Kept as a
-#: table because no public-suffix list ships offline and none of our hosts
-#: needs one yet — add to it rather than guessing if a `.co.uk` ever appears.
-MULTI_LABEL_SUFFIXES: tuple[str, ...] = ()
-
-
-def registrable(host: str) -> str:
-    """The domain a wildcard would be written against, e.g. `docs.bfl.ai` -> `bfl.ai`."""
-    parts = str(host or "").strip().lower().strip(".").split(".")
-    for suffix in MULTI_LABEL_SUFFIXES:
-        if host.endswith("." + suffix):
-            return ".".join(parts[-(suffix.count(".") + 2) :])
-    return ".".join(parts[-2:]) if len(parts) >= 2 else host
+#: Составной суффикс и разбор домена — в `source_hosts` (Е1). Здесь была
+#: ВТОРАЯ копия знания, и она была пустой: `MULTI_LABEL_SUFFIXES = ()`.
+registrable = source_hosts.registrable
 
 
 #: Where `*.<registrable domain>` is the WRONG ask, and what to ask instead.

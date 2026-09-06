@@ -85,6 +85,40 @@ class ЧужоеНаписаниеСводитсяКВендорскому(unitt
         for чужое, своё in слияние.MERGES.items():
             self.assertNotEqual(чужое, своё)
 
+    def test_таблица_написаний_целиком_литералом(self):
+        """Все 14 записей литералом (Т2), а не «две из них проверены».
+
+        До 2026-09-06 таблицу охраняли только общие свойства (цель не слита,
+        имя не сводится само к себе) плюс два имени, названные поимённо в
+        других тестах. ИЗМЕРЕНО подменой: удаление `gpt_image_2 -> gpt-image-2`
+        — одного из ДВУХ дефектов, ради которых файл написан, — оставляло все
+        тесты зелёными. Двенадцать из четырнадцати записей можно было снять
+        молча, и каждая снятая запись возвращает свой измеренный дефект:
+        модель отвечает от половины своих фактов.
+
+        Таблица обязана РАСТИ осознанно: новое написание — это новая строка
+        и здесь тоже, иначе оно приходит вместе с чьим-то «поправил рядом».
+        """
+        self.assertEqual(
+            {
+                "eleven-v3": "eleven_v3",
+                "elevenlabs-eleven-v3": "eleven_v3",
+                "eleven-flash-v2.5": "eleven_flash_v2_5",
+                "eleven-flash-v2-5": "eleven_flash_v2_5",
+                "eleven-flash-v2": "eleven_flash_v2",
+                "eleven-multilingual-v2": "eleven_multilingual_v2",
+                "elevenlabs-multilingual-v2": "eleven_multilingual_v2",
+                "eleven-multilingual-sts-v2": "eleven_multilingual_sts_v2",
+                "eleven-turbo-v2-5": "eleven_turbo_v2_5",
+                "elevenlabs-turbo-v2.5": "eleven_turbo_v2_5",
+                "eleven-turbo-v2": "eleven_turbo_v2",
+                "eleven-v3-conversational": "eleven_v3_conversational",
+                "gpt_image_2": "gpt-image-2",
+                "elevenlabs-*": "eleven-*",
+            },
+            dict(слияние.MERGES),
+        )
+
     def test_атрибут_licence_в_таблице(self):
         """Литерал (Т2). Единственная запись таблицы атрибутов, и её пропажа
         молча вернула бы дефект, который дороже всех прочих в этом файле."""
