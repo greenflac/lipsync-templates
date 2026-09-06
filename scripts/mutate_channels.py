@@ -2393,6 +2393,20 @@ MUTANTS: list[tuple[str, str, str, str, str]] = [
         "studio.mcp.tests.test_screen_customer_words",
     ),
     (
+        "studio/duration.py",
+        "    слова = СЛОВА_О_ДЛИТЕЛЬНОСТИ.search(низ)",
+        "    слова = None",
+        "длительность: неразобранное снова подаётся как несказанное заказчиком",
+        "studio.mcp.tests.test_duration_unparsed",
+    ),
+    (
+        "studio/planner.py",
+        "+ (0 if длительность.разобрано else 1)",
+        "",
+        "план: неразобранная длительность не считается неизмеримостью — проверка длины исчезает молча",
+        "studio.mcp.tests.test_duration_unparsed",
+    ),
+    (
         "scripts/run_tests.py",
         "        raise AssertionError(ОТКАЗ)\n\n    def connect_ex",
         "        return None\n\n    def connect_ex",
