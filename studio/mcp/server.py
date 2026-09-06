@@ -285,8 +285,12 @@ def record_model_fact(
 
         "vendor", "portal" and "blog" are decided by the URL, not by you: pass
         the one you believe and you will be refused, with the host named, if it
-        disagrees. "probe", "paper" and "benchmark" describe how you got the
-        fact, so those are yours to state.
+        disagrees. "probe" and "benchmark" describe how you got the fact, so
+        those are yours to state. "paper" is yours to state TOO, but the URL
+        has to carry something a reader can re-check the paper by — a known
+        venue (arXiv, OpenReview, ACL, ACM, IEEE, CVF, Springer, MLR, NeurIPS,
+        bioRxiv), a DOI, or an arXiv identifier — otherwise it is refused with
+        that reason. A repository of the code for a paper is not the paper.
     :param stated_on: the ISO date THE SOURCE stated it (YYYY-MM-DD), not
         today. Dating an old article as today is how a stale claim looks fresh.
     :param fix: for a failure mode, what to do about it.

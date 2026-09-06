@@ -7,7 +7,14 @@
 в тот же день; здесь она закрывается для `paper`, у которого признак в адресе
 ЕСТЬ: статья почти всегда несёт свой идентификатор.
 
-ИЗМЕРЕНО на живой базе: из 175 строк тира `paper` признак несут 174.
+ИЗМЕРЕНО на живой базе 2026-09-06: из 184 строк тира `paper` признак несут 183.
+
+Первая версия признака была одновременно СЛИШКОМ СТРОГОЙ и СЛИШКОМ СЛАБОЙ, и
+обе стороны назвала независимая проверка: отвергались NeurIPS, `dl.acm.org/doi`,
+IEEE, CVF, Springer, MLR, bioRxiv и старый формат arxiv (`abs/cs/0501001`) —
+это отказ записать настоящую статью; и принимались любой `.pdf` (включая
+рекламную презентацию), любой сегмент вида `NNNN.NNNNN` и чужой блог, в адресе
+которого `openreview.net` стоит подстрокой.
 
 Ожидаемое — литералы (Т2), сети нет (Т4), входы с обоих краёв (Т3).
 """
@@ -51,14 +58,44 @@ class АдресСтатьиОбязанБытьПроверяемым(unittest.
         )
         self.assertEqual(self.записать(живой)["outcome"], "pass")
 
-    def test_doi_openreview_acl_и_pdf_проходят(self):
+    def test_настоящие_площадки_проходят(self):
+        """Отказ по этим адресам — отказ записать настоящую статью. Взяты и
+        краю списка, и его середина (Т3)."""
         for url in (
             "https://doi.org/10.1145/3592433",
             "https://openreview.net/forum?id=abc",
             "https://aclanthology.org/2024.acl-long.1/",
-            "https://example.test/paper.pdf",
+            "https://arxiv.org/abs/cs/0501001",
+            "https://dl.acm.org/doi/10.1145/3592433",
+            "https://proceedings.neurips.cc/paper_files/paper/2024/hash/a.html",
+            "https://openaccess.thecvf.com/content/CVPR2024/papers/x.pdf",
+            "https://ieeexplore.ieee.org/document/10123456",
+            "https://link.springer.com/article/10.1007/s11263-024-02001",
+            "https://proceedings.mlr.press/v235/smith24a.html",
+            "https://www.biorxiv.org/content/10.1101/2024.01.01.573",
         ):
             self.assertEqual(self.записать(url)["outcome"], "pass", url)
+
+    def test_рекламная_презентация_это_не_статья(self):
+        """`.pdf` сам по себе не признак: у вендора в PDF лежат презентации.
+        Признак — площадка, DOI или идентификатор arxiv."""
+        итог = self.записать("https://vendor.example/decks/marketing-2026.pdf")
+        self.assertEqual(итог["outcome"], "fail")
+
+    def test_имя_площадки_подстрокой_в_чужом_адресе_не_считается(self):
+        """Сравнение идёт по РЕГИСТРИРУЕМОМУ ДОМЕНУ. Раньше блог, у которого в
+        пути стоит `openreview.net`, проходил как статья с OpenReview."""
+        итог = self.записать("https://blog.example.com/why-openreview.net-is-broken")
+        self.assertEqual(итог["outcome"], "fail")
+
+    def test_число_похожее_на_идентификатор_не_идентификатор(self):
+        """`9912.34567` — месяц 12 бывает, а вот `build-9912.34567` не сегмент
+        пути целиком; и месяца 34 не существует."""
+        for url in (
+            "https://example.test/build-9912.34567/notes",
+            "https://example.test/2434.09262/notes",
+        ):
+            self.assertEqual(self.записать(url)["outcome"], "fail", url)
 
     def test_блог_на_ступени_paper_отвергается(self):
         итог = self.записать("https://someblog.example/why-video-models-fail")

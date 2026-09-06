@@ -1094,9 +1094,23 @@ MUTANTS: list[tuple[str, str, str, str, str]] = [
     ),
     (
         "studio/mcp/advice.py",
-        '    if fields["tier"] == TIER_PAPER and not _ПРИЗНАК_СТАТЬИ.search(fields["source_url"]):',
+        '    if fields["tier"] == TIER_PAPER and not признак_статьи(fields["source_url"]):',
         "    if False:",
         "ступень: `paper` снова берётся на слово — статью не по чему перепроверить",
+        "studio.mcp.tests.test_paper_tier_is_checkable",
+    ),
+    (
+        "studio/mcp/advice.py",
+        "    if домен in ПЛОЩАДКИ_СТАТЕЙ:\n        return True",
+        '    if домен in ПЛОЩАДКИ_СТАТЕЙ or адрес.lower().endswith(".pdf"):\n        return True',
+        "ступень: рекламная презентация в PDF снова засчитывается за статью",
+        "studio.mcp.tests.test_paper_tier_is_checkable",
+    ),
+    (
+        "studio/mcp/advice.py",
+        "    домен = source_hosts.registrable(source_hosts.host_of(адрес))\n    if домен in ПЛОЩАДКИ_СТАТЕЙ:",
+        "    if any(p in адрес for p in ПЛОЩАДКИ_СТАТЕЙ):",
+        "ступень: площадка опознаётся подстрокой — чужой блог про OpenReview снова статья",
         "studio.mcp.tests.test_paper_tier_is_checkable",
     ),
     (
