@@ -939,6 +939,20 @@ MUTANTS: list[tuple[str, str, str, str, str]] = [
     # Прибор, который никто не сторожит, ослабляется незаметно: его красное
     # видно, а его ослабление — нет.
     (
+        "scripts/whitelist_request.py",
+        'MULTI_PART_SUFFIXES: frozenset[str] = frozenset({"co.uk", "com.cn", "co.jp", "com.au"})',
+        "MULTI_PART_SUFFIXES: frozenset[str] = frozenset()",
+        "заявка: составной суффикс не опознаётся — просим весь co.uk вместо одного домена",
+        "studio.mcp.tests.test_whitelist_request",
+    ),
+    (
+        "scripts/whitelist_request.py",
+        '    return (f"*.{domain}", domain)',
+        '    return (f"*.{domain}",)',
+        "заявка: голая форма домена выпала — доступ не доедет",
+        "studio.mcp.tests.test_whitelist_request",
+    ),
+    (
         "scripts/check_declared_deps.py",
         "    новые = {k: v for k, v in found.items() if k not in KNOWN_UNDECLARED}",
         "    новые = {}",
