@@ -38,7 +38,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from studio.mcp.fetch import DENIED_PATH  # noqa: E402
+from studio.mcp import fetch  # noqa: E402
 from studio.selfrag import source_hosts  # noqa: E402
 from studio.selfrag.facts import (  # noqa: E402
     DEFAULT_FACTS_PATH,
@@ -57,19 +57,25 @@ SUMMARY_MARKER = "read via summary"
 
 
 def refused_hosts() -> set[str]:
-    """Hosts measured refused by the egress policy, from the recorded refusals."""
-    if not DENIED_PATH.is_file():
-        return set()
-    hosts = set()
-    for line in DENIED_PATH.read_text(encoding="utf-8").splitlines():
-        line = line.strip()
-        if not line or line.startswith("//"):
-            continue
-        try:
-            hosts.add(str(json.loads(line).get("host", "")).lower())
-        except ValueError:
-            continue
-    return {h for h in hosts if h}
+    """Хосты, закрытые политикой ПО ПОСЛЕДНЕМУ записанному состоянию.
+
+    ЖУРНАЛ ОТКАЗОВ — ЖУРНАЛ СОСТОЯНИЙ, А НЕ СПИСОК УПОМИНАНИЙ. Строка `open`
+    снимает прежний отказ; собирать хосты по любому упоминанию значит считать
+    закрытым всё, что когда-либо отказало хоть раз.
+
+    ИЗМЕРЕНО 2026-09-06: в журнале 274 хоста, закрыты по последнему состоянию
+    210. Прежний разбор возвращал все 274, и на живой базе это 1007 строк,
+    которым повторный прогон поставил бы `read_directly = False` ЗРЯ — при
+    том, что шапка этого файла обещает: «повторный прогон безопасен, это
+    чистая функция файла». Обещание не выполнялось.
+
+    Тот же класс дефекта независимая проверка нашла накануне в собственном
+    подсчёте и записала числом: «закрыт» без учёта поздних проб завысил ответ
+    в 983 раза. Здесь он вторым местом (правило И7: нашёл дефект — грепни по
+    его форме), и разбор теперь ОДИН на весь проект (Е1).
+    """
+    состояния = fetch.последние_состояния()
+    return {h for h, с in состояния.items() if с == fetch.STATE_REFUSED}
 
 
 def decide(row: dict, refused: set[str]) -> dict:

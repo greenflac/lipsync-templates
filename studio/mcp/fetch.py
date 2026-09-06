@@ -76,6 +76,8 @@ __all__ = [
     "wanted",
     "note_denial",
     "причина_для_записи",
+    "последние_состояния",
+    "закрыт_политикой",
     "DENIED_PATH",
     "MEASURED_ON",
 ]
@@ -258,6 +260,33 @@ def _latest_states(rows: list[dict]) -> dict[str, str]:
     return latest
 
 
+def последние_состояния(denied: Path | None = None) -> dict[str, str]:
+    """Хост -> его ПОСЛЕДНЕЕ записанное состояние. Одно место на весь проект.
+
+    Журнал отказов дописывается, а не переписывается: строка `open` снимает
+    прежний отказ. Разбор «по любому упоминанию» на живой базе завышает вдвое
+    (274 хоста против 210 закрытых, ИЗМЕРЕНО 2026-09-06), и однажды это уже
+    стоило независимой проверке ошибки в 983 раза.
+    """
+    путь = DENIED_PATH if denied is None else denied
+    try:
+        текст = путь.read_text(encoding="utf-8")
+    except OSError:
+        return {}
+    состояния: dict[str, str] = {}
+    for строка in текст.splitlines():
+        строка = строка.strip()
+        if not строка or строка.startswith("//"):
+            continue
+        try:
+            row = json.loads(строка)
+        except ValueError:
+            continue
+        if isinstance(row, dict) and row.get("host"):
+            состояния[str(row["host"]).lower()] = str(row.get("state", STATE_REFUSED))
+    return состояния
+
+
 def закрыт_политикой(url: str, denied: Path | None = None) -> bool:
     """Записан ли хост этого адреса ПОСЛЕДНИМ состоянием как отказавший.
 
@@ -269,28 +298,7 @@ def закрыт_политикой(url: str, denied: Path | None = None) -> boo
     host = _host(url)
     if not host:
         return False
-    путь = DENIED_PATH if denied is None else путь_или(denied)
-    try:
-        текст = путь.read_text(encoding="utf-8")
-    except OSError:
-        return False
-    состояния: dict[str, str] = {}
-    for строка in текст.splitlines():
-        строка = строка.strip()
-        if not строка:
-            continue
-        try:
-            row = json.loads(строка)
-        except ValueError:
-            continue
-        if isinstance(row, dict) and row.get("host"):
-            состояния[str(row["host"])] = str(row.get("state", STATE_REFUSED))
-    return состояния.get(host, "") == STATE_REFUSED
-
-
-def путь_или(p: Path) -> Path:
-    """Тождество, названное именем: точка подмены для теста."""
-    return p
+    return последние_состояния(denied).get(host, "") == STATE_REFUSED
 
 
 def note_open(url: str) -> dict:

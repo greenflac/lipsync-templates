@@ -939,6 +939,13 @@ MUTANTS: list[tuple[str, str, str, str, str]] = [
     # Прибор, который никто не сторожит, ослабляется незаметно: его красное
     # видно, а его ослабление — нет.
     (
+        "studio/mcp/fetch.py",
+        '            состояния[str(row["host"]).lower()] = str(row.get("state", STATE_REFUSED))',
+        '            состояния.setdefault(str(row["host"]).lower(), str(row.get("state", STATE_REFUSED)))',
+        "журнал состояний: `open` снова не снимает прежний отказ — 64 хоста считаются закрытыми зря",
+        "studio.mcp.tests.test_retier_reads_states",
+    ),
+    (
         "scripts/poll_catalogs.py",
         'OPENROUTER_NOT_PRICES = frozenset({"overrides"})',
         "OPENROUTER_NOT_PRICES = frozenset()",
