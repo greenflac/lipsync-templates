@@ -50,6 +50,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+import tempfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -131,6 +132,41 @@ def _check(path: Path | None = None) -> int:
     return 1 if stale else 0
 
 
+ПОЧЕМУ_НЕ_ПЕРЕНОС = (
+    "строка не проходит НЫНЕШНЮЮ проверку записи и под своим прежним именем тоже: "
+    "перенос тут ни при чём, чинить надо саму строку"
+)
+
+
+def отказ_из_за_самой_строки(fact, пробник: Path | None = None) -> bool:
+    """Отказ пришёл от переноса — или строка сама не проходит проверку записи?
+
+    ЗАЧЕМ (найдено независимой проверкой 2026-09-06). Правила записи строже
+    правил, действовавших когда строка легла в базу: с `7900a37` ступень `paper`
+    требует адреса, по которому статью перепроверить. Такая старая строка не
+    переносится НИКОГДА — и без этой развилки давала жёсткое «НЕ ПЕРЕНЕСЕНО» и
+    код 1, то есть сведение имён навсегда красное по причине, к сведению имён
+    отношения не имеющей. Это Р1: третий исход не сворачивается в «не годно».
+
+    Проверяется наблюдением, а не догадкой (Е2): тот же факт записывается под
+    ПРЕЖНИМ именем в ОТДЕЛЬНЫЙ файл. Отказали оба — дело в строке.
+    """
+    with tempfile.TemporaryDirectory() as каталог:
+        итог = advice.record(
+            fact.model,
+            fact.attribute,
+            fact.value,
+            fact.source_url,
+            fact.tier,
+            fact.stated_on,
+            note=fact.note,
+            fix=fact.fix,
+            read_directly=fact.read_directly,
+            path=пробник or Path(каталог) / "probe.jsonl",
+        )
+    return итог["outcome"] != PASS
+
+
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--dry-run", action="store_true")
@@ -140,7 +176,7 @@ def main(argv: list[str]) -> int:
     if args.check:
         return _check()
 
-    moved = kept = failed = 0
+    moved = kept = failed = не_смогли = 0
     for fact in _plan():
         canonical, attribute = canonical_of(fact)
         if args.dry_run:
@@ -159,8 +195,15 @@ def main(argv: list[str]) -> int:
             read_directly=fact.read_directly,
         )
         if written["outcome"] != PASS:
-            failed += 1
-            print(f"  НЕ ПЕРЕНЕСЕНО {fact.model}.{fact.attribute}: {written['note'][:120]}")
+            if отказ_из_за_самой_строки(fact):
+                не_смогли += 1
+                print(
+                    f"  НЕ СМОГЛИ {fact.model}.{fact.attribute}: {written['note'][:120]}\n"
+                    f"    {ПОЧЕМУ_НЕ_ПЕРЕНОС}"
+                )
+            else:
+                failed += 1
+                print(f"  НЕ ПЕРЕНЕСЕНО {fact.model}.{fact.attribute}: {written['note'][:120]}")
             continue
         removed = advice.withdraw(fact.model, fact.attribute, fact.value, fact.source_url, WHY)
         if removed["outcome"] != PASS:
@@ -174,8 +217,8 @@ def main(argv: list[str]) -> int:
     print(f"\nнаписаний в таблице {len(MERGES) + len(ATTRIBUTE_MERGES)}")
     print(f"перенесено {moved}")
     print(f"из них уже стояло под каноническим id {kept}")
-    print(f"не смогли {failed}")
-    return 1 if failed else 0
+    print(f"не смогли {не_смогли}")
+    return 1 if failed else (2 if не_смогли else 0)
 
 
 if __name__ == "__main__":

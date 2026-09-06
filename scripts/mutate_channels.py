@@ -988,6 +988,20 @@ MUTANTS: list[tuple[str, str, str, str, str]] = [
         "studio.mcp.tests.test_merge_model_ids",
     ),
     (
+        "scripts/merge_model_ids.py",
+        '    return итог["outcome"] != PASS',
+        "    return True",
+        "имена: любой сбой переноса объявляется бедой самой строки — настоящая поломка спрятана",
+        "studio.mcp.tests.test_merge_model_ids",
+    ),
+    (
+        "scripts/merge_model_ids.py",
+        '            path=пробник or Path(каталог) / "probe.jsonl",',
+        "            path=пробник,",
+        "имена: проба записи уходит в ЖИВУЮ базу — сведение имён само её и пачкает",
+        "studio.mcp.tests.test_merge_model_ids",
+    ),
+    (
         "studio/selfrag/source_hosts.py",
         '    {"co.uk", "com.cn", "co.jp", "com.au", "com.br", "co.kr", "co.in"}',
         "    set()",
