@@ -1109,6 +1109,20 @@ MUTANTS: list[tuple[str, str, str, str, str]] = [
         "studio.mcp.tests.test_retier_reads_states",
     ),
     (
+        "scripts/validator.py",
+        "SEED = 20260830",
+        "SEED = 1",
+        "бенч: зерно выборки уплыло — заявленный признак перепроверяется на другой выборке",
+        "studio.mcp.tests.test_validator",
+    ),
+    (
+        "scripts/validator.py",
+        "PER_CONFIG = 2",
+        "PER_CONFIG = 1",
+        "бенч: вдвое меньше разборов на конфигурацию при том же отчёте",
+        "studio.mcp.tests.test_validator",
+    ),
+    (
         "studio/selfrag/source_hosts.py",
         '    {"co.uk", "com.cn", "co.jp", "com.au", "com.br", "co.kr", "co.in"}',
         "    set()",

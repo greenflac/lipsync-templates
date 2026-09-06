@@ -129,6 +129,54 @@ class TheSample(unittest.TestCase):
         assert len(out["cases"]) == 3 * bench.PER_CONFIG
         assert out["held_out"] == len(self.ROWS) - len(out["cases"])
 
+    #: Строки с РАЗНЫМИ адресами картинок: `case_id` считается по адресу, и на
+    #: одинаковых фикстурах все шесть отобранных получали один id — выборка
+    #: выглядела бы одинаковой при ЛЮБОМ зерне.
+    ADDRESSED = [
+        {
+            "image_url": f"https://i.test/{prefix}{i}.jpg",
+            "base_model": model,
+            "parameters": {"sampler": sampler, "steps": steps},
+        }
+        for prefix, model, sampler, steps, count in (
+            ("a", "Illustrious", "Euler a", 30, 40),
+            ("b", "Pony", "DPM++ 2M", 25, 25),
+            ("c", "Wan Video 14B t2v", "UniPC", 15, 10),
+        )
+        for i in range(count)
+    ]
+
+    def test_THE_SEED_ITSELF_is_the_one_the_bench_publishes(self) -> None:
+        """Т2, ИЗМЕРЕНО подменой 2026-09-06: соседний тест сравнивал два вызова
+        В ОДНОМ ПРОГОНЕ и потому был слеп к ЗНАЧЕНИЮ зерна — `SEED = 1` держал
+        его зелёным. Воспроизводимость бенча стоит на конкретном числе: с ним
+        отобранные разборы обязаны быть ЭТИМИ, иначе заявленный признак
+        перепроверяется на другой выборке и сравнение ничего не значит."""
+        self.assertEqual(20260830, bench.SEED)
+        with mock.patch.object(bench, "_rows", lambda: list(self.ADDRESSED)):
+            out = bench.sample(20)
+        self.assertEqual(
+            [
+                "vc-7d3fdd990b",
+                "vc-506c2fcb8d",
+                "vc-2a32a054a5",
+                "vc-ebc98f114d",
+                "vc-7ac931b02e",
+                "vc-94a727b3d4",
+            ],
+            [c["id"] for c in out["cases"]],
+        )
+
+    def test_TWO_cases_per_configuration_and_the_number_is_a_literal(self) -> None:
+        """Соседний тест брал `bench.PER_CONFIG` и ехал вместе с модулем (Т2):
+        подмена «по одному разбору на конфигурацию» оставалась зелёной, а это
+        вдвое меньший бенч при том же отчёте."""
+        self.assertEqual(2, bench.PER_CONFIG)
+        with mock.patch.object(bench, "_rows", lambda: list(self.ADDRESSED)):
+            out = bench.sample(20)
+        self.assertEqual(6, len(out["cases"]))
+        self.assertEqual(69, out["held_out"])
+
     def test_an_absent_corpus_is_COULD_NOT_MEASURE(self) -> None:
         with mock.patch.object(bench, "CORPUS", Path("/nowhere/civitai.jsonl")):
             out = bench.sample(10)
