@@ -1081,6 +1081,20 @@ MUTANTS: list[tuple[str, str, str, str, str]] = [
         "studio.mcp.tests.test_corpus",
     ),
     (
+        "studio/mcp/civitai.py",
+        "MAX_NSFW_LEVEL = 4",
+        "MAX_NSFW_LEVEL = 32",
+        "civitai: потолок откровенности снят — собираем то, что решили не собирать",
+        "studio.mcp.tests.test_civitai_facts",
+    ),
+    (
+        "studio/mcp/civitai.py",
+        "MIN_PROMPT_WORDS = 3",
+        "MIN_PROMPT_WORDS = 0",
+        "civitai: обрывок тегов засчитывается за промпт",
+        "studio.mcp.tests.test_civitai",
+    ),
+    (
         "studio/selfrag/source_hosts.py",
         '    {"co.uk", "com.cn", "co.jp", "com.au", "com.br", "co.kr", "co.in"}',
         "    set()",
