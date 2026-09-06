@@ -180,10 +180,7 @@ def build_kling(count: int) -> list[dict]:
                 },
             }
         )
-        print(
-            f"  {cid}  {a.get('kling_version')}  {row.get('type')}  "
-            f"{_мегабайты(report):.1f} МБ"
-        )
+        print(f"  {cid}  {a.get('kling_version')}  {row.get('type')}  {_мегабайты(report):.1f} МБ")
     return made
 
 

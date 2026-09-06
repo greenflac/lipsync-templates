@@ -1095,6 +1095,20 @@ MUTANTS: list[tuple[str, str, str, str, str]] = [
         "studio.mcp.tests.test_civitai",
     ),
     (
+        "scripts/retier_facts.py",
+        'METHOD_TIERS = ("probe", "paper", "benchmark")',
+        "METHOD_TIERS = ()",
+        "перетир: ступень-метод перезаписывается по адресу — решаем за записавшего, чем была находка",
+        "studio.mcp.tests.test_retier_reads_states",
+    ),
+    (
+        "scripts/retier_facts.py",
+        '        out["read_directly"] = row.get("read_directly")',
+        '        out["read_directly"] = False',
+        "перетир: неизвестное объявляется непрочитанным — 1007 строк зря",
+        "studio.mcp.tests.test_retier_reads_states",
+    ),
+    (
         "studio/selfrag/source_hosts.py",
         '    {"co.uk", "com.cn", "co.jp", "com.au", "com.br", "co.kr", "co.in"}',
         "    set()",

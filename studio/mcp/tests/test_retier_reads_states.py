@@ -18,6 +18,7 @@
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import tempfile
 import unittest
@@ -25,6 +26,13 @@ from pathlib import Path
 from unittest import mock
 
 from studio.mcp import fetch
+
+_SPEC = importlib.util.spec_from_file_location(
+    "retier_facts", Path(__file__).resolve().parents[3] / "scripts" / "retier_facts.py"
+)
+assert _SPEC and _SPEC.loader
+перетир = importlib.util.module_from_spec(_SPEC)
+_SPEC.loader.exec_module(перетир)
 
 
 def журнал(строки: list[dict]) -> Path:
@@ -91,3 +99,69 @@ class ПоследнееСостояниеПобеждаетПрежнее(unitt
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class РешениеПоСтрокеБезДискаИСети(unittest.TestCase):
+    """`decide` — сердце перетирания, и до 2026-09-06 его не касался ни один тест.
+
+    Модуль обещает в шапке: «повторный прогон безопасен, это ЧИСТАЯ функция
+    файла плюс двух источников свидетельства». Обещание держится ровно этой
+    функцией, а она жила без охраны: ступень-метод можно было начать
+    перезаписывать по URL, а метку пересказа перестать опознавать, и оба
+    прогона остались бы зелёными (ИЗМЕРЕНО подменой: OK и OK).
+    """
+
+    ВЕНДОР = "https://elevenlabs.io/docs/models"
+
+    def строка(self, **поля) -> dict:
+        сырьё = {
+            "model": "eleven_v3",
+            "attribute": "max_seconds",
+            "value": "300",
+            "source_url": self.ВЕНДОР,
+            "tier": "blog",
+            "stated_on": "2026-09-05",
+            "note": "",
+        }
+        сырьё.update(поля)
+        return сырьё
+
+    def test_ступень_метода_не_перезаписывается_адресом(self):
+        """Никакой URL не докажет, что API спрашивали или что метод опубликован.
+        Ступени `probe`, `paper`, `benchmark` — слово записавшего, и переписать
+        их по хосту значит решить за него, чем была его находка."""
+        for ступень in ("probe", "paper", "benchmark"):
+            итог = перетир.decide(self.строка(tier=ступень), set())
+            self.assertEqual(ступень, итог["tier"], ступень)
+
+    def test_ступень_личности_считается_по_адресу(self):
+        """Негативный контроль (И5): иначе функция просто ничего не делает.
+        Вендорский хост поднимает строку с `blog` до `vendor`."""
+        итог = перетир.decide(self.строка(tier="blog"), set())
+        self.assertEqual("vendor", итог["tier"])
+
+    def test_зонд_считается_прочитанным(self):
+        """API ответил нам — это и есть чтение."""
+        итог = перетир.decide(self.строка(tier="probe"), set())
+        self.assertIs(True, итог["read_directly"])
+
+    def test_метка_пересказа_ставит_непрочитано(self):
+        итог = перетир.decide(self.строка(note="Read via summary of the page"), set())
+        self.assertIs(False, итог["read_directly"])
+
+    def test_закрытый_хост_ставит_непрочитано(self):
+        """В этом окружении такую страницу открыть было нечем."""
+        итог = перетир.decide(self.строка(), {"elevenlabs.io"})
+        self.assertIs(False, итог["read_directly"])
+
+    def test_открытый_хост_флаг_не_трогает(self):
+        """Не записано — не то же самое, что не прочитано: третий ответ (Р1).
+        Именно этот случай стоил 1007 строк, объявленных непрочитанными зря."""
+        итог = перетир.decide(self.строка(), set())
+        self.assertIsNone(итог["read_directly"])
+
+    def test_чужие_поля_строки_сохраняются(self):
+        """Перетирание правит две графы и не смеет терять остальные."""
+        итог = перетир.decide(self.строка(fix="что делать", witnessed="прогон"), set())
+        self.assertEqual("что делать", итог["fix"])
+        self.assertEqual("прогон", итог["witnessed"])

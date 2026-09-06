@@ -478,7 +478,9 @@ class MoneyGuard(StudioCase):
             ответ = self.client.post("/api/video", json={"session_id": session_id})
 
         self.assertEqual(ответ.json()["outcome"], "could not measure")
-        self.assertEqual(self.store.sessions[session_id]["stage"], "needs_review", "сессия ушла человеку")
+        self.assertEqual(
+            self.store.sessions[session_id]["stage"], "needs_review", "сессия ушла человеку"
+        )
         событие = jobs.из_журнала(f"{session_id}:video:1:refund")
         self.assertIsNotNone(событие, "причина записана в журнал ручек")
         assert событие is not None

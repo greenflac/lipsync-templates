@@ -160,9 +160,7 @@ class РазборПервойФразы(unittest.TestCase):
         self.assertEqual("начитка диктора", clarify.первая_фраза("Начитка диктора, голос"))
 
     def test_фраза_без_реза_целиком(self):
-        self.assertEqual(
-            "нужен рекламный ролик", clarify.первая_фраза("Нужен рекламный ролик")
-        )
+        self.assertEqual("нужен рекламный ролик", clarify.первая_фраза("Нужен рекламный ролик"))
 
 
 class ВопросВПлане(unittest.TestCase):
