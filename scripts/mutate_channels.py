@@ -2309,6 +2309,13 @@ MUTANTS: list[tuple[str, str, str, str, str]] = [
         "studio.mcp.tests.test_find_signals",
     ),
     (
+        "scripts/ingest_civitai.py",
+        'ЗНАК_ЯРЛЫК = "без: нехватка памяти"',
+        'ЗНАК_ЯРЛЫК = "нехватка памяти"',
+        "civitai: отрицание события читается как событие — свидетельство с перевёрнутым знаком",
+        "studio.mcp.tests.test_civitai_facts",
+    ),
+    (
         "scripts/run_tests.py",
         "        raise AssertionError(ОТКАЗ)\n\n    def connect_ex",
         "        return None\n\n    def connect_ex",
