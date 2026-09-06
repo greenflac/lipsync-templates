@@ -2197,6 +2197,20 @@ MUTANTS: list[tuple[str, str, str, str, str]] = [
         "studio.mcp.tests.test_misses",
     ),
     (
+        "scripts/ingest_harvest.py",
+        "MIN_EVIDENCE_CHARS = 12",
+        "MIN_EVIDENCE_CHARS = 1",
+        "сбор: доказательством становится одна буква — утверждение едет в базу как цитата",
+        "studio.mcp.tests.test_harvest_rows",
+    ),
+    (
+        "scripts/ingest_harvest.py",
+        '    if not row.get("read_directly"):',
+        "    if False:",
+        "сбор: непрочитанная страница доезжает до базы сбором, а не пересказом",
+        "studio.mcp.tests.test_harvest_rows",
+    ),
+    (
         "scripts/run_tests.py",
         "        raise AssertionError(ОТКАЗ)\n\n    def connect_ex",
         "        return None\n\n    def connect_ex",
