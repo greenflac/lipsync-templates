@@ -603,3 +603,5 @@
 {"host": "everypixel.com", "url": "https://everypixel.com/", "reason": "Tunnel connection failed: 403 Forbidden", "why_wanted": "checking whether a search hit is readable", "incidental": true, "state": "refused", "first_seen": "2026-09-05"}
 {"host": "dubly.ai", "url": "https://dubly.ai/", "reason": "Tunnel connection failed: 403 Forbidden", "why_wanted": "checking whether a search hit is readable", "incidental": true, "state": "refused", "first_seen": "2026-09-05"}
 {"host": "panjaya.ai", "url": "https://panjaya.ai/", "reason": "Tunnel connection failed: 403 Forbidden", "why_wanted": "checking whether a search hit is readable", "incidental": true, "state": "refused", "first_seen": "2026-09-05"}
+{"host": "venice.ai", "url": "https://venice.ai/", "reason": "Tunnel connection failed: 403 Forbidden", "why_wanted": "checking whether a search hit is readable", "incidental": true, "state": "refused", "first_seen": "2026-09-06"}
+{"host": "veo3ai.io", "url": "https://veo3ai.io/", "reason": "Tunnel connection failed: 403 Forbidden", "why_wanted": "checking whether a search hit is readable", "incidental": true, "state": "refused", "first_seen": "2026-09-06"}
