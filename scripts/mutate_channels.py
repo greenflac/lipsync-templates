@@ -939,6 +939,20 @@ MUTANTS: list[tuple[str, str, str, str, str]] = [
     # Прибор, который никто не сторожит, ослабляется незаметно: его красное
     # видно, а его ослабление — нет.
     (
+        "scripts/check_headline.py",
+        'ПУСТОТА = ("nothing is recorded", "ничего не записано")',
+        'ПУСТОТА = ("НЕ-ВСТРЕТИТСЯ-НИКОГДА",)',
+        "заголовок: слова пустоты перестали опознаваться — ложный заголовок снова невидим",
+        "studio.mcp.tests.test_headline_vs_base",
+    ),
+    (
+        "scripts/check_headline.py",
+        '    if int(ответ.get("unmeasured") or 0) and not any(с in нота for с in ТРЕТИЙ_ИСХОД):',
+        "    if False:",
+        "заголовок: неизмеренное снова может молчать в ноте",
+        "studio.mcp.tests.test_headline_vs_base",
+    ),
+    (
         "scripts/check_craft.py",
         "VERBATIM_MAX_WORDS = 15",
         "VERBATIM_MAX_WORDS = 500",
