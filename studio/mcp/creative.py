@@ -227,7 +227,10 @@ def frames_in(frames_dir: str | Path) -> dict:
     text = str(frames_dir or "").strip()
     if not text:
         return {"state": FRAMES_NONE, "frames": [], "why": "каталог кадров не назван"}
-    directory = Path(text)
+    # ТИЛЬДА РАСКРЫВАЕТСЯ И ЗДЕСЬ (И7: правило чинится во всех местах своей
+    # формы). Приёмка 2026-09-07 нашла `expanduser` ровно в ОДНОМ из трёх мест,
+    # строящих Path из пути заказчика.
+    directory = Path(text).expanduser()
     if not directory.is_dir():
         return {
             "state": FRAMES_MISSING,
@@ -298,7 +301,7 @@ def look(path: str | Path) -> dict:
         (always None — see the module docstring), and the raw numbers the
         words came from, so a reader can disagree with the naming.
     """
-    target = Path(str(path))
+    target = Path(str(path)).expanduser()
     gone = missing_reason(target)
     if gone:
         return {

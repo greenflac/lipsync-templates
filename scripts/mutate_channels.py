@@ -850,10 +850,25 @@ MUTANTS: list[tuple[str, str, str, str, str]] = [
         "план: снова строится на видео, которого нет по названному пути",
         "studio.mcp.tests.test_what_to_do_next",
     ),
+    # === ПЯТАЯ ПРИЁМКА: окно двойного отрицания и род потолка ============
+    (
+        "studio/mcp/screen.py",
+        "        if с.lower() in ЗАЧИН_ДРУГОГО:\n            break",
+        "        if False:\n            break",
+        "бриф: окно двойного отрицания снова бесконечно — «без спешки не обойтись» отвергает бриф",
+        "studio.mcp.tests.test_acceptance_findings_5",
+    ),
+    (
+        "studio/planner.py",
+        "    if потолок is not None and not в_валюте_бюджета:",
+        "    if False:",
+        "цена: ноль сравнений снова объявляется «годно»",
+        "studio.mcp.tests.test_acceptance_findings_5",
+    ),
     # === ЧЕТВЁРТАЯ ПРИЁМКА: 9 находок, 6 «стало хуже» ====================
     (
         "studio/planner.py",
-        "    if потолок is not None and set(за_что or ()) & посекундный:",
+        "    if потолок is not None and названо and not (названо & за_ролик_же):",
         "    if False:",
         "цена: посекундный потолок снова сравнивается с ценой всего ролика",
         "studio.mcp.tests.test_acceptance_findings_4",
@@ -874,7 +889,7 @@ MUTANTS: list[tuple[str, str, str, str, str]] = [
     ),
     (
         "studio/mcp/screen.py",
-        "    if any(о in низ for о in ДВОЙНОЕ_ОТРИЦАНИЕ):\n        return False",
+        '    if any(о in " ".join(хвост_слова) for о in ДВОЙНОЕ_ПОСЛЕ):\n        return False',
         "    if False:\n        return False",
         "бриф: «без обнажёнки не обойтись» снова читается как отказ от неё",
         "studio.mcp.tests.test_acceptance_findings_4",
@@ -939,8 +954,8 @@ MUTANTS: list[tuple[str, str, str, str, str]] = [
     ),
     (
         "studio/mcp/screen.py",
-        "        if слово in ОТРИЦАНИЯ:\n            return True",
-        "        if False:\n            return True",
+        "        if слово in ОТРИЦАНИЯ:\n            # «НЕВОЗМОЖНО без ТЕМА»",
+        "        if False:\n            # «НЕВОЗМОЖНО без ТЕМА»",
         "бриф: «без обнажёнки» снова читается как просьба о ней",
         "studio.mcp.tests.test_negation_is_not_a_request",
     ),
