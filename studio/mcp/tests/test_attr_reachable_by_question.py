@@ -343,3 +343,212 @@ class ПродуктОтвечаетНаЖивойВопрос(unittest.TestCase
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ОграничениеНеВыдаётсяЗаУмение(unittest.TestCase):
+    """Вход, заведённый вчера, сделал ХУЖЕ, чем было, — и это измерено.
+
+    ИЗМЕРЕНО 2026-09-07 независимой приёмкой на живой базе (574 модели, путём
+    `advise`): «что умеет» отвечало у 24 моделей с исходом `pass`, и у ЧЕТЫРЁХ
+    из них (17%) ответ состоял ТОЛЬКО из ограничений:
+
+        advise("minimax-h3", "что умеет")     -> pass, moderation
+        advise("sora-2", "что умеет")         -> pass, human_face_restriction
+        advise("wan-2.7-t2v", "что умеет")    -> pass, watermark
+        advise("elevenlabs-pvc", "что умеет") -> pass, consent_gate
+
+    То есть продукт называл умением ровно то, чего модель НЕ делает. До
+    заведения синонима «что умеет» молчало, и молчание было безопаснее.
+
+    ПОЧЕМУ ЭТО НЕ ЧИНИТСЯ ПОРЯДКОМ. Когда весь ответ состоит из ограничений,
+    первым встаёт ограничение: ранжирование внутри семьи не меняет СОСТАВА
+    ответа. Прогон трёх путей на одной базе дал 27/4, 0/0 и 23/0 — разведение
+    на две семьи единственное, что снимает четвёрку, не теряя двадцати трёх
+    верных ответов.
+
+    Имена во всех наборах — ЛИТЕРАЛЫ (Т2) и взяты из живой базы, а не
+    придуманы: семья, проверенная на выдуманном имени, меряет мою фантазию.
+    """
+
+    #: Т3, край: у этих моделей записаны ТОЛЬКО ограничения — именно они и
+    #: отвечали не на тот вопрос. Списки — настоящие имена из базы.
+    ТОЛЬКО_ОГРАНИЧЕНИЯ = [
+        ("minimax-h3", ["moderation"]),
+        ("sora-2", ["human_face_restriction"]),
+        ("wan-2.7-t2v", ["watermark"]),
+        ("elevenlabs-pvc", ["consent_gate"]),
+    ]
+
+    def test_край_ответ_из_одних_ограничений_на_что_умеет_молчит(self):
+        """Первая сторона (И5): вход, где прибор ОБЯЗАН сказать «нет»."""
+        for модель, записано in self.ТОЛЬКО_ОГРАНИЧЕНИЯ:
+            with self.subTest(модель=модель):
+                self.assertEqual(attrfamily.expand("что умеет", записано), [])
+
+    def test_край_то_же_самое_достаётся_своим_вопросом(self):
+        """Вторая сторона (И5): вход, где прибор обязан ШЕВЕЛЬНУТЬСЯ.
+
+        Ограничение не выброшено из базы, у него теперь свой вопрос: строка,
+        до которой не доводит ни одно слово, для продукта не существует.
+        """
+        for модель, записано in self.ТОЛЬКО_ОГРАНИЧЕНИЯ:
+            with self.subTest(модель=модель):
+                self.assertEqual(attrfamily.expand("чего не даёт", записано), записано)
+
+    def test_край_умение_без_ограничений_отвечает_как_прежде(self):
+        """Другой край: у `veo-3.1` записано умение и ни одного ограничения."""
+        self.assertEqual(attrfamily.expand("что умеет", ["summary_line"]), ["summary_line"])
+        self.assertEqual(attrfamily.expand("чего не даёт", ["summary_line"]), [])
+
+    def test_середина_смешанный_ответ_делится_надвое(self):
+        """`runway-act-two` держит и умение, и требование — и до правки они
+        приезжали ОДНИМ ответом на вопрос «что умеет»."""
+        записано = ["endpoint_purpose", "face_requirement"]
+        self.assertEqual(attrfamily.expand("что умеет", записано), ["endpoint_purpose"])
+        self.assertEqual(attrfamily.expand("чего не даёт", записано), ["face_requirement"])
+
+    def test_все_пять_ограничений_приезжают_на_свой_вопрос(self):
+        """Полный состав семьи — списком, а не «непусто»: семья, забравшая
+        всё подряд, прошла бы проверку «пришло что-то»."""
+        записано = [
+            "moderation",
+            "watermark",
+            "consent_gate",
+            "face_requirement",
+            "human_face_restriction",
+            "capabilities",
+            "best_for",
+        ]
+        self.assertEqual(
+            attrfamily.expand("ограничения", записано),
+            [
+                "consent_gate",
+                "face_requirement",
+                "human_face_restriction",
+                "moderation",
+                "watermark",
+            ],
+        )
+        self.assertEqual(attrfamily.expand("что умеет", записано), ["best_for", "capabilities"])
+
+    def test_отрицательное_значение_умения_остаётся_умением(self):
+        """НЕГАТИВНЫЙ КОНТРОЛЬ РАЗВЕДЕНИЯ (И5). Забрать сюда всё, что звучит
+        как плохая новость, значило бы спрятать её из ответа на «что умеет».
+
+        `authenticated_read_reachable` = «no» — это умение с отрицательным
+        ЗНАЧЕНИЕМ, а не наложенное ограничение; `text_rendering_non_latin` =
+        «undocumented» — это «не знаем» (третий исход, Р1). Оба обязаны
+        остаться в ответе на «что умеет» и НЕ приезжать на «чего не даёт».
+        """
+        записано = ["authenticated_read_reachable", "text_rendering_non_latin"]
+        self.assertEqual(attrfamily.expand("что умеет", записано), записано)
+        self.assertEqual(attrfamily.expand("чего не даёт", записано), [])
+
+    def test_ограничения_не_забирают_лицензию_и_деньги(self):
+        """Правовое и денежное ограничение — свои вопросы (Ц5 решается по
+        `license`, а не по «чего не даёт»)."""
+        записано = ["license_restriction", "commercial_revenue_threshold", "moderation"]
+        self.assertEqual(attrfamily.expand("чего не даёт", записано), ["moderation"])
+        self.assertEqual(attrfamily.expand("лицензия", записано), ["license_restriction"])
+
+    def test_ограничения_не_забирают_ограничения_ВХОДА(self):
+        """«Что подавать» — свой вопрос, и плохая новость там и есть ответ."""
+        записано = ["input_restriction", "face_reference_restriction", "watermark"]
+        self.assertEqual(attrfamily.expand("чего не даёт", записано), ["watermark"])
+        self.assertEqual(
+            attrfamily.expand("что подавать", записано),
+            ["face_reference_restriction", "input_restriction"],
+        )
+
+    def test_имя_одного_ограничения_не_зовёт_остальные(self):
+        """Синонимом семьи взято только СЕМЕЙНОЕ слово.
+
+        «модерация» и «водяной знак» называют ОДНО имя, а не семью: получив на
+        «модерация» ещё и `watermark`, спросивший снова читал бы ответ не на
+        свой вопрос — тот самый дефект, ради которого семья заводилась.
+        """
+        self.assertEqual(attrfamily.семья("модерация"), "")
+        self.assertEqual(attrfamily.семья("водяной знак"), "")
+        self.assertEqual(
+            attrfamily.expand("moderation", ["moderation", "watermark"]), ["moderation"]
+        )
+
+
+class УстройствоЗвучитДляДвухСемей(unittest.TestCase):
+    """Второй вход той же приёмки: по-русски «устройство» — и строение, и железо.
+
+    ИЗМЕРЕНО 2026-09-07: «устройство» отвечало у 20 моделей, и у 7 из них
+    рядом записано ЖЕЛЕЗО, которое в ответ не попадало и о котором ответ
+    молчал (`minimax-h3`: architecture при записанном `runs_on`;
+    `hunyuan-video`: vae_compression при записанном `min_vram_gb`). Слово
+    выбирало одно из двух значений молча — ровно то, из-за чего в семьи НЕ
+    взято «требования».
+    """
+
+    def test_двусмысленное_слово_семьи_не_имеет(self):
+        self.assertEqual(attrfamily.семья("устройство"), "")
+
+    def test_обе_семьи_остались_достижимы_своими_словами(self):
+        self.assertEqual(attrfamily.семья("на чём построена"), "architecture")
+        self.assertEqual(attrfamily.семья("архитектура"), "architecture")
+        self.assertEqual(attrfamily.семья("какая карта"), "hardware")
+        self.assertEqual(attrfamily.семья("видеопамять"), "hardware")
+
+    def test_устройство_ничего_не_достаёт(self):
+        """`minimax-h3` держит оба ответа сразу — и молча выдавался один."""
+        self.assertEqual(attrfamily.expand("устройство", ["architecture", "runs_on"]), [])
+        self.assertEqual(
+            attrfamily.expand("на чём построена", ["architecture", "runs_on"]), ["architecture"]
+        )
+        self.assertEqual(attrfamily.expand("какая карта", ["architecture", "runs_on"]), ["runs_on"])
+
+
+class ПродуктНеОтвечаетОграничениемНаУмение(unittest.TestCase):
+    """Тем же путём, каким идёт пользователь: `advise`, а не `expand`.
+
+    Т3: край «только ограничение» (`minimax-h3`), край «только умение»
+    (`veo-3.1`) и середина «и то, и другое» (`runway-act-two`). Факты — во
+    временном файле; живая база здесь не читается и сеть не трогается.
+    """
+
+    def setUp(self):
+        self.только_ограничение = _store(
+            [_факт("moderation", "автоматическая модерация текста, картинок и видео на входе")]
+        )
+        self.только_умение = _store(
+            [_факт("summary_line", "8-second videos at 720p/1080p/4k with native audio")]
+        )
+        self.смешанный = _store(
+            [
+                _факт("endpoint_purpose", "controls a character's facial expressions"),
+                _факт("face_requirement", "a recognizable face must remain in frame throughout"),
+            ]
+        )
+
+    def _спросить(self, путь, слово: str) -> tuple[str, list[str]]:
+        итог = advice.advise("test-model", слово, path=путь)
+        return итог["outcome"], sorted(итог["claims"])
+
+    def test_край_на_что_умеет_продукт_молчит(self):
+        """Р1: «не записано такого» не сворачивается в «ответили»."""
+        исход, имена = self._спросить(self.только_ограничение, "что умеет")
+        self.assertEqual(имена, ["что умеет"])
+        self.assertEqual(исход, "could not measure")
+
+    def test_край_на_чего_не_даёт_продукт_отвечает(self):
+        исход, имена = self._спросить(self.только_ограничение, "чего не даёт")
+        self.assertEqual(имена, ["moderation"])
+        self.assertEqual(исход, "pass")
+
+    def test_край_умение_отвечает_как_прежде(self):
+        исход, имена = self._спросить(self.только_умение, "что умеет")
+        self.assertEqual(имена, ["summary_line"])
+        self.assertEqual(исход, "pass")
+
+    def test_середина_каждый_вопрос_получает_свою_половину(self):
+        исход, имена = self._спросить(self.смешанный, "что умеет")
+        self.assertEqual(имена, ["endpoint_purpose"])
+        self.assertEqual(исход, "pass")
+        исход, имена = self._спросить(self.смешанный, "чего не даёт")
+        self.assertEqual(имена, ["face_requirement"])
+        self.assertEqual(исход, "pass")

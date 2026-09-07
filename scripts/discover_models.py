@@ -343,7 +343,7 @@ def channels_answered(hf: dict[str, Any], pypi: dict[str, Any]) -> int:
     return whole
 
 
-def report(hf: dict[str, Any], pypi: dict[str, Any], findings: dict[str, list]) -> int:
+def report(hf: dict[str, Any], pypi: dict[str, Any], findings: dict[str, list[Any]]) -> int:
     """Напечатать разницу числами и вернуть код возврата с тремя исходами."""
     # Канал считается ответившим, только если ответили ВСЕ его источники.
     # Пока один живой тег из шести засчитывался как живой канал, итог печатал

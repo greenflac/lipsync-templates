@@ -65,6 +65,32 @@ class Проверка(unittest.TestCase):
         self.assertEqual(итог["violations"], 0)
         self.assertEqual(итог["unmeasured"], 1)
 
+    # Р2, ВОСПРОИЗВЕДЕНО ПРИЁМКОЙ 2026-09-07: файл ЕСТЬ и пуст — прибор
+    # отвечал `pass` при `checked=0`. Это прямо противоречит его же
+    # докстроке: усечение журнала в ноль — самая вероятная его порча, после
+    # которой канал ответит «не менялась» про всё подряд.
+    def test_пустое_основание_это_не_годно(self):
+        итог = self._свести([])
+        self.assertEqual(итог["outcome"], "could not measure")
+        self.assertEqual(итог["checked"], 0)
+        self.assertEqual(итог["violations"], 0)
+        self.assertEqual(итог["unmeasured"], 1)
+
+    def test_журнал_из_одних_комментариев_тоже_не_годно(self):
+        """Строк ноль и без усечения: журнал, где остались одни пометки."""
+        каталог = Path(self.enterContext(tempfile.TemporaryDirectory()))
+        путь = каталог / "vendor_pages.jsonl"
+        путь.write_text("// журнал\n// и ещё пометка\n", encoding="utf-8")
+        итог = rv.проверить_собранное(путь, факты=[], карта={})
+        self.assertEqual(итог["outcome"], "could not measure")
+        self.assertEqual(итог["checked"], 0)
+
+    def test_одна_строка_основания_уже_измерение(self):
+        """Вторая половина (И5): край ровно в одной строке журнала."""
+        итог = self._свести([_строка("https://vendor.example/a", rv.СПОСОБ)])
+        self.assertEqual(итог["outcome"], "pass")
+        self.assertEqual(итог["checked"], 1)
+
     def test_здоровое_основание_молчит(self):
         итог = self._свести([_строка(f"https://vendor.example/{н}", rv.СПОСОБ) for н in range(3)])
         self.assertEqual(итог["outcome"], "pass")

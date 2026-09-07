@@ -33,6 +33,12 @@ _SPEC.loader.exec_module(ih)
 КАРТОЧКА = "https://huggingface.co/vendor/{}"
 ТРЕД = "https://huggingface.co/vendor/{}/discussions/7"
 
+#: Служебные страницы площадки: у HuggingFace ЕСТЬ блог, и он не карточка
+#: модели. Литералы (Т2), обе формы взяты из настоящих адресов.
+БЛОГ = "https://huggingface.co/blog/video-generation-guide"
+СТАТЬЯ = "https://huggingface.co/papers/2410.07718"
+SPACE = "https://huggingface.co/spaces/Vchitect/VBench_Leaderboard"
+
 
 def _карточка(модель: str, атрибут: str, значение: str, **поверх) -> Fact:
     поля: dict[str, object] = {
@@ -55,6 +61,20 @@ def _тред(модель: str, атрибут: str, значение: str, **�
         "source_url": ТРЕД.format(модель),
         "tier": "blog",
         "stated_on": "2026-09-01",
+    }
+    поля.update(поверх)
+    return Fact(**поля)  # type: ignore[arg-type]  # DEBT(2026-09-07): см. выше
+
+
+def _страница(url: str, атрибут: str, значение: str, **поверх) -> Fact:
+    """Строка со СЛУЖЕБНОЙ страницы площадки — не карточка и не тред."""
+    поля: dict[str, object] = {
+        "model": "wan-2.2",
+        "attribute": атрибут,
+        "value": значение,
+        "source_url": url,
+        "tier": "blog",
+        "stated_on": "2026-02-10",
     }
     поля.update(поверх)
     return Fact(**поля)  # type: ignore[arg-type]  # DEBT(2026-09-07): см. выше
@@ -105,6 +125,52 @@ class Проверка(unittest.TestCase):
         итог = ih.проверить_собранное(
             факты=[_карточка("one", "license", "apache-2.0", tier="blog")]
         )
+        self.assertEqual(итог["outcome"], "fail")
+        self.assertEqual(итог["violations"], 1)
+
+    # ЛОЖНЫЙ ОТКАЗ, ВОСПРОИЗВЕДЁННЫЙ ПРИЁМКОЙ 2026-09-07. Факт
+    # `advice.record("wan-2.2","motion_quality", ...,
+    # "https://huggingface.co/blog/video-generation-guide","blog",...)`
+    # проходил запись (тир этой странице выдаёт `source_hosts.classify`) и
+    # ронял гейт нарушением «карточка в тире blog». У HuggingFace есть блог, и
+    # он не карточка модели; единственным «лечением» было удалить верный факт.
+    #
+    # ЗДЕСЬ — ПОЛОВИНА «ПРИБОР ОБЯЗАН ПРОМОЛЧАТЬ» (И5). Вторая половина —
+    # `test_карточка_поданная_как_форум` выше: на настоящей карточке в тире
+    # `blog` прибор обязан сказать «нет», и говорит.
+    def test_блог_площадки_не_карточка_и_молчит(self):
+        итог = ih.проверить_собранное(
+            факты=[_страница(БЛОГ, "motion_quality", "smooth on 24fps per HF blog")]
+        )
+        self.assertEqual(итог["outcome"], "pass")
+        self.assertEqual(итог["checked"], 1)
+        self.assertEqual(итог["violations"], 0)
+
+    def test_статья_площадки_не_карточка_и_молчит(self):
+        итог = ih.проверить_собранное(
+            факты=[_страница(СТАТЬЯ, "failure_mode", "губы отстают на быстрой речи")]
+        )
+        self.assertEqual(итог["outcome"], "pass")
+        self.assertEqual(итог["violations"], 0)
+
+    def test_space_площадки_не_карточка_и_молчит(self):
+        итог = ih.проверить_собранное(
+            факты=[_страница(SPACE, "metric_blind_spot", "VBench не смотрит на губы")]
+        )
+        self.assertEqual(итог["outcome"], "pass")
+        self.assertEqual(итог["violations"], 0)
+
+    def test_вид_страницы_различает_три_вида(self):
+        """Три вида, а не два: два вида и были дефектом."""
+        self.assertEqual(ih.вид_страницы(КАРТОЧКА.format("m")), "карточка")
+        self.assertEqual(ih.вид_страницы(ТРЕД.format("m")), "тред")
+        self.assertEqual(ih.вид_страницы(БЛОГ), "не карточка")
+        self.assertEqual(ih.вид_страницы(СТАТЬЯ), "не карточка")
+
+    def test_лицензия_из_блога_площадки_это_нарушение(self):
+        """Ц5: лицензию читают В КАРТОЧКЕ. Блог площадки ею не становится
+        оттого, что перестал быть «карточкой» для правила о тире."""
+        итог = ih.проверить_собранное(факты=[_страница(БЛОГ, "license", "apache-2.0")])
         self.assertEqual(итог["outcome"], "fail")
         self.assertEqual(итог["violations"], 1)
 

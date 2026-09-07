@@ -150,8 +150,8 @@ def _number(value: Any) -> float | None:
     return None
 
 
-def openrouter_record(entry: dict, polled_on: str) -> tuple[dict, int]:
-    prices: list[dict] = []
+def openrouter_record(entry: dict[str, Any], polled_on: str) -> tuple[dict[str, Any], int]:
+    prices: list[dict[str, Any]] = []
     unparsed = 0
     for key, raw in (entry.get("pricing") or {}).items():
         if key in OPENROUTER_NOT_PRICES:
@@ -188,8 +188,8 @@ def openrouter_record(entry: dict, polled_on: str) -> tuple[dict, int]:
     return record, unparsed
 
 
-def deepinfra_record(entry: dict, polled_on: str) -> tuple[dict, int]:
-    prices: list[dict] = []
+def deepinfra_record(entry: dict[str, Any], polled_on: str) -> tuple[dict[str, Any], int]:
+    prices: list[dict[str, Any]] = []
     unparsed = 0
     for key, raw in (entry.get("pricing") or {}).items():
         if key in DEEPINFRA_NOT_PRICES or key.startswith("rate_per_"):
@@ -283,7 +283,7 @@ def keyed_channels() -> list[dict[str, str]]:
     ]
 
 
-def summarise(polls: list[dict[str, Any]], records: list[dict]) -> dict[str, Any]:
+def summarise(polls: list[dict[str, Any]], records: list[dict[str, Any]]) -> dict[str, Any]:
     """Числа, которые печатаются и сохраняются. Считаются один раз (правило Е1)."""
     checked = len(records)
     rejected = 0
@@ -394,6 +394,10 @@ def проверить_собранное(
     они названы поимённо и с наблюдённым кодом, — плюс каналы, которые
     спрашивали и которые не ответили. Первое число известно и постоянно,
     второе обязано быть нулём: неполный опрос не есть полный каталог.
+
+    Что считается «проверено» (N): записи каталога и каналы сводки — то, на
+    что прибор ПОСМОТРЕЛ. Каталоги без ключа сюда не идут: они стоят в K, и
+    считать их дважды значит завышать объём измеренного неизмеримым.
     """
     if not poll_path.is_file():
         return {
@@ -459,7 +463,27 @@ def проверить_собранное(
     ответило = int(сводка["channels_answered"] or 0)
     не_ответило = max(0, спрошено - ответило)
     не_смогли = len(KEYED) + не_ответило
-    проверено = len(записи) + len(сводка["channels"]) + len(KEYED)
+    # ДВОЙНОГО СЧЁТА ЗДЕСЬ БЫТЬ НЕ ДОЛЖНО: каталоги без ключа объявлены
+    # НЕИЗМЕРИМЫМИ и уже стоят в `не_смогли`. Считая их же «проверенными», мы
+    # рассказывали, что измерили то, чего не измеряли, — а число «проверено»
+    # существует ровно затем, чтобы этого не рассказывать (Р2).
+    # ВОСПРОИЗВЕДЕНО 2026-09-07: на здоровой паре файлов «проверено 9» при
+    # 3 записях, 2 каналах и 4 каталогах без ключа.
+    проверено = len(записи) + len(сводка["channels"])
+
+    # Р2: ноль отработавших проверок — не успех. Пустой каталог при пустом
+    # списке каналов означает, что сверять сводку не с чем.
+    if not проверено:
+        return {
+            "outcome": FAIL if нарушения else UNMEASURED,
+            "checked": 0,
+            "violations": len(нарушения),
+            "unmeasured": max(1, не_смогли),
+            "note": (
+                f"{poll_path.name}: каналов в сводке {len(сводка['channels'])}, "
+                f"записей в каталоге {len(записи)} — сверять нечего, и это НЕ «годно»"
+            ),
+        }
 
     исход = FAIL if нарушения else (UNMEASURED if не_ответило else PASS)
     заметка = (

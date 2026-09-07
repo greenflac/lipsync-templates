@@ -159,7 +159,7 @@ def проверить_собранное(bank: Path | None = None) -> dict[str,
         }
 
     нарушения: list[str] = []
-    настоящие: dict[str, dict] = {}
+    настоящие: dict[str, dict[str, Any]] = {}
     for ответ in ответы:
         слепое = str((ответ or {}).get("case_id") or "")
         настоящее = str(карта.get(слепое, слепое))

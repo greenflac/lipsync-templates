@@ -68,6 +68,36 @@ class Проверка(unittest.TestCase):
         self.assertEqual(итог["outcome"], "could not measure")
         self.assertEqual(итог["checked"], 0)
 
+    # Р2, ВОСПРОИЗВЕДЕНО ПРИЁМКОЙ 2026-09-07: строки канала есть, ВИДОВЫХ
+    # среди них нет — прибор отвечал `pass` при `checked=0`. Ноль
+    # отработавших проверок не бывает успехом: сверять «требует ⊆ принимает»
+    # было не с чем, а «годно» читалось как «схемы связны».
+    def test_строки_есть_а_видовых_нет_это_не_годно(self):
+        итог = sc.проверить_собранное(факты=[_факт("one", "price", "$0.07 per second")])
+        self.assertEqual(итог["outcome"], "could not measure")
+        self.assertEqual(итог["checked"], 0)
+        self.assertEqual(итог["violations"], 0)
+        self.assertEqual(итог["unmeasured"], 1)
+
+    def test_одна_видовая_строка_уже_измерение(self):
+        """Вторая половина (И5): край ровно в одной отработавшей проверке."""
+        итог = sc.проверить_собранное(
+            факты=[
+                _факт("one", "price", "$0.07 per second"),
+                _факт("one", "accepts_inputs", "текст"),
+            ]
+        )
+        self.assertEqual(итог["outcome"], "pass")
+        self.assertEqual(итог["checked"], 1)
+        self.assertEqual(итог["violations"], 0)
+
+    def test_видовых_нет_но_нарушение_есть_это_не_годно(self):
+        """Третий исход не съедает второй: порча остаётся порчей."""
+        итог = sc.проверить_собранное(
+            факты=[_факт("one", "price", "$0.07 per second", tier="vendor")]
+        )
+        self.assertNotEqual(итог["outcome"], "pass")
+
     def test_согласованная_пара_молчит(self):
         итог = sc.проверить_собранное(
             факты=[
