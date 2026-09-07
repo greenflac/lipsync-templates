@@ -808,6 +808,13 @@ MUTANTS: list[tuple[str, str, str, str, str]] = [
         "база: голое «none» снова записывается как факт (str(None), JSON null)",
         "studio.mcp.tests.test_value_is_not_a_shrug",
     ),
+    (
+        "studio/planner.py",
+        "        dur.DUR_ASK_UNPARSED,\n        dur.DUR_ABSENT,\n    ):",
+        "        dur.DUR_ASK_UNPARSED,\n    ):",
+        "план: молчание базы о пределе снова продаётся как согласие",
+        "studio.mcp.tests.test_silence_is_not_consent",
+    ),
     # === ЦЕНА РОЛИКА И ОТРИЦАНИЕ В БРИФЕ (продуктовая проверка 2026-09-07) ==
     (
         "studio/planner.py",
