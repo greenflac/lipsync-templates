@@ -62,6 +62,7 @@ from __future__ import annotations
 
 import json
 import re
+import socket
 import urllib.error
 import urllib.request
 from datetime import date
@@ -72,6 +73,7 @@ from lipsync.fork_identity import FAIL, PASS, UNMEASURED
 
 __all__ = [
     "fetch",
+    "имя_существует",
     "reachability",
     "wanted",
     "note_denial",
@@ -148,6 +150,49 @@ def причина_для_записи(текст: str) -> str:
 def _host(url: str) -> str:
     match = re.match(r"https?://([^/:]+)", str(url or ""), re.I)
     return match.group(1).lower() if match else ""
+
+
+def имя_существует(host: str) -> bool | None:
+    """Резолвится ли это имя. Три исхода: да, нет, резолвер не ответил (Р1).
+
+    ЗАЧЕМ. ВОСПРОИЗВЕДЕНО 2026-09-07: прокси отвечает `Tunnel connection
+    failed: 403` ОДИНАКОВО и на настоящий хост, и на выдуманный
+    (`docs-nesuschestvuet-2026.example-nope-xyz.com` дал ровно тот же отказ,
+    что и `example.com`). Значит журнал отказов — а через него и заявка,
+    которую читает ВЛАДЕЛЕЦ ОКРУЖЕНИЯ, — не отличает «хост закрыт политикой»
+    от «хоста не существует», и владельца можно попросить открыть домен,
+    которого нет.
+
+    ЭТО НЕ ОБХОД Ц3. С закрытого хоста здесь ничего не скачивается и никакое
+    соединение с ним не устанавливается: спрашивается только, есть ли такое
+    имя, — ровно чтобы не занимать чужое время просьбой про несуществующее.
+    Ц10 требует того же от имён, попадающих в код.
+
+    ГДЕ ЭТО РЕШАЕТСЯ, И ПОЧЕМУ НЕ В ЖУРНАЛЕ ОТКАЗОВ. Первая версия спрашивала
+    DNS прямо в `note_denial` — в функции, которую зовут десятки тестов, — и
+    тем самым завела сеть в тесты, чего Т4 не допускает: три фикстуры на
+    зарезервированном `example.test` покраснели в ту же минуту и показали это.
+    Поэтому имя проверяется В ОДНОМ месте (Е1) — в
+    `scripts/allowlist_request.py`, который и так ходит в сеть и собирает
+    документ для человека.
+
+    ИЗМЕРЕНО 2026-09-07: разрешение имени стоит 0.01–0.03 с и различает обе
+    стороны — `example.com`, `docs.bfl.ai`, `kling.ai` резолвятся;
+    `qwertyuiop-nope-12345.dev` и выдуманный домен выше — нет.
+    """
+    имя = str(host or "").strip().lower()
+    if not имя:
+        return None
+    try:
+        socket.getaddrinfo(имя, 443, proto=socket.IPPROTO_TCP)
+    except socket.gaierror:
+        # Имени нет в DNS. Это ответ, а не сбой: резолвер отработал.
+        return False
+    except OSError:
+        # Сам резолвер не ответил — таймаут, нет сети. Третий исход: сказать
+        # «не знаю» честнее, чем записать «хоста нет» из-за своей аварии.
+        return None
+    return True
 
 
 def note_denial(url: str, reason: str, why_wanted: str = "", *, incidental: bool = False) -> dict:

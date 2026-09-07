@@ -779,6 +779,21 @@ MUTANTS: list[tuple[str, str, str, str, str]] = [
         "база: не-ответ ищется подстрокой, настоящие значения отвергаются",
         "studio.mcp.tests.test_value_is_not_a_shrug",
     ),
+    # === ИМЯ, КОТОРОГО НЕТ, В ПРОСЬБЕ К ВЛАДЕЛЬЦУ (allowlist_request.py) ==
+    (
+        "scripts/allowlist_request.py",
+        "    несуществующие = sorted(h for h in by_host if fetch.имя_существует(h) is False)",
+        "    несуществующие = []",
+        "просьба: несуществующий домен снова просится у владельца",
+        "studio.mcp.tests.test_name_exists",
+    ),
+    (
+        "scripts/allowlist_request.py",
+        "    несуществующие = sorted(h for h in by_host if fetch.имя_существует(h) is False)",
+        "    несуществующие = sorted(h for h in by_host if not fetch.имя_существует(h))",
+        "просьба: неизвестность приравнена к «имени нет», доступ теряется",
+        "studio.mcp.tests.test_name_exists",
+    ),
     # === ЖУРНАЛ ЗОНДОВ (studio/mcp/probe.py, studio/mcp/advice.py) ========
     (
         "studio/mcp/probe.py",

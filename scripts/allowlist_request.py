@@ -288,6 +288,30 @@ def main() -> int:
     asked = fetch.wanted()
     by_host = {row["host"]: row for row in asked.get("hosts", [])}
 
+    # ИМЯ, КОТОРОГО НЕТ, ИЗ ПРОСЬБЫ ВЫНИМАЕТСЯ, И РЕШАЕТСЯ ЭТО ЗДЕСЬ — В
+    # ЕДИНСТВЕННОМ МЕСТЕ (Е1).
+    #
+    # ВОСПРОИЗВЕДЕНО 2026-09-07: прокси отвечает `Tunnel connection failed:
+    # 403` ДОСЛОВНО одинаково и на настоящий хост, и на выдуманный, так что
+    # журнал отказов их не различает — а это и есть документ, по которому
+    # человек идёт открывать доступ.
+    #
+    # ПОЧЕМУ НЕ В `note_denial` И НЕ В `wanted()`, ХОТЯ ТАМ БЫЛО БЫ РОВНЕЕ:
+    # обе функции читают файл и в сеть не ходят, их зовут десятки тестов, и
+    # проверка имени завела бы туда DNS — Т4 этого не допускает (три фикстуры
+    # на зарезервированном `example.test` покраснели в ту же минуту и это
+    # показали). Этот генератор — сетевой инструмент по своей природе: он
+    # только что перепробовал все хосты выше.
+    #
+    # ВЫНИМАЕТСЯ ТОЛЬКО ЯВНОЕ «имени нет». `None` — резолвер не ответил —
+    # остаётся в просьбе: потерять нужный доступ из-за своей аварии DNS хуже,
+    # чем оставить лишнюю строку.
+    несуществующие = sorted(h for h in by_host if fetch.имя_существует(h) is False)
+    for host in несуществующие:
+        by_host.pop(host, None)
+    if несуществующие:
+        print("\nимена, которых нет в DNS — из просьбы вынуты: " + ", ".join(несуществующие))
+
     # Measured, not remembered: a request that lists a host which is already
     # open wastes the reader's time and makes the rest look unchecked.
     print("\nre-measuring what is already open")
@@ -349,7 +373,14 @@ def main() -> int:
         "",
         f"**{len(by_host)} host(s) asked for.** "
         f"{len(asked.get('also_refused', []))} further host(s) were refused during "
-        "bulk probes and are deliberately NOT part of this request.",
+        "bulk probes and are deliberately NOT part of this request."
+        + (
+            f" A further {len(несуществующие)} name(s) in the journal do not "
+            "resolve in DNS at all and were dropped from the ask rather than "
+            f"asked for: {', '.join(несуществующие)}."
+            if несуществующие
+            else ""
+        ),
         "",
         "## The list, to paste — wildcards, if the whitelist supports them",
         "",
