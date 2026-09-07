@@ -177,7 +177,7 @@ READINGS: tuple[dict[str, object], ...] = (
     {
         "model": "flux-2",
         "attribute": "expands_internally",
-        "value": "unknown",
+        "value": "not documented: the BFL docs index lists no prompt-expander page",
         "source_url": "https://docs.bfl.ai/",
         "tier": "vendor",
         "stated_on": READ_ON,
@@ -194,7 +194,7 @@ READINGS: tuple[dict[str, object], ...] = (
     {
         "model": "kling-3.0",
         "attribute": "expands_internally",
-        "value": "unknown",
+        "value": "not documented: the Kling prompt guide describes no expander",
         "source_url": "https://kling.ai/quickstart/text-to-video-prompt-guide",
         "tier": "vendor",
         "stated_on": "2025-11-24",
