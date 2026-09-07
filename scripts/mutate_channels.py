@@ -2660,15 +2660,16 @@ MUTANTS: list[tuple[str, str, str, str, str]] = [
         "studio/mcp/server.py",
         # ПЕРЕНАЦЕЛЕН 2026-09-07: между просевом и отказом встала ветка
         # третьего исхода для бессловесного брифа.
-        '    if просев["outcome"] != PASS:\n        # Строка о брифе',
-        "    if False:\n        # Строка о брифе",
+        # ПЕРЕНАЦЕЛЕН 2026-09-07: обе ветки отказа сведены в общую функцию.
+        '    if просев["outcome"] != PASS:\n        return _json(\n            {\n                **_общий_отказ(просев, brief',
+        "    if False:\n        return _json(\n            {\n                **_общий_отказ(просев, brief",
         "план: бриф снова не просеивается — продукт строит план производства дипфейка",
         "studio.mcp.tests.test_screen_customer_words",
     ),
     (
         "studio/mcp/server.py",
-        '    просев = screen.просеять(intent)\n    if просев["outcome"] != PASS:',
-        "    просев = screen.просеять(intent)\n    if False:",
+        '    if просев["outcome"] != PASS:\n        return _json(\n            {\n                **_общий_отказ(\n                    просев,\n                    intent,',
+        "    if False:\n        return _json(\n            {\n                **_общий_отказ(\n                    просев,\n                    intent,",
         "промпт: вход снова не просеивается — «запрещённых тем 0» о непроверенном запросе",
         "studio.mcp.tests.test_screen_customer_words",
     ),
@@ -2772,22 +2773,24 @@ MUTANTS: list[tuple[str, str, str, str, str]] = [
     # ПУСТОЙ БРИФ И ЯЗЫК ОТКАЗА (2026-09-07, восьмая приёмка).
     (
         "studio/mcp/server.py",
-        '    if просев["outcome"] == UNMEASURED:',
-        "    if False:",
+        # ЦЕЛЬ УТОЧНЕНА 2026-09-07: та же строка появилась и в
+        # `write_lipsync_prompt`, и цель стала двусмысленной.
+        '    if просев["outcome"] == UNMEASURED:\n        # БЕССЛОВЕСНЫЙ БРИФ',
+        "    if False:\n        # БЕССЛОВЕСНЫЙ БРИФ",
         "план: пустой бриф снова получает ОТКАЗ с пустым объяснением и чужим советом",
         "studio.tests.test_what_the_customer_brought",
     ),
     (
         "studio/mcp/server.py",
-        '                "reason": REASON_BANNED_TOPIC if просев["banned"] else REASON_INJECTION,',
-        '                "reason": REASON_BANNED_TOPIC,',
+        '        "reason": REASON_BANNED_TOPIC if просев["banned"] else REASON_INJECTION,',
+        '        "reason": REASON_BANNED_TOPIC,',
         "план: причина отказа снова «запрещённая_тема» там, где темы нет",
         "studio.tests.test_what_the_customer_brought",
     ),
     (
         "studio/mcp/server.py",
-        "        англ = not planner._есть_кириллица(brief)",
-        "        англ = False",
+        "    англ = not planner._есть_кириллица(текст)",
+        "    англ = False",
         "план: английский заказчик снова не читает единственную строку, по которой действует",
         "studio.tests.test_what_the_customer_brought",
     ),

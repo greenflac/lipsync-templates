@@ -787,7 +787,10 @@ def предупреждение(риски: Sequence[str]) -> str:
 #: наша: «recognisable third parties» заказчику говорит меньше, чем «people
 #: who can be recognised, without their consent».
 ПО_АНГЛИЙСКИ: dict[str, str] = {
-    "adult content": "nudity",
+    # НЕ ПРОСТО «nudity»: группа ловит и `erotic`, и `porn`, и `sexual`, и
+    # заказчику сказали бы «мы не делаем nudity» о том, чего он не писал
+    # (найдено девятой приёмкой). Имя группы обязано покрывать её содержимое.
+    "adult content": "nudity or sexual content",
     "violence": "violence",
     "minors": "minors",
     "recognisable third parties": "people who can be recognised, without their consent",

@@ -37,6 +37,20 @@ from studio import planner
     "Add sound effects and ambience to our clip",
     "Localise our ad for Spain",
     "нужны sfx для ролика",
+    # СЛОВОФОРМЫ. Жёсткая граница справа оставила от английских подсказок
+    # только точную форму: ИЗМЕРЕНО машинным перебором — было 168 форм из 168,
+    # стало 16. Заказчику отвечали «назовите работу словом `voiceover`» — его
+    # же словом в единственном числе.
+    "we need voiceovers for the ad",
+    "two narrators reading the script",
+    "we need dubbing into German",
+    "the clip must be dubbed",
+    "three presenters on camera",
+    "lip syncing on existing footage",
+    "selfies to animate",
+    "replace characters in the scene",
+    "background sounds for the scene",
+    "we need avatars",
 )
 
 #: Чужие вывески. Ни одна не заказывает работу.
@@ -49,6 +63,16 @@ from studio import planner
     "реклама Dublin Pub, видео снято",
     "промо приложения Avatar Maker, видео снято",
     "реклама студии Localise Ltd, видео снято",
+    # БРЕНД, СОВПАДАЮЩИЙ С НАШИМ ТЕРМИНОМ, — ТОЖЕ БРЕНД. Спасение цепочки
+    # составной подсказкой открывало её целиком.
+    "our client is Talking Head Studios, make a poster",
+    "клиент — Talking Head Studios, нужен постер",
+    "клиент Voice Over Inc, нужна визитка",
+    "the brand is Lip Sync Records, design a logo",
+    # ДВОЕТОЧИЕ В LOOKBEHIND было разменом ни на что: заказов не спасало,
+    # вывески пропускало.
+    "Client: Talking Tom. We need a poster",
+    "клиент: Talking Tom, нужен постер",
 )
 
 
@@ -93,6 +117,21 @@ class ВывескаНеЗаказ(unittest.TestCase):
         видна в самом списке подсказок, а не подразумевается."""
         self.assertTrue(planner._подсказка_есть("localis*", "localisation", "localisation"))
         self.assertFalse(planner._подсказка_есть("localis", "localisation", "localisation"))
+
+    def test_английская_словоформа_ловится(self) -> None:
+        """Хвост закрытый: `s`, `es`, `ed`, `ing` и удвоение последней
+        согласной. Именно закрытость оставляет «Dubai» за бортом."""
+        for текст in ("we need voiceovers", "dubbing into german", "the clip was dubbed"):
+            self.assertTrue(planner.derive(текст), текст)
+
+    def test_закрытость_хвоста_держит_топоним(self) -> None:
+        """И5: хвост «что угодно» вернул бы «Dubai» и «Dublin»."""
+        self.assertFalse(planner._подсказка_есть("dub", "hotel in dubai", "hotel in dubai"))
+        self.assertFalse(planner._подсказка_есть("dub", "dublin pub", "dublin pub"))
+
+    def test_форма_компании_сильнее_составной_подсказки(self) -> None:
+        без = planner._без_имён_собственных("клиент Voice Over Inc, нужна визитка")
+        self.assertNotIn("voice over", без)
 
     def test_русская_подсказка_по_прежнему_подстрокой(self) -> None:
         """Русское слово склоняется, и граница справа потеряла бы «озвучки»."""

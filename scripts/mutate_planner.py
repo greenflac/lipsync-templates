@@ -91,6 +91,19 @@ ROOT = Path(__file__).resolve().parents[1]
     "studio.tests.test_counters_are_printed",
     # Отбор по тому, что говорит ЗА модель, а не по объёму написанного.
     "studio.tests.test_favour_outranks_volume",
+    # НАБОР ДОПОЛНЕН 2026-09-07 ПОСЛЕ ДЕВЯТОЙ ПРИЁМКИ, и это её находка о
+    # приборе, а не о продукте. Мутанты вписывались в таблицу, тесты писались
+    # в другие модули, а `НАБОРЫ` оставались прежними — и прогон честно
+    # печатал «промолчали на 0», не запустив ни одного сторожа новых правок.
+    # ИЗМЕРЕНО приёмкой: из девяти мутантов последнего коммита промолчали 9.
+    # Проверка «цель мутанта на месте» отвечает на другой вопрос: она видит,
+    # что цель есть, а не что её кто-то убивает.
+    "studio.tests.test_brand_is_not_an_order",
+    "studio.tests.test_answer_in_the_customers_language",
+    "studio.tests.test_what_the_customer_brought",
+    "studio.tests.test_brief_in_english",
+    "studio.tests.test_brought_inputs_english",
+    "studio.tests.test_clarify_english",
 )
 
 MUTANTS = [
@@ -803,16 +816,56 @@ MUTANTS = [
     # снять — и оставить только его.
     (
         "studio/planner.py",
+        "        if not просят:\n            return True",
+        "        if True:\n            return True",
+        "вход плана: «нужно сделать своё видео» снова читается как принесённый вход",
+    ),
+    (
+        "studio/planner.py",
+        "        if any(начало.endswith(п) for п in ПРЕДЛОГИ_МАТЕРИАЛА + ГЛАГОЛЫ_РАБОТЫ):",
+        "        if False:",
+        "вход плана: «сделай липсинк под мою озвучку» — принесённая дорожка снова не видна",
+    ),
+    (
+        "studio/planner.py",
         "    есть: set[str] = set(принесено(brief))",
         "    есть: set[str] = set()",
         "вход плана: принесённое заказчиком снова не признаётся — круг вопроса и лишний шаг",
+    ),
+    # АНГЛИЙСКОЕ ВЛАДЕНИЕ (2026-09-07): узнавалось 6 формулировок из 54.
+    (
+        "studio/planner.py",
+        '    "is ready",\n    "are ready",',
+        "",
+        "вход плана: «the video is ready» снова не читается — круг вопроса жив по-английски",
+    ),
+    (
+        "studio/planner.py",
+        '    "my video",\n    "our video",',
+        "",
+        "вход плана: английский притяжательный оборот снова не признаётся входом",
+    ),
+    (
+        "studio/planner.py",
+        '    "we want",\n',
+        "",
+        "вход плана: «we want our video made from scratch» снова читается как принесённое",
+    ),
+    (
+        "studio/planner.py",
+        'ГЛАГОЛЫ_РАБОТЫ: tuple[str, ...] = ("sync ", "dub ", "use ", "take ")',
+        "ГЛАГОЛЫ_РАБОТЫ: tuple[str, ...] = ()",
+        "вход плана: «lip sync my video» снова читается как просьба сделать видео",
     ),
     (
         "studio/planner.py",
         # ПЕРЕНАЦЕЛЕН 2026-09-07 в тот же день: заслон доведён по своему же
         # гейту («нужен липсинк на ГОТОВОЕ видео» глушился просьбой).
-        "        if (владение < 0 and not свой) and any(с in клауза for с in ПРОСЬБА):",
-        "        if False and any(с in клауза for с in ПРОСЬБА):",
+        # ПЕРЕНАЦЕЛЕН 2026-09-07: заслон снят с клаузы целиком и перенесён на
+        # притяжательные обороты — прежняя редакция была мёртвой (0 из 32
+        # брифов) и вредной (пропускала просьбы как принесённое).
+        "        просят = any(с in клауза for с in ПРОСЬБА)",
+        "        просят = False",
         "вход плана: «нужно, чтобы было видео» снова читается как «видео есть»",
     ),
     (
@@ -893,8 +946,8 @@ MUTANTS = [
     ),
     (
         "studio/planner.py",
-        '    return re.search(rf"\\b{re.escape(cue)}\\b", без_имён) is not None',
-        '    return re.search(rf"\\b{re.escape(cue)}", без_имён) is not None',
+        '    хвост = rf"(?:{re.escape(cue[-1])}?(?:s|es|ed|ing))?"',
+        '    хвост = r""',
         "подсказки: граница справа снята — «dubai» снова заказывает дубляж",
     ),
     (
@@ -912,8 +965,8 @@ MUTANTS = [
     ),
     (
         "studio/planner.py",
-        "    if отказ_кадра:",
-        "    if False:",
+        '    нельзя += int(шаг.get("frame_rejects_count") or 0)',
+        "    нельзя += 0",
         "совет: отвергнутые кадром снова числятся доступными кандидатами",
     ),
     (
@@ -956,8 +1009,8 @@ MUTANTS = [
     ),
     (
         "studio/planner.py",
-        '    return re.search(rf"\\b{re.escape(cue)}\\b", без_имён) is not None',
-        '    return re.search(rf"\\b{re.escape(cue)}\\b", низ) is not None',
+        '    return re.search(rf"\\b{re.escape(cue)}{хвост}\\b", без_имён) is not None',
+        '    return re.search(rf"\\b{re.escape(cue)}{хвост}\\b", низ) is not None',
         "подсказки: имена собственные снова ищутся — «Talking Tom» заказывает липсинк",
     ),
     (
