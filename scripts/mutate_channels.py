@@ -794,6 +794,43 @@ MUTANTS: list[tuple[str, str, str, str, str]] = [
         "просьба: неизвестность приравнена к «имени нет», доступ теряется",
         "studio.mcp.tests.test_name_exists",
     ),
+    # === ЗАЯВКА НА ПЛАТНЫЙ ЗАМЕР: РЕШЕНИЕ ЛИ ОНА ПОКУПАЕТ =================
+    (
+        "studio/mcp/proposal.py",
+        '    if fields["decides"] and один_и_тот_же_шаг(fields["decides"]) is True:',
+        "    if False:",
+        "заявка: обещание про «оба ответа — один шаг» снова только слова",
+        "studio.mcp.tests.test_decides_buys_a_decision",
+    ),
+    (
+        "studio/mcp/proposal.py",
+        "    if len(действия) < 2:\n        return True\n    return False",
+        "    return False",
+        "заявка: одинаковые действия в ветвях больше не считаются одинаковыми",
+        "studio.mcp.tests.test_decides_buys_a_decision",
+    ),
+    (
+        "studio/mcp/proposal.py",
+        "    if len(разобранные) < 2:\n        return None",
+        "    if len(разобранные) < 2:\n        return False",
+        "заявка: «не смогли разобрать» свёрнуто в «ветви разные» (Р1)",
+        "studio.mcp.tests.test_decides_buys_a_decision",
+    ),
+    # === ОЧЕРЕДЬ ПРОТУХШЕГО И ЗАКРЫТЫЙ ИСТОЧНИК (studio/mcp/advice.py) ====
+    (
+        "studio/mcp/advice.py",
+        '    закрытые = [row for row in old if fetch.закрыт_политикой(str(row["source_url"]))]',
+        "    закрытые = []",
+        "очередь: снова просит перечитать закрытую политикой страницу",
+        "studio.mcp.tests.test_stale_blocked_source",
+    ),
+    (
+        "studio/mcp/advice.py",
+        '    закрытые = [row for row in old if fetch.закрыт_политикой(str(row["source_url"]))]',
+        "    закрытые = list(old)",
+        "очередь: закрытым объявлено всё, работа исчезает целиком",
+        "studio.mcp.tests.test_stale_blocked_source",
+    ),
     # === ЖУРНАЛ ЗОНДОВ (studio/mcp/probe.py, studio/mcp/advice.py) ========
     (
         "studio/mcp/probe.py",

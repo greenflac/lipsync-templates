@@ -1496,6 +1496,8 @@ def stale(*, days: int = STALE_AFTER_DAYS, path: Path | None = None) -> dict:
             "note": "the fact base is empty: there is nothing to age",
             "stale": [],
             "undated": [],
+            "published_and_old": [],
+            "blocked_source": [],
         }
 
     old: list[dict] = []
@@ -1530,8 +1532,24 @@ def stale(*, days: int = STALE_AFTER_DAYS, path: Path | None = None) -> dict:
             # именно так.
             (published if fact.tier in PUBLISHED_TIERS else old).append(row)
 
+    # СТРАНИЦА, КОТОРУЮ НЕЧЕМ ОТКРЫТЬ, — НЕ РАБОТА В ОЧЕРЕДИ. Та же болезнь,
+    # что и с датой публикации десятью строками выше: очередь наполняется
+    # строками, по которым сказанное ею действие выполнить нельзя, и тогда
+    # её читают по диагонали вместе с теми строками, где работа настоящая.
+    #
+    # «Поищи в сети и запиши, что найдёшь» для хоста, закрытого политикой
+    # окружения, — работа, которую нельзя сделать, и обходить запрет нечем
+    # (Ц3). Строка НЕ выбрасывается: утверждение стареет по-прежнему, и
+    # лечится оно двумя способами, названными в ноте, — попросить доступ
+    # (хост уже в журнале отказов) или измерить модель зондом.
+    #
+    # Журнал отказов читается ФАЙЛОМ, сети здесь не появляется (Т4).
+    закрытые = [row for row in old if fetch.закрыт_политикой(str(row["source_url"]))]
+    old = [row for row in old if row not in закрытые]
+
     old.sort(key=lambda row: -(row["age_days"] or 0))
     published.sort(key=lambda row: -(row["age_days"] or 0))
+    закрытые.sort(key=lambda row: -(row["age_days"] or 0))
     if old or undated:
         return {
             "outcome": FAIL,
@@ -1547,10 +1565,19 @@ def stale(*, days: int = STALE_AFTER_DAYS, path: Path | None = None) -> dict:
                 "rot, so re-reading it changes nothing. If one of those models "
                 "has moved since, the answer is a fresh measurement of the "
                 "model, not a fresh reading of the paper."
+                + (
+                    f" Ещё {len(закрытые)} строк(и) стоят на хостах, закрытых "
+                    "политикой окружения: перечитать их здесь НЕЧЕМ, и обходить "
+                    "запрет нельзя. Под ключом `blocked_source`; лечится "
+                    "просьбой о доступе или замером модели, а не поиском."
+                    if закрытые
+                    else ""
+                )
             ),
             "stale": old,
             "undated": undated,
             "published_and_old": published,
+            "blocked_source": закрытые,
         }
 
     return {
@@ -1570,4 +1597,5 @@ def stale(*, days: int = STALE_AFTER_DAYS, path: Path | None = None) -> dict:
         "stale": [],
         "undated": [],
         "published_and_old": published,
+        "blocked_source": закрытые,
     }
