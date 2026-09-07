@@ -47,6 +47,7 @@ import json
 import urllib.error
 import urllib.request
 from datetime import date
+from pathlib import Path
 from typing import Any
 
 from lipsync.fork_identity import FAIL, PASS, UNMEASURED
@@ -54,13 +55,78 @@ from lipsync.fork_identity import FAIL, PASS, UNMEASURED
 from studio.mcp import credentials
 from studio.mcp.fetch import TIMEOUT_SECONDS, _DENIAL, _host, note_denial
 
-__all__ = ["probe_limit", "ABSURD_MIN", "KEY_ENV"]
+__all__ = ["probe_limit", "ABSURD_MIN", "KEY_ENV", "PROBES_PATH", "note_probe", "зонд_был"]
 
 #: CHOSEN, and it is the safety constant of this module. A probe value must be
 #: at least this large. A million seconds is 11 days of video and a million
 #: pixels of width is not a format; no vendor can satisfy either, so no vendor
 #: can charge for satisfying it. Lowering this is how a probe turns into a bill.
 ABSURD_MIN = 1_000_000
+
+#: ЖУРНАЛ СОСТОЯВШИХСЯ ЗОНДОВ. Счётчик раньше ручки (П1).
+#:
+#: ЗАЧЕМ. Тир `probe` означает «их API ответил», и до 2026-09-07 он брался НА
+#: СЛОВО: сверять было не с чем, потому что зонд никуда не записывался. То же
+#: самое уже случалось с флагом `read_directly` — «я открыл эту страницу» про
+#: хост, закрытый политикой, — и чинилось ровно так же: журналом, а не
+#: обещанием. Без журнала «зонд не выполнялся» и «зонд выполнялся» неразличимы,
+#: то есть отказ прибора нечем отличить от выдумки.
+#:
+#: ЗАПИСЫВАЕТСЯ КОНТАКТ, А НЕ ВЕРДИКТ. Строка появляется, как только ответ
+#: получен — включая 401, 404 и 2xx, из которых предел НЕ следует. Журнал
+#: отвечает на один вопрос: доходили ли мы до этого хоста вообще.
+PROBES_PATH = Path(__file__).resolve().parents[1] / "knowledge" / "probes.jsonl"
+
+
+def note_probe(url: str, field: str, status: int | None, *, why_wanted: str = "") -> dict:
+    """Записать состоявшийся зонд. Возвращает записанную строку или пустую.
+
+    Дописывает всегда: два зонда одного поля в разные дни — это два
+    наблюдения, а не повтор. Файл append-only, как и журнал отказов.
+    """
+    host = _host(url)
+    if not host:
+        return {}
+    row = {
+        "host": host,
+        "url": str(url),
+        "field": str(field),
+        "status": None if status is None else int(status),
+        "probed_on": date.today().isoformat(),
+        "why_wanted": str(why_wanted or ""),
+    }
+    PROBES_PATH.parent.mkdir(parents=True, exist_ok=True)
+    with PROBES_PATH.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(row, ensure_ascii=False) + "\n")
+    return row
+
+
+def зонд_был(url: str, journal: Path | None = None) -> bool:
+    """Доходил ли кто-нибудь зондом до хоста этого адреса.
+
+    Вопрос ХОСТОВЫЙ нарочно: у одного API десятки путей, и требовать
+    совпадения адреса целиком значило бы объявлять невыполненным зонд,
+    отличающийся версией пути. Здесь нужен ответ «мы туда ходили», а не
+    «мы ходили ровно сюда».
+    """
+    host = _host(url)
+    if not host:
+        return False
+    путь = journal or PROBES_PATH
+    if not путь.exists():
+        return False
+    for строка in путь.read_text(encoding="utf-8").splitlines():
+        строка = строка.strip()
+        if not строка:
+            continue
+        try:
+            запись = json.loads(строка)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(запись, dict) and запись.get("host") == host:
+            return True
+    return False
+
 
 #: Коды, при которых отказ ИЗМЕРЯЕТ предел: сервер разобрал запрос и назвал,
 #: что именно в нём не так. Всё остальное 4xx/5xx — про ключ, адрес, частоту
@@ -216,6 +282,11 @@ def probe_limit(
     # The request is echoed back WITHOUT the Authorization header, which never
     # leaves this function.
     sent = {"url": target, "method": "POST", "body": body}
+
+    # ЖУРНАЛ ПИШЕТСЯ ЗДЕСЬ, ДО РАЗБОРА КОДА ОТВЕТА: записывается КОНТАКТ, а не
+    # вердикт. Зонд, ответивший 401, тоже состоялся — а именно на этот вопрос
+    # журнал и отвечает.
+    note_probe(target, field, status, why_wanted=why_wanted)
 
     # ОТКАЗЫ РАЗНЫЕ ПО РОДУ (исправлено 2026-09-05 по независимому аудиту).
     #

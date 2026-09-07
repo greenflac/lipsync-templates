@@ -779,6 +779,21 @@ MUTANTS: list[tuple[str, str, str, str, str]] = [
         "база: не-ответ ищется подстрокой, настоящие значения отвергаются",
         "studio.mcp.tests.test_value_is_not_a_shrug",
     ),
+    # === ЖУРНАЛ ЗОНДОВ (studio/mcp/probe.py, studio/mcp/advice.py) ========
+    (
+        "studio/mcp/probe.py",
+        "    note_probe(target, field, status, why_wanted=why_wanted)",
+        "    pass  # мутация",
+        "зонд: состоявшееся обращение больше не записывается",
+        "studio.mcp.tests.test_probe_journal",
+    ),
+    (
+        "studio/mcp/advice.py",
+        '    if fields["tier"] == TIER_PROBE and not probe.зонд_был(fields["source_url"]):',
+        "    if False:",
+        "зонд: тир probe снова берётся на слово",
+        "studio.mcp.tests.test_probe_journal",
+    ),
     # === СУД НАД ПРОМПТОМ ИЗ ЛЮБОГО ИСТОЧНИКА (studio/mcp/contract.py) ====
     (
         "studio/mcp/contract.py",

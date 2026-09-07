@@ -47,7 +47,7 @@ from typing import Any
 from lipsync.fork_identity import FAIL, PASS, UNMEASURED
 
 from studio import lifecycle as _lifecycle
-from studio.mcp import fetch
+from studio.mcp import fetch, probe
 from studio.selfrag import attrfamily, registry, source_hosts
 from studio.selfrag.facts import (
     DEFAULT_FACTS_PATH,
@@ -58,6 +58,7 @@ from studio.selfrag.facts import (
     TIER_OPERATOR,
     TIER_PAPER,
     TIER_PORTAL,
+    TIER_PROBE,
     TIER_VENDOR,
     Fact,
     FactStore,
@@ -1141,6 +1142,24 @@ def record(
     # третий способ соврать.
     прочитано = None if read_directly is None else bool(read_directly)
     поправка = ""
+
+    # ТИР `probe` ТОЖЕ СВЕРЯЕТСЯ СО СВИДЕТЕЛЬСТВОМ (Е2). «Их API ответил» —
+    # утверждение о СОБЫТИИ, и с 2026-09-07 у события есть журнал
+    # (`probe.PROBES_PATH`, пишется в момент ответа). До журнала сверять было
+    # не с чем, и тир брался на слово — та же дыра, что была у флага чтения.
+    #
+    # ФАКТ НЕ ОТВЕРГАЕТСЯ, И ЭТО НЕ МЯГКОСТЬ. Зонд мог быть выполнен на другой
+    # машине, в другой сессии или руками через curl — журнал этого окружения
+    # такого не видит. Отказ потерял бы настоящий факт, а потерянный факт не
+    # запишет уже никто; пометка же едет вместе с источником и видна читателю.
+    if fields["tier"] == TIER_PROBE and not probe.зонд_был(fields["source_url"]):
+        поправка += (
+            " [ТИР probe ЗАЯВЛЕН, НО ЗОНДА В ЖУРНАЛЕ НЕТ: ни одного обращения к "
+            f"{source_hosts.host_of(fields['source_url']) or 'этому хосту'} в "
+            "probes.jsonl не записано. Строка оставлена — зонд мог быть выполнен "
+            "вне этого окружения, — но «их API ответил» здесь ничем не "
+            "подтверждено]"
+        )
     if прочитано and fetch.закрыт_политикой(fields["source_url"]):
         прочитано = False
         поправка = (
