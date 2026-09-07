@@ -296,3 +296,114 @@
 {"host": "api.vendor.test", "url": "https://api.vendor.test/v1/videos", "field": "duration", "status": 503, "probed_on": "2026-09-07", "why_wanted": "предел длительности"}
 {"host": "api.vendor.test", "url": "https://api.vendor.test/v1/videos", "field": "duration", "status": 200, "probed_on": "2026-09-07", "why_wanted": "предел длительности"}
 {"host": "api.vendor.test", "url": "https://api.vendor.test/v1/videos", "field": "duration", "status": 200, "probed_on": "2026-09-07", "why_wanted": "предел длительности"}
+{"host": "api.klingai.com", "url": "https://api.klingai.com/v1/videos/text2video", "field": "duration", "status": 400, "probed_on": "2026-09-07", "why_wanted": ""}
+{"host": "api.klingai.com", "url": "https://api.klingai.com/v1/videos/text2video", "field": "duration", "status": 400, "probed_on": "2026-09-07", "why_wanted": ""}
+{"host": "api.vendor.test", "url": "https://api.vendor.test/v1/videos", "field": "duration", "status": 400, "probed_on": "2026-09-07", "why_wanted": "предел длительности"}
+{"host": "api.vendor.test", "url": "https://api.vendor.test/v1/videos", "field": "duration", "status": 422, "probed_on": "2026-09-07", "why_wanted": "предел длительности"}
+{"host": "api.vendor.test", "url": "https://api.vendor.test/v1/videos", "field": "duration", "status": 401, "probed_on": "2026-09-07", "why_wanted": "предел длительности"}
+{"host": "api.vendor.test", "url": "https://api.vendor.test/v1/videos", "field": "duration", "status": 401, "probed_on": "2026-09-07", "why_wanted": "предел длительности"}
+{"host": "api.vendor.test", "url": "https://api.vendor.test/v1/videos", "field": "duration", "status": 403, "probed_on": "2026-09-07", "why_wanted": "предел длительности"}
+{"host": "api.vendor.test", "url": "https://api.vendor.test/v1/videos", "field": "duration", "status": 404, "probed_on": "2026-09-07", "why_wanted": "предел длительности"}
+{"host": "api.vendor.test", "url": "https://api.vendor.test/v1/videos", "field": "duration", "status": 429, "probed_on": "2026-09-07", "why_wanted": "предел длительности"}
+{"host": "api.vendor.test", "url": "https://api.vendor.test/v1/videos", "field": "duration", "status": 500, "probed_on": "2026-09-07", "why_wanted": "предел длительности"}
+{"host": "api.vendor.test", "url": "https://api.vendor.test/v1/videos", "field": "duration", "status": 503, "probed_on": "2026-09-07", "why_wanted": "предел длительности"}
+{"host": "api.vendor.test", "url": "https://api.vendor.test/v1/videos", "field": "duration", "status": 200, "probed_on": "2026-09-07", "why_wanted": "предел длительности"}
+{"host": "api.vendor.test", "url": "https://api.vendor.test/v1/videos", "field": "duration", "status": 200, "probed_on": "2026-09-07", "why_wanted": "предел длительности"}
+{"host": "api.klingai.com", "url": "https://api.klingai.com/v1/videos/text2video", "field": "duration", "status": 400, "probed_on": "2026-09-07", "why_wanted": ""}
+{"host": "api.klingai.com", "url": "https://api.klingai.com/v1/videos/text2video", "field": "duration", "status": 400, "probed_on": "2026-09-07", "why_wanted": ""}
+{"host": "api.vendor.test", "url": "https://api.vendor.test/v1/videos", "field": "duration", "status": 400, "probed_on": "2026-09-07", "why_wanted": "предел длительности"}
+{"host": "api.vendor.test", "url": "https://api.vendor.test/v1/videos", "field": "duration", "status": 422, "probed_on": "2026-09-07", "why_wanted": "предел длительности"}
+{"host": "api.vendor.test", "url": "https://api.vendor.test/v1/videos", "field": "duration", "status": 401, "probed_on": "2026-09-07", "why_wanted": "предел длительности"}
+{"host": "api.vendor.test", "url": "https://api.vendor.test/v1/videos", "field": "duration", "status": 401, "probed_on": "2026-09-07", "why_wanted": "предел длительности"}
+{"host": "api.vendor.test", "url": "https://api.vendor.test/v1/videos", "field": "duration", "status": 403, "probed_on": "2026-09-07", "why_wanted": "предел длительности"}
+{"host": "api.vendor.test", "url": "https://api.vendor.test/v1/videos", "field": "duration", "status": 404, "probed_on": "2026-09-07", "why_wanted": "предел длительности"}
+{"host": "api.vendor.test", "url": "https://api.vendor.test/v1/videos", "field": "duration", "status": 429, "probed_on": "2026-09-07", "why_wanted": "предел длительности"}
+{"host": "api.vendor.test", "url": "https://api.vendor.test/v1/videos", "field": "duration", "status": 500, "probed_on": "2026-09-07", "why_wanted": "предел длительности"}
+{"host": "api.vendor.test", "url": "https://api.vendor.test/v1/videos", "field": "duration", "status": 503, "probed_on": "2026-09-07", "why_wanted": "предел длительности"}
+{"host": "api.vendor.test", "url": "https://api.vendor.test/v1/videos", "field": "duration", "status": 200, "probed_on": "2026-09-07", "why_wanted": "предел длительности"}
+{"host": "api.vendor.test", "url": "https://api.vendor.test/v1/videos", "field": "duration", "status": 200, "probed_on": "2026-09-07", "why_wanted": "предел длительности"}
+{"host": "api.klingai.com", "url": "https://api.klingai.com/v1/videos/text2video", "field": "duration", "status": 400, "probed_on": "2026-09-07", "why_wanted": ""}
+{"host": "api.klingai.com", "url": "https://api.klingai.com/v1/videos/text2video", "field": "duration", "status": 400, "probed_on": "2026-09-07", "why_wanted": ""}
+{"host": "api.vendor.test", "url": "https://api.vendor.test/v1/videos", "field": "duration", "status": 400, "probed_on": "2026-09-07", "why_wanted": "предел длительности"}
+{"host": "api.vendor.test", "url": "https://api.vendor.test/v1/videos", "field": "duration", "status": 422, "probed_on": "2026-09-07", "why_wanted": "предел длительности"}
+{"host": "api.vendor.test", "url": "https://api.vendor.test/v1/videos", "field": "duration", "status": 401, "probed_on": "2026-09-07", "why_wanted": "предел длительности"}
+{"host": "api.vendor.test", "url": "https://api.vendor.test/v1/videos", "field": "duration", "status": 401, "probed_on": "2026-09-07", "why_wanted": "предел длительности"}
+{"host": "api.vendor.test", "url": "https://api.vendor.test/v1/videos", "field": "duration", "status": 403, "probed_on": "2026-09-07", "why_wanted": "предел длительности"}
+{"host": "api.vendor.test", "url": "https://api.vendor.test/v1/videos", "field": "duration", "status": 404, "probed_on": "2026-09-07", "why_wanted": "предел длительности"}
+{"host": "api.vendor.test", "url": "https://api.vendor.test/v1/videos", "field": "duration", "status": 429, "probed_on": "2026-09-07", "why_wanted": "предел длительности"}
+{"host": "api.vendor.test", "url": "https://api.vendor.test/v1/videos", "field": "duration", "status": 500, "probed_on": "2026-09-07", "why_wanted": "предел длительности"}
+{"host": "api.vendor.test", "url": "https://api.vendor.test/v1/videos", "field": "duration", "status": 503, "probed_on": "2026-09-07", "why_wanted": "предел длительности"}
+{"host": "api.vendor.test", "url": "https://api.vendor.test/v1/videos", "field": "duration", "status": 200, "probed_on": "2026-09-07", "why_wanted": "предел длительности"}
+{"host": "api.vendor.test", "url": "https://api.vendor.test/v1/videos", "field": "duration", "status": 200, "probed_on": "2026-09-07", "why_wanted": "предел длительности"}
+{"host": "api.klingai.com", "url": "https://api.klingai.com/v1/videos/text2video", "field": "duration", "status": 400, "probed_on": "2026-09-07", "why_wanted": ""}
+{"host": "api.klingai.com", "url": "https://api.klingai.com/v1/videos/text2video", "field": "duration", "status": 400, "probed_on": "2026-09-07", "why_wanted": ""}
+{"host": "api.vendor.test", "url": "https://api.vendor.test/v1/videos", "field": "duration", "status": 400, "probed_on": "2026-09-07", "why_wanted": "предел длительности"}
+{"host": "api.vendor.test", "url": "https://api.vendor.test/v1/videos", "field": "duration", "status": 422, "probed_on": "2026-09-07", "why_wanted": "предел длительности"}
+{"host": "api.vendor.test", "url": "https://api.vendor.test/v1/videos", "field": "duration", "status": 401, "probed_on": "2026-09-07", "why_wanted": "предел длительности"}
+{"host": "api.vendor.test", "url": "https://api.vendor.test/v1/videos", "field": "duration", "status": 401, "probed_on": "2026-09-07", "why_wanted": "предел длительности"}
+{"host": "api.vendor.test", "url": "https://api.vendor.test/v1/videos", "field": "duration", "status": 403, "probed_on": "2026-09-07", "why_wanted": "предел длительности"}
+{"host": "api.vendor.test", "url": "https://api.vendor.test/v1/videos", "field": "duration", "status": 404, "probed_on": "2026-09-07", "why_wanted": "предел длительности"}
+{"host": "api.vendor.test", "url": "https://api.vendor.test/v1/videos", "field": "duration", "status": 429, "probed_on": "2026-09-07", "why_wanted": "предел длительности"}
+{"host": "api.vendor.test", "url": "https://api.vendor.test/v1/videos", "field": "duration", "status": 500, "probed_on": "2026-09-07", "why_wanted": "предел длительности"}
+{"host": "api.vendor.test", "url": "https://api.vendor.test/v1/videos", "field": "duration", "status": 503, "probed_on": "2026-09-07", "why_wanted": "предел длительности"}
+{"host": "api.vendor.test", "url": "https://api.vendor.test/v1/videos", "field": "duration", "status": 200, "probed_on": "2026-09-07", "why_wanted": "предел длительности"}
+{"host": "api.vendor.test", "url": "https://api.vendor.test/v1/videos", "field": "duration", "status": 200, "probed_on": "2026-09-07", "why_wanted": "предел длительности"}
+{"host": "api.klingai.com", "url": "https://api.klingai.com/v1/videos/text2video", "field": "duration", "status": 400, "probed_on": "2026-09-07", "why_wanted": ""}
+{"host": "api.klingai.com", "url": "https://api.klingai.com/v1/videos/text2video", "field": "duration", "status": 400, "probed_on": "2026-09-07", "why_wanted": ""}
+{"host": "api.vendor.test", "url": "https://api.vendor.test/v1/videos", "field": "duration", "status": 400, "probed_on": "2026-09-07", "why_wanted": "предел длительности"}
+{"host": "api.vendor.test", "url": "https://api.vendor.test/v1/videos", "field": "duration", "status": 422, "probed_on": "2026-09-07", "why_wanted": "предел длительности"}
+{"host": "api.vendor.test", "url": "https://api.vendor.test/v1/videos", "field": "duration", "status": 401, "probed_on": "2026-09-07", "why_wanted": "предел длительности"}
+{"host": "api.vendor.test", "url": "https://api.vendor.test/v1/videos", "field": "duration", "status": 401, "probed_on": "2026-09-07", "why_wanted": "предел длительности"}
+{"host": "api.vendor.test", "url": "https://api.vendor.test/v1/videos", "field": "duration", "status": 403, "probed_on": "2026-09-07", "why_wanted": "предел длительности"}
+{"host": "api.vendor.test", "url": "https://api.vendor.test/v1/videos", "field": "duration", "status": 404, "probed_on": "2026-09-07", "why_wanted": "предел длительности"}
+{"host": "api.vendor.test", "url": "https://api.vendor.test/v1/videos", "field": "duration", "status": 429, "probed_on": "2026-09-07", "why_wanted": "предел длительности"}
+{"host": "api.vendor.test", "url": "https://api.vendor.test/v1/videos", "field": "duration", "status": 500, "probed_on": "2026-09-07", "why_wanted": "предел длительности"}
+{"host": "api.vendor.test", "url": "https://api.vendor.test/v1/videos", "field": "duration", "status": 503, "probed_on": "2026-09-07", "why_wanted": "предел длительности"}
+{"host": "api.vendor.test", "url": "https://api.vendor.test/v1/videos", "field": "duration", "status": 200, "probed_on": "2026-09-07", "why_wanted": "предел длительности"}
+{"host": "api.vendor.test", "url": "https://api.vendor.test/v1/videos", "field": "duration", "status": 200, "probed_on": "2026-09-07", "why_wanted": "предел длительности"}
+{"host": "api.klingai.com", "url": "https://api.klingai.com/v1/videos/text2video", "field": "duration", "status": 400, "probed_on": "2026-09-07", "why_wanted": ""}
+{"host": "api.klingai.com", "url": "https://api.klingai.com/v1/videos/text2video", "field": "duration", "status": 400, "probed_on": "2026-09-07", "why_wanted": ""}
+{"host": "api.vendor.test", "url": "https://api.vendor.test/v1/videos", "field": "duration", "status": 400, "probed_on": "2026-09-07", "why_wanted": "предел длительности"}
+{"host": "api.vendor.test", "url": "https://api.vendor.test/v1/videos", "field": "duration", "status": 422, "probed_on": "2026-09-07", "why_wanted": "предел длительности"}
+{"host": "api.vendor.test", "url": "https://api.vendor.test/v1/videos", "field": "duration", "status": 401, "probed_on": "2026-09-07", "why_wanted": "предел длительности"}
+{"host": "api.vendor.test", "url": "https://api.vendor.test/v1/videos", "field": "duration", "status": 401, "probed_on": "2026-09-07", "why_wanted": "предел длительности"}
+{"host": "api.vendor.test", "url": "https://api.vendor.test/v1/videos", "field": "duration", "status": 403, "probed_on": "2026-09-07", "why_wanted": "предел длительности"}
+{"host": "api.vendor.test", "url": "https://api.vendor.test/v1/videos", "field": "duration", "status": 404, "probed_on": "2026-09-07", "why_wanted": "предел длительности"}
+{"host": "api.vendor.test", "url": "https://api.vendor.test/v1/videos", "field": "duration", "status": 429, "probed_on": "2026-09-07", "why_wanted": "предел длительности"}
+{"host": "api.vendor.test", "url": "https://api.vendor.test/v1/videos", "field": "duration", "status": 500, "probed_on": "2026-09-07", "why_wanted": "предел длительности"}
+{"host": "api.vendor.test", "url": "https://api.vendor.test/v1/videos", "field": "duration", "status": 503, "probed_on": "2026-09-07", "why_wanted": "предел длительности"}
+{"host": "api.vendor.test", "url": "https://api.vendor.test/v1/videos", "field": "duration", "status": 200, "probed_on": "2026-09-07", "why_wanted": "предел длительности"}
+{"host": "api.vendor.test", "url": "https://api.vendor.test/v1/videos", "field": "duration", "status": 200, "probed_on": "2026-09-07", "why_wanted": "предел длительности"}
+{"host": "api.vendor.test", "url": "https://api.vendor.test/v1/videos", "field": "duration", "status": 400, "probed_on": "2026-09-07", "why_wanted": "предел длительности"}
+{"host": "api.vendor.test", "url": "https://api.vendor.test/v1/videos", "field": "duration", "status": 422, "probed_on": "2026-09-07", "why_wanted": "предел длительности"}
+{"host": "api.vendor.test", "url": "https://api.vendor.test/v1/videos", "field": "duration", "status": 401, "probed_on": "2026-09-07", "why_wanted": "предел длительности"}
+{"host": "api.vendor.test", "url": "https://api.vendor.test/v1/videos", "field": "duration", "status": 401, "probed_on": "2026-09-07", "why_wanted": "предел длительности"}
+{"host": "api.vendor.test", "url": "https://api.vendor.test/v1/videos", "field": "duration", "status": 403, "probed_on": "2026-09-07", "why_wanted": "предел длительности"}
+{"host": "api.vendor.test", "url": "https://api.vendor.test/v1/videos", "field": "duration", "status": 404, "probed_on": "2026-09-07", "why_wanted": "предел длительности"}
+{"host": "api.vendor.test", "url": "https://api.vendor.test/v1/videos", "field": "duration", "status": 429, "probed_on": "2026-09-07", "why_wanted": "предел длительности"}
+{"host": "api.vendor.test", "url": "https://api.vendor.test/v1/videos", "field": "duration", "status": 500, "probed_on": "2026-09-07", "why_wanted": "предел длительности"}
+{"host": "api.vendor.test", "url": "https://api.vendor.test/v1/videos", "field": "duration", "status": 503, "probed_on": "2026-09-07", "why_wanted": "предел длительности"}
+{"host": "api.vendor.test", "url": "https://api.vendor.test/v1/videos", "field": "duration", "status": 200, "probed_on": "2026-09-07", "why_wanted": "предел длительности"}
+{"host": "api.vendor.test", "url": "https://api.vendor.test/v1/videos", "field": "duration", "status": 200, "probed_on": "2026-09-07", "why_wanted": "предел длительности"}
+{"host": "api.vendor.test", "url": "https://api.vendor.test/v1/videos", "field": "duration", "status": 400, "probed_on": "2026-09-07", "why_wanted": "предел длительности"}
+{"host": "api.vendor.test", "url": "https://api.vendor.test/v1/videos", "field": "duration", "status": 422, "probed_on": "2026-09-07", "why_wanted": "предел длительности"}
+{"host": "api.vendor.test", "url": "https://api.vendor.test/v1/videos", "field": "duration", "status": 401, "probed_on": "2026-09-07", "why_wanted": "предел длительности"}
+{"host": "api.vendor.test", "url": "https://api.vendor.test/v1/videos", "field": "duration", "status": 401, "probed_on": "2026-09-07", "why_wanted": "предел длительности"}
+{"host": "api.vendor.test", "url": "https://api.vendor.test/v1/videos", "field": "duration", "status": 403, "probed_on": "2026-09-07", "why_wanted": "предел длительности"}
+{"host": "api.vendor.test", "url": "https://api.vendor.test/v1/videos", "field": "duration", "status": 404, "probed_on": "2026-09-07", "why_wanted": "предел длительности"}
+{"host": "api.vendor.test", "url": "https://api.vendor.test/v1/videos", "field": "duration", "status": 429, "probed_on": "2026-09-07", "why_wanted": "предел длительности"}
+{"host": "api.vendor.test", "url": "https://api.vendor.test/v1/videos", "field": "duration", "status": 500, "probed_on": "2026-09-07", "why_wanted": "предел длительности"}
+{"host": "api.vendor.test", "url": "https://api.vendor.test/v1/videos", "field": "duration", "status": 503, "probed_on": "2026-09-07", "why_wanted": "предел длительности"}
+{"host": "api.vendor.test", "url": "https://api.vendor.test/v1/videos", "field": "duration", "status": 200, "probed_on": "2026-09-07", "why_wanted": "предел длительности"}
+{"host": "api.vendor.test", "url": "https://api.vendor.test/v1/videos", "field": "duration", "status": 200, "probed_on": "2026-09-07", "why_wanted": "предел длительности"}
+{"host": "api.vendor.test", "url": "https://api.vendor.test/v1/videos", "field": "duration", "status": 400, "probed_on": "2026-09-07", "why_wanted": "предел длительности"}
+{"host": "api.vendor.test", "url": "https://api.vendor.test/v1/videos", "field": "duration", "status": 422, "probed_on": "2026-09-07", "why_wanted": "предел длительности"}
+{"host": "api.vendor.test", "url": "https://api.vendor.test/v1/videos", "field": "duration", "status": 401, "probed_on": "2026-09-07", "why_wanted": "предел длительности"}
+{"host": "api.vendor.test", "url": "https://api.vendor.test/v1/videos", "field": "duration", "status": 401, "probed_on": "2026-09-07", "why_wanted": "предел длительности"}
+{"host": "api.vendor.test", "url": "https://api.vendor.test/v1/videos", "field": "duration", "status": 403, "probed_on": "2026-09-07", "why_wanted": "предел длительности"}
+{"host": "api.vendor.test", "url": "https://api.vendor.test/v1/videos", "field": "duration", "status": 404, "probed_on": "2026-09-07", "why_wanted": "предел длительности"}
+{"host": "api.vendor.test", "url": "https://api.vendor.test/v1/videos", "field": "duration", "status": 429, "probed_on": "2026-09-07", "why_wanted": "предел длительности"}
+{"host": "api.vendor.test", "url": "https://api.vendor.test/v1/videos", "field": "duration", "status": 500, "probed_on": "2026-09-07", "why_wanted": "предел длительности"}
+{"host": "api.vendor.test", "url": "https://api.vendor.test/v1/videos", "field": "duration", "status": 503, "probed_on": "2026-09-07", "why_wanted": "предел длительности"}
+{"host": "api.vendor.test", "url": "https://api.vendor.test/v1/videos", "field": "duration", "status": 200, "probed_on": "2026-09-07", "why_wanted": "предел длительности"}
+{"host": "api.vendor.test", "url": "https://api.vendor.test/v1/videos", "field": "duration", "status": 200, "probed_on": "2026-09-07", "why_wanted": "предел длительности"}

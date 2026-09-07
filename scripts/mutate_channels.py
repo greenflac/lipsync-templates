@@ -794,6 +794,21 @@ MUTANTS: list[tuple[str, str, str, str, str]] = [
         "просьба: неизвестность приравнена к «имени нет», доступ теряется",
         "studio.mcp.tests.test_name_exists",
     ),
+    # === ЗАПРЕТ СЕТИ В РАННЕРЕ: РАЗРЕШЕНИЕ ИМЁН (scripts/run_tests.py) =====
+    (
+        "scripts/run_tests.py",
+        "    socket.getaddrinfo = _без_dns  # type: ignore[assignment]",
+        "    pass  # мутация",
+        "раннер: разрешение имён снова не запрещается",
+        "studio.mcp.tests.test_runner",
+    ),
+    (
+        "scripts/run_tests.py",
+        '    if str(host or "").lower() in _СВОИ_ИМЕНА:',
+        "    if False:",
+        "раннер: запрет закрыл и петлю — прибор отвергает всё",
+        "studio.mcp.tests.test_runner",
+    ),
     # === ЗАЯВКА НА ПЛАТНЫЙ ЗАМЕР: РЕШЕНИЕ ЛИ ОНА ПОКУПАЕТ =================
     (
         "studio/mcp/proposal.py",
