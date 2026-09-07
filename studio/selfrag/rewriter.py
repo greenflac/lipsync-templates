@@ -45,6 +45,37 @@ and saying so; shortening for a model whose card says it expands the prompt
 internally. Nothing else. In particular there is no synonym map: the last one
 in this repository read the user's "porous volcanic stone" as the palette
 colour "sand" and the generator put literal sand under the bottle.
+
+СТАТУС 2026-09-07: НЕ ПОДКЛЮЧЁН, И ЭТО ОТРИЦАТЕЛЬНЫЙ РЕЗУЛЬТАТ С ЧИСЛАМИ (И6)
+
+Перемерено по пункту 19 `docs/RELEASE_BLUEPRINT.md` («включить в путь или
+удалить»). Итог: не сделано ни то, ни другое, и вот на чём.
+
+РАБОТАЕТ. 32 строки `fixtures/rewriter_control_set.jsonl` через
+`rewrite(model=None)`: 30 с карточкой, из них 26 `pass` и 4 `could not
+measure` (ровно строки x01-x04, где отказ и есть правильный ответ);
+`must_contain` сохранено 30 из 30; `must_not_contain` — 122 проверки по
+словарной границе, 0 нарушений. Тестов о нём 56 из 347 в наборе
+(`test_rewriter` 39, `test_rewriter_contract` 17), все зелёные.
+
+НО ЗВАТЬ ЕГО НЕКОМУ. `grep -rn "selfrag.rewriter"` по всему дереву вне
+`tests/`: ноль импортов; единственные упоминания — 4 канала мутаций в
+`scripts/mutate_channels.py`, которые его не зовут, а правят как файл.
+
+И ПОДКЛЮЧАТЬ НЕ К ЧЕМУ. Продуктовый писатель промптов — `write_lipsync_prompt`
+-> `studio/mcp/lipsync_prompt.py`, и он пишет ТОЛЬКО вид кадра: называть
+предмет запрещено контрактом (`studio/mcp/contract.py`, зона subject_zone).
+Этот модуль занят ровно обратным — переносит существительные заказчика в
+промпт без потерь. ИЗМЕРЕНО: его 26 выданных промптов через продуктовый
+`contract.gate` — 20 `pass`, 6 `fail`, и одна из утечек (`u06`) это предметное
+слово «shirt». `docs/PRODUCT_LOGIC.md` тот же вывод уже записал словами:
+model path и clause classification — «not needed» при шаблонах с фиксированными
+ручками.
+
+УДАЛИТЬ ТОЖЕ НЕЛЬЗЯ ОДНОЙ РУКОЙ. `scripts/mutate_channels.py` (владелец —
+другой агент, файл под замком) читает этот путь через `путь.read_text()` без
+проверки существования: пропажа файла роняет весь прогон мутаций, а не только
+4 своих канала. Снятие кода = правка чужого файла, и это решение владельца.
 """
 
 from __future__ import annotations

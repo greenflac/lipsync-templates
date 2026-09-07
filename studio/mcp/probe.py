@@ -45,6 +45,7 @@ from __future__ import annotations
 
 import json
 import socket
+import sys
 import urllib.error
 import urllib.request
 from datetime import date
@@ -99,7 +100,19 @@ def _под_тестами() -> bool:
     уйти, значит записывать нечего. Это Е2 в чистом виде: верим свидетельству
     (сокета нет), а не намерению кода.
     """
-    return type(socket.socket).__name__ == "_БезСети" or socket.socket.__name__ == "_БезСети"
+    if type(socket.socket).__name__ == "_БезСети" or socket.socket.__name__ == "_БезСети":
+        return True
+    # ВТОРОЙ ПРИЗНАК, И ОН ШИРЕ ПЕРВОГО. Первая редакция смотрела только на
+    # подменённый сокет — то есть держала прогон ЧЕРЕЗ РАННЕР и пропускала
+    # прямой `python -m unittest`. ИЗМЕРЕНО 2026-09-07 через час после
+    # починки: `python -m unittest studio.mcp.tests.test_fetch_probe` дописал
+    # в живой журнал ещё 2 строки. Сторож, который держит один способ запуска
+    # из двух, — это ровно то «выглядит как защита», против чего он написан.
+    #
+    # Проверено, что признак не срабатывает в проде: `import
+    # studio.mcp.server` НЕ тянет `unittest` (измерено тем же днём), а
+    # MCP-сервер запускается именно так.
+    return "unittest" in sys.modules
 
 
 def note_probe(url: str, field: str, status: int | None, *, why_wanted: str = "") -> dict:

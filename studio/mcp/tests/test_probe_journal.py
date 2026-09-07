@@ -150,8 +150,19 @@ class ЖурналНеПишетсяИзПодТестов(unittest.TestCase):
 
         with mock.patch.object(socket, "socket", _БезСети):
             self.assertTrue(probe._под_тестами())
-        with mock.patch.object(socket, "socket", _НАСТОЯЩИЙ_СОКЕТ):
-            self.assertFalse(probe._под_тестами())
+        # Второй признак — `unittest` в загруженных модулях — под тестами
+        # истинен ВСЕГДА, и это правильно: он и заведён затем, что прямой
+        # `python -m unittest` сокет не подменяет. Поэтому «признака нет»
+        # проверяется на пустом наборе модулей, а не в этом процессе.
+        with (
+            mock.patch.object(socket, "socket", _НАСТОЯЩИЙ_СОКЕТ),
+            mock.patch.dict("sys.modules", {}, clear=False),
+        ):
+            import sys as _sys
+
+            без_unittest = {и: м for и, м in _sys.modules.items() if not и.startswith("unittest")}
+            with mock.patch.object(_sys, "modules", без_unittest):
+                self.assertFalse(probe._под_тестами())
 
 
 class ЗаявкаНаЗондСверяетсяСЖурналом(unittest.TestCase):

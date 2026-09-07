@@ -102,6 +102,31 @@ class ЗакрытыйИсточникОтделён(unittest.TestCase):
         self.assertNotIn("закрытых политикой", итог["note"])
 
 
+class ЗакрытыеДосчитываютсяАНеИсчезают(unittest.TestCase):
+    """Найдено второй приёмкой 2026-09-07 мутацией: она вернула
+    `unmeasured` к `len(undated)` — и НИ ОДИН из 1897 тестов не покраснел.
+    Половина находки была починена и никем не сторожилась.
+
+    Числа обязаны сходиться: строка, унесённая из работы, не исчезает из
+    отчёта — иначе «работы нет» и «работу спрятали» печатаются одинаково.
+    """
+
+    def test_смешанный_случай_числа_сходятся(self) -> None:
+        база = _база(("the-decoder.com", "openweb.example", "openweb.example"))
+        with mock.patch.object(fetch, "DENIED_PATH", _журнал(("the-decoder.com",))):
+            итог = advice.stale(path=база)
+        self.assertEqual("fail", итог["outcome"], итог)
+        self.assertEqual(3, итог["checked"])
+        self.assertEqual(2, итог["violations"], "две открытые строки — это работа")
+        self.assertEqual(1, итог["unmeasured"], "закрытая строка досчитана, а не потеряна")
+        self.assertEqual(1, len(итог["blocked_source"]))
+        self.assertEqual(
+            итог["violations"] + итог["unmeasured"],
+            len(итог["stale"]) + len(итог["blocked_source"]),
+            "сумма исходов обязана сходиться с числом строк",
+        )
+
+
 class ВсеПротухшиеЗакрытыЭтоНеУспех(unittest.TestCase):
     """Найдено приёмкой 2026-09-07 и воспроизведено ею же.
 

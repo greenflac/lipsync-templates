@@ -261,6 +261,15 @@ class ControlSet(unittest.TestCase):
         )
 
 
+# ЭТОТ ПРОПУСК БОЛЬШЕ НЕ ЛЕГАЛИЗОВАН, и это изменение 2026-09-07.
+# `scripts/check_skips.py` держал "rewriter missing" в списке «данных нет
+# в окружении». Данные тут ни при чём: контрольный набор лежит рядом
+# (`fixtures/rewriter_control_set.jsonl`, 32 строки), а пропускается класс
+# из-за отсутствия ИСХОДНИКА — то есть это выключенный тест, и по Т6 он
+# обязан красить сборку. Сегодня он не срабатывает: ИЗМЕРЕНО 2026-09-07,
+# `studio/selfrag/tests` — 347 прогнано, 0 пропущено. Условие оставлено
+# как было: агент B пишет этот файл, не читая rewriter.py, и импорт
+# может не существовать в момент написания.
 @unittest.skipIf(_rewrite is None, IMPORT_ERROR or "rewriter missing")
 class Contract(unittest.TestCase):
     """Every row through `rewrite`, with no model and therefore no network."""

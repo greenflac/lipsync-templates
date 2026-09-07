@@ -32,6 +32,27 @@ from pathlib import Path
 from studio.mcp import advice
 from studio.selfrag.facts import load_facts
 
+#: ЭТОТ СПИСОК ОДИН РАЗ УЖЕ БЫЛ НЕВЕРЕН, И ЗАПИСЬ ОБ ЭТОМ ВАЖНЕЕ САМОГО
+#: СПИСКА. 2026-09-07 первая приёмка назвала `none`, `null`, `na` ложными
+#: отказами, я согласился и убрал их из двери, а тест — закрепил приём. Вторая
+#: приёмка прогнала СТАРУЮ версию двери и показала, что основание было
+#: выдумано: дверь сравнивает значение целиком, и «none — no prompt upsampling
+#: on klein», «none required», «N/A regions» она пропускала всегда; отвергались
+#: только ГОЛЫЕ, а таких в базе 0 строк из 2127. Ложного отказа не случалось ни
+#: разу — заплачено было тем, что `str(None)` и JSON `null` стали фактами.
+#:
+#: Мораль не про слова, а про тест: он закреплял приём значений, которого
+#: никто не измерил. Поэтому здесь теперь стоит ИЗМЕРЕННАЯ пара — голое
+#: значение отвергается, оно же со словами проходит.
+ГОЛЫЕ_НЕ_ОТВЕТЫ = ("none", "None", "null", "NULL", "NA", "na")
+СО_СЛОВАМИ_ПРОХОДЯТ = (
+    "none — no restrictions",
+    "none required",
+    "N/A regions",
+    "NULL (API returns null when unset)",
+)
+
+
 #: Обе стороны прибора (И5). Слева — то, что обязано быть отвергнуто; справа —
 #: то, что обязано пройти. Второй список важнее первого: ложный отказ здесь
 #: дороже пропуска, потому что отвергнутый настоящий факт не запишет никто.
@@ -48,16 +69,8 @@ from studio.selfrag.facts import load_facts
     "?",
     "   ",
     "нет данных",
+    *ГОЛЫЕ_НЕ_ОТВЕТЫ,
 )
-
-#: ТРИ ЗНАЧЕНИЯ УБРАНЫ ИЗ ЭТОГО СПИСКА ПРИЁМКОЙ 2026-09-07, и это был ЛОЖНЫЙ
-#: ОТКАЗ — та самая ошибка, которую здесь считали дороже пропуска. `none`,
-#: `null` и `NA` — настоящие значения: «none» отвечает на `requires_inputs`,
-#: `limitation`, `license_restriction`, в базе уже стоит
-#: `flux-2-klein-9b.prompt_upsampling = 'none — no prompt upsampling on klein'`,
-#: а `NA` — код региона. Дверь их отвергала, а её же нота велела «не
-#: записывайте ничего», то есть факт не записал бы уже никто.
-ЛОЖНО_ОТВЕРГАЛИСЬ = ("none", "None", "null", "NULL", "NA", "na")
 
 НАСТОЯЩИЕ = (
     "10 s",
@@ -69,7 +82,7 @@ from studio.selfrag.facts import load_facts
     "non-commercial",
     "none of the seeds held identity",
     "unknown-provenance checkpoint",
-    *ЛОЖНО_ОТВЕРГАЛИСЬ,
+    *СО_СЛОВАМИ_ПРОХОДЯТ,
 )
 
 
@@ -168,6 +181,35 @@ class ИзмереннаяПричинаПочинки(unittest.TestCase):
         после = advice.store_for(путь).claims("kling-3.0", "max_seconds")
         self.assertEqual("pass", после["outcome"])
         self.assertEqual(["10 s"], после["values"])
+
+
+class ГолоеЗначениеОтличаетсяОтОтвета(unittest.TestCase):
+    """И5 обеими сторонами на одном и том же слове.
+
+    `none` голым — это невыставленное поле, `str(None)` или JSON `null`,
+    приведённый к строке. `none — no restrictions` — настоящий ответ. Дверь
+    обязана различать их, а не выбирать одну сторону.
+    """
+
+    def test_голое_отвергается_со_словами_проходит(self) -> None:
+        self.assertTrue(advice.не_ответ("none"))
+        self.assertFalse(advice.не_ответ("none — no restrictions"))
+        self.assertTrue(advice.не_ответ("NA"))
+        self.assertFalse(advice.не_ответ("N/A regions"))
+
+    def test_отказ_называет_выход(self) -> None:
+        """Отказ без выхода — это ловушка: писавший не узнает, как записать
+        настоящий ответ, и не запишет его вовсе."""
+        нота = advice.record(
+            "kling-3.0",
+            "requires_inputs",
+            "none",
+            "https://example.com/x",
+            "blog",
+            "2026-09-01",
+            path=_пустой(),
+        )["note"]
+        self.assertIn("none — no restrictions", нота)
 
 
 class ЖиваяБазаЧиста(unittest.TestCase):
