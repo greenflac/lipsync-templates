@@ -156,17 +156,32 @@ class Вопрос:
     текст: str
     почему: str
     варианты: tuple[str, ...]
+    #: ТОТ ЖЕ ВОПРОС ПО-АНГЛИЙСКИ. Не перевод «на всякий случай»: НАЙДЕНО
+    #: седьмой приёмкой 2026-09-07, что английский бриф получает вопрос
+    #: по-русски — то есть заказчик не может прочесть единственную строку, по
+    #: которой он способен что-то сделать. Поле обязательное и без значения по
+    #: умолчанию нарочно: новый вопрос, заведённый без английской половины,
+    #: обязан не собраться, а не тихо заговорить по-русски.
+    english: tuple[str, str, tuple[str, ...]]
 
     def строка(self) -> str:
         return f"вопрос [{self.ось}]: {self.текст} ({' / '.join(self.варианты)}) — {self.почему}"
 
-    def row(self) -> dict:
+    def row(self, по_английски: bool = False) -> dict:
+        """Строка вопроса. Язык — по языку брифа, а не по языку кода."""
+        текст, почему, варианты = (
+            self.english if по_английски else (self.текст, self.почему, self.варианты)
+        )
         return {
             "axis": self.ось,
-            "text": self.текст,
-            "why": self.почему,
-            "options": list(self.варианты),
+            "text": текст,
+            "why": почему,
+            "options": list(варианты),
         }
+
+    def сказать(self, по_английски: bool = False) -> str:
+        """Только текст вопроса, на нужном языке."""
+        return self.english[0] if по_английски else self.текст
 
 
 ВОПРОСЫ: dict[str, Вопрос] = {
@@ -178,12 +193,23 @@ class Вопрос:
             "пересинхронизируют, ненаснятое сначала генерируют"
         ),
         варианты=("видео есть", "снимать нечего, делаем с нуля"),
+        english=(
+            "Do you already have the video shot — or do we make the clip from scratch?",
+            "this decides the whole plan: footage you have gets re-voiced and "
+            "re-synced, footage you do not have has to be generated first",
+            ("I have the video", "nothing is shot, make it from scratch"),
+        ),
     ),
     ОСЬ_РЕЧЬ: Вопрос(
         ось=ОСЬ_РЕЧЬ,
         текст="Персонаж должен говорить вслух — или это немая анимация?",
         почему="речь добавляет в план озвучку и липсинк, немая анимация обходится без них",
         варианты=("должен говорить", "без речи"),
+        english=(
+            "Does the character speak out loud — or is it a silent animation?",
+            "speech adds voiceover and lip sync to the plan; a silent animation needs neither",
+            ("it speaks", "no speech"),
+        ),
     ),
 }
 

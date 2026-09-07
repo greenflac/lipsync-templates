@@ -104,6 +104,14 @@ VENDOR: dict[str, str] = {
     "z.ai": "Zhipu GLM",
     "skywork.ai": "Skywork models",
     "bytedance.com": "Seedance and OmniHuman — the lab's own pages",
+    # ЗАЯВЛЕН 2026-09-07, И ЭТО САМЫЙ НУЖНЫЙ ДОМЕН В СПИСКЕ НА СЕГОДНЯ.
+    # `argil-avatars-text-to-video` планировщик выбирает на 6 шагах из 58, а
+    # применимости о нём НЕ ЗАПИСАНО НИ ОДНОЙ СТРОКИ, и достать её сегодня
+    # нечем: arXiv по запросу `all:"Argil"` даёт 1 результат, и тот про
+    # геологию (argillic alteration); ключа для зонда в окружении нет.
+    # Открытие даёт только ступень `vendor`, то есть СПОСОБНОСТЬ, — но и её
+    # сейчас читать неоткуда, а без неё модель выбирается вслепую.
+    "argil.ai": "Argil avatars — limits and prohibited uses; the only source that exists",
     "alibabacloud.com": "Wan and Qwen on Alibaba's own cloud docs",
     "aliyun.com": "the same, Chinese-language docs",
     # Alibaba hosts some Wan documentation on its DingTalk docs service.

@@ -5,7 +5,7 @@ Re-run it and a host that has since opened drops off by itself.
 
 Every host below was probed and refused by the egress proxy (`Tunnel connection failed: 403`). None was routed around: no mirror, no cache, no archive copy, no read-through proxy.
 
-**50 host(s) asked for.** 166 further host(s) were refused during bulk probes and are deliberately NOT part of this request.
+**55 host(s) asked for.** 176 further host(s) were refused during bulk probes and are deliberately NOT part of this request.
 
 ## The list, to paste — wildcards, if the whitelist supports them
 
@@ -24,6 +24,8 @@ alici.ai
 amazon.com
 *.apiframe.ai
 apiframe.ai
+*.argil.ai
+argil.ai
 *.artificialanalysis.ai
 artificialanalysis.ai
 *.atlascloud.ai
@@ -42,6 +44,8 @@ docker.com
 epoch.ai
 *.evolink.ai
 evolink.ai
+*.fal.run
+fal.run
 *.filmthreat.com
 filmthreat.com
 *.frontierswe.com
@@ -95,6 +99,8 @@ skywork.ai
 swe-marathon.org
 *.swebench.com
 swebench.com
+*.sync.so
+sync.so
 *.the-decoder.com
 the-decoder.com
 *.together.xyz
@@ -128,18 +134,23 @@ aitooltier.com
 aivid.video
 aividpipeline.com
 alici.ai
+api.argil.ai
 api.replicate.com
 api.together.xyz
 apiframe.ai
+argil.ai
 artificialanalysis.ai
 blog.google
 cohere.com
 deepmind.google
 deepswe.datacurve.ai
+docs.argil.ai
 docs.aws.amazon.com
 docs.qingque.cn
+docs.sync.so
 epoch.ai
 evolink.ai
+fal.run
 filmthreat.com
 gaga.art
 hailuoai.video
@@ -178,7 +189,7 @@ Each one is justified below, grouped so the list can be cut at any group boundar
 
 ## Already open — do not add these
 
-Re-measured when this file was generated: 77 of 79 still answer.
+Re-measured when this file was generated: 76 of 79 still answer.
 
 ```
 ai.google.dev
@@ -247,7 +258,6 @@ platform.openai.com
 pypi.org
 raw.githubusercontent.com
 reddit.com
-searchapi.api.cloud.yandex.net
 seed.bytedance.com
 static.arxiv.org
 storage.googleapis.com
@@ -286,6 +296,10 @@ read a page this fact base cites but nobody opened
 
 read a page this fact base cites but nobody opened
 
+### `api.argil.ai`
+
+Поднять ПРИМЕНИМОСТЬ семи моделей, которые выбирает планировщик: нужны первоисточники вендоров (argil, sync.so, klingai, elevenlabs) и независимые бенчмарки (artificialanalysis.ai). Тир применимости даёт только paper/benchmark/probe/operator, значит нужны либо площадки бенчмарков, либо живые API для зонда.
+
 ### `api.replicate.com`
 
 portal-tier model descriptions for hailuo-02 physics and kling-3.0 negative_prompt
@@ -298,9 +312,13 @@ portal-tier model descriptions for hailuo-02 physics and kling-3.0 negative_prom
 
 read a page this fact base cites but nobody opened
 
+### `argil.ai`
+
+Поднять ПРИМЕНИМОСТЬ семи моделей, которые выбирает планировщик: нужны первоисточники вендоров (argil, sync.so, klingai, elevenlabs) и независимые бенчмарки (artificialanalysis.ai). Тир применимости даёт только paper/benchmark/probe/operator, значит нужны либо площадки бенчмарков, либо живые API для зонда.
+
 ### `artificialanalysis.ai`
 
-Verify whether the video arena ELO page is readable on a different path of the same host.
+Поднять ПРИМЕНИМОСТЬ семи моделей, которые выбирает планировщик: нужны первоисточники вендоров (argil, sync.so, klingai, elevenlabs) и независимые бенчмарки (artificialanalysis.ai). Тир применимости даёт только paper/benchmark/probe/operator, значит нужны либо площадки бенчмарков, либо живые API для зонда.
 
 ### `blog.google`
 
@@ -318,6 +336,10 @@ Veo 3.1 vendor claim about physical plausibility / physics
 
 Reading the official leaderboards and vendor blogs that non-Anthropic model cards cite for their 2026 benchmark scores (DeepSWE, FrontierSWE, Agents' Last Exam, PostTrainBench, GLM/MiniMax release blogs)
 
+### `docs.argil.ai`
+
+Поднять ПРИМЕНИМОСТЬ семи моделей, которые выбирает планировщик: нужны первоисточники вендоров (argil, sync.so, klingai, elevenlabs) и независимые бенчмарки (artificialanalysis.ai). Тир применимости даёт только paper/benchmark/probe/operator, значит нужны либо площадки бенчмарков, либо живые API для зонда.
+
 ### `docs.aws.amazon.com`
 
 portal-tier fallback for Cohere embed-v4 dimensions/embedding types and voyage-multimodal-3 limits, since docs.cohere.com and docs.voyageai.com are refused
@@ -326,6 +348,10 @@ portal-tier fallback for Cohere embed-v4 dimensions/embedding types and voyage-m
 
 _причина в журнале не записана: хост попал в просьбу строкой смены состояния. Спрашивать доступ по такой строке можно, но стоит перепроверить, нужен ли он ещё._
 
+### `docs.sync.so`
+
+Поднять ПРИМЕНИМОСТЬ семи моделей, которые выбирает планировщик: нужны первоисточники вендоров (argil, sync.so, klingai, elevenlabs) и независимые бенчмарки (artificialanalysis.ai). Тир применимости даёт только paper/benchmark/probe/operator, значит нужны либо площадки бенчмарков, либо живые API для зонда.
+
 ### `epoch.ai`
 
 Reading primary benchmark results (SWE-bench, GPQA, LMArena, vendor evals) for non-Anthropic LLM families
@@ -333,6 +359,10 @@ Reading primary benchmark results (SWE-bench, GPQA, LMArena, vendor evals) for n
 ### `evolink.ai`
 
 read a page this fact base cites but nobody opened
+
+### `fal.run`
+
+Зонд предела (probe_model_limit) у моделей fal.ai, которые планировщик выбирает без строк применимости
 
 ### `filmthreat.com`
 
@@ -466,4 +496,4 @@ Reading the official leaderboards and vendor blogs that non-Anthropic model card
 
 Hosts refused while a bulk probe swept past them — search results being tagged with whether they open, or the reachability map being re-dated. Nobody asked for these; they are listed so no refusal is lost.
 
-`acttwo.cv`, `ai-compare-hub.com`, `ai-sdk.dev`, `aibase.com`, `aifreeapi.com`, `aimlapi.com`, `aitoolanalysis.com`, `alibabacloud.com`, `alphaxiv.org`, `andlukyane.com`, `andreaskuhr.com`, `anotherwrapper.com`, `apidog.com`, `apimart.ai`, `apiyi.com`, `apob.ai`, `artlist.io`, `atlabs.ai`, `atlascloud.ai`, `benchlm.ai`, `bfl.ml`, `bloomway.ai`, `bytedance.com`, `chatpaper.ai`, `christytuckerlearning.com`, `clickrank.ai`, `cliprise.app`, `cloudflare.com`, `cometapi.com`, `comfy.icu`, `comfy.org`, `commandlinux.com`, `datacamp.com`, `deeka.ai`, `deepgram.com`, `deepset.ai`, `deevid.ai`, `dev.to`, `devactivity.com`, `docs.hedra.com`, `docs.sync.so`, `dreamega.ai`, `dubly.ai`, `eachlabs.ai`, `emergentmind.com`, `everypixel.com`, `facebook.com`, `fal.run`, `flaq.ai`, `flashloop.app`, `flowith.io`, `flyne.ai`, `forbes.com`, `forzebras.ai`, `futurebeeai.com`, `genmix.ai`, `getimg.ai`, `github.io`, `glbgpt.com`, `goenhance.ai`, `google.com`, `google.dev`, `gptproto.com`, `gradium.ai`, `higgsfield.ai`, `imagebattle.ai`, `jonathanmast.com`, `kie.ai`, `kili-technology.com`, `kingy.ai`, `kling-motion-control.com`, `kling2-6.com`, `kling3.ai`, `kling3.io`, `kling3api.com`, `klingaimotioncontrol.com`, `klingmotion.com`, `kompozy.io`, `labellerr.com`, `layer.ai`, `layer3labs.io`, `learnprompting.org`, `leonardo.ai`, `lmcouncil.ai`, `localaimaster.com`, `lovegen.ai`, `lumalabs.ai`, `lumeflow.ai`, `magichour.ai`, `magnific.com`, `max-productive.ai`, `medium.com`, `mindstudio.ai`, `minionarts.com`, `modelhunter.ai`, `mongodb.com`, `morphic.com`, `motioncontrolai.com`, `mozilla.org`, `multic.com`, `musicmake.ai`, `myphysicslab.com`, `nanobanana.org`, `nanophoto.ai`, `new3jcn.com`, `ntnu.no`, `omnihuman-lab.github.io`, `opencreator.io`, `ourcodeworld.com`, `panjaya.ai`, `percify.io`, `phygital.plus`, `physion.net`, `piclumen.com`, `picsart.com`, `pollo.ai`, `puter.com`, `qingque.cn`, `redditinc.com`, `renderful.ai`, `runcomfy.com`, `rundiffusion.com`, `runware.ai`, `runway.com`, `runwayml.com`, `scenario.com`, `scenetra.com`, `scmp.com`, `seavidgen.com`, `seedance20.com`, `seedance2ai.io`, `seedance2pro.io`, `seedanceapi.org`, `seevio.ai`, `segmind.com`, `semanticscholar.org`, `soku.ai`, `stensyl.ai`, `substack.com`, `swfte.com`, `sync.so`, `takara.ai`, `theaibuilders.dev`, `theinfluencer.ai`, `themoonlight.io`, `toolcenter.ai`, `unifuncs.com`, `union.ai`, `veed.io`, `vellum.ai`, `veneratech.com`, `venice.ai`, `veo3ai.io`, `veo3gen.app`, `vibedex.ai`, `videoweb.ai`, `vidofy.ai`, `viggle.ai`, `visualizee.ai`, `voyageai.com`, `vultr.com`, `wan.video`, `wan2-1.com`, `wan27.org`, `wikipedia.org`, `youtube.com`
+`acttwo.cv`, `ai-compare-hub.com`, `ai-sdk.dev`, `aiadoptionagency.com`, `aibase.com`, `aifreeapi.com`, `aifreeforever.com`, `aimlapi.com`, `aitoolanalysis.com`, `alibabacloud.com`, `alphaxiv.org`, `andlukyane.com`, `andreaskuhr.com`, `anotherwrapper.com`, `apidog.com`, `apimart.ai`, `apiyi.com`, `apob.ai`, `artlist.io`, `atlabs.ai`, `atlascloud.ai`, `benchlm.ai`, `bfl.ml`, `bloomway.ai`, `bytedance.com`, `chatpaper.ai`, `christytuckerlearning.com`, `clickrank.ai`, `cliprise.app`, `cloudflare.com`, `cometapi.com`, `comfy.icu`, `comfy.org`, `commandlinux.com`, `datacamp.com`, `deeka.ai`, `deepgram.com`, `deepset.ai`, `deevid.ai`, `dev.to`, `devactivity.com`, `digitalsoftwarelabs.com`, `dlthub.com`, `docs.hedra.com`, `dreamega.ai`, `dubly.ai`, `eachlabs.ai`, `emergentmind.com`, `everypixel.com`, `facebook.com`, `flaq.ai`, `flashloop.app`, `flowith.io`, `flyne.ai`, `forbes.com`, `forzebras.ai`, `futurebeeai.com`, `genmix.ai`, `getimg.ai`, `github.io`, `glbgpt.com`, `goenhance.ai`, `google.com`, `google.dev`, `gptproto.com`, `gradium.ai`, `higgsfield.ai`, `imagebattle.ai`, `inworld.ai`, `jonathanmast.com`, `kie.ai`, `kili-technology.com`, `kingy.ai`, `kling-motion-control.com`, `kling2-6.com`, `kling3.ai`, `kling3.io`, `kling3api.com`, `klingaimotioncontrol.com`, `klingmotion.com`, `kompozy.io`, `labellerr.com`, `layer.ai`, `layer3labs.io`, `learnprompting.org`, `leonardo.ai`, `lmcouncil.ai`, `localaimaster.com`, `lovegen.ai`, `lumalabs.ai`, `lumeflow.ai`, `magichour.ai`, `magnific.com`, `max-productive.ai`, `medium.com`, `metadatamarketer.com`, `mindstudio.ai`, `minionarts.com`, `modelhunter.ai`, `mongodb.com`, `morphic.com`, `motioncontrolai.com`, `mozilla.org`, `multic.com`, `musicmake.ai`, `myphysicslab.com`, `nanobanana.org`, `nanophoto.ai`, `new3jcn.com`, `nih.gov`, `ntnu.no`, `omnihuman-lab.github.io`, `opencreator.io`, `ourcodeworld.com`, `panjaya.ai`, `percify.io`, `phygital.plus`, `physion.net`, `piclumen.com`, `picsart.com`, `pollo.ai`, `puter.com`, `qingque.cn`, `redditinc.com`, `renderful.ai`, `researchgate.net`, `runcomfy.com`, `rundiffusion.com`, `runware.ai`, `runway.com`, `runwayml.com`, `scenario.com`, `scenetra.com`, `scmp.com`, `seavidgen.com`, `seedance20.com`, `seedance2ai.io`, `seedance2pro.io`, `seedanceapi.org`, `seevio.ai`, `segmind.com`, `semanticscholar.org`, `soku.ai`, `stanford.edu`, `stensyl.ai`, `substack.com`, `swfte.com`, `swiftscholar.net`, `sync.so`, `takara.ai`, `theaibuilders.dev`, `theinfluencer.ai`, `themoonlight.io`, `therundown.ai`, `toolcenter.ai`, `tractionco.com`, `unifuncs.com`, `union.ai`, `veed.io`, `vellum.ai`, `veneratech.com`, `venice.ai`, `veo3ai.io`, `veo3gen.app`, `vibedex.ai`, `videoweb.ai`, `vidofy.ai`, `viggle.ai`, `visualizee.ai`, `voyageai.com`, `vultr.com`, `wan.video`, `wan2-1.com`, `wan27.org`, `wikipedia.org`, `youtube.com`
