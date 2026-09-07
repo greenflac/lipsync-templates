@@ -121,6 +121,7 @@ __all__ = [
     "CAPABILITY_HEADER",
     "CONTRA_ATTRIBUTES",
     "is_contra",
+    "is_contra_row",
     "DEFAULT_OVERRIDES_PATH",
     "KINDS",
     "KIND_CLAIM",
@@ -534,6 +535,27 @@ def relates(
     относятся = [m for m in marked if id(m.fact) in попало]
     мимо = [m for m in marked if id(m.fact) not in попало]
     return относятся, мимо
+
+
+def is_contra_row(строка: dict) -> bool:
+    """Плохая ли это новость — по СЛОВАРЮ строки, а не по объекту факта.
+
+    Тот же вопрос, что у `is_contra`, но заданный тому, что уже уехало в
+    ответ инструмента: там от факта остаются `attribute`, `value` и, если
+    знак объявляли явно, `contra`. Заведено 2026-09-07 приёмкой: строка «что
+    дальше» брала ПЕРВУЮ запись применимости и зачитывала её заказчику как
+    «измеренный провал» — а первой у `latentsync` лежит `benchmark_score`
+    «94% on HDTF, vs 91% previous SOTA», то есть похвала.
+
+    Явный знак сильнее имени атрибута (Е2): если писавший объявил `contra`,
+    верим ему, а не догадке по имени.
+    """
+    if not isinstance(строка, dict):
+        return False
+    знак = строка.get("contra")
+    if знак is not None:
+        return bool(знак)
+    return str(строка.get("attribute") or "") in CONTRA_ATTRIBUTES
 
 
 def is_contra(fact: "Fact") -> bool:
