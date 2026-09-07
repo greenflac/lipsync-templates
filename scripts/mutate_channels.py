@@ -817,8 +817,8 @@ MUTANTS: list[tuple[str, str, str, str, str]] = [
     ),
     (
         "studio/planner.py",
-        '        if прочие:\n            # ИМЯ АТРИБУТА РЯДОМ СО ЗНАЧЕНИЕМ',
-        '        if False:\n            # ИМЯ АТРИБУТА РЯДОМ СО ЗНАЧЕНИЕМ',
+        "        if прочие:\n            # ИМЯ АТРИБУТА РЯДОМ СО ЗНАЧЕНИЕМ",
+        "        if False:\n            # ИМЯ АТРИБУТА РЯДОМ СО ЗНАЧЕНИЕМ",
         "цена: записанная цена снова отрицается словом «не записана»",
         "studio.mcp.tests.test_price_recorded_is_not_absent",
     ),
@@ -828,6 +828,20 @@ MUTANTS: list[tuple[str, str, str, str, str]] = [
         '            что = "; ".join(f"{ф.value}" for ф, _ in прочие[:2])',
         "цена: число печатается без имени атрибута — «0.1» вместо «за 1000 знаков»",
         "studio.mcp.tests.test_price_recorded_is_not_absent",
+    ),
+    (
+        "studio/planner.py",
+        '    ответ["что_дальше"] = что_дальше(ответ)',
+        '    ответ["что_дальше"] = ""',
+        "ответ: заказчику снова достаётся телеметрия без единого действия",
+        "studio.mcp.tests.test_what_to_do_next",
+    ),
+    (
+        "studio/planner.py",
+        '    if итог.get("outcome") == PASS:\n        return ""',
+        '    if False:\n        return ""',
+        "ответ: совет выдаётся и на годном плане — выдумка вместо молчания",
+        "studio.mcp.tests.test_what_to_do_next",
     ),
     # === ЦЕНА РОЛИКА И ОТРИЦАНИЕ В БРИФЕ (продуктовая проверка 2026-09-07) ==
     (
