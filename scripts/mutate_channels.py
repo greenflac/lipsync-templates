@@ -852,13 +852,6 @@ MUTANTS: list[tuple[str, str, str, str, str]] = [
     ),
     # === ПЯТАЯ ПРИЁМКА: окно двойного отрицания и род потолка ============
     (
-        "studio/mcp/screen.py",
-        "        if с.lower() in ЗАЧИН_ДРУГОГО:\n            break",
-        "        if False:\n            break",
-        "бриф: окно двойного отрицания снова бесконечно — «без спешки не обойтись» отвергает бриф",
-        "studio.mcp.tests.test_acceptance_findings_5",
-    ),
-    (
         "studio/planner.py",
         "    if потолок is not None and not в_валюте_бюджета:",
         "    if False:",
@@ -882,21 +875,27 @@ MUTANTS: list[tuple[str, str, str, str, str]] = [
     ),
     (
         "studio/planner.py",
-        '            плохое.sort(key=lambda з: 0 if з.get("attribute") == "failure_mode" else 1)\n            запись = (плохое or записи or [{}])[0]',
-        "            запись = (записи or [{}])[0]",
+        # ПЕРЕНАЦЕЛЕН 2026-09-07: развилка вынесена из `plan` в
+        # `худшая_новость` (Т5) — прежняя цель жила в ветке, достижимой только
+        # через живую базу, и мутант замолчал, как только сбор данных сменил
+        # выбираемую модель.
+        '    плохое.sort(key=lambda з: 0 if з.get("attribute") == "failure_mode" else 1)',
+        "    плохое.sort(key=lambda з: 1)",
         "ответ: заказчику снова зачитывают похвалу модели как измеренный провал",
         "studio.mcp.tests.test_acceptance_findings_4",
     ),
     (
         "studio/mcp/screen.py",
-        '    if any(о in " ".join(хвост_слова) for о in ДВОЙНОЕ_ПОСЛЕ):\n        return False',
+        # ПЕРЕНАЦЕЛЕН 2026-09-07: сравнение стало целыми словами.
+        '    if any(f" {о} " in f" {хвост} " for о in ДВОЙНОЕ_ПОСЛЕ):\n        return False',
         "    if False:\n        return False",
         "бриф: «без обнажёнки не обойтись» снова читается как отказ от неё",
         "studio.mcp.tests.test_acceptance_findings_4",
     ),
     (
         "studio/mcp/screen.py",
-        "        if слово not in ПРОКЛАДКИ:\n            return False",
+        # ПЕРЕНАЦЕЛЕН 2026-09-07: к условию добавлены перечисление и определение.
+        "        if слово not in ПРОКЛАДКИ and not перечисление and not определение:\n            return False",
         "        if False:\n            return False",
         "бриф: прокладкой считается любое слово — отрицание тянется через смысл",
         "studio.mcp.tests.test_acceptance_findings_4",
@@ -2680,6 +2679,90 @@ MUTANTS: list[tuple[str, str, str, str, str]] = [
         "",
         "план: неразобранная длительность не считается неизмеримостью — проверка длины исчезает молча",
         "studio.mcp.tests.test_duration_unparsed",
+    ),
+    # ОТМЕНА ТЕМЫ ОТРИЦАНИЕМ (2026-09-07, после шестой приёмки). Шесть
+    # мутантов на обе стороны: ослабить — и ужесточить. Половина `ДВОЙНОЕ_ПЕРЕД`
+    # до этого дня не сторожилась НИЧЕМ на 2039 тестах.
+    (
+        "studio/mcp/screen.py",
+        "ДВОЙНОЕ_ПЕРЕД: tuple[str, ...] = (",
+        "ДВОЙНОЕ_ПЕРЕД: tuple[str, ...] = () and (",
+        "просев: «невозможно без обнажёнки» снова читается как ЗАПРЕТ — просьба проходит",
+        "studio.mcp.tests.test_refusal_of_a_topic_is_not_a_request",
+    ),
+    (
+        "studio/mcp/screen.py",
+        "        if низкое not in СЛОВА_ДВОЙНОГО and низкое not in ПРОКЛАДКИ:\n            break",
+        "        if False:\n            break",
+        "просев: хвост снова набирается из чего угодно — «костюм обязательный» отвергается",
+        "studio.mcp.tests.test_refusal_of_a_topic_is_not_a_request",
+    ),
+    (
+        "studio/mcp/screen.py",
+        '    if any(f" {о} " in f" {хвост} " for о in ДВОЙНОЕ_ПОСЛЕ):',
+        "    if any(о in хвост for о in ДВОЙНОЕ_ПОСЛЕ):",
+        "просев: обороты снова сравниваются подстрокой — `никак` находится внутри «никакой»",
+        "studio.mcp.tests.test_refusal_of_a_topic_is_not_a_request",
+    ),
+    (
+        "studio/mcp/screen.py",
+        '        перечисление = родительный and (разделители[шаг] == "," or следующее in СВЯЗКИ)',
+        "        перечисление = False",
+        "просев: «без насилия и обнажёнки» снова отвергается за порнографию",
+        "studio.mcp.tests.test_refusal_of_a_topic_is_not_a_request",
+    ),
+    (
+        "studio/mcp/screen.py",
+        "        определение = any(слово.endswith(о) for о in АДЪЕКТИВНЫЕ)",
+        "        определение = True",
+        "просев: переходится ЛЮБОЕ слово — «без цензуры обнажёнка» становится запретом",
+        "studio.mcp.tests.test_refusal_of_a_topic_is_not_a_request",
+    ),
+    # ЗАЯВЛЕНИЯ ЗАКАЗЧИКА (2026-09-07). Проверка, которая НЕ МЕНЯЕТ ИСХОД,
+    # особенно легко умирает молча: гейт на неё не покраснеет ничем, кроме
+    # мутанта. Обе стороны: убрать проверку — и убрать условие пары.
+    (
+        "studio/mcp/screen.py",
+        "    риски = _заявления(строка)",
+        "    риски = []",
+        "просев: заявление заказчика («БАД излечивает диабет») снова остаётся без комментария",
+        "studio.mcp.tests.test_claim_is_the_customers_own",
+    ),
+    (
+        "studio/mcp/screen.py",
+        "        if предмет and утверждение:",
+        "        if предмет or утверждение:",
+        "просев: хватает ОДНОГО слова — «врач рассказывает о приёме» получает предупреждение",
+        "studio.mcp.tests.test_claim_is_the_customers_own",
+    ),
+    (
+        "studio/mcp/screen.py",
+        "ПРОВЕРОК = 4",
+        "ПРОВЕРОК = 3",
+        "просев: четвёртая проверка не считается — читается как непроведённая (Р2)",
+        "studio.mcp.tests.test_claim_is_the_customers_own",
+    ),
+    (
+        "studio/mcp/server.py",
+        '    if просев["risks"]:',
+        "    if False:",
+        "план: предупреждение о заявлении не доезжает до заказчика — проверка есть, продукт молчит",
+        "studio.mcp.tests.test_claim_is_the_customers_own",
+    ),
+    # АНГЛИЙСКИЕ ПОДСКАЗКИ (2026-09-07): обе стороны — исчезли и стали шире.
+    (
+        "studio/clarify.py",
+        '    "video",\n    "clip",\n    "reel",\n    "commercial",',
+        "",
+        "уточнение: английский «product video» снова не спрашивает про исходное видео",
+        "studio.tests.test_brief_in_english",
+    ),
+    (
+        "studio/clarify.py",
+        '    "blog post",',
+        "",
+        "уточнение: «blog post about the generative video market» получает вопрос про съёмку",
+        "studio.tests.test_brief_in_english",
     ),
     (
         "studio/mcp/screen.py",

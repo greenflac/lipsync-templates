@@ -13,6 +13,7 @@ import os
 import pathlib
 import unittest
 
+from studio import planner
 from studio.mcp import screen, server
 from studio.mcp.creative import missing_reason
 from studio.planner import в_ролик
@@ -73,12 +74,43 @@ class ПотолокСравниваетсяТолькоСоСвоим(unittest.
 
 
 class ЧтоДальшеНеВрёт(unittest.TestCase):
+    #: Строки НАСТОЯЩЕЙ формы, но ЛИТЕРАЛАМИ (Т2), а не выборкой из базы.
+    #: Прежняя редакция звала продукт на живом брифе — и замолчала, как только
+    #: сбор данных сменил выбираемую модель: у новой осталась одна плохая
+    #: строка, и порядок перестал что-либо решать. Проверка, зависящая от
+    #: того, кого база ставит первой, сторожит базу, а не код.
+    ЗАПИСИ = (
+        {"attribute": "benchmark_score", "value": "94% on HDTF, vs 91% previous SOTA"},
+        {"attribute": "metric_blind_spot", "value": "LSE-C не видит дрожания зубов"},
+        {"attribute": "failure_mode", "value": "рот размывается на профиле"},
+    )
+
     def test_цитируется_плохая_новость_а_не_первая(self) -> None:
         """Заказчику зачитывали `benchmark_score` «94% on HDTF, vs 91%
         previous SOTA» как ИЗМЕРЕННЫЙ провал — то есть похвалу модели."""
+        запись = planner.худшая_новость(self.ЗАПИСИ)
+        self.assertEqual("failure_mode", запись["attribute"])
+        self.assertNotIn("previous SOTA", str(запись["value"]))
+
+    def test_предметная_новость_обгоняет_оговорку_о_метрике(self) -> None:
+        """Порядок среди ПЛОХИХ: «что сломалось» полезнее, чем «метрика этого
+        не видит». Без сортировки первой пошла бы оговорка."""
+        без_провала = (self.ЗАПИСИ[0], self.ЗАПИСИ[1])
+        self.assertEqual("metric_blind_spot", planner.худшая_новость(без_провала)["attribute"])
+        self.assertEqual("failure_mode", planner.худшая_новость(self.ЗАПИСИ)["attribute"])
+
+    def test_нет_плохих_новостей_берётся_первая(self) -> None:
+        только_похвала = ({"attribute": "benchmark_score", "value": "94% on HDTF"},)
+        self.assertEqual("benchmark_score", planner.худшая_новость(только_похвала)["attribute"])
+
+    def test_пусто_не_падает(self) -> None:
+        """У вызывающего есть ветка «сказать нечего»; падение ею не является."""
+        self.assertEqual({}, planner.худшая_новость(()))
+
+    def test_продукт_всё_ещё_зачитывает_это_заказчику(self) -> None:
+        """Функция сама по себе ничего не стоит, если продукт её не зовёт."""
         строка = _план("ролик 1 минута, говорящая голова, бюджет 100000 долларов")["что_дальше"]
-        self.assertNotIn("previous SOTA", строка)
-        self.assertNotIn("accuracy 94%", строка)
+        self.assertIn("ИЗМЕРЕННЫЙ провал", строка)
 
     def test_число_кандидатов_настоящее(self) -> None:
         """Во всех прогонах стояло «их 2» — это потолок ПОКАЗА, а не число
