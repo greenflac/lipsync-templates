@@ -815,6 +815,20 @@ MUTANTS: list[tuple[str, str, str, str, str]] = [
         "план: молчание базы о пределе снова продаётся как согласие",
         "studio.mcp.tests.test_silence_is_not_consent",
     ),
+    (
+        "studio/planner.py",
+        '        if прочие:\n            # ИМЯ АТРИБУТА РЯДОМ СО ЗНАЧЕНИЕМ',
+        '        if False:\n            # ИМЯ АТРИБУТА РЯДОМ СО ЗНАЧЕНИЕМ',
+        "цена: записанная цена снова отрицается словом «не записана»",
+        "studio.mcp.tests.test_price_recorded_is_not_absent",
+    ),
+    (
+        "studio/planner.py",
+        '            что = "; ".join(f"{ф.attribute} = {ф.value}" for ф, _ in прочие[:2])',
+        '            что = "; ".join(f"{ф.value}" for ф, _ in прочие[:2])',
+        "цена: число печатается без имени атрибута — «0.1» вместо «за 1000 знаков»",
+        "studio.mcp.tests.test_price_recorded_is_not_absent",
+    ),
     # === ЦЕНА РОЛИКА И ОТРИЦАНИЕ В БРИФЕ (продуктовая проверка 2026-09-07) ==
     (
         "studio/planner.py",
