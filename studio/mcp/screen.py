@@ -47,6 +47,8 @@ __all__ = [
     "привести_буквы",
     "РУССКИЕ_ГРУППЫ",
     "РУССКИЕ_УКАЗАНИЯ",
+    "по_английски",
+    "по_русски",
     "предупреждение",
     "просеять",
     "чисто",
@@ -779,6 +781,25 @@ def предупреждение(риски: Sequence[str]) -> str:
     "minors": "несовершеннолетние",
     "recognisable third parties": "узнаваемые люди без их согласия",
 }
+
+
+#: Имена групп ПО-АНГЛИЙСКИ. В коде они и так английские, но их РЕДАКЦИЯ —
+#: наша: «recognisable third parties» заказчику говорит меньше, чем «people
+#: who can be recognised, without their consent».
+ПО_АНГЛИЙСКИ: dict[str, str] = {
+    "adult content": "nudity",
+    "violence": "violence",
+    "minors": "minors",
+    "recognisable third parties": "people who can be recognised, without their consent",
+}
+
+
+def по_английски(метка: str) -> str:
+    """То же, что `по_русски`, на языке заказчика, писавшего латиницей."""
+    группа, _, признак = str(метка).partition(":")
+    имя = ПО_АНГЛИЙСКИ.get(группа.strip(), группа.strip())
+    признак = признак.strip()
+    return f"{имя}: {признак}" if признак else имя
 
 
 def по_русски(метка: str) -> str:

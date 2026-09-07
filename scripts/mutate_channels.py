@@ -2658,8 +2658,10 @@ MUTANTS: list[tuple[str, str, str, str, str]] = [
     ),
     (
         "studio/mcp/server.py",
-        '    просев = screen.просеять(brief)\n    if просев["outcome"] != PASS:',
-        "    просев = screen.просеять(brief)\n    if False:",
+        # ПЕРЕНАЦЕЛЕН 2026-09-07: между просевом и отказом встала ветка
+        # третьего исхода для бессловесного брифа.
+        '    if просев["outcome"] != PASS:\n        # Строка о брифе',
+        "    if False:\n        # Строка о брифе",
         "план: бриф снова не просеивается — продукт строит план производства дипфейка",
         "studio.mcp.tests.test_screen_customer_words",
     ),
@@ -2766,6 +2768,28 @@ MUTANTS: list[tuple[str, str, str, str, str]] = [
         'РОДИТЕЛЬНЫЕ: tuple[str, ...] = ("и", "ы", "ей", "ов", "я")',
         "просев: именительные окончания снова считаются родительными — просьбы проходят",
         "studio.mcp.tests.test_refusal_of_a_topic_is_not_a_request",
+    ),
+    # ПУСТОЙ БРИФ И ЯЗЫК ОТКАЗА (2026-09-07, восьмая приёмка).
+    (
+        "studio/mcp/server.py",
+        '    if просев["outcome"] == UNMEASURED:',
+        "    if False:",
+        "план: пустой бриф снова получает ОТКАЗ с пустым объяснением и чужим советом",
+        "studio.tests.test_what_the_customer_brought",
+    ),
+    (
+        "studio/mcp/server.py",
+        '                "reason": REASON_BANNED_TOPIC if просев["banned"] else REASON_INJECTION,',
+        '                "reason": REASON_BANNED_TOPIC,',
+        "план: причина отказа снова «запрещённая_тема» там, где темы нет",
+        "studio.tests.test_what_the_customer_brought",
+    ),
+    (
+        "studio/mcp/server.py",
+        "        англ = not planner._есть_кириллица(brief)",
+        "        англ = False",
+        "план: английский заказчик снова не читает единственную строку, по которой действует",
+        "studio.tests.test_what_the_customer_brought",
     ),
     # ЗАЯВЛЕНИЯ ЗАКАЗЧИКА (2026-09-07). Проверка, которая НЕ МЕНЯЕТ ИСХОД,
     # особенно легко умирает молча: гейт на неё не покраснеет ничем, кроме

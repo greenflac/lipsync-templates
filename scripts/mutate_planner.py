@@ -870,6 +870,52 @@ MUTANTS = [
         "            больше = False",
         "совет: второе число снова исчезает — «их 8» против «12 всего» шагом ниже",
     ),
+    # БРЕНД ПРОТИВ НАШЕГО ТЕРМИНА (2026-09-07, восьмая приёмка). Пять
+    # мутантов: у починки не было ни одного сторожа, и два её собственных
+    # мутанта молчали.
+    (
+        "studio/planner.py",
+        "    if not _регистр_что_то_значит(текст):\n        return _norm(текст)",
+        "    if False:\n        return _norm(текст)",
+        "подсказки: КАПС и Title Case снова теряют заказ — «BRIEF: TALKING HEAD AD» не понят",
+    ),
+    (
+        "studio/planner.py",
+        "    if _есть_кириллица(текст):\n        return True",
+        "    if False:\n        return True",
+        "подсказки: в русском брифе «Talking Tom» снова заказывает липсинк",
+    ),
+    (
+        "studio/planner.py",
+        "        if any(c in низ for c in составные):",
+        "        if False:",
+        "подсказки: «нужен Lip Sync на готовое видео» снова даёт совпало 0",
+    ),
+    (
+        "studio/planner.py",
+        '    return re.search(rf"\\b{re.escape(cue)}\\b", без_имён) is not None',
+        '    return re.search(rf"\\b{re.escape(cue)}", без_имён) is not None',
+        "подсказки: граница справа снята — «dubai» снова заказывает дубляж",
+    ),
+    (
+        "studio/planner.py",
+        "ЗАГЛАВНЫХ_СЛИШКОМ = 0.6",
+        "ЗАГЛАВНЫХ_СЛИШКОМ = 0.05",
+        "подсказки: любой регистр объявляется оформлением — имена не вычёркиваются",
+    ),
+    # СОВЕТ И СЧЁТ КАНДИДАТОВ.
+    (
+        "studio/planner.py",
+        '            принести = ЧТО_ПРИНЕСТИ.get(str(шаг.get("step") or "")) if шаг.get("inferred") else None',
+        '            принести = ЧТО_ПРИНЕСТИ.get(str(шаг.get("step") or ""))',
+        "совет: «шаг уйдёт вовсе» снова обещается на шаге, названном заказчиком",
+    ),
+    (
+        "studio/planner.py",
+        "    if отказ_кадра:",
+        "    if False:",
+        "совет: отвергнутые кадром снова числятся доступными кандидатами",
+    ),
     (
         "studio/planner.py",
         "    по_английски = not _есть_кириллица(brief)",
@@ -903,14 +949,15 @@ MUTANTS = [
     # ПОДСКАЗКИ ОПЕРАЦИЙ: латиница по границе слова и без имён собственных.
     (
         "studio/planner.py",
-        "    if not _ЛАТИНСКАЯ.match(cue):\n        return cue in низ",
+        # ПЕРЕНАЦЕЛЕН 2026-09-07: у подсказки появилась объявляемая приставка.
+        '    if not _ЛАТИНСКАЯ.match(cue.rstrip("*")):\n        return cue in низ',
         "    if True:\n        return cue in низ",
         "подсказки: латиница снова ищется подстрокой — Dubai заказывает дубляж",
     ),
     (
         "studio/planner.py",
-        '    return re.search(rf"\\b{re.escape(cue)}", без_имён) is not None',
-        '    return re.search(rf"\\b{re.escape(cue)}", низ) is not None',
+        '    return re.search(rf"\\b{re.escape(cue)}\\b", без_имён) is not None',
+        '    return re.search(rf"\\b{re.escape(cue)}\\b", низ) is not None',
         "подсказки: имена собственные снова ищутся — «Talking Tom» заказывает липсинк",
     ),
     (
