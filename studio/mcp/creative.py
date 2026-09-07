@@ -42,6 +42,14 @@ come back as `could not measure` with the missing dependency NAMED, and they
 are counted in `unmeasured` — never quietly skipped, because zero violations
 out of zero checks is not a clean creative.
 
+AND THE PATH ITSELF IS ONE OF THE THREE STATES, NOT A FOOTNOTE
+
+`analyse` returns an `input` block before anything else: `INPUT_MISSING`,
+`INPUT_UNOPENED`, `INPUT_MEASURED`. Found 2026-09-07 on a live run: a plan was
+built on a creative nobody had opened, because "there is no such file" and "we
+have no insightface" arrived as the same top-level `could not measure` and the
+real reason sat inside `could_not_run[0].why`.
+
 The engine's modules are imported, never reimplemented, and never edited:
 `lipsync/**` is frozen by `studio/CONTRACTS.md`.
 """
@@ -62,14 +70,43 @@ __all__ = [
     "DOMINANT_COLOURS",
     "GRAIN_SAMPLE",
     "HIGH_KEY_MEAN",
+    "INPUT_MEASURED",
+    "INPUT_MISSING",
+    "INPUT_UNOPENED",
     "LOW_KEY_MEAN",
     "MUTED_CHROMA",
     "NAMED_COLOURS",
     "SATURATED_CHROMA",
     "analyse",
+    "frames_in",
+    "input_state",
     "look",
+    "missing_reason",
     "motion_of",
 ]
+
+#: ТРИ СОСТОЯНИЯ ПОДАННОГО ВХОДА, и они НЕ сворачиваются друг в друга (Р1).
+#: НАЙДЕНО 2026-09-07 чтением живой выдачи: на несуществующем пути верхний
+#: `outcome` был `could not measure` — ровно тот же, что у настоящего файла,
+#: которому не хватило пакета, — а «файла нет» лежало в `could_not_run[0].why`,
+#: то есть на два уровня ниже, чем читают. Это две РАЗНЫЕ новости с разной
+#: ценой: первую заказчик чинит за пять секунд, поправив путь, вторую не чинит
+#: никогда. Строки ВЫБРАНЫ (мной, 2026-09-07) так, чтобы их было видно в
+#: верхней строке ответа без перевода.
+INPUT_MISSING = "no file at that path"
+INPUT_UNOPENED = "the file is there, but nothing could open it"
+INPUT_MEASURED = "the file was opened and measured"
+
+#: ТО ЖЕ САМОЕ ДЛЯ КАДРОВ, ВЫНУТЫХ ВЫЗЫВАЮЩИМ. Второе место той же формы,
+#: найдено грепом по форме дефекта (И7) в тот же день: `analyse_creative`
+#: читал `frames_dir` как `sorted(dir.glob("*"))`, и НЕСУЩЕСТВУЮЩИЙ каталог
+#: давал пустой список, а пустой список доезжал до `motion_of` и отвечал
+#: «0 frame(s): the engine needs at least 3 to judge a loop» — ровно теми же
+#: словами, что настоящий двухкадровый ролик. «Вы назвали каталог, которого
+#: нет» и «в клипе мало кадров» — снова две новости в одном исходе.
+FRAMES_NONE = "no frames were handed in"
+FRAMES_MISSING = "no frames at that directory"
+FRAMES_GIVEN = "frames were handed in"
 
 #: CHOSEN by me, 2026-08-27, not measured and not taken from anywhere: an RGB
 #: anchor for each of `style.PALETTE_WORDS`, so a dominant colour can be given
@@ -142,6 +179,90 @@ def _house(outcome: str, checked: int, violations: int, unmeasured: int, note: s
     }
 
 
+def missing_reason(path: str | Path) -> str:
+    """Почему по этому пути НЕТ файла. Пустая строка — файл есть.
+
+    Самая дешёвая проверка во всём разборе (П2): один `stat`, микросекунды,
+    и она стоит ПЕРЕД любым импортом numpy и перед любым запуском ffmpeg.
+    Один источник истины (Е1): и `look`, и `analyse` спрашивают о наличии
+    файла здесь, а не каждый своим `is_file()` со своей формулировкой.
+
+    Различает три способа не быть файлом, потому что заказчик чинит их
+    по-разному: путь не назван, по пути ничего нет, по пути каталог.
+    """
+    text = str(path or "").strip()
+    if not text:
+        return "путь к креативу не назван"
+    target = Path(text)
+    if target.is_dir():
+        return f"{target} — это каталог, а не файл"
+    if not target.exists():
+        return f"по пути {target} файла нет"
+    if not target.is_file():
+        return f"{target} существует, но это не обычный файл"
+    return ""
+
+
+def frames_in(frames_dir: str | Path) -> dict:
+    """Кадры, которые вызывающий вынул сам, и ТРИ исхода вокруг них (Р1).
+
+    `каталог не назван` — обычный случай, кадры вынет разбор сам;
+    `каталога нет или он пуст` — НОВОСТЬ, и это ошибка вызывающего, которую он
+    поправит за пять секунд; `кадры есть` — их столько-то.
+
+    Развилка вынесена сюда из тела MCP-инструмента (Т5): в `@server.tool()`
+    она была недостижима для теста и потому деградировала молча — там она и
+    прожила, отдавая пустой список туда, где его принимали за короткий ролик.
+    """
+    text = str(frames_dir or "").strip()
+    if not text:
+        return {"state": FRAMES_NONE, "frames": [], "why": "каталог кадров не назван"}
+    directory = Path(text)
+    if not directory.is_dir():
+        return {
+            "state": FRAMES_MISSING,
+            "frames": [],
+            "why": f"каталога {directory} нет — кадры не читались",
+        }
+    got = [str(p) for p in sorted(directory.glob("*")) if p.is_file()]
+    if not got:
+        return {
+            "state": FRAMES_MISSING,
+            "frames": [],
+            "why": f"каталог {directory} есть, но файлов в нём нет",
+        }
+    return {"state": FRAMES_GIVEN, "frames": got, "why": f"{len(got)} кадр(ов) из {directory}"}
+
+
+def input_state(path: str | Path, *, measured: int) -> dict:
+    """В каком из ТРЁХ состояний оказался поданный вход (Р1).
+
+    `файла нет` / `файл есть, но открыть его было нечем` / `открыт и измерен`.
+    Третьего мало и двух мало: до 2026-09-07 первые два состояния приезжали
+    наверх ответа ОДНОЙ строкой `could not measure`, и заказчик, опечатавшийся
+    в пути, получал ровно тот же вердикт, что и заказчик, чей файл в порядке,
+    но у нас не установлен `insightface`. Первая новость чинится за пять
+    секунд, вторая не чинится никогда.
+
+    :param measured: сколько штук успели измерить приборы. Свидетельство, а не
+        намерение (Е2): состояние выводится из того, что ОТРАБОТАЛО.
+    """
+    why = missing_reason(path)
+    if why:
+        return {"state": INPUT_MISSING, "path": str(path or ""), "why": why}
+    if measured > 0:
+        return {
+            "state": INPUT_MEASURED,
+            "path": str(path),
+            "why": f"{measured} thing(s) measured on the file itself",
+        }
+    return {
+        "state": INPUT_UNOPENED,
+        "path": str(path),
+        "why": "the file is on disk; not one instrument could open it — see could_not_run",
+    }
+
+
 def _nearest_word(rgb: Sequence[float]) -> str:
     """The palette word closest to one colour, by plain RGB distance."""
     r, g, b = (float(rgb[0]), float(rgb[1]), float(rgb[2]))
@@ -158,7 +279,9 @@ def look(path: str | Path) -> dict:
     """What one still frame looks like, in the prompt writer's own vocabulary.
 
     Three outcomes. A file that cannot be opened is `could not measure` and
-    names the reason — it is not a creative that failed a check.
+    names the reason — it is not a creative that failed a check. A path with no
+    file behind it says so in the FIRST WORDS of the note (`INPUT_MISSING`),
+    because that reason is the customer's to fix and a missing package is not.
 
     :returns: the house dict plus `palette` (up to `DOMINANT_COLOURS` words),
         `light` (a word, or "" when the histogram supports neither), `mood`
@@ -166,9 +289,10 @@ def look(path: str | Path) -> dict:
         words came from, so a reader can disagree with the naming.
     """
     target = Path(str(path))
-    if not target.is_file():
+    gone = missing_reason(target)
+    if gone:
         return {
-            **_house(UNMEASURED, 0, 0, 1, f"{target} is not a file, so nothing was opened"),
+            **_house(UNMEASURED, 0, 0, 1, f"{INPUT_MISSING}: {gone}"),
             "palette": [],
             "light": "",
             "saturation": "",
@@ -509,6 +633,17 @@ def analyse(path: str | Path, *, frames: Sequence[str] | None = None) -> dict:
         anything decoded from `path` — a caller who already has the frames
         should not pay for a second decode.
 
+    THE FIRST FIELD TO READ IS `input`, not `outcome`. It carries one of three
+    states, kept apart on purpose (P1): `INPUT_MISSING` — there is no file at
+    that path, so nobody opened anything and no instrument was even started;
+    `INPUT_UNOPENED` — the file is on disk and not one instrument could open it
+    (a package this environment lacks, a codec, a corrupt byte stream);
+    `INPUT_MEASURED` — the file was opened and numbers came off it. Before
+    2026-09-07 the first two both surfaced as a bare `could not measure`, and a
+    customer who mistyped a path got the same top line as a customer whose file
+    was fine but whose face model was missing. One of those is a five-second
+    fix and the other is never fixed.
+
     Three outcomes over the whole creative, and `could_not_run` names every
     instrument that did not run and why. That list is the point: an answer with
     no violations and four silent instruments is not a clean creative, and the
@@ -520,10 +655,28 @@ def analyse(path: str | Path, *, frames: Sequence[str] | None = None) -> dict:
     """
     # Ролик приводится к кадрам ПЕРЕД замерами, и кадры остаются на диске на
     # время разбора: `look` меряет один кадр, `motion_of` — всю последовательность.
+    # САМОЕ ДЕШЁВОЕ РАНЬШЕ САМОГО ДОРОГОГО (П2) И ГЛАВНАЯ НОВОСТЬ РАНЬШЕ ВСЕХ.
+    # Если файла нет, дальше мерить нечего и незачем: до этой заплаты разбор
+    # честно запускал все приборы по несуществующему пути, получал от каждого
+    # свой «не смогли» — в том числе «нет пакета insightface», к пути никак не
+    # относящийся, — и складывал их в один верхний `could not measure`. Ответ
+    # был правдив построчно и вводил в заблуждение целиком.
+    gone = missing_reason(path)
+    if gone:
+        return {
+            **_house(UNMEASURED, 0, 0, 1, f"{INPUT_MISSING}: {gone}"),
+            "input": {"state": INPUT_MISSING, "path": str(path or ""), "why": gone},
+            "parts": {},
+            "could_not_run": [{"instrument": "input", "why": gone}],
+        }
+
     still = Path(path)
     decoded: dict | None = None
     temp: tempfile.TemporaryDirectory | None = None
-    if frames is None and still.suffix.lower() in VIDEO_SUFFIXES:
+    # `not frames`, а не `frames is None`: ПУСТОЙ список — это «кадров не
+    # подали», и принимать его за «кадры поданы» значило бы молча отменить
+    # раскадровку ролика и потом отчитаться о ней как о клипе в ноль кадров.
+    if not frames and still.suffix.lower() in VIDEO_SUFFIXES:
         temp = tempfile.TemporaryDirectory()
         decoded = frames_from_video(still, Path(temp.name))
         got = list(decoded.get("frames") or [])
@@ -538,7 +691,7 @@ def analyse(path: str | Path, *, frames: Sequence[str] | None = None) -> dict:
             "look": look(still),
             "intake": intake_of(still),
         }
-        if frames is not None:
+        if frames:
             parts["motion"] = motion_of(frames)
         if decoded is not None and str(decoded.get("outcome")) == UNMEASURED:
             parts["video_decode"] = decoded
@@ -579,6 +732,10 @@ def _finish(path: str | Path, parts: dict) -> dict:
     else:
         outcome = UNMEASURED
 
+    # Состояние входа стоит В ВЕРХНЕЙ СТРОКЕ и ВПЕРЕДИ чисел: «файла нет» и
+    # «файл есть, а приборов нет» — разные новости с разной ценой, и читают
+    # первую строку, а не `could_not_run[0].why` двумя уровнями ниже.
+    вход = input_state(path, measured=checked)
     return {
         **_house(
             outcome,
@@ -586,6 +743,7 @@ def _finish(path: str | Path, parts: dict) -> dict:
             violations,
             unmeasured,
             (
+                f"{вход['state']}; "
                 f"{checked} thing(s) measured, {violations} against the engine's bars, "
                 f"{unmeasured} not measurable"
                 + (
@@ -595,6 +753,7 @@ def _finish(path: str | Path, parts: dict) -> dict:
                 )
             ),
         ),
+        "input": вход,
         "parts": parts,
         "could_not_run": could_not_run,
     }

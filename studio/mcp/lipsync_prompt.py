@@ -240,20 +240,215 @@ def _догадки_по_слотам(догадки: dict[str, str]) -> dict[st
     return {слот: sorted(set(значения)) for слот, значения in по_слотам.items()}
 
 
-def _спросить_про_догадку(слот: str, догадки: dict[str, str], свои: list[str]) -> dict:
+#: ТЕМА БРИФА -> ПРИМЕР ОТВЕТА, СОБРАННЫЙ ИЗ ДОПУСТИМЫХ ЗНАЧЕНИЙ.
+#:
+#: ЗАЧЕМ. Найдено продуктовой проверкой 2026-09-07: заказчику кофейни
+#: показывали список из двенадцати цветов, в котором нет ни коричневого, ни
+#: кофейного, ни бежевого, — и он не догадается, что ближайшее к его задаче
+#: здесь `amber` и `sand`. Список допустимых значений — это ещё не вопрос, на
+#: который человек может ответить; пример под ЕГО задачу — уже вопрос.
+#:
+#: ЧЕГО ЗДЕСЬ НЕТ: новых значений. Каждое значение ниже взято из списков
+#: движка (`studio/style.py`), и это сторожит тест
+#: `test_asks_in_the_customers_language.py`. Пример — это ПОДСКАЗКА, КАК
+#: ОТВЕТИТЬ, а не выбор за заказчика: слот остаётся незаполненным, промт не
+#: пишется, решение по-прежнему за владельцем.
+#:
+#: ВЫБРАНО (мной, 2026-09-07, из трёх видов роликов, которые чаще всего
+#: приходят в брифах планировщика: интерьер/заведение, ночная сцена, студийный
+#: портрет). Это НЕ ИЗМЕРЕНО: корпус брифов (`studio/fixtures/planner_briefs.jsonl`,
+#: 13 записей) о цвете не говорит вовсе — там ни одного слова о палитре.
+ТЕМЫ: tuple[dict[str, Any], ...] = (
+    {
+        "имя": {"ru": "тёплый уютный интерьер", "en": "a warm cosy interior"},
+        "ключи": (
+            "кофе",
+            "кофейн",
+            "уют",
+            "тёпл",
+            "тепл",
+            "пекарн",
+            "камин",
+            "coffee",
+            "cafe",
+            "cosy",
+            "cozy",
+            "warm",
+            "bakery",
+        ),
+        "значения": {
+            "palette": ("amber", "sand"),
+            "value_key": ("mid",),
+            "texture": ("matte",),
+            "saturation": ("muted",),
+        },
+    },
+    {
+        "имя": {"ru": "ночная сцена с вывесками", "en": "a night scene lit by signs"},
+        "ключи": (
+            "ноч",
+            "неон",
+            "клуб",
+            "вечерн",
+            "нуар",
+            "night",
+            "neon",
+            "club",
+            "evening",
+            "noir",
+        ),
+        "значения": {
+            "palette": ("indigo", "teal"),
+            "value_key": ("dark",),
+            "texture": ("glossy",),
+            "saturation": ("saturated",),
+        },
+    },
+    {
+        "имя": {"ru": "студийный деловой портрет", "en": "a studio business portrait"},
+        "ключи": (
+            "студи",
+            "портрет",
+            "офис",
+            "интервью",
+            "делов",
+            "studio",
+            "portrait",
+            "office",
+            "interview",
+            "corporate",
+        ),
+        "значения": {
+            "palette": ("ivory", "slate"),
+            "value_key": ("light",),
+            "texture": ("crisp",),
+            "saturation": ("moderate",),
+        },
+    },
+)
+
+
+def _тема(текст: str) -> dict | None:
+    """Тема брифа — ЕДИНСТВЕННАЯ подошедшая, иначе никакой (Р1, третий исход).
+
+    Не «первая» и не «самая похожая». Увидено глазами на смешанном брифе
+    «тёплый ролик в стиле film noir»: «тёпл» тянет в тёплый интерьер, «noir» —
+    в ночную сцену, и первая-по-порядку выдавала заказчику нуара пример
+    «amber, sand — тёплый уютный интерьер». Пример под ЧУЖУЮ задачу хуже, чем
+    отсутствие примера: список допустимых значений он всё равно не сужает, а
+    сбивает — уверенно.
+    """
+    низ = str(текст or "").lower()
+    подошли = [тема for тема in ТЕМЫ if any(ключ in низ for ключ in тема["ключи"])]
+    return подошли[0] if len(подошли) == 1 else None
+
+
+def _пример(слот: str, текст: str, язык: str) -> str:
+    """« Например: amber, sand — тёплая кофейная гамма.» или пустая строка.
+
+    Пустая — третий исход (Р1) в миниатюре: тему брифа мы не узнали, и
+    выдуманный пример был бы хуже, чем никакого.
+    """
+    тема = _тема(текст)
+    if тема is None:
+        return ""
+    значения = тема["значения"].get(слот) or ()
+    if not значения:
+        return ""
+    ведущее = "Например" if язык == ruwords.РУССКИЙ else "For example"
+    return f"{ведущее}: " + ", ".join(значения) + " — " + тема["имя"][язык] + "."
+
+
+def _и_пример(вопрос: str, слот: str, текст: str, язык: str) -> str:
+    """Вопрос и пример одной строкой, с точкой между ними.
+
+    Точка нужна, потому что вопрос-перечисление её не ставит: без неё в выдаче
+    читалось «…, velvet, watercolour Например: matte — …», и я это увидел
+    глазами до того, как записал (П3), а не после.
+    """
+    пример = _пример(слот, текст, язык)
+    if not пример:
+        return вопрос
+    хвост = "" if вопрос.rstrip().endswith(("?", ".", "!")) else "."
+    return вопрос.rstrip() + хвост + " " + пример
+
+
+#: Слот -> вопрос на языке брифа. Английские формулировки — те же, что были до
+#: 2026-09-07: заказчик, писавший по-английски, ничего не терял, и менять ему
+#: текст было бы починкой того, что не сломано.
+_ВОПРОС_СЛОТА: dict[str, dict[str, str]] = {
+    "palette": {
+        "en": "Which colours? Name one to three of: " + ", ".join(PALETTE_WORDS),
+        "ru": "Какие цвета? Назовите один-три из: " + ", ".join(PALETTE_WORDS),
+    },
+    "value_key": {
+        "en": "How lit — light, mid or dark?",
+        "ru": "Какой свет — light, mid или dark?",
+    },
+    "texture": {
+        "en": "Which surface? One of: " + ", ".join(TEXTURE_WORDS),
+        "ru": "Какая фактура? Одна из: " + ", ".join(TEXTURE_WORDS),
+    },
+    "saturation": {
+        "en": "How much colour — " + ", ".join(SATURATION_WORDS) + "?",
+        "ru": "Сколько цвета — " + ", ".join(SATURATION_WORDS) + "?",
+    },
+}
+
+
+#: Как слот карточки называется в разговоре с заказчиком. Русское название
+#: в двух формах: «Вы назвали ФАКТУРУ приблизительно» и «ФАКТУРА заполнить
+#: нечем» — одно слово в двух падежах, и склеивать их одной формой значит
+#: писать заказчику коряво на его же языке.
+ИМЕНА_СЛОТОВ: dict[str, dict[str, str]] = {
+    "palette": {"ru": "цвет", "ru_вин": "цвет", "en": "palette"},
+    "light": {"ru": "свет", "ru_вин": "свет", "en": "light"},
+    "value_key": {"ru": "свет", "ru_вин": "свет", "en": "value_key"},
+    "texture": {"ru": "фактура", "ru_вин": "фактуру", "en": "texture"},
+    "saturation": {"ru": "насыщенность", "ru_вин": "насыщенность", "en": "saturation"},
+}
+
+
+def имя_слота(слот: str, язык: str, падеж: str = "ru") -> str:
+    """Название слота на языке брифа; незнакомый слот остаётся собой."""
+    имена = ИМЕНА_СЛОТОВ.get(слот)
+    if имена is None:
+        return слот
+    return имена[падеж] if язык == ruwords.РУССКИЙ else имена["en"]
+
+
+def _спросить(слот: str, текст: str, язык: str) -> dict:
+    """Пустой слот: список допустимых значений плюс пример под задачу брифа."""
+    return {"slot": слот, "ask": _и_пример(_ВОПРОС_СЛОТА[слот][язык], слот, текст, язык)}
+
+
+def _спросить_про_догадку(
+    слот: str, догадки: dict[str, str], свои: list[str], текст: str, язык: str
+) -> dict:
     """Вопрос, который НАЗЫВАЕТ и понятое, и точные варианты.
 
     Спрашивать «какой свет?» у того, кто свет уже назвал, — глухота: он
     ответил, просто приблизительно.
+
+    Названными считаются ТОЛЬКО догадки ЭТОГО слота (`свои`): до 2026-09-07
+    ветка палитры печатала весь словарь догадок разом, и в вопросе о цвете
+    заказчик читал «сзади ~ backlit».
     """
     названо = ", ".join(f"{ру} ~ {анг}" for ру, анг in sorted(догадки.items()) if анг in свои)
-    return {
-        "slot": слот,
-        "ask": (
+    варианты = ", ".join(СЛОВАРИ_СЛОТОВ[слот])
+    if язык == ruwords.РУССКИЙ:
+        ask = (
+            f"Вы назвали {имя_слота(слот, язык, 'ru_вин')} приблизительно ({названо}); "
+            f"движок берёт точные значения. Какое из: {варианты}?"
+        )
+    else:
+        ask = (
             f"You named {слот} approximately ({названо}); the engine takes exact "
-            f"values. Which of: " + ", ".join(СЛОВАРИ_СЛОТОВ[слот]) + "?"
-        ),
-    }
+            f"values. Which of: {варианты}?"
+        )
+    # Пример нужен и здесь: «тёплый ~ amber» называет ОДНО слово, а палитра
+    # берёт до трёх, и пара под задачу показывает, как выглядит полный ответ.
+    return {"slot": слот, "ask": _и_пример(ask, слот, текст, язык)}
 
 
 def write(intent: str, examples: Sequence[Any]) -> dict:
@@ -383,68 +578,68 @@ def write(intent: str, examples: Sequence[Any]) -> dict:
                 "record_ids": saturation_sources,
             }
 
+    # НА КАКОМ ЯЗЫКЕ СПРАШИВАТЬ. Определяется ПО ТЕКСТУ БРИФА
+    # (`studio/ruwords.py`), а не по настройке и не по догадке: спрашивал
+    # продукт до 2026-09-07 всегда по-английски, в том числе у того, кто
+    # написал «тёплый уютный кофейный ролик».
+    язык = ruwords.язык(said)
+
     unresolved: list[dict] = []
     if len(named["palette"]) > PALETTE_WIDTH:
         # The engine truncates a wider palette silently (`colours[:PALETTE_WIDTH]`),
         # so a colour the owner named would vanish from the prompt without anyone
         # being told. Asking costs one message; a dropped colour costs a render.
-        unresolved.append(
-            {
-                "slot": "palette",
-                "ask": (
-                    f"You named {len(named['palette'])} colours "
-                    f"({', '.join(named['palette'])}) and the engine takes "
-                    f"{PALETTE_WIDTH}. Which {PALETTE_WIDTH}?"
-                ),
-            }
+        слишком = (
+            f"Вы назвали {len(named['palette'])} цвета/цветов "
+            f"({', '.join(named['palette'])}), а движок берёт {PALETTE_WIDTH}. "
+            f"Какие {PALETTE_WIDTH}?"
+            if язык == ruwords.РУССКИЙ
+            else (
+                f"You named {len(named['palette'])} colours "
+                f"({', '.join(named['palette'])}) and the engine takes "
+                f"{PALETTE_WIDTH}. Which {PALETTE_WIDTH}?"
+            )
         )
+        unresolved.append({"slot": "palette", "ask": слишком})
+    elif colours:
+        # Палитра уже есть — вопроса нет. Раньше этой ветки не было, и
+        # приблизительная догадка («тёплый ~ amber») спрашивала о слоте,
+        # который заказчик закрыл точным словом («янтарный»).
+        pass
     elif цветные_догадки:
         # Заказчик цвет НАЗВАЛ, просто приблизительно. Спрашивать «какие
         # цвета?» здесь было бы глухотой: он уже ответил. Вопрос уточняет
         # оттенок и называет, из чего именно мы выбираем.
         unresolved.append(
-            {
-                "slot": "palette",
-                "ask": (
-                    "You named a colour approximately ("
-                    + ", ".join(
-                        f"{ру} ~ {анг}" for ру, анг in sorted((named.get("guessed") or {}).items())
-                    )
-                    + "); the engine takes exact shades. Which of: "
-                    + ", ".join(PALETTE_WORDS)
-                    + "?"
-                ),
-            }
+            _спросить_про_догадку(
+                "palette", named.get("guessed") or {}, цветные_догадки, said, язык
+            )
         )
-    elif not colours:
-        unresolved.append(
-            {
-                "slot": "palette",
-                "ask": ("Which colours? Name one to three of: " + ", ".join(PALETTE_WORDS)),
-            }
-        )
+    else:
+        unresolved.append(_спросить("palette", said, язык))
     if not value_key:
         unresolved.append(
-            _спросить_про_догадку("light", named.get("guessed") or {}, догадки_слотов["light"])
+            _спросить_про_догадку(
+                "light", named.get("guessed") or {}, догадки_слотов["light"], said, язык
+            )
             if догадки_слотов.get("light")
-            else {"slot": "value_key", "ask": "How lit — light, mid or dark?"}
+            else _спросить("value_key", said, язык)
         )
     if not texture:
         unresolved.append(
-            _спросить_про_догадку("texture", named.get("guessed") or {}, догадки_слотов["texture"])
+            _спросить_про_догадку(
+                "texture", named.get("guessed") or {}, догадки_слотов["texture"], said, язык
+            )
             if догадки_слотов.get("texture")
-            else {"slot": "texture", "ask": "Which surface? One of: " + ", ".join(TEXTURE_WORDS)}
+            else _спросить("texture", said, язык)
         )
     if not saturation:
         unresolved.append(
             _спросить_про_догадку(
-                "saturation", named.get("guessed") or {}, догадки_слотов["saturation"]
+                "saturation", named.get("guessed") or {}, догадки_слотов["saturation"], said, язык
             )
             if догадки_слотов.get("saturation")
-            else {
-                "slot": "saturation",
-                "ask": "How much colour — " + ", ".join(SATURATION_WORDS) + "?",
-            }
+            else _спросить("saturation", said, язык)
         )
 
     if unresolved:
@@ -454,9 +649,18 @@ def write(intent: str, examples: Sequence[Any]) -> dict:
             "violations": 0,
             "unmeasured": len(unresolved),
             "note": (
-                f"{4 - len(unresolved)} of 4 card slots were filled; "
-                + "; ".join(row["slot"] for row in unresolved)
-                + " could not be, and a guess is not a prompt. Ask, then run again."
+                (
+                    f"Заполнено слотов карточки: {4 - len(unresolved)} из 4; "
+                    + "; ".join(имя_слота(row["slot"], язык) for row in unresolved)
+                    + " заполнить нечем, а догадка — это не промт. "
+                    "Спросите заказчика и запустите снова."
+                )
+                if язык == ruwords.РУССКИЙ
+                else (
+                    f"{4 - len(unresolved)} of 4 card slots were filled; "
+                    + "; ".join(row["slot"] for row in unresolved)
+                    + " could not be, and a guess is not a prompt. Ask, then run again."
+                )
             ),
             "prompt": None,
             "card": None,

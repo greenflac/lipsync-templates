@@ -366,6 +366,15 @@ def analyse_creative(path: str, frames_dir: str = "") -> str:
     :param frames_dir: frames you extracted yourself, in filename order. Given,
         it wins over decoding `path` — nobody should pay for a second decode.
 
+    READ `input` FIRST — before `outcome`, before the numbers. It says which of
+    three things happened to the file you named, and they are kept apart on
+    purpose: `no file at that path` (nothing was opened, nothing was started —
+    check the path, it is a five-second fix), `the file is there, but nothing
+    could open it` (a package or codec this environment does not have — not
+    your fix), `the file was opened and measured`. Until 2026-09-07 the first
+    two came back as the same top-level `could not measure` and the real reason
+    was two levels down, so a plan could be built on a creative nobody opened.
+
     Read the `could_not_run` list before trusting a clean answer. Several
     instruments need packages this environment does not have — every face and
     pose axis among them — and they come back named rather than skipped,
@@ -376,11 +385,15 @@ def analyse_creative(path: str, frames_dir: str = "") -> str:
     from a measurement. And it never names a lighting word for an image whose
     histogram supports neither high-key nor low-key — it returns none.
     """
-    frames: list[str] | None = None
-    if frames_dir.strip():
-        directory = Path(frames_dir.strip())
-        frames = [str(p) for p in sorted(directory.glob("*")) if p.is_file()]
-    return _json(creative.analyse(path, frames=frames))
+    # Каталог кадров разбирает `creative.frames_in` (Т5: развилка вынесена из
+    # точки входа), и его состояние ПЕЧАТАЕТСЯ рядом с ответом. До 2026-09-07
+    # несуществующий `frames_dir` давал пустой список, а пустой список доезжал
+    # до приборов движения и возвращался как «0 frame(s): the engine needs at
+    # least 3» — теми же словами, что настоящий короткий клип.
+    handed = creative.frames_in(frames_dir)
+    out = creative.analyse(path, frames=handed["frames"] or None)
+    out["frames_dir"] = handed
+    return _json(out)
 
 
 @server.tool()
@@ -579,6 +592,35 @@ def запрос_корпуса(intent: str) -> str:
     return запрос
 
 
+def сведения_о_поиске(intent: str, запрос: str, found: Mapping[str, Any]) -> dict:
+    """Чем именно искали и что нашли — рядом с исходом поиска.
+
+    ВЫНЕСЕНО ИЗ ТЕЛА ИНСТРУМЕНТА (Т5): развилка внутри точки входа, которая
+    поднимает индекс на 13 438 записей, тестом недостижима.
+
+    ПОЧЕМУ `asked_with` ТЕПЕРЬ ПЕЧАТАЕТСЯ ВСЕГДА. Найдено продуктовой
+    проверкой 2026-09-07: на английском намерении «cozy coffee shop, warm
+    morning light, muted palette» поиск отвечал
+    `{"outcome": "fail", "note": "nothing in the index clears the relevance
+    floor", "asked_with": ""}`. Пустая строка ЗНАЧИЛА «запрос совпал с тем,
+    что написал заказчик», а ЧИТАЛАСЬ как «искали пустотой» — и читалась так
+    ровно там, где поиск ничего не нашёл, то есть в единственном месте, где
+    читатель ищет причину. Признак «поле пустое» отвечал на два разных вопроса
+    (Е2: вердикт выводится из того, что исполнилось): теперь здесь стоит
+    ЗАПРОС, КОТОРЫЙ БЫЛ ВЫПОЛНЕН, а совпадает он со словами заказчика или нет
+    — видно из соседнего `owner_words`.
+    """
+    запрос = str(запрос or "")
+    return {
+        "outcome": found.get("outcome"),
+        "examples": len(found.get("examples", ()) or ()),
+        "below_floor": found.get("below_floor"),
+        "note": found.get("note"),
+        "asked_with": запрос,
+        "owner_words": запрос == str(intent or "").lower(),
+    }
+
+
 @server.tool()
 def write_lipsync_prompt(intent: str) -> str:
     """Write a lipsync style prompt from the owner's words plus the corpus.
@@ -634,16 +676,9 @@ def write_lipsync_prompt(intent: str) -> str:
         запрос, k=lp.DEFAULT_K, index=_index()
     )
     result = lp.write(intent, found.get("examples", ()))
-    result["retrieval"] = {
-        "outcome": found["outcome"],
-        "examples": len(found.get("examples", ())),
-        "below_floor": found.get("below_floor"),
-        "note": found.get("note"),
-        # What the query was actually asked with, when it differs from what the
-        # owner typed. A search run on words the caller never wrote is a second
-        # way to know what was asked, unless it is said out loud.
-        "asked_with": запрос if запрос != str(intent or "").lower() else "",
-    }
+    # ЧЕМ ИСКАЛИ — ЧАСТЬ ОТВЕТА. Поиск по словам, которых заказчик не писал, —
+    # второй способ узнать, что было спрошено, если о нём не сказано вслух.
+    result["retrieval"] = сведения_о_поиске(intent, запрос, found)
     return _json(result)
 
 

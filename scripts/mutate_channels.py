@@ -843,6 +843,13 @@ MUTANTS: list[tuple[str, str, str, str, str]] = [
         "ответ: совет выдаётся и на годном плане — выдумка вместо молчания",
         "studio.mcp.tests.test_what_to_do_next",
     ),
+    (
+        "studio/planner.py",
+        '    if str(creative or "").strip():\n        # Импорт внутри функции',
+        "    if False:\n        # Импорт внутри функции",
+        "план: снова строится на видео, которого нет по названному пути",
+        "studio.mcp.tests.test_what_to_do_next",
+    ),
     # === ЦЕНА РОЛИКА И ОТРИЦАНИЕ В БРИФЕ (продуктовая проверка 2026-09-07) ==
     (
         "studio/planner.py",
