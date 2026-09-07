@@ -33,10 +33,31 @@ import unittest
 from studio import planner as pn
 
 
+def _строка(kind: str = "measurement") -> pn.Evidence:
+    """Одна строка доказательства с её РОДОМ, литералами (Т2).
+
+    Род стал частью решения 2026-09-07: «чисто» держится, только если о
+    кандидате есть хоть одна строка рода `measurement` (кто-то мерил), а не
+    любые две строки. Фикстура без строк доказательства перестала быть
+    осмысленной: она описывала кандидата, о котором «измерено 2», при пустом
+    списке измеренного.
+    """
+    return pn.Evidence(
+        attribute="benchmark_score",
+        value="что-то измерили",
+        tier="paper" if kind == "measurement" else "probe",
+        stated_on="2026-09-01",
+        kind=kind,
+        axis="применимость",
+        source_url="https://example.test/x",
+        matched=("lipsync",),
+    )
+
+
 def _кандидат(имя: str, *, применимость: int, против: int, способность: int = 0) -> pn.Candidate:
     return pn.Candidate(
         model=имя,
-        evidence=(),
+        evidence=tuple(_строка() for _ in range(применимость)),
         applicability=применимость,
         capability=способность,
         unresolved=0,

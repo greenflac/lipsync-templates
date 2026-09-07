@@ -17,13 +17,32 @@ from __future__ import annotations
 
 import unittest
 
-from studio.planner import Candidate, by_evidence, why_not
+from studio.planner import Candidate, Evidence, by_evidence, why_not
+
+
+def _строка() -> Evidence:
+    """Строка доказательства рода «кто-то мерил», литералами (Т2).
+
+    Заведена 2026-09-07: ступень `SIGN_THIN` смотрит теперь и на РОД строк, и
+    кандидат с пустым `evidence` при `applicability=2` описывал невозможное —
+    «измерено две вещи» при пустом списке измеренного.
+    """
+    return Evidence(
+        attribute="benchmark_score",
+        value="что-то измерили",
+        tier="paper",
+        stated_on="2026-09-01",
+        kind="measurement",
+        axis="применимость",
+        source_url="https://example.test/x",
+        matched=("lipsync",),
+    )
 
 
 def кандидат(model: str, применимость: int, против: int) -> Candidate:
     return Candidate(
         model=model,
-        evidence=(),
+        evidence=tuple(_строка() for _ in range(применимость)),
         applicability=применимость,
         capability=0,
         unresolved=0,

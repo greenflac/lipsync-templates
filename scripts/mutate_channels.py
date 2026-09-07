@@ -2710,16 +2710,61 @@ MUTANTS: list[tuple[str, str, str, str, str]] = [
     ),
     (
         "studio/mcp/screen.py",
-        '        перечисление = родительный and (разделители[шаг] == "," or следующее in СВЯЗКИ)',
+        # ПЕРЕНАЦЕЛЕН 2026-09-07: правило перечисления разведено на три моста.
+        "        перечисление = союз or запятая",
         "        перечисление = False",
         "просев: «без насилия и обнажёнки» снова отвергается за порнографию",
         "studio.mcp.tests.test_refusal_of_a_topic_is_not_a_request",
     ),
     (
         "studio/mcp/screen.py",
-        "        определение = any(слово.endswith(о) for о in АДЪЕКТИВНЫЕ)",
+        "        определение = рядом and (тема.isascii() or any(слово.endswith(о) for о in АДЪЕКТИВНЫЕ))",
         "        определение = True",
         "просев: переходится ЛЮБОЕ слово — «без цензуры обнажёнка» становится запретом",
+        "studio.mcp.tests.test_refusal_of_a_topic_is_not_a_request",
+    ),
+    # ТРИ МОСТА ПЕРЕЧИСЛЕНИЯ (2026-09-07, седьмая приёмка). Каждый — в обе
+    # стороны: снять мост и расширить его до соседнего.
+    (
+        "studio/mcp/screen.py",
+        "        союз = следующее in СВЯЗКИ",
+        "        союз = False",
+        "просев: «без насилия ИЛИ обнажёнки» снова отвергается — союз перестал быть мостом",
+        "studio.mcp.tests.test_refusal_of_a_topic_is_not_a_request",
+    ),
+    (
+        "studio/mcp/screen.py",
+        '        запятая = разделители[шаг] == "," and тема.endswith(РОДИТЕЛЬНЫЕ)',
+        '        запятая = разделители[шаг] == ","',
+        "просев: запятая переходится при любой теме — «без затей, эротика» становится запретом",
+        "studio.mcp.tests.test_refusal_of_a_topic_is_not_a_request",
+    ),
+    (
+        "studio/mcp/screen.py",
+        '        запятая = разделители[шаг] == "," and тема.endswith(РОДИТЕЛЬНЫЕ)',
+        "        запятая = False",
+        "просев: «без крови, обнажёнки и мата» снова отвергается за порнографию",
+        "studio.mcp.tests.test_refusal_of_a_topic_is_not_a_request",
+    ),
+    (
+        "studio/mcp/screen.py",
+        '        рядом = разделители[шаг] == ""',
+        "        рядом = True",
+        "просев: определение переходит запятую — «no limits, nudity closeup» проходит",
+        "studio.mcp.tests.test_refusal_of_a_topic_is_not_a_request",
+    ),
+    (
+        "studio/mcp/screen.py",
+        "        определение = рядом and (тема.isascii() or any(слово.endswith(о) for о in АДЪЕКТИВНЫЕ))",
+        "        определение = рядом and any(слово.endswith(о) for о in АДЪЕКТИВНЫЕ)",
+        "просев: английское определение снова не переходится — «no explicit nudity» отвергается",
+        "studio.mcp.tests.test_refusal_of_a_topic_is_not_a_request",
+    ),
+    (
+        "studio/mcp/screen.py",
+        'РОДИТЕЛЬНЫЕ: tuple[str, ...] = ("и", "ей", "ов")',
+        'РОДИТЕЛЬНЫЕ: tuple[str, ...] = ("и", "ы", "ей", "ов", "я")',
+        "просев: именительные окончания снова считаются родительными — просьбы проходят",
         "studio.mcp.tests.test_refusal_of_a_topic_is_not_a_request",
     ),
     # ЗАЯВЛЕНИЯ ЗАКАЗЧИКА (2026-09-07). Проверка, которая НЕ МЕНЯЕТ ИСХОД,
