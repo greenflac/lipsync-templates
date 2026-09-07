@@ -5,11 +5,13 @@ Re-run it and a host that has since opened drops off by itself.
 
 Every host below was probed and refused by the egress proxy (`Tunnel connection failed: 403`). None was routed around: no mirror, no cache, no archive copy, no read-through proxy.
 
-**14 host(s) asked for.** 17 further host(s) were refused during bulk probes and are deliberately NOT part of this request.
+**50 host(s) asked for.** 166 further host(s) were refused during bulk probes and are deliberately NOT part of this request.
 
 ## The list, to paste — wildcards, if the whitelist supports them
 
 ```
+*.agents-last-exam.org
+agents-last-exam.org
 *.aitooltier.com
 aitooltier.com
 *.aivid.video
@@ -18,27 +20,96 @@ aivid.video
 aividpipeline.com
 *.alici.ai
 alici.ai
+*.amazon.com
+amazon.com
 *.apiframe.ai
 apiframe.ai
+*.artificialanalysis.ai
+artificialanalysis.ai
 *.atlascloud.ai
 atlascloud.ai
+*.blog.google
+blog.google
+*.cohere.com
+cohere.com
+*.datacurve.ai
+datacurve.ai
+*.deepmind.google
+deepmind.google
+*.docker.com
+docker.com
+*.epoch.ai
+epoch.ai
 *.evolink.ai
 evolink.ai
 *.filmthreat.com
 filmthreat.com
+*.frontierswe.com
+frontierswe.com
 *.gaga.art
 gaga.art
+*.cloud.google.com
+*.hailuoai.video
+hailuoai.video
+*.hedra.com
+hedra.com
+*.ideogram.ai
+ideogram.ai
 *.invideo.io
 invideo.io
+*.llm-stats.com
+llm-stats.com
+*.lmarena.ai
+lmarena.ai
+*.microsoft.com
+microsoft.com
+*.minimax.io
+minimax.io
+*.mistral.ai
+mistral.ai
+*.models.dev
+models.dev
+*.openrouter.ai
+openrouter.ai
 *.piapi.ai
 piapi.ai
+*.posttrainbench.com
+posttrainbench.com
+*.qingque.cn
+qingque.cn
+*.qwen.ai
+qwen.ai
+*.reddithelp.com
+reddithelp.com
+*.redditinc.com
+redditinc.com
+*.replicate.com
+replicate.com
+*.scale.com
+scale.com
 *.seedance2-video.com
 seedance2-video.com
 *.skywork.ai
 skywork.ai
+*.swe-marathon.org
+swe-marathon.org
+*.swebench.com
+swebench.com
 *.the-decoder.com
 the-decoder.com
+*.together.xyz
+together.xyz
+*.vals.ai
+vals.ai
+*.x.ai
+x.ai
+*.z.ai
+z.ai
 ```
+
+Two of these are deliberately narrower than the domain suggests:
+
+- `google.com` — NOT `*.google.com` — that is Search, Mail, Drive and everything else Google runs. `cloud.google.com` is already permitted and open, so this is a wildcard UNDER a host you have already allowed.
 
 **Prefer this form.** The argument for it was made on 2026-08-27, the grant was given in that form, and it is now MEASURED rather than argued:
 
@@ -51,43 +122,85 @@ Vendors also spread across more than one registrable domain — Kling uses `klin
 ## The same list as exact hosts, if wildcards are not available
 
 ```
+about.ideogram.ai
+agents-last-exam.org
 aitooltier.com
 aivid.video
 aividpipeline.com
 alici.ai
+api.replicate.com
+api.together.xyz
 apiframe.ai
+artificialanalysis.ai
+blog.google
+cohere.com
+deepmind.google
+deepswe.datacurve.ai
+docs.aws.amazon.com
+docs.qingque.cn
+epoch.ai
 evolink.ai
 filmthreat.com
 gaga.art
+hailuoai.video
+hedra.com
 invideo.io
+learn.microsoft.com
+llm-stats.com
+lmarena.ai
+minimax.io
+mistral.ai
+models.dev
+openrouter.ai
 piapi.ai
+posttrainbench.com
+production.cloudfront.docker.com
+qwen.ai
+replicate.com
+scale.com
 seedance2-video.com
 skywork.ai
+support.reddithelp.com
+swe-marathon.org
+swebench.com
 the-decoder.com
+vals.ai
+vertexaisearch.cloud.google.com
 www.atlascloud.ai
+www.frontierswe.com
+www.redditinc.com
+www.swebench.com
+x.ai
+z.ai
 ```
 
 Each one is justified below, grouped so the list can be cut at any group boundary and still make sense. The groups are ordered by how cheap they are to say yes to, not by how much we want them. This form is expected to need revisiting; the wildcard form is not.
 
 ## Already open — do not add these
 
-Re-measured when this file was generated: 56 of 56 still answer.
+Re-measured when this file was generated: 77 of 79 still answer.
 
 ```
 ai.google.dev
 aiplatform.googleapis.com
+alidocs.dingtalk.com
+api-docs.deepseek.com
 api.bfl.ai
 api.civitai.com
+api.cohere.com
+api.deepseek.com
 api.dev.runwayml.com
 api.elevenlabs.io
 api.fal.ai
 api.github.com
 api.klingai.com
+api.mistral.ai
 api.openai.com
 api.wavespeed.ai
 app.klingai.com
 arxiv.org
 bfl.ai
+blog.voyageai.com
 byteplus.com
 cdn.openai.com
 civitai.com
@@ -95,20 +208,28 @@ cloud.google.com
 console.byteplus.com
 customsearch.googleapis.com
 dashboard.bfl.ai
+developer.ideogram.ai
+developers.googleblog.com
 developers.reddit.com
 discoveryengine.googleapis.com
+docs.anthropic.com
 docs.bfl.ai
+docs.bfl.ml
 docs.byteplus.com
 docs.cloud.google.com
+docs.cohere.com
 docs.dev.runwayml.com
 docs.elevenlabs.io
-docs.fal.ai
+docs.mistral.ai
+docs.voyageai.com
+docs.x.ai
 elevenlabs.io
 export.arxiv.org
 fal.ai
 files.pythonhosted.org
 generativelanguage.googleapis.com
 github.com
+help.aliyun.com
 help.elevenlabs.io
 help.runwayml.com
 huggingface.co
@@ -120,19 +241,34 @@ oauth.reddit.com
 old.reddit.com
 openai.com
 orchestration.civitai.com
+platform.kimi.ai
+platform.minimax.io
 platform.openai.com
 pypi.org
 raw.githubusercontent.com
 reddit.com
 searchapi.api.cloud.yandex.net
+seed.bytedance.com
 static.arxiv.org
 storage.googleapis.com
+tongyi.aliyun.com
 wavespeed.ai
 www.civitai.com
+www.hedra.com
+www.minimax.io
 www.reddit.com
+www.voyageai.com
 ```
 
 ## Recorded earlier, still wanted
+
+### `about.ideogram.ai`
+
+Ideogram 3.0 vendor announcement: existence and text-rendering/typography claim
+
+### `agents-last-exam.org`
+
+Reading the official leaderboards and vendor blogs that non-Anthropic model cards cite for their 2026 benchmark scores (DeepSWE, FrontierSWE, Agents' Last Exam, PostTrainBench, GLM/MiniMax release blogs)
 
 ### `aitooltier.com`
 
@@ -150,9 +286,49 @@ read a page this fact base cites but nobody opened
 
 read a page this fact base cites but nobody opened
 
+### `api.replicate.com`
+
+portal-tier model descriptions for hailuo-02 physics and kling-3.0 negative_prompt
+
+### `api.together.xyz`
+
+разведка каналов для блюпринта
+
 ### `apiframe.ai`
 
 read a page this fact base cites but nobody opened
+
+### `artificialanalysis.ai`
+
+Verify whether the video arena ELO page is readable on a different path of the same host.
+
+### `blog.google`
+
+vendor physics claims for veo-3.1, kling-3.0, wan-2.5
+
+### `cohere.com`
+
+Voyage multimodal-3 dimension/payload limits; Cohere Embed v4 context length, Matryoshka dims, int8/binary support
+
+### `deepmind.google`
+
+Veo 3.1 vendor claim about physical plausibility / physics
+
+### `deepswe.datacurve.ai`
+
+Reading the official leaderboards and vendor blogs that non-Anthropic model cards cite for their 2026 benchmark scores (DeepSWE, FrontierSWE, Agents' Last Exam, PostTrainBench, GLM/MiniMax release blogs)
+
+### `docs.aws.amazon.com`
+
+portal-tier fallback for Cohere embed-v4 dimensions/embedding types and voyage-multimodal-3 limits, since docs.cohere.com and docs.voyageai.com are refused
+
+### `docs.qingque.cn`
+
+_причина в журнале не записана: хост попал в просьбу строкой смены состояния. Спрашивать доступ по такой строке можно, но стоит перепроверить, нужен ли он ещё._
+
+### `epoch.ai`
+
+Reading primary benchmark results (SWE-bench, GPQA, LMArena, vendor evals) for non-Anthropic LLM families
 
 ### `evolink.ai`
 
@@ -166,13 +342,69 @@ read a page this fact base cites but nobody opened
 
 settles a live contradiction: the only source for runway-gen-4.5 max_resolution='4K', against Runway's own OpenAPI schema whose largest gen4.5 ratio is 1280:720 while the same schema offers 3840:2160 to another model. Reading this page would say whether the review means something else by 4K.
 
+### `hailuoai.video`
+
+physics claims for hailuo-02, seedance-2.0, kling-3.0, wan-2.5 from vendor pages
+
+### `hedra.com`
+
+Hedra Character-3 vendor documentation: still image plus external audio inputs and duration limits
+
 ### `invideo.io`
 
 read a page this fact base cites but nobody opened
 
+### `learn.microsoft.com`
+
+portal-tier fallback for Cohere embed-v4 dimensions/embedding types and voyage-multimodal-3 limits, since docs.cohere.com and docs.voyageai.com are refused
+
+### `llm-stats.com`
+
+Section 1: find an OPEN catalogue channel for CLOSED LLMs after openrouter.ai and api.together.xyz were refused
+
+### `lmarena.ai`
+
+Reading primary benchmark results (SWE-bench, GPQA, LMArena, vendor evals) for non-Anthropic LLM families
+
+### `minimax.io`
+
+physics claims for hailuo-02, seedance-2.0, kling-3.0, wan-2.5 from vendor pages
+
+### `mistral.ai`
+
+Reading primary benchmark results (SWE-bench, GPQA, LMArena, vendor evals) for non-Anthropic LLM families
+
+### `models.dev`
+
+Section 1: an open catalogue of CLOSED LLMs (context windows, prices) since openrouter.ai and api.together.xyz are refused
+
+### `openrouter.ai`
+
+разведка каналов для блюпринта
+
 ### `piapi.ai`
 
 read a page this fact base cites but nobody opened
+
+### `posttrainbench.com`
+
+Reading the official leaderboards and vendor blogs that non-Anthropic model cards cite for their 2026 benchmark scores (DeepSWE, FrontierSWE, Agents' Last Exam, PostTrainBench, GLM/MiniMax release blogs)
+
+### `production.cloudfront.docker.com`
+
+run Qdrant as a container, as the RAG handover assumes. MEASURED 2026-08-28: not needed — qdrant-client local mode indexes and queries with no server at all
+
+### `qwen.ai`
+
+Reading primary benchmark results (SWE-bench, GPQA, LMArena, vendor evals) for non-Anthropic LLM families
+
+### `replicate.com`
+
+portal-tier model descriptions for hailuo-02 physics and kling-3.0 negative_prompt
+
+### `scale.com`
+
+Reading primary benchmark results (SWE-bench, GPQA, LMArena, vendor evals) for non-Anthropic LLM families
 
 ### `seedance2-video.com`
 
@@ -182,16 +414,56 @@ read a page this fact base cites but nobody opened
 
 read a page this fact base cites but nobody opened
 
+### `support.reddithelp.com`
+
+_причина в журнале не записана: хост попал в просьбу строкой смены состояния. Спрашивать доступ по такой строке можно, но стоит перепроверить, нужен ли он ещё._
+
+### `swe-marathon.org`
+
+Reading the official leaderboards and vendor blogs that non-Anthropic model cards cite for their 2026 benchmark scores (DeepSWE, FrontierSWE, Agents' Last Exam, PostTrainBench, GLM/MiniMax release blogs)
+
+### `swebench.com`
+
+Reading primary benchmark results (SWE-bench, GPQA, LMArena, vendor evals) for non-Anthropic LLM families
+
 ### `the-decoder.com`
 
 read a page this fact base cites but nobody opened
+
+### `vals.ai`
+
+Reading primary benchmark results (SWE-bench, GPQA, LMArena, vendor evals) for non-Anthropic LLM families
+
+### `vertexaisearch.cloud.google.com`
+
+прочитать своими глазами страницу sync.so про ограничения lipsync-2 (жалобы практиков, g26)
 
 ### `www.atlascloud.ai`
 
 settles a live contradiction: this page is the ONLY source for kling-3.0 max_seconds='10', against Kuaishou's own release saying 15, which has now been read first-hand. Until this page can be opened the contest cannot be closed either way.
 
+### `www.frontierswe.com`
+
+Reading the official leaderboards and vendor blogs that non-Anthropic model cards cite for their 2026 benchmark scores (DeepSWE, FrontierSWE, Agents' Last Exam, PostTrainBench, GLM/MiniMax release blogs)
+
+### `www.redditinc.com`
+
+_причина в журнале не записана: хост попал в просьбу строкой смены состояния. Спрашивать доступ по такой строке можно, но стоит перепроверить, нужен ли он ещё._
+
+### `www.swebench.com`
+
+Reading primary benchmark results (SWE-bench, GPQA, LMArena, vendor evals) for non-Anthropic LLM families
+
+### `x.ai`
+
+Reading primary benchmark results (SWE-bench, GPQA, LMArena, vendor evals) for non-Anthropic LLM families
+
+### `z.ai`
+
+Reading the official leaderboards and vendor blogs that non-Anthropic model cards cite for their 2026 benchmark scores (DeepSWE, FrontierSWE, Agents' Last Exam, PostTrainBench, GLM/MiniMax release blogs)
+
 ## Not part of this request
 
 Hosts refused while a bulk probe swept past them — search results being tagged with whether they open, or the reachability map being re-dated. Nobody asked for these; they are listed so no refusal is lost.
 
-`aifreeapi.com`, `api.replicate.com`, `atlascloud.ai`, `deepmind.google`, `docs.qingque.cn`, `google.com`, `kling3api.com`, `mindstudio.ai`, `nanophoto.ai`, `qingque.cn`, `redditinc.com`, `replicate.com`, `runwayml.com`, `seed.bytedance.com`, `tongyi.aliyun.com`, `unifuncs.com`, `wan.video`
+`acttwo.cv`, `ai-compare-hub.com`, `ai-sdk.dev`, `aibase.com`, `aifreeapi.com`, `aimlapi.com`, `aitoolanalysis.com`, `alibabacloud.com`, `alphaxiv.org`, `andlukyane.com`, `andreaskuhr.com`, `anotherwrapper.com`, `apidog.com`, `apimart.ai`, `apiyi.com`, `apob.ai`, `artlist.io`, `atlabs.ai`, `atlascloud.ai`, `benchlm.ai`, `bfl.ml`, `bloomway.ai`, `bytedance.com`, `chatpaper.ai`, `christytuckerlearning.com`, `clickrank.ai`, `cliprise.app`, `cloudflare.com`, `cometapi.com`, `comfy.icu`, `comfy.org`, `commandlinux.com`, `datacamp.com`, `deeka.ai`, `deepgram.com`, `deepset.ai`, `deevid.ai`, `dev.to`, `devactivity.com`, `docs.hedra.com`, `docs.sync.so`, `dreamega.ai`, `dubly.ai`, `eachlabs.ai`, `emergentmind.com`, `everypixel.com`, `facebook.com`, `fal.run`, `flaq.ai`, `flashloop.app`, `flowith.io`, `flyne.ai`, `forbes.com`, `forzebras.ai`, `futurebeeai.com`, `genmix.ai`, `getimg.ai`, `github.io`, `glbgpt.com`, `goenhance.ai`, `google.com`, `google.dev`, `gptproto.com`, `gradium.ai`, `higgsfield.ai`, `imagebattle.ai`, `jonathanmast.com`, `kie.ai`, `kili-technology.com`, `kingy.ai`, `kling-motion-control.com`, `kling2-6.com`, `kling3.ai`, `kling3.io`, `kling3api.com`, `klingaimotioncontrol.com`, `klingmotion.com`, `kompozy.io`, `labellerr.com`, `layer.ai`, `layer3labs.io`, `learnprompting.org`, `leonardo.ai`, `lmcouncil.ai`, `localaimaster.com`, `lovegen.ai`, `lumalabs.ai`, `lumeflow.ai`, `magichour.ai`, `magnific.com`, `max-productive.ai`, `medium.com`, `mindstudio.ai`, `minionarts.com`, `modelhunter.ai`, `mongodb.com`, `morphic.com`, `motioncontrolai.com`, `mozilla.org`, `multic.com`, `musicmake.ai`, `myphysicslab.com`, `nanobanana.org`, `nanophoto.ai`, `new3jcn.com`, `ntnu.no`, `omnihuman-lab.github.io`, `opencreator.io`, `ourcodeworld.com`, `panjaya.ai`, `percify.io`, `phygital.plus`, `physion.net`, `piclumen.com`, `picsart.com`, `pollo.ai`, `puter.com`, `qingque.cn`, `redditinc.com`, `renderful.ai`, `runcomfy.com`, `rundiffusion.com`, `runware.ai`, `runway.com`, `runwayml.com`, `scenario.com`, `scenetra.com`, `scmp.com`, `seavidgen.com`, `seedance20.com`, `seedance2ai.io`, `seedance2pro.io`, `seedanceapi.org`, `seevio.ai`, `segmind.com`, `semanticscholar.org`, `soku.ai`, `stensyl.ai`, `substack.com`, `swfte.com`, `sync.so`, `takara.ai`, `theaibuilders.dev`, `theinfluencer.ai`, `themoonlight.io`, `toolcenter.ai`, `unifuncs.com`, `union.ai`, `veed.io`, `vellum.ai`, `veneratech.com`, `venice.ai`, `veo3ai.io`, `veo3gen.app`, `vibedex.ai`, `videoweb.ai`, `vidofy.ai`, `viggle.ai`, `visualizee.ai`, `voyageai.com`, `vultr.com`, `wan.video`, `wan2-1.com`, `wan27.org`, `wikipedia.org`, `youtube.com`

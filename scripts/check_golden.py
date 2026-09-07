@@ -38,7 +38,7 @@ import json
 import re
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -252,7 +252,10 @@ def _зов(имя: str, аргументы: dict[str, Any]) -> dict[str, Any]:
     орудие = getattr(mcp_server, имя)
     # У инструмента MCP настоящая функция лежит в `.fn`; вызывать обёртку
     # напрямую нельзя, а второй копии этого знания в наборе не заводится (Е1).
-    return json.loads(getattr(орудие, "fn", орудие)(**аргументы))
+    # `json.loads` отдаёт `Any`, и объявленный `dict` тут был словом, а не
+    # проверкой: список или строка проехали бы в `проверка_прошла` и упали бы
+    # позже и не тем. Сужение объявлено явно и без подавления проверки.
+    return cast("dict[str, Any]", json.loads(getattr(орудие, "fn", орудие)(**аргументы)))
 
 
 def ответ(задача: dict[str, Any]) -> tuple[dict[str, Any], str]:
@@ -279,12 +282,12 @@ def проверка_прошла(вид: str, что: Any, итог: dict[str, 
     if вид == "шагов_нет":
         return not итог.get("steps")
     if вид == "причина":
-        return итог.get("reason") == что
+        return bool(итог.get("reason") == что)
     if вид == "вопрос_ось":
         вопрос = итог.get("question") or {}
-        return вопрос.get("axis") == что
+        return bool(вопрос.get("axis") == что)
     if вид == "исход":
-        return итог.get("outcome") == что
+        return bool(итог.get("outcome") == что)
     if вид == "исход_среди":
         return итог.get("outcome") in что
     if вид == "источник_у_утверждения":

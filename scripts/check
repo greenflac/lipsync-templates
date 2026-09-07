@@ -186,6 +186,28 @@ MYPYPATH=. python -m mypy --explicit-package-bases studio/mcp/ --ignore-missing-
 step "mypy (scripts)"
 MYPYPATH=. python -m mypy --no-namespace-packages scripts/ --ignore-missing-imports
 
+# ТОТ ЖЕ КАТАЛОГ, НО ПРИБОРАМИ ГЕЙТА И БЕЗ `--no-namespace-packages`. Шаг выше
+# проверяет ВСЕ scripts/, и цена его флага измерена негативным контролем
+# 2026-09-07: у `studio/` нет `__init__.py`, поэтому в режиме обычных пакетов
+# ВЕСЬ `studio` для проверки не существует, а `--ignore-missing-imports`
+# превращает всё оттуда в `Any`. Подложенный лишний аргумент
+# `pl.render(отчёт, "лишний аргумент")` шаг выше пропустил молча
+# («Success: no issues found in 65 source files»), а этот назвал:
+# `Too many arguments for "render"`. То есть вызовы приборов в studio шаг выше
+# не проверяет ВООБЩЕ — а настоящий дефект 2026-09-04 (`advice.withdraw(**row)`)
+# был именно такой формы, и его брат `advice.record(**entry)` дожил под
+# `# type: ignore[arg-type]` до 2026-09-07 (И7).
+#
+# Территория шага — файлы, которыми гейт меряет сам себя: `check_*.py`,
+# `read_sources.py` (шаг «прочтения применены»), `creative_fit.py`.
+# `--strict` держит аннотации (46 находок в 18 файлах на 2026-09-07 -> 0);
+# `--follow-imports=silent` оставляет ошибки чужих модулей их владельцам (Ц2),
+# не теряя их подписи — на них проверка и держится.
+step "mypy (приборы гейта, strict)"
+MYPYPATH=. python -m mypy --explicit-package-bases --strict --follow-imports=silent \
+    scripts/check_*.py scripts/read_sources.py scripts/creative_fit.py \
+    --ignore-missing-imports
+
 step "tests (mcp)"
 python scripts/run_tests.py studio/mcp/tests
 
@@ -466,6 +488,54 @@ python scripts/poll_portal.py --check
 # Сети здесь нет.
 step "канал Civitai: наблюдение практика, права и негативный контроль"
 python scripts/ingest_civitai.py --check
+
+# ВОСЕМЬ КАНАЛОВ СБОРА, КОТОРЫХ ГЕЙТ НЕ ЗВАЛ ВОВСЕ. ИЗМЕРЕНО 2026-09-07 по
+# самим файлам, а не по чертежу: офлайновый `--check` был у четырёх каналов из
+# двенадцати (ingest_civitai, ingest_harvest, poll_portal, refill_queue), у
+# восьми не было ничего. Канал без офлайнового режима нельзя позвать — значит
+# он может испортиться молча, и «нет новостей» неотличимо от «никто не смотрел».
+#
+# Порядок — по измеренной длительности, дешёвые раньше дорогих (П2): 35, 71,
+# 116, 151, 161, 163, 166, 178 мс на этой машине. Сети нет ни в одном.
+#
+# ДВА ПЕРВЫХ КАНАЛА ЧИТАЮТ ТО, ЧЕГО В РЕПОЗИТОРИИ НЕТ (`work/` и
+# `civitai_prompts.jsonl` в .gitignore — чужие промпты и чужие видео). Их
+# честный исход здесь — «не смогли», код 2, и он НЕ красит сборку: красит код
+# 1, то есть настоящая порча собранного. Ровно так же устроен шаг
+# `check_sheet_shape` выше.
+step "канал подсказок: связен ли снятый прогон банка"
+set +e
+python scripts/find_signals.py --check
+SIGNALS=$?
+set -e
+[ "$SIGNALS" = "1" ] && { echo "ПРОВАЛ: прогон банка разъехался"; exit 1; }
+[ "$SIGNALS" = "2" ] && echo "(банка нет на диске — сравнивать нечего, это не провал)"
+
+step "канал Civitai: форма уже собранных пар"
+set +e
+python scripts/collect_civitai.py --check
+PAIRS=$?
+set -e
+[ "$PAIRS" = "1" ] && { echo "ПРОВАЛ: собранные пары испорчены"; exit 1; }
+[ "$PAIRS" = "2" ] && echo "(собранных пар нет на диске — это не провал)"
+
+step "каталоги: сводка опроса против самого каталога"
+python scripts/poll_catalogs.py --check
+
+step "портал: тир карточки, цифра в цене, модели без показанной цены"
+python scripts/ingest_portal.py --check
+
+step "схемы: «требует» есть подмножество «принимает»"
+python scripts/ingest_schema.py --check
+
+step "индексы: знаменатель разницы не съехал"
+python scripts/discover_models.py --check
+
+step "вендорские страницы: основание отпечатков и способ их снятия"
+python scripts/recheck_vendor.py --check
+
+step "HuggingFace: тир решает URL и после записи тоже"
+python scripts/ingest_hf.py --check
 
 # Валидатор-2: он принимает ПАЙПЛАЙН, а не факт. Разрыв между шагами (выход
 # шага N не является допустимым входом шага N+1) не виден ни одному посшаговому

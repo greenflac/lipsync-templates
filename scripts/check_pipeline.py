@@ -51,6 +51,7 @@ import sys
 from collections import Counter
 from datetime import date
 from pathlib import Path
+from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -61,7 +62,7 @@ from studio import pipeline as pl  # noqa: E402
 from studio.selfrag.facts import load_facts  # noqa: E402
 
 
-def control_results(controls: list[pl.Control]) -> list[dict]:
+def control_results(controls: list[pl.Control]) -> list[dict[str, Any]]:
     """Исход каждой контрольной подачи рядом с ожидаемым. Вынесено из main (Т5)."""
     out = []
     for c in controls:
@@ -81,7 +82,7 @@ def control_results(controls: list[pl.Control]) -> list[dict]:
     return out
 
 
-def control_verdict(results: list[dict], rows: int) -> dict:
+def control_verdict(results: list[dict[str, Any]], rows: int) -> dict[str, Any]:
     """Прибор различает то, что заявлено, и в обе стороны.
 
     Пять условий, и ни одно не выводится из остальных: исход, классы, набор

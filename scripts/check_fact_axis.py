@@ -60,6 +60,7 @@ import argparse
 import sys
 from collections import Counter
 from pathlib import Path
+from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -614,7 +615,7 @@ RELEVANCE_CONTROL: tuple[tuple[str, tuple[tuple[Fact, bool], ...]], ...] = (
 FALSE_PICKUPS_MEASURED = 4
 
 
-def pair_results() -> list[dict]:
+def pair_results() -> list[dict[str, Any]]:
     """Пары «своё требование / чужое требование» на ОДНИХ И ТЕХ ЖЕ фактах (И5)."""
     out = []
     for имя, факты, своё, ждём_своё, чужое, ждём_чужое in CONTROL_PAIRS:
@@ -637,7 +638,7 @@ def pair_results() -> list[dict]:
     return out
 
 
-def pair_verdict(results: list[dict]) -> dict:
+def pair_verdict(results: list[dict[str, Any]]) -> dict[str, Any]:
     """Прибор обязан РАЗЛИЧАТЬ, а не просто краснеть.
 
     Три условия, и ни одно не выводится из остальных: своё требование дало
@@ -685,7 +686,7 @@ def pair_verdict(results: list[dict]) -> dict:
     }
 
 
-def relevance_results() -> list[dict]:
+def relevance_results() -> list[dict[str, Any]]:
     """Сколько раз ретривер подобрал чужое и сколько раз пропустил своё."""
     out = []
     for требование, строки in RELEVANCE_CONTROL:
@@ -706,7 +707,7 @@ def relevance_results() -> list[dict]:
     return out
 
 
-def relevance_verdict(results: list[dict]) -> dict:
+def relevance_verdict(results: list[dict[str, Any]]) -> dict[str, Any]:
     """Ложные подборы и пропуски — числом (Р2), а не словом «бывают».
 
     Красным считается только ПРОПУСК относящейся строки: пропущенное
@@ -763,7 +764,7 @@ def relevance_verdict(results: list[dict]) -> dict:
     }
 
 
-def control_results() -> list[dict]:
+def control_results() -> list[dict[str, Any]]:
     """Исходы контрольных шагов рядом с ожидаемыми. Вынесено из main (Т5)."""
     out = []
     for имя, требование, факты, ожидалось in CONTROL_STEPS:
@@ -774,7 +775,7 @@ def control_results() -> list[dict]:
     return out
 
 
-def control_verdict(results: list[dict]) -> dict:
+def control_verdict(results: list[dict[str, Any]]) -> dict[str, Any]:
     """Различает ли прибор три случая, и те ли, что заявлены.
 
     Два условия, и оба обязательны: каждый шаг дал ОЖИДАЕМЫЙ исход, и трёх
@@ -813,7 +814,9 @@ def control_verdict(results: list[dict]) -> dict:
     }
 
 
-def base_verdict(facts: list[Fact], overrides: dict) -> dict:
+def base_verdict(
+    facts: list[Fact], overrides: dict[tuple[str, str, str], tuple[str, str, str]]
+) -> dict[str, Any]:
     """Разметка живой базы: числа по родам и нарушения происхождения (И4)."""
     if not facts:
         return {

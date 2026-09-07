@@ -47,15 +47,25 @@ class ТриИсходаРезолвера(unittest.TestCase):
             self.assertIs(True, fetch.имя_существует(ЕСТЬ))
 
     def test_имени_нет(self) -> None:
-        with mock.patch("socket.getaddrinfo", side_effect=socket.gaierror(-2, "no")):
+        ошибка = socket.gaierror(socket.EAI_NONAME, "Name or service not known")
+        with mock.patch("socket.getaddrinfo", side_effect=ошибка):
             self.assertIs(False, fetch.имя_существует(НЕТ))
 
     def test_резолвер_не_ответил_это_третий_исход(self) -> None:
         """Р1: своя авария не превращается в «хоста нет».
 
-        Вернуть False по таймауту значило бы выкинуть из просьбы доступ,
-        который вправду нужен, — и никто бы не узнал.
+        ФИКСТУРА ВЗЯТА С НАСТОЯЩЕГО КРАЯ (Т3), И ПЕРВАЯ БЫЛА НЕ ОТТУДА.
+        Приёмка 2026-09-07: тест проверял третий исход через `TimeoutError`,
+        которого `getaddrinfo` при отказе резолвера НЕ БРОСАЕТ — он бросает
+        тот же `gaierror`, но с кодом `EAI_AGAIN`. Из-за этого сторож молчал,
+        пока прибор объявлял «имени нет» на любой аварии DNS, и просьба к
+        владельцу вычёркивала все 49 хостов, печатая «нечего просить».
         """
+        занят = socket.gaierror(socket.EAI_AGAIN, "Temporary failure in name resolution")
+        with mock.patch("socket.getaddrinfo", side_effect=занят):
+            self.assertIsNone(fetch.имя_существует(ЕСТЬ), "EAI_AGAIN — это не «имени нет»")
+        with mock.patch("socket.getaddrinfo", side_effect=OSError("network unreachable")):
+            self.assertIsNone(fetch.имя_существует(ЕСТЬ))
         with mock.patch("socket.getaddrinfo", side_effect=TimeoutError("resolver")):
             self.assertIsNone(fetch.имя_существует(ЕСТЬ))
 

@@ -39,7 +39,7 @@ import argparse
 import json
 import sys
 from types import SimpleNamespace
-from typing import cast
+from typing import Any, cast
 import time
 from pathlib import Path
 
@@ -56,7 +56,7 @@ from studio.factindex import FactIndex  # noqa: E402
 TODAY = "2026-09-02"
 
 
-def run(path: Path = pn.DEFAULT_BRIEFS_PATH) -> dict:
+def run(path: Path = pn.DEFAULT_BRIEFS_PATH) -> dict[str, Any]:
     """Прогон всего набора. Возвращает числа, а не булев флаг (Е3)."""
     from datetime import date
 
@@ -441,7 +441,7 @@ def run(path: Path = pn.DEFAULT_BRIEFS_PATH) -> dict:
     }
 
 
-def старшие_ключи(строка: dict) -> tuple:
+def старшие_ключи(строка: dict[str, Any]) -> tuple[tuple[int, int], int]:
     """Поля ключа планировщика, стоящие ПЕРЕД ценой, по строке кандидата.
 
     Считаются теми же функциями планировщика (Е1): второй способ вычислить
@@ -461,7 +461,7 @@ def старшие_ключи(строка: dict) -> tuple:
     return (pn.blocked_rank(заглушка), pn.FIT_ORDER.get(строка.get("fit_state", ""), 0))
 
 
-def verdict(итог: dict) -> tuple[int, list[str]]:
+def verdict(итог: dict[str, Any]) -> tuple[int, list[str]]:
     """Код возврата и причины. Три исхода, и третий не сворачивается (Р1)."""
     беды: list[str] = []
     if итог["parsed"] == 0:
@@ -572,7 +572,7 @@ def verdict(итог: dict) -> tuple[int, list[str]]:
     return (1 if беды else 0), беды
 
 
-def render(итог: dict) -> str:
+def render(итог: dict[str, Any]) -> str:
     строки = [
         f"брифов в файле {итог['rows_in_file']}, разобрано {итог['parsed']}",
         (

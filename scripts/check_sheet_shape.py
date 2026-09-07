@@ -51,6 +51,7 @@ import collections
 import json
 import sys
 from pathlib import Path
+from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -76,7 +77,7 @@ def _size_bucket(size: int) -> str:
     return f"~{step // 1024}КБ"
 
 
-def properties(case: dict, width: int, height: int, size: int) -> dict[str, str]:
+def properties(case: dict[str, Any], width: int, height: int, size: int) -> dict[str, str]:
     """The things a reader could learn without decoding an image."""
     return {
         "размер полосы": f"{width}x{height}",
@@ -87,10 +88,10 @@ def properties(case: dict, width: int, height: int, size: int) -> dict[str, str]
     }
 
 
-def _within(group: list[tuple[str, dict[str, str]]]) -> dict[str, dict]:
+def _within(group: list[tuple[str, dict[str, str]]]) -> dict[str, dict[str, Any]]:
     """Per property, how many of these cases a value sorts by source."""
     names = sorted({name for _, props in group for name in props})
-    report: dict[str, dict] = {}
+    report: dict[str, dict[str, Any]] = {}
     for name in names:
         holders: dict[str, set[str]] = collections.defaultdict(set)
         for source, props in group:
@@ -105,7 +106,7 @@ def _within(group: list[tuple[str, dict[str, str]]]) -> dict[str, dict]:
     return report
 
 
-def check(observations: list[tuple[str, str, dict[str, str]]]) -> dict:
+def check(observations: list[tuple[str, str, dict[str, str]]]) -> dict[str, Any]:
     """`observations` is (source, medium, {property: value}) per case.
 
     Kept out of `main` on purpose (rule T5): the fork that decides годно /
@@ -138,7 +139,7 @@ def check(observations: list[tuple[str, str, dict[str, str]]]) -> dict:
         }
 
     per_medium = {medium: _within(group) for medium, group in sorted(comparable.items())}
-    flat: dict[str, dict] = {}
+    flat: dict[str, dict[str, Any]] = {}
     leaking: list[str] = []
     for medium, report in per_medium.items():
         for name, row in report.items():

@@ -24,6 +24,7 @@ from __future__ import annotations
 import argparse
 import sys
 from pathlib import Path
+from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -52,7 +53,7 @@ GRANDFATHERED = ("HANDOFF_MCP_AGENT.md", "HANDOFF_studio-mvp.md")
 ARCHIVE_PREFIX = "HANDOFF_ARCHIVE_"
 
 
-def check_records(rows: list[dict]) -> dict:
+def check_records(rows: list[dict[str, Any]]) -> dict[str, Any]:
     """Схема записей. Вынесено из main (Т5), чтобы развилка была достижима тестом."""
     if not rows:
         return {
@@ -78,7 +79,7 @@ def check_records(rows: list[dict]) -> dict:
     }
 
 
-def check_handoffs(sizes: dict[str, int], limit: int = HANDOFF_MAX_LINES) -> dict:
+def check_handoffs(sizes: dict[str, int], limit: int = HANDOFF_MAX_LINES) -> dict[str, Any]:
     """Размер хэндофов. `sizes` — имя файла к числу строк, чтобы тест не ходил на диск."""
     if not sizes:
         return {
@@ -120,7 +121,7 @@ def check_handoffs(sizes: dict[str, int], limit: int = HANDOFF_MAX_LINES) -> dic
     }
 
 
-def свести_половины(records: dict, handoffs: dict) -> str:
+def свести_половины(records: dict[str, Any], handoffs: dict[str, Any]) -> str:
     """Исход по ДВУМ половинам сразу. Р1: третий исход не сворачивается в первый.
 
     ЗАЧЕМ (найдено независимой проверкой 2026-09-06). Складывались `checked`

@@ -47,10 +47,17 @@ from studio.selfrag.facts import load_facts
     "TBD",
     "?",
     "   ",
-    "null",
-    "None",
     "нет данных",
 )
+
+#: ТРИ ЗНАЧЕНИЯ УБРАНЫ ИЗ ЭТОГО СПИСКА ПРИЁМКОЙ 2026-09-07, и это был ЛОЖНЫЙ
+#: ОТКАЗ — та самая ошибка, которую здесь считали дороже пропуска. `none`,
+#: `null` и `NA` — настоящие значения: «none» отвечает на `requires_inputs`,
+#: `limitation`, `license_restriction`, в базе уже стоит
+#: `flux-2-klein-9b.prompt_upsampling = 'none — no prompt upsampling on klein'`,
+#: а `NA` — код региона. Дверь их отвергала, а её же нота велела «не
+#: записывайте ничего», то есть факт не записал бы уже никто.
+ЛОЖНО_ОТВЕРГАЛИСЬ = ("none", "None", "null", "NULL", "NA", "na")
 
 НАСТОЯЩИЕ = (
     "10 s",
@@ -62,6 +69,7 @@ from studio.selfrag.facts import load_facts
     "non-commercial",
     "none of the seeds held identity",
     "unknown-provenance checkpoint",
+    *ЛОЖНО_ОТВЕРГАЛИСЬ,
 )
 
 

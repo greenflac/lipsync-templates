@@ -208,6 +208,22 @@ IDENTITY_TIERS: tuple[str, ...] = (TIER_VENDOR, TIER_PORTAL, TIER_BLOG)
 #:
 #: ВЫБРАНО (И4): списком названы обороты, которыми не-ответ записывают
 #: по-русски и по-английски. Числа за ним нет: это не порог, а перечень.
+#:
+#: ТРИ СЛОВА ИЗ СПИСКА УБРАНЫ ПРИЁМКОЙ 2026-09-07, И ЭТО ТОТ САМЫЙ ЛОЖНЫЙ
+#: ОТКАЗ, КОТОРОГО ЗДЕСЬ БОЯЛИСЬ. `none`, `null` и `na` — настоящие значения:
+#: «none» отвечает на `requires_inputs`, `license_restriction`, `limitation`
+#: («ничего не требуется», «ограничений нет»), в базе уже стоит
+#: `flux-2-klein-9b.prompt_upsampling = 'none — no prompt upsampling on
+#: klein'`, а `NA` — код региона. Дверь их отвергала, и по её же ноте такой
+#: факт не записал бы уже никто.
+#:
+#: ПОЧЕМУ РЯДОМ ЖИВЁТ ВТОРОЙ ПОХОЖИЙ СПИСОК И ЭТО НЕ ДУБЛЬ ПО Е1.
+#: `studio/selfrag/facts.ПУСТЫЕ_ЗНАЧЕНИЯ` («other», «unknown», «n/a», «none»,
+#: «-») отвечает на ДРУГОЙ вопрос: какие значения не считать голосом при
+#: сверке источников между собой. Признак настоящего дубля — «изменишь одно,
+#: обязано измениться второе» — здесь не выполняется: `license = 'other'`
+#: (8 живых строк, это категория лицензии HuggingFace) записывать МОЖНО, а
+#: голосом при сверке она не является.
 НЕ_ОТВЕТЫ: frozenset[str] = frozenset(
     {
         "не знаю",
@@ -221,9 +237,6 @@ IDENTITY_TIERS: tuple[str, ...] = (TIER_VENDOR, TIER_PORTAL, TIER_BLOG)
         "not specified",
         "unspecified",
         "n/a",
-        "na",
-        "none",
-        "null",
         "tbd",
         "tba",
         "?",
@@ -1162,7 +1175,11 @@ def record(
         )
     if прочитано and fetch.закрыт_политикой(fields["source_url"]):
         прочитано = False
-        поправка = (
+        # `+=`, А НЕ `=`. Приёмка 2026-09-07: здесь стояло присваивание, и оно
+        # затирало пометку про зонд — ровно в самом подозрительном сочетании,
+        # где заявлены И зонд, И чтение закрытого хоста, читатель базы видел
+        # только одну претензию из двух.
+        поправка += (
             " [ЗАЯВЛЕНО ЧТЕНИЕ, НО ХОСТ ЗАКРЫТ ПОЛИТИКОЙ: последнее записанное "
             "состояние хоста — отказ, открыть его в этом окружении было нечем; "
             "флаг чтения снят]"
@@ -1205,9 +1222,14 @@ def record(
         "checked": len(fields),
         "violations": 0,
         "unmeasured": 0,
+        # ПОМЕТКА ЕДЕТ И В ОТВЕТ, А НЕ ТОЛЬКО В ФАЙЛ. Приёмка 2026-09-07:
+        # `record` отвечал `pass` и «written as a new claim», а претензия к
+        # записи оставалась в файле — то есть тот, кто записывал, её не видел
+        # и поправить не мог.
         "note": (
             f"{what}. {row['model']}.{row['attribute']} now stands at "
             f"{after['outcome']!r} across {after.get('checked', 0)} source(s)."
+            + (f" ПОМЕТКА К ЭТОЙ ЗАПИСИ:{поправка}" if поправка else "")
         ),
         "written": None if unchanged else row,
         "superseded": None if standing is None else _as_row(standing),
@@ -1555,7 +1577,10 @@ def stale(*, days: int = STALE_AFTER_DAYS, path: Path | None = None) -> dict:
             "outcome": FAIL,
             "checked": len(facts),
             "violations": len(old),
-            "unmeasured": len(undated),
+            # ЗАКРЫТЫЕ СЧИТАЮТСЯ, А НЕ ИСЧЕЗАЮТ (Р2). Приёмка 2026-09-07:
+            # строки уносились из `old` и не досчитывались никуда, поэтому
+            # ноль работы над закрытыми хостами читался как ноль проблем.
+            "unmeasured": len(undated) + len(закрытые),
             "note": (
                 f"{len(old)} claim(s) older than {days} days and {len(undated)} "
                 f"with no date at all, out of {len(facts)} checked. Search the "
@@ -1576,6 +1601,31 @@ def stale(*, days: int = STALE_AFTER_DAYS, path: Path | None = None) -> dict:
             ),
             "stale": old,
             "undated": undated,
+            "published_and_old": published,
+            "blocked_source": закрытые,
+        }
+
+    # «ВСЁ СВЕЖО» НАД ПРОТУХШИМИ СТРОКАМИ — ЭТО НЕПРАВДА, А НЕ ТРЕТИЙ ИСХОД.
+    # Приёмка 2026-09-07 воспроизвела: две строки the-decoder.com от 2024 года,
+    # обе на закрытом хосте — прибор отвечал `pass` и «all 2 claim(s) are
+    # within 90 days». Пока закрытых нет, это латентно; растёт с каждым
+    # закрываемым хостом. Р1: не «годно», а «не смогли», и сказано, чем.
+    if закрытые:
+        return {
+            "outcome": UNMEASURED,
+            "checked": len(facts),
+            "violations": 0,
+            "unmeasured": len(закрытые),
+            "note": (
+                f"из {len(facts)} утверждений протухших вне закрытых хостов нет, "
+                f"НО {len(закрытые)} строк(и) старше {days} дней стоят на хостах, "
+                "закрытых политикой окружения: перечитать их здесь НЕЧЕМ, и "
+                "обходить запрет нельзя. Это не «всё свежо» — это «свежесть "
+                "части строк не проверить». Лечится просьбой о доступе или "
+                "замером модели."
+            ),
+            "stale": [],
+            "undated": [],
             "published_and_old": published,
             "blocked_source": закрытые,
         }

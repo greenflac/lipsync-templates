@@ -39,9 +39,11 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 from typing import Any, Callable
+from urllib.parse import urlparse
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from lipsync.fork_identity import FAIL, PASS, UNMEASURED  # noqa: E402
 from studio.selfrag.facts import FactStore  # noqa: E402
 
 API = "https://huggingface.co/api/models/"
@@ -1284,9 +1286,109 @@ def записать(rows: list[dict], today: str) -> dict:
     }
 
 
+#: Хост канала — тот же, из которого он строит адреса (Е1).
+ХОСТ_КАНАЛА = WEB.split("//", 1)[1].strip("/")
+
+#: Часть адреса, по которой тред отличается от карточки. Тир решает URL, и
+#: разница между «вендор написал в спеке» и «практик написал в треде» — вся
+#: разница между capability и applicability, ради которой канал и заведён.
+ТРЕД = "/discussions/"
+
+#: Атрибуты, которые НЕ ИМЕЮТ ПРАВА стоять на треде. Лицензия, прочитанная в
+#: форуме, — не лицензия (Ц5), а «скачиваний столько-то» из чужой реплики —
+#: не число индекса. Все три канал берёт с карточки и только с неё.
+С_КАРТОЧКИ_И_ТОЛЬКО: tuple[str, ...] = ("license", "license_restriction", "adoption")
+
+#: Моделей, у которых записано ОГРАНИЧЕНИЕ лицензии и не записана сама
+#: лицензия. ИЗМЕРЕНО 2026-09-07 на закоммиченном `model_facts.jsonl`: 2 из 17.
+#: Ограничение без лицензии — половина ответа на вопрос Ц5: «нельзя вот это»
+#: без «а вообще условия такие». Пол, а не норма: накопленное числом, рост
+#: краснеет.
+ПОЛ_ОГРАНИЧЕНИЙ_БЕЗ_ЛИЦЕНЗИИ = 2
+
+
+def проверить_собранное(факты: Any = None) -> dict[str, Any]:
+    """Офлайн: годно ли УЖЕ ЗАПИСАННОЕ с HuggingFace. Сети здесь нет.
+
+    ТИР РЕШАЕТ URL, А НЕ СКРИПТ — так написано в шапке, и до сих пор это не
+    проверял никто ПОСЛЕ записи. А факт попадает в базу и мимо `advice.record`:
+    правкой файла, слиянием, переносом при канонизации имени.
+
+    Нарушения (M):
+      * утверждение с треда не в тире `blog` — опыт практика подан как спека;
+      * утверждение с карточки в тире `blog` — спека подана как форум;
+      * `license`, `license_restriction` или `adoption` стоят на треде;
+      * строка без даты источника.
+
+    Не смогли (K): модели, у которых есть ограничение лицензии и нет самой
+    лицензии. Сравнивается с полом `ПОЛ_ОГРАНИЧЕНИЙ_БЕЗ_ЛИЦЕНЗИИ`.
+    """
+    from studio.selfrag.facts import load_facts
+
+    строки = [
+        ф
+        for ф in (load_facts() if факты is None else факты)
+        if urlparse(str(ф.source_url or "")).netloc == ХОСТ_КАНАЛА
+    ]
+    if not строки:
+        return {
+            "outcome": UNMEASURED,
+            "checked": 0,
+            "violations": 0,
+            "unmeasured": 1,
+            "note": f"в базе нет ни одной строки этого канала (хост {ХОСТ_КАНАЛА})",
+        }
+    нарушения: list[str] = []
+    с_лицензией: set[str] = set()
+    с_ограничением: set[str] = set()
+    тредов = 0
+    for ф in строки:
+        тред = ТРЕД in str(ф.source_url or "")
+        тредов += 1 if тред else 0
+        if тред and ф.tier != "blog":
+            нарушения.append(f"{ф.model} {ф.attribute}: тред в тире {ф.tier!r}, а тред — blog")
+        if not тред and ф.tier == "blog":
+            нарушения.append(f"{ф.model} {ф.attribute}: карточка в тире blog")
+        if тред and ф.attribute in С_КАРТОЧКИ_И_ТОЛЬКО:
+            нарушения.append(f"{ф.model} {ф.attribute}: взято из треда, а не с карточки")
+        if not ф.stated_on:
+            нарушения.append(f"{ф.model} {ф.attribute}: без даты источника")
+        if ф.attribute == "license":
+            с_лицензией.add(ф.model)
+        elif ф.attribute == "license_restriction":
+            с_ограничением.add(ф.model)
+
+    без_лицензии = sorted(с_ограничением - с_лицензией)
+    исход = (
+        FAIL
+        if нарушения
+        else (PASS if len(без_лицензии) <= ПОЛ_ОГРАНИЧЕНИЙ_БЕЗ_ЛИЦЕНЗИИ else UNMEASURED)
+    )
+    заметка = (
+        f"строк канала {len(строки)}, из них с тредов {тредов}, с карточек "
+        f"{len(строки) - тредов}; моделей с лицензией {len(с_лицензией)}, "
+        f"с ограничением {len(с_ограничением)}, из них без самой лицензии "
+        f"{len(без_лицензии)} (пол {ПОЛ_ОГРАНИЧЕНИЙ_БЕЗ_ЛИЦЕНЗИИ})"
+    )
+    if нарушения:
+        заметка += "\n  " + "\n  ".join(нарушения[:10])
+    if len(без_лицензии) > ПОЛ_ОГРАНИЧЕНИЙ_БЕЗ_ЛИЦЕНЗИИ:
+        заметка += "\n  НОВЫЕ ограничения без лицензии: " + ", ".join(без_лицензии[:5])
+    return {
+        "outcome": исход,
+        "checked": len(строки),
+        "violations": len(нарушения),
+        "unmeasured": len(без_лицензии),
+        "note": заметка,
+    }
+
+
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("models", nargs="+", help="id вида MiniMaxAI/MiniMax-H3")
+    parser.add_argument("models", nargs="*", help="id вида MiniMaxAI/MiniMax-H3")
+    parser.add_argument(
+        "--check", action="store_true", help="без сети: проверить уже записанное с HuggingFace"
+    )
     parser.add_argument("--json", action="store_true")
     parser.add_argument(
         "--record",
@@ -1294,6 +1396,18 @@ def main(argv: list[str]) -> int:
         help="записать находки в базу через advice.record, датой источника ДАТА",
     )
     args = parser.parse_args(argv)
+
+    if args.check:
+        проверка = проверить_собранное()
+        print(проверка["note"])
+        print(
+            f"\nпроверено {проверка['checked']}\nнарушений {проверка['violations']}\n"
+            f"не смогли {проверка['unmeasured']}"
+        )
+        return 0 if проверка["outcome"] == PASS else (1 if проверка["outcome"] == FAIL else 2)
+    if not args.models:
+        parser.error("нужна хотя бы одна модель (или --check для офлайновой проверки)")
+
     rows = [survey(m) for m in args.models]
     if args.record:
         итог = записать(rows, args.record)

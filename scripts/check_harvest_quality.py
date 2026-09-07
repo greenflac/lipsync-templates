@@ -56,6 +56,7 @@ import argparse
 import re
 import sys
 from pathlib import Path
+from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -308,7 +309,7 @@ def проверить_контроль() -> tuple[int, list[str]]:
     return сошлось, беды
 
 
-def проверить(путь: Path = DEFAULT_FACTS_PATH) -> dict:
+def проверить(путь: Path = DEFAULT_FACTS_PATH) -> dict[str, Any]:
     """Вердикт гейта. Три исхода, и третий — «базы нет», а не «нарушений нет»."""
     факты = load_facts(путь)
     if not факты:
@@ -396,7 +397,7 @@ def проверить(путь: Path = DEFAULT_FACTS_PATH) -> dict:
     }
 
 
-def напечатать(вердикт: dict) -> None:
+def напечатать(вердикт: dict[str, Any]) -> None:
     """Числа рядом с исходом (Р2) и пропущенные строки поимённо."""
     for имя, итог in вердикт.get("группы", {}).items():
         помета = "" if имя in ГЕЙТЯТСЯ else "  (печатается, требования нет)"

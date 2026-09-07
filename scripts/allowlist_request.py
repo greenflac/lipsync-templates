@@ -474,13 +474,39 @@ def main() -> int:
         if group != seen_group:
             lines += [f"## {group[3:].capitalize()}", ""]
             seen_group = group
-        lines += [f"### `{host}`", "", row["why_wanted"], ""]
+        # Та же дыра, что двадцатью строками ниже (И7: чинить по форме, а не
+        # по месту) — причины может не быть и здесь.
+        причина = str(row.get("why_wanted") or "").strip()
+        lines += [
+            f"### `{host}`",
+            "",
+            причина
+            or "_причина в журнале не записана: хост попал в просьбу строкой смены состояния._",
+            "",
+        ]
 
     extra = [h for h in sorted(by_host) if h not in {w[1] for w in WANTED}]
     if extra:
         lines += ["## Recorded earlier, still wanted", ""]
         for host in extra:
-            lines += [f"### `{host}`", "", by_host[host]["why_wanted"], ""]
+            # ПРИЧИНА МОЖЕТ ОТСУТСТВОВАТЬ, И ЭТО НЕ ПОВОД РОНЯТЬ ДОКУМЕНТ.
+            # Найдено приёмкой 2026-09-07: `wanted()` берёт последнюю
+            # НЕ-incidental строку журнала, а ею бывает строка смены
+            # состояния без `why_wanted` (docs.qingque.cn,
+            # support.reddithelp.com, www.redditinc.com) — генератор падал с
+            # KeyError ДО записи файла, и просьба вообще не выпускалась с
+            # коммита edbf289. Молчащая причина хуже отсутствующего документа
+            # не бывает: печатаем её отсутствие словами.
+            причина = str(by_host[host].get("why_wanted") or "").strip()
+            lines += [
+                f"### `{host}`",
+                "",
+                причина
+                or "_причина в журнале не записана: хост попал в просьбу строкой "
+                "смены состояния. Спрашивать доступ по такой строке можно, но "
+                "стоит перепроверить, нужен ли он ещё._",
+                "",
+            ]
 
     lines += [
         "## Not part of this request",

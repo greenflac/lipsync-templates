@@ -77,10 +77,10 @@ def брифы(путь: Path = ЗАДАЧИ) -> list[dict[str, Any]]:
     return из
 
 
-def рекомендации(входы: list[dict[str, Any]]) -> tuple[Counter, Counter]:
+def рекомендации(входы: list[dict[str, Any]]) -> tuple[Counter[str], Counter[str]]:
     """(сколько раз модель выбрана, сколько раз выбрана без применимости)."""
-    выбраны: Counter = Counter()
-    без: Counter = Counter()
+    выбраны: Counter[str] = Counter()
+    без: Counter[str] = Counter()
     for вход in входы:
         итог = planner.plan(вход["brief"], creative=вход.get("creative", ""))
         for шаг in итог["steps"]:

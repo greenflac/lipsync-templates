@@ -39,6 +39,7 @@ import argparse
 import json
 import sys
 from pathlib import Path
+from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -48,7 +49,7 @@ from studio.mcp import catalog as cat  # noqa: E402
 from scripts.poll_catalogs import KEYED, POLL_PATH  # noqa: E402
 
 
-def keyed_gap(path: Path | None = None) -> dict:
+def keyed_gap(path: Path | None = None) -> dict[str, Any]:
     """Каждый закрытый ключом каталог записан как незакрытый третий исход?"""
     target = path or POLL_PATH
     if not target.exists():

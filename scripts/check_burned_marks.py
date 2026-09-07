@@ -61,6 +61,7 @@ import argparse
 import itertools
 import sys
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 
@@ -138,7 +139,7 @@ def судить_углы(медианы: dict[str, tuple[float, int]]) -> tuple
     return findings, scores
 
 
-def scan(paths: list[Path]) -> dict:
+def scan(paths: list[Path]) -> dict[str, Any]:
     if len(paths) < 3:
         return {
             "outcome": UNMEASURED,

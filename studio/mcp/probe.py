@@ -44,6 +44,7 @@ parameter ends up in a call log, a transcript and a traceback; a key read from
 from __future__ import annotations
 
 import json
+import socket
 import urllib.error
 import urllib.request
 from datetime import date
@@ -78,6 +79,29 @@ ABSURD_MIN = 1_000_000
 PROBES_PATH = Path(__file__).resolve().parents[1] / "knowledge" / "probes.jsonl"
 
 
+def _под_тестами() -> bool:
+    """Идёт ли прогон под раннером, отобравшим у процесса сеть.
+
+    ЗАЧЕМ. ВОСПРОИЗВЕДЕНО 2026-09-07, через несколько часов после того, как
+    журнал зондов был заведён: в нём оказалось 526 строк, из них 462 к
+    `api.vendor.test` и 68 к `api.klingai.com`, и НИ ОДНА не была настоящим
+    зондом. Их написали ТЕСТЫ: `probe_limit` с подменённым `urlopen` доходит
+    до записи ровно так же, как настоящий вызов.
+
+    Цена ровно та, против которой журнал и заводился: `зонд_был(
+    "api.klingai.com")` отвечал `True` — то есть журнал ПОРУЧИЛСЯ за зонд,
+    которого не было, и снял бы пометку с факта тира `probe`. Прибор, который
+    сам себе подтверждает несуществующее наблюдение, хуже отсутствующего.
+
+    Признак теста берётся у РАННЕРА, а не у имени файла или переменной среды:
+    `scripts/run_tests.py` подменяет `socket.socket` своим классом и
+    `getaddrinfo` своей функцией. Если сеть отобрана — запрос физически не мог
+    уйти, значит записывать нечего. Это Е2 в чистом виде: верим свидетельству
+    (сокета нет), а не намерению кода.
+    """
+    return type(socket.socket).__name__ == "_БезСети" or socket.socket.__name__ == "_БезСети"
+
+
 def note_probe(url: str, field: str, status: int | None, *, why_wanted: str = "") -> dict:
     """Записать состоявшийся зонд. Возвращает записанную строку или пустую.
 
@@ -86,6 +110,10 @@ def note_probe(url: str, field: str, status: int | None, *, why_wanted: str = ""
     """
     host = _host(url)
     if not host:
+        return {}
+    if _под_тестами():
+        # Запрос не уходил — записывать нечего. Молча: тест, который этого
+        # ждёт, проверяет журнал своим путём (подменив PROBES_PATH).
         return {}
     row = {
         "host": host,

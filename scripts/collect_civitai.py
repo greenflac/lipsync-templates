@@ -31,6 +31,7 @@ import json
 import sys
 from datetime import date
 from pathlib import Path
+from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -59,8 +60,107 @@ def exit_code(outcomes: list[str], written: int) -> int:
     return 2
 
 
+def проверить_собранное(path: Path | None = None) -> dict[str, Any]:
+    """Офлайн: годны ли УЖЕ СОБРАННЫЕ пары. Сети здесь нет.
+
+    ФАЙЛА В РЕПОЗИТОРИИ НЕТ И НЕ БУДЕТ (`.gitignore`, и почему — в PROVENANCE.md):
+    это чужие промпты. Поэтому на чистом клоне честный исход ровно один — «не
+    смогли», и он НЕ сворачивается в «годно». Ноль проверенных строк при нуле
+    нарушений — это отсутствие прибора, а не его успех (правило Р2); именно
+    так канал и мог бы испортиться молча.
+
+    Что считается нарушением (M), когда файл всё-таки лежит:
+      * строка не разобралась как JSON;
+      * нет любого поля из `civitai.REQUIRED_ROW_FIELDS` или оно пустое —
+        строка без своего происхождения не подлежит точному удалению;
+      * `provenance` не начинается с `civitai.PROVENANCE_PREFIX` — обращение
+        по требованию об удалении ищет строки по этому префиксу;
+      * `nsfw_level` выше потолка `civitai.MAX_NSFW_LEVEL` или не число;
+      * слов в промпте меньше `civitai.MIN_PROMPT_WORDS`;
+      * `image_url` повторяется — сбор дедуплицирует по нему, и повтор значит,
+        что дедупликация перестала работать.
+
+    Все пороги ИМПОРТИРУЮТСЯ из `studio/mcp/civitai.py` (правило Е1): вторая
+    копия потолка NSFW разъехалась бы с той, по которой строки собирались, и
+    проверка пропускала бы ровно то, что фильтр перестал ловить.
+    """
+    target = path or civitai.DEFAULT_OUTPUT_PATH
+    if not target.is_file():
+        return {
+            "outcome": UNMEASURED,
+            "checked": 0,
+            "violations": 0,
+            "unmeasured": 1,
+            "note": (
+                f"собранных пар нет: {target.name} не найден (файл не коммитится, "
+                "см. .gitignore и studio/knowledge/PROVENANCE.md) — "
+                "проверять нечего, и это НЕ «годно»"
+            ),
+        }
+    нарушения: list[str] = []
+    строк = 0
+    видели: set[str] = set()
+    for номер, строка in enumerate(target.read_text(encoding="utf-8").splitlines(), start=1):
+        строка = строка.strip()
+        if not строка or строка.startswith("//"):
+            continue
+        строк += 1
+        try:
+            запись = json.loads(строка)
+        except ValueError:
+            нарушения.append(f"строка {номер}: не JSON")
+            continue
+        if not isinstance(запись, dict):
+            нарушения.append(f"строка {номер}: не объект")
+            continue
+        for поле in civitai.REQUIRED_ROW_FIELDS:
+            if not str(запись.get(поле) or "").strip():
+                нарушения.append(f"строка {номер}: нет обязательного поля {поле}")
+        if not str(запись.get("provenance") or "").startswith(civitai.PROVENANCE_PREFIX):
+            нарушения.append(f"строка {номер}: provenance без префикса {civitai.PROVENANCE_PREFIX}")
+        уровень = запись.get("nsfw_level")
+        if not isinstance(уровень, int) or isinstance(уровень, bool):
+            нарушения.append(f"строка {номер}: nsfw_level не число")
+        elif уровень > civitai.MAX_NSFW_LEVEL:
+            нарушения.append(
+                f"строка {номер}: nsfw_level {уровень} выше потолка {civitai.MAX_NSFW_LEVEL}"
+            )
+        слов = len(str(запись.get("prompt") or "").split())
+        if слов < civitai.MIN_PROMPT_WORDS:
+            нарушения.append(f"строка {номер}: слов в промпте {слов}")
+        url = str(запись.get("image_url") or "")
+        if url and url in видели:
+            нарушения.append(f"строка {номер}: image_url повторяется")
+        видели.add(url)
+    if not строк:
+        return {
+            "outcome": UNMEASURED,
+            "checked": 0,
+            "violations": 0,
+            "unmeasured": 1,
+            "note": f"{target.name} есть, но в нём ни одной строки — проверять нечего",
+        }
+    заметка = f"собранных пар {строк}, разных изображений {len(видели)}"
+    if нарушения:
+        заметка += "\n  " + "\n  ".join(нарушения[:10])
+        if len(нарушения) > 10:
+            заметка += f"\n  ... и ещё {len(нарушения) - 10}"
+    return {
+        "outcome": FAIL if нарушения else PASS,
+        "checked": строк,
+        "violations": len(нарушения),
+        "unmeasured": 0,
+        "note": заметка,
+    }
+
+
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--check",
+        action="store_true",
+        help="без сети: проверить форму уже собранных пар (нет файла — «не смогли»)",
+    )
     parser.add_argument("--pages", type=int, default=1, help="model listing pages to walk")
     parser.add_argument("--per-page", type=int, default=20, help="models per listing page")
     parser.add_argument("--versions", type=int, default=25, help="hard ceiling on version requests")
@@ -96,6 +196,15 @@ def main(argv: list[str]) -> int:
         "--summary", action="store_true", help="report what is held, collect nothing"
     )
     args = parser.parse_args(argv)
+
+    if args.check:
+        итог = проверить_собранное()
+        print(итог["note"])
+        print(
+            f"\nпроверено {итог['checked']}\nнарушений {итог['violations']}\n"
+            f"не смогли {итог['unmeasured']}"
+        )
+        return 0 if итог["outcome"] == PASS else (1 if итог["outcome"] == FAIL else 2)
 
     path = civitai.DEFAULT_OUTPUT_PATH
     if args.summary:

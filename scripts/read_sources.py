@@ -777,6 +777,31 @@ READINGS: tuple[dict[str, object], ...] = (
     },
 )
 
+#: Поля записи о прочтении, которые этот скрипт умеет донести до
+#: `advice.record`. Список нужен потому, что поля больше НЕ распаковываются
+#: звёздочкой: неизвестный ключ обязан назваться ошибкой здесь, а не заехать
+#: молча в чужой параметр (у `record` их четырнадцать, среди них `path`).
+#: `replaces` в список не входит: он снимается со записи выше и уезжает в
+#: `advice.withdraw`, а не в `record`.
+#: DEBT(2026-09-07): у этого списка нет своего теста — набор лежит в
+#: `studio/mcp/tests`, а это чужая территория (Ц2). Мутация проверена руками в
+#: обе стороны: убрать `fix` — четыре живые записи объявляются чужими; добавить
+#: `path` — подложенный `path` проезжает молча. Тест обязан сделать владелец
+#: набора.
+ПОЛЯ_ПРОЧТЕНИЯ = frozenset(
+    {
+        "model",
+        "attribute",
+        "value",
+        "source_url",
+        "tier",
+        "stated_on",
+        "note",
+        "fix",
+        "read_directly",
+    }
+)
+
 #: Claims whose own page, once opened, does not make them. Each is
 #: `withdraw`'s arguments: the four fields that identify the claim, and why.
 WITHDRAWN: tuple[dict[str, str], ...] = (
@@ -942,7 +967,27 @@ def _canonical_attribute(attribute: str) -> str:
     каноническому имени, файл остаётся как есть. Ровно так же здесь уже
     поступают с именами моделей в `ingest_harvest.py`.
     """
-    return ATTRIBUTE_MERGES.get(str(attribute), str(attribute))
+    return str(ATTRIBUTE_MERGES.get(str(attribute), str(attribute)))
+
+
+def _замена(entry: dict[str, object]) -> tuple[str, str] | None:
+    """Пара «старое значение, причина» из записи — или `None`, если пары нет.
+
+    ЗНАНИЕ О ФОРМЕ `replaces` ЛЕЖИТ В ОДНОМ МЕСТЕ (Е1). Разбирали её двое, и
+    по-разному: `main` требовал кортеж из двух, а `check` брал `replaces[0]`
+    под `# type: ignore[index]` — на строке вместо пары он молча взял бы её
+    первую букву и сравнил с базой, то есть напечатал бы вердикт не о том.
+    Проверка теперь общая, и подавлять в ней нечего.
+    """
+    replaces = entry.get("replaces")
+    if replaces is None:
+        return None
+    if not (isinstance(replaces, tuple) and len(replaces) == 2):
+        raise TypeError(
+            f"'replaces' ждёт пару (старое значение, причина), "
+            f"а в записи {entry.get('model')!r} лежит {replaces!r}"
+        )
+    return str(replaces[0]), str(replaces[1])
 
 
 def check() -> int:
@@ -964,9 +1009,9 @@ def check() -> int:
         if key in standing:
             left.append(f"still asserted: {row['model']}.{row['attribute']} <- {row['source_url']}")
     for entry in READINGS:
-        replaces = entry.get("replaces")
-        if replaces is not None:
-            old_value = replaces[0]  # type: ignore[index]
+        замена = _замена(entry)
+        if замена is not None:
+            old_value = замена[0]
             old = claim_key(
                 str(entry["model"]),
                 _canonical_attribute(str(entry["attribute"])),
@@ -1050,19 +1095,10 @@ def main(argv: list[str]) -> int:
     print(f"\n== recording {len(READINGS)} reading(s)")
     for entry in READINGS:
         entry = dict(entry)
-        replaces = entry.pop("replaces", None)
-        if replaces is not None:
-            # Пара распаковывается ЧЕРЕЗ ЯВНЫЕ СТРОКИ, а не кортежем с
-            # `type: ignore`: молчаливое подавление проверки скрывало, что тип
-            # значения здесь неизвестен, и следующая правка узнала бы об этом
-            # от пользователя, а не от прибора.
-            if not (isinstance(replaces, tuple) and len(replaces) == 2):
-                raise TypeError(
-                    f"'replaces' ждёт пару (старое значение, причина), "
-                    f"а в записи {entry.get('model')!r} лежит {replaces!r}"
-                )
-            old_value = str(replaces[0])
-            reason = str(replaces[1])
+        замена = _замена(entry)
+        entry.pop("replaces", None)
+        if замена is not None:
+            old_value, reason = замена
             gone = advice.withdraw(
                 str(entry["model"]),
                 str(entry["attribute"]),
@@ -1076,7 +1112,31 @@ def main(argv: list[str]) -> int:
                 nothing += 1
             else:
                 failed += 1
-        out = advice.record(**entry)  # type: ignore[arg-type]
+        # ПОЛЯ НАЗВАНЫ ЯВНО — ровно по той же причине, что и у `advice.withdraw`
+        # двадцатью строками выше, и это И7: тот дефект был починен в одном
+        # месте из двух. `**entry` ехал в подпись вслепую под
+        # `# type: ignore[arg-type]`; снятое подавление назвало три параметра,
+        # куда мог заехать чужой ключ, — `str`, `bool | None` и `path: Path |
+        # None`. Пока ключи словаря совпадали с именами параметров, оно
+        # работало; переименование параметра сломало бы прибор молча.
+        чужие = set(entry) - ПОЛЯ_ПРОЧТЕНИЯ
+        if чужие:
+            raise TypeError(
+                f"запись {entry.get('model')!r} несёт поля, которые этот скрипт "
+                f"не доносит до `advice.record`: {sorted(чужие)}"
+            )
+        прочитано = entry.get("read_directly")
+        out = advice.record(
+            str(entry["model"]),
+            str(entry["attribute"]),
+            str(entry["value"]),
+            str(entry["source_url"]),
+            str(entry["tier"]),
+            str(entry["stated_on"]),
+            note=str(entry.get("note", "")),
+            fix=str(entry.get("fix", "")),
+            read_directly=None if прочитано is None else bool(прочитано),
+        )
         label = f"{entry['model']}.{entry['attribute']}"
         if out["outcome"] != PASS:
             failed += 1

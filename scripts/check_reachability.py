@@ -33,6 +33,7 @@ import argparse
 import collections
 import sys
 from pathlib import Path
+from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -54,7 +55,7 @@ from studio.selfrag.facts import load_facts  # noqa: E402
 ПОТОЛОК_ДОЛИ = 0.0
 
 
-def свести() -> dict:
+def свести() -> dict[str, Any]:
     факты = load_facts()
     if not факты:
         return {"outcome": "could not measure", "note": "база пуста или не прочиталась"}

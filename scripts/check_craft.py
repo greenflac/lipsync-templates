@@ -31,6 +31,7 @@ import argparse
 import json
 import sys
 from pathlib import Path
+from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -51,7 +52,7 @@ KNOWLEDGE_DIR = Path(__file__).resolve().parents[1] / "studio" / "knowledge"
 VERBATIM_MAX_WORDS = 15
 
 
-def _fragments(record: dict) -> list[tuple[str, str]]:
+def _fragments(record: dict[str, Any]) -> list[tuple[str, str]]:
     """Every place a record can carry somebody else's words. Both doors."""
     out: list[tuple[str, str]] = []
     for value in record.get("verbatim") or []:
@@ -69,7 +70,7 @@ ABSENT = "absent"  # a file:// pointer whose target is not on THIS machine
 NOT_EVIDENCE = "not evidence"  # neither shape
 
 
-def _checkable(item: dict) -> str:
+def _checkable(item: dict[str, Any]) -> str:
     """Can somebody go and see this for themselves — and if not, why not?
 
     An `http` URL is the common case. A `file://` pointer into this repository is
@@ -100,7 +101,7 @@ def _checkable(item: dict) -> str:
     return CITED if all((root / name).exists() for name in names) else ABSENT
 
 
-def audit(directory: Path | None = None) -> dict:
+def audit(directory: Path | None = None) -> dict[str, Any]:
     """Judge the knowledge lane. Three outcomes, and counts beside the verdict."""
     target = directory or KNOWLEDGE_DIR
     files = sorted(target.glob(CRAFT_GLOB))

@@ -39,6 +39,7 @@ import sys
 from collections.abc import Callable, Collection, Hashable
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -111,7 +112,7 @@ def overlap(left: Collection[Hashable], right: Collection[Hashable]) -> float | 
     return len(a & b) / len(union)
 
 
-def measure(channel: Channel, *, threshold: float = INVARIANT_AT) -> dict:
+def measure(channel: Channel, *, threshold: float = INVARIANT_AT) -> dict[str, Any]:
     """Один канал на всех своих парах: худший (самый инвариантный) случай.
 
     Берётся МАКСИМУМ перекрытия, а не среднее: канал, инвариантный на одной
@@ -153,7 +154,7 @@ def measure(channel: Channel, *, threshold: float = INVARIANT_AT) -> dict:
     }
 
 
-def judge(results: list[dict], known: dict[str, str]) -> dict:
+def judge(results: list[dict[str, Any]], known: dict[str, str]) -> dict[str, Any]:
     """Сводный вердикт по каналам, с известными нарушителями отдельной графой.
 
     Известный нарушитель НЕ красит сборку, но и не читается как успех: он
@@ -217,7 +218,7 @@ def live_channels() -> list[Channel]:
     """
 
     def advice_list(
-        field: str, key: Callable[[dict], Hashable]
+        field: str, key: Callable[[dict[str, Any]], Hashable]
     ) -> Callable[[str], Collection[Hashable]]:
         """Поле-список из `advise`, свёрнутое к множеству устойчивых ключей."""
 
@@ -235,10 +236,15 @@ def live_channels() -> list[Channel]:
         return set(advice.advise(model)["claims"])
 
     def knowledge_examples(text: str) -> Collection[Hashable]:
-        # `# type: ignore` не от лени: рядом с `studio/knowledge.py` лежит
+        # DEBT(2026-09-07): ЕДИНСТВЕННОЕ оставленное подавление на всей
+        # территории приборов. `# type: ignore` не от лени: рядом с `studio/knowledge.py` лежит
         # каталог `studio/knowledge/` с данными, и mypy видит namespace-пакет
         # вместо модуля. На исполнении выигрывает модуль — проверено прогоном
         # этого гейта, — а разводить два имени в чужом коде запрещает Ц2.
+        # Проверено 2026-09-07 снятием: без подавления шаг краснеет
+        # `Module has no attribute "retrieve"`, то есть подавление живое, а не
+        # унаследованный мусор. Настоящая починка — переименовать каталог
+        # данных или завести `studio/__init__.py`, и то и другое вне территории.
         from studio import knowledge
 
         return {example["id"] for example in knowledge.retrieve(text)["examples"]}  # type: ignore[attr-defined]

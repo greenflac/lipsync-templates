@@ -102,5 +102,36 @@ class ЗакрытыйИсточникОтделён(unittest.TestCase):
         self.assertNotIn("закрытых политикой", итог["note"])
 
 
+class ВсеПротухшиеЗакрытыЭтоНеУспех(unittest.TestCase):
+    """Найдено приёмкой 2026-09-07 и воспроизведено ею же.
+
+    Строки уносились из `stale` и не досчитывались никуда, поэтому случай «все
+    протухшие стоят на закрытых хостах» давал `pass` и ноту «all 2 claim(s)
+    are within 90 days» — прямую неправду над строками 2024 года. Р2 дословно:
+    ноль нарушений при нуле отработавших проверок — не успех.
+    """
+
+    def _очередь_только_закрытых(self) -> dict:
+        база = _база(("the-decoder.com", "the-decoder.com"))
+        with mock.patch.object(fetch, "DENIED_PATH", _журнал(("the-decoder.com",))):
+            return advice.stale(path=база)
+
+    def test_исход_не_годно_и_не_pass(self) -> None:
+        итог = self._очередь_только_закрытых()
+        self.assertEqual("could not measure", итог["outcome"], итог)
+
+    def test_числа_сходятся(self) -> None:
+        итог = self._очередь_только_закрытых()
+        self.assertEqual(2, итог["checked"])
+        self.assertEqual(2, итог["unmeasured"], "закрытые обязаны считаться, а не исчезать")
+        self.assertEqual(2, len(итог["blocked_source"]))
+        self.assertEqual([], итог["stale"])
+
+    def test_нота_не_говорит_что_всё_свежо(self) -> None:
+        нота = self._очередь_только_закрытых()["note"]
+        self.assertNotIn("are within", нота)
+        self.assertIn("перечитать их здесь НЕЧЕМ", нота)
+
+
 if __name__ == "__main__":
     unittest.main()

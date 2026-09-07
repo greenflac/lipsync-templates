@@ -35,6 +35,7 @@ import re
 import subprocess
 import sys
 from pathlib import Path
+from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -159,7 +160,7 @@ def модули() -> list[Path]:
 ПОТОЛОК = 9
 
 
-def свести(потолок: int | None = None) -> dict:
+def свести(потолок: int | None = None) -> dict[str, Any]:
     """Итог. `outcome` считается ОТНОСИТЕЛЬНО ПОТОЛКА, а не по наличию долга.
 
     Печаталось `fail` при долге ровно по потолку — и возвращался ноль. Флаг и

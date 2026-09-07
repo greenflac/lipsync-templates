@@ -39,6 +39,7 @@ from __future__ import annotations
 import argparse
 import sys
 from pathlib import Path
+from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -90,7 +91,7 @@ from studio import verbatim as vb  # noqa: E402
 ПОЛ_ИМЁН = 0
 
 
-def свести(корень: Path) -> dict:
+def свести(корень: Path) -> dict[str, Any]:
     """Все книги знания одним числом. Вынесено из main (Т5)."""
     книги = vb.книги(корень)
     if not книги:

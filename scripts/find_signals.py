@@ -2,6 +2,7 @@
 """What did the readers who were RIGHT see that the readers who were WRONG did not?
 
     python scripts/find_signals.py
+    python scripts/find_signals.py --check   # без сети: связен ли снятый прогон
 
 THE POINT OF THE WHOLE BENCH
 
@@ -27,10 +28,11 @@ import json
 import re
 import sys
 from pathlib import Path
+from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from lipsync.fork_identity import PASS, UNMEASURED  # noqa: E402
+from lipsync.fork_identity import FAIL, PASS, UNMEASURED  # noqa: E402
 
 BANK = Path(__file__).resolve().parents[1] / "work" / "casebank"
 
@@ -82,7 +84,143 @@ def перекошенные(
     return найдено
 
 
+#: Файлы прогона, без которых короткий список не из чего строить. Имена ровно
+#: те, что читает `main` ниже: второй список имён разъехался бы с первым.
+ФАЙЛЫ_БАНКА: tuple[str, ...] = ("TRUTH.json", "ANSWERS.json", "SCORE.json", "BLIND_MAP.json")
+
+
+def проверить_собранное(bank: Path | None = None) -> dict[str, Any]:
+    """Офлайн: связен ли УЖЕ СНЯТЫЙ прогон банка. Сети здесь нет.
+
+    БАНКА В РЕПОЗИТОРИИ НЕТ (`work/` в `.gitignore`), поэтому на чистом клоне и
+    в CI честный исход ровно один — «не смогли». Ноль проверенных разборов при
+    нуле нарушений успехом не считается (правило Р2).
+
+    ЧТО ЛОВИТ. Короткий список строится СКЛЕЙКОЙ трёх файлов: счёт знает разбор
+    под настоящим именем, ответы — под слепым, а карта `BLIND_MAP` связывает
+    одно с другим. Разъехалась карта — и `answers.get(...)` молча не находит
+    ничего: `hits + misses` падает, скрипт печатает короткий список по
+    оставшимся разборам и НЕ говорит, что половину он не нашёл. Здесь эта
+    склейка проверяется по числам до того, как из неё что-то посчитано.
+
+    Нарушения (M):
+      * файл банка не разобрался как JSON или лежит не тем типом;
+      * строка счёта без обязательных полей (`case_id`, `answered`, `family_hit`);
+      * два слепых имени указывают на один и тот же разбор;
+      * ОТВЕЧЕННАЯ строка счёта, которой не соответствует ни один ответ, —
+        это и есть разъехавшаяся склейка.
+
+    Не смогли (K): нет банка; или в банке нет ни одного отвеченного разбора —
+    считать не из чего, и это не «годно».
+    """
+    каталог = BANK if bank is None else bank
+    нет = [и for и in ФАЙЛЫ_БАНКА if not (каталог / и).is_file()]
+    if нет:
+        return {
+            "outcome": UNMEASURED,
+            "checked": 0,
+            "violations": 0,
+            "unmeasured": len(нет),
+            "note": (
+                f"прогона банка нет: в {каталог} не найдено {', '.join(нет)} "
+                "(каталог work/ не коммитится) — проверять нечего, и это НЕ «годно»"
+            ),
+        }
+    прочитано: dict[str, Any] = {}
+    for имя in ФАЙЛЫ_БАНКА:
+        try:
+            прочитано[имя] = json.loads((каталог / имя).read_text(encoding="utf-8"))
+        except ValueError:
+            return {
+                "outcome": FAIL,
+                "checked": 0,
+                "violations": 1,
+                "unmeasured": 0,
+                "note": f"{имя} не разобрался как JSON",
+            }
+    счёт = прочитано["SCORE.json"]
+    ответы = прочитано["ANSWERS.json"]
+    карта = прочитано["BLIND_MAP.json"]
+    if not isinstance(счёт, dict) or not isinstance(счёт.get("rows"), list):
+        return {
+            "outcome": FAIL,
+            "checked": 0,
+            "violations": 1,
+            "unmeasured": 0,
+            "note": "SCORE.json без списка rows",
+        }
+    if not isinstance(ответы, list) or not isinstance(карта, dict):
+        return {
+            "outcome": FAIL,
+            "checked": 0,
+            "violations": 1,
+            "unmeasured": 0,
+            "note": "ANSWERS.json обязан быть списком, BLIND_MAP.json — объектом",
+        }
+
+    нарушения: list[str] = []
+    настоящие: dict[str, dict] = {}
+    for ответ in ответы:
+        слепое = str((ответ or {}).get("case_id") or "")
+        настоящее = str(карта.get(слепое, слепое))
+        if настоящее in настоящие:
+            нарушения.append(f"два слепых имени указывают на один разбор {настоящее}")
+        настоящие[настоящее] = ответ if isinstance(ответ, dict) else {}
+
+    отвеченных = 0
+    for строка in счёт["rows"]:
+        if not isinstance(строка, dict) or not all(
+            п in строка for п in ("case_id", "answered", "family_hit")
+        ):
+            нарушения.append(f"строка счёта без обязательных полей: {str(строка)[:60]}")
+            continue
+        if not строка["answered"]:
+            continue
+        отвеченных += 1
+        ответ = настоящие.get(str(строка["case_id"]))
+        if ответ is None:
+            нарушения.append(f"отвеченный разбор {строка['case_id']} без ответа в ANSWERS")
+        elif not (ответ.get("observed") or []):
+            нарушения.append(f"ответ {строка['case_id']} без observed — считать не из чего")
+
+    проверено = len(счёт["rows"])
+    # НАРУШЕНИЕ СИЛЬНЕЕ НЕИЗМЕРИМОСТИ. Битые строки счёта не дают ни одного
+    # отвеченного разбора, и без этой ветки «файл испорчен» вышло бы наружу
+    # как «считать не из чего» — то есть Р1 наоборот: не годно свернулось бы
+    # в не смогли.
+    if not отвеченных and not нарушения:
+        return {
+            "outcome": UNMEASURED,
+            "checked": проверено,
+            "violations": len(нарушения),
+            "unmeasured": 1,
+            "note": f"строк счёта {проверено}, отвеченных 0 — считать не из чего",
+        }
+    заметка = (
+        f"строк счёта {проверено}, отвеченных {отвеченных}, "
+        f"ответов {len(ответы)}, слепых имён в карте {len(карта)}"
+    )
+    if нарушения:
+        заметка += "\n  " + "\n  ".join(нарушения[:10])
+    return {
+        "outcome": FAIL if нарушения else PASS,
+        "checked": проверено,
+        "violations": len(нарушения),
+        "unmeasured": 0,
+        "note": заметка,
+    }
+
+
 def main() -> int:
+    if "--check" in sys.argv[1:]:
+        итог = проверить_собранное()
+        print(итог["note"])
+        print(
+            f"\nпроверено {итог['checked']}\nнарушений {итог['violations']}\n"
+            f"не смогли {итог['unmeasured']}"
+        )
+        return 0 if итог["outcome"] == PASS else (1 if итог["outcome"] == FAIL else 2)
+
     truth_path, answers_path, score_path = (
         BANK / "TRUTH.json",
         BANK / "ANSWERS.json",

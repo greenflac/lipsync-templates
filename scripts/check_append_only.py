@@ -25,13 +25,14 @@ from __future__ import annotations
 import argparse
 import sys
 from pathlib import Path
+from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from studio import appendonly as ao  # noqa: E402
 
 
-def контроль() -> dict:
+def контроль() -> dict[str, Any]:
     """Обе половины негативного контроля, на ФИКСТУРАХ (И5).
 
     Фикстуры, а не история этого репозитория: CI клонирует с `fetch-depth: 1`,
@@ -66,7 +67,7 @@ def контроль() -> dict:
     }
 
 
-def известные() -> dict:
+def известные() -> dict[str, Any]:
     """Четыре нарушения, ИЗМЕРЕННЫЕ в истории этого репозитория (И6).
 
     Третий исход здесь настоящий и частый: при мелком клоне (`fetch-depth: 1`,

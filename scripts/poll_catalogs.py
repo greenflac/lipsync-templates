@@ -42,7 +42,7 @@ from typing import Any, Callable
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from lipsync.fork_identity import PASS, UNMEASURED  # noqa: E402
+from lipsync.fork_identity import FAIL, PASS, UNMEASURED  # noqa: E402
 
 from studio.mcp import catalog as cat  # noqa: E402
 
@@ -358,10 +358,148 @@ def report(summary: dict[str, Any], wrote: int | None) -> int:
     return 0
 
 
+#: Поля сводки опроса, без которых её не с чем сверять. Отсутствие любого —
+#: нарушение формы, а не «пустой опрос»: файл, потерявший `channels_asked`,
+#: молча превращает «ответили 2 из 6» в «ответили 2».
+ПОЛЯ_СВОДКИ: tuple[str, ...] = (
+    "channels",
+    "channels_asked",
+    "channels_answered",
+    "keyed_out",
+    "checked",
+)
+
+
+def проверить_собранное(
+    poll_path: Path = POLL_PATH,
+    catalog_path: Path | None = None,
+) -> dict[str, Any]:
+    """Офлайн: сходится ли СВОДКА опроса с самим КАТАЛОГОМ. Сети здесь нет.
+
+    Канал пишет два файла — сводку (`catalog_poll.json`) и индекс
+    (`catalog.jsonl`), — и до сих пор ни один гейт не спрашивал, говорят ли они
+    одно и то же. Расхождение между флагом и свидетельством — правило Е2, и
+    здесь свидетельство это САМ каталог: если сводка объявляет 395 записей
+    openrouter, а в каталоге их 12, то верна вторая цифра, а первая — рассказ.
+
+    Что считается нарушением (M):
+      * сводка не разобралась или потеряла обязательное поле;
+      * канал объявлен ответившим, а его записей в каталоге другое число;
+      * каталог несёт битую строку или запись вне схемы (`catalog.validate`);
+      * каталог, у которого нет ключа (`KEYED`), ИСЧЕЗ из списка незакрытых —
+        то самое сворачивание третьего исхода во второй, ради которого этот
+        список и заведён.
+
+    Что считается «не смогли» (K): каталоги без ключа — их ровно `len(KEYED)`,
+    они названы поимённо и с наблюдённым кодом, — плюс каналы, которые
+    спрашивали и которые не ответили. Первое число известно и постоянно,
+    второе обязано быть нулём: неполный опрос не есть полный каталог.
+    """
+    if not poll_path.is_file():
+        return {
+            "outcome": UNMEASURED,
+            "checked": 0,
+            "violations": 0,
+            "unmeasured": 1,
+            "note": f"опроса каталогов нет: {poll_path.name} не найден",
+        }
+    try:
+        сводка = json.loads(poll_path.read_text(encoding="utf-8"))
+    except ValueError:
+        return {
+            "outcome": FAIL,
+            "checked": 0,
+            "violations": 1,
+            "unmeasured": 0,
+            "note": f"{poll_path.name} не разобрался как JSON",
+        }
+    нет_полей = [п for п in ПОЛЯ_СВОДКИ if п not in сводка]
+    if нет_полей:
+        return {
+            "outcome": FAIL,
+            "checked": 0,
+            "violations": len(нет_полей),
+            "unmeasured": 0,
+            "note": f"{poll_path.name} без полей: {', '.join(нет_полей)}",
+        }
+
+    записи, битые = cat.read_catalog(catalog_path)
+    if not записи and битые:
+        return {
+            "outcome": UNMEASURED,
+            "checked": 0,
+            "violations": 0,
+            "unmeasured": 1,
+            "note": f"каталога нет или он нечитаем: {битые[0]}",
+        }
+
+    в_каталоге: dict[str, int] = {}
+    вне_схемы = 0
+    for запись in записи:
+        имя = str(запись.get("catalog") or "")
+        в_каталоге[имя] = в_каталоге.get(имя, 0) + 1
+        if cat.validate(запись):
+            вне_схемы += 1
+
+    нарушения: list[str] = list(битые)
+    if вне_схемы:
+        нарушения.append(f"записей вне схемы каталога: {вне_схемы}")
+    for канал in сводка["channels"]:
+        имя = str(канал.get("catalog") or "")
+        объявлено = int(канал.get("records") or 0)
+        лежит = в_каталоге.get(имя, 0)
+        if объявлено != лежит:
+            нарушения.append(f"{имя}: сводка объявляет {объявлено}, в каталоге {лежит}")
+    названы = {str(к.get("catalog") or "") for к in сводка["keyed_out"]}
+    пропали = sorted(set(KEYED) - названы)
+    for имя in пропали:
+        нарушения.append(f"каталог без ключа {имя} исчез из списка незакрытых")
+
+    спрошено = int(сводка["channels_asked"] or 0)
+    ответило = int(сводка["channels_answered"] or 0)
+    не_ответило = max(0, спрошено - ответило)
+    не_смогли = len(KEYED) + не_ответило
+    проверено = len(записи) + len(сводка["channels"]) + len(KEYED)
+
+    исход = FAIL if нарушения else (UNMEASURED if не_ответило else PASS)
+    заметка = (
+        f"опрос {сводка.get('polled_on', 'без даты')}: каналов {спрошено}, "
+        f"ответили {ответило}, записей в каталоге {len(записи)}; "
+        f"без ключа и потому не измерены {len(KEYED)} "
+        f"({', '.join(sorted(KEYED))})"
+    )
+    if нарушения:
+        заметка += "\n  " + "\n  ".join(нарушения[:10])
+    if не_ответило:
+        заметка += (
+            f"\n  НЕПОЛНЫЙ ОПРОС: не ответили {не_ответило} канал(ов) — "
+            "каталог ниже есть счёт по спрошенному, а не по рынку"
+        )
+    return {
+        "outcome": исход,
+        "checked": проверено,
+        "violations": len(нарушения),
+        "unmeasured": не_смогли,
+        "note": заметка,
+    }
+
+
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--dry-run", action="store_true", help="опросить и не писать файлы")
+    parser.add_argument(
+        "--check", action="store_true", help="без сети: сверить сводку опроса с каталогом"
+    )
     args = parser.parse_args(argv)
+
+    if args.check:
+        итог = проверить_собранное()
+        print(итог["note"])
+        print(
+            f"\nпроверено {итог['checked']}\nнарушений {итог['violations']}\n"
+            f"не смогли {итог['unmeasured']}"
+        )
+        return 0 if итог["outcome"] == PASS else (1 if итог["outcome"] == FAIL else 2)
 
     polls = [poll_openrouter(), poll_deepinfra()]
     records = [r for poll in polls for r in poll["records"]]
