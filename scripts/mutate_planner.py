@@ -107,6 +107,9 @@ ROOT = Path(__file__).resolve().parents[1]
     # Запрет операции словами и имя живого человека (2026-09-07).
     "studio.tests.test_customer_forbade_a_step",
     "studio.tests.test_named_person_is_not_ours",
+    # Сторожа гейта `check_main_is_last` (2026-09-08). Гейт сам оказался
+    # модулем с константой-решения без мутантов — прибор без охраны.
+    "studio.tests.test_main_is_last_gate",
     # Ступень «чисто по бедности» живёт в другом каталоге, а сторожит её
     # константу планировщика — без этой строки мутант молчал (десятая приёмка).
     "studio.mcp.tests.test_clean_by_poverty",
@@ -1111,8 +1114,8 @@ MUTANTS = [
     ),
     (
         "studio/planner.py",
-        '    return re.search(rf"\\b{re.escape(cue)}{хвост}\\b", без_имён) is not None',
-        '    return re.search(rf"\\b{re.escape(cue)}{хвост}\\b", низ) is not None',
+        '    м = re.search(rf"\\b{re.escape(cue)}{хвост}\\b", без_имён)',
+        '    м = re.search(rf"\\b{re.escape(cue)}{хвост}\\b", низ)',
         "подсказки: имена собственные снова ищутся — «Talking Tom» заказывает липсинк",
     ),
     (
@@ -1217,6 +1220,57 @@ MUTANTS = [
         "        if not нужен_выход & output_kinds(свои):",
         "        if False:",
         "поиск по форме -> слабее: выход перестал совпадать",
+    ),
+    # --- строчная вывеска перед подсказкой (заведено 2026-09-08) ----------
+    (
+        "studio/planner.py",
+        "    return bool(слова) and any(слова[-1].startswith(с) for с in ВЫВЕСКА_ВПЕРЕДИ)",
+        "    return False",
+        "строчная вывеска -> слабее: «промо студии sfx masters» снова заказывает работу",
+    ),
+    (
+        "studio/planner.py",
+        "    слова = низ[:место].split()",
+        "    слова = низ[max(0, место - 24) : место].split()",
+        "строчная вывеска -> строже: окно назад съедает «реклама сети кофеен, нужен talking head»",
+    ),
+    # --- бриф в печати (заведено 2026-09-08) ------------------------------
+    (
+        "studio/planner.py",
+        '        f"бриф: {итог[\'brief\']}"\n        if "brief" in итог',
+        "        f\"бриф: {итог.get('brief_words', 0)} слов(а)\"\n        if False",
+        "печать брифа -> слабее: заказчик никогда не видит своих же слов",
+    ),
+    # --- гейт «main последним» (заведено 2026-09-08) ------------------------
+    (
+        "scripts/check_main_is_last.py",
+        "ТЕРЯЕТСЯ = (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)",
+        "ТЕРЯЕТСЯ = (ast.ClassDef,)",
+        "main последним -> слабее: функция после main перестаёт считаться потерей",
+    ),
+    (
+        "scripts/check_main_is_last.py",
+        "ТЕРЯЕТСЯ = (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)",
+        "ТЕРЯЕТСЯ = (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef, ast.Assign)",
+        "main последним -> строже: безвредное присваивание объявляется бедой",
+    ),
+    (
+        "scripts/check_main_is_last.py",
+        "    elif len(беды) > порог:",
+        "    elif False:",
+        "main последним -> слабее: долг растёт, а исход всегда «годно»",
+    ),
+    (
+        "scripts/check_main_is_last.py",
+        "ПОТОЛОК = 34",
+        "ПОТОЛОК = 999",
+        "main последним -> слабее: записанный долг перестаёт быть храповиком",
+    ),
+    (
+        "scripts/check_main_is_last.py",
+        "        место = _строка_main(дерево)",
+        "        место = -1",
+        "main последним -> слабее: хвост не смотрится ни в одном файле",
     ),
 ]
 
