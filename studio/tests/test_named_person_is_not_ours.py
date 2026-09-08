@@ -222,5 +222,119 @@ class ДетиВКадреИДетиВЗале(unittest.TestCase):
         )
 
 
+class ПослаблениеНеСнимаетЗаслон(unittest.TestCase):
+    """ЧЕТЫРЕ РЕГРЕССИИ ОДНОГО КОММИТА, найденные двенадцатой приёмкой.
+
+    Все три послабления предыдущей волны — профессия без имени, «для» как
+    аудитория, предлог места — открывали дыру ровно на том входе, ради
+    которого сторож и существует. Набор держит обе стороны каждого из них:
+    послабление обязано работать И обязано кончаться.
+    """
+
+    def test_профессия_рядом_с_именем_это_человек(self) -> None:
+        """Глагола появления в брифе нет, и обе половины сторожа молчали.
+
+        «a video of singer Elon Musk» уходило с пустыми banned и risks.
+        """
+        итог = screen.просеять("a video of singer Elon Musk")
+        self.assertEqual(итог["banned"], ["recognisable third parties: singer"])
+
+    def test_профессия_рядом_с_русским_именем(self) -> None:
+        self.assertEqual(
+            screen.просеять("music video with the singer Taylor Swift")["banned"],
+            ["recognisable third parties: singer"],
+        )
+
+    def test_роль_без_имени_по_прежнему_проходит(self) -> None:
+        """Негативный контроль (И5): починка не должна вернуть ложный отказ."""
+        self.assertEqual(
+            screen.просеять("Music video, singer lipsyncing to my track")["banned"], []
+        )
+
+    def test_предлог_без_слова_съёмки_ничего_не_снимает(self) -> None:
+        """«в», «in», «from» — самые частые предлоги языка; сами по себе они
+        сторож имени не отключают."""
+        for бриф in (
+            "promo in Elon Musk style, he speaks our slogan",
+            "ролик в Киану Ривз рассказывает про банк",
+            "advert from Taylor Swift, she says our slogan",
+        ):
+            self.assertNotEqual([], screen.просеять(бриф)["risks"], бриф)
+
+    def test_предлог_со_словом_съёмки_снимает(self) -> None:
+        """Другая сторона: ради этого входа правило и заводилось."""
+        self.assertEqual(screen.просеять("already shot in New York, need lipsync")["risks"], [])
+        self.assertEqual(
+            screen.просеять("ролик снят в Нижнем Новгороде, нужен липсинк")["risks"], []
+        )
+
+    def test_дети_в_кадре_сильнее_предлога_аудитории(self) -> None:
+        """«для» называет зрителя — но не тогда, когда сказано «в кадре»."""
+        self.assertEqual(screen.просеять("видео для детей в кадре")["banned"], ["minors: детей"])
+        self.assertEqual(
+            screen.просеять("клип для детей 10 лет, снимаем их в студии")["banned"],
+            ["minors: детей"],
+        )
+
+    def test_без_предлога_аудитории_послабление_вообще_не_включается(self) -> None:
+        """И5 с другой стороны: слово группы БЕЗ «для» — запрет всегда.
+
+        Поймано ручной мутацией 2026-09-08: мутант «развилка про предлог
+        снята» молчал, потому что все фикстуры набора содержали оборот кадра и
+        закрывались им. Здесь оборота нет — работает только предлог.
+        """
+        self.assertEqual(
+            screen.просеять("ролик, где дети читают стихи")["banned"], ["minors: дети"]
+        )
+
+    def test_английские_дети_в_кадре_тоже(self) -> None:
+        self.assertEqual(
+            screen.просеять("clip for children on camera")["banned"], ["minors: children"]
+        )
+
+    def test_аудитория_без_кадра_по_прежнему_проходит(self) -> None:
+        """Негативный контроль к трём выше."""
+        self.assertEqual(
+            screen.просеять("Обучающий ролик для детей 5 лет, говорящий зайчик")["banned"], []
+        )
+        self.assertEqual(screen.просеять("educational clip for kids about space")["banned"], [])
+
+    def test_название_роли_не_действие_человека(self) -> None:
+        """`present` основой сидело внутри `presenter`, и «Burger King»
+        объявлялся живым человеком."""
+        итог = screen.просеять("promo for Burger King, talking head presenter")
+        self.assertEqual(итог["outcome"], "pass")
+        self.assertEqual(итог["risks"], [])
+
+    def test_слово_темы_внутри_названия_это_название(self) -> None:
+        self.assertEqual(screen.просеять("promo for Burger King, 30 seconds")["banned"], [])
+
+    def test_то_же_слово_вне_названия_снова_тема(self) -> None:
+        """И5: послабление кончается, как только слово стоит само по себе."""
+        self.assertIn(
+            "recognisable third parties: king",
+            screen.просеять("Burger King, нужен king в кадре")["banned"],
+        )
+
+    def test_родовое_слово_внутри_пары_не_человек(self) -> None:
+        """«Сбер Банка» — не живой человек, хотя пара заглавных налицо."""
+        self.assertEqual(screen.просеять("реклама Сбер Банка, диктор читает текст")["risks"], [])
+
+    def test_известность_через_пробел_ловится(self) -> None:
+        """`привести` заменяет дефис пробелом: `well-known` не находилось никогда."""
+        self.assertEqual(
+            screen.просеять("a well known singer lipsyncing to my track")["banned"],
+            ["recognisable third parties: singer"],
+        )
+
+    def test_внутренняя_метка_не_доезжает_до_заказчика(self) -> None:
+        """В совете стояло «Кроме того: medical claim: диабет + излечива»."""
+        совет = screen.просеять("ролик, где Киану Ривз говорит, что наш БАД излечивает диабет")[
+            "note"
+        ]
+        self.assertNotIn("medical claim", совет)
+        self.assertIn("медицинское", совет.lower())
+
+
 if __name__ == "__main__":
     unittest.main()

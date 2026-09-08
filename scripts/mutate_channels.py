@@ -3237,28 +3237,25 @@ MUTANTS: list[tuple[str, str, str, str, str]] = [
     (
         "studio/mcp/screen.py",
         "    if any(о in низ for о in ИЗВЕСТНОСТЬ):\n        return False",
-        "    if False:\n        return False",
+        "    if False and any(о in низ for о in ИЗВЕСТНОСТЬ):\n        return False",
         "просев: «a video with a famous singer» проходит — послабление стало снятым заслоном",
         "studio.tests.test_named_person_is_not_ours",
     ),
+    # МУТАНТ СНЯТ 2026-09-08: он оказался эквивалентным (см. комментарий в
+    # `_роль_без_имени`), то есть измерял ноль и молчал не потому, что охрана
+    # крепка. Развилку «имя рядом с ролью» красит соседний мутант на
+    # `_ИМЯ_ФАМИЛИЯ.search`.
     (
         "studio/mcp/screen.py",
-        "    return not _люди_в_заказе(текст)",
-        "    return True",
-        "просев: названное имя рядом с ролью больше не возвращает заслон",
-        "studio.tests.test_named_person_is_not_ours",
-    ),
-    (
-        "studio/mcp/screen.py",
-        "    return место > 0 and по_порядку[место - 1] in АУДИТОРИЯ_ВПЕРЕДИ",
-        "    return False",
+        "    if место <= 0 or по_порядку[место - 1] not in АУДИТОРИЯ_ВПЕРЕДИ:",
+        "    if True:",
         "просев: «обучающий ролик для детей» снова отказ по несовершеннолетним",
         "studio.tests.test_named_person_is_not_ours",
     ),
     (
         "studio/mcp/screen.py",
-        "    return место > 0 and по_порядку[место - 1] in АУДИТОРИЯ_ВПЕРЕДИ",
-        "    return True",
+        "    if место <= 0 or по_порядку[место - 1] not in АУДИТОРИЯ_ВПЕРЕДИ:",
+        "    if False:",
         "просев: ребёнок В КАДРЕ перестаёт быть запретом — послабление съело группу",
         "studio.tests.test_named_person_is_not_ours",
     ),
@@ -3299,7 +3296,7 @@ MUTANTS: list[tuple[str, str, str, str, str]] = [
     ),
     (
         "studio/mcp/screen.py",
-        "        if слова_до and слова_до[-1] in МЕСТО_ВПЕРЕДИ:",
+        "        if если_место:",
         "        if False:",
         "просев: «filmed in New York» получает предупреждение о правах живого человека",
         "studio.tests.test_named_person_is_not_ours",
@@ -3318,6 +3315,57 @@ MUTANTS: list[tuple[str, str, str, str, str]] = [
         "    подделка = []",
         "просев: риск подделки поднят, а совет о нём молчит — счётчик без слов",
         "studio.mcp.tests.test_claim_is_the_customers_own",
+    ),
+    # ПОСЛАБЛЕНИЯ, КОТОРЫЕ ЧУТЬ НЕ СТАЛИ СНЯТЫМИ ЗАСЛОНАМИ (2026-09-08,
+    # двенадцатая приёмка нашла четыре регрессии предыдущего коммита).
+    (
+        "studio/mcp/screen.py",
+        '    if _ИМЯ_ФАМИЛИЯ.search(str(текст or "")):\n        return False',
+        "    if False:\n        return False",
+        "просев: «a video of singer Elon Musk» снова проходит молча",
+        "studio.tests.test_named_person_is_not_ours",
+    ),
+    (
+        "studio/mcp/screen.py",
+        "            and any(слова_до[-2].startswith(с) for с in СЪЁМКА_ПЕРЕД_МЕСТОМ)",
+        "            and True",
+        "просев: восемь предлогов снова отключают сторож имени",
+        "studio.tests.test_named_person_is_not_ours",
+    ),
+    (
+        "studio/mcp/screen.py",
+        "    return not any(о in низ for о in ОБОРОТ_КАДРА)",
+        "    return True",
+        "просев: «видео для детей В КАДРЕ» снова проходит по слову «для»",
+        "studio.tests.test_named_person_is_not_ours",
+    ),
+    (
+        "studio/mcp/screen.py",
+        "    return not any(о in низ for о in ОБОРОТ_КАДРА)",
+        "    return False",
+        "просев: оборот кадра съел послабление — детский обучающий снова отказ",
+        "studio.tests.test_named_person_is_not_ours",
+    ),
+    (
+        "studio/mcp/screen.py",
+        "        and not _признак_это_имя(м, строка)",
+        "        and not False",
+        "просев: «Burger King» снова отказывается по слову king",
+        "studio.tests.test_named_person_is_not_ours",
+    ),
+    (
+        "studio/mcp/screen.py",
+        '    вне = _ИМЯ_ФАМИЛИЯ.sub(" ", строка)',
+        '    вне = ""',
+        "просев: слово темы ВНЕ названия перестало быть темой",
+        "studio.tests.test_named_person_is_not_ours",
+    ),
+    (
+        "studio/mcp/screen.py",
+        '        if any(с.lower().strip(".,").startswith(н) for с in пара.split() for н in НЕ_ЧЕЛОВЕК):',
+        "        if False:",
+        "просев: «Сбер Банка» снова живой человек с правами на образ",
+        "studio.tests.test_named_person_is_not_ours",
     ),
 ]
 
