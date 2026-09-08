@@ -266,6 +266,9 @@ print(out["note"])
 sys.exit(0 if out["outcome"] == "pass" else 1)
 PY
 
+step "main стоит последним в файле теста"
+python scripts/check_main_is_last.py --check > /dev/null
+
 step "whitelist request classifies every refusal"
 python scripts/whitelist_request.py --check > /dev/null
 

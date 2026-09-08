@@ -266,10 +266,6 @@ class ИнструментыОтказываютНаВходе(unittest.TestCase
         self.assertTrue(итог.get("steps"))
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class ЗапросПромптаПросеиваетсяТакЖе(unittest.TestCase):
     """НАЙДЕНО девятой приёмкой 2026-09-07: та же строка `if просев["outcome"]
     != PASS:` жила в файле дважды, и починка попадала в одно место из двух.
@@ -305,3 +301,28 @@ class ЗапросПромптаПросеиваетсяТакЖе(unittest.Test
         """И5: дверь, отвергающая всё, ловит ноль настоящих заказов."""
         итог = json.loads(server.write_lipsync_prompt("тёплый янтарный свет на тихой крыше"))
         self.assertNotEqual("fail", итог["outcome"])
+
+
+class ИмяГруппыПокрываетЕёСодержимое(unittest.TestCase):
+    """Правка `ПО_АНГЛИЙСКИ["adult content"]` не сторожилась ничем: мутант,
+    возвращающий узкое «nudity», молчал на полном наборе (десятая приёмка).
+
+    Заказчику, написавшему `erotic`, сказали бы «мы не делаем nudity» — о том,
+    чего он не писал."""
+
+    def test_имя_группы_шире_одного_признака(self) -> None:
+        имя = screen.по_английски("adult content")
+        self.assertIn("sexual", имя)
+        self.assertIn("nudity", имя)
+
+    def test_русское_имя_тоже_шире(self) -> None:
+        self.assertEqual("обнажённое тело", screen.по_русски("adult content"))
+
+    def test_группа_ловит_больше_одного_слова(self) -> None:
+        """И5: если бы группа ловила только `nudity`, узкое имя было бы верным."""
+        for текст in ("erotic scene", "porn shoot"):
+            self.assertEqual("fail", screen.просеять(текст)["outcome"], текст)
+
+
+if __name__ == "__main__":
+    unittest.main()

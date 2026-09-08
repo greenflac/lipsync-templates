@@ -117,10 +117,6 @@ class ПродуктГоворитЭтоЗаказчику(unittest.TestCase):
         self.assertRegex(итог["что_дальше"], r"«[^»]+»")
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class ЧужаяБедаНеВыдаётсяЗаВашу(unittest.TestCase):
     """НАЙДЕНО продуктовой проверкой 2026-09-07 (второй заход): на 26 брифах из
     30 заказчику дословно зачитывали одну и ту же запись про срыв ретрофлексов
@@ -233,3 +229,80 @@ class ЧислоКандидатовНеБерётсяИзПечатнойСтр
             "frame_rejects_count": 12,
         }
         self.assertEqual(0, planner.живых_кандидатов(шаг))
+
+
+class АрифметикаВычетаСторожится(unittest.TestCase):
+    """Девятая приёмка: `нельзя += 1 + …` не сторожилось ничем — ни «на один
+    больше», ни «на один меньше» не красило."""
+
+    ШАГ = {"candidates_found": 20, "banned_count": 3, "frame_rejects_count": 2}
+
+    def test_вычитается_ровно_непригодное_и_выбранный(self) -> None:
+        # 20 найдено, 5 непригодных, 1 выбранный -> 14. Литерал (Т2).
+        self.assertEqual(14, planner.живых_кандидатов(self.ШАГ))
+
+    def test_выбранный_вычитается_ровно_один_раз(self) -> None:
+        self.assertEqual(19, planner.живых_кандидатов({"candidates_found": 20}))
+
+    def test_на_одном_кандидате_ответ_ноль(self) -> None:
+        """И5: «минус один кандидат» читателю не значит ничего."""
+        self.assertEqual(0, planner.живых_кандидатов({"candidates_found": 1}))
+
+
+class СчётОтвергнутыхКадромСчитаетсяСам(unittest.TestCase):
+    """Функция была заведена, а вызывал её только продукт: мутант «всегда 0»
+    молчал на полном наборе из 770 тестов (десятая приёмка)."""
+
+    def _кандидат(self, состояние: str) -> planner.Candidate:
+        return planner.Candidate(
+            model="m",
+            evidence=(),
+            applicability=0,
+            capability=0,
+            unresolved=0,
+            price="",
+            fit_state=состояние,
+        )
+
+    def test_считаются_только_отвергнутые_кадром(self) -> None:
+        свои = [self._кандидат(planner.FIT_OVER), self._кандидат(planner.FIT_IN)]
+        self.assertEqual(1, planner.frame_rejects_count(свои))
+
+    def test_на_кадре_влезающем_всем_ноль(self) -> None:
+        """И5: прибор, считающий всех, находит беду там, где её нет."""
+        self.assertEqual(0, planner.frame_rejects_count([self._кандидат(planner.FIT_IN)]))
+
+    def test_без_кандидатов_ноль(self) -> None:
+        self.assertEqual(0, planner.frame_rejects_count([]))
+
+
+class ХвостОтказаНаЯзыкеЗаказчика(unittest.TestCase):
+    """Новый параметр `хвост_ноты` — пара языков, и её перестановка не красила
+    ничего: мутант молчал на 770 тестах."""
+
+    def test_русский_хвост_в_русском_отказе(self) -> None:
+        итог = json.loads(server.plan_pipeline("дипфейк Илона Маска"))
+        self.assertIn("План не строится", итог["note"])
+
+    def test_английский_хвост_в_английском_отказе(self) -> None:
+        итог = json.loads(server.plan_pipeline("I want a deepfake of Elon Musk"))
+        self.assertIn("The plan is not built", итог["note"])
+        self.assertNotIn("План не строится", итог["note"])
+
+    def test_промпт_обещает_промпт_а_не_план(self) -> None:
+        """Коммит вынес в параметр хвост ноты, а «что дальше» оставил
+        литералом — и начал обещать ПЛАН тому, кто спрашивал ПРОМПТ."""
+        итог = json.loads(server.write_lipsync_prompt("дипфейк Илона Маска"))
+        self.assertIn("промпт напишется", итог["что_дальше"])
+        self.assertNotIn("план соберётся", итог["что_дальше"])
+
+    def test_нарушений_ноль_на_третьем_исходе(self) -> None:
+        """Р2: «не смогли» с ненулевыми нарушениями — вердикт, спорящий с
+        собственным счётом."""
+        for текст in ("", "   "):
+            self.assertEqual(0, json.loads(server.plan_pipeline(текст))["violations"])
+            self.assertEqual(0, json.loads(server.write_lipsync_prompt(текст))["violations"])
+
+
+if __name__ == "__main__":
+    unittest.main()

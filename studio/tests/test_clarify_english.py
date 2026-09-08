@@ -125,3 +125,35 @@ class ГдеМолчимПоАнглийски(unittest.TestCase):
 
 if __name__ == "__main__":  # pragma: no cover
     unittest.main()
+
+
+class ЧужойРезультатСторожится(unittest.TestCase):
+    """Мутант «ЧУЖОЙ_РЕЗУЛЬТАТ слабее» молчал: набор не проверял, что на чужом
+    ремесле вопрос НЕ задаётся (десятая приёмка)."""
+
+    ЧУЖОЕ = (
+        "статью в блог про рынок генеративного видео",
+        "Write a blog post about the generative video market",
+        # БЕЗ ЕДИНОГО СЛОВА ВЛАДЕНИЯ: «уже отснятого» и «пришлём» сами по себе
+        # объявляют видео принесённым, вопрос не задаётся и без заслона — и
+        # мутант на `ЧУЖОЙ_РЕЗУЛЬТАТ` такими строками не различался. Поймано
+        # прогоном самой мутации, дважды подряд.
+        "смонтировать ролик",
+        "напишите рекламный текст для сайта",
+    )
+
+    def test_на_чужом_ремесле_вопроса_нет(self) -> None:
+        import json
+
+        from studio.mcp import server
+
+        спросили = [т for т in self.ЧУЖОЕ if json.loads(server.plan_pipeline(т)).get("question")]
+        self.assertEqual([], спросили)
+
+    def test_на_своём_вопрос_есть(self) -> None:
+        """И5: заслон, глушащий всё, оставит продукт без единого вопроса."""
+        import json
+
+        from studio.mcp import server
+
+        self.assertIsNotNone(json.loads(server.plan_pipeline("нужен ролик")).get("question"))

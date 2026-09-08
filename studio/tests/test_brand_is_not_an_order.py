@@ -153,5 +153,93 @@ class ИзмеренныйПропуск(unittest.TestCase):
         self.assertTrue(planner.derive("реклама приложения talking tom"))
 
 
+class ГраницыКонстантСторожатсяВОбеСтороны(unittest.TestCase):
+    """И4/Т1: константа, проверенная только в одну сторону, — половина сторожа.
+
+    НАЙДЕНО девятой приёмкой: мутант `ЗАГЛАВНЫХ_СЛИШКОМ` 0.6 -> 0.95 молчал
+    (в наборе не было брифа с долей между), а `len(слова) < 2` -> `< 1` молчал
+    вовсе — однословного латинского брифа никто не подавал.
+    """
+
+    #: ДОЛЯ МЕЖДУ ПОРОГАМИ: 4 заглавных из 5 = 0.8, то есть выше 0.6 и ниже
+    #: 0.95. Первая редакция фикстуры брала строку с долей 1.0 и потому
+    #: мутанта 0.6 -> 0.95 не различала — поймано прогоном самой мутации.
+    ПОЧТИ_КАПС = "Make me A Talking Avatar"
+
+    def test_доля_между_порогами_читается_как_оформление(self) -> None:
+        self.assertFalse(planner._регистр_что_то_значит(self.ПОЧТИ_КАПС))
+        self.assertTrue(planner.derive(self.ПОЧТИ_КАПС))
+
+    def test_обычный_регистр_остаётся_обычным(self) -> None:
+        """Вторая сторона: при потолке 0.05 любой текст стал бы оформлением."""
+        self.assertTrue(planner._регистр_что_то_значит("we need a talking head ad for our SaaS"))
+
+    def test_однословный_латинский_бриф(self) -> None:
+        """`len(слова) < 2` -> `< 1` не красило ничего: одно слово с заглавной
+        не с чем сравнивать, и доля от него — не признак."""
+        self.assertTrue(planner._регистр_что_то_значит("Voiceover"))
+        self.assertTrue(planner.derive("Voiceover"))
+
+    def test_два_слова_уже_считаются(self) -> None:
+        self.assertFalse(planner._регистр_что_то_значит("Talking Head"))
+
+
+class ЯрлыкВНачалеБрифа(unittest.TestCase):
+    """Слово после «Задача: », «Job: » — начало фразы, а не имя собственное.
+
+    НАЙДЕНО десятой приёмкой 2026-09-07: снятие `:` и `;` из lookbehind
+    теряло 12 заказов с ярлыком против 3 убранных ложных срабатываний. Девятая
+    приёмка измерила снятие на своём наборе и не увидела потерь ровно потому,
+    что ни в одной фикстуре репозитория не было брифа вида «Ярлык: Заглавная».
+    """
+
+    ЗАКАЗЫ_С_ЯРЛЫКОМ = (
+        "Задача: Lipsync нашего видео",
+        "Job: Dub our video into German",
+        "Brief: Voiceover for the ad",
+        "Что нужно: Foley для ролика",
+        "Нужен постер; Voiceover тоже нужен",
+        "Бриф: Talking head ad, 30 seconds",
+    )
+    ВЫВЕСКИ_С_ЯРЛЫКОМ = (
+        "Client: Talking Tom. We need a poster",
+        "клиент: Talking Tom, нужен постер",
+        "заказчик: Avatar Maker, нужен постер",
+    )
+
+    def test_заказ_с_ярлыком_разбирается(self) -> None:
+        потеряны = [б for б in self.ЗАКАЗЫ_С_ЯРЛЫКОМ if not planner.derive(б)]
+        self.assertEqual([], потеряны)
+
+    def test_вывеска_за_ярлыком_остаётся_вывеской(self) -> None:
+        """И5: вернуть двоеточие целиком значило бы вернуть и три ложных.
+        За ярлыком имя — это ЦЕПОЧКА из двух и более заглавных."""
+        пойманы = [б for б in self.ВЫВЕСКИ_С_ЯРЛЫКОМ if planner.derive(б)]
+        self.assertEqual([], пойманы)
+
+    def test_порядок_затирания_решает(self) -> None:
+        """Общая цепочка успевает стереть ВТОРОЕ слово, и правило «два и
+        больше» перестаёт срабатывать. Поймано собственным прогоном."""
+        без = planner._без_имён_собственных("Client: Talking Tom. We need a poster")
+        self.assertNotIn("talking", без)
+
+
+class ФормаКомпанииСторожитсяВОбеСтороны(unittest.TestCase):
+    """Т1: список правился, а мутанта на него не было ни одного."""
+
+    def test_вывеска_с_формой_компании_молчит(self) -> None:
+        self.assertEqual([], planner.derive("our client is Talking Head Studios, make a poster"))
+
+    def test_обычное_слово_формой_компании_не_считается(self) -> None:
+        """Вторая сторона: список, куда попало «Video», съел бы заказы."""
+        self.assertNotIn("video", planner.ФОРМЫ_КОМПАНИЙ)
+        self.assertNotIn("talking", planner.ФОРМЫ_КОМПАНИЙ)
+        self.assertTrue(planner.derive("нужен Lip Sync для Social Media"))
+
+    def test_форма_компании_живая(self) -> None:
+        self.assertIn("studios", planner.ФОРМЫ_КОМПАНИЙ)
+        self.assertIn("inc", planner.ФОРМЫ_КОМПАНИЙ)
+
+
 if __name__ == "__main__":
     unittest.main()

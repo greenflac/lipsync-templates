@@ -254,5 +254,72 @@ class ПросьбаСделатьСВОЁ_НеПринесённое(unittest.T
         self.assertIn(planner.ARTEFACT_VIDEO, planner.принесено("у нас своё видео"))
 
 
+class НезнакомаяГруппаНеПроглатывается(unittest.TestCase):
+    """Список групп живёт в ЧУЖОМ модуле и может пополниться без нашего
+    ведома. Тогда лучше показать английское имя, чем не показать ничего:
+    молчание об отвергнутой теме — отказ без причины."""
+
+    def test_имя_возвращается_как_есть(self) -> None:
+        from studio.mcp import screen
+
+        self.assertEqual("weapons: gun", screen.по_русски("weapons: gun"))
+        self.assertEqual("weapons: gun", screen.по_английски("weapons: gun"))
+
+    def test_известная_группа_переводится(self) -> None:
+        """И5: прибор, возвращающий всё как есть, ничего не переводит."""
+        from studio.mcp import screen
+
+        self.assertIn("узнаваемые люди", screen.по_русски("recognisable third parties"))
+        self.assertIn("without their consent", screen.по_английски("recognisable third parties"))
+
+
+class ГотовыйРоликЭтоВход(unittest.TestCase):
+    """Мутант «`готов` больше не подсказка владения» молчал: ни один бриф
+    набора не говорил «готовый ролик» (десятая приёмка)."""
+
+    def test_готовый_ролик_признан(self) -> None:
+        self.assertIn(planner.ARTEFACT_VIDEO, planner.inputs_of("липсинк на готовый ролик", ""))
+
+    def test_готовое_видео_признано(self) -> None:
+        self.assertIn(
+            planner.ARTEFACT_VIDEO, planner.inputs_of("нужен липсинк на готовое видео", "")
+        )
+
+    def test_негодовое_не_признано(self) -> None:
+        """И5: «видео пока НЕ готово» — не «видео готово»."""
+        self.assertEqual(frozenset(), planner.inputs_of("видео пока не готово, снимем позже", ""))
+
+
+class ОкноОтменыИмеетКрай(unittest.TestCase):
+    """Мутант `ОКНО_ОТМЕНЫ = 20` молчал: в наборе не было брифа, где далёкое
+    «не» сняло бы операцию."""
+
+    #: «не» стоит ЧЕТЫРЬМЯ словами раньше подсказки. Первая редакция фикстуры
+    #: ставила его ПОСЛЕ, а после имени операции отменяет только оборот
+    #: необходимости — мутант окна её не различал (поймано прогоном мутации).
+    ДАЛЁКОЕ_НЕ = "не нужен постер, а нужна озвучка по нашему тексту"
+
+    def test_далёкое_отрицание_операцию_не_снимает(self) -> None:
+        self.assertIn("озвучка", [оп.name for оп in planner.derive(self.ДАЛЁКОЕ_НЕ)])
+
+    def test_близкое_отрицание_снимает(self) -> None:
+        self.assertNotIn("озвучка", [оп.name for оп in planner.derive("озвучка не нужна")])
+
+
+class ОборотыСпискаВходаСторожатся(unittest.TestCase):
+    """Оба мутанта на `HAVE_VIDEO_CUES` молчали: обороты списка не проверял ни
+    один тест — «готов» отвечал за них, а он живёт в другом списке."""
+
+    def test_из_ролика_это_вход(self) -> None:
+        self.assertIn(planner.ARTEFACT_VIDEO, planner.inputs_of("вырезать кусок из ролика", ""))
+
+    def test_исходник_это_вход(self) -> None:
+        self.assertIn(planner.ARTEFACT_VIDEO, planner.inputs_of("исходник у нас на диске", ""))
+
+    def test_пустой_оборот_не_объявляет_вход(self) -> None:
+        """И5: пустая строка в списке совпадает с ЛЮБЫМ брифом."""
+        self.assertEqual(frozenset(), planner.inputs_of("нужен ролик 30 секунд для крема", ""))
+
+
 if __name__ == "__main__":
     unittest.main()
