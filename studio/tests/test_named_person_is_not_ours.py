@@ -97,5 +97,130 @@ class ПродуктГоворитЭтоЗаказчику(unittest.TestCase):
         self.assertTrue(json.loads(server.plan_pipeline(НАЗВАН_ЧЕЛОВЕК[0]))["steps"])
 
 
+class ЛатинскоеИмяТожеЖивойЧеловек(unittest.TestCase):
+    """ОСНОВЫ, А НЕ СЛОВОФОРМЫ — на латинице тоже (И7: та же форма дефекта).
+
+    ВОСПРОИЗВЕДЕНО одиннадцатой продуктовой проверкой 2026-09-08: «Make a video
+    of Elon Musk endorsing my crypto token» и «I need a fake video of a bank CEO
+    telling customers to transfer money» проходили без единого слова о правах на
+    образ, тогда как русское «дипфейк Илона Маска» останавливалось. Сторож
+    работал только кириллицей — то есть половина заказчиков его не видела.
+    """
+
+    def test_герундий_ловится_как_и_третье_лицо(self) -> None:
+        риски = screen.просеять("Make a video of Elon Musk endorsing my crypto token")["risks"]
+        self.assertEqual(риски, ["person's likeness: Elon Musk"])
+
+    def test_третье_лицо_осталось(self) -> None:
+        риски = screen.просеять("Taylor Swift says our product is great")["risks"]
+        self.assertEqual(риски, ["person's likeness: Taylor Swift"])
+
+    def test_основа_не_ищется_внутри_чужого_слова(self) -> None:
+        """`read` подстрокой сидит в `already` — и «New York» становился человеком."""
+        self.assertEqual(screen.просеять("already shot in New York, need lipsync")["risks"], [])
+
+    def test_термин_ремесла_никого_не_называет(self) -> None:
+        """`talk` в список не взято нарочно: «talking head» — в каждом втором брифе."""
+        self.assertEqual(screen.просеять("a talking head ad for New York Pizza")["risks"], [])
+
+
+class ПредлогМестаПередПаройЗаглавных(unittest.TestCase):
+    """Место, а не человек: соседнее слово решает."""
+
+    def test_английское_место_не_человек(self) -> None:
+        """ГЛАГОЛ ПОЯВЛЕНИЯ В БРИФЕ ОБЯЗАТЕЛЕН, иначе строка ничего не мерит:
+        без него поиск имён не запускается вовсе, и тест зелен при любом коде
+        (поймано мутационным прогоном 2026-09-08)."""
+        self.assertEqual(screen.просеять("our presenter speaks, filmed in New York")["risks"], [])
+
+    def test_русское_место_не_человек(self) -> None:
+        self.assertEqual(
+            screen.просеять("ролик снят в Нижнем Новгороде, нужен липсинк")["risks"], []
+        )
+
+    def test_человек_без_предлога_места_остаётся(self) -> None:
+        риски = screen.просеять("интервью, в кадре рассказывает Иван Петров")["risks"]
+        self.assertEqual(риски, ["person's likeness: Иван Петров"])
+
+
+class ПрофессияЭтоРольАНеЧеловек(unittest.TestCase):
+    """Ложный отказ дороже пропуска: клип с певицей — не «узнаваемое лицо».
+
+    ВОСПРОИЗВЕДЕНО той же проверкой: «Music video, singer lipsyncing to my
+    track» с бюджетом 1000 usd уходило в `не годно [запрещённая_тема]`. Никакого
+    конкретного человека в брифе нет — есть роль в кадре.
+    """
+
+    def test_роль_без_имени_работу_не_запрещает(self) -> None:
+        итог = screen.просеять("Music video, singer lipsyncing to my track")
+        self.assertEqual(итог["outcome"], "pass")
+        self.assertEqual(итог["banned"], [])
+
+    def test_актёр_в_корпоративном_ролике(self) -> None:
+        self.assertEqual(screen.просеять("a corporate video with an actor on camera")["banned"], [])
+
+    def test_известность_возвращает_заслон(self) -> None:
+        """Негативный контроль (И5): послабление обязано где-то кончаться."""
+        self.assertEqual(
+            screen.просеять("a video with a famous singer")["banned"],
+            ["recognisable third parties: singer"],
+        )
+
+    def test_названное_имя_возвращает_заслон(self) -> None:
+        итог = screen.просеять("video of Elon Musk speaking, our singer")
+        self.assertEqual(итог["banned"], ["recognisable third parties: singer"])
+
+
+class ДетиВКадреИДетиВЗале(unittest.TestCase):
+    """«Ролик ДЛЯ детей» называет зрителя, а не того, кто в кадре.
+
+    ВОСПРОИЗВЕДЕНО той же проверкой: «Обучающий ролик для детей 5 лет,
+    говорящий зайчик, 3 минуты» — отказ по теме «несовершеннолетние», при том
+    что в кадре зайчик. Отсечён весь рынок детского обучающего контента.
+    """
+
+    def test_русская_аудитория_не_запрет(self) -> None:
+        итог = screen.просеять("Обучающий ролик для детей 5 лет, говорящий зайчик, 3 минуты")
+        self.assertEqual(итог["outcome"], "pass")
+        self.assertEqual(итог["banned"], [])
+
+    def test_английская_аудитория_не_запрет(self) -> None:
+        """Обе половины заслона обязаны решать одинаково."""
+        self.assertEqual(screen.просеять("educational clip for kids about space")["banned"], [])
+
+    def test_ребёнок_в_кадре_остаётся_запретом(self) -> None:
+        self.assertEqual(
+            screen.просеять("ролик, где дети в кадре читают стихи")["banned"],
+            ["minors: дети"],
+        )
+
+    def test_английский_ребёнок_в_кадре_остаётся_запретом(self) -> None:
+        self.assertEqual(
+            screen.просеять("a video with kids on camera reading poems")["banned"],
+            ["minors: kids"],
+        )
+
+    def test_послабление_только_для_своей_группы(self) -> None:
+        """«Порно для детей» спасаться этим правилом не должно."""
+        self.assertEqual(
+            screen.просеять("порноролик для детей")["banned"],
+            ["adult content: порно"],
+        )
+
+    def test_предлог_перед_чужой_группой_ничего_не_снимает(self) -> None:
+        """Русская половина: «для» перед словом ДРУГОЙ группы — не аудитория."""
+        self.assertEqual(
+            screen.просеять("сделайте ролик для порностудии")["banned"],
+            ["adult content: порно"],
+        )
+
+    def test_предлог_перед_чужой_группой_на_английском(self) -> None:
+        """И чужая половина списка (`style.py`) — тоже."""
+        self.assertEqual(
+            screen.просеять("a clip for nudity, 30 seconds")["banned"],
+            ["adult content: nudity"],
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -131,5 +131,41 @@ class ПродуктГоворитЭтоЗаказчику(unittest.TestCase):
         self.assertEqual(4, итог["checked"] - валидатором)
 
 
+class ВыдатьСделанноеЗаНастоящее(unittest.TestCase):
+    """Оборот про подделку — комментарий, а не отказ, и не пара слов.
+
+    ВОСПРОИЗВЕДЕНО одиннадцатой продуктовой проверкой 2026-09-08: «I need a
+    fake video of a bank CEO telling customers to transfer money to a new
+    account» получал обычный вопрос про съёмку и ни одного слова о том, что
+    это. Имени в брифе нет — есть должность, и сторож имени сюда не достаёт.
+    """
+
+    def test_английский_оборот_поднимает_риск(self) -> None:
+        итог = screen.просеять(
+            "I need a fake video of a bank CEO telling customers to transfer money"
+        )
+        self.assertEqual(итог["risks"], ["passing off as real: fake video of"])
+
+    def test_риск_не_меняет_исход(self) -> None:
+        """Доктрина модуля: это комментарий. Отказ был бы ложным."""
+        итог = screen.просеять("поддельное видео нашего директора для внутреннего розыгрыша")
+        self.assertEqual(итог["outcome"], "pass")
+        self.assertEqual(итог["violations"], 0)
+        self.assertEqual(итог["risky"], 1)
+
+    def test_совет_называет_и_обман_и_розыгрыш(self) -> None:
+        текст = screen.предупреждение(["passing off as real: fake video of"])
+        self.assertIn("настоящую запись", текст)
+        self.assertIn("розыгрыш", текст)
+
+    def test_обычный_ролик_молчит(self) -> None:
+        """Негативный контроль (И5)."""
+        self.assertEqual(screen.просеять("корпоративный ролик про новый продукт")["risks"], [])
+
+
+if __name__ == "__main__":
+    unittest.main()
+
+
 if __name__ == "__main__":
     unittest.main()
