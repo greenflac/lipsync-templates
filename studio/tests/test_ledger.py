@@ -297,3 +297,71 @@ class TestJournalShape(LedgerTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class НомерПопыткиИзЖурнала(unittest.TestCase):
+    """Номер попытки входит в ключ идемпотентности, то есть решает про деньги,
+    и место такого знания там же, где деньги (Е1). До 2026-09-05 он считался по
+    реестру задач в ПАМЯТИ процесса: перезапуск обнулял счёт, ключ повторялся,
+    и `charge` отвечал «повтор строки, списания не было».
+
+    Ожидаемое — литералы (Т2), сети нет (Т4).
+    """
+
+    def setUp(self) -> None:
+        self.db = Path(tempfile.mkdtemp()) / "ledger.db"
+        ledger.refund("u1", 100, key="opening", reason="пополнение", db_path=self.db)
+
+    def test_пустой_журнал_даёт_первую_попытку(self):
+        self.assertEqual(1, ledger.next_attempt("s1:video:", db_path=self.db))
+
+    def test_номер_растёт_с_каждой_записанной_попыткой(self):
+        ledger.charge("u1", 10, key="s1:video:1", reason="раз", db_path=self.db)
+        self.assertEqual(2, ledger.next_attempt("s1:video:", db_path=self.db))
+        ledger.charge("u1", 10, key="s1:video:2", reason="два", db_path=self.db)
+        self.assertEqual(3, ledger.next_attempt("s1:video:", db_path=self.db))
+
+    def test_возврат_попыткой_не_считается(self):
+        """Возврат пишется как `<ключ>:refund`. Считать его попыткой значило бы
+        пропустить номер и потерять связь ключа с работой."""
+        ledger.charge("u1", 10, key="s1:video:1", reason="раз", db_path=self.db)
+        ledger.refund("u1", 10, key="s1:video:1:refund", reason="вернули", db_path=self.db)
+        self.assertEqual(2, ledger.next_attempt("s1:video:", db_path=self.db))
+
+    def test_чужая_сессия_и_чужой_вид_не_считаются(self):
+        """Негативный контроль (И5): счётчик, считающий всё подряд, поднимет
+        номер там, где никакой работы не было, и разведёт ключ с делом."""
+        ledger.charge("u1", 10, key="s1:video:1", reason="раз", db_path=self.db)
+        ledger.charge("u1", 1, key="s1:frame:1", reason="кадр", db_path=self.db)
+        ledger.charge("u1", 10, key="s2:video:1", reason="чужая", db_path=self.db)
+        self.assertEqual(2, ledger.next_attempt("s1:video:", db_path=self.db))
+        self.assertEqual(2, ledger.next_attempt("s1:frame:", db_path=self.db))
+        self.assertEqual(2, ledger.next_attempt("s2:video:", db_path=self.db))
+
+    def test_пустая_приставка_не_считает_весь_журнал(self):
+        ledger.charge("u1", 10, key="s1:video:1", reason="раз", db_path=self.db)
+        self.assertEqual(1, ledger.next_attempt("", db_path=self.db))
+
+    def test_имя_сессии_со_спецсимволами_LIKE(self):
+        """Независимая проверка 2026-09-05: экранирование `%` и `_` без
+        `ESCAPE` не работает — у LIKE в SQLite escape-символа по умолчанию нет,
+        и `\\_` значит «обратный слэш, затем любой символ». Возвращался УЖЕ
+        ЗАНЯТЫЙ номер 1, и обычная вторая генерация упиралась в 409."""
+        for сессия in ("s_1", "s%2", "s\\3", "обычная"):
+            ledger.charge("u1", 1, key=f"{сессия}:video:1", reason="раз", db_path=self.db)
+            self.assertEqual(2, ledger.next_attempt(f"{сессия}:video:", db_path=self.db), сессия)
+
+    def test_подчёркивание_не_совпадает_с_любым_символом(self):
+        """Негативный контроль (И5) к тому же: без `ESCAPE` приставка `s_1:`
+        совпала бы и с `sX1:`, и счётчик считал бы ЧУЖИЕ строки."""
+        ledger.charge("u1", 1, key="sX1:video:1", reason="чужая", db_path=self.db)
+        self.assertEqual(1, ledger.next_attempt("s_1:video:", db_path=self.db))
+
+    def test_нецифровой_хвост_не_валит_денежную_функцию(self):
+        """`str.isdigit()` шире, чем `int()` его понимает: `"²"` проходит первую
+        проверку и валит вторую, а «١» проходит обе и молча считается попыткой.
+        В денежной функции необработанное исключение останавливает работу."""
+        ledger.charge("u1", 1, key="s4:video:\u00b2", reason="верхний индекс", db_path=self.db)
+        ledger.charge("u1", 1, key="s5:video:\u0661", reason="арабская цифра", db_path=self.db)
+        self.assertEqual(1, ledger.next_attempt("s4:video:", db_path=self.db))
+        self.assertEqual(1, ledger.next_attempt("s5:video:", db_path=self.db))

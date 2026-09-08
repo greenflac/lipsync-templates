@@ -9,7 +9,9 @@ from __future__ import annotations
 
 import io
 import socket
+import tempfile
 import unittest
+from unittest import mock
 from dataclasses import asdict, dataclass, is_dataclass
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -30,6 +32,12 @@ def setUpModule() -> None:
     Creating a socket is left alone because the event loop the test client
     starts needs a local socketpair; reaching *out* is what must be impossible.
     """
+
+    # ЖУРНАЛ РУЧЕК УВОДИТСЯ ВО ВРЕМЕННЫЙ КАТАЛОГ. Иначе прогон дописывает
+    # состояние процесса в файл рабочего дерева: он игнорируется git-ом, но
+    # смешивает тестовые задачи с настоящими, а прибор, пишущий в то же место,
+    # что и продукт, однажды будет прочитан как продукт.
+    jobs.JOURNAL = Path(tempfile.mkdtemp()) / "studio_jobs.jsonl"
 
     def refuse(*_args: object, **_kwargs: object) -> None:
         raise AssertionError("a test tried to reach the network")
@@ -105,6 +113,7 @@ class FakeLedger:
         self.rows: list[dict] = [{"delta": opening, "key": "opening", "reason": "opening"}]
         self.keys: set[str] = {"opening"}
         self.broken = False
+        self.pinned_attempt: int | None = None
 
     def balance(self, _user_id: str) -> int:
         return sum(int(row["delta"]) for row in self.rows)
@@ -119,6 +128,22 @@ class FakeLedger:
         self.keys.add(key)
         self.rows.append({"delta": delta, "key": key, "reason": reason})
         return {"outcome": PASS_, "balance": self.balance("u"), "delta": delta, "key": key}
+
+    def next_attempt(self, prefix: str) -> int:
+        """Как в настоящем журнале: номер выводится из записанных ключей.
+
+        `pinned_attempt` — не удобство теста, а способ показать журнал,
+        ОТСТАВШИЙ от действительности: недоступный, восстановленный из старой
+        копии, любой. Ради этого случая и стоит защита от повтора ключа.
+        """
+        if self.pinned_attempt is not None:
+            return self.pinned_attempt
+        номера = [
+            int(k[len(prefix) :])
+            for k in self.keys
+            if k.startswith(prefix) and k[len(prefix) :].isdigit()
+        ]
+        return (max(номера) + 1) if номера else 1
 
     def charge(self, user_id: str, credits: int, *, key: str, reason: str) -> dict:
         return self._append(-credits, key, reason)
@@ -230,7 +255,7 @@ class StudioCase(unittest.TestCase):
 
     def make_frame(self, session_id: str) -> str:
         reply = self.client.post(
-            "/api/frame", json={"session_id": session_id, "template_id": "walk_city"}
+            "/api/frame", json={"session_id": session_id, "template_id": "dance_hallway"}
         )
         self.assertEqual(reply.status_code, 200, reply.text)
         job_id = str(reply.json()["job_id"])
@@ -244,7 +269,10 @@ class HappyPath(StudioCase):
         self.upload_selfie(session_id)
         self.set_style(session_id)
         frame_job = self.make_frame(session_id)
-        self.assertEqual(self.client.get(f"/api/job/{frame_job}").json()["state"], "done")
+        self.assertEqual(
+            self.client.get(f"/api/job/{frame_job}?session_id={session_id}").json()["state"],
+            "done",
+        )
 
         consent = self.client.post("/api/consent", json={"session_id": session_id})
         self.assertEqual(consent.status_code, 200, consent.text)
@@ -261,7 +289,7 @@ class HappyPath(StudioCase):
         self.upload_selfie(session_id)
         self.set_style(session_id)
         frame = self.client.post(
-            "/api/frame", json={"session_id": session_id, "template_id": "walk_city"}
+            "/api/frame", json={"session_id": session_id, "template_id": "dance_hallway"}
         )
         self.assertEqual(frame.json()["charged"], 1)
         jobs.wait(str(frame.json()["job_id"]))
@@ -274,11 +302,11 @@ class HappyPath(StudioCase):
         self.upload_selfie(session_id)
         self.set_style(session_id)
         first = self.client.post(
-            "/api/frame", json={"session_id": session_id, "template_id": "walk_city"}
+            "/api/frame", json={"session_id": session_id, "template_id": "dance_hallway"}
         ).json()
         jobs.wait(str(first["job_id"]))
         second = self.client.post(
-            "/api/frame", json={"session_id": session_id, "template_id": "walk_city"}
+            "/api/frame", json={"session_id": session_id, "template_id": "dance_hallway"}
         ).json()
         self.assertEqual(first["idempotency_key"], f"{session_id}:frame:1")
         self.assertEqual(second["idempotency_key"], f"{session_id}:frame:2")
@@ -344,7 +372,7 @@ class MoneyGuard(StudioCase):
         before = self.ledger.balance("u1")
 
         reply = self.client.post(
-            "/api/frame", json={"session_id": session_id, "template_id": "walk_city"}
+            "/api/frame", json={"session_id": session_id, "template_id": "dance_hallway"}
         )
         state = jobs.wait(str(reply.json()["job_id"]))
 
@@ -362,7 +390,7 @@ class MoneyGuard(StudioCase):
         before = self.ledger.balance("u1")
 
         reply = self.client.post(
-            "/api/frame", json={"session_id": session_id, "template_id": "walk_city"}
+            "/api/frame", json={"session_id": session_id, "template_id": "dance_hallway"}
         )
         job_id = str(reply.json()["job_id"])
         state = jobs.wait(job_id)
@@ -382,7 +410,7 @@ class MoneyGuard(StudioCase):
         jobs.wait(
             str(
                 self.client.post(
-                    "/api/frame", json={"session_id": session_id, "template_id": "walk_city"}
+                    "/api/frame", json={"session_id": session_id, "template_id": "dance_hallway"}
                 ).json()["job_id"]
             )
         )
@@ -408,6 +436,175 @@ class MoneyGuard(StudioCase):
 
         self.assertEqual(reply.status_code, 402)
         self.assertEqual(self.ledger.balance("u1"), 0)
+
+    def test_работа_не_запустилась_деньги_вернулись(self) -> None:
+        """Независимая проверка 2026-09-05 воспроизвела два пути, на которых
+        10 кредитов списаны, работа не идёт и `on_settle` не вызовется никогда:
+        `threading.Thread.start` бросает `RuntimeError` при исчерпании потоков,
+        `store.update` — `sqlite3.Error` при беде с диском. Докстрока обещала
+        «списание без работы, видимое и возвратное»; возвратным его не делал
+        никто, и сессия оставалась заперта в `video_running`.
+        """
+        session_id = self.open_session()
+        self.upload_selfie(session_id)
+        self.set_style(session_id)
+        self.make_frame(session_id)
+        self.client.post("/api/consent", json={"session_id": session_id})
+        до = self.ledger.balance("u1")
+
+        with mock.patch.object(jobs, "submit", side_effect=RuntimeError("нет потоков")):
+            ответ = self.client.post("/api/video", json={"session_id": session_id})
+
+        self.assertEqual(ответ.json()["outcome"], "could not measure")
+        self.assertEqual(self.ledger.balance("u1"), до, "деньги вернулись полностью")
+        self.assertNotIn("job_id", ответ.json())
+
+    def test_неудавшийся_возврат_отправляет_сессию_человеку(self) -> None:
+        """Вердикт возврата выбрасывался в мусор: `refund` умеет ответить
+        «не смогли», и на этом ответе сессия всё равно уезжала назад, как будто
+        деньги вернулись. Измерено: баланс 89 -> 89, строки `:refund` в журнале
+        нет, в записи задачи ни следа, следующая попытка спишет заново."""
+        session_id = self.open_session()
+        self.upload_selfie(session_id)
+        self.set_style(session_id)
+        self.make_frame(session_id)
+        self.client.post("/api/consent", json={"session_id": session_id})
+
+        def сломать_возврат(*_a: object, **_k: object) -> dict:
+            self.ledger.broken = True
+            raise RuntimeError("нет потоков")
+
+        with mock.patch.object(jobs, "submit", side_effect=сломать_возврат):
+            ответ = self.client.post("/api/video", json={"session_id": session_id})
+
+        self.assertEqual(ответ.json()["outcome"], "could not measure")
+        self.assertEqual(
+            self.store.sessions[session_id]["stage"], "needs_review", "сессия ушла человеку"
+        )
+        событие = jobs.из_журнала(f"{session_id}:video:1:refund")
+        self.assertIsNotNone(событие, "причина записана в журнал ручек")
+        assert событие is not None
+        self.assertEqual(событие["state"], "refund_failed")
+        self.assertIn("НЕ СДЕЛАН", событие["note"])
+
+    def test_номер_попытки_переживает_перезапуск(self) -> None:
+        """Номер попытки входит в ключ идемпотентности, то есть решает про
+        деньги. До 2026-09-05 он считался по реестру задач в ПАМЯТИ процесса:
+        перезапуск обнулял счёт, ключ повторялся, и списания не происходило.
+
+        Здесь перезапуск изображён сносом реестра задач при живом журнале.
+        """
+        session_id = self.open_session()
+        self.upload_selfie(session_id)
+        self.set_style(session_id)
+        self.make_frame(session_id)
+        self.client.post("/api/consent", json={"session_id": session_id})
+        первый = self.client.post("/api/video", json={"session_id": session_id})
+        self.assertEqual(первый.json()["idempotency_key"], f"{session_id}:video:1")
+
+        jobs._JOBS.clear()  # перезапуск: реестр задач в памяти потерян
+
+        # Второе видео в той же сессии: новый кадр, новое согласие.
+        self.make_frame(session_id)
+        self.client.post("/api/consent", json={"session_id": session_id})
+        до = self.ledger.balance("u1")
+        второй = self.client.post("/api/video", json={"session_id": session_id})
+
+        # ЭТО И ЕСТЬ ПРОВЕРКА: при счёте по памяти ключ был бы снова `:1`,
+        # `charge` ответил бы «повтор строки», и защита вернула бы «не смогли»
+        # вместо работы — то есть перезапуск ломал бы обычную вторую генерацию.
+        self.assertEqual(второй.json()["outcome"], "pass", второй.text)
+        self.assertEqual(второй.json()["idempotency_key"], f"{session_id}:video:2")
+        self.assertEqual(self.ledger.balance("u1"), до - 10, "и списано по-настоящему")
+
+    def test_чужая_сессия_не_получает_задачу(self) -> None:
+        """Единственный маршрут, не спрашивавший «чья работа», отдавал
+        `session_id` и РЕЗУЛЬТАТ любому, кто назвал идентификатор задачи."""
+        свой = self.open_session()
+        self.upload_selfie(свой)
+        self.set_style(свой)
+        задача = self.make_frame(свой)
+        чужой = self.open_session()
+
+        ответ = self.client.get(f"/api/job/{задача}?session_id={чужой}")
+
+        self.assertEqual(ответ.status_code, 409)
+        self.assertEqual(ответ.json()["outcome"], "fail")
+        self.assertNotIn("result", ответ.json())
+
+    def test_сессия_не_названа_это_третий_исход(self) -> None:
+        """Не знаем, свой спрашивает или чужой. Молча выбрать один из двух
+        ответов значило бы решить за того, кто нас об этом не спрашивал."""
+        свой = self.open_session()
+        self.upload_selfie(свой)
+        self.set_style(свой)
+        задача = self.make_frame(свой)
+
+        ответ = self.client.get(f"/api/job/{задача}")
+
+        self.assertEqual(ответ.json()["outcome"], "could not measure")
+        self.assertNotIn("result", ответ.json())
+
+    def test_своя_сессия_задачу_получает(self) -> None:
+        """Негативный контроль (И5): проверка доступа, отказывающая всем, не
+        отличается от сломанного маршрута."""
+        свой = self.open_session()
+        self.upload_selfie(свой)
+        self.set_style(свой)
+        задача = self.make_frame(свой)
+
+        ответ = self.client.get(f"/api/job/{задача}?session_id={свой}")
+
+        self.assertEqual(ответ.status_code, 200)
+        self.assertEqual(ответ.json()["session_id"], свой)
+
+    def test_replayed_key_starts_no_video_and_does_not_claim_a_charge(self) -> None:
+        """Повтор ключа — не оплата, и запускать под ним платную работу нельзя.
+
+        ИЗМЕРЕНО 2026-09-05 на настоящем журнале: два `charge` с одним ключом
+        дают `outcome=pass`, `delta=-10` ОБА раза, а баланс 100 -> 90 -> 90.
+        Второй ответ — ЭХО первой строки, списания не было. Здесь он читался
+        как «списали», и наверх уходило `"charged": 10` рядом с запущенной
+        платной генерацией, за которую не заплатил никто.
+
+        Ключ повторяется, когда номер попытки начался заново: реестр задач
+        живёт в памяти процесса. Это не отказ пользователю и не его вина —
+        это потерянное нами состояние, поэтому третий исход.
+        """
+        session_id = self.open_session()
+        self.upload_selfie(session_id)
+        self.set_style(session_id)
+        self.make_frame(session_id)
+        self.client.post("/api/consent", json={"session_id": session_id})
+        до = self.ledger.balance("u1")
+        # Строка под этим ключом уже есть, а журнал называет номер попытки 1 —
+        # то есть ОТСТАЁТ от собственных записей: восстановлен из старой копии,
+        # прочитан не тот файл, реплика не догнала. С 2026-09-05 номер берётся
+        # из журнала, и обычный перезапуск больше не даёт повтора; защита
+        # остаётся ради случая, когда сам журнал разошёлся с собой.
+        self.ledger.keys.add(f"{session_id}:video:1")
+        self.ledger.pinned_attempt = 1
+
+        reply = self.client.post("/api/video", json={"session_id": session_id})
+
+        self.assertEqual(reply.json()["outcome"], "could not measure")
+        self.assertNotIn("job_id", reply.json(), "платная работа НЕ запущена")
+        self.assertNotIn("charged", reply.json(), "и «списали» не сказано")
+        self.assertEqual(self.ledger.balance("u1"), до, "и действительно не списано")
+
+    def test_первое_видео_на_свежем_ключе_по_прежнему_идёт(self) -> None:
+        """Негативный контроль (И5): защита от повтора не смеет останавливать
+        обычную работу — иначе продукт перестанет делать то, за что платят."""
+        session_id = self.open_session()
+        self.upload_selfie(session_id)
+        self.set_style(session_id)
+        self.make_frame(session_id)
+        self.client.post("/api/consent", json={"session_id": session_id})
+
+        reply = self.client.post("/api/video", json={"session_id": session_id})
+
+        self.assertEqual(reply.json()["outcome"], "pass")
+        self.assertEqual(reply.json()["charged"], 10)
 
     def test_unreachable_journal_is_unmeasured_not_a_free_video(self) -> None:
         session_id = self.open_session()
@@ -467,7 +664,7 @@ class Refusals(StudioCase):
         session_id = self.open_session()
         self.set_style(session_id)
         reply = self.client.post(
-            "/api/frame", json={"session_id": session_id, "template_id": "walk_city"}
+            "/api/frame", json={"session_id": session_id, "template_id": "dance_hallway"}
         )
         self.assertEqual(reply.status_code, 409)
 
@@ -475,7 +672,7 @@ class Refusals(StudioCase):
         session_id = self.open_session()
         self.upload_selfie(session_id)
         reply = self.client.post(
-            "/api/frame", json={"session_id": session_id, "template_id": "walk_city"}
+            "/api/frame", json={"session_id": session_id, "template_id": "dance_hallway"}
         )
         self.assertEqual(reply.status_code, 409)
 
@@ -491,7 +688,7 @@ class Refusals(StudioCase):
     def test_unknown_session_is_refused_by_every_endpoint_that_takes_one(self) -> None:
         for path, body in (
             ("/api/style", {"session_id": "ghost", "text": "warm"}),
-            ("/api/frame", {"session_id": "ghost", "template_id": "walk_city"}),
+            ("/api/frame", {"session_id": "ghost", "template_id": "dance_hallway"}),
             ("/api/consent", {"session_id": "ghost"}),
             ("/api/video", {"session_id": "ghost"}),
         ):
@@ -499,7 +696,7 @@ class Refusals(StudioCase):
                 self.assertEqual(self.client.post(path, json=body).status_code, 404)
 
     def test_unknown_job_id_is_answered_not_raised(self) -> None:
-        reply = self.client.get("/api/job/does-not-exist")
+        reply = self.client.get("/api/job/does-not-exist?session_id=s1")
         self.assertEqual(reply.status_code, 200)
         self.assertEqual(reply.json()["state"], "unknown")
 

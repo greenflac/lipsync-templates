@@ -18,10 +18,12 @@ available. The three rankings are merged with reciprocal rank fusion.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
 import sqlite3
+import threading
 from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
@@ -47,7 +49,11 @@ __all__ = [
     "KIND_STYLE_CARD",
     "MAX_PER_PROVENANCE",
     "PHRASE_MAX",
+    "PROVENANCE_COMMUNITY_CIVITAI",
+    "PROVENANCE_NAMESPACE",
     "PROVENANCE_WEIGHT",
+    "provenance_family",
+    "provenance_weight",
     "RECALL_FLOOR",
     "RRF_K",
     "KnowledgeIndex",
@@ -66,12 +72,20 @@ KIND_CORE = "core"
 KIND_OUR_PROMPT = "our_prompt"
 KIND_GALLERY_PROMPT = "gallery_prompt"
 KIND_STYLE_CARD = "style_card"
+# Knowledge, not an example. A `craft_*.jsonl` record explains a MECHANISM — why
+# CFG burns skin, what a Rembrandt key is, which parameter a vendor says to
+# change — where every other kind here is a prompt somebody wrote. The two
+# answer different questions ("why did this happen" against "how do I phrase
+# it") and mixing them in one answer serves neither: ask for a golden-hour
+# prompt and get a paragraph on schedulers.
+KIND_KNOWLEDGE = "knowledge"
 
 KINDS: tuple[str, ...] = (
     KIND_CORE,
     KIND_OUR_PROMPT,
     KIND_GALLERY_PROMPT,
     KIND_STYLE_CARD,
+    KIND_KNOWLEDGE,
 )
 
 # Where an entry came from. Retrieval quotas count these, not `kind`, because
@@ -85,6 +99,18 @@ PROVENANCE_GALLERY = "gallery"
 # it: the row's own statement of where it came from is the evidence, and a
 # name we invent here would be a second, divergent story.
 PROVENANCE_THIRD_PARTY = "third_party_gallery"
+# A community platform is its OWN family, named after the platform, because
+# `civitai:Lykon` and some future `openart:someone` are different populations
+# with different norms and should be weighable apart. Rows arrive already
+# namespaced from `studio/mcp/civitai.py`; adding another platform is one line
+# here and one prefix there.
+PROVENANCE_COMMUNITY_CIVITAI = "civitai"
+# The knowledge lane's own family. It needs one for the same reason `civitai`
+# has one: `provenance_weight` falls back to 0.5 for a family it does not know,
+# and the critic measured that `vendor:comfyui` therefore weighed LESS than the
+# third-party gallery it is supposed to outrank. A record read out of a vendor's
+# own documentation is not less trustworthy than a stranger's prompt.
+PROVENANCE_KNOWLEDGE = "knowledge"
 
 # CHOSEN by us as starting values (not measured): core is the source of truth,
 # our own shipped prompts outrank harvested style cards, and anything scraped
@@ -95,7 +121,68 @@ PROVENANCE_WEIGHT: dict[str, float] = {
     PROVENANCE_REFERENCE_CARD: 0.8,
     PROVENANCE_GALLERY: 0.6,
     PROVENANCE_THIRD_PARTY: 0.6,
+    # CHOSEN, same rung as the gallery: it is third-party wording either way.
+    # Arguably it deserves more — these are prompts posted WITH the image they
+    # produced, by the person who ran them, which the gallery rows are not —
+    # but "arguably" is not a measurement, so it starts level and moves when
+    # something measures it.
+    PROVENANCE_COMMUNITY_CIVITAI: 0.6,
+    # ВЫБРАНО, above the gallery and below our own prompts: these records are
+    # read out of vendor documentation and papers and carry a tier and a URL,
+    # which no gallery row does — but nobody has measured that they answer
+    # better, so they do not outrank what this project wrote for itself.
+    PROVENANCE_KNOWLEDGE: 0.75,
+    "vendor": 0.75,
+    "probe": 0.75,
+    "blog": 0.55,
 }
+
+#: A provenance may be NAMESPACED: `"<family>:<who>"`, where the family is a
+#: key of `PROVENANCE_WEIGHT` and the part after the colon names the individual
+#: author. `civitai:Lykon` and `civitai:Merjic` weigh the same and count as two
+#: DIFFERENT sources against the per-answer quota.
+#:
+#: This exists because of a defect measured 2026-08-27. A community corpus was
+#: collected with one provenance per uploader — 1409 rows across 106 people —
+#: precisely so the quota would see many sources. The loader then collapsed
+#: every unrecognised provenance to `PROVENANCE_GALLERY`, so all 106 became one
+#: and the quota capped every answer at 2 again. The corpus had done the right
+#: thing and the reader undid it.
+#:
+#: The family is what carries the WEIGHT, because how much a source is trusted
+#: is a property of the kind of source, not of the person. The whole string is
+#: what carries IDENTITY, because "no single source fills the answer" is a
+#: statement about people, not about platforms.
+PROVENANCE_NAMESPACE = ":"
+
+
+def provenance_family(provenance: str) -> str:
+    """The part of a provenance that decides how much it is trusted.
+
+    `"civitai:Lykon"` -> `"civitai"`, `"ours"` -> `"ours"`. Splitting on the
+    FIRST separator only, so an author whose name contains a colon still lands
+    in the right family.
+    """
+    return str(provenance or "").split(PROVENANCE_NAMESPACE, 1)[0]
+
+
+def _known_provenance(provenance: str) -> bool:
+    """Is this a provenance the index recognises, plain or namespaced?"""
+    text = str(provenance or "")
+    return text in PROVENANCE_WEIGHT or provenance_family(text) in PROVENANCE_WEIGHT
+
+
+def provenance_weight(provenance: str) -> float:
+    """How much one provenance is trusted. A namespaced one inherits its family.
+
+    The fallback stays 0.5 — below every declared weight, so a provenance
+    nobody has classified cannot outrank one somebody has.
+    """
+    text = str(provenance or "")
+    if text in PROVENANCE_WEIGHT:
+        return PROVENANCE_WEIGHT[text]
+    return PROVENANCE_WEIGHT.get(provenance_family(text), 0.5)
+
 
 # The structural fields. Imported from studio.style, never re-declared: one
 # word list, one place. A word that is not on these lists cannot be a field
@@ -267,6 +354,19 @@ DENSE_FLOOR = 0.35  # cosine; CHOSEN, then checked: both negative controls
 # fuse against an answer filling up with a single kind of source.
 MAX_PER_PROVENANCE = 2
 
+#: The same fuse, for the knowledge lane, and a different number because the
+#: risk it guards is different. MEASURED by the record-design critic 2026-08-28:
+#: with 300 knowledge records under one provenance, `retrieve(k=8)` returned 2
+#: and turned away 298. That cap is right for prompt examples — 4601 of ours
+#: come from a single gallery, and without it one gallery fills every answer —
+#: but knowledge records are not interchangeable: six records from
+#: huggingface.co/docs are six different mechanisms, and returning two of them
+#: is not diversity, it is amnesia. Near-duplicates are already stopped by the
+#: prefix dedup below, which is the guard that actually fits this lane.
+#: ВЫБРАНО, not measured: 6 is the number of distinct mechanisms that still fit
+#: in an answer a person will read. Nothing has measured what a reader can use.
+MAX_PER_PROVENANCE_KNOWLEDGE = 6
+
 # Near-duplicate suppression inside one answer. Our own prompt corpus is
 # template-generated, so the top of a ranking is often the same paragraph
 # twice; two identical demonstrations teach the writer nothing and cost a slot.
@@ -276,11 +376,76 @@ DEDUP_PREFIX = 120
 RECALL_FLOOR = 0.60
 
 DEFAULT_DB_PATH = Path(__file__).with_name("knowledge") / "index.sqlite3"
-CORE_RULES_PATH = Path(__file__).with_name("knowledge") / "core_rules.md"
+#: The data directory. Named once, because the module and the directory share a
+#: name and re-deriving that path per constant is how the two drift apart.
+KNOWLEDGE_DIR = Path(__file__).with_name("knowledge")
+
+CORE_RULES_PATH = KNOWLEDGE_DIR / "core_rules.md"
+#: Where the knowledge lane lives. A named default rather than `None`, because
+#: a source that cannot be pointed somewhere else cannot be switched OFF — and
+#: two tests that disable every source caught exactly that: the craft records
+#: leaked into an index the test had emptied on purpose, and "no sources" quietly
+#: became "one source". A test that depends on what happens to be on the machine
+#: is the bug this package has already paid for once.
+CRAFT_RECORDS_DIR = KNOWLEDGE_DIR
 EVAL_SET_PATH = Path(__file__).with_name("knowledge") / "eval_set.jsonl"
 GALLERY_PROMPTS_PATH = Path(__file__).with_name("knowledge") / "gallery_prompts.jsonl"
-OUR_PROMPTS_DIR = Path("/home/user/cyclerunner/demo/instories/fixtures/gen")
-REFERENCE_CARDS_DIR = Path("/home/user/cyclerunner/demo/instories/references")
+
+#: The community corpus: prompts posted on Civitai together with the image they
+#: produced, by the person who ran them. Same row shape as the gallery harvest,
+#: so it goes through the same loader — one knowledge, one place.
+#:
+#: It is NOT committed. `LICENCE` clause 2(d) of that site would have this
+#: repository claim rights over other people's prompts, so the file is
+#: gitignored and rebuilt with `python scripts/collect_civitai.py`. A build on
+#: a fresh clone therefore reports it absent, which is correct and is why a
+#: missing source has always been reported rather than fatal.
+COMMUNITY_PROMPTS_PATH = Path(__file__).with_name("knowledge") / "civitai_prompts.jsonl"
+
+# Where the two example corpora live. These were absolute paths into one
+# developer's home directory, and the consequence was measured on 2026-08-26:
+# on a fresh clone the index built with 12 core entries and 0 examples, every
+# `retrieve` answered "could not measure", `evaluate` could not run at all, and
+# the two tests that would have caught it skipped. The recall numbers in
+# HANDOFF_studio-mvp.md were not reproducible by anybody else.
+#
+# Resolution order, first existing directory wins:
+#   1. $STUDIO_KNOWLEDGE_OUR_PROMPTS / $STUDIO_KNOWLEDGE_REFERENCE_CARDS
+#   2. a directory inside this repository
+#   3. the original absolute path, kept last so the machine that has the data
+#      keeps working — but no longer the only way to have any data at all.
+OUR_PROMPTS_ENV = "STUDIO_KNOWLEDGE_OUR_PROMPTS"
+REFERENCE_CARDS_ENV = "STUDIO_KNOWLEDGE_REFERENCE_CARDS"
+
+_LEGACY_ROOT = Path("/home/user/cyclerunner/demo/instories")
+
+
+def _resolve_dir(env_name: str, in_repo: Path, legacy: Path) -> Path:
+    """First existing candidate, or the in-repo path so the error names this repo.
+
+    Returning the in-repo path when nothing exists matters: a caller that
+    prints "sources absent" should name a path the reader can create, not one
+    on a machine they have never seen.
+    """
+    override = os.environ.get(env_name, "").strip()
+    candidates = [Path(override).expanduser()] if override else []
+    candidates += [in_repo, legacy]
+    for candidate in candidates:
+        if candidate.is_dir():
+            return candidate
+    return in_repo
+
+
+OUR_PROMPTS_DIR = _resolve_dir(
+    OUR_PROMPTS_ENV,
+    Path(__file__).with_name("knowledge") / "our_prompts",
+    _LEGACY_ROOT / "fixtures" / "gen",
+)
+REFERENCE_CARDS_DIR = _resolve_dir(
+    REFERENCE_CARDS_ENV,
+    Path(__file__).with_name("knowledge") / "reference_cards",
+    _LEGACY_ROOT / "references",
+)
 
 DENSE_MODEL_ID = "sentence-transformers/all-MiniLM-L6-v2"  # apache-2.0, checked
 DENSE_ENV_FLAG = "STUDIO_KNOWLEDGE_DENSE"
@@ -329,7 +494,16 @@ def _result(
 # ------------------------------------------------------------- text helpers
 
 
-_WORD = re.compile(r"[a-z0-9][a-z0-9'-]*")
+# Latin AND Cyrillic. The Cyrillic half was missing until 2026-08-28, and the
+# consequence was not a missing feature — it was a LIE. `query_terms` on a
+# Russian question returned [], the fusion admitted nothing, and `retrieve`
+# answered `fail` with the note "nothing in the index clears the relevance
+# floor": the system reporting that it had searched 5074 entries and found
+# nothing relevant, when in truth it had not been able to read the question.
+# Our operators write in Russian. OBSERVED before the fix:
+#   query_terms('покажи промт для золотого часа') -> []
+#   retrieve(...) -> fail, examples 0, checked 5074
+_WORD = re.compile(r"[a-z0-9\u0430-\u044f\u0451][a-z0-9\u0430-\u044f\u0451'-]*")
 
 
 def _words(text: str) -> list[str]:
@@ -495,9 +669,12 @@ def load_gallery_prompts(path: Path = GALLERY_PROMPTS_PATH) -> list[dict]:
         if not isinstance(text, str) or not text.strip():
             continue
         declared = str(payload.get("provenance") or PROVENANCE_GALLERY)
-        provenance = declared if declared in PROVENANCE_WEIGHT else PROVENANCE_GALLERY
+        provenance = declared if _known_provenance(declared) else PROVENANCE_GALLERY
         rights = payload.get("rights")
-        source = str(payload.get("id") or path.name)
+        # `source_url` before the file name: a row whose source is only
+        # "civitai_prompts.jsonl" cannot be gone and checked, and every row
+        # in a 473-row file would carry the same one.
+        source = str(payload.get("id") or payload.get("source_url") or path.name)
         entries.append(
             {
                 "kind": KIND_GALLERY_PROMPT,
@@ -509,6 +686,65 @@ def load_gallery_prompts(path: Path = GALLERY_PROMPTS_PATH) -> list[dict]:
                 "source": f"{source} (rights={rights})" if rights else source,
             }
         )
+    return entries
+
+
+def load_craft_records(directory: Path = CRAFT_RECORDS_DIR) -> list[dict]:
+    """Read the knowledge lane: `craft_*.jsonl`, harvested 2026-08-28.
+
+    A record is rendered into ONE searchable text made of the fields a person
+    would actually query by — the title, the questions the record says it
+    answers, and the claim itself. The mechanism and the numbers are carried in
+    the text too, because "why is the skin plastic" has to reach a record whose
+    title never says "plastic".
+
+    The records are written in RUSSIAN, which is why this loader arrives in the
+    same commit as the Cyrillic tokenizer: without that fix every one of them
+    would be indexed and none of them findable by the people they are for.
+    """
+    entries: list[dict] = []
+    if not directory.is_dir():
+        return entries
+    for path in sorted(directory.glob("craft_*.jsonl")):
+        for line in path.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                record = json.loads(line)
+            except ValueError:
+                continue
+            title = str(record.get("title") or "").strip()
+            claim = str(record.get("claim") or "").strip()
+            if not title and not claim:
+                continue
+            asks = record.get("question")
+            asks = [asks] if isinstance(asks, str) else list(asks or [])
+            parts = [
+                title,
+                " ".join(str(a) for a in asks),
+                claim,
+                str(record.get("mechanism") or ""),
+            ]
+            for knob in record.get("knob") or []:
+                if isinstance(knob, dict):
+                    parts.append(f"{knob.get('param', '')} {knob.get('where', '')}")
+            evidence = record.get("evidence") or []
+            source = ""
+            for item in evidence:
+                if isinstance(item, dict) and item.get("url"):
+                    source = str(item["url"])
+                    break
+            declared = str(record.get("provenance") or "")
+            provenance = declared if _known_provenance(declared) else PROVENANCE_KNOWLEDGE
+            entries.append(
+                {
+                    "kind": KIND_KNOWLEDGE,
+                    "text": " ".join(p for p in parts if p).strip(),
+                    "provenance": provenance,
+                    "source": source or f"{path.name}#{record.get('id', '?')}",
+                }
+            )
     return entries
 
 
@@ -551,6 +787,98 @@ CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 """
 
 
+#: Кэш векторов, и ключ у него — ХЕШ ТЕКСТА, а не номер строки. Это починка
+#: долга DEBT(2026-08-31), записанного у `DELETE FROM vectors`: векторы там
+#: стираются при каждой пересборке ПРАВИЛЬНО (записи получают новые
+#: автоинкрементные идентификаторы, и старый вектор под новым текстом — это
+#: ответ на незаданный вопрос), но следствием было то, что кэш не мог
+#: сработать никогда.
+#:
+#: ИЗМЕРЕНО 2026-09-02, 4 CPU, без GPU:
+#:     сборка индекса без плотного канала      1.5 с   (13 438 записей)
+#:     attach_dense                          160.1 с   (13 426 текстов, ~525 знаков)
+#:     из них загрузка модели                  3.1 с
+#: То есть 157 секунд — это счёт эмбеддингов, и он платится при КАЖДОМ старте
+#: сервера, потому что `build_index` по умолчанию собирается в `:memory:`.
+#: Первый вызов пользователя ждёт всё это время: ИЗМЕРЕНО — 162 с на первый
+#: `write_lipsync_prompt` и 0.1 с на второй.
+#:
+#: Хеш содержимого снимает эту цену, не трогая правило: вектор привязан к
+#: ТЕКСТУ, поэтому подложить его под другой текст невозможно по построению.
+#: Имя модели входит в ключ — векторы другой модели не подхватятся.
+VECTOR_CACHE_PATH = Path(__file__).with_name("knowledge") / "vector_cache.sqlite3"
+
+VECTOR_CACHE_SCHEMA = """
+CREATE TABLE IF NOT EXISTS vector_cache (
+    sha TEXT NOT NULL,
+    model TEXT NOT NULL,
+    dim INTEGER NOT NULL,
+    data BLOB NOT NULL,
+    PRIMARY KEY (sha, model)
+);
+"""
+
+
+def _text_sha(text: str) -> str:
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def _cache_conn(path: Path | None) -> sqlite3.Connection | None:
+    """Соединение с кэшем, или None. Кэш — удобство: его отказ не отказ сборки."""
+    if path is None:
+        return None
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        conn = sqlite3.connect(str(path))
+        conn.executescript(VECTOR_CACHE_SCHEMA)
+        return conn
+    except sqlite3.Error:
+        return None
+
+
+def _cached_vectors(path: Path | None, model_id: str, shas: Sequence[str]) -> dict[str, bytes]:
+    """Что уже посчитано. Пустой ответ — законный исход, а не ошибка."""
+    conn = _cache_conn(path)
+    if conn is None:
+        return {}
+    найдено: dict[str, bytes] = {}
+    try:
+        with conn:
+            for кусок in range(0, len(shas), 500):
+                часть = list(dict.fromkeys(shas[кусок : кусок + 500]))
+                места = ",".join("?" * len(часть))
+                for sha, data in conn.execute(
+                    f"SELECT sha, data FROM vector_cache WHERE model = ? AND sha IN ({места})",
+                    [model_id, *часть],
+                ):
+                    найдено[str(sha)] = bytes(data)
+    except sqlite3.Error:
+        return {}
+    finally:
+        conn.close()
+    return найдено
+
+
+def _store_vectors(
+    path: Path | None, model_id: str, dim: int, rows: Sequence[tuple[str, bytes]]
+) -> int:
+    """Дописать посчитанное. Возвращает число записанных строк."""
+    conn = _cache_conn(path)
+    if conn is None or not rows:
+        return 0
+    try:
+        with conn:
+            conn.executemany(
+                "INSERT OR REPLACE INTO vector_cache (sha, model, dim, data) VALUES (?,?,?,?)",
+                [(sha, model_id, dim, data) for sha, data in rows],
+            )
+    except sqlite3.Error:
+        return 0
+    finally:
+        conn.close()
+    return len(rows)
+
+
 def dense_probe(*, model_id: str = DENSE_MODEL_ID) -> dict:
     """Report whether the dense channel can run, with an error code if not.
 
@@ -590,6 +918,10 @@ class KnowledgeIndex:
 
     def __init__(self, conn: sqlite3.Connection) -> None:
         self.conn = conn
+        # Guards every statement on `conn`. sqlite3 serialises access itself,
+        # but a cursor's rows must be drained before the next statement runs on
+        # the same connection, and two threads interleaving that is the bug.
+        self.lock = threading.Lock()
         self.entries: list[Entry] = []
         self.by_id: dict[int, Entry] = {}
         self.dense_ids: list[int] = []
@@ -616,37 +948,40 @@ class KnowledgeIndex:
             texture = _first(structure["texture"])
             mood = _first(structure["mood"])
             provenance = str(record["provenance"])
-            weight = PROVENANCE_WEIGHT.get(provenance, 0.5)
-            cur = self.conn.execute(
-                "INSERT INTO entries (kind, text, palette, light, texture, mood,"
-                " provenance, weight, source) VALUES (?,?,?,?,?,?,?,?,?)",
-                (
-                    str(record["kind"]),
-                    text,
-                    " ".join(palette),
-                    light,
-                    texture,
-                    mood,
-                    provenance,
-                    weight,
-                    str(record.get("source", "")),
-                ),
-            )
-            entry_id = int(cur.lastrowid or 0)
-            self.conn.execute(
-                "INSERT INTO entries_fts (rowid, text, structured) VALUES (?,?,?)",
-                (entry_id, text, _structure_text(structure)),
-            )
+            weight = provenance_weight(provenance)
+            with self.lock:
+                cur = self.conn.execute(
+                    "INSERT INTO entries (kind, text, palette, light, texture, mood,"
+                    " provenance, weight, source) VALUES (?,?,?,?,?,?,?,?,?)",
+                    (
+                        str(record["kind"]),
+                        text,
+                        " ".join(palette),
+                        light,
+                        texture,
+                        mood,
+                        provenance,
+                        weight,
+                        str(record.get("source", "")),
+                    ),
+                )
+                entry_id = int(cur.lastrowid or 0)
+                self.conn.execute(
+                    "INSERT INTO entries_fts (rowid, text, structured) VALUES (?,?,?)",
+                    (entry_id, text, _structure_text(structure)),
+                )
             added += 1
-        self.conn.commit()
+        with self.lock:
+            self.conn.commit()
         return added
 
     def reload(self) -> None:
         """Refresh the in-memory mirror used by the non-lexical channels."""
-        rows = self.conn.execute(
-            "SELECT id, kind, text, palette, light, texture, mood, provenance,"
-            " weight, source FROM entries ORDER BY id"
-        ).fetchall()
+        with self.lock:
+            rows = self.conn.execute(
+                "SELECT id, kind, text, palette, light, texture, mood, provenance,"
+                " weight, source FROM entries ORDER BY id"
+            ).fetchall()
         self.entries = [
             Entry(
                 entry_id=int(row[0]),
@@ -664,8 +999,14 @@ class KnowledgeIndex:
         ]
         self.by_id = {entry.entry_id: entry for entry in self.entries}
 
-    def attach_dense(self, *, model_id: str = DENSE_MODEL_ID) -> dict:
-        """Embed every non-core entry, or record why that could not be done."""
+    def attach_dense(
+        self, *, model_id: str = DENSE_MODEL_ID, cache_path: Path | None = VECTOR_CACHE_PATH
+    ) -> dict:
+        """Embed every non-core entry, or record why that could not be done.
+
+        :param cache_path: файл кэша векторов, ключ — ХЕШ ТЕКСТА. `None`
+            отключает кэш: так делают тесты, чтобы не писать в репозиторий.
+        """
         probe = dense_probe(model_id=model_id)
         self.dense_report = probe
         if probe["outcome"] != PASS:
@@ -680,31 +1021,81 @@ class KnowledgeIndex:
                 UNMEASURED, "nothing to embed", unmeasured=1, error_code="EMPTY"
             )
             return self.dense_report
-        vectors = model.encode([e.text for e in targets], normalize_embeddings=True, batch_size=64)
-        matrix = np.asarray(vectors, dtype="float32")
+        хеши = [_text_sha(e.text) for e in targets]
+        из_кэша = _cached_vectors(cache_path, model_id, хеши)
+        нужно = [(i, e) for i, e in enumerate(targets) if хеши[i] not in из_кэша]
+        if нужно:
+            свежие = model.encode(
+                [e.text for _, e in нужно], normalize_embeddings=True, batch_size=64
+            )
+            свежие = np.asarray(свежие, dtype="float32")
+            for (i, _), строка in zip(нужно, свежие):
+                из_кэша[хеши[i]] = строка.tobytes()
+            _store_vectors(
+                cache_path,
+                model_id,
+                int(свежие.shape[1]),
+                [(хеши[i], из_кэша[хеши[i]]) for i, _ in нужно],
+            )
+        self.dense_cached = len(targets) - len(нужно)
+        self.dense_embedded = len(нужно)
+        matrix = np.frombuffer(b"".join(из_кэша[h] for h in хеши), dtype="float32").reshape(
+            len(targets), -1
+        )
         self.dense_ids = [e.entry_id for e in targets]
         self.dense_matrix = matrix
         dim = int(matrix.shape[1])
-        for entry_id, row in zip(self.dense_ids, matrix):
+        with self.lock:
+            for entry_id, row in zip(self.dense_ids, matrix):
+                self.conn.execute(
+                    "INSERT OR REPLACE INTO vectors (id, dim, data) VALUES (?,?,?)",
+                    (entry_id, dim, row.tobytes()),
+                )
             self.conn.execute(
-                "INSERT OR REPLACE INTO vectors (id, dim, data) VALUES (?,?,?)",
-                (entry_id, dim, row.tobytes()),
+                "INSERT OR REPLACE INTO meta (key, value) VALUES ('dense_model', ?)",
+                (model_id,),
             )
-        self.conn.execute(
-            "INSERT OR REPLACE INTO meta (key, value) VALUES ('dense_model', ?)",
-            (model_id,),
-        )
-        self.conn.commit()
+            self.conn.commit()
         self.dense_report = _result(
             PASS,
-            f"embedded {len(self.dense_ids)} entries with {model_id}",
+            f"embedded {self.dense_embedded} entries with {model_id}, "
+            f"{self.dense_cached} taken from the vector cache",
             checked=len(self.dense_ids),
         )
         return self.dense_report
 
     def load_dense_from_db(self, *, model_id: str = DENSE_MODEL_ID) -> dict:
-        """Reuse vectors already stored in the file, without re-embedding."""
-        rows = self.conn.execute("SELECT id, dim, data FROM vectors").fetchall()
+        """Reuse vectors already stored in the file, without re-embedding.
+
+        Сохранённые векторы годятся, только если они посчитаны ТОЙ ЖЕ моделью и
+        описывают РОВНО ТЕ ЖЕ записи. Иначе выдача молча поедет: старый вектор
+        под новым текстом — это ответ на вопрос, которого никто не задавал.
+        Поэтому сверяется имя модели из `meta` и множество идентификаторов;
+        расхождение — «не смогли», а не тихое использование того, что нашлось.
+        """
+        with self.lock:
+            rows = self.conn.execute("SELECT id, dim, data FROM vectors").fetchall()
+            stored_model = self.conn.execute(
+                "SELECT value FROM meta WHERE key = 'dense_model'"
+            ).fetchone()
+        if rows and (not stored_model or str(stored_model[0]) != model_id):
+            self.dense_report = _result(
+                UNMEASURED,
+                f"stored vectors were made by {stored_model[0] if stored_model else 'nobody knows'}"
+                f", not by {model_id}",
+                unmeasured=1,
+                error_code="MODEL_CHANGED",
+            )
+            return self.dense_report
+        want = {e.entry_id for e in self.entries if e.kind != KIND_CORE}
+        if rows and {int(r[0]) for r in rows} != want:
+            self.dense_report = _result(
+                UNMEASURED,
+                f"stored vectors cover {len(rows)} entries, the index has {len(want)}",
+                unmeasured=1,
+                error_code="STALE",
+            )
+            return self.dense_report
         if not rows:
             self.dense_report = _result(
                 UNMEASURED, "no stored vectors", unmeasured=1, error_code="EMPTY"
@@ -730,9 +1121,11 @@ class KnowledgeIndex:
     def counts(self) -> dict[str, int]:
         """Entry count per provenance, plus the total."""
         out: dict[str, int] = {}
-        for row in self.conn.execute(
-            "SELECT provenance, COUNT(*) FROM entries GROUP BY provenance"
-        ):
+        with self.lock:
+            rows = self.conn.execute(
+                "SELECT provenance, COUNT(*) FROM entries GROUP BY provenance"
+            ).fetchall()
+        for row in rows:
             out[str(row[0])] = int(row[1])
         out["total"] = sum(out.values())
         return out
@@ -782,6 +1175,8 @@ def build_index(
     our_prompts: Path = OUR_PROMPTS_DIR,
     reference_cards: Path = REFERENCE_CARDS_DIR,
     gallery_prompts: Path = GALLERY_PROMPTS_PATH,
+    community_prompts: Path = COMMUNITY_PROMPTS_PATH,
+    craft_records: Path = CRAFT_RECORDS_DIR,
     dense: bool | None = None,
 ) -> KnowledgeIndex:
     """Build the index from every source that is present.
@@ -789,19 +1184,46 @@ def build_index(
     A missing source is reported, never fatal: the index must come up without
     the gallery harvest, because that file is produced by another agent.
 
+    An index that comes up with core rules but no examples is reported as
+    `could not measure`, not `pass`: it cannot answer a retrieval query.
+
     >>> index = build_index(core_rules=CORE_RULES_PATH,
     ...                     our_prompts=Path("/nowhere"),
     ...                     reference_cards=Path("/nowhere"),
-    ...                     gallery_prompts=Path("/nowhere"))
+    ...                     gallery_prompts=Path("/nowhere"),
+    ...                     community_prompts=Path("/nowhere"))
     >>> index.build_report["outcome"], index.counts()["core"] > 0
-    ('pass', True)
+    ('could not measure', True)
     """
     if db_path != ":memory:":
         Path(db_path).parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(str(db_path))
+    # `check_same_thread=False`, with every statement taken under the index's
+    # own lock. Every route in studio/app.py is a plain `def`, which FastAPI
+    # runs in a threadpool worker; with sqlite3's default the first route to
+    # call `retrieve()` from a worker raises ProgrammingError. Nothing calls it
+    # yet, so this has never fired — which is exactly why it was worth fixing
+    # before the commit that wires retrieval into the web layer.
+    conn = sqlite3.connect(str(db_path), check_same_thread=False)
     conn.executescript(SCHEMA)
     conn.execute("DELETE FROM entries")
     conn.execute("DELETE FROM entries_fts")
+    # Векторы стираются здесь ПРАВИЛЬНО, и это не оплошность: записи вставляются
+    # заново с новыми автоинкрементными идентификаторами, а вектор привязан к
+    # идентификатору. Оставить старые значило бы подложить вектор одного текста
+    # под другой — тихо, и хуже, чем пересчитать.
+    #
+    # Следствие ИЗМЕРЕНО 2026-08-31: кэш не может сработать НИКОГДА, поэтому
+    # каждая сборка с плотным каналом платит 171 с на 13 426 записях.
+    # `load_dense_from_db` вызывается строкой ниже и всегда получает пустую
+    # таблицу — вызов не лишний, он станет рабочим, как только вектор будет
+    # ключиться СОДЕРЖИМЫМ, а не номером строки.
+    #
+    # ДОЛГ DEBT(2026-08-31) ЗАКРЫТ 2026-09-02 — ровно так, как он и был описан:
+    # вектор ключится содержимым, но не здесь, а в отдельном файле
+    # `VECTOR_CACHE_PATH`. Эти три строки остаются как были: стирать `vectors`
+    # при пересборке по-прежнему ПРАВИЛЬНО, потому что идентификаторы новые.
+    # ИЗМЕРЕНО 2026-09-02 на тех же 13 426 записях: первая сборка 160.3 с,
+    # вторая 3.0 с, векторы побайтно те же.
     conn.execute("DELETE FROM vectors")
     index = KnowledgeIndex(conn)
 
@@ -812,6 +1234,8 @@ def build_index(
         ("ours", load_our_prompts(our_prompts), our_prompts),
         ("reference_card", load_style_cards(reference_cards), reference_cards),
         ("gallery", load_gallery_prompts(gallery_prompts), gallery_prompts),
+        ("community", load_gallery_prompts(community_prompts), community_prompts),
+        ("knowledge", load_craft_records(craft_records), craft_records),
     ):
         loaded[name] = index.add(records)
         if not records:
@@ -821,15 +1245,33 @@ def build_index(
     if dense is None:
         dense = os.environ.get(DENSE_ENV_FLAG, "") == "1"
     if dense:
-        index.attach_dense()
+        # СНАЧАЛА взять готовое. ИЗМЕРЕНО 2026-08-31: эмбеддинги 13 426 записей
+        # стоят 171 с, они честно складываются в файл — и не читались НИКОГДА.
+        # `load_dense_from_db` существовала без единого вызова, поэтому каждая
+        # сборка платила три минуты заново. Кэш, который наполняется и не
+        # читается, — это не кэш, а расход.
+        reused = index.load_dense_from_db()
+        if reused["outcome"] != PASS:
+            index.attach_dense()
 
     total = sum(loaded.values())
+    examples = total - loaded["core"]
     if total == 0:
         outcome = UNMEASURED
         note = "no source produced a single entry"
     elif loaded["core"] == 0:
         outcome = FAIL
         note = "core rules missing: the index has examples but no source of truth"
+    elif examples == 0:
+        # The verdict that was missing, and its absence is what let the defect
+        # above survive: an index holding only core rules reports PASS while
+        # being unable to answer a single retrieval query. Zero examples is
+        # never a built index; it is an index nobody can measure.
+        outcome = UNMEASURED
+        note = (
+            f"{loaded['core']} core rules and 0 examples: every retrieval will "
+            "answer 'could not measure' and evaluate cannot run"
+        )
     else:
         outcome = PASS
         note = "built"
@@ -873,10 +1315,20 @@ def _channel_phrase(
         hit: set[int] = set()
         for variant in variants:
             try:
-                rows = index.conn.execute(
-                    "SELECT rowid FROM entries_fts WHERE entries_fts MATCH ?",
-                    (f'"{variant}"',),
-                ).fetchall()
+                # Under the index lock, like every other query in this file.
+                # It was the one execute that was not, and CI caught it on
+                # 2026-08-27: `ValueError: not enough values to unpack
+                # (expected 1, got 0)` from the `(rowid,)` below, on Python
+                # 3.12, in the threaded retrieval test. It never fires on a
+                # machine whose sqlite3 reports `threadsafety == 3`
+                # (serialized) — MEASURED 3 here — because that build
+                # serialises the shared connection for us. Relying on the
+                # runner's compile-time flag is not a guarantee; the lock is.
+                with index.lock:
+                    rows = index.conn.execute(
+                        "SELECT rowid FROM entries_fts WHERE entries_fts MATCH ?",
+                        (f'"{variant}"',),
+                    ).fetchall()
             except sqlite3.OperationalError:
                 continue
             hit.update(int(rowid) for (rowid,) in rows)
@@ -905,10 +1357,12 @@ def _channel_bm25(index: KnowledgeIndex, terms: Sequence[str]) -> tuple[list[int
             if not escaped:
                 continue
             try:
-                rows = index.conn.execute(
-                    "SELECT rowid, bm25(entries_fts) FROM entries_fts WHERE entries_fts MATCH ?",
-                    (f'"{escaped}"',),
-                ).fetchall()
+                with index.lock:
+                    rows = index.conn.execute(
+                        "SELECT rowid, bm25(entries_fts) FROM entries_fts"
+                        " WHERE entries_fts MATCH ?",
+                        (f'"{escaped}"',),
+                    ).fetchall()
             except sqlite3.OperationalError:
                 continue
             for rowid, score in rows:
@@ -1021,6 +1475,28 @@ def retrieve(
         )
 
     terms = query_terms(text)
+    # THE THIRD OUTCOME, applied to the question rather than to the corpus.
+    # A query that yields no searchable term and commits to no structural field
+    # gives the channels nothing to work with. Every one of them then admits
+    # nothing, and the old code read that as `fail` — "I searched and found
+    # nothing relevant" — which is a claim about the index made on the strength
+    # of never having read the query. An empty string got the same confident
+    # answer as a real question. "I could not search this" is a different thing
+    # from "there is nothing here", and the caller has to be able to tell them
+    # apart (rule R1).
+    if not terms and not any(structure.values()):
+        return _result(
+            UNMEASURED,
+            "the query carries no searchable term and no style field, so nothing "
+            "was searched — this is not the same as finding nothing",
+            checked=0,
+            unmeasured=1,
+            core_rules=core,
+            examples=[],
+            k=k,
+            terms=terms,
+        )
+
     rankings: dict[str, list[int]] = {}
     admitted: set[int] = set()
     channels_off = 0
@@ -1069,21 +1545,49 @@ def retrieve(
         fused[entry_id] *= index.by_id[entry_id].weight
 
     ordered = sorted((i for i in fused if i in admitted), key=lambda i: (-fused[i], i))
-    rejected = len(fused) - len(ordered)
+    # An entry that scored but did not clear the admission floor is the floor
+    # doing its job, not a breach. It used to be reported as `violations`,
+    # which made that field unreadable next to every other module's use of it.
+    below_floor = len(fused) - len(ordered)
 
+    # TWO LANES, RETURNED SEPARATELY, and this is a deliberate refusal to guess.
+    # OBSERVED the moment knowledge was indexed: "покажи промт для золотого часа"
+    # came back with three explanatory records and no prompt, because knowledge
+    # outweighs the gallery. The tempting fix is a router that reads the query's
+    # intent — and the critic of the record design said exactly why not: a
+    # router without a mechanism is a wish, and this one would have to decide
+    # from a handful of marker words in two languages. So nothing decides.
+    # `examples` stays what it always was — prompts somebody wrote — and
+    # `knowledge` is a second, labelled list. The caller can see both and use
+    # what fits, which is strictly more information than a guess would leave it.
     picked: list[dict] = []
+    knowledge: list[dict] = []
     per_provenance: dict[str, int] = defaultdict(int)
     seen_prefixes: set[str] = set()
+    # How many entries the quota turned away. MEASURED 2026-08-26: with a
+    # corpus of 4601 rows all carrying one provenance, the quota caps every
+    # answer at 2 however large k is, and nothing in the result said so — a
+    # caller asking for 5 got 2 and could not tell "the corpus has no more"
+    # from "the guard stopped counting". The guard stays; the silence does not.
+    quota_blocked = 0
     for entry_id in ordered:
         entry = index.by_id[entry_id]
-        if per_provenance[entry.provenance] >= MAX_PER_PROVENANCE:
+        cap = MAX_PER_PROVENANCE_KNOWLEDGE if entry.kind == KIND_KNOWLEDGE else MAX_PER_PROVENANCE
+        if per_provenance[entry.provenance] >= cap:
+            quota_blocked += 1
             continue
         prefix = " ".join(entry.text.lower().split())[:DEDUP_PREFIX]
         if prefix in seen_prefixes:
             continue
+        lane = knowledge if entry.kind == KIND_KNOWLEDGE else picked
+        # Each lane fills to k on its own. Without this the loop ran until BOTH
+        # were full and one overshot badly — OBSERVED: 43 examples returned for
+        # k=5, because the knowledge lane had not filled yet.
+        if len(lane) >= k:
+            continue
         seen_prefixes.add(prefix)
         per_provenance[entry.provenance] += 1
-        picked.append(
+        lane.append(
             {
                 "id": entry.entry_id,
                 "kind": entry.kind,
@@ -1097,24 +1601,39 @@ def retrieve(
                 "score": round(fused[entry_id], 6),
             }
         )
-        if len(picked) >= k:
+        if len(picked) >= k and len(knowledge) >= k:
             break
 
-    if picked:
-        outcome, note = PASS, f"{len(picked)} examples above the floor"
+    if picked or knowledge:
+        outcome = PASS
+        note = f"{len(picked)} examples and {len(knowledge)} knowledge records above the floor"
+        if not picked and knowledge:
+            # Worth saying out loud rather than leaving a caller to notice an
+            # empty list: a Russian question reaches the knowledge lane and
+            # nothing else, because every prompt in this corpus is in English.
+            note += "; no prompt example matched — the prompt corpus is English"
+        if len(picked) < k and quota_blocked:
+            note = (
+                f"{note}; {k} were asked for and the per-provenance quota of "
+                f"{MAX_PER_PROVENANCE} turned away {quota_blocked} more — this "
+                "index does not hold enough distinct sources to fill k"
+            )
     else:
         outcome, note = FAIL, "nothing in the index clears the relevance floor"
     return _result(
         outcome,
         note,
         checked=len(candidates),
-        violations=rejected,
+        violations=0,
         unmeasured=channels_off,
         core_rules=core,
         examples=picked,
+        knowledge=knowledge,
         k=k,
         terms=terms,
         channels=sorted(rankings),
+        below_floor=below_floor,
+        quota_blocked=quota_blocked,
     )
 
 
@@ -1195,6 +1714,36 @@ def evaluate(
         recall = len(found) / len(must) if must else None
         relevant = sum(1 for hay in haystacks if any(phrase in hay for phrase in must))
         precision = relevant / len(examples) if examples else (1.0 if not must else 0.0)
+
+        # НЕ СМОГЛИ — не то же самое, что НЕ НАШЛИ (правило Р1). Найдено
+        # разбором 2026-08-31: `unmeasured` объявлялся нулём и не двигался
+        # НИКОГДА, а строка, на которой сам ретривер ответил «не смогли»
+        # (запрос без поискового термина, например), получала recall 0.0 и
+        # уезжала в нарушения. То есть прибор превращал «нечего было искать» в
+        # «искали и провалились», занижая собственное число и печатая при этом
+        # честный на вид «не смогли 0».
+        #
+        # # DEBT(2026-08-31): владелец `studio/knowledge.py` — другой агент
+        # (HANDOFF_studio-mvp.md), и по Ц2 чужой модуль не правится. Правка
+        # сделана всё равно и намеренно узко: дефект искажает публикуемое
+        # число качества поиска, а владельца в этой ветке нет. Отступление
+        # записано здесь, чтобы оно грепалось и не стало нормой.
+        if answer["outcome"] == UNMEASURED:
+            unmeasured += 1
+            per_record.append(
+                {
+                    "query": query,
+                    "control": control,
+                    "returned": len(examples),
+                    "recall": None,
+                    "precision": None,
+                    "found": [],
+                    "leaked": [],
+                    "ok": None,
+                    "outcome": answer["outcome"],
+                }
+            )
+            continue
 
         ok = True
         if control == "negative":

@@ -1,0 +1,27 @@
+// Ручные разметки второй оси: род факта там, где его не вывести из тира и
+// имени атрибута. Выведенное сюда НЕ дублируется — оно считается на лету
+// (studio/factaxis.py), и копия дала бы второй способ узнать известное (Е1).
+//
+// Строка несёт `origin` из И4 и НИКОГДА не `ИЗМЕРЕНО`, если наблюдение не
+// лежит в самом факте: `ВЫБРАНО` — это суждение человека, прочитавшего
+// значение глазами, и оно помечено как суждение, чтобы потом его можно было
+// оспорить. Значения факта здесь нет намеренно: репозиторий хранит пересказ
+// со ссылкой, а не чужую прозу, поэтому ключ — модель, атрибут и страница.
+//
+// 2026-08-31: двенадцать строк тира `paper`, которые механическое правило
+// оставило третьим исходом — имена атрибутов у них штучные и ни под один
+// маркер не подходят. Прочитаны глазами: каждая называет протокол (VBench 2.0,
+// PersonaShot, Bradley-Terry на 2 696 парных разметках, постраничная задержка
+// на одной NVIDIA L4), то есть это измерения, а не проза о качестве.
+{"model": "*", "attribute": "fvd_blind_spot_spatial_bias", "source_url": "https://arxiv.org/abs/2403.09669", "kind": "measurement", "origin": "ВЫБРАНО", "why": "прочитано глазами 2026-08-31: значение называет протокол и число, это измерение"}
+{"model": "*", "attribute": "metric_blind_spots_ssim_psnr_fvd_vqa", "source_url": "https://arxiv.org/abs/2605.03475", "kind": "measurement", "origin": "ВЫБРАНО", "why": "прочитано глазами 2026-08-31: значение называет протокол и число, это измерение"}
+{"model": "*", "attribute": "vlm_judge_human_agreement", "source_url": "https://arxiv.org/abs/2605.03475", "kind": "measurement", "origin": "ВЫБРАНО", "why": "прочитано глазами 2026-08-31: значение называет протокол и число, это измерение"}
+{"model": "*", "attribute": "arena_rank_vs_prompt_adherence", "source_url": "https://arxiv.org/abs/2606.31711", "kind": "measurement", "origin": "ВЫБРАНО", "why": "прочитано глазами 2026-08-31: значение называет протокол и число, это измерение"}
+{"model": "*", "attribute": "vlm_judge_pipeline_sensitivity", "source_url": "https://arxiv.org/abs/2607.10826", "kind": "measurement", "origin": "ВЫБРАНО", "why": "прочитано глазами 2026-08-31: значение называет протокол и число, это измерение"}
+{"model": "*", "attribute": "multishot_identity_continuity_gap", "source_url": "https://arxiv.org/abs/2608.16717", "kind": "measurement", "origin": "ВЫБРАНО", "why": "прочитано глазами 2026-08-31: значение называет протокол и число, это измерение"}
+{"model": "*", "attribute": "single_vs_multishot_quality_drop", "source_url": "https://arxiv.org/abs/2607.24241", "kind": "measurement", "origin": "ВЫБРАНО", "why": "прочитано глазами 2026-08-31: значение называет протокол и число, это измерение"}
+{"model": "*", "attribute": "keyframe_conditioning_tradeoff", "source_url": "https://arxiv.org/abs/2607.14202", "kind": "measurement", "origin": "ВЫБРАНО", "why": "прочитано глазами 2026-08-31: значение называет протокол и число, это измерение"}
+{"model": "*", "attribute": "identity_drift_in_commercial_models", "source_url": "https://arxiv.org/abs/2608.20749", "kind": "measurement", "origin": "ВЫБРАНО", "why": "прочитано глазами 2026-08-31: значение называет протокол и число, это измерение"}
+{"model": "*", "attribute": "identity_vs_prompt_capacity_conflict", "source_url": "https://arxiv.org/abs/2608.16154", "kind": "measurement", "origin": "ВЫБРАНО", "why": "прочитано глазами 2026-08-31: значение называет протокол и число, это измерение"}
+{"model": "*", "attribute": "lipsync_identity_failure_mode", "source_url": "https://arxiv.org/abs/2608.18832", "kind": "measurement", "origin": "ВЫБРАНО", "why": "прочитано глазами 2026-08-31: значение называет протокол и число, это измерение"}
+{"model": "colpali", "attribute": "indexing_latency", "source_url": "https://arxiv.org/html/2407.01449v6", "kind": "measurement", "origin": "ВЫБРАНО", "why": "прочитано глазами 2026-08-31: значение называет протокол и число, это измерение"}

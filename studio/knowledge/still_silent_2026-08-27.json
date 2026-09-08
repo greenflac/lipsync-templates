@@ -1,0 +1,170 @@
+[
+ {
+  "target": "flux-2 text_rendering_non_latin — a POSITIVE Cyrillic answer",
+  "why": "I closed the vendor-silence half (recorded as a vendor-tier negative), but nobody has published a shipping text-to-image model that documents legible Cyrillic. BFL never names a script; Qwen-Image, the loudest non-Latin text-rendering claimant, scopes itself to en+zh. Next step is a paid probe the operator must approve: one prompt with a quoted Cyrillic packaging string (e.g. 'Молоко 3,2%') against flux-2 [flex] (BFL's own typography-specialised variant) and flux-2 [max], eyeballed for glyph-level legibility. A negative control is required — the same prompt in Latin — or the probe measures 'the model can render text', not 'the model can render Cyrillic'."
+ },
+ {
+  "target": "kling-3.0 character_orientation — whether it holds across twelve shots",
+  "why": "The parameter's semantics are now closed at portal tier, and that alone answers the question in the negative on mechanism: 'image' disables element binding, which is the only documented facility for facial identity, and caps each clip at 10s. What is NOT closed is the applicability claim either way — no vendor, benchmark or corpus source states how far likeness drifts across a twelve-shot run in either mode. The base's three existing failure-mode rows on drift are all blog-tier."
+ },
+ {
+  "target": "seedance-2.0 — any vendor-tier source at all",
+  "why": "docs.byteplus.com (ByteDance's own ModelArk docs, the page the base's card already cites) answered 200 but serves a JavaScript shell: the page body contained none of 'video reference', 'reference image', 'consistency' or 'duration'. Not a policy refusal — a rendering failure. Both seedance facts above therefore rest on Runway's OpenAPI schema, which is a PORTAL that runs the model and documents Runway's own ceilings, not ByteDance's. api.klingai.com/openapi.json returned 404 likewise. Nothing was routed around."
+ },
+ {
+  "target": "seedance-2.0 holds_identity — whether the character actually survives the 9 slots",
+  "why": "Capability is recorded; applicability is not. No published evaluation measures identity retention across seedance-2.0's reference slots, and the base's own card carries an unresolved vendor-vs-vendor contradiction on duration and resolution and warns not to bill against it. Also worth flagging to the operator: the same Runway schema exposes seedance2_5, which goes to 30s — the card already says 2.5 supersedes 2.0."
+ },
+ {
+  "target": "flux-2 holds_identity — how many shots before drift",
+  "why": "The vendor asserts identity is maintained 'across multiple generations' and illustrates eight, but publishes no number, no drift metric and no failure threshold. 'Twelve shots' is outside anything anyone documented for either flux-2 or kling-3.0; both would need a measured run."
+ },
+ {
+  "target": "hedra-character-3 / availability",
+  "why": "POLICY REFUSAL, reported not routed around. hedra.com is refused by this organisation's egress policy (\"Tunnel connection failed: 403 Forbidden\"), and so is api.replicate.com, the other host that carries a Character-3 input schema. No mirror, cache or proxy was tried. Three further primary routes were probed and failed honestly: fal.ai has no Hedra model at all (/api/models?keywords=hedra returns total:0); Hedra's official SDK repo github.com/hedra-labs/hedra-python is real (named as Repository in the hedra-python PyPI metadata, support@hedra.com) but raw.githubusercontent.com returns 404 for both main/api.md and master/api.md, and the package's last release is 0.1.2 of 2024-11-02 — six months before Character-3 shipped — so even if readable it would not name the model. Everything I have on Hedra taking a still image plus an audio file is a Gemini search summary of hedra.com pages I could not open, which is exactly the kind of unquotable sentence this task forbids returning. NEXT STEP: allowlist hedra.com (or api.replicate.com) — one page read closes it."
+ },
+ {
+  "target": "omnihuman-1.5 / max_seconds at VENDOR tier",
+  "why": "Closed only at portal tier. The 30s-at-1080p / 60s-at-720p pair is fal.ai's resale ceiling. ByteDance's own documentation lives on volcengine.com / BytePlus, which I did not probe — and the search snippets already disagree across resellers (Replicate and EvoLink say 35s, AI/ML API and fal say 30s, Magnific says 60s/720p and 30s/1080p). Whether ByteDance's own limit is 30, 35 or 60 is unresolved, and the disagreement is itself evidence that resellers set different caps. NEXT STEP: probe docs.byteplus.com and volcengine.com for reachability, or a paid probe against the vendor API."
+ },
+ {
+  "target": "kling-avatar / max audio seconds and output resolution",
+  "why": "The fal schema I read has no duration and no resolution field, so it proves the input shape and nothing about limits. Search snippets offered 60s, 300s and 5 minutes across three different Kling endpoints and versions (advanced-lip-sync, Avatar 2.0, LipsyncA2VRequest) with no way to tell which maps to 'kling-avatar' — recording any of them would be inventing precision. api.klingai.com is listed as reachable but I did not find a documented schema path on it, and guessing paths is not a measurement. NEXT STEP: name the exact Kling endpoint the operator intends, then read its schema."
+ },
+ {
+  "target": "chatterbox / phone-speaker intelligibility, output sample rate, reference-clip length",
+  "why": "The model card states none of these. It gives licence, size, language count, cfg/exaggeration tuning and a watermark note, but never an output sample rate, never a minimum or maximum reference-audio duration, and never an intelligibility figure. The one comparative claim on the page (\"consistently preferred\" vs ElevenLabs) is vendor-asserted and points at Resemble's own Podonos page. This is a listening judgement, not a schema field. NEXT STEP: a paid A/B measurement the operator approves — synthesise the same 40-second script through eleven_v3, speech-02-hd and chatterbox from the same reference clip and score intelligibility on a phone speaker. No free source will settle it."
+ },
+ {
+  "target": "speech-02-hd / cloning quality and the clone endpoint's reference-audio requirements",
+  "why": "platform.minimax.io is refused by this organisation's egress policy (\"Tunnel connection failed: 403 Forbidden\"). Not routed around. The fal schema I did read is the synthesis endpoint only — voice_id there is a predefined voice; cloning is a separate endpoint (fal-ai/minimax/voice-clone) whose schema I did not fetch, so the minimum usable reference-clip length is unknown. NEXT STEP: allowlist platform.minimax.io, or read the fal-ai/minimax/voice-clone schema for the reseller-tier answer."
+ },
+ {
+  "target": "aleph2 / output resolution and price",
+  "why": "The OpenAPI describes no resolution or duration parameter on the aleph2 branch, which most likely means output tracks the input plate — but 'most likely' is inference, not a quoted sentence, so I am not returning it as a fact. The only resolution-adjacent text in that branch is an outputFormat surcharge note mentioning \"larger than 4 megapixels (roughly 4K)\", which implies aleph2 can exceed 4 MP without stating a ceiling. NEXT STEP: read docs.dev.runwayml.com/guides/pricing for the aleph2 row (that host is reachable and already sourced the gen4.5 price), or probe the API."
+ },
+ {
+  "target": "applicability of ALL of the above",
+  "why": "Every fact returned here is a CAPABILITY claim from a schema or a README — the API accepts the input, the flag exists. None of them is evidence that the RESULT holds up: not that OmniHuman 1.5's 60s/720p output stays identity-stable at second 55, not that aleph2 can add a subject to a plate without the plate drifting, not that any of the three voices survives a phone speaker. The fact base's own InfiniteTalk rows show how far apart those two things sit — the vendor README promises unlimited length while a probe measured bystanders drifting at 6-15x the VAE floor in V2V. Applicability comes from the corpus and from practitioners, and for these five targets nobody in reach has published it."
+ },
+ {
+  "target": "gpt-4o-mini-tts — cost per hour of Russian narration",
+  "why": "The billing UNIT is now closed (per token: $0.60/1M text in, $12/1M audio out, vendor page read directly). The per-hour figure is not: OpenAI publishes no audio-tokens-per-second rate for this model anywhere on the pricing page, and no cost-per-minute estimate appears for gpt-4o-mini-tts. Converting to an 8h budget needs a metered probe — one real synthesis, tokens billed vs. seconds returned, on Russian text specifically. That is a paid measurement the operator has to approve."
+ },
+ {
+  "target": "f5-tts — clone stability, any number",
+  "why": "No speaker-similarity (SIM) or WER figure is stated in the abstract on the paper page, and the repo README publishes only latency/RTF benchmarks (253 ms, RTF 0.0394 on an L20), not similarity. For the Russian finetune specifically nothing at all is published — one contributor, Common Voice data, no eval. Closing this requires running the repo's own eval, or an A/B listening test, on Russian long-form input."
+ },
+ {
+  "target": "kling-3.0 — measured identity drift across many separate generations",
+  "why": "Kling's own blog describes the Subject Binding mechanism and claims 'industrial-grade stability', but publishes no drift metric, no number of generations tested, and no tolerance. I found no benchmark-tier evaluation. The honest answer is that the vendor asserts a mechanism and nobody has published a measurement. Closing it means generating N clips from one bound subject and scoring face embeddings — a paid measurement."
+ },
+ {
+  "target": "veo-3.1 — repeatability guarantee for a speaker's voice across separate API calls",
+  "why": "Google prescribes reusing the seed to hold voice output steady across scenes, and I quoted that. What is NOT documented anywhere I read is whether a fixed seed plus an unchanged voice clause yields a bit-identical or merely similar voice, or how far the voice moves when the scene text changes. There is no voice-cloning input to pin against. Only a probe answers this."
+ },
+ {
+  "target": "xtts-v2 — a commercially-licensed successor",
+  "why": "Not asked, but worth naming: Coqui shut down, so CPML will not be relaxed and no vendor is maintaining these weights. I did not search for a commercially-licensed open-weight Russian TTS replacement, so I am not reporting one. If the audiobook is commercial, that search is the actual next step and neither XTTS-v2 nor F5-TTS survives it."
+ },
+ {
+  "target": "eleven_v3 / availability — \"Is ElevenLabs v3 a candidate, and what are its stated limits?\"",
+  "why": "NOT SILENT — the base already answers it, so the slot was spent elsewhere. model_advice returned 10 attributes on eleven_v3, all read directly: character_limit 5000 chars (~5 min) [vendor, elevenlabs.io/docs/models.md], max_text_length 5000 [portal, fal openapi], languages 70+ [vendor], price $0.10/1000 chars [portal, fal] and 1 credit per 50 chars [portal, runway], positioning \"latest and most advanced speech synthesis model\" [vendor], language_control language_code ISO 639-1 [portal], unsupported_params no previous_text/next_text [portal], plus two vendor failure modes (Creative stability hallucinates; too many <break> tags destabilise delivery, and v3 does not support SSML break tags at all). I added two NEW v3 attributes the base lacked and that bear on the question: ipa_consistency 80-90%, and the PVC clone-quality caveat."
+ },
+ {
+  "target": "ideogram-3 — a VENDOR statement about typography accuracy",
+  "why": "about.ideogram.ai and developer.ideogram.ai are both REFUSED by this session's egress policy (Tunnel connection failed: 403 Forbidden). Reported, not routed around — no mirror, cache or proxy attempted. Everything I have on Ideogram 3 is portal-tier (fal's OpenAPI schema). The typography claims circulating in search summaries (\"excels at complex text layouts\", \"Cyrillic/CJK/Arabic accuracy\") trace to resellers and blogs, not to Ideogram, and I refuse to launder them as vendor. ASK: allowlist about.ideogram.ai and developer.ideogram.ai."
+ },
+ {
+  "target": "seedream-4 — a text-rendering / typography claim from ByteDance",
+  "why": "The arXiv 2509.20427 abstract, which I read, makes no typography claim at all. The vendor docs live on byteplus.com and volcengine.com, which I did not open; search summaries attribute concrete prompting rules to them (quote exact text, 1-10 words, use 2048x2048+ for cleaner type) but I could not quote a sentence from the source, so I return nothing rather than a plausible paraphrase. Next cheap step: fetch the BytePlus Seedream prompt guide and the full arXiv PDF, which does have text-rendering benchmark sections the abstract omits."
+ },
+ {
+  "target": "ideogram-3 vs imagen-4 vs seedream-4 — a HEAD-TO-HEAD typography comparison",
+  "why": "No published benchmark scoring the three on in-image text was found through free sources, and the target's premise is now partly moot: Imagen 4 is discontinued on Vertex (June 30, 2026, past). A comparison of the two survivors on the operator's own catalogue text is a PAID MEASUREMENT: same 20 prompts with known target strings, rendered on ideogram-3 and seedream-4, scored by character error rate via OCR. Roughly $5-15 of API spend. Needs operator approval."
+ },
+ {
+  "target": "eleven_multilingual_v2 — Russian quality: accent artefacts and stress errors on LONG Russian prose",
+  "why": "MEASURED BOUNDARY. What free primary sources give is the control surface, not the quality: the vendor confirms Russian is one of the 29 languages (already in the base) and that Multilingual v2 supports no phoneme tags (new, recorded). No vendor page, paper or benchmark states a Russian stress-error rate, an accent-artefact rate, or any degradation over paragraph-length Cyrillic input. Vendor marketing would not publish a per-language weakness and no third party has measured it. PAID MEASUREMENT: ~2000 characters of Russian prose loaded with known stress minimal pairs (за́мок/замо́к, му́ка/мука́) plus a homograph set, generated on eleven_multilingual_v2 and eleven_v3, scored by a Russian speaker or by forced-alignment against a stress dictionary. ~$0.40 of API spend plus a human listening pass; the human pass is the real cost. Needs operator approval."
+ },
+ {
+  "target": "minimax-speech-02 — does a voice_id sound IDENTICAL weeks apart",
+  "why": "Only partly closed. I found the retention rule (auto-deleted if unused for 7 days) and the lab's zero-shot similarity claim, but neither answers whether two generations from the same surviving voice_id are acoustically identical after weeks — that depends on silent server-side model updates the vendor does not announce. minimax.io is not fetchable through this session's search backend (listed fetchable:false), so I could not read MiniMax's own retention or versioning policy and the 7-day rule rests on a portal restatement of it. PAID MEASUREMENT, and it needs elapsed time: clone one voice, generate a fixed sentence today, keep the id alive with weekly touch calls, regenerate the same sentence at 2 and 6 weeks, compare with a speaker-verification embedding cosine — with a negative control (a different voice) so the metric is proved to move. Trivial API cost; the cost is the 6-week clock. Needs operator approval, and it cannot be backdated, so if voice durability matters the clone should be started now."
+ },
+ {
+  "target": "kling-3.0 / lip_sync_accuracy",
+  "why": "MEASURED NEGATIVE, not unsearched. The arXiv API query search_query=all:\"Kling 3.0\" AND all:\"lip\" returned HTTP 200 with <opensearch:totalResults>0</opensearch:totalResults> — no paper on arXiv mentions both. Web search returned only vendor marketing prose about 'native audio sync' with no metric; no Sync-C, LSE-C or LSE-D figure for this model exists in anything reachable. Nearest miss is Avatar V (arxiv.org/abs/2606.13872), which benchmarks lip synchronization against 'Kling O3 Pro' — a DIFFERENT model id — and is run by the winning model's own authors. Closing this needs a paid generation plus a SyncNet-family metric run locally: an operator has to approve the spend."
+ },
+ {
+  "target": "seed.bytedance.com (the Seedance 2.0 vendor model page)",
+  "why": "REFUSED BY POLICY, reported not routed around: fetch_url returned denied:true, 'Tunnel connection failed: 403 Forbidden'. Not retried, no mirror, no cache. This is where the vendor's own evaluation write-up (the '97.55% motion-quality usability' and SeedVideoBench 2.0 figures secondary sources attribute to ByteDance) would be verifiable. Worth adding to the allowlist ask; I substituted the ByteDance-authored arXiv model card, which carries no such numbers."
+ },
+ {
+  "target": "veo-3.1 / upscale_artifacts — the standalone Veo upscaler for existing footage",
+  "why": "The generation-path half is closed (Google documents 4k as directly generated). Secondary sources describe a separate Veo upscaling product on Vertex that takes existing video to 1080p/4k, but I could not locate its vendor page: cloud.google.com/gemini-enterprise-agent-platform/models/video/upscale-a-video and docs.cloud.google.com/gemini-enterprise-agent-platform/models/video/upscale-videos both answered 404. I did not guess further URLs. Nothing about that product's artefacts is recorded, and the Gemini search summary asserting 'deep learning-based detail reconstruction rather than simple pixel interpolation' quotes no page I could open."
+ },
+ {
+  "target": "kling-3.0 / fps — vendor confirmation of the measured 24 fps",
+  "why": "app.klingai.com/global/dev/document-api/apiReference/model/videoGeneration answered HTTP 200 but is a client-rendered JS shell: 76,341 bytes containing ZERO occurrences of 'fps', 'frame rate' or '帧率'. The docs render in the browser, so the vendor's stated frame rate is unreachable by fetch. The 24 fps I return is a probe on two fal example outputs, and it disagrees with the 30/60 fps figures blogs assert — that disagreement is unresolved and needs either a rendered-JS fetch or one paid generation through api.klingai.com."
+ },
+ {
+  "target": "wan-2.6-flash / max_resolution",
+  "why": "Both Alibaba vendor documentation hosts are refused by this session's egress policy and were NOT routed around: www.alibabacloud.com and help.aliyun.com both returned \"Tunnel connection failed: 403 Forbidden\". No open-weight fallback exists either — huggingface.co/api/models?search=Wan2.6 returns only two empty user repos (fanfa2320s/wan2.6, Fhcxfh/wan2.6), no Wan-AI org card. The wavespeed.ai text-to-video-flash page I fetched served only its site-wide i18n bundle, not the endpoint parameter table, and fal.ai's queue OpenAPI URL 404'd for this endpoint id. PARTIAL ANSWER ALREADY IN THE BASE, not re-recorded: wan-2.6-flash.max_seconds cites a directly-read wavespeed.ai page quoting \"resolution '720p or 1080p (default: 720p)'\" — portal tier, i.e. that reseller's ceiling, which is exactly the mistake that put Veo at 1080p. On that portal evidence Wan 2.6 Flash does NOT belong on a 4K shortlist, but no vendor artefact confirms it. NEXT STEP: ask the policy owner for www.alibabacloud.com and help.aliyun.com, or pay for one probe call at resolution=4k and measure the file."
+ },
+ {
+  "target": "kling-3.0 / max_resolution — the native-vs-upscale question, settled properly",
+  "why": "Answered only at the level of a vendor product name (\"Kling Native 4K Video\"). The pages that would carry the actual pixel dimensions and the resolution enum — app.klingai.com/global/dev/model-release/native-4k-video and app.klingai.com/global/dev/document-api/apiReference/model/videoGeneration — are client-rendered SPAs. Both hosts ANSWERED 200 (this is not a policy refusal), but fetch_url receives only the JS config shell, so there was nothing to quote. The 3840x2160 / 60fps figures that circulate come from third-party blogs and from a search engine's generated summary, and no vendor sentence for them was read. Closing this needs either a rendered-DOM fetch or a paid probe of the create-task endpoint."
+ },
+ {
+  "target": "veo-3.1 / the \"148 seconds\" figure",
+  "why": "Not silent so much as CONTRADICTED, and worth flagging: every non-vendor source repeats 148s (8s + 20 x 7s). Google's own extend-videos page says 37s for Veo, with input capped at 30s. I could not find any Google page stating 148s. The Gemini API page ai.google.dev/gemini-api/docs/veo has an #extending_veo_videos section, but fetch_url truncates at 400,000 bytes and the section falls past the cut, so Google's second surface on this could NOT be read. If someone needs certainty on 148 vs 37, that section is the thing to fetch."
+ },
+ {
+  "target": "kling-3.0 / holds_identity — how much identity drifts over a long take on Motion Control",
+  "why": "No primary source states it, and it is a quantitative degradation claim that no vendor publishes. kling.ai/quickstart/* fetches as a client-rendered JS shell with zero prose in the HTML (I fetched kling.ai/quickstart/motion-control-guide: 350 KB, all CSS/JS, no article text), and seed-style vendor pages for Kuaishou are not reachable. Web search returned only marketing aggregators (klingmotion.com, kling-motion-control.com, artlist.io, invideo.io) with no measurement method. What the base already holds is a blog-tier failure mode — 'face likeness drifts under Motion Control', fix 'use a reference where the face fills more of the frame, or set character_orientation=image' — and that is a direction, not a magnitude. Next step is a paid probe the operator must approve: generate the same reference at 5 s / 10 s / 15 s, run an ArcFace cosine-similarity curve against the reference still, and record the drop per second, with И5's negative control (a different person's face must score low, an identical frame must score high) so the metric is proved to be measuring identity at all."
+ },
+ {
+  "target": "seed.bytedance.com — ByteDance Seed's own Seedance model page",
+  "why": "REFUSED by this organisation's egress policy (Tunnel connection failed: 403 Forbidden). Not retried and not routed around. It would have given the first-party Seedance 2.0 announcement rather than the BytePlus reseller-adjacent docs; the BytePlus docs closed the question anyway, so this is reported, not escalated."
+ },
+ {
+  "target": "fal.ai — portal schema for Seedance 2.0 video-to-video",
+  "why": "TLS handshake failure (SSL: UNEXPECTED_EOF_WHILE_READING), not a policy refusal. Not chased: it is portal tier and would only have documented fal's own ceiling, which is exactly the failure mode that put '1080p' on Veo 3.1. The vendor doc answered instead."
+ },
+ {
+  "target": "docs.dev.runwayml.com — Runway's hosted API reference for act_two",
+  "why": "Reachable but client-rendered per endpoint tag; the fetched 415 KB contains zero occurrences of 'act_two'. The answer came from runwayml/sdk-node instead, which is generated from the same OpenAPI spec. Note the fact base's host map rules raw.githubusercontent.com as 'blog' tier, so the recorded runway-act-two.max_seconds claim reads 'could not measure' in the registry despite resting on Runway's own spec — I flagged it as TIER UNDERSTATED in the note. Same understatement applies to the facefusion and insightface records."
+ },
+ {
+  "target": "voyage-multimodal-3 / availability (dimension, max image payload, measurement on real document pages)",
+  "why": "BLOCKED BY EGRESS POLICY, NOT ROUTED AROUND. All three Voyage AI hosts are refused: docs.voyageai.com, blog.voyageai.com and www.voyageai.com (probed 2026-08-27, all 'refused by policy'). The only reachable Voyage-owned artefact is their Hugging Face org: huggingface.co/voyageai/voyage-multimodal-3 exists (verified org, created 2024-10-31) but its README.md is literally three lines — '---\\nlicense: mit\\n---' — with no dimension, no payload limit and no benchmark, and config.json returns 404 (weights are gated/absent). search_web returned a Gemini-synthesised answer (1024 dims; 16M pixels / 20MB per image; 560 px = 1 token; 32k tokens per input, 320k total) but every cited URL was a vertexaisearch redirect to an unfetchable host, so there is no sentence I read and no page anybody can check. Not returned as a fact. NEXT STEP: allowlist docs.voyageai.com and blog.voyageai.com, or pay for an API probe of the /v1/multimodalembeddings endpoint to read the dimension off a live response and bisect the payload ceiling."
+ },
+ {
+  "target": "cohere-embed-v4 / context length (128k tokens?)",
+  "why": "HALF-CLOSED. Dimensions and binary/int8 support came from Cohere's own SDK source; context length did not. The SDK's max_tokens docstring says only 'The maximum number of tokens to embed per input' with no ceiling, and defers to https://docs.cohere.com/docs/models — which is refused by egress policy (probed 2026-08-27). The repo-root cohere-openapi.yaml on raw.githubusercontent.com truncates at 400KB before its components/schemas section, so no schema-level maximum is readable either. api.cohere.com is also refused, so a probe cannot be run from here. NEXT STEP: allowlist docs.cohere.com, or a paid API probe that bisects input length until embed-v4.0 returns a too-long error."
+ },
+ {
+  "target": "colqwen2 / latency at ~30k documents",
+  "why": "NOT MEASURED BY ANY SOURCE I FOUND. The storage half is closed (768-patch cap, sourced). The latency half is not: neither the ColQwen2 card nor the ColPali paper reports query latency at a 30k-page corpus. The paper gives only a scaling hint — 'this late interaction operation induces marginally small overheads (~1 ms per 1000 pages in the corpus)' — which would extrapolate to ~30 ms of scoring overhead at 30k pages, but that is MY arithmetic on a per-1000-page figure measured on much smaller ViDoRe splits, not a measurement at 30k. ViDoRe's own splits are deliberately small ('we limit the number of candidate documents for each retrieval task'). NEXT STEP: an operator-approved local measurement — index 30k rendered pages with colpali-engine and time end-to-end query latency with and without token pooling, which is the number that actually decides this."
+ },
+ {
+  "target": "tier label disagreement worth flagging",
+  "why": "I labelled the three embed-v4.0 facts 'vendor' because raw.githubusercontent.com/cohere-ai/cohere-python IS Cohere's own repository (Fern-generated from their API definition). The fact base's host map disagrees and forced them in as 'blog'; they are stored with a 'TIER UNDERSTATED' note and consequently read back as 'could not measure' (blog-only corroboration). Same shape for colqwen2: huggingface.co/vidore is the ColPali authors' own org (the paper states 'We release models, data, code and benchmarks under open licenses at https://hf.co/vidore'), but the map rates it 'portal'. If these facts are to carry their real weight, cohere-ai and vidore paths need adding to studio/selfrag/source_hosts.py."
+ },
+ {
+  "target": "cohere-rerank-3.5 / accepts_images",
+  "why": "PARTIALLY closed, and the id is wrong. docs.cohere.com is REFUSED by this session's egress policy (403 Forbidden through the proxy) — reported, not routed around; it belongs on the allowlist request. I closed it from Cohere's own SDK instead, cohere-ai/cohere-python src/cohere/v2/client.py, which is auto-generated from their API definition: the rerank signature is `documents: typing.Sequence[str]`, the docstring says \"This endpoint takes in a query and a list of texts and produces an ordered array with each text assigned a relevance score\", and the model docstring says \"The identifier of the model to use, eg `rerank-v3.5`\" — so the vendor spells it rerank-v3.5, not cohere-rerank-3.5. By contrast v2.embed does declare \"images : typing.Optional[typing.Sequence[str]] - An array of image data URIs for the model to embed\", proving the absence in rerank is deliberate. Answer: NO, it does not handle image-bearing candidates. I did not return this as a fact because the fact base's host mapping refuses to rate raw.githubusercontent.com above 'blog' tier and I will not launder a blog-tier row as vendor; it is recorded in the base at blog tier with the full quote, and the honest close needs either docs.cohere.com unblocked or a probe of api.cohere.com."
+ },
+ {
+  "target": "qwen2-vl / throughput for 30k pages",
+  "why": "No primary source states pages/second or tokens/second. The vendor card gives only the knob that governs it (\"The default range for the number of visual tokens per image in the model is 4-16384... such as a token count range of 256-1280, to balance speed and memory usage\") — a capability, not a throughput. Throughput depends on GPU, batch size, max_pixels and caption length, none of which any vendor page fixes. This is a paid measurement: one hour on the actual GPU with the actual page resolution, not a number to be looked up."
+ },
+ {
+  "target": "qwen2-vl / hallucinated figure captions as a named failure mode",
+  "why": "Searched the Qwen HF card and its limitations section directly; hallucination is absent from the list and no vendor or paper source I could reach states a figure-caption hallucination rate. HallBench avg 50.6 is on the card but is a whole-benchmark aggregate, not figure captions. Closing this needs a measured audit on a sample of the 30k pages, scored by a human or a stronger judge."
+ },
+ {
+  "target": "siglip / a ViDoRe number for SigLIP 2 or SigLIP 2 NaFlex",
+  "why": "The google/siglip2-so400m-patch16-naflex card links its evaluation table only as an image (eval_table.png) and states no document-retrieval result in text. A web summary asserted NaFlex 'excels in OCR and document-based retrieval', but I could not read a primary sentence saying so, so it is not returned. Marked НЕПРОВЕРЕНО."
+ }
+]

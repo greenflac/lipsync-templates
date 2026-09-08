@@ -1,0 +1,804 @@
+[
+ {
+  "question": "Which audio-driven avatar model accepts ONE still photo plus an external audio track (not model-generated audio) as its driving input? Candidates put to the base: omnihuman-1.5, hedra-character-3, kling-avatar, infinitetalk.",
+  "model": "omnihuman-1.5 / hedra-character-3 / kling-avatar",
+  "attribute": "availability",
+  "verdict": "silent",
+  "what_the_base_said": "omnihuman-1.5: 'not in the registry', though three fact-base claims exist for it (limitation, max_audio_seconds, metric_blind_spot). hedra-character-3 and kling-avatar: 'in neither the registry nor the fact base. Nothing was checked, which is not the same as nothing being wrong.' The registry holds only flux-2, kling-3.0, runway-gen-4.5, seedance-2.0, sora-2, veo-3.1, wan-2.6-flash — no dedicated photo+audio avatar product has a card. Only infinitetalk came back with substance."
+ },
+ {
+  "question": "Does a single photograph hold up for a 40-second continuous take, or does the image-to-video path degrade before then?",
+  "model": "infinitetalk",
+  "attribute": "degrades_when",
+  "verdict": "answered",
+  "what_the_base_said": "Vendor tier, read directly: 'I2V generation: Generates good results from a single image for up to 1 minute. Beyond 1 minute, color shifts become more pronounced.' (https://raw.githubusercontent.com/MeiGen-AI/InfiniteTalk/main/README.md, read 2026-08-27). 40s sits inside that window. Same source adds that the FusionX LoRA speedup 'exacerbates color shift over 1 minute and reduces ID preservation' — so the fast path must not be used for this job."
+ },
+ {
+  "question": "At full-screen phone viewing, does the driven head motion read as a real speaker, or is it the thing a viewer clocks first?",
+  "model": "infinitetalk",
+  "attribute": "failure_mode",
+  "verdict": "answered",
+  "what_the_base_said": "Three recorded failure modes, best tier probe. (1) 'Driven motion is systematically over-articulated relative to the audio — the head and body move more than a real speaker would', reported independently against both the ComfyUI wrapper and upstream MeiGen-AI, upstream workarounds did not fix it (issue 1203). (2) V2V drift measured at 6-15x the VAE encode/decode floor, mean absolute luma diff on a 233-frame 832x480 clip (issue 2048) — a real number with a stated instrument. (3) Multi-character/multi-audio OOMs unconditionally at 960x544 (issue 1866); irrelevant for a single speaker but it bounds the architecture. No `fix` field is populated on any of the three."
+ },
+ {
+  "question": "What output resolution can it actually deliver? Full-screen on a modern phone means 1080x1920; anything at 480p or 720p upscaled will show.",
+  "model": "infinitetalk",
+  "attribute": "max_resolution",
+  "verdict": "silent",
+  "what_the_base_said": "'nothing recorded about infinitetalk.max_resolution'. The only resolutions appearing anywhere in its record are incidental to other measurements — 832x480 in the drift probe and 960x544 in the OOM report. Both are far below phone-full-screen, but neither is a recorded ceiling, so the base does not answer the question and I will not read a limit out of a bystander number."
+ },
+ {
+  "question": "Could I skip the separate voice model and let a native-audio video model speak the 40 seconds in one generation?",
+  "model": "veo-3.1",
+  "attribute": "max_seconds",
+  "verdict": "answered",
+  "what_the_base_said": "Registry card: max_seconds=8.0, audio=True, and the quirk 'durations are quantised to 4, 6 or 8 seconds, not free-running'. 40s in one generation is out. The base flags the card as second-hand ('no vendor document was read'), sources are cloud.google.com prompting guides. Separately, a vendor-tier failure mode is directly on point: 'Photorealistic prominent-person requests are rejected unless the project is allowlisted' — a photo-of-a-real-person pipeline hits a safety gate that 'silently reduces the batch'."
+ },
+ {
+  "question": "If I take the same route via Kling 3.0, how many seconds does one generation actually give me?",
+  "model": "kling-3.0",
+  "attribute": "max_seconds",
+  "verdict": "contested",
+  "what_the_base_said": "The base refused to resolve it and returned both sides: '10' (blog, atlascloud.ai, 2026-08-26, not read directly, claims no 15s single-shot exists on any plan) vs '15' (vendor, Kuaishou investor release, READ and quoted: 'extended video duration of up to 15 seconds, and native audio generation', 2026-02-05). It also recorded a NEGATIVE probe result: api.klingai.com rejects duration=1000000 with code 1201 naming no ceiling, so the free probe route cannot settle it — narrowing would cost a billable generation. This is the correct behaviour, and either way 10 or 15 does not reach 40."
+ },
+ {
+  "question": "Is Sora 2 a viable backbone for a 40s talking head driven by a real person's photograph?",
+  "model": "sora-2",
+  "attribute": "limitation",
+  "verdict": "answered",
+  "what_the_base_said": "Answered decisively against, all vendor tier, all read: 'Real people—including public figures—cannot be generated'; 'Character uploads that depict human likeness are blocked by default' (needs account-manager eligibility); 'Long, complex speeches are unlikely to sync well and may break pacing'; instruction-following degrades with length, OpenAI's own guide recommending two stitched 4s clips over one 8s; extensions reach 120s total but 'accept only a source video and prompt. They don't support characters or image references' — i.e. the length route and the identity route are mutually exclusive. Plus a hard EOL of 2026-09-24, 28 days out. max_seconds=20 (vendor, read) even though the card itself says duration could not be sourced."
+ },
+ {
+  "question": "Does Sora 2 hold one identity across a multi-shot 40s assembly?",
+  "model": "sora-2",
+  "attribute": "holds_identity",
+  "verdict": "contested",
+  "what_the_base_said": "Reported as contested and left unresolved — but the disagreement is degenerate: two claims from the SAME URL (cookbook.openai.com sora2_prompting_guide) quoting the same sentence, differing only in paraphrase wording ('phrase-fragile' vs 'phrasing-sensitive'). Both say small phrasing changes across shots alter identity, pose or scene focus. The base's refusal to pick is correct by its own rule, but here it is flagging a duplicate-record artefact rather than a real field disagreement — worth cleaning up."
+ },
+ {
+  "question": "Which voice model should read the 40-second recording — cloning quality, 40s of continuous prosody, and phone-speaker intelligibility? Candidates put to the base: elevenlabs-v3, elevenlabs, minimax-speech-02, chatterbox.",
+  "model": "elevenlabs-v3 / elevenlabs / minimax-speech-02 / chatterbox",
+  "attribute": "availability",
+  "verdict": "silent",
+  "what_the_base_said": "All four: 'in neither the registry nor the fact base. Nothing was checked, which is not the same as nothing being wrong. Search the web and call `record` to put it there.' The registry contains no audio/TTS media type at all — every card returned is media='video' or 'image'. Half of the task's model choice has zero coverage."
+ },
+ {
+  "question": "Can Kling 3.0's Motion Control put a person into an existing filmed plate, or does it regenerate the scene around a character image?",
+  "model": "kling-3.0",
+  "attribute": "motion_control_architecture",
+  "verdict": "answered",
+  "what_the_base_said": "'motion transfer onto a character image, not an edit of the reference' — portal tier, https://fal.ai/models/fal-ai/kling-video/v2.6/standard/motion-control/api, read directly 2026-08-27, duration enum 3-13. The note is explicit that this repo's own engine calls that endpoint and it was once recommended for a job that required keeping an existing room, 'which it cannot do'. That is a usable, decision-changing negative: Kling Motion Control is disqualified for a keep-the-plate job."
+ },
+ {
+  "question": "Does the Runway stack expose a video-to-video route that edits existing footage (add a subject, keep the plate), and what are its limits?",
+  "model": "runway-gen-4.5",
+  "attribute": "video_to_video",
+  "verdict": "silent",
+  "what_the_base_said": "'nothing recorded about runway-gen-4.5.video_to_video'. Asking for 'runway-gen-4' returns 'in neither the registry nor the fact base' and lists the whole registry: flux-2, kling-3.0, runway-gen-4.5, seedance-2.0, sora-2, veo-3.1, wan-2.6-flash. No Aleph-class editing model is in the base at all, and the gen-4.5 card records audio=False, 720p, 10s. This is the single most decision-changing question of the task and the base has nothing on it."
+ },
+ {
+  "question": "Can we upload the client's own filmed clip to Sora 2's edit endpoint and add a presenter into it?",
+  "model": "sora-2",
+  "attribute": "video_edit_upload_gated",
+  "verdict": "answered",
+  "what_the_base_said": "'uploaded-video editing restricted to eligible customers' — vendor tier, quoted verbatim from https://platform.openai.com/docs/guides/video-generation.md, read 2026-08-27: 'Editing uploaded videos is only available to eligible customers. Contact your account manager...'. It also records remix_endpoint_status = 'deprecated, replaced by /v1/videos/edits'. So the bring-your-own-plate route exists but is gated by default — actionable."
+ },
+ {
+  "question": "Can the added presenter be a specific real human (a client-supplied face or a hired actor's likeness)?",
+  "model": "sora-2",
+  "attribute": "human_face_restriction",
+  "verdict": "answered",
+  "what_the_base_said": "'input images containing human faces are rejected; real people cannot be generated' — vendor tier, quoted from the same guide. Corroborated on the other side by veo-3.1's recorded failure_mode: 'Photorealistic prominent-person requests are rejected unless the project is allowlisted (support codes 29310472 / 15236754)', vendor, https://cloud.google.com/gemini-enterprise-agent-platform/models/video/responsible-ai-and-usage-guidelines. Both rule out a named-likeness presenter without an allowlist."
+ },
+ {
+  "question": "Can Kling 3.0 deliver the full 15 seconds in one generation, so the ad is not a stitch?",
+  "model": "kling-3.0",
+  "attribute": "max_seconds",
+  "verdict": "contested",
+  "what_the_base_said": "Explicitly contested and refused: '15' (vendor, Kuaishou investor release 2026-02-05, read and quoted: 'extended video duration of up to 15 seconds') vs '10' (blog, atlascloud.ai, 2026-08-26, claims no 15s single-shot on any plan). It also records a negative probe result: api.klingai.com rejects duration=1000000 with code 1201 naming no ceiling, so the free probe channel cannot settle it and only a paid generation would. This is the base behaving correctly."
+ },
+ {
+  "question": "What single-generation duration can Veo 3.1 give me, given the ad is 15s?",
+  "model": "veo-3.1",
+  "attribute": "max_seconds",
+  "verdict": "answered",
+  "what_the_base_said": "'8' seconds, with duration_enum '4, 6, 8 seconds only' (portal, Runway OpenAPI, read 2026-08-27) and vendor summary_line 'Veo 3.1 is a model for generating 8-second videos' from https://ai.google.dev/gemini-api/docs/veo. Clear: a 15s spot from Veo is at least two joins."
+ },
+ {
+  "question": "Is there a model in the base that gives 15s natively in 9:16, as a single take?",
+  "model": "wan-2.6-flash",
+  "attribute": "max_seconds",
+  "verdict": "answered",
+  "what_the_base_said": "'15' — portal tier, https://wavespeed.ai/models/alibaba/wan-2.6/image-to-video-flash, read 2026-08-27: 'duration — video length in seconds, up to 15 (default: 15)'. Card adds 9:16, 30fps, 720p/1080p, audio=True, $0.021-0.069/s. Sora 2 also answers 20s (vendor) but is end_of_life 2026-09-24, 28 days out."
+ },
+ {
+  "question": "Will the presenter's face and voice hold across a full take without drifting?",
+  "model": "veo-3.1",
+  "attribute": "holds_identity",
+  "verdict": "answered",
+  "what_the_base_said": "'Character and voice identity is not carried by the model across generations — it must be re-supplied verbatim in every prompt plus a fixed seed' — vendor, cloud.google.com best-practice page, read and quoted. Directly changes the build: any multi-shot 15s assembly needs a frozen character block plus seed, not a re-written prompt per shot."
+ },
+ {
+  "question": "Same identity question for Sora 2, if that were the presenter engine.",
+  "model": "sora-2",
+  "attribute": "holds_identity",
+  "verdict": "contested",
+  "what_the_base_said": "Reported as contested and not resolved: two vendor-tier values, 'Character identity is phrase-fragile...' and 'Character identity is phrasing-sensitive...', both harvested from the SAME page (https://cookbook.openai.com/examples/sora/sora2_prompting_guide). The refusal to pick is correct behaviour by the rules, but here the 'disagreement' is two paraphrases of one quote — see notes."
+ },
+ {
+  "question": "What vertical resolution can I finish at with Veo 3.1 — does it reach 4K for a client master?",
+  "model": "veo-3.1",
+  "attribute": "max_resolution",
+  "verdict": "wrong",
+  "what_the_base_said": "'1920:1080 (1080p max, no 4K); enum 1280:720, 720:1280, 1080:1920, 1920:1080' — portal tier, Runway's OpenAPI. Google's own page says otherwise: 'Veo 3.1 can also directly generate 720p, 1080p or 4k videos (4k not available for Veo 3.1 Lite)'. I fetched and quoted that page myself. The base even holds the contradicting vendor quote in its OWN summary_line ('8-second videos (720p, 1080p, or 4k)') and did not flag max_resolution as contested.",
+  "refutation_url": "https://ai.google.dev/gemini-api/docs/veo"
+ },
+ {
+  "question": "Is there any audio-driven talking-head / lip-sync model in the base to drive the presenter's dialogue?",
+  "model": "omnihuman-1.5",
+  "attribute": "max_seconds",
+  "verdict": "silent",
+  "what_the_base_said": "'omnihuman-1.5' is not in the registry; the known set is flux-2, kling-3.0, runway-gen-4.5, seedance-2.0, sora-2, veo-3.1, wan-2.6-flash. Nothing recorded. Despite the repository being called lipsync-studio, the fact base contains no dedicated audio-driven lip-sync or avatar model."
+ },
+ {
+  "question": "Can Seedance 2.0 take the filmed clip as a video reference and keep it?",
+  "model": "seedance-2.0",
+  "attribute": "video_to_video",
+  "verdict": "silent",
+  "what_the_base_said": "'nothing recorded about seedance-2.0.video_to_video'. The card mentions 'reference limits reported as up to 3 videos, 9 images, 3 audio clips' as a quirk, but nothing says what a video reference DOES — and the card carries 'UNRESOLVED CONTRADICTION: duration 12s vs 4-15s... Do not bill against this card.' Same silence for kling-3.0.preserves_source_plate and wan-2.6-flash.video_to_video."
+ },
+ {
+  "question": "On veo-3.1, what actually carries the character's appearance from shot 1 to shot 12 — prompt text, or an image reference input?",
+  "model": "veo-3.1",
+  "attribute": "holds_identity",
+  "verdict": "wrong",
+  "what_the_base_said": "holds_identity, vendor tier, read directly: 'Character and voice identity is not carried by the model across generations — it must be re-supplied verbatim in every prompt plus a fixed seed. Any drift in the description is drift in the character.' (cloud.google.com/gemini-enterprise-agent-platform/models/video/best-practice). Asked separately for veo-3.1.reference_images the base returned 'nothing recorded'. So the base's only answer to the twelve-shot identity question was: copy-paste the description, there is no model-side identity channel.",
+  "refutation_url": "https://ai.google.dev/gemini-api/docs/veo"
+ },
+ {
+  "question": "Can I master the twelve shots at 4K on veo-3.1, or is 1080p the ceiling I have to design the finish around?",
+  "model": "veo-3.1",
+  "attribute": "max_resolution",
+  "verdict": "wrong",
+  "what_the_base_said": "max_resolution 'pass', single claim: '1920:1080 (1080p max, no 4K); enum 1280:720, 720:1280, 1080:1920, 1920:1080', portal tier, harvested from docs.dev.runwayml.com/openapi.json. It reported this as answered, not contested, even though its own veo-3.1.summary_line row quotes ai.google.dev saying '720p, 1080p, or 4k'. A Runway resale schema was allowed to stand as the model's ceiling.",
+  "refutation_url": "https://ai.google.dev/gemini-api/docs/veo"
+ },
+ {
+  "question": "Does sora-2 give me a reusable character asset I can attach to all twelve shots, does a cartoon (non-human) character qualify, and does it survive video extension?",
+  "model": "sora-2",
+  "attribute": "limitation",
+  "verdict": "answered",
+  "what_the_base_said": "Vendor tier, read directly (platform.openai.com/docs/guides/video-generation): there IS a Characters API and it is 'restricted to non-human subjects by default; human-likeness character uploads are blocked and require a sales/account-manager eligibility grant' — so a cartoon character is the supported case. Constraints given: character assets work best only from 2–4s clips, 16:9 or 9:16, 720p–1080p, at most two characters per video; a source aspect ratio that differs from the requested output makes the character 'appear stretched or distorted'. And the killer for a twelve-shot pipeline: 'Extensions are mutually exclusive with the identity-preservation features: they accept only a source video and prompt, no characters and no image references' (max 6 extensions, 120s total). Also flagged: output is non-deterministic by design, and the whole Sora 2 / Videos API is deprecated with hard shutdown 2026-09-24 — 28 days from today. The base surfaced the applicability risk unprompted."
+ },
+ {
+  "question": "Does kling-3.0's character_orientation='image' actually lock likeness to a reference still well enough to reuse across twelve shots?",
+  "model": "kling-3.0",
+  "attribute": "character_orientation",
+  "verdict": "silent",
+  "what_the_base_said": "'nothing recorded about kling-3.0.character_orientation'. The parameter appears only in the registry card's parameters dict (\"'image' locks likeness to the reference still\") on a card explicitly marked confidence='weak' / 'card is second-hand: no vendor document was read', and in a failure_mode whose sole source is aividpipeline.com — blog tier, and the base's own note says 'every source is blog tier... Repetition is not corroboration'. So the one knob the card advertises as the identity lock has no checkable source behind it."
+ },
+ {
+  "question": "Can flux-2 pre-generate a locked character sheet / twelve keyframes that hold the same design, using its multi-reference input?",
+  "model": "flux-2",
+  "attribute": "holds_identity",
+  "verdict": "silent",
+  "what_the_base_said": "'nothing recorded about flux-2.holds_identity'. Asked again as flux-2.references: 'nothing recorded about flux-2.references'. The card advertises 'references: up to 10 reference images combined into one output' and a quirk \"preserve identity by saying so: 'while maintaining the same facial features'\", but the card is marked second-hand with no vendor document read, and no claim row backs either. The two vendor-tier flux-2 rows that do exist are about negative prompts and evaluative edit instructions — neither touches identity. The keyframe-first strategy is therefore unsupported by the base."
+ },
+ {
+  "question": "Does seedance-2.0 carry a character through its reference-image slots, and how long can one shot be?",
+  "model": "seedance-2.0",
+  "attribute": "holds_identity",
+  "verdict": "silent",
+  "what_the_base_said": "'nothing recorded about seedance-2.0.holds_identity'. Only two claim rows exist for the whole model (max_resolution, max_seconds). The card mentions 'reference limits reported as up to 3 videos, 9 images, 3 audio clips' as a quirk with no source row, and carries the warning 'UNRESOLVED CONTRADICTION... Do not bill against this card. Seedance 2.5 supersedes it.' The base is honest that it cannot support a decision here."
+ },
+ {
+  "question": "How long can one shot be — i.e. do twelve shots mean twelve renders or fewer, and at what per-shot ceiling?",
+  "model": "kling-3.0",
+  "attribute": "max_seconds",
+  "verdict": "contested",
+  "what_the_base_said": "Refused to resolve: \"sources disagree on kling-3.0.max_seconds: '10' (blog); '15' (vendor). Reported as contested rather than resolved: picking one would invent a confidence nobody published.\" It went further and recorded a NEGATIVE probe result: api.klingai.com rejects duration=1000000 with code 1201 naming no ceiling, so the free probe channel cannot settle 10 vs 15 and doing so 'needs a paid generation'. seedance-2.0.max_seconds is contested the same way ('12' blog vs '4 to 15' portal-read OpenAPI), and runway-gen-4.5.max_resolution is contested ('4K' blog vs '720p' vendor OpenAPI, with an explicit negative control noted: the same schema does expose 4K ratios for seedance2). This is the base behaving correctly."
+ },
+ {
+  "question": "For the shots I can price, what is the per-shot render unit and cost across twelve shots?",
+  "model": "runway-gen-4.5",
+  "attribute": "max_seconds",
+  "verdict": "answered",
+  "what_the_base_said": "runway-gen-4.5: duration is 'an integer from 2 to 10' for gen4.5 on both text_to_video and image_to_video, vendor tier, OpenAPI read directly; price 12 credits/s = $0.12/s (vendor, docs.dev.runwayml.com/guides/pricing). veo-3.1: max_seconds 8 with duration_enum '4, 6, 8 seconds only' — an enum, not a range, so 5 and 7 are refused; 40 credits/s with audio, 20 without. kling-3.0 $0.126/s; wan-2.6-flash 15s ceiling (portal, read) at $0.021–0.069/s. Enough to price twelve shots and to see that twelve shots = twelve separate renders on every candidate."
+ },
+ {
+  "question": "What breaks first — inside a shot, and between shots?",
+  "model": "veo-3.1",
+  "attribute": "failure_mode",
+  "verdict": "answered",
+  "what_the_base_said": "Four vendor-tier, directly-read failure modes for veo-3.1: (1) 'Chaining multiple distinct events (A then B then C) in one short-video prompt yields muddled or incomplete videos' — so a shot must be one beat; (2) in image-to-video, 're-describing what the source image already shows (character, background, lighting) actively degrades the result', which is in direct tension with the holds_identity advice to paste the full character description into every prompt — the base contains both and does not reconcile them; (3) the LLM prompt rewriter 'cannot be disabled' on Veo 3 and 3.1, so a prompt you A/B tested is not what ran, and it is only echoed back under 30 words — that is the mechanism by which shot 7 drifts from shot 6; (4) safety filtering silently returns fewer videos than requested. Cross-checked against sora-2: 'Instruction following degrades as clip length grows; OpenAI recommends stitching two 4-second clips rather than generating one 8-second clip', and 'Character identity is phrase-fragile: small wording changes between shots can alter identity, pose, or the focus of the scene.'"
+ },
+ {
+  "question": "Which shipping text-to-image model renders legible Cyrillic packaging text? Is there any recorded Cyrillic / non-Latin text-rendering evidence for the one image model in the registry (flux-2)?",
+  "model": "flux-2",
+  "attribute": "cyrillic / non_latin_text / text_rendering",
+  "verdict": "silent",
+  "what_the_base_said": "Three separate calls, three empty returns: 'nothing recorded about flux-2.cyrillic', 'nothing recorded about flux-2.non_latin_text', 'nothing recorded about flux-2.text_rendering'. Outcome 'could not measure' each time. The only text-adjacent thing in the base is a registry-card parameter note ('steps: FLUX.2 [flex] exposes it; trades latency against text rendering') on a card the base itself flags as second-hand, confidence weak, no vendor document read. Nothing about Cyrillic in any tier."
+ },
+ {
+  "question": "Are the models actually marketed for in-image typography (Ideogram 3, Imagen 4, Seedream 4) even known to the base, so I can compare them?",
+  "model": "ideogram-3 / imagen-4 / seedream-4",
+  "attribute": "availability",
+  "verdict": "silent",
+  "what_the_base_said": "All three: 'is in neither the registry nor the fact base. Nothing was checked, which is not the same as nothing being wrong.' The registry holds exactly seven models — flux-2, kling-3.0, runway-gen-4.5, seedance-2.0, sora-2, veo-3.1, wan-2.6-flash — of which only flux-2 is an image model. The base is a video-model base with one image entry; the entire text-rendering half of this decision is outside it."
+ },
+ {
+  "question": "How should non-Latin script text failure be reasoned about at all — is 'Cyrillic' the right axis, or something else? Is there any class-level finding?",
+  "model": "qwen-image",
+  "attribute": "limitation / benchmark_score",
+  "verdict": "answered",
+  "what_the_base_said": "Benchmark tier, source read directly: ChineseWord accuracy for Qwen-Image is 97.29 at Level-1 (3500 common chars), 40.53 at Level-2, 6.48 at Level-3 (1605 rare chars); GPT Image 1 [High] scores 3.55 and Seedream 3.0 scores 1.25 at Level-3. The base states the class finding explicitly: 'Character frequency, not language, is the real axis of failure.' Source https://arxiv.org/html/2508.02324v1. This is the single most decision-changing thing the base returned: it says to bucket the 4000 SKUs by glyph/word frequency, not by 'has Cyrillic', and to expect a cliff on rare strings — but it is measured on Chinese, not Cyrillic, so it transfers as a shape, not as a number."
+ },
+ {
+  "question": "Is the OpenAI image path reliable enough on text to be the primary renderer for packaging copy?",
+  "model": "gpt-image-2",
+  "attribute": "limitation",
+  "verdict": "contested",
+  "what_the_base_said": "Outcome 'fail', contested: ['limitation']. Three vendor-tier sides returned side by side with no resolution — (a) 'Precise text placement and clarity still fails; precise element placement in layout-sensitive compositions still fails; complex prompts can take up to 2 minutes'; (b) the recurring-brand-element consistency limitation; (c) input_fidelity is not tunable, raising input token cost on reference edits. The base says: 'Reported as contested rather than resolved: picking one would invent a confidence nobody published.' Same contested outcome on gpt-image-1. Correct behaviour — and (a) is already enough to disqualify it as the primary Cyrillic renderer."
+ },
+ {
+  "question": "Will one SKU's packaging design stay identical across the many renders a 4000-item catalogue needs?",
+  "model": "gpt-image-1 / gpt-image-2",
+  "attribute": "holds_identity",
+  "verdict": "answered",
+  "what_the_base_said": "Vendor tier, read directly, quoted from OpenAI's own LIMITATIONS section: 'the model may occasionally struggle to maintain visual consistency for recurring characters or brand elements across multiple generations.' Source https://platform.openai.com/docs/guides/image-generation. Directly load-bearing: brand elements are exactly what a product catalogue repeats, so per-SKU reference conditioning plus a diff gate is required rather than assumed."
+ },
+ {
+  "question": "For the fallback, is masked inpainting a hard boundary I can use to paste a correct Cyrillic text block into an otherwise-good render?",
+  "model": "gpt-image-2",
+  "attribute": "edit_support / failure_mode / mask_requirements",
+  "verdict": "answered",
+  "what_the_base_said": "Vendor tier, all read directly. Capability: 'yes — v1/images/edits Supported, inpainting supported'. But the failure mode contradicts the naive use: 'Masking with GPT Image is entirely prompt-based. The model uses the mask as guidance, but may not follow its exact shape with complete precision' — so it is NOT a hard inpainting boundary, and with multiple input images the mask applies only to the first. Mechanics: image and mask same format and size, <50MB, mask must carry an alpha channel. This kills 'model-inpaint the text' as the fallback and pushes toward deterministic compositing."
+ },
+ {
+  "question": "What does one catalogue image cost on the model the base actually holds a card for, so I can budget 4000?",
+  "model": "flux-2",
+  "attribute": "price_per_image",
+  "verdict": "silent",
+  "what_the_base_said": "'nothing recorded about flux-2.price_per_image'; the card's price_per_second_usd is None. The base carries a pricing shape for video models (flux-3: $0.17/s hd etc.) but no per-image or per-megapixel figure for its one image model."
+ },
+ {
+  "question": "What do the off-registry alternatives cost per image at 4000 volume?",
+  "model": "nano-banana-pro / qwen-image",
+  "attribute": "price_per_image_usd / price_per_megapixel_usd",
+  "verdict": "answered",
+  "what_the_base_said": "Portal tier (fal.ai billing JSON, read directly): nano-banana-pro (underlying model Gemini 3 Pro Image) is $0.15 per image — about $600 for 4000 single renders before retries. qwen-image is $0.02 per megapixel, billed rounding up to the nearest megapixel, Apache 2.0 weights, ~20.4B params, native 1328x1328 / 1664x928 etc. Portal not vendor, so the number is checkable but second-party."
+ },
+ {
+  "question": "Can I generate at the crop shapes a catalogue needs, and at enough resolution for small package text to survive?",
+  "model": "flux-2",
+  "attribute": "aspect_ratios (card) vs max_resolution",
+  "verdict": "wrong",
+  "what_the_base_said": "The registry card asserts a closed set: aspect_ratios=('16:9','9:16','1:1','4:3','3:4'). BFL's own release notes for the FLUX.2 [pro]/[flex] launch say 'Up to 4MP output — High-resolution generation at any aspect ratio.' The card's closed enumeration is not what the vendor states. Two aggravating details: asked for the attribute directly, the base returned 'nothing recorded about flux-2.aspect_ratios' while the card keeps asserting the list, and the base's own card note concedes it is second-hand with no vendor document read. The max_resolution claim ('up to 4MP output', vendor tier) is correct; only the ratio enumeration is refuted.",
+  "refutation_url": "https://docs.bfl.ai/release-notes.md"
+ },
+ {
+  "question": "Which TTS/voice models does this base even carry — is ElevenLabs v3 a candidate it knows?",
+  "model": "elevenlabs-v3",
+  "attribute": "availability",
+  "verdict": "silent",
+  "what_the_base_said": "outcome=could not measure, checked=0, unmeasured=1. \"'elevenlabs-v3' is in neither the registry nor the fact base.\" It listed its whole registry: flux-2, kling-3.0, runway-gen-4.5, seedance-2.0, sora-2, veo-3.1, wan-2.6-flash — all video/image. No card, no claims, no failure_modes, no class_findings."
+ },
+ {
+  "question": "Does the base record Russian-language quality for a multilingual TTS model (eleven-multilingual-v2), e.g. stress/ё handling or accent artefacts on long Russian prose?",
+  "model": "eleven-multilingual-v2",
+  "attribute": "languages",
+  "verdict": "silent",
+  "what_the_base_said": "could not measure; not in registry or fact base; claims {} and failure_modes [] were both empty. Nothing on Russian at any tier, not even blog."
+ },
+ {
+  "question": "Does a cloned/preset voice hold timbre identical across sessions separated by weeks — i.e. is speaker embedding stable across model updates and separate API calls (the core requirement)?",
+  "model": "minimax-speech-02",
+  "attribute": "voice_consistency",
+  "verdict": "silent",
+  "what_the_base_said": "could not measure; model unknown to registry and fact base. No claim about voice_consistency, no failure mode about drift, no class_finding about speaker-identity stability in TTS at all."
+ },
+ {
+  "question": "Is there a self-hosted option whose weights I can pin, so identity cannot move under me mid-project (xtts-v2)? And what is its licence — a non-commercial licence would kill the audiobook use.",
+  "model": "xtts-v2",
+  "attribute": "license",
+  "verdict": "silent",
+  "what_the_base_said": "could not measure; not in registry or fact base. No licence field, no card, nothing. (Notably XTTS-v2's licence is exactly the kind of fact the harness rule Ц5 demands before integration, and the base carries none.)"
+ },
+ {
+  "question": "Same pinning question for a newer open zero-shot cloner (f5-tts): does the base record clone stability or Russian coverage?",
+  "model": "f5-tts",
+  "attribute": "voice_consistency",
+  "verdict": "silent",
+  "what_the_base_said": "could not measure; not in registry or fact base; empty claims and failure_modes."
+ },
+ {
+  "question": "Since veo-3.1 is one of the models the base DOES know and it generates audio, does the base record anything about the voices it produces — controllability or repeatability of a speaker?",
+  "model": "veo-3.1",
+  "attribute": "audio",
+  "verdict": "silent",
+  "what_the_base_said": "The card came back populated (audio=True, max_seconds=8.0, vendor-tier failure modes about dialogue quoting and safety filtering), but the attribute itself returned \"nothing recorded about veo-3.1.audio\", outcome=could not measure. The card proves audio exists; it says nothing about voice identity, and the base explicitly refused to extrapolate."
+ },
+ {
+  "question": "Will the chosen model still be running in several weeks — does the base track deprecation dates for voice vendors the way it does for video?",
+  "model": "sora-2",
+  "attribute": "end_of_life",
+  "verdict": "answered",
+  "what_the_base_said": "For sora-2 it gave a real, checkable deprecation answer: status='sunsetting', end_of_life='2026-09-24', \"28 days away\", app withdrawn 2026-04-26, API following — sourced to https://help.openai.com/en/articles/20001152-what-to-know-about-the-sora-discontinuation (vendor tier) plus a the-decoder.com corroboration, and it flagged its own card as second-hand. This answers the *shape* of my question (the base does model lifecycle, and would have warned me off a sunsetting model) but for a video model, not for any TTS candidate — for voice this same question is unanswerable, because no voice model is in the registry to carry an end_of_life field."
+ },
+ {
+  "question": "Is per-hour cost of ~8h of Russian narration knowable from the base (price band, per-character vs per-second billing)?",
+  "model": "gpt-4o-mini-tts",
+  "attribute": "price",
+  "verdict": "silent",
+  "what_the_base_said": "could not measure; 'gpt-4o-mini-tts' not in registry or fact base. The base does carry price_per_second_usd for its video models (veo-3.1 0.15–0.40, kling-3.0 0.126) so the field exists — there is simply no voice row to put a price on."
+ },
+ {
+  "question": "Does the base hold any class-level finding about identity drift across many separate generations — transferable from the video side to the narrator-consistency problem?",
+  "model": "kling-3.0",
+  "attribute": "identity_consistency",
+  "verdict": "silent",
+  "what_the_base_said": "\"nothing recorded about kling-3.0.identity_consistency\", outcome=could not measure. The card's quirks do mention that \"face likeness drifts under Motion Control\" with a remedy (character_orientation=image), and sora-2 carries a vendor-tier failure mode that \"passing a character ID alone does not preserve the character\" — but these are per-model quirk strings about faces in video, not a class_finding about identity persistence, and the base returned class_findings/contested as empty everywhere. Nothing generalises to audio."
+ },
+ {
+  "question": "Can Veo 3.1 emit 45 seconds in one generation call — is the duration a range I can push, or a fixed set?",
+  "model": "veo-3.1",
+  "attribute": "max_seconds",
+  "verdict": "answered",
+  "what_the_base_said": "max_seconds = 8, best tier portal, source READ directly: Runway's OpenAPI (https://docs.dev.runwayml.com/openapi.json) shows `veo3.1` and `veo3.1_fast` take duration from the ENUM [4, 6, 8] — an enum, not a range, so 5 and 7 are refused. The base flags this itself as portal tier, not vendor: Runway documenting an endpoint it resells, and Google may allow elsewhere what Runway does not expose. Card quirk repeats it: 'durations are quantised to 4, 6 or 8 seconds, not free-running'. 45s in one call is out by a factor of ~5.6."
+ },
+ {
+  "question": "If Veo 3.1 caps at 8s, does it have a scene-extension / continuation path that reaches 45s, and what is the total ceiling?",
+  "model": "veo-3.1",
+  "attribute": "max_total_length_via_extension",
+  "verdict": "silent",
+  "what_the_base_said": "'nothing recorded about veo-3.1.max_total_length_via_extension' — outcome 'could not measure', checked 0. The card lists first_frame and last_frame as steering parameters, which hints at a stitching workflow, but no extension ceiling, no continuity claim, no source. This is the single largest hole for this task: Veo is the obvious candidate for a stitched long take and the base has nothing on whether it can be chained."
+ },
+ {
+  "question": "Kling 3.0 is the one card claiming 15s. Is that a real single-shot ceiling I can build a 3x-stitch plan on?",
+  "model": "kling-3.0",
+  "attribute": "max_seconds",
+  "verdict": "contested",
+  "what_the_base_said": "outcome 'fail', contested: ['max_seconds']. Two sides returned unresolved — '10' (blog, https://www.atlascloud.ai/blog/tips/kling-ai-video-length-limit, 2026-08-26, explicitly claims no 15s single-shot option exists on any plan) vs '15' (vendor, Kuaishou's own investor release https://ir.kuaishou.com/news-releases/news-release-details/kling-ai-launches-30-model-ushering-era-where-everyone-can-be, 2026-02-05, READ and quoted: 'extended video duration of up to 15 seconds'). The base states it refuses to pick: 'picking one would invent a confidence nobody published.' Note the vendor side is 203 days old and is an IR press release, not an API doc — the weaker document type on the stronger tier. Correct refusal; it means my 3x15s plan is unbudgetable until someone reads the create-task API."
+ },
+ {
+  "question": "What is the longest single generation available anywhere in this registry — does anything clear 20s?",
+  "model": "sora-2",
+  "attribute": "max_seconds",
+  "verdict": "answered",
+  "what_the_base_said": "max_seconds = 20, vendor tier, READ and quoted from https://platform.openai.com/docs/guides/video-generation.md: 'Generate videos up to 20 seconds'. supported_durations adds: '16 and 20 seconds explicitly named; 8 used in all official examples'. So the field ceiling for one uninterrupted generation, across every model the base knows, is 20s. 45s in one call is answered NO, and answered from a vendor doc somebody opened."
+ },
+ {
+  "question": "Sora 2 extends. Can I chain to 45s, and does an extension carry the character identity across the join — i.e. will the seam be invisible?",
+  "model": "sora-2",
+  "attribute": "max_total_length_via_extension",
+  "verdict": "answered",
+  "what_the_base_said": "'120 seconds (6 extensions of up to 20s)', vendor, READ and quoted: 'Each extension can add up to 20 seconds. A single video can be extended up to six times, for a maximum total length of 120 seconds.' 45s is reachable in 3 calls. But the same base returns the disqualifying limitation, also vendor tier: 'Extensions are mutually exclusive with the identity-preservation features: they accept only a source video and prompt, no characters and no image references' — 'continuity across an extension rests only on the source clip and prompt.' Paired with the recorded holds_identity finding (contested only in wording, both sides vendor, both from the OpenAI cookbook): 'small changes in phrasing can alter identity, pose, or the focus of the scene itself.' This is the answer to the actual question and it is a warning, not a green light."
+ },
+ {
+  "question": "Sora 2 is the only model that reaches 45s. Can I actually ship on it?",
+  "model": "sora-2",
+  "attribute": "end_of_life",
+  "verdict": "answered",
+  "what_the_base_said": "status 'sunsetting', end_of_life 2026-09-24 — the availability block computes '28 days away' from today. Recorded as a vendor-tier limitation in its own right: 'Sora 2 and the Videos API are deprecated with a hard shutdown date of 2026-09-24 — pipeline-level applicability risk regardless of output quality.' The base also corrects a common misreading: 'the app went on 2026-04-26, the API is scheduled to go on 2026-09-24.' The only model that does the job by extension dies inside the month."
+ },
+ {
+  "question": "Do the remaining shipping candidates get anywhere near 45s in one shot?",
+  "model": "runway-gen-4.5",
+  "attribute": "max_seconds",
+  "verdict": "answered",
+  "what_the_base_said": "runway-gen-4.5: max_seconds = 10, VENDOR tier, READ from https://docs.dev.runwayml.com/openapi.json — 'duration is an integer from 2 to 10 for gen4.5 on both text_to_video and image_to_video. Not an enum but a range, so 2-10 inclusive.' Also audio=False, resolutions=('720p',) only. wan-2.6-flash: max_seconds = 15, portal tier, READ from https://wavespeed.ai/models/alibaba/wan-2.6/image-to-video-flash ('duration — video length in seconds, up to 15, default 15'), at 0.021-0.069 USD/s, the cheapest per second in the registry. Neither reaches 45s; Wan is the cheapest 15s block if a stitched plan needs one."
+ },
+ {
+  "question": "Seedance is the other 4K-capable long-clip candidate — what is its ceiling, and does the 30s variant hinted in the schema exist here?",
+  "model": "seedance-2.0",
+  "attribute": "max_seconds",
+  "verdict": "contested",
+  "what_the_base_said": "outcome 'fail', contested: ['max_seconds']. '12' (blog, https://seedance2-video.com/seedance-2-0-specs) vs '4 to 15' (portal, Runway OpenAPI READ directly: 'seedance2 takes duration 4..15 inclusive'), with the note that the blog page contradicts its own headline. The card carries an explicit warning: 'UNRESOLVED CONTRADICTION: duration 12s vs 4-15s ... Do not bill against this card. Seedance 2.5 supersedes it.' The same OpenAPI note observes 'seedance2_5 in the same file goes to 30' — but querying seedance-2.5 returns 'is in neither the registry nor the fact base', so the one model in evidence that might do 30s in a single shot is unqueryable. Contested on 2.0, silent on 2.5."
+ },
+ {
+  "question": "Is there a field-level statement about long continuous takes — how instruction-following and coherence behave as clip length grows, independent of any one model?",
+  "model": "sora-2",
+  "attribute": "degrades_when",
+  "verdict": "answered",
+  "what_the_base_said": "No class_findings field was returned in any response — this build's model_advice returns only availability / claims / failure_modes / contested, so there is no cross-model layer to ask. The nearest thing is recorded per-model and is vendor tier on both sides: sora-2.degrades_when — 'Instruction following degrades as clip length grows; OpenAI recommends stitching two 4-second clips rather than generating one 8-second clip' (READ, cookbook.openai.com/examples/sora/sora2_prompting_guide, quoted verbatim). And veo-3.1 failure_modes, vendor: 'Chaining multiple distinct events (A then B then C) in one short-video prompt yields muddled or incomplete videos.' Two independent vendors say the same thing: length is not merely capped, it is where quality falls off — so even a hypothetical 45s call would not be the safe choice."
+ },
+ {
+  "question": "Which LLM planner candidates does the base actually carry, so the A/B pair can be chosen on evidence rather than on vibes? (probed: claude-opus-4.5, claude-opus-4.1, claude-sonnet-4.5, sonnet-4, claude-haiku-4.5, gemini-3-pro, grok-4, gpt-5.1-codex, qwen3.5-9b, gpt-5, kimi-k2-thinking)",
+  "model": "registry-wide",
+  "attribute": "availability",
+  "verdict": "silent",
+  "what_the_base_said": "The registry holds only video/image generators (flux-2, kling-3.0, runway-gen-4.5, seedance-2.0, sora-2, veo-3.1, wan-2.6-flash). Nine of eleven LLM names returned 'in neither the registry nor the fact base... Nothing was checked, which is not the same as nothing being wrong.' Only gpt-5 and kimi-k2-thinking have fact-base entries, and neither has a registry card. So the base can support exactly one pair, by default rather than by comparison."
+ },
+ {
+  "question": "Does a published SWE-bench Verified number measure the model, or the scaffold it was run inside?",
+  "model": "gpt-5",
+  "attribute": "metric_blind_spot",
+  "verdict": "answered",
+  "what_the_base_said": "Benchmark tier, read directly: 'OpenAI's own reported SWE-bench figure and the leaderboard's figure measure different systems: OpenAI evaluated GPT-5 with Agentless, a RAG-based non-agentic best-of-N system... while the bash-only leaderboard runs a <100-line bash-only agent.' (github.com/SWE-bench/swe-bench.github.io/blob/main/data/posts/250808-gpt5.md, 2025-08-08). Corroborated by a second harness-gap datapoint: re-running IMO-AnswerBench with the official API moved GPT-5 from 65.6 (benchmark paper) to 76 — 10.4 points attributable to harness/prompting, not the model. This directly answers the task's core question: the published delta is not a planner delta."
+ },
+ {
+  "question": "How much of a reported resolve rate is supplied by the human-written task spec rather than by the planner we are A/B-ing?",
+  "model": "gpt-5",
+  "attribute": "failure_mode",
+  "verdict": "answered",
+  "what_the_base_said": "Benchmark tier (arxiv.org/abs/2509.16941, SWE-Bench Pro): stripping human-written requirements/interface and leaving the raw problem statement drops GPT-5 (high) from 25.9% to 8.40%, and Claude Opus 4.1 from 22.7% to 8.20%. The base's own gloss: 'roughly two-thirds of measured capability is supplied by the spec, not the model.' Usable directly as an A/B design constraint — hold spec richness fixed or the experiment measures the spec."
+ },
+ {
+  "question": "Does swapping the planner backbone actually move end-to-end agent success, or does the scaffold absorb the difference?",
+  "model": "gpt-5",
+  "attribute": "benchmark_score",
+  "verdict": "answered",
+  "what_the_base_said": "Benchmark tier (arxiv.org/abs/2608.25777, posted 2026-08-26): 'Across four representative state-of-the-art frameworks, replacing GPT-5 with Qwen3.5-9B reduces average OSWorld SR-100 from 60.9% to 37.7%. Trajectory annotation further identifies at least one control failure in 91.6% of failed trajectories.' A 23-point planner-swap effect averaged across four scaffolds is the closest thing the base has to a validated planner-A/B protocol, and the 91.6% control-failure figure names the metric to instrument."
+ },
+ {
+  "question": "What IS GPT-5's agentic coding number — i.e. which figure do we baseline against?",
+  "model": "gpt-5",
+  "attribute": "benchmark_score",
+  "verdict": "contested",
+  "what_the_base_said": "The base reported the disagreement and refused to resolve it: 'sources disagree on gpt-5.benchmark_score' — OSWorld SR-100 60.9% as planner backbone (arxiv 2608.25777) vs SWE-Bench Pro public set N=731, SWE-Agent scaffold, 41.8% resolve (arxiv 2509.16941), the latter annotated 'same benchmark family that reports ~70-80% on SWE-bench Verified.' Both benchmark tier, both read directly. Explicit refusal: 'picking one would invent a confidence nobody published.' Correct behaviour, and the right answer for us: there is no single baseline number."
+ },
+ {
+  "question": "Will the ranking we measure survive our step budget, or is it an artefact of how long we let the agent run?",
+  "model": "gpt-5",
+  "attribute": "degrades_when",
+  "verdict": "contested",
+  "what_the_base_said": "'sources disagree on gpt-5.degrades_when.' Side A (arxiv 2509.16941): public-to-private repo move drops GPT-5 (high) from 41.8% to 15.7% — public numbers do not transfer to unfamiliar commercial codebases. Side B (SWE-bench post 250808-gpt5.md): 'Step limit changes the ranking, not just the score: GPT-5 family saturates early while a competitor keeps climbing to ~100 steps' — quoted source: GPT-5-* shows strongly diminishing returns after 30 steps, don't run past 50; Sonnet 4 maxes around 100 steps. Both benchmark tier. These are arguably not contradictory (different axes), so the base may be over-flagging here — but both are load-bearing for the A/B design and it surfaced both with URLs rather than averaging."
+ },
+ {
+  "question": "Does Kimi K2 Thinking hold a coherent plan across a long tool-calling horizon — the actual planner job?",
+  "model": "kimi-k2-thinking",
+  "attribute": "holds_identity",
+  "verdict": "answered",
+  "what_the_base_said": "Vendor tier, read directly (huggingface.co/moonshotai/Kimi-K2-Thinking model card): 'Maintains coherent goal-directed behavior across up to 200-300 consecutive tool invocations, surpassing prior models that degrade after 30-50 steps.' The base flagged its own weakness in the note: 'This is a vendor claim about a failure mode competitors are said to have.' Above blog tier with a checkable source, so answered — but it is capability-claimed-by-seller, not applicability, and it collides with the recorded gpt-5 step-saturation figure of the same 30-50 magnitude."
+ },
+ {
+  "question": "Can a vendor's published configuration even be reproduced in a shipped product — i.e. is the number we would A/B against reachable?",
+  "model": "kimi-k2-thinking",
+  "attribute": "failure_mode",
+  "verdict": "answered",
+  "what_the_base_said": "Vendor tier, quoted: 'To ensure a fast, lightweight experience, we selectively employ a subset of tools and reduce the number of tool call steps under the chat mode on kimi.com. As a result, chatting on kimi.com may not reproduce our benchmark scores.' A vendor stating in its own model card that its own product does not reproduce its own benchmark — the strongest single piece of evidence in the base that published numbers describe a scaffold configuration, not a model."
+ },
+ {
+  "question": "What will the A/B cost, and how many trials do we need to see past run-to-run noise?",
+  "model": "gpt-5, kimi-k2-thinking",
+  "attribute": "price_per_token, run_variance",
+  "verdict": "silent",
+  "what_the_base_said": "'nothing recorded about gpt-5.price_per_token', 'nothing recorded about kimi-k2-thinking.price_per_token', 'nothing recorded about gpt-5.run_variance'. Nothing on token pricing, latency, seed/temperature stability, or pass@k variance for either candidate. Every recorded score is a single point estimate with no error bar, so the base cannot tell us whether a planner-swap delta smaller than ~20 points is even detectable in our own harness."
+ },
+ {
+  "question": "Does Veo 3.1 render 4K directly, or is 1080p its real ceiling?",
+  "model": "veo-3.1",
+  "attribute": "max_resolution",
+  "verdict": "contested",
+  "what_the_base_said": "outcome fail, contested:[max_resolution]. Two sides returned with URLs and dates, nothing voted: portal tier from docs.dev.runwayml.com/openapi.json read directly, '1920:1080 (1080p max, no 4K); enum 1280:720, 720:1280, 1080:1920, 1920:1080'; vendor tier from ai.google.dev/gemini-api/docs/veo read directly, '4k (720p, 1080p or 4k; 4k not available for Veo 3.1 Lite)'. The base's own note explains the split: the Runway spec 'describes what Runway resells, not what Google's own API accepts', and says picking one 'would invent a confidence nobody published'. This is the correct refusal, and it is also the actionable answer for a client: 4K exists on Google direct, not through the Runway reseller path."
+ },
+ {
+  "question": "Can Sora 2 be offered for a 4K deliverable at all?",
+  "model": "sora-2",
+  "attribute": "max_resolution",
+  "verdict": "answered",
+  "what_the_base_said": "max_resolution '1280x720 (landscape) / 720x1280 (portrait)', 1 source, best tier vendor, outcome pass. So Sora 2 is 720p-ceiling — 4K would be pure post-upscale. The card additionally carries end_of_life 2026-09-24 (28 days out) and a vendor limitation that 'Resolution, duration and character references are container parameters the prompt cannot influence'. Rules the model out on two independent grounds."
+ },
+ {
+  "question": "Kling 3.0's card lists '4k' among its resolutions — is that a native render or a post-hoc upscale?",
+  "model": "kling-3.0",
+  "attribute": "max_resolution",
+  "verdict": "silent",
+  "what_the_base_said": "'nothing recorded about kling-3.0.max_resolution' (and equally nothing for attribute 'resolution'). The only 4K signal is the card tuple resolutions=('720p','1080p','4k') with confidence='weak' and the note 'card is second-hand: no vendor document was read'. Card sources are a Kuaishou IR press release plus two kling.ai quickstart guides — nothing that distinguishes native from upscaled. For the single largest 4K candidate in the registry, the base has no claim-level evidence."
+ },
+ {
+  "question": "Does Runway Gen-4.5 reach 4K, or does its API cap below it?",
+  "model": "runway-gen-4.5",
+  "attribute": "resolution",
+  "verdict": "contested",
+  "what_the_base_said": "No claim recorded ('nothing recorded about runway-gen-4.5.resolution'), but the card note reports the disagreement and refuses to resolve it: 'Sources contradict each other on max resolution (720p vs a 4K review)... The card takes the conservative reading: a limit understated costs a nicer render, a limit overstated costs a failed paid call.' Card carries resolutions=('720p',). I opened Runway's own OpenAPI spec to test this and the gen4.5 blocks cap at enum ['1280:720','720:1280',...] — the conservative reading holds, so no 'wrong' verdict."
+ },
+ {
+  "question": "What output size does Seedance 2.0 actually accept?",
+  "model": "seedance-2.0",
+  "attribute": "max_resolution",
+  "verdict": "answered",
+  "what_the_base_said": "max_resolution '3840x2160', portal tier, read_directly true: 'READ (OpenAPI): seedance2 accepts ratio 3840:1646, 3840:2160, 3840:2880, 3840:3840, 2880:3840 and 2160:3840 among its 24. The largest 16:9 is 3840:2160.' Usable and checkable — but this is CAPABILITY (the API accepts the ratio), not applicability."
+ },
+ {
+  "question": "Is Seedance 2.0's 4K a native render or an upscale off a lower native grid?",
+  "model": "seedance-2.0",
+  "attribute": "resolution",
+  "verdict": "contested",
+  "what_the_base_said": "'UNRESOLVED CONTRADICTION: duration 12s vs 4-15s, resolution 1080p native vs 480p/720p native, across two readings of the same vendor. Do not bill against this card. Seedance 2.5 supersedes it.' The base refuses to pick and explicitly warns off billing. Note the shape of the finding: the API accepts 3840x2160 while the base cannot say the native grid is even 1080p — which is precisely the upscale question, unresolved."
+ },
+ {
+  "question": "Does Wan 2.6 Flash belong on the 4K shortlist at all?",
+  "model": "wan-2.6-flash",
+  "attribute": "resolution",
+  "verdict": "silent",
+  "what_the_base_said": "'nothing recorded about wan-2.6-flash.resolution'; outcome 'could not measure'. Card shows resolutions=('720p','1080p') with confidence='weak' and 'card is second-hand: no vendor document was read'. Absence of '4k' in a weak second-hand tuple is not evidence of a ceiling — I cannot exclude it on this basis, only note the base never checked."
+ },
+ {
+  "question": "What artefacts does taking 4K by upscale rather than native render actually cost — the whole point of the client question?",
+  "model": "veo-3.1 (also queried across kling-3.0, sora-2, seedance-2.0, runway-gen-4.5)",
+  "attribute": "upscale",
+  "verdict": "silent",
+  "what_the_base_said": "'nothing recorded about veo-3.1.upscale'. Across all six video models, zero failure_modes mention upscaling, resolution artefacts, softness, ringing, temporal shimmer from super-resolution, or face degradation at 4K. The nearest recorded item is a sora-2 vendor claim from cookbook.openai.com that 'Lower resolutions compress visual information and introduce softness or artifacts; motion consistency is resolution-dependent, not just fidelity' — that is about generating small, the opposite direction from upscaling one. The base cannot cost the artefact side of this decision."
+ },
+ {
+  "question": "What does 4K cost, in money and in lost features, relative to 1080p?",
+  "model": "veo-3.1",
+  "attribute": "availability",
+  "verdict": "silent",
+  "what_the_base_said": "Card note says only '4K is a premium tier on Vertex/Gemini; price band is Fast..Standard' — the 0.15–0.40 USD/s band is a Fast-vs-Standard spread, not a 1080p-vs-4K delta, so no number for the premium exists in the base. kling-3.0 carries a flat 0.126 USD/s with no resolution dimension; seedance-2.0 has price_per_second_usd=None. No recorded claim anywhere on 4K latency, or on whether 4K forfeits features (video extension, i2v, duration)."
+ },
+ {
+  "question": "Is there a recorded lip-sync accuracy measure or threshold for our primary render model — i.e. does the base give me anything to calibrate a sync metric against on kling-3.0?",
+  "model": "kling-3.0",
+  "attribute": "lip_sync",
+  "verdict": "silent",
+  "what_the_base_said": "\"nothing recorded about kling-3.0.lip_sync\" — checked 0, unmeasured 1. The card carries audio=True but no sync-related attribute at all. Same probe on veo-3.1 returned \"nothing recorded about veo-3.1.lip_sync\". So the single most load-bearing metric for a lipsync product has no anchor in this base for either of the two models the repo actually renders with."
+ },
+ {
+  "question": "Does the base record any evaluation or benchmark methodology for these models — a scoring protocol, a benchmark, or a field-level finding about which automated metrics track human judgement?",
+  "model": "seedance-2.0",
+  "attribute": "benchmark",
+  "verdict": "silent",
+  "what_the_base_said": "\"nothing recorded about seedance-2.0.benchmark\". The same shape on runway-gen-4.5/evaluation: \"nothing recorded about runway-gen-4.5.evaluation\". Across all seven registry models queried, no class_findings key was ever returned in any response — the base is organised around per-model capability attributes, not around how the field measures output quality. Every metric choice in this design is therefore mine, unsourced."
+ },
+ {
+  "question": "How many renders per prompt must the harness average over — is a single render admissible evidence about a prompt?",
+  "model": "sora-2",
+  "attribute": "limitation",
+  "verdict": "answered",
+  "what_the_base_said": "Vendor tier, read directly, 2026-08-27: \"Generation is non-deterministic by design — identical prompts yield different takes, so a single render is not evidence about a prompt\" (https://cookbook.openai.com/examples/sora/sora2_prompting_guide). This is the one statement in the base that directly sets an eval-harness parameter: n>1 per prompt, and every metric reported with a spread, not a point value. What it cannot see: it gives no n and no variance figure, so the sample size stays VYBRANO, not measured."
+ },
+ {
+  "question": "Is the prompt we A/B test the prompt the model actually ran? If not, prompt-level attribution in the eval is unsound.",
+  "model": "veo-3.1",
+  "attribute": "limitation",
+  "verdict": "answered",
+  "what_the_base_said": "Vendor tier, read directly: \"You can't disable the prompt rewriter when using Veo 3 and 3.1 models\" (https://cloud.google.com/gemini-enterprise-agent-platform/models/video/turn-the-prompt-rewriter-off), and the rewritten prompt is only echoed back when the original is under 30 words. Consequence for the design: any per-prompt metric on Veo measures prompt+rewriter, not prompt; the harness must log the echoed rewrite where available and mark Veo rows as unattributable above 30 words."
+ },
+ {
+  "question": "Must the eval clip set be stratified by clip length and by spoken-line length, or can one 8s fixture stand in for the range?",
+  "model": "sora-2",
+  "attribute": "degrades_when",
+  "verdict": "answered",
+  "what_the_base_said": "Vendor tier, read directly: \"Long or complex dialogue does not lip-sync reliably; a 4s shot holds only one or two short exchanges, an 8s clip a few more\", and \"Instruction following degrades as clip length grows; OpenAI recommends stitching two 4-second clips rather than generating one 8-second clip\" (both https://cookbook.openai.com/examples/sora/sora2_prompting_guide). So sync score is a function of line length and take length: the fixture set has to span both axes or the metric reports the fixture, not the model."
+ },
+ {
+  "question": "Does the face hold across a take, and between takes — what is the identity metric actually supposed to catch?",
+  "model": "veo-3.1",
+  "attribute": "holds_identity",
+  "verdict": "answered",
+  "what_the_base_said": "Vendor tier, read directly: \"Character and voice identity is not carried by the model across generations — it must be re-supplied verbatim in every prompt plus a fixed seed. Any drift in the description is drift in the character\" (https://cloud.google.com/gemini-enterprise-agent-platform/models/video/best-practice), plus veo-3.1.reference_images (vendor, https://ai.google.dev/gemini-api/docs/veo): up to 3 reference images preserve appearance. This makes the identity metric a between-shot measure, not a within-shot one. Note the contrast: the same question on kling-3.0 comes back blog-only — \"face likeness drifts under Motion Control\" rests on aividpipeline.com alone, and the base marks the whole failure_mode group \"could not measure\" because every source is blog tier."
+ },
+ {
+  "question": "For sora-2 specifically, does identity hold well enough to be an eval baseline — and does the base commit to an answer?",
+  "model": "sora-2",
+  "attribute": "holds_identity",
+  "verdict": "contested",
+  "what_the_base_said": "outcome fail, contested: [degrades_when, holds_identity, limitation]. \"sources disagree on sora-2.holds_identity: 'Character identity is phrase-fragile: small wording changes between shots can alter identity or pose.' (vendor); 'Character identity is phrasing-sensitive: small wording changes across shots can change identity, pose or scene focus.' (vendor)\" — both from the same cookbook URL, same date. The base refused to merge two near-identical vendor statements and reported the disagreement rather than picking. Correct behaviour by its own rule, but it means 'contested' here is a near-duplicate artefact rather than a real dispute, and a caller reading only `contested` would over-read the uncertainty."
+ },
+ {
+  "question": "Can renders silently vanish from a batch — i.e. is the denominator of any pass-rate metric trustworthy?",
+  "model": "veo-3.1",
+  "attribute": "failure_mode",
+  "verdict": "answered",
+  "what_the_base_said": "Vendor tier, read directly: \"If fewer videos than requested are returned, then some generated output is being blocked for not meeting safety requirements\", and photorealistic prominent-person requests are rejected unless allowlisted (https://cloud.google.com/gemini-enterprise-agent-platform/models/video/responsible-ai-and-usage-guidelines). This forces a three-outcome scoreboard: rendered-and-scored / rendered-and-failed / never-rendered. A pass rate computed over returned clips only would silently improve as safety filtering got stricter."
+ },
+ {
+  "question": "What frame rate and frame budget do outputs come back at — needed to fix the window of any temporal-flicker or jitter metric?",
+  "model": "kling-3.0",
+  "attribute": "fps",
+  "verdict": "silent",
+  "what_the_base_said": "\"nothing recorded about kling-3.0.fps\"; the card itself carries fps=None. Contrast the neighbouring path, which answers: wan-animate-replace (not in the registry, but claims exist) gives portal tier, read directly, \"num_frames 17 to 161 inclusive, default 81; frames_per_second 4 to 60\" with the note that \"the ceiling is a FRAME count, not a duration: 161 frames is 5.4 s at 30 fps and 10.1 s at 16 fps\" (https://fal.ai/models/fal-ai/wan/v2.2-14b/animate/replace/api). So a per-frame metric is well-defined on the Wan path and undefined on the Kling path."
+ },
+ {
+  "question": "How long a take can the eval budget assume for Kling — the clip length sets both cost per cell and whether per-clip scores are comparable across models?",
+  "model": "kling-3.0",
+  "attribute": "max_seconds",
+  "verdict": "contested",
+  "what_the_base_said": "outcome fail: \"sources disagree on kling-3.0.max_seconds: '10' (blog, atlascloud.ai); '15' (vendor, Kuaishou IR release, READ and quoted). Reported as contested rather than resolved.\" It also records a negative probe result: api.klingai.com rejects duration=1000000 with code 1201 naming no ceiling, so \"the probe route cannot decide between the blog's 10 and the vendor's 15\" without a billable generation. This is the base at its best — it refused to resolve and it recorded the failed measurement attempt."
+ },
+ {
+  "question": "Is sora-2 usable as a cross-model reference arm in the eval, given the registry card says its basic output limits are unknown?",
+  "model": "sora-2",
+  "attribute": "availability",
+  "verdict": "wrong",
+  "what_the_base_said": "The card note asserts: \"Its duration, resolution and fps limits could not be sourced at all — the primary page is partly withdrawn\", and the card fields back this up with max_seconds=None, resolutions=(), fps=None. That is false for duration and resolution: I opened https://platform.openai.com/docs/models/sora-2.md through fetch_url (HTTP 200, 2842 bytes) and it states the output sizes plainly — \"Portrait: 720x1280 / Landscape: 1280x720\" at $0.1/second, with Sora 2 Pro rows for 1024x1792 and 1080x1920. The base's own claims layer already knows this (sora-2.max_resolution = '1280x720 (landscape) / 720x1280 (portrait)', vendor, read_directly=true; sora-2.max_seconds = '20', vendor) — so the card summary contradicts the claims recorded beneath it, and a caller who reads only the card gets 'unsourceable' for a limit that is on a live vendor page. fps genuinely is absent from that page; the note is wrong on two of the three limits it names.",
+  "refutation_url": "https://platform.openai.com/docs/models/sora-2.md"
+ },
+ {
+  "question": "Does Runway Act-Two edit an existing plate (keeping its room, lighting and camera move) or does it build a new scene around a character?",
+  "model": "runway-act-two",
+  "attribute": "architecture",
+  "verdict": "answered",
+  "what_the_base_said": "Vendor tier, source read directly (docs.dev.runwayml.com/openapi.json, read 2026-08-27): POST /v1/character_performance, model act_two. `character` = 'The character to control... A visually recognizable face must be visible and stay within the frame'; `reference` = 'The reference video containing the performance to apply to the character.' The base states outright that the reference supplies MOVEMENT, not the set, and that 'using it to keep an existing room is a category error.' This is the single most decision-changing answer I got: Act-Two cannot preserve my original plate."
+ },
+ {
+  "question": "Same question for Kling 3.0 Motion Control — does it edit my footage or transfer motion onto a character image?",
+  "model": "kling-3.0",
+  "attribute": "motion_control_architecture",
+  "verdict": "answered",
+  "what_the_base_said": "Portal tier, read directly (fal.ai kling-video/v2.6/standard/motion-control/api): it applies 'the motion from a reference video to any character image... perfect for portraits and simple animations.' Duration enum 3-13. The base adds a pointed provenance note: this repo's own engine calls this endpoint and it was previously recommended for a job that required keeping an existing room, 'which it cannot do.' Same category as Act-Two — rules it out for face-swap-into-a-plate."
+ },
+ {
+  "question": "Can I bring my own footage to Sora 2's video-edit path and swap a human face into it?",
+  "model": "sora-2",
+  "attribute": "limitation",
+  "verdict": "answered",
+  "what_the_base_said": "Vendor tier, multiple read sources (platform.openai.com/docs/guides/video-generation, read 2026-08-27). Three separate hard blocks: 'Editing an uploaded (non-API-generated) video is gated behind eligibility — you cannot bring your own footage to the edits endpoint by default'; 'Human likeness is out of scope for the Characters API: human-likeness character uploads are blocked by default and require account-manager eligibility'; and a failure_mode 'Any input image containing a human face is rejected.' Plus end_of_life 2026-09-24, 28 days out. Fully eliminated on vendor evidence."
+ },
+ {
+  "question": "Does Veo 3.1 accept a video input at all (i.e. could it be a v2v face-swap route)?",
+  "model": "veo-3.1",
+  "attribute": "video_input",
+  "verdict": "silent",
+  "what_the_base_said": "'nothing recorded about veo-3.1.video_input' — checked 0, unmeasured 1. The card records first_frame/last_frame image steering and 8s max, which implies no v2v, but the base does not say so and I will not infer it on the base's behalf."
+ },
+ {
+  "question": "Does Seedance 2.0 accept a video input for editing existing footage?",
+  "model": "seedance-2.0",
+  "attribute": "video_input",
+  "verdict": "silent",
+  "what_the_base_said": "'nothing recorded about seedance-2.0.video_input'. The card itself is flagged unusable: 'UNRESOLVED CONTRADICTION: duration 12s vs 4-15s, resolution 1080p native vs 480p/720p native, across two readings of the same vendor. Do not bill against this card. Seedance 2.5 supersedes it.'"
+ },
+ {
+  "question": "Is any dedicated face-swap tool (FaceFusion / inswapper class) known to the base at all?",
+  "model": "facefusion",
+  "verdict": "silent",
+  "what_the_base_said": "'facefusion is in neither the registry nor the fact base. Nothing was checked, which is not the same as nothing being wrong.' Registry is exactly seven models: flux-2, kling-3.0, runway-gen-4.5, seedance-2.0, sora-2, veo-3.1, wan-2.6-flash. The entire face-swap-onto-a-plate tool category is absent — which is the central silence for this task, since the task's actual answer probably lives in that category."
+ },
+ {
+  "question": "How much does identity drift over a long take on the closest available candidate (Kling Motion Control)?",
+  "model": "kling-3.0",
+  "attribute": "holds_identity",
+  "verdict": "silent",
+  "what_the_base_said": "'nothing recorded about kling-3.0.holds_identity' (checked 0). The nearest thing is a failure_mode, 'face likeness drifts under Motion Control', with fix 'use a reference where the face fills more of the frame, or set character_orientation=image' — but its only source is blog tier (aividpipeline.com, 2026-08-26, read_directly not recorded). Blog tier is below the bar, and no source anywhere quantifies drift against duration. So the identity-drift-over-10s half of my task rests on evidence nobody has."
+ },
+ {
+  "question": "How long an output can Act-Two produce — does a 10-second take fit in one pass?",
+  "model": "runway-act-two",
+  "attribute": "max_seconds",
+  "verdict": "silent",
+  "what_the_base_said": "'nothing recorded about runway-act-two.max_seconds'. The base does record reference_video_duration_range '3 to 30 seconds' (vendor, OpenAPI, read directly), but that is the input performance clip, not the output ceiling. Also recorded: max_resolution 720p, with a good negative control — 'in a document that offers 3840:2160 to another model'. 720p is a real constraint for a footage swap regardless."
+ },
+ {
+  "question": "How long can Kling 3.0 run in one shot — does a 10s take fit without stitching?",
+  "model": "kling-3.0",
+  "attribute": "max_seconds",
+  "verdict": "contested",
+  "what_the_base_said": "The base reported the disagreement and refused to resolve it: '10' (blog, atlascloud.ai, not read directly, claims no 15s single-shot option exists on any plan) vs '15' (vendor, Kuaishou investor release, read and quoted: 'extended video duration of up to 15 seconds'). It also recorded a negative probe result: api.klingai.com rejects duration=1000000 with code 1201 naming no ceiling, so the probe route cannot settle 10 vs 15 without a billable generation. 10s sits exactly on the contested boundary, so this contest is load-bearing for my take length."
+ },
+ {
+  "question": "For page-image retrieval over scanned/rendered design docs, does the base hold anything on ColPali-style late-interaction retrieval (quality vs. an OCR-then-text pipeline, and whether it is production-viable)?",
+  "model": "colpali",
+  "attribute": "",
+  "verdict": "silent",
+  "what_the_base_said": "outcome 'could not measure', checked 0, unmeasured 1: \"'colpali' is in neither the registry nor the fact base.\" Registry contains only flux-2, kling-3.0, runway-gen-4.5, seedance-2.0, sora-2, veo-3.1, wan-2.6-flash. No claims, no failure_modes, no class_findings, no contested entries."
+ },
+ {
+  "question": "Same question for the Qwen2-VL-based variant: does the base know whether ColQwen2 changes the storage/latency picture for late interaction at ~30k documents?",
+  "model": "colqwen2",
+  "attribute": "",
+  "verdict": "silent",
+  "what_the_base_said": "'could not measure', checked 0, unmeasured 1 — not in registry or fact base. Empty claims/failure_modes/contested."
+ },
+ {
+  "question": "If we take the single-vector route instead, what does the base record about voyage-multimodal-3 on interleaved text+figure documents — dimension, max image payload, and whether anyone measured it on real document pages rather than a benchmark?",
+  "model": "voyage-multimodal-3",
+  "attribute": "",
+  "verdict": "silent",
+  "what_the_base_said": "'could not measure', checked 0, unmeasured 1 — absent from both registry and fact base. Nothing at any tier, not even blog."
+ },
+ {
+  "question": "Competing single-vector candidate: does the base have anything on cohere-embed-v4 for mixed text+image documents (context length, Matryoshka dimensions, binary/int8 embedding support that would decide our index size)?",
+  "model": "cohere-embed-v4",
+  "attribute": "",
+  "verdict": "silent",
+  "what_the_base_said": "'could not measure', checked 0, unmeasured 1 — unknown model. No card, no claims."
+ },
+ {
+  "question": "Managed alternative on GCP: does the base record anything about gemini-embedding-001 — specifically whether it accepts images at all, which decides whether it can be the multimodal encoder or only the text half?",
+  "model": "gemini-embedding-001",
+  "attribute": "",
+  "verdict": "silent",
+  "what_the_base_said": "'could not measure', checked 0, unmeasured 1 — not in registry or fact base."
+ },
+ {
+  "question": "Open-weight baseline we could self-host for 30k docs: what is recorded for jina-clip-v2 on text-in-image / dense-diagram retrieval, and its license terms (Ц5 — non-commercial clauses would block it)?",
+  "model": "jina-clip-v2",
+  "attribute": "",
+  "verdict": "silent",
+  "what_the_base_said": "'could not measure', checked 0, unmeasured 1 — absent. No licence field, no failure_modes."
+ },
+ {
+  "question": "Cheaper open baseline still: does the base hold a known failure mode for SigLIP on document images — i.e. does it degrade when the discriminative content is rendered text rather than depicted objects?",
+  "model": "siglip",
+  "attribute": "",
+  "verdict": "silent",
+  "what_the_base_said": "'could not measure', checked 0, unmeasured 1 — unknown. failure_modes empty."
+ },
+ {
+  "question": "Floor case: is plain CLIP recorded anywhere as adequate/inadequate for this workload, so we know whether the cheap option is even on the table?",
+  "model": "clip",
+  "attribute": "",
+  "verdict": "silent",
+  "what_the_base_said": "'could not measure', checked 0, unmeasured 1 — unknown model, empty claims."
+ },
+ {
+  "question": "Alternative architecture — VLM-captions-then-text-embeddings: does the base know anything about Qwen2-VL as the captioning/description model for 30k pages (throughput, hallucinated figure captions as a failure mode)?",
+  "model": "qwen2-vl",
+  "attribute": "",
+  "verdict": "silent",
+  "what_the_base_said": "'could not measure', checked 0, unmeasured 1 — not present."
+ },
+ {
+  "question": "Second stage: does the base record whether a cross-encoder reranker (cohere-rerank-3.5) handles image-bearing candidates, which decides if reranking can sit after a multimodal first stage at all?",
+  "model": "cohere-rerank-3.5",
+  "attribute": "",
+  "verdict": "silent",
+  "what_the_base_said": "'could not measure', checked 0, unmeasured 1 — unknown."
+ },
+ {
+  "question": "Does the base record anything about Veo 3.1's physical plausibility — gravity, support, weight of objects?",
+  "model": "veo-3.1",
+  "attribute": "physics",
+  "verdict": "silent",
+  "what_the_base_said": "\"nothing recorded about veo-3.1.physics\", checked 0, unmeasured 1. Retried under the alternate name physical_realism: \"nothing recorded about veo-3.1.physical_realism\". Veo 3.1 has 13 attributes recorded, six of them vendor-tier and read directly, and not one of them touches physics."
+ },
+ {
+  "question": "Does Kling 3.0 — the model whose vendor pitch is motion realism — have any recorded claim about physical plausibility or liquid behaviour?",
+  "model": "kling-3.0",
+  "attribute": "physics",
+  "verdict": "silent",
+  "what_the_base_said": "\"nothing recorded about kling-3.0.physics\". Its three recorded failure modes are all blog tier and all about faces, hands and warping backgrounds — none about object dynamics or fluids."
+ },
+ {
+  "question": "Sora 2 is the model most often invoked as a 'world simulator'. Does the base support that for object/liquid dynamics, and is it even procurable?",
+  "model": "sora-2",
+  "attribute": "physics",
+  "verdict": "answered",
+  "what_the_base_said": "On physics: silent (\"nothing recorded about sora-2.physics\"). But the procurement half was answered at vendor tier and it settles the question anyway: status 'sunsetting', end_of_life 2026-09-24 (28 days away), app already withdrawn 2026-04-26, source https://help.openai.com/en/articles/20001152-what-to-know-about-the-sora-discontinuation. The base also flags that its duration/resolution/fps could not be sourced at all because the primary page is partly withdrawn. Sora 2 is not a candidate to build on regardless of its physics."
+ },
+ {
+  "question": "Does Seedance 2.0 or Runway Gen-4.5 record a physics claim we could bet on?",
+  "model": "seedance-2.0, runway-gen-4.5",
+  "attribute": "physics",
+  "verdict": "silent",
+  "what_the_base_said": "Both: \"nothing recorded about <model>.physics\", zero failure modes recorded for either. Seedance's card additionally carries an UNRESOLVED CONTRADICTION warning (12s vs 4-15s duration, 1080p vs 480p/720p native) and says \"Do not bill against this card. Seedance 2.5 supersedes it.\""
+ },
+ {
+  "question": "Are the physics-reputation models people actually name in this discussion — Wan 2.5, Hailuo/MiniMax 02 — in the base at all?",
+  "model": "wan-2.5, hailuo-02",
+  "attribute": "physics",
+  "verdict": "silent",
+  "what_the_base_said": "Neither is in the registry or the fact base: \"Nothing was checked, which is not the same as nothing being wrong.\" The whole registry is seven models: flux-2, kling-3.0, runway-gen-4.5, seedance-2.0, sora-2, veo-3.1, wan-2.6-flash. Wan 2.6-flash is present but has only three claims (best_for, expands_internally, max_seconds) and none is about motion quality."
+ },
+ {
+  "question": "A pour is a multi-stage event (tilt, stream forms, vessel fills). Is a single generation call even the right unit for that, or does the model muddle staged events?",
+  "model": "veo-3.1",
+  "attribute": "failure_mode",
+  "verdict": "answered",
+  "what_the_base_said": "Vendor tier, read directly: \"Trying to chain multiple distinct events (A then B then C) in one prompt for a short video often leads to muddled or incomplete videos.\" — https://cloud.google.com/gemini-enterprise-agent-platform/models/video/best-practice, read 2026-08-27. This is the one directly actionable finding: it argues for decomposing a physical action into one beat per shot rather than prompting the whole sequence."
+ },
+ {
+  "question": "If we try to fix this by prompt engineering — A/B testing physics wording — will we actually be measuring the model?",
+  "model": "veo-3.1",
+  "attribute": "limitation",
+  "verdict": "answered",
+  "what_the_base_said": "Vendor tier, read directly: \"You can't disable the prompt rewriter when using Veo 3 and 3.1 models\" — https://cloud.google.com/gemini-enterprise-agent-platform/models/video/turn-the-prompt-rewriter-off, read 2026-08-27; the rewritten prompt is only echoed back when the original is under 30 words. So on Veo a prompt-level physics fix cannot be cleanly attributed: the prompt you tested is not the prompt that ran."
+ },
+ {
+  "question": "Is there a negative-prompt lever to suppress floating/unsupported objects, and on which models is it real?",
+  "model": "kling-3.0, veo-3.1",
+  "attribute": "negative_prompt",
+  "verdict": "silent",
+  "what_the_base_said": "\"nothing recorded about kling-3.0.negative_prompt\" and \"nothing recorded about veo-3.1.negative_prompt\". Only the second-hand registry cards mention it (Kling negative_prompt='yes', \"exposed on the create-task API\"; Veo negative_prompt='unknown', \"Vertex AI accepts it; the Gemini API's support is undocumented\"), and both cards are explicitly marked \"card is second-hand: no vendor document was read\", confidence weak. Capability is not even established at vendor tier, let alone applicability to physics artefacts."
+ },
+ {
+  "question": "If the workaround is generate-many-and-select, what does a re-shoot loop cost per second and at what resolution can we run it?",
+  "model": "veo-3.1",
+  "attribute": "max_resolution",
+  "verdict": "contested",
+  "what_the_base_said": "The base refused to resolve it and returned both sides: \"1920:1080 (1080p max, no 4K)\" from https://docs.dev.runwayml.com/openapi.json (portal, read 2026-08-27) versus \"4k (720p, 1080p or 4k; 4k not available for Veo 3.1 Lite)\" from https://ai.google.dev/gemini-api/docs/veo (vendor, read 2026-08-27), with the note \"Reported as contested rather than resolved: picking one would invent a confidence nobody published\" and the explanation that the portal source describes what Runway resells, not what Google's API accepts. Cost side was answered: 40 credits/s with audio, 20 without (portal, docs.dev.runwayml.com/guides/pricing)."
+ }
+]

@@ -480,7 +480,12 @@ var API = {
   consent:   "/api/consent",   // POST {session_id} -> {outcome, note}
   video:     "/api/video",     // POST {session_id} -> {outcome, job_id, charged, balance}
   balance:   "/api/balance",   // GET -> {credits}. NOT in app.py yet: probed once, silent on 404.
-  jobStatus: function (id) { return "/api/job/" + encodeURIComponent(id); }
+  // Сессия в запросе ОБЯЗАТЕЛЬНА с 2026-09-05: маршрут больше не отдаёт чужую
+  // работу тому, кто назвал только идентификатор задачи.
+  jobStatus: function (id, sessionId) {
+    return "/api/job/" + encodeURIComponent(id) +
+           "?session_id=" + encodeURIComponent(sessionId || "");
+  }
 };
 
 /* DEBT(2026-08-25): FRAME_CREDITS / VIDEO_CREDITS live in studio/app.py and no
@@ -1085,7 +1090,7 @@ function pollJob(jobId, kind) {
   return new Promise(function (resolve, reject) {
     (function tick() {
       if (Date.now() > deadline) { reject({ outcome: UNMEASURED, note: TEXT.timeout }); return; }
-      call(API.jobStatus(jobId)).then(function (res) {
+      call(API.jobStatus(jobId, state.sessionId)).then(function (res) {
         var d = res.data || {};
         // A dropped request mid-poll is a hiccup, not a verdict: keep polling
         // until the deadline rather than declaring anything.

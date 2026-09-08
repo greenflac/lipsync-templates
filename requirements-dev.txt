@@ -1,6 +1,12 @@
 # Runtime
 numpy==2.4.6
 pillow==12.3.0
+# Декодирование видео. Использовалась ЧЕТЫРЬМЯ модулями (studio/mcp/creative.py,
+# studio/mcp/casebank.py, scripts/contact_sheets.py и их тесты) и не была
+# объявлена НИГДЕ: локально пакет стоял, в CI его не было, и первый же тест,
+# которому он понадобился, уронил сборку 2026-08-31. Необъявленная зависимость
+# не «почти работает» — она работает ровно там, где её случайно поставили.
+imageio-ffmpeg==0.6.0
 # Tooling — pinned so local runs and CI run the same checks.
 # Keep in sync with .pre-commit-config.yaml rev.
 ruff==0.15.8
@@ -8,5 +14,13 @@ mypy==1.19.1
 types-requests==2.33.0.20260712
 # Studio web layer — pinned to what was installed and measured on 2026-08-25.
 fastapi==0.141.1
+# TestClient у Starlette требует httpx2 и называет его в тексте ошибки; сам
+# fastapi его не тянет. Пакет приезжал транзитивно через mcp — то есть
+# studio/tests зависел от чужого пина, и это ровно форма imageio-ffmpeg выше.
+# ИЗМЕРЕНО 2026-09-02 в чистом venv: снял httpx2 — test_app падает с
+# «requires the httpx2 package», вернул — 503 теста studio/tests зелены.
+httpx2==2.12.0
 uvicorn==0.52.4
 python-multipart==0.0.32
+# The chat agent (studio/mcp) — pinned to what was installed and measured on 2026-08-27.
+mcp==2.1.1
