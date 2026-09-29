@@ -1,0 +1,59 @@
+{
+  "admitted": 609,
+  "by_rule": {
+    "deprecated": 138,
+    "edit_op": 7,
+    "forever_date": 4,
+    "router": 5
+  },
+  "channels": [
+    {
+      "catalog": "openrouter",
+      "records": 395,
+      "state": "ok",
+      "unparsed_price_keys": 0
+    },
+    {
+      "catalog": "deepinfra",
+      "records": 368,
+      "state": "ok",
+      "unparsed_price_keys": 0
+    }
+  ],
+  "channels_answered": 2,
+  "channels_asked": 2,
+  "checked": 763,
+  "keyed_out": [
+    {
+      "catalog": "artificialanalysis",
+      "observed": "HTTP 401",
+      "reason": "нужен ключ",
+      "state": "could not measure",
+      "url": "https://artificialanalysis.ai/api/v2/data/llms/models"
+    },
+    {
+      "catalog": "replicate",
+      "observed": "HTTP 401",
+      "reason": "нужен ключ",
+      "state": "could not measure",
+      "url": "https://api.replicate.com/v1/models"
+    },
+    {
+      "catalog": "together",
+      "observed": "HTTP 401",
+      "reason": "нужен ключ",
+      "state": "could not measure",
+      "url": "https://api.together.xyz/v1/models"
+    },
+    {
+      "catalog": "wavespeed",
+      "observed": "HTTP 401",
+      "reason": "нужен ключ",
+      "state": "could not measure",
+      "url": "https://api.wavespeed.ai/api/v3/models"
+    }
+  ],
+  "polled_on": "2026-08-31",
+  "rejected": 154,
+  "unmeasured": 0
+}

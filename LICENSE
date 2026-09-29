@@ -26,18 +26,41 @@ publication.
    c. redistribute, sublicense, publish or sell it, in original or modified
       form;
    d. reuse the prompts, prompt fragments, directive strings, calibrated
-      thresholds and measured constants contained here, which are the
-      substance of the work rather than incidental to it.
+      thresholds and measured constants AUTHORED BY THE COPYRIGHT HOLDER and
+      contained here, which are the substance of the work rather than
+      incidental to it. This clause claims nothing over third-party material
+      recorded in the knowledge base — see section 5.
 
 
-3. NO WARRANTY
+3. THIRD-PARTY STATEMENTS RECORDED IN THE KNOWLEDGE BASE
+
+   The knowledge base under `studio/knowledge/` records what other people
+   published about generation models: vendor documentation, papers, and
+   statements practitioners posted in public discussions on HuggingFace and
+   Civitai. Each record carries the URL it came from and the date the source
+   stated it.
+
+   Those statements are their authors' work, not the copyright holder's.
+   Clause 2(d) does not claim them, and this licence grants no rights over
+   them. They are quoted, in short and with attribution to the source page,
+   for the purpose named at the top of this file: so that the engineering can
+   be reviewed and audited. Anyone who wants their statement removed can ask
+   the copyright holder, and it will be withdrawn.
+
+   Names of individual posters are not recorded. Where a practitioner's
+   nickname had been captured incidentally in an internal note, it was removed
+   on 2026-09-02; the surrounding statement and its source URL remain, because
+   a claim whose source cannot be checked is worse than no claim.
+
+
+4. NO WARRANTY
 
    The software is provided "as is", without warranty of any kind, express or
    implied. The copyright holder is not liable for any claim, damage or other
    liability arising from this software or its use.
 
 
-4. THIRD-PARTY COMPONENTS
+5. THIRD-PARTY COMPONENTS
 
    This repository refers to and interoperates with third-party models, weights
    and packages that carry their own licences. Those licences are not granted or
@@ -47,7 +70,7 @@ publication.
    layer as shipped is a development instrument, not a resellable component.
 
 
-5. HOW TO OBTAIN RIGHTS
+6. HOW TO OBTAIN RIGHTS
 
    Permission to use any part of this work is available by agreement. Ask.
 
@@ -66,7 +89,22 @@ publication.
 прототипе или внутреннем инструменте; копировать и встраивать в свои работы,
 в том числе как обучающие данные; распространять, сублицензировать, продавать;
 переиспользовать промты, их фрагменты, строки-директивы, откалиброванные
-пороги и измеренные константы — они и есть суть работы, а не её оболочка.
+пороги и измеренные константы АВТОРСТВА ПРАВООБЛАДАТЕЛЯ — они и есть суть
+работы, а не её оболочка.
+
+ЧУЖИЕ ВЫСКАЗЫВАНИЯ В БАЗЕ ЗНАНИЙ. В `studio/knowledge/` записано то, что о
+моделях опубликовали ДРУГИЕ: документация вендоров, статьи и реплики
+практиков из открытых обсуждений на HuggingFace и Civitai. У каждой записи
+стоит ссылка на источник и дата. Это работа их авторов, а не правообладателя:
+пункт «нельзя» их не касается, и эта лицензия прав на них не даёт. Они
+приведены коротко и со ссылкой ради того, ради чего репозиторий и опубликован
+— чтобы инженерию можно было проверить. Кто хочет, чтобы его высказывание
+убрали, — напишите, уберём.
+
+Имена людей не записываются. Ники практиков, попавшие в служебные заметки по
+недосмотру, удалены 2026-09-02; сами высказывания и ссылки на источник
+остались, потому что утверждение, у которого нельзя проверить источник, хуже
+отсутствия утверждения.
 
 ГАРАНТИЙ НЕТ. Сторонние модели и пакеты идут под своими лицензиями, и эта
 лицензия их не выдаёт и не меняет.

@@ -1,0 +1,39 @@
+# Facts the adversarial audit rejected, 2026-08-27.
+# Kept so the audit is checkable: 35 of 410 (8.5%) did not survive a second
+# agent trying to refute them. Most were an empty or paraphrased `evidence`.
+
+elevenlabs-tts.output_formats
+flux-1-dev.licence
+flux-2-flex.price_per_megapixel_usd
+gemini-3.7-flash.tool_use
+gpt-5.6-sol.tool_use
+grok_imagine_1_5.max_resolution
+happyhorse_1_0.max_resolution
+ltx-video.max_frames
+qwen-image-edit-plus.reference_images
+qwen-image-edit.editing
+qwen3.8-2.4t-a95b.architecture
+seedance-1.0-pro-i2v.duration_enum_seconds
+seedance2_5.max_resolution
+seedance2_fast.max_resolution
+seedance2_mini.max_resolution
+seedream-4.0.price_per_image_usd
+sora-2.aspect_options
+sora-2.deprecation
+sora-2.video_input_accepted
+veo-2.duration_resolution_audio
+veo-3.1.aspect_ratio_options
+veo-3.1.audio_prompt_structure
+veo-3.1.dialogue_extension_caveat
+veo-3.1.duration_seconds_options
+veo-3.1.frame_rate
+veo-3.1.native_audio
+veo-3.1.output_retention
+veo-3.1.person_generation
+veo-3.1.prompt_structure
+veo-3.1.reference_images
+veo-3.1.request_latency
+veo-3.1.resolution_options
+veo-3.1.video_extension
+veo-3.1.videos_per_request_gemini_api
+veo-3.duration_and_resolution

@@ -1,0 +1,58 @@
+// Gold set for the harvested gallery corpus (studio/knowledge/gallery_prompts.jsonl).
+// The corpus itself is NOT in this repository; see docs/SELFRAG.md.
+//
+// Ground truth is `must_category`: the gallery's own section label. A query
+// passes when the retriever returns at least one record filed under that
+// section. The grouping is a third party's, not ours, which is what keeps the
+// measurement from being circular — the alternative, judging against records
+// we picked ourselves, measures our own taste.
+//
+// Every query below is written from scratch in English. No prompt wording from
+// the corpus is reproduced here. The section labels are labels, not content,
+// and are kept for the reason NOTICE_replacement.md already gives.
+{"id": "c01a", "query": "preserve an uploaded design exactly and reproduce it across large vertical banners", "expect": "hit", "must_category": "Mockups"}
+{"id": "c01b", "query": "keep the uploaded artwork unchanged and place it onto a physical surface mockup", "expect": "hit", "must_category": "Mockups"}
+{"id": "c02a", "query": "editorial still life with a sculptural set and a very clean composition", "expect": "hit", "must_category": "Set-design"}
+{"id": "c02b", "query": "high end perfume still life arranged on sculptural forms", "expect": "hit", "must_category": "Set-design"}
+{"id": "c03a", "query": "futuristic female character wearing armour with brightly coloured hair", "expect": "hit", "must_category": "Персонажи в доспехах"}
+{"id": "c03b", "query": "full body shot of a model in sculptural armour, dynamic pose", "expect": "hit", "must_category": "Персонажи в доспехах"}
+{"id": "c04a", "query": "pastel heart shaped candies packed densely together", "expect": "hit", "must_category": "День святого Валентина"}
+{"id": "c04b", "query": "a tender romantic couple in an intimate editorial for valentines day", "expect": "hit", "must_category": "День святого Валентина"}
+{"id": "c05a", "query": "a consumer gadget silhouette centred on a smooth gradient background", "expect": "hit", "must_category": "Продуктовая съёмка 2"}
+{"id": "c05b", "query": "skincare bottle held in a sculptural balancing composition", "expect": "hit", "must_category": "Продуктовая съёмка 2"}
+{"id": "c06a", "query": "fisheye distorted editorial portrait taken on a very wide lens", "expect": "hit", "must_category": "Фишай съёмка"}
+{"id": "c06b", "query": "extreme wide angle distorted fashion close up shot on a Canon body", "expect": "hit", "must_category": "Фишай съёмка"}
+{"id": "c07a", "query": "a flagship store facade shaped like an enormous version of the product", "expect": "hit", "must_category": "Фасады для брендов"}
+{"id": "c07b", "query": "brand flagship storefront with an inventive sculptural facade in a city", "expect": "hit", "must_category": "Фасады для брендов"}
+{"id": "c08a", "query": "stylised 3d avatar head with big glossy eyes on a gradient background", "expect": "hit", "must_category": "3D аватары"}
+{"id": "c08b", "query": "cute 3d profile picture character with colourful hair and a hat", "expect": "hit", "must_category": "3D аватары"}
+{"id": "c09a", "query": "a knitted pumpkin as a seamless autumn pattern", "expect": "hit", "must_category": "halloween"}
+{"id": "c09b", "query": "cute cartoon halloween creature, spooky but friendly", "expect": "hit", "must_category": "halloween"}
+{"id": "c10a", "query": "an athlete sprinting straight toward the camera in sportswear", "expect": "hit", "must_category": "Спорт"}
+{"id": "c10b", "query": "low angle shot from the ground of a runner on a track", "expect": "hit", "must_category": "Спорт"}
+{"id": "c11a", "query": "a designer handbag warping and melting into a puddle", "expect": "hit", "must_category": "Расплавленные объекты"}
+{"id": "c11b", "query": "a luxury dessert plate softening and drooping, surreal", "expect": "hit", "must_category": "Расплавленные объекты"}
+{"id": "c12a", "query": "hyperrealistic macro of a plant rendered entirely in polished chrome", "expect": "hit", "must_category": "Chrome"}
+{"id": "c12b", "query": "cinematic render of a game controller with a mirror chrome finish", "expect": "hit", "must_category": "Chrome"}
+{"id": "c13a", "query": "dark moody hybrid between a flower and a mushroom, cinematic", "expect": "hit", "must_category": "Тёмный стиль"}
+{"id": "c13b", "query": "a brand logo completely overgrown with moss in a dark forest", "expect": "hit", "must_category": "Тёмный стиль"}
+{"id": "c14a", "query": "abstract biomorphic bust covered in soft fur and fabric", "expect": "hit", "must_category": "Пушистая органика"}
+{"id": "c14b", "query": "surreal furry organic sculpture with strong textural contrast", "expect": "hit", "must_category": "Пушистая органика"}
+{"id": "c15a", "query": "render of interwoven inflated soft tubular forms used as a background", "expect": "hit", "must_category": "Текстуры и фоны 2"}
+{"id": "c15b", "query": "macro of an abstract glass crystal formation with flowing curved forms", "expect": "hit", "must_category": "Текстуры и фоны 2"}
+{"id": "c16a", "query": "bright sunny summer fashion poster of a young woman", "expect": "hit", "must_category": "Summer time"}
+{"id": "c16b", "query": "experimental summer fashion editorial poster with a big headline", "expect": "hit", "must_category": "Summer time"}
+{"id": "c17a", "query": "cyber elf woman with horns and visible metal implants, portrait", "expect": "hit", "must_category": "Кибер эстетика"}
+{"id": "c17b", "query": "neon cyber portrait with a translucent jacket and a glowing neck", "expect": "hit", "must_category": "Кибер эстетика"}
+{"id": "c18a", "query": "hyperrealistic composition of geometric forms floating in perfect symmetry", "expect": "hit", "must_category": "3D объекты и девайсы"}
+{"id": "c18b", "query": "futuristic assemblage of inflated modules and folded industrial panels", "expect": "hit", "must_category": "3D объекты и девайсы"}
+{"id": "c19a", "query": "christmas ornament in a velvety powder pink material", "expect": "hit", "must_category": "Новогодняя коллекция, 1 часть"}
+{"id": "c19b", "query": "background packed tightly with stocking shaped festive ornaments", "expect": "hit", "must_category": "Новогодняя коллекция, 1 часть"}
+{"id": "c20a", "query": "sculptural modern armchair in smooth matte tan leather", "expect": "hit", "must_category": "Плёночный стиль"}
+{"id": "c20b", "query": "vintage car photographed in profile in a dark studio", "expect": "hit", "must_category": "Плёночный стиль"}
+{"id": "n01", "query": "how do I file a quarterly value added tax return in Estonia", "expect": "abstain", "must_retrieve": []}
+{"id": "n02", "query": "kubernetes ingress controller certificate rotation runbook", "expect": "abstain", "must_retrieve": []}
+{"id": "n03", "query": "recipe for sourdough starter hydration percentages", "expect": "abstain", "must_retrieve": []}
+{"id": "n04", "query": "torque specification for motorcycle sprocket bolts", "expect": "abstain", "must_retrieve": []}
+{"id": "n05", "query": "difference between LIFO and FIFO inventory accounting", "expect": "abstain", "must_retrieve": []}
+{"id": "n06", "query": "symptoms of vitamin D deficiency in adults", "expect": "abstain", "must_retrieve": []}
