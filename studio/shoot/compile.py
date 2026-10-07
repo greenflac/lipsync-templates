@@ -71,6 +71,11 @@ def compile_shot(prod: Production, shot: Shot) -> Compiled:
         for r in prod.characters[k].refs:
             refs.append(r.file)
             extra_pic.append((k, len(refs), r.what))
+    set_pic: list[tuple[int, str]] = []
+    for sr in prod.set_refs:
+        if not sr.scenes or shot.scene in sr.scenes:
+            refs.append(sr.file)
+            set_pic.append((len(refs), sr.what))
 
     defs = []
     for k in cast:
@@ -100,14 +105,18 @@ def compile_shot(prod: Production, shot: Shot) -> Compiled:
                 f"<Subject {subj[tall]}>'s {level}, so <Subject {subj[short]}> must look up."
             )
 
-    retention = [
-        f"<Subject {subj[k]}>: fully_preserved - face and hair from <Picture {face_pic[k]}>."
-        for k in cast
-        if k in face_pic
-    ] + [
-        f"<Picture {n}>: fully_preserved - {what} (<Subject {subj[k]}>)."
-        for k, n, what in extra_pic
-    ]
+    retention = (
+        [
+            f"<Subject {subj[k]}>: fully_preserved - face and hair from <Picture {face_pic[k]}>."
+            for k in cast
+            if k in face_pic
+        ]
+        + [
+            f"<Picture {n}>: fully_preserved - {what} (<Subject {subj[k]}>)."
+            for k, n, what in extra_pic
+        ]
+        + [f"<Picture {n}>: fully_preserved - {what}." for n, what in set_pic]
+    )
 
     placement = []
     for p in shot.blocking:
@@ -135,12 +144,28 @@ def compile_shot(prod: Production, shot: Shot) -> Compiled:
     for t, text in sorted(events, key=lambda e: e[0]):
         timeline.append(f"At {_ts(t)} {text}" if t > 0 else text)
 
-    look = (
-        f"{prod.look} The canvas and the cage padding are printed only with the made-up league "
-        f"name {prod.league}; there are no real-world brand logos anywhere. The gloves are plain matte black "
-        "with no letters or logos on them at all; the only lettering on the canvas is "
-        f"{prod.league}. Natural matte skin with subtle true-to-life texture, no oily shine, no beauty "
-        "retouching; clean unmarked faces with no scratches, cuts or red marks."
+    # НАБЛЮДЕНО 2026-10-07, S01_announce: фраза о перчатках в образе дома надела
+    # боксёрскую перчатку на конферансье. Перчатки называются, только если в
+    # кадре есть тот, у кого они в описании.
+    gloved = any("glove" in prod.characters[p.who].description for p in shot.blocking)
+    look = " ".join(
+        [
+            prod.look,
+            f"The only lettering in the arena is the made-up league name {prod.league}; there "
+            "are no real-world brand logos or league names anywhere.",
+            *(
+                f"The floor is printed exactly like <Picture {n}>: {what}; no other words "
+                "are printed on the canvas."
+                for n, what in set_pic
+            ),
+            *(
+                ["The fighters' gloves are plain matte black with no letters or logos at all."]
+                if gloved
+                else []
+            ),
+            "Natural matte skin with subtle true-to-life texture, no oily shine, no beauty "
+            "retouching; clean unmarked faces with no scratches, cuts or red marks.",
+        ]
     )
     shot_text = " ".join(
         [

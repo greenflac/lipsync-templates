@@ -5,6 +5,18 @@
  "width": 768,
  "height": 1344,
  "extra_brands": [],
+ "set_refs": [
+  {
+   "file": "refs/ref_canvas_security_arena.png",
+   "what": "the white octagon canvas with the black shield emblem and the words SECURITY ARENA in its center",
+   "scenes": [
+    "announce",
+    "intro_adgar",
+    "intro_august",
+    "octagon"
+   ]
+  }
+ ],
  "characters": {
   "august": {
    "name": "AUGUST",

@@ -10,7 +10,9 @@
   нет, а у плечевой камеры есть всегда. В процентах ширины кадра, чтобы
   не зависеть от разрешения;
 * склейки — скачок средней разницы соседних кадров во много раз выше медианы;
-* звук — есть ли он и не упирается ли в потолок.
+* звук — есть ли он и не упирается ли в потолок;
+* похожие на бренды надписи (OCR) и контактный лист: OCR ловит не всё, лист
+  смотрится глазами до того, как план идёт в монтаж.
 
 Пороги дрожи откалиброваны на роликах 2026-10-07 (см. `JITTER_*`), а не взяты
 из головы. Нет ffmpeg или не читается файл — «не смогли», а не «годно».
@@ -67,6 +69,7 @@ class Report:
     audio_peak: float = 0.0
     audio_rms_db: float = -120.0
     text_seen: list[str] = field(default_factory=list)
+    sheet: str = ""
     notes: list[str] = field(default_factory=list)
 
 
@@ -268,6 +271,25 @@ def brand_hits(tokens: list[str], brands: tuple[str, ...] = ()) -> list[tuple[st
     return hits
 
 
+def contact_sheet(path: str, seconds: float, frames_n: int = 6) -> str:
+    """Лист из `frames_n` кадров рядом с роликом — для просмотра глазами.
+
+    ПОЧЕМУ ГЛАЗА ОБЯЗАТЕЛЬНЫ. НАБЛЮДЕНО 2026-10-07, S01_announce: на канвасе
+    крупно напечатано «UFC» в перспективе, а RapidOCR на тех же кадрах прочёл
+    только «SIEV» — и с поворотами, и с увеличением нижней половины кадра.
+    Пустой список прочитанного текста НЕ значит «надписей нет».
+    """
+    out = path.rsplit(".", 1)[0] + ".sheet.jpg"
+    rate = frames_n / max(seconds, 0.1)
+    subprocess.run(
+        ["ffmpeg", "-v", "error", "-y", "-i", path, "-vf"]
+        + [f"fps={rate:.4f},scale=320:-2,tile={frames_n}x1", "-frames:v", "1", out],
+        capture_output=True,
+        check=True,
+    )
+    return out
+
+
 def _ocr_brands(path: str, seconds: float) -> list[str] | None:
     """Весь текст, прочитанный на трёх кадрах плана; None — читать нечем."""
     try:
@@ -367,6 +389,7 @@ def measure(path: str, rig: str) -> Report:
     else:
         rep.notes.append("в файле нет звуковой дорожки")
     rep.zoom = round(zoom(cam), 3)
+    rep.sheet = contact_sheet(path, len(frames) / fps)
     seen = _ocr_brands(path, len(frames) / fps)
     if seen is not None:
         rep.text_seen = seen

@@ -159,7 +159,21 @@ class Compiler(unittest.TestCase):
         self.assertIn(RIGS[shot.rig].operator, c.prompt)
         self.assertIn("27 cm taller", c.prompt)
         self.assertEqual(c.prompt.count("cm taller"), 1)
-        self.assertEqual(len(c.refs), 5)
+        self.assertEqual(len(c.refs), 6)
+        self.assertEqual(Path(c.refs[-1]).name, "ref_canvas_security_arena.png")
+        self.assertIn("The floor is printed exactly like <Picture 6>", c.prompt)
+        self.assertIn("gloves are plain matte black", c.prompt)
+
+    def test_no_gloves_on_the_announcer(self) -> None:
+        # S01_announce, 2026-10-07: фраза о перчатках надела перчатку конферансье
+        prod = _prod()
+        c = compile_shot(prod, next(s for s in prod.shots if s.id == "S01_announce"))
+        self.assertNotIn("glove", c.prompt)
+
+    def test_set_ref_only_in_its_scenes(self) -> None:
+        prod = _prod()
+        c = compile_shot(prod, next(s for s in prod.shots if s.id == "S08_booth"))
+        self.assertEqual(c.refs, ())
         self.assertTrue(all((PRODUCTION.parent / r).exists() for r in c.refs))
 
     def test_graph_wires_every_ref(self) -> None:

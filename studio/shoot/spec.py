@@ -36,6 +36,20 @@ class Ref:
 
 
 @dataclass(frozen=True)
+class SetRef:
+    """Картинка декорации: канвас, баннер. Подключается ко всем планам своих сцен.
+
+    НАБЛЮДЕНО 2026-10-07: запрет брендов словами не держит пол октагона — в
+    S01_announce на канвасе напечатано «UFC», в sc_S1 «OFC». Модели нужно
+    показать, ЧТО напечатано на полу, а не только сказать, чего там нет.
+    """
+
+    file: str
+    what: str
+    scenes: tuple[str, ...] = ()  # пусто — во всех сценах
+
+
+@dataclass(frozen=True)
 class Character:
     key: str
     name: str
@@ -95,6 +109,7 @@ class Production:
     characters: dict[str, Character]
     shots: tuple[Shot, ...]
     extra_brands: tuple[str, ...] = field(default=())
+    set_refs: tuple[SetRef, ...] = field(default=())
 
 
 def load(path: str | Path) -> Production:
@@ -141,4 +156,8 @@ def load(path: str | Path) -> Production:
         characters=chars,
         shots=shots,
         extra_brands=tuple(raw.get("extra_brands", [])),
+        set_refs=tuple(
+            SetRef(r["file"], r["what"], tuple(r.get("scenes", [])))
+            for r in raw.get("set_refs", [])
+        ),
     )
