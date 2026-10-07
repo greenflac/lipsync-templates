@@ -15,7 +15,7 @@ from pathlib import Path
 
 import numpy as np
 
-from studio.shoot import qa, validate
+from studio.shoot import journal, qa, validate
 from studio.shoot.camera import RIGS
 from studio.shoot.compile import compile_shot
 from studio.shoot.h3graph import build, frames
@@ -233,7 +233,7 @@ class Measure(unittest.TestCase):
         self.assertGreater(qa.zoom(path), 1.5)
         verdict, notes = qa.judge("in_cage_handheld", 0.1, [], qa.zoom(path))
         self.assertEqual(verdict, "не годно")
-        self.assertTrue(any("ИИ-наезд" in n for n in notes))
+        self.assertTrue(any(n.startswith("масштаб кадра") for n in notes), notes)
         # тот же наезд с дрожью рук — оператор шагнул ближе (op_A), это годно
         self.assertEqual(qa.judge("in_cage_handheld", 0.5, [], qa.zoom(path))[0], "годно")
         self.assertEqual(qa.judge("cage_side_tele", 0.5, [], qa.zoom(path))[0], "годно")
@@ -243,11 +243,110 @@ class Measure(unittest.TestCase):
         self.assertEqual(qa.brand_hits(["OFC", "SECURITYAREN"]), [("OFC", "UFC")])
         self.assertEqual(qa.brand_hits(["SECURITY ARENA", "FREE VPN", "АвгустVPN"]), [])
 
+    def test_threshold_sits_between_measured_takes(self) -> None:
+        # замеры 2026-10-07 (studio/knowledge/measured.jsonl): ИИ-наезды и оператор
+        ai_push = (0.281, 0.111, 0.256, 0.115)
+        operator = (0.506, 0.330)
+        self.assertLess(max(ai_push), qa.JITTER_HANDHELD_MIN)
+        self.assertLess(qa.JITTER_HANDHELD_MIN, min(operator))
+
     def test_cut_found_and_no_false_cut(self) -> None:
-        a = np.stack([_crop(self.big, 150, 200, 1.0, self.H, self.W)] * 24)
-        b = np.stack([_texture(self.H, self.W, 9)] * 24)
+        # живой план всегда немного меняется от кадра к кадру: зерно, движение
+        rng = np.random.default_rng(5)
+        base_a = _crop(self.big, 150, 200, 1.0, self.H, self.W)
+        base_b = _texture(self.H, self.W, 9)
+        a = np.stack([base_a + rng.normal(0, 2, base_a.shape) for _ in range(24)])
+        b = np.stack([base_b + rng.normal(0, 2, base_b.shape) for _ in range(24)])
         self.assertEqual(qa.cuts(np.concatenate([a, b])), [1.0])
         self.assertEqual(qa.cuts(a), [])
+
+
+class Journal(unittest.TestCase):
+    JOURNAL = PRODUCTION.parent / "journal.jsonl"
+
+    def test_production_journal_is_consistent(self) -> None:
+        rows = journal.load(self.JOURNAL)
+        self.assertGreater(len(rows), 10)
+        self.assertEqual(journal.check(rows), [])
+
+    def test_owner_remark_without_incident_is_caught(self) -> None:
+        rows: list[dict[str, object]] = [
+            {
+                "id": "review-1",
+                "ts": "t",
+                "kind": "review",
+                "stage": "camera",
+                "by": "owner",
+                "summary": "камера неживая",
+                "outcome": "не годно",
+            }
+        ]
+        self.assertTrue(any("без разбора" in p for p in journal.check(rows)))
+        rows.append(
+            {
+                "id": "incident-1",
+                "ts": "t",
+                "kind": "incident",
+                "stage": "camera",
+                "by": "agent",
+                "summary": "наезд",
+                "from": ["review-1"],
+                "cause": "промпт про движение, не про оператора",
+                "rule": "studio/shoot/camera.py:RIGS",
+            }
+        )
+        self.assertEqual(journal.check(rows), [])
+
+    def test_incident_needs_rule_or_reason(self) -> None:
+        ev = {"id": "i", "ts": "t", "kind": "incident", "stage": "look", "by": "agent"}
+        ev |= {"summary": "x", "cause": "y"}
+        self.assertTrue(any("правила" in p for p in journal.problems(ev)))
+        self.assertEqual(journal.problems(ev | {"no_rule": "разовый сбой провайдера"}), [])
+
+    def test_render_needs_outcome(self) -> None:
+        ev = {"id": "r", "ts": "t", "kind": "render", "stage": "render", "by": "pipeline"}
+        self.assertTrue(any("исхода" in p for p in journal.problems(ev | {"summary": "x"})))
+
+    def test_two_prices_in_summary(self) -> None:
+        rows = [
+            {"kind": "render", "gpu_s": 3600, "cost_usd": 2.0, "outcome": "годно", "shot": "A"},
+            {"kind": "cost", "cost_usd": 8.0},
+        ]
+        s = journal.summarize(rows)
+        self.assertEqual((s.render_cost_usd, s.cost_usd), (2.0, 8.0))
+        self.assertIn("25%", journal.render_summary(s))
+
+
+class Budget(unittest.TestCase):
+    def test_batch_over_budget_is_refused(self) -> None:
+        from studio.shoot.render import budget_problem, estimate_usd
+
+        prod = dataclasses.replace(_prod(), budget_usd=10.0)
+        ids = [s.id for s in prod.shots]
+        rows = [{"kind": "cost", "cost_usd": 9.5}]
+        need = estimate_usd(prod, ids, rows, 2.09)
+        self.assertGreater(need, 0.5)
+        self.assertIn("осталось $0.50", budget_problem(10.0, prod, ids, rows, 2.09))
+        self.assertEqual(budget_problem(100.0, prod, ids, rows, 2.09), "")
+        self.assertEqual(budget_problem(0.0, prod, ids, rows, 2.09), "")  # бюджет не задан
+
+    def test_rate_learned_from_journal(self) -> None:
+        from studio.shoot.render import DEFAULT_GPU_S_PER_S, gpu_s_per_second
+
+        self.assertEqual(gpu_s_per_second([]), DEFAULT_GPU_S_PER_S)
+        rows = [{"kind": "render", "gpu_s": 186, "seconds": 5}]
+        self.assertAlmostEqual(gpu_s_per_second(rows), 37.2)
+
+    def test_render_event_records_what_reproduces_the_take(self) -> None:
+        from studio.shoot.render import render_event
+
+        prod = _prod()
+        c = compile_shot(prod, prod.shots[3])
+        ev = render_event(c, "cage_side_tele", 413, "годно", "x.mp4", 2.09, build(c, "p"))
+        self.assertEqual(journal.problems(ev | {"id": "r", "ts": "t"}), [])
+        self.assertEqual(len(ev["prompt_sha"]), 12)
+        self.assertEqual(ev["seed"], c.seed)
+        self.assertAlmostEqual(ev["cost_usd"], 0.2398, places=3)
 
 
 if __name__ == "__main__":

@@ -189,6 +189,11 @@ MYPYPATH=. python -m mypy --explicit-package-bases studio/shoot/ studio/tests/te
 step "validate (shoot)"
 python -m studio.shoot validate productions/augustvpn_main_event/production.json
 
+# Журнал производства: каждое замечание владельца «не годно» разобрано
+# инцидентом с правилом в коде или явным основанием, почему правила нет.
+step "journal (shoot)"
+python -m studio.shoot journal productions/augustvpn_main_event/production.json > /dev/null
+
 # Приборы гейта — тоже код, и до сих пор их типы не проверял никто: на
 # 2026-09-04 здесь лежало 36 ошибок в 8 файлах, среди них настоящая —
 # `advice.withdraw(**row)` подавал словарь в подпись, первый именованный

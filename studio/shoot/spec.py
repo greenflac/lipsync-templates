@@ -110,6 +110,7 @@ class Production:
     shots: tuple[Shot, ...]
     extra_brands: tuple[str, ...] = field(default=())
     set_refs: tuple[SetRef, ...] = field(default=())
+    budget_usd: float = 0.0  # 0 — бюджет не задан
 
 
 def load(path: str | Path) -> Production:
@@ -156,6 +157,7 @@ def load(path: str | Path) -> Production:
         characters=chars,
         shots=shots,
         extra_brands=tuple(raw.get("extra_brands", [])),
+        budget_usd=float(raw.get("budget_usd", 0)),
         set_refs=tuple(
             SetRef(r["file"], r["what"], tuple(r.get("scenes", [])))
             for r in raw.get("set_refs", [])
