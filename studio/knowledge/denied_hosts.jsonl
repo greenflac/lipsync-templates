@@ -641,3 +641,7 @@
 {"host": "api.runpod.ai", "url": "https://api.runpod.ai/", "reason": "Tunnel connection failed: 403 Forbidden", "why_wanted": "Настройка RunPod по agent-setup.md: документация, REST/GraphQL API управления подами", "incidental": false, "state": "refused", "first_seen": "2026-10-07"}
 {"host": "rest.runpod.ai", "url": "https://rest.runpod.ai/", "reason": "Tunnel connection failed: 403 Forbidden", "why_wanted": "Настройка RunPod по agent-setup.md: документация, REST/GraphQL API управления подами", "incidental": false, "state": "refused", "first_seen": "2026-10-07"}
 {"host": "console.runpod.io", "url": "https://console.runpod.io/", "reason": "Tunnel connection failed: 403 Forbidden", "why_wanted": "Настройка RunPod по agent-setup.md: документация, REST/GraphQL API управления подами", "incidental": false, "state": "refused", "first_seen": "2026-10-07"}
+{"host": "docs.runpod.io", "url": "https://docs.runpod.io/", "state": "open", "first_seen": "2026-10-07"}
+{"host": "api.runpod.io", "url": "https://api.runpod.io/", "state": "open", "first_seen": "2026-10-07"}
+{"host": "rest.runpod.io", "url": "https://rest.runpod.io/", "state": "open", "first_seen": "2026-10-07"}
+{"host": "mcp.getrunpod.io", "url": "https://mcp.getrunpod.io/", "reason": "Tunnel connection failed: 403 Forbidden", "why_wanted": "MCP-сервер Runpod из официального плагина", "incidental": false, "state": "refused", "first_seen": "2026-10-07"}
