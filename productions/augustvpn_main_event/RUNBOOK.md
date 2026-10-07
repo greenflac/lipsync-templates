@@ -69,3 +69,16 @@ python -m studio.shoot render productions/augustvpn_main_event/production.json O
 1. **Выключить под** (`pod-action {"action":"stop"}`).
 2. Записать в журнал строку `cost` из `list-pod-billing` за день рендера.
 3. Записать приёмку каждого плана: `python -m studio.shoot log … review edit owner|agent "…" shot=… outcome=годно`.
+
+## 6. Мастер
+
+```bash
+python -m studio.shoot edit productions/augustvpn_main_event/production.json \
+    productions/augustvpn_main_event/edit.json OUT master_1080x1920.mp4
+```
+
+В монтаж берётся самый свежий файл плана из `OUT`. Если принят не последний
+дубль, отбракованные убрать из `OUT`. Точки входа и выхода (`in`/`out`) и время
+стоп-кадра «лага» в S07 подогнать по реальным рендерам: в листе они стоят по
+битам сценария. Графика и звуковые эффекты пересобираются командой
+`python productions/augustvpn_main_event/make_assets.py` (там же проверка QR).

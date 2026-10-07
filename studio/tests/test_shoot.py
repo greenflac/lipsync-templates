@@ -10,6 +10,8 @@ sheen», UFC на перчатках, перепрыгнутая ось. Нег�
 from __future__ import annotations
 
 import dataclasses
+import shutil
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -347,6 +349,55 @@ class Budget(unittest.TestCase):
         self.assertEqual(len(ev["prompt_sha"]), 12)
         self.assertEqual(ev["seed"], c.seed)
         self.assertAlmostEqual(ev["cost_usd"], 0.2398, places=3)
+
+
+class Edit(unittest.TestCase):
+    EDIT = PRODUCTION.parent / "edit.json"
+
+    def test_edit_sheet_is_clean_and_forty_seconds(self) -> None:
+        from studio.shoot import edit
+
+        e = edit.load(self.EDIT)
+        shots = {s.id for s in _prod().shots}
+        self.assertEqual(edit.problems(e, self.EDIT.parent, shots), [])
+        self.assertAlmostEqual(e.length, 40.0, places=3)
+        used = {c.shot for c in e.clips if not c.still}
+        self.assertEqual(used, shots)  # каждый снятый план в монтаже
+
+    def test_subtitle_too_fast_or_wide_is_caught(self) -> None:
+        from studio.shoot import edit
+
+        e = edit.load(self.EDIT)
+        c = e.clips[0]
+        long = edit.Sub(0.1, 1.0, "Очень длинная реплика, которую никто не успеет прочитать")
+        bad = dataclasses.replace(e, clips=(dataclasses.replace(c, subs=(long,)),))
+        found = edit.problems(bad, self.EDIT.parent, {c.shot})
+        self.assertTrue(any("не успеть прочитать" in p for p in found), found)
+        if Path(edit.FONT).exists():
+            self.assertTrue(any("шире кадра" in p for p in found), found)
+
+    def test_slate_wraps_lines(self) -> None:
+        from studio.shoot.edit import _wrap
+
+        lines = _wrap("S07 · нет рендера\nFASTER: the free VPN lags; a stutter is added", 20)
+        self.assertEqual(lines[0], "S07 · нет рендера")
+        self.assertTrue(all(len(x) <= 20 for x in lines[1:]))
+
+    @unittest.skipUnless(shutil.which("ffmpeg"), "нет ffmpeg")
+    def test_assemble_slates_and_still(self) -> None:
+        from studio.shoot import edit
+
+        with tempfile.TemporaryDirectory() as tmp:
+            e = edit.Edit(
+                clips=(
+                    edit.Clip("S01_announce", 0.0, 0.5),
+                    edit.Clip("packshot", 0.0, 0.5, still="gfx/packshot.png"),
+                )
+            )
+            out = Path(tmp) / "m.mp4"
+            slates = edit.assemble(e, self.EDIT.parent, {}, {}, out)
+            self.assertEqual(slates, ["S01_announce"])
+            self.assertTrue(out.exists())
 
 
 if __name__ == "__main__":

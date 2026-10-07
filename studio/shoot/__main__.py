@@ -9,6 +9,8 @@
     journal  PRODUCTION.json                проверка журнала и сводка для постмортема
     log      PRODUCTION.json KIND STAGE BY "итог" [ключ=значение | ключ:=json …]
              ручная строка: решение, отзыв, инцидент
+    edit     PRODUCTION.json EDIT.json RENDERS_DIR OUT.mp4
+             монтаж; плана без рендера в RENDERS_DIR — слейт той же длины
 
 Код выхода: 0 — «годно», 1 — «не годно», 2 — «не смогли».
 """
@@ -134,6 +136,29 @@ def _log(path: str, kind: str, stage: str, by: str, summary: str, extra: list[st
     return 0
 
 
+def _edit(path: str, edit_path: str, renders_dir: str, out: str) -> int:
+    from studio.shoot import edit
+
+    prod = load(path)
+    e = edit.load(edit_path)
+    base = Path(edit_path).resolve().parent
+    bad = edit.problems(e, base, {s.id for s in prod.shots})
+    for b in bad:
+        print("не годно:", b)
+    if bad:
+        return 1
+    renders: dict[str, Path] = {}
+    for shot in prod.shots:  # самый свежий файл плана; принятый дубль кладётся последним
+        found = sorted(Path(renders_dir).glob(f"{shot.id}*.mp4"), key=lambda p: p.stat().st_mtime)
+        if found:
+            renders[shot.id] = found[-1]
+    slates = edit.assemble(e, base, renders, {s.id: s.purpose for s in prod.shots}, Path(out))
+    print(f"{out}: {e.length:.1f} с; рендеров {len(renders)}, слейтов {len(slates)}")
+    for sid, p in sorted(renders.items()):
+        print(f"  {sid:20} ← {p.name}")
+    return 0
+
+
 def main(argv: list[str]) -> int:
     if len(argv) >= 2 and argv[0] == "validate":
         return _validate(argv[1])
@@ -145,6 +170,8 @@ def main(argv: list[str]) -> int:
         return _render(argv[1], argv[2], argv[3:])
     if len(argv) == 2 and argv[0] == "journal":
         return _journal(argv[1])
+    if len(argv) == 5 and argv[0] == "edit":
+        return _edit(argv[1], argv[2], argv[3], argv[4])
     if len(argv) >= 6 and argv[0] == "log":
         return _log(argv[1], argv[2], argv[3], argv[4], argv[5], argv[6:])
     print(__doc__, file=sys.stderr)
