@@ -178,10 +178,40 @@ def padding_ref() -> None:
     im.save(HERE / "refs" / "ref_padding_security_arena.png")
 
 
+def beds() -> None:
+    """Подложки по ревью 2026-10-08 (монтаж): общий гул зала поверх планов, чтобы
+    громкость толпы не скакала на склейках; глухой пульс до «зависания» Адгара
+    (на стоп-кадре он обрывается вместе со всем звуком); удар тела о канвас."""
+    rng = np.random.default_rng(21)
+    n = SR * 8
+    noise = rng.normal(0, 1, n)
+    k = np.ones(400) / 400
+    murmur = np.convolve(noise, k, mode="same") - np.convolve(noise, np.ones(4000) / 4000, mode="same")
+    swell = 0.7 + 0.3 * np.sin(2 * np.pi * np.arange(n) / SR / 3.7)
+    fade = np.minimum(1, np.minimum(np.arange(n), n - np.arange(n)) / (SR * 0.05))
+    wav("arena_bed.wav", murmur * swell * fade)
+    beat = int(SR * 60 / 96)  # 96 ударов в минуту
+    n = beat * 8
+    t = np.arange(n) / SR
+    pulse = np.zeros(n)
+    for i in range(8):
+        s0 = i * beat
+        tt = np.arange(min(int(SR * 0.4), n - s0)) / SR
+        pulse[s0 : s0 + tt.size] += np.sin(2 * np.pi * (48 + 40 * np.exp(-tt * 30)) * tt) * np.exp(-tt * 9)
+    pulse += 0.15 * np.sin(2 * np.pi * 55 * t) * (0.6 + 0.4 * np.sin(2 * np.pi * t / (beat * 4 / SR)))
+    wav("pulse.wav", pulse)
+    n = int(SR * 0.6)
+    tt = np.arange(n) / SR
+    thud = np.sin(2 * np.pi * (70 + 60 * np.exp(-tt * 40)) * tt) * np.exp(-tt * 11)
+    thud[:600] += rng.normal(0, 0.5, 600) * np.linspace(1, 0, 600)
+    wav("thud.wav", thud)
+
+
 def main() -> None:
     padding_ref()
     kit_prints()
     sfx()
+    beds()
     print(check_qr())
 
 

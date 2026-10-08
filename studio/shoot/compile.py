@@ -160,11 +160,17 @@ def compile_shot(prod: Production, shot: Shot) -> Compiled:
             prod.look,
             f"The only lettering in the arena is the made-up league name {prod.league}; there "
             "are no real-world brand logos or league names anywhere.",
+            # каждая декорация — своей фразой: до 2026-10-08 любая называлась «полом»,
+            # и реф мата сетки уходил в модель как второй рисунок канваса
+            *(f"Exactly as in <Picture {n}>: {what}." for n, what in set_pic),
             *(
-                f"The floor is printed exactly like <Picture {n}>: {what}; around it the "
-                "canvas is plain white with thin black octagon lines and nothing else printed "
-                "on it, no other words or logos anywhere on the floor."
-                for n, what in set_pic
+                [
+                    "Around the center logo the canvas is plain white with thin black octagon "
+                    "lines and nothing else printed on it; the corner posts and the fence "
+                    "padding carry no other words or logos."
+                ]
+                if set_pic
+                else []
             ),
             *(
                 [

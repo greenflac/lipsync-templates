@@ -3,6 +3,11 @@
 
     python productions/augustvpn_main_event/render_gfx.py [имя …]
 
+РАСКЛАДКА ПО ВЕРТИКАЛИ (ревью 2026-10-08): верхние ~180 px и нижние ~480 px
+кадра в Reels/TikTok/Shorts закрывает интерфейс; титры имени и итога — в
+верхней трети, чтобы не закрывать печать спонсора на груди бойца (иначе бренд
+на экране ≈4,5 с из 43). Адрес и QR пэкшота — выше 75 % высоты.
+
 ПОЧЕМУ ТАК. НАБЛЮДЕНО 2026-10-08, владелец о графике v1 (статичные PNG из
 Pillow): «плашки бойцов, LIVE и пр. выглядят дёшево». Дороговизну эфирной
 графике дают движение (шторки, сдвиги, блик по панели), материал (тёмное
@@ -29,6 +34,8 @@ HERE = Path(__file__).resolve().parent
 OUT = HERE / "gfx"
 FPS = 24
 W, H = 1080, 1920
+#: Секунда табло, на которой часы встают: длительность S06+S07+S08 в монтаже.
+FROZEN_CLOCK_AT = 7.6
 
 CSS = """
 @font-face { font-family: Osw; src: url('fonts/Oswald-Variable.ttf'); font-weight: 200 700; }
@@ -73,13 +80,13 @@ element(
     "bug_live",
     3.0,
     """
-<div id=bug class=glass style="left:40px;top:64px;width:470px;height:92px;border-radius:6px">
+<div id=bug class=glass style="left:40px;top:190px;width:470px;height:92px;border-radius:6px">
   <div style="position:absolute;left:0;top:0;width:8px;height:100%;background:linear-gradient(180deg,var(--gold1),var(--gold3))"></div>
   <div class="osw gold" style="position:absolute;left:28px;top:10px;font-size:40px;font-weight:700">Security Arena</div>
   <div class="osw dim" style="position:absolute;left:30px;top:56px;font-size:20px;font-weight:500;letter-spacing:.18em">Main event · PPV</div>
   <div id=sw class=sweep></div>
 </div>
-<div id=live class=glass style="left:526px;top:64px;width:124px;height:92px;border-radius:6px;background:linear-gradient(180deg,#e2313a,#8c0f16)">
+<div id=live class=glass style="left:526px;top:190px;width:124px;height:92px;border-radius:6px;background:linear-gradient(180deg,#e2313a,#8c0f16)">
   <div id=dot style="position:absolute;left:20px;top:36px;width:20px;height:20px;border-radius:50%;background:#fff"></div>
   <div class="osw white" style="position:absolute;left:50px;top:22px;font-size:36px;font-weight:700">Live</div>
 </div>""",
@@ -137,8 +144,8 @@ def name_super(key: str, first: str, last: str, record: str, corner: str, c1: st
         key,
         2.3,
         f"""
-<div id=bar style="position:absolute;left:0;top:1090px;width:820px;height:12px;background:linear-gradient(90deg,{c1},{c2});box-shadow:0 0 36px {c1}"></div>
-<div id=panel class=glass style="left:0;top:1102px;width:820px;height:220px;border-radius:0 0 8px 0">
+<div id=bar style="position:absolute;left:0;top:310px;width:820px;height:12px;background:linear-gradient(90deg,{c1},{c2});box-shadow:0 0 36px {c1}"></div>
+<div id=panel class=glass style="left:0;top:322px;width:820px;height:220px;border-radius:0 0 8px 0">
   <div id=f class="osw dim" style="position:absolute;left:54px;top:14px;font-size:38px;font-weight:500;letter-spacing:.12em">{first}</div>
   <div id=l class="osw white" style="position:absolute;left:50px;top:52px;font-size:112px;line-height:1;font-weight:700">{last}</div>
   <div id=s class="osw" style="position:absolute;left:54px;top:174px;font-size:28px;font-weight:600;letter-spacing:.16em;color:{c1}">{corner} &nbsp;·&nbsp; <span class=white>{record}</span></div>
@@ -165,7 +172,7 @@ element(
     "scorebug",
     20.0,
     """
-<div id=sb class=glass style="left:40px;top:64px;height:84px;border-radius:6px;display:flex;align-items:center">
+<div id=sb class=glass style="left:40px;top:190px;height:84px;border-radius:6px;display:flex;align-items:center">
   <div style="width:8px;align-self:stretch;background:var(--blue)"></div>
   <div class="osw white" style="padding:0 16px 0 20px;font-size:44px;font-weight:700">Pobedinsky</div>
   <div class="osw dim" style="font-size:26px;font-weight:500">vs</div>
@@ -188,7 +195,7 @@ element(
     "result",
     3.4,
     """
-<div id=panel class=glass style="left:60px;top:1060px;width:960px;height:300px;border-radius:8px">
+<div id=panel class=glass style="left:60px;top:300px;width:960px;height:300px;border-radius:8px">
   <div style="position:absolute;left:0;top:0;width:100%;height:10px;background:linear-gradient(90deg,var(--gold3),var(--gold1),var(--gold3))"></div>
   <div id=a class="osw dim" style="position:absolute;width:100%;text-align:center;top:30px;font-size:32px;font-weight:600;letter-spacing:.3em">Official result · R1</div>
   <div id=b class="osw white" style="position:absolute;width:100%;text-align:center;top:76px;font-size:64px;font-weight:700">Pobedinsky wins</div>
@@ -209,19 +216,19 @@ function render(t){
 # ---------------------------------------------------------------- пэкшот
 element(
     "packshot",
-    5.0,
+    6.0,
     """
 <div style="position:absolute;inset:0;background:radial-gradient(ellipse at 50% 34%, #2a2414 0%, #0b0b0d 58%)"></div>
-<div id=glow style="position:absolute;left:190px;top:300px;width:700px;height:420px;border-radius:50%;background:rgba(255,200,40,.22);filter:blur(90px)"></div>
-<div id=tag class="fira white" style="position:absolute;width:100%;text-align:center;top:300px;font-size:44px;font-weight:600;opacity:.82">Бесплатный VPN подводит<br>в самый важный момент.</div>
-<div id=logo class="fira" style="position:absolute;width:100%;text-align:center;top:470px;font-size:150px;font-weight:900;color:#ffc828;text-shadow:0 0 60px rgba(255,200,40,.45)">АвгустVPN</div>
-<div id=w1 class="osw white" style="position:absolute;width:100%;text-align:center;top:690px;font-size:84px;font-weight:700">Быстрее.</div>
-<div id=w2 class="osw white" style="position:absolute;width:100%;text-align:center;top:790px;font-size:84px;font-weight:700">Надёжнее.</div>
-<div id=w3 class="osw white" style="position:absolute;width:100%;text-align:center;top:890px;font-size:84px;font-weight:700">Безопаснее.</div>
-<div id=cta style="position:absolute;left:150px;top:1050px;width:780px;height:116px;border-radius:58px;background:linear-gradient(180deg,#ffd75a,#f2b10f);box-shadow:0 12px 40px rgba(242,177,15,.45)">
+<div id=glow style="position:absolute;left:190px;top:250px;width:700px;height:420px;border-radius:50%;background:rgba(255,200,40,.22);filter:blur(90px)"></div>
+<div id=tag class="fira white" style="position:absolute;width:100%;text-align:center;top:250px;font-size:52px;font-weight:700;opacity:.9">Не отключается<br>в главном бою.</div>
+<div id=logo class="fira" style="position:absolute;width:100%;text-align:center;top:420px;font-size:150px;font-weight:900;color:#ffc828;text-shadow:0 0 60px rgba(255,200,40,.45)">АвгустVPN</div>
+<div id=w1 class="osw white" style="position:absolute;width:100%;text-align:center;top:620px;font-size:76px;font-weight:700">Быстрее.</div>
+<div id=w2 class="osw white" style="position:absolute;width:100%;text-align:center;top:710px;font-size:76px;font-weight:700">Надёжнее.</div>
+<div id=w3 class="osw white" style="position:absolute;width:100%;text-align:center;top:800px;font-size:76px;font-weight:700">Безопаснее.</div>
+<div id=cta style="position:absolute;left:150px;top:940px;width:780px;height:116px;border-radius:58px;background:linear-gradient(180deg,#ffd75a,#f2b10f);box-shadow:0 12px 40px rgba(242,177,15,.45)">
   <div class="fira" style="position:absolute;width:100%;text-align:center;top:26px;font-size:50px;font-weight:800;color:#141414">Попробовать 1 день за 10 ₽</div></div>
-<img id=qr src="gfx/qr.png" style="position:absolute;left:375px;top:1210px;width:330px;height:330px;border-radius:12px">
-<div id=url class="fira white" style="position:absolute;width:100%;text-align:center;top:1556px;font-size:40px;font-weight:600;opacity:.9">august-vpn.com</div>""",
+<img id=qr src="gfx/qr.png" style="position:absolute;left:395px;top:1090px;width:290px;height:290px;border-radius:12px">
+<div id=url class="fira white" style="position:absolute;width:100%;text-align:center;top:1390px;font-size:44px;font-weight:600;opacity:.9">august-vpn.com</div>""",
     """
 function render(t){
   $('tag').style.opacity=0.82*prog(t,0.0,0.4);
@@ -306,6 +313,11 @@ def render(names: list[str]) -> None:
                 # кадр-образец для просмотра и для тестов: середина анимации
                 pg.evaluate(f"render({seconds * 0.6})")
                 pg.screenshot(path=str(OUT / f"{name}.still.png"), omit_background=True)
+                if name == "scorebug":
+                    # часы табло «зависают» вместе с Адгаром (ревью 2026-10-08):
+                    # стоп-кадр табло на моменте, где обрывается пакет боя
+                    pg.evaluate(f"render({FROZEN_CLOCK_AT})")
+                    pg.screenshot(path=str(OUT / "scorebug_frozen.png"), omit_background=True)
             src.unlink()
             print(name, "готово")
         browser.close()

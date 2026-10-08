@@ -111,6 +111,15 @@ class Clip:
     still: str = ""  # картинка или ролик вместо рендера (пэкшот)
     gain_db: float = 0.0
     glitches: tuple[Glitch, ...] = ()
+    #: Укрупнение в монтаже: 1.18 — кадр на 18 % крупнее; zoom_y — куда сдвинут
+    #: кроп (0 — верх кадра, 0.5 — центр). Ревью 2026-10-08: S03 и S04 сняты
+    #: одной крупностью, и 77 против 150 кг на одиночных планах не читается.
+    zoom: float = 1.0
+    zoom_y: float = 0.5
+    #: Окна полной тишины плана (звук модели и эффекты). Ревью 2026-10-08:
+    #: стоп-кадр читается как «зависло», только если вместе с картинкой
+    #: встаёт и звук.
+    mutes: tuple[Glitch, ...] = ()
 
     @property
     def length(self) -> float:
@@ -125,6 +134,9 @@ class Edit:
     #: (`edit … --no-watermark`), не трогая лист. Владелец, 2026-10-08: «потом
     #: должна быть возможность её убрать».
     watermark: Overlay | None = None
+    #: Подложки поверх нескольких планов (гул зала, пульс): файл, от плана, до плана.
+    beds: tuple[Sfx, ...] = ()
+    bed_ends: tuple[float, ...] = ()
     loudness_lufs: float = -14.0
     true_peak_db: float = -1.0
     extra: dict[str, Any] = field(default_factory=dict)
@@ -157,6 +169,9 @@ def load(path: str | Path) -> Edit:
             still=c.get("still", ""),
             gain_db=float(c.get("gain_db", 0)),
             glitches=tuple(Glitch(float(g["t"]), float(g["dur"])) for g in c.get("glitches", [])),
+            zoom=float(c.get("zoom", 1.0)),
+            zoom_y=float(c.get("zoom_y", 0.5)),
+            mutes=tuple(Glitch(float(g["t"]), float(g["dur"])) for g in c.get("mutes", [])),
         )
         for c in raw["clips"]
     )
@@ -182,6 +197,11 @@ def load(path: str | Path) -> Edit:
         clips=clips,
         global_overlays=glob(raw.get("global_overlays", [])),
         watermark=ovs([raw["watermark"]])[0] if raw.get("watermark") else None,
+        beds=tuple(
+            Sfx(b["file"], starts[b["from"]][0], float(b.get("gain_db", 0)))
+            for b in raw.get("beds", [])
+        ),
+        bed_ends=tuple(starts[b.get("to", b["from"])][1] for b in raw.get("beds", [])),
         loudness_lufs=float(raw.get("loudness_lufs", -14)),
         true_peak_db=float(raw.get("true_peak_db", -1)),
     )
@@ -326,7 +346,11 @@ def _segment_cmd(c: Clip, src: Path | None, base: Path, out: Path, slate_text: s
         n = len(parts_v)
         chain = parts_v + parts_a
         chain.append("".join(f"[vp{k}][ap{k}]" for k in range(n)) + f"concat=n={n}:v=1:a=1[vc][ac]")
-        chain.append(f"[vc]scale=-2:{H}:flags=lanczos,crop={W}:{H},fps={FPS},format=yuv420p[v0]")
+        zh = round(H * c.zoom / 2) * 2
+        chain.append(
+            f"[vc]scale=-2:{zh}:flags=lanczos,crop={W}:{H}:(iw-{W})/2:(ih-{H})*{c.zoom_y:.3f},"
+            f"fps={FPS},format=yuv420p[v0]"
+        )
         a = "[ac]"
     # графика плана
     idx = sum(1 for x in inputs if x == "-i")
@@ -360,6 +384,7 @@ def _segment_cmd(c: Clip, src: Path | None, base: Path, out: Path, slate_text: s
         f"{a}aresample={AR},aformat=channel_layouts=stereo,volume={c.gain_db}dB,"
         f"apad=whole_dur={length:.3f},atrim=0:{length:.3f}[a0]"
     )
+    mute = "".join(f",volume=0:enable='between(t,{m.t:.3f},{m.t + m.dur:.3f})'" for m in c.mutes)
     mix = ["[a0]"]
     for k, fx in enumerate(c.sfx):
         inputs += ["-i", str(base / fx.file)]
@@ -374,7 +399,7 @@ def _segment_cmd(c: Clip, src: Path | None, base: Path, out: Path, slate_text: s
     chain.append(
         "".join(mix)
         + f"amix=inputs={len(mix)}:duration=first:normalize=0,"
-        + f"afade=t=in:d={EDGE_FADE},afade=t=out:st={fade_out:.3f}:d={EDGE_FADE}[aout]"
+        + f"afade=t=in:d={EDGE_FADE},afade=t=out:st={fade_out:.3f}:d={EDGE_FADE}{mute}[aout]"
     )
     return [
         "ffmpeg",
@@ -447,8 +472,22 @@ def assemble(
             chain += [links[0], links[1] + f"[go{k}]"]
             cur = f"[go{k}]"
         chain.append(f"{cur}format=yuv420p[vout]")
+        mix = ["[0:a]"]
+        for k, (b, end) in enumerate(zip(e.beds, e.bed_ends, strict=True)):
+            n = len([x for x in inputs if x == "-i"])
+            inputs += ["-stream_loop", "-1", "-i", str(base / b.file)]
+            ms = int(b.t * 1000)
+            dur = end - b.t
+            chain.append(
+                f"[{n}:a]aresample={AR},aformat=channel_layouts=stereo,atrim=0:{dur:.3f},"
+                f"afade=t=out:st={max(0.0, dur - 0.15):.3f}:d=0.15,volume={b.gain_db}dB,"
+                f"adelay={ms}|{ms}[bed{k}]"
+            )
+            mix.append(f"[bed{k}]")
         chain.append(
-            f"[0:a]loudnorm=I={e.loudness_lufs}:TP={e.true_peak_db}:LRA=11,"
+            "".join(mix)
+            + f"amix=inputs={len(mix)}:duration=first:normalize=0,"
+            + f"loudnorm=I={e.loudness_lufs}:TP={e.true_peak_db}:LRA=11,"
             f"alimiter=limit={10 ** (e.true_peak_db / 20):.4f},aresample={AR}[aout]"
         )
         out.parent.mkdir(parents=True, exist_ok=True)

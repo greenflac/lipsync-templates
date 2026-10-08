@@ -217,7 +217,8 @@ class Compiler(unittest.TestCase):
         self.assertEqual(
             names[-2:], ["ref_canvas_security_arena.png", "ref_padding_security_arena.png"]
         )
-        self.assertIn("The floor is printed exactly like <Picture 6>", c.prompt)
+        self.assertIn("Exactly as in <Picture 6>: the white octagon canvas", c.prompt)
+        self.assertIn("Exactly as in <Picture 7>: the black padding", c.prompt)
         self.assertNotIn("UFC", c.prompt)  # 2026-10-08: «как у UFC» в описании рефа печатало UFC
         self.assertIn("gloves are plain matte black", c.prompt)
 

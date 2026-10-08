@@ -141,7 +141,7 @@
    "id": "S02_announce",
    "scene": "announce",
    "seconds": 6,
-   "seed": 12,
+   "seed": 13,
    "rig": "steadicam_orbit",
    "framing": "medium close-up of the announcer in the center of the octagon, the cage and the dark crowd behind him",
    "purpose": "The event is real and big: the voice of a title fight.",
@@ -166,7 +166,7 @@
     {
      "t": 4.0,
      "kind": "action",
-     "text": "He throws his free arm up toward the arena lights."
+     "text": "He pumps his free fist once at shoulder height, elbow bent, then points it toward the crowd."
     }
    ],
    "dialogue": [
@@ -436,7 +436,7 @@
    "id": "S09_windup_freeze",
    "scene": "octagon",
    "seconds": 7,
-   "seed": 91,
+   "seed": 92,
    "rig": "in_cage_handheld",
    "framing": "medium-wide shot of both fighters in the center of the octagon",
    "purpose": "The turn: the giant winds up the finishing blow and freezes in mid-air like a paused video.",
@@ -461,20 +461,20 @@
     {
      "t": 1.5,
      "kind": "action",
-     "text": "In the middle of the swing {adgar} stops dead and stays perfectly still, like a paused video, one foot lifted, mouth open, for two full seconds, while everything around him keeps moving."
+     "text": "In the middle of the swing {adgar} stops dead and stays perfectly still, like a paused video, one foot lifted, mouth open, completely frozen until the end of the shot, while everything around him keeps moving."
     },
     {
      "t": 2.0,
      "kind": "camera",
-     "text": "The operator steps around {adgar} slowly, puzzled, re-centering on his frozen face."
+     "text": "The operator steps around the frozen {adgar} slowly, puzzled, and re-centers on his face."
     },
     {
-     "t": 4.5,
+     "t": 3.5,
      "kind": "action",
-     "text": "{august} lowers his guard a little and tilts his head, studying the frozen giant."
+     "text": "{august} lowers his guard, steps closer and slowly waves one glove up and down in front of {adgar}'s frozen face without touching him; {adgar} does not react at all."
     }
    ],
-   "soundscape": "The roar cuts out to a stunned near silence; a single confused voice in the crowd; a faint high electronic whine.",
+   "soundscape": "The roar cuts out to a stunned near silence; a faint high electronic whine. A commentator in the broadcast mix says quietly: 'He's... frozen.'",
    "music": "None."
   },
   {
