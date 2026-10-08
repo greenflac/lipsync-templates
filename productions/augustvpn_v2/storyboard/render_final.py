@@ -22,8 +22,11 @@ KF = Path("/tmp/claude-0/-home-user-lipsync-templates/1e036219-dc10-53a7-8a45-91
 OUT = Path(sys.argv[1])
 # аргумент «S04» — план как есть; «S04:0.7» — план с управлением движением
 # по видео скелета CONTROL[план] на силе 0.7 (Fun ControlNet Union, поза)
-ONLY = {a.split(":")[0] for a in sys.argv[2:]}
-STRENGTH = {a.split(":")[0]: float(a.split(":")[1]) for a in sys.argv[2:] if ":" in a}
+# «S03@209» — план длиной 209 кадров (17k+5) вместо значения из таблицы
+ARGS = [a.split("@") for a in sys.argv[2:]]
+ONLY = {a[0].split(":")[0] for a in ARGS}
+STRENGTH = {a[0].split(":")[0]: float(a[0].split(":")[1]) for a in ARGS if ":" in a[0]}
+LENGTH = {a[0].split(":")[0]: int(a[1]) for a in ARGS if len(a) > 1}
 CONTROL = {"S04": "s04_pose.mp4", "S06": "s06_pose.mp4"}
 
 AUG = "the lean blond fighter with a very short buzzcut in the black fight jersey with the yellow АвгустVPN print"
@@ -138,9 +141,10 @@ for i, (sid, kf, frames, desc, sound) in enumerate(SHOTS):
     requests.post(f"{URL}/upload/image", files={"image": (name, p.read_bytes())}, data={"overwrite": "true"}, timeout=120)
     text = prompt(desc, sound)
     (OUT / f"{sid}.prompt.txt").write_text(text, encoding="utf-8")
+    frames = LENGTH.get(sid, frames)
     st = STRENGTH.get(sid, 0.0)
     ctl = CONTROL.get(sid, "") if st else ""
-    tag = f"{sid}_c{int(st * 100)}" if ctl else sid
+    tag = (f"{sid}_c{int(st * 100)}" if ctl else sid) + (f"_f{frames}" if sid in LENGTH else "")
     r = requests.post(f"{URL}/prompt", json={"prompt": graph(name, text, frames, 500 + i, f"final/{tag}", ctl, st)}, timeout=60).json()
     jobs[tag] = r.get("prompt_id")
     sid = tag
@@ -149,7 +153,10 @@ for i, (sid, kf, frames, desc, sound) in enumerate(SHOTS):
 t0 = time.time()
 while jobs and time.time() - t0 < 7200:
     for sid, pid in list(jobs.items()):
-        h = requests.get(f"{URL}/history/{pid}", timeout=60).json()
+        try:
+            h = requests.get(f"{URL}/history/{pid}", timeout=60).json()
+        except (requests.RequestException, ValueError):
+            continue
         if pid not in h:
             continue
         vids = [v for n in h[pid]["outputs"].values() for v in n.get("images", []) + n.get("videos", [])]
