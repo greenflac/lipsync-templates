@@ -14,7 +14,7 @@
 Посты взяты из того, как на самом деле снимают турнир по MMA: оператор с
 плечевой камерой внутри клетки, длинный объектив снаружи сквозь сетку, стедикам
 на выходе бойцов, тросовая камера над октагоном, статичная камера в
-комментаторской.
+комментаторской, главная камера на возвышении за клеткой, камера на столбе.
 """
 
 from __future__ import annotations
@@ -32,6 +32,12 @@ class Rig:
     lens: str  # объектив и глубина резкости
     operator: str  # несовершенства живого оператора — то, что отличает съёмку от ИИ-наезда
     handling: str  # что слышно от самой камеры (идёт в звуковую сцену)
+    #: Стоит ли пост во время раунда — от гонга до остановки боя. НАБЛЮДЕНО
+    #: 2026-10-08 на эфире-референсе владельца (ONE, Kane vs Gazzaev): пока идёт
+    #: раунд, в клетке только рефери и бойцы, весь бой снят снаружи — телевиками
+    #: поверх сетки и с возвышения, повторы — с камеры на столбе. Плечевая
+    #: камера и стедикам заходят в клетку до гонга и после остановки.
+    in_round: bool = False
 
 
 RIGS: dict[str, Rig] = {
@@ -53,6 +59,27 @@ RIGS: dict[str, Rig] = {
         "a slightly unsteady pan following the action, small manual zoom adjustments, the focus "
         "drifting onto the fence for a moment and snapping back",
         "",
+        in_round=True,
+    ),
+    "high_wide_tele": Rig(
+        "high_wide_tele",
+        "the main broadcast camera on a raised platform behind the cage, operated on a fluid "
+        "head and looking down over the top of the fence",
+        "zoom lens held at a medium-wide setting, both fighters seen head to toe with a large "
+        "area of the canvas around them, the fence posts at the frame edges",
+        "continuous panning and small zoom adjustments to keep both fighters framed as they move, "
+        "the frame lagging a fraction behind sudden bursts of movement and catching up",
+        "",
+        in_round=True,
+    ),
+    "post_cam": Rig(
+        "post_cam",
+        "a small fixed remote camera mounted low on a cage post just above the canvas",
+        "very wide lens with slight barrel distortion, the canvas stretching away in the "
+        "foreground, everything in focus",
+        "no operator: a completely fixed frame with only a faint vibration when the fence is hit",
+        "",
+        in_round=True,
     ),
     "steadicam_orbit": Rig(
         "steadicam_orbit",
@@ -76,6 +103,7 @@ RIGS: dict[str, Rig] = {
         "wide lens around 24mm",
         "a slow descent with a gentle sway of the cables and a soft settle at the end of the move",
         "",
+        in_round=True,
     ),
     "booth_locked": Rig(
         "booth_locked",
@@ -83,6 +111,7 @@ RIGS: dict[str, Rig] = {
         "normal lens around 50mm, the glowing cage softly out of focus through the booth glass",
         "static framing with only a barely visible tripod settle",
         "",
+        in_round=True,
     ),
 }
 

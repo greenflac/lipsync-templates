@@ -76,6 +76,13 @@ MUTANTS: list[tuple[str, str, str, str, str]] = [
         "studio.tests.test_shoot",
     ),
     (
+        "studio/shoot/validate.py",
+        "        if rig and not rig.in_round:",
+        "        if rig and not rig.in_round and False:",
+        "раунд: плечевая камера в клетке посреди боя снова проходит",
+        "studio.tests.test_shoot",
+    ),
+    (
         "studio/shoot/journal.py",
         'NEEDS_OUTCOME = ("render", "qa", "review")',
         'NEEDS_OUTCOME = ("qa",)',

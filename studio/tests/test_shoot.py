@@ -221,6 +221,27 @@ class Reveal(unittest.TestCase):
         self.assertTrue(any("до развязки" in p for p in found), found)
 
 
+class Round(unittest.TestCase):
+    """2026-10-08, референс владельца: во время раунда оператора в клетке нет."""
+
+    def test_in_cage_camera_during_round_is_caught(self) -> None:
+        prod = _prod()
+        i = next(k for k, s in enumerate(prod.shots) if s.id == "S07_pressure")
+        found = validate.check(_with_shot(prod, i, rig="in_cage_handheld"))
+        self.assertIn("round", {f.rule for f in found if f.severity == validate.VIOLATION})
+
+    def test_in_cage_camera_before_bell_and_after_stoppage_is_allowed(self) -> None:
+        prod = _prod()
+        rigs = {s.id: s.rig for s in prod.shots}
+        self.assertEqual(rigs["S11_logo_reveal"], "in_cage_handheld")  # после остановки
+        self.assertFalse(RIGS[rigs["S04_walkout_august"]].in_round)  # до гонга
+        self.assertNotIn("round", _rules(prod))
+
+    def test_round_bounds_must_exist(self) -> None:
+        prod = dataclasses.replace(_prod(), round_to="S99_nope")
+        self.assertIn("round", _rules(prod))
+
+
 class Compiler(unittest.TestCase):
     def test_prompt_sections_and_refs(self) -> None:
         prod = _prod()

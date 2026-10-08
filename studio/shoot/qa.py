@@ -48,6 +48,9 @@ JITTER_LOCKED_MAX = 0.05
 RIG_MOTION = {
     "in_cage_handheld": "handheld",
     "cage_side_tele": "handheld",
+    # главная камера на возвышении — тот же оператор с головкой, что у сетки
+    "high_wide_tele": "handheld",
+    "post_cam": "locked",
     "steadicam_orbit": "floating",
     "steadicam_follow": "floating",
     "overhead_cable": "floating",
@@ -212,6 +215,7 @@ ZOOM_MAX = {
     "steadicam_follow": 1.3,
     "overhead_cable": 1.6,
     "booth_locked": 1.15,  # статичный речевой план nb_N1 намерил ×1,06 — шум оценки
+    "post_cam": 1.15,
 }
 
 

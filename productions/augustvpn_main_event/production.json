@@ -24,6 +24,8 @@
   "интернет*",
   "сигнал*"
  ],
+ "round_from": "S06_bell_charge",
+ "round_to": "S10_disconnect",
  "extra_brands": [],
  "set_refs": [
   {
@@ -347,10 +349,10 @@
    "id": "S07_pressure",
    "scene": "octagon",
    "seconds": 7,
-   "seed": 71,
-   "rig": "in_cage_handheld",
-   "framing": "medium shot against the cage: Adgar pressing August into the fence",
-   "purpose": "Danger peaks: August is trapped against the cage by a giant, but his guard holds.",
+   "seed": 72,
+   "rig": "high_wide_tele",
+   "framing": "wide shot from above the fence: both fighters head to toe against the cage, the referee a few steps behind them",
+   "purpose": "Danger peaks: August is trapped against the cage under a giant's weight, but his guard holds.",
    "blocking": [
     {
      "who": "august",
@@ -361,26 +363,36 @@
      "who": "adgar",
      "screen": "right",
      "faces": "left"
+    },
+    {
+     "who": "referee",
+     "screen": "right",
+     "faces": "left"
     }
    ],
    "beats": [
     {
      "t": 0,
      "kind": "action",
-     "text": "{adgar} pins {august} against the fence and throws a flurry of punches; every one lands only on {august}'s tight high guard and forearms, his face stays covered and calm behind his gloves."
+     "text": "{adgar} pins {august} against the fence in a clinch and leans all his weight on him, heavy and tired, digging short punches into {august}'s high guard and forearms; {august} keeps his elbows tight, his face covered and calm."
     },
     {
-     "t": 0.5,
+     "t": 0.3,
      "kind": "camera",
-     "text": "The operator steps in close, ducks to keep both faces in frame, the image shaking with the impacts on the fence."
+     "text": "The operator pans and zooms in slightly to keep both fighters and the referee in frame, the frame lagging behind each shove and catching up."
     },
     {
-     "t": 4.5,
+     "t": 2.0,
      "kind": "action",
-     "text": "{august} spins off the fence and back to the center, untouched; {adgar} turns after him, breathing hard."
+     "text": "{referee} steps closer behind {adgar}, watching, ready to separate them."
+    },
+    {
+     "t": 4.0,
+     "kind": "action",
+     "text": "{august} pushes off the fence with his forearm, turns out under {adgar}'s arm and circles back to the center, untouched; {adgar} turns after him, breathing hard."
     }
    ],
-   "soundscape": "The fence rattling, gloves thudding on gloves, the crowd screaming.",
+   "soundscape": "The fence rattling, short dull thuds of gloves on forearms, the crowd roaring; a commentator in the broadcast mix, fast and excited: 'He's leaning all hundred and fifty kilos on him!'",
    "music": "None."
   },
   {
@@ -437,8 +449,8 @@
    "scene": "octagon",
    "seconds": 7,
    "seed": 92,
-   "rig": "in_cage_handheld",
-   "framing": "medium-wide shot of both fighters in the center of the octagon",
+   "rig": "cage_side_tele",
+   "framing": "tight telephoto two-shot from outside the cage: both fighters from the waist up in the center of the octagon",
    "purpose": "The turn: the giant winds up the finishing blow and freezes in mid-air like a paused video.",
    "blocking": [
     {
@@ -466,7 +478,7 @@
     {
      "t": 2.0,
      "kind": "camera",
-     "text": "The operator steps around the frozen {adgar} slowly, puzzled, and re-centers on his face."
+     "text": "The operator holds the two-shot, then slowly reframes and zooms in a little on the frozen {adgar}'s face, the focus breathing for a moment."
     },
     {
      "t": 3.5,

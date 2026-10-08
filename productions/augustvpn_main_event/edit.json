@@ -32,7 +32,7 @@
   {
    "file": "sfx/pulse.wav",
    "from": "S01_hook_lookup",
-   "to": "S08_booth",
+   "to": "S05_faceoff",
    "gain_db": -16
   }
  ],
@@ -227,11 +227,6 @@
      "file": "sfx/hit.wav",
      "t": 0.35,
      "gain_db": -14
-    },
-    {
-     "file": "sfx/vo_offer_ru.wav",
-     "t": 1.4,
-     "gain_db": 0
     }
    ]
   }

@@ -270,6 +270,41 @@ def check_reveal(prod: Production) -> list[Finding]:
     return out
 
 
+def check_round(prod: Production) -> list[Finding]:
+    """Пока идёт раунд, оператора в клетке нет.
+
+    НАБЛЮДЕНО 2026-10-08. Владелец: «движения в бою выглядят реально фальшиво»;
+    в разборе его референса (эфир ONE, Kane vs Gazzaev) все кадры раунда сняты
+    снаружи — телевиками поверх сетки, с возвышения и камерой на столбе, — а
+    плечевая камера ходит по клетке только до гонга и после остановки. У нас
+    S07 и S09 стояли на `in_cage_handheld` посреди раунда: такого кадра у
+    настоящей трансляции не бывает, и зритель это чувствует, не называя.
+    """
+    ids = [s.id for s in prod.shots]
+    if not (prod.round_from or prod.round_to):
+        return []
+    bad = [k for k in (prod.round_from, prod.round_to) if k not in ids]
+    if bad:
+        return [Finding("*", VIOLATION, "round", f"раунд: нет плана {', '.join(map(repr, bad))}")]
+    a, b = ids.index(prod.round_from), ids.index(prod.round_to)
+    if a > b:
+        return [Finding("*", VIOLATION, "round", "раунд: план гонга идёт после плана остановки")]
+    out: list[Finding] = []
+    for shot in prod.shots[a : b + 1]:
+        rig = RIGS.get(shot.rig)
+        if rig and not rig.in_round:
+            inside = ", ".join(k for k, r in sorted(RIGS.items()) if r.in_round)
+            out.append(
+                Finding(
+                    shot.id,
+                    VIOLATION,
+                    "round",
+                    f"пост {shot.rig} во время раунда: оператора в клетке нет; годятся {inside}",
+                )
+            )
+    return out
+
+
 def check(prod: Production) -> list[Finding]:
     found: list[Finding] = []
     ids: set[str] = set()
@@ -305,6 +340,7 @@ def check(prod: Production) -> list[Finding]:
         found.extend(check_shot(prod, s))
     found.extend(check_continuity(prod))
     found.extend(check_reveal(prod))
+    found.extend(check_round(prod))
     return found
 
 

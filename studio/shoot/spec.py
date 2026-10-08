@@ -115,6 +115,10 @@ class Production:
     #: `secret_words` нигде не звучат и не пишутся (владелец, 2026-10-08).
     reveal_from: str = ""
     secret_words: tuple[str, ...] = ()
+    #: Раунд идёт с плана гонга по план остановки включительно: в эти планы
+    #: ставятся только посты снаружи клетки (`camera.Rig.in_round`).
+    round_from: str = ""
+    round_to: str = ""
 
 
 def load(path: str | Path) -> Production:
@@ -164,6 +168,8 @@ def load(path: str | Path) -> Production:
         budget_usd=float(raw.get("budget_usd", 0)),
         reveal_from=raw.get("reveal_from", ""),
         secret_words=tuple(raw.get("secret_words", [])),
+        round_from=raw.get("round_from", ""),
+        round_to=raw.get("round_to", ""),
         set_refs=tuple(
             SetRef(r["file"], r["what"], tuple(r.get("scenes", [])))
             for r in raw.get("set_refs", [])
