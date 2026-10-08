@@ -88,9 +88,9 @@
    "id": "S01_hook_lookup",
    "scene": "octagon",
    "seconds": 6,
-   "seed": 101,
+   "seed": 102,
    "rig": "in_cage_handheld",
-   "framing": "extreme close-up of August's eyes that becomes a vertical tilt up to Adgar's face",
+   "framing": "extreme close-up that starts with nothing in the frame but August's eyes and eyebrows, then becomes a vertical handheld tilt up to Adgar's face",
    "purpose": "Hook: a small calm fighter looks up, the camera follows his eyeline up to a giant. Question for the viewer: how will he survive this?",
    "blocking": [
     {
@@ -108,7 +108,7 @@
     {
      "t": 0,
      "kind": "camera",
-     "text": "The operator holds an extreme close-up on {august}'s calm pale blue eyes, which are looking steeply upward."
+     "text": "At the first frame only {august}'s calm pale blue eyes and eyebrows fill the frame edge to edge, looking steeply upward; the operator holds them with a slight handheld sway."
     },
     {
      "t": 0,
@@ -118,7 +118,7 @@
     {
      "t": 1.2,
      "kind": "camera",
-     "text": "The operator slowly tilts up along his eyeline, with a brief focus hunt, until {adgar}'s bearded face fills the top of the frame, a full head above, glaring straight down."
+     "text": "The operator tilts straight up along his eyeline, past the top of his head, with a brief focus hunt, until {adgar}'s bearded face fills the top of the frame, a full head above, glaring straight down; the tilt overshoots a little and the operator corrects."
     },
     {
      "t": 3.5,
@@ -246,9 +246,9 @@
    "id": "S05_faceoff",
    "scene": "octagon",
    "seconds": 8,
-   "seed": 51,
+   "seed": 52,
    "rig": "cage_side_tele",
-   "framing": "medium-wide profile three-shot of the face-off in the center of the octagon",
+   "framing": "tight telephoto shot from the waist up through the cage fence: the three of them in profile, the floor out of frame",
    "purpose": "Scale and tension: the referee's instructions, the giant refuses to touch gloves.",
    "blocking": [
     {
@@ -276,7 +276,7 @@
     {
      "t": 3.0,
      "kind": "camera",
-     "text": "The cage-side operator follows {adgar} leaning in and makes a small zoom adjustment to hold both heads in frame."
+     "text": "The cage-side operator follows {adgar} leaning in, the black fence mesh drifting soft in the foreground, and makes a small zoom adjustment to hold both heads in frame."
     },
     {
      "t": 5.0,

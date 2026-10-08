@@ -19,6 +19,13 @@ detailed_description / overall_soundscape / non_diegetic_music, с персон�
   Тот же день, A/B sk_R1–R5: матовая формулировка убрала блеск у обоих бойцов;
   у Адгара остались красные отметины на скуле, которые читаются как ссадины, —
   ТЗ запрещает кровь и насилие, поэтому лицо прямо названо чистым.
+* форма без знаков спортивных брендов. НАБЛЮДЕНО 2026-10-08, S01_hook_lookup:
+  на плече Адгара и у ворота Августа модель дорисовала знак, похожий на
+  логотип Venum, — OCR его не читает (это знак, не буквы). Владелец: похожий
+  знак допустим, идентичный — нет.
+* пол целиком. НАБЛЮДЕНО 2026-10-08, S05_faceoff: с рефом канваса в центре
+  модель всё равно напечатала рядом курсивное UFC — запрет «других слов» не
+  описывал, что там вместо них. Теперь описан пустой белый канвас с линиями.
 """
 
 from __future__ import annotations
@@ -154,12 +161,17 @@ def compile_shot(prod: Production, shot: Shot) -> Compiled:
             f"The only lettering in the arena is the made-up league name {prod.league}; there "
             "are no real-world brand logos or league names anywhere.",
             *(
-                f"The floor is printed exactly like <Picture {n}>: {what}; no other words "
-                "are printed on the canvas."
+                f"The floor is printed exactly like <Picture {n}>: {what}; around it the "
+                "canvas is plain white with thin black octagon lines and nothing else printed "
+                "on it, no other words or logos anywhere on the floor."
                 for n, what in set_pic
             ),
             *(
-                ["The fighters' gloves are plain matte black with no letters or logos at all."]
+                [
+                    "The fighters' gloves are plain matte black with no letters or logos at all. "
+                    "Jerseys and shorts carry no sportswear brand marks: the only print on a "
+                    "jersey is its one chest sponsor."
+                ]
                 if gloved
                 else []
             ),
