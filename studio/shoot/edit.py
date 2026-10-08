@@ -120,6 +120,13 @@ class Clip:
     #: стоп-кадр читается как «зависло», только если вместе с картинкой
     #: встаёт и звук.
     mutes: tuple[Glitch, ...] = ()
+    #: Звуковые «ручки» склейки (J/L-cut). НАБЛЮДЕНО 2026-10-08, владелец о
+    #: монтаже: «рваный, обрезается ровно в конце фразы». Звук каждого плана
+    #: кончался точно на склейке, следующий начинался с нуля. Теперь звук плана
+    #: заходит под предыдущую картинку на audio_lead с и тянется под следующую
+    #: на audio_tail с, с фейдом, — как в живом монтаже. None — значения листа.
+    audio_lead: float | None = None
+    audio_tail: float | None = None
 
     @property
     def length(self) -> float:
@@ -137,6 +144,9 @@ class Edit:
     #: Подложки поверх нескольких планов (гул зала, пульс): файл, от плана, до плана.
     beds: tuple[Sfx, ...] = ()
     bed_ends: tuple[float, ...] = ()
+    #: Ручки по умолчанию для всех планов с исходником.
+    audio_lead: float = 0.12
+    audio_tail: float = 0.35
     loudness_lufs: float = -14.0
     true_peak_db: float = -1.0
     extra: dict[str, Any] = field(default_factory=dict)
@@ -172,6 +182,8 @@ def load(path: str | Path) -> Edit:
             zoom=float(c.get("zoom", 1.0)),
             zoom_y=float(c.get("zoom_y", 0.5)),
             mutes=tuple(Glitch(float(g["t"]), float(g["dur"])) for g in c.get("mutes", [])),
+            audio_lead=float(c["audio_lead"]) if "audio_lead" in c else None,
+            audio_tail=float(c["audio_tail"]) if "audio_tail" in c else None,
         )
         for c in raw["clips"]
     )
@@ -202,6 +214,8 @@ def load(path: str | Path) -> Edit:
             for b in raw.get("beds", [])
         ),
         bed_ends=tuple(starts[b.get("to", b["from"])][1] for b in raw.get("beds", [])),
+        audio_lead=float(raw.get("audio_lead", 0.12)),
+        audio_tail=float(raw.get("audio_tail", 0.35)),
         loudness_lufs=float(raw.get("loudness_lufs", -14)),
         true_peak_db=float(raw.get("true_peak_db", -1)),
     )
@@ -293,7 +307,15 @@ def _wrap(text: str, width: int) -> list[str]:
     return lines
 
 
-def _segment_cmd(c: Clip, src: Path | None, base: Path, out: Path, slate_text: str) -> list[str]:
+def _segment_cmd(
+    c: Clip,
+    src: Path | None,
+    base: Path,
+    out: Path,
+    slate_text: str,
+    fade_in: bool = True,
+    fade_out: bool = True,
+) -> list[str]:
     """Команда ffmpeg, собирающая один план в промежуточный файл единого формата."""
     length = c.length
     inputs: list[str] = []
@@ -395,11 +417,15 @@ def _segment_cmd(c: Clip, src: Path | None, base: Path, out: Path, slate_text: s
         )
         mix.append(f"[fx{k}]")
         idx += 1
-    fade_out = max(0.0, length - EDGE_FADE)
+    # край без ручки — короткий фейд от щелчка; край с ручкой — без фейда:
+    # звук продолжается тем же исходником в ручке, фейд дал бы провал
+    edges = ""
+    if fade_in:
+        edges += f",afade=t=in:d={EDGE_FADE}"
+    if fade_out:
+        edges += f",afade=t=out:st={max(0.0, length - EDGE_FADE):.3f}:d={EDGE_FADE}"
     chain.append(
-        "".join(mix)
-        + f"amix=inputs={len(mix)}:duration=first:normalize=0,"
-        + f"afade=t=in:d={EDGE_FADE},afade=t=out:st={fade_out:.3f}:d={EDGE_FADE}{mute}[aout]"
+        "".join(mix) + f"amix=inputs={len(mix)}:duration=first:normalize=0{edges}{mute}[aout]"
     )
     return [
         "ffmpeg",
@@ -427,6 +453,27 @@ def _segment_cmd(c: Clip, src: Path | None, base: Path, out: Path, slate_text: s
     ]
 
 
+def duration(path: Path) -> float:
+    out = subprocess.run(
+        ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", str(path)],
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    try:
+        return float(out)
+    except ValueError:
+        return 0.0
+
+
+def handles(e: Edit, c: Clip, src_len: float) -> tuple[float, float]:
+    """Сколько звука плана взять до входа и после выхода — в пределах исходника."""
+    if c.still:
+        return 0.0, 0.0
+    lead = e.audio_lead if c.audio_lead is None else c.audio_lead
+    tail = e.audio_tail if c.audio_tail is None else c.audio_tail
+    return max(0.0, min(lead, c.src_in)), max(0.0, min(tail, src_len - c.src_out))
+
+
 def assemble(
     e: Edit,
     base: Path,
@@ -441,14 +488,25 @@ def assemble(
     slates: list[str] = []
     with tempfile.TemporaryDirectory() as tmp:
         segs = []
+        # куски звука вокруг склеек: (исходник, с какой секунды исходника,
+        # сколько, где в ролике, фейд «in»/«out», громкость плана)
+        handle_parts: list[tuple[Path, float, float, float, str, float]] = []
+        t0 = 0.0
         for i, c in enumerate(e.clips):
             src = renders.get(c.shot)
             if src is None and not c.still:
                 slates.append(c.shot)
+            lead, tail = handles(e, c, duration(src)) if src is not None else (0.0, 0.0)
             seg = Path(tmp) / f"seg{i:02d}.mkv"
             slate = f"{c.shot} · нет рендера\n{purposes.get(c.shot) or c.note}"
-            subprocess.run(_segment_cmd(c, src, base, seg, slate), check=True)
+            cmd = _segment_cmd(c, src, base, seg, slate, fade_in=lead <= 0, fade_out=tail <= 0)
+            subprocess.run(cmd, check=True)
             segs.append(seg)
+            if src is not None and lead > 0:
+                handle_parts.append((src, c.src_in - lead, lead, t0 - lead, "in", c.gain_db))
+            if src is not None and tail > 0:
+                handle_parts.append((src, c.src_out, tail, t0 + c.length, "out", c.gain_db))
+            t0 += c.length
         lst = Path(tmp) / "list.txt"
         lst.write_text("".join(f"file '{s}'\n" for s in segs), encoding="utf-8")
         joined = Path(tmp) / "joined.mkv"
@@ -473,6 +531,16 @@ def assemble(
             cur = f"[go{k}]"
         chain.append(f"{cur}format=yuv420p[vout]")
         mix = ["[0:a]"]
+        for k, (hsrc, ss, dur, at, kind, gain) in enumerate(handle_parts):
+            n = len([x for x in inputs if x == "-i"])
+            inputs += ["-i", str(hsrc)]
+            ms = max(0, int(at * 1000))
+            fade = f"afade=t=in:d={dur:.3f}" if kind == "in" else f"afade=t=out:d={dur:.3f}"
+            chain.append(
+                f"[{n}:a]atrim={ss:.3f}:{ss + dur:.3f},asetpts=PTS-STARTPTS,aresample={AR},"
+                f"aformat=channel_layouts=stereo,volume={gain}dB,{fade},adelay={ms}|{ms}[hd{k}]"
+            )
+            mix.append(f"[hd{k}]")
         for k, (b, end) in enumerate(zip(e.beds, e.bed_ends, strict=True)):
             n = len([x for x in inputs if x == "-i"])
             inputs += ["-stream_loop", "-1", "-i", str(base / b.file)]

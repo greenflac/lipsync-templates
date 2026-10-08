@@ -152,6 +152,34 @@ class RefBrands(unittest.TestCase):
         self.assertIn("brand", _rules(dataclasses.replace(prod, characters=chars)))
 
 
+class CutsAndSpeech(unittest.TestCase):
+    """2026-10-08: «монтаж рваный, обрезается ровно в конце фразы»."""
+
+    WS = [
+        __import__("studio.shoot.speech", fromlist=["Word"]).Word("August", 3.35, 3.9),
+        __import__("studio.shoot.speech", fromlist=["Word"]).Word("Pobedinsky", 4.5, 5.8),
+    ]
+
+    def test_cut_inside_word_is_caught_unless_handle_covers_it(self) -> None:
+        from studio.shoot.speech import cut_problems
+
+        self.assertTrue(cut_problems("S04", 3.3, 5.2, 0.12, 0.35, self.WS))  # «Pobedinsky» обрезан
+        self.assertEqual(
+            cut_problems("S04", 3.3, 5.2, 0.12, 0.7, self.WS), []
+        )  # L-cut договаривает
+        self.assertEqual(cut_problems("S04", 3.3, 5.85, 0.12, 0.35, self.WS), [])
+
+    def test_handles_stay_inside_source(self) -> None:
+        from studio.shoot import edit
+
+        e = edit.load(PRODUCTION.parent / "edit.json")
+        c = dataclasses.replace(e.clips[0], src_in=0.05, src_out=6.4)
+        lead, tail = edit.handles(e, c, 6.5)
+        self.assertAlmostEqual(lead, 0.05)
+        self.assertAlmostEqual(tail, 0.1)
+        self.assertEqual(edit.handles(e, e.clips[-1], 6.0), (0.0, 0.0))  # пэкшот без исходника
+
+
 class Reveal(unittest.TestCase):
     """2026-10-08: до развязки — настоящий бой, ни слова о продукте."""
 

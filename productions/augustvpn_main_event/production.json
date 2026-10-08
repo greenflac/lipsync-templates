@@ -184,7 +184,7 @@
    "id": "S03_walkout_adgar",
    "scene": "octagon",
    "seconds": 6,
-   "seed": 32,
+   "seed": 33,
    "rig": "steadicam_orbit",
    "framing": "medium shot of Adgar standing in his corner of the octagon while he is introduced, the cage and the dark crowd behind him",
    "purpose": "Introduction of the giant in his corner: the crowd is afraid for the other guy.",
@@ -202,14 +202,14 @@
      "text": "The Steadicam operator arcs slowly around {adgar} in his corner, keeping his face framed, with a light bob from the footsteps."
     },
     {
-     "t": 1.5,
+     "t": 1.0,
      "kind": "action",
-     "text": "{adgar} rolls his huge shoulders and slaps his own chest twice, staring across the octagon."
+     "text": "{adgar} stands still with his heavy arms hanging loose, breathing deeply through his nose, his chest rising and falling, and stares across the octagon without blinking."
     },
     {
      "t": 4.0,
      "kind": "action",
-     "text": "He raises one glove to the crowd without smiling."
+     "text": "He tilts his head slightly to one side and cracks his neck once."
     }
    ],
    "soundscape": "The crowd booing and roaring. The arena PA: 'Fighting out of the red corner... Adgar... Fribetov!'",

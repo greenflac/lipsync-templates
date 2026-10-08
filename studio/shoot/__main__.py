@@ -153,6 +153,25 @@ def _edit(path: str, edit_path: str, renders_dir: str, out: str, watermark: bool
         found = sorted(Path(renders_dir).glob(f"{shot.id}*.mp4"), key=lambda p: p.stat().st_mtime)
         if found:
             renders[shot.id] = found[-1]
+    # склейка не режет слово (2026-10-08: «монтаж рваный, обрезается ровно в
+    # конце фразы»); слова берутся из Whisper и кэшируются рядом с рендером
+    from studio.shoot import speech
+
+    cut_bad: list[str] = []
+    for c in e.clips:
+        src = renders.get(c.shot)
+        if src is None or c.still:
+            continue
+        ws = speech.words(src)
+        if ws is None:
+            print(f"не смогли: {c.shot} — нет faster-whisper, склейки по словам не проверены")
+            continue
+        lead, tail = edit.handles(e, c, edit.duration(src))
+        cut_bad += speech.cut_problems(c.shot, c.src_in, c.src_out, lead, tail, ws)
+    for b in cut_bad:
+        print("не годно:", b)
+    if cut_bad:
+        return 1
     purposes = {s.id: s.purpose for s in prod.shots}
     slates = edit.assemble(e, base, renders, purposes, Path(out), watermark=watermark)
     print(f"{out}: {e.length:.1f} с; рендеров {len(renders)}, слейтов {len(slates)}")

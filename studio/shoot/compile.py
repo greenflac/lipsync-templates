@@ -183,6 +183,11 @@ def compile_shot(prod: Production, shot: Shot) -> Compiled:
             ),
             "Natural matte skin with subtle true-to-life texture, no oily shine, no beauty "
             "retouching; clean unmarked faces with no scratches, cuts or red marks.",
+            # НАБЛЮДЕНО 2026-10-08, владелец о S03: «футболка неестественно
+            # сжимается, движения слишком плавные» — у H3 тянет к слоумо
+            "Everything moves at real-time speed with natural weight, momentum and small "
+            "irregularities, never in slow motion; fabric keeps its thickness and creases "
+            "naturally, it never shrinks or stretches like rubber.",
         ]
     )
     shot_text = " ".join(
