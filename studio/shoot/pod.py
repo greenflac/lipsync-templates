@@ -55,21 +55,26 @@ def run(pod_id: str, command: str, timeout_s: int = 120, password: str = "") -> 
         timeout=30,
     )
     mark = "__DONE_" + uuid.uuid4().hex[:8]
-    ws.send(json.dumps(["stdin", f"{command}; echo {mark}\r"]))
+    # Метка разбита кавычками: в эхе набранной команды её нет целиком, и конец
+    # ловится только по настоящему выводу. НАБЛЮДЕНО 2026-10-08: длинная строка
+    # перерисовывается терминалом, эхо давало метку дважды раньше вывода.
+    ws.send(json.dumps(["stdin", f"{command}; echo {mark[:4]}''{mark[4:]}\r"]))
     out, t0 = "", time.time()
     try:
         while time.time() - t0 < timeout_s:
             msg = json.loads(ws.recv())
             if msg[0] == "stdout":
                 out += msg[1]
-                if out.count(mark) >= 2:  # эхо команды + сама метка
+                if mark in out:
                     break
     finally:
         ws.close()
         s.delete(base + f"/api/terminals/{term}", headers=hdr, timeout=30)
     out = re.sub(r"\x1b\[[0-9;?]*[a-zA-Z]", "", out)
-    i = out.find(mark)
-    return out[i + len(mark) :].replace(mark, "").strip() if i >= 0 else out[-4000:]
+    head = f"echo {mark[:4]}''{mark[4:]}"
+    i = out.rfind(head)
+    body = out[i + len(head) :] if i >= 0 else out
+    return body.split(mark)[0].strip() if mark in body else out[-4000:]
 
 
 def script_command(text: str, name: str = "/tmp/studio_shoot_step.sh") -> str:
