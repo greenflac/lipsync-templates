@@ -33,6 +33,14 @@
     "announce",
     "octagon"
    ]
+  },
+  {
+   "file": "refs/ref_padding_security_arena.png",
+   "what": "the black padding on top of the cage fence and on the posts, printed only with this repeating SECURITY ARENA pattern",
+   "scenes": [
+    "announce",
+    "octagon"
+   ]
   }
  ],
  "characters": {
@@ -42,7 +50,7 @@
    "refs": [
     {
      "file": "refs/print_august.png",
-     "what": "one large yellow sponsor wordmark printed flat across the center of his jersey chest, like the main sponsor on a real UFC fight kit"
+     "what": "one large yellow sponsor wordmark printed flat across the center of his jersey chest, the only print on the jersey"
     }
    ],
    "height_m": 1.78,
@@ -55,7 +63,7 @@
    "refs": [
     {
      "file": "refs/print_freevpn.png",
-     "what": "one large white sponsor logo (a shield mark above a lowercase word) printed flat across the center of his jersey chest, like the main sponsor on a real UFC fight kit"
+     "what": "one large white sponsor logo (a shield mark above a lowercase word) printed flat across the center of his jersey chest, the only print on the jersey"
     }
    ],
    "height_m": 2.05,
@@ -133,7 +141,7 @@
    "id": "S02_announce",
    "scene": "announce",
    "seconds": 6,
-   "seed": 11,
+   "seed": 12,
    "rig": "steadicam_orbit",
    "framing": "medium close-up of the announcer in the center of the octagon, the cage and the dark crowd behind him",
    "purpose": "The event is real and big: the voice of a title fight.",
@@ -174,12 +182,12 @@
   },
   {
    "id": "S03_walkout_adgar",
-   "scene": "walkout",
+   "scene": "octagon",
    "seconds": 6,
-   "seed": 31,
-   "rig": "steadicam_follow",
-   "framing": "medium shot of Adgar walking toward the camera down the dark entrance tunnel lit by moving spotlights",
-   "purpose": "Adgar's walkout: a giant, the crowd is afraid for the other guy.",
+   "seed": 32,
+   "rig": "steadicam_orbit",
+   "framing": "medium shot of Adgar standing in his corner of the octagon while he is introduced, the cage and the dark crowd behind him",
+   "purpose": "Introduction of the giant in his corner: the crowd is afraid for the other guy.",
    "blocking": [
     {
      "who": "adgar",
@@ -191,30 +199,30 @@
     {
      "t": 0,
      "kind": "camera",
-     "text": "The Steadicam operator walks backwards in front of {adgar} and follows his pace, the frame bobbing with each step, lagging a little when he speeds up and re-centering on his face."
+     "text": "The Steadicam operator arcs slowly around {adgar} in his corner, keeping his face framed, with a light bob from the footsteps."
     },
     {
      "t": 1.5,
      "kind": "action",
-     "text": "{adgar} rolls his huge shoulders and slaps his own chest twice, staring past the lens."
+     "text": "{adgar} rolls his huge shoulders and slaps his own chest twice, staring across the octagon."
     },
     {
      "t": 4.0,
      "kind": "action",
-     "text": "He ducks his head under a low beam of light, still looking ahead."
+     "text": "He raises one glove to the crowd without smiling."
     }
    ],
-   "soundscape": "Heavy walkout music thumping through the arena speakers, the crowd booing and roaring. The arena PA: 'Fighting out of the red corner... Adgar... Fribetov!'",
+   "soundscape": "The crowd booing and roaring. The arena PA: 'Fighting out of the red corner... Adgar... Fribetov!'",
    "music": "None."
   },
   {
    "id": "S04_walkout_august",
-   "scene": "walkout",
+   "scene": "octagon",
    "seconds": 6,
-   "seed": 41,
-   "rig": "steadicam_follow",
-   "framing": "medium shot of August walking toward the camera down the same entrance tunnel",
-   "purpose": "August's walkout: no show, total calm; the contrast keeps the viewer curious.",
+   "seed": 42,
+   "rig": "steadicam_orbit",
+   "framing": "medium shot of August standing in the opposite corner of the octagon while he is introduced, the cage and the dark crowd behind him",
+   "purpose": "Introduction of August: no show, total calm; the contrast keeps the viewer curious.",
    "blocking": [
     {
      "who": "august",
@@ -226,20 +234,20 @@
     {
      "t": 0,
      "kind": "camera",
-     "text": "The Steadicam operator walks backwards in front of {august} and follows him at an even pace, with a gentle bob and a slight horizon drift that is corrected."
+     "text": "The Steadicam operator arcs slowly around {august} in his corner, with a gentle bob and a slight horizon drift that is corrected."
     },
     {
      "t": 2.0,
      "kind": "action",
-     "text": "{august} walks calmly, hands loose, and gives a small nod to someone off-camera."
+     "text": "{august} bounces lightly on his toes, hands loose, and gives a small nod toward the opposite corner."
     },
     {
      "t": 4.0,
      "kind": "action",
-     "text": "He glances once toward the cage ahead and exhales."
+     "text": "He exhales and touches his gloves together once."
     }
    ],
-   "soundscape": "Lighter walkout music, a warm cheer from the crowd. The arena PA: 'And fighting out of the blue corner... August... Pobedinsky!'",
+   "soundscape": "A warm cheer from the crowd. The arena PA: 'And fighting out of the blue corner... August... Pobedinsky!'",
    "music": "None."
   },
   {

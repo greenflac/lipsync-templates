@@ -281,15 +281,23 @@ def check(prod: Production) -> list[Finding]:
             )
         if m := SKIN_WORDS.search(text):
             found.append(Finding("*", VIOLATION, "skin", f"{where}: «{m.group(0)}»"))
+    # Всё, что компилятор кладёт в промпт помимо планов: описания персонажей и
+    # их рефов, декорации. НАБЛЮДЕНО 2026-10-08: в описании печати на форме
+    # стояло «like the main sponsor on a real UFC fight kit» — и модель
+    # напечатала UFC на груди обоих бойцов в S03/S04. Проверялось только
+    # описание персонажа, описание его рефа — нет.
+    prompt_texts: list[tuple[str, str]] = []
     for c in prod.characters.values():
-        if m := look_brand.search(c.description):
+        prompt_texts.append((f"описание {c.key}", c.description))
+        prompt_texts += [(f"реф {c.key} {r.file}", r.what) for r in c.refs]
+    prompt_texts += [(f"декорация {r.file}", r.what) for r in prod.set_refs]
+    for where, text in prompt_texts:
+        if m := look_brand.search(text):
             found.append(
-                Finding(
-                    "*", VIOLATION, "brand", f"описание {c.key}: настоящий бренд «{m.group(0)}»"
-                )
+                Finding("*", VIOLATION, "brand", f"{where}: настоящий бренд «{m.group(0)}»")
             )
-        if m := SKIN_WORDS.search(c.description):
-            found.append(Finding("*", VIOLATION, "skin", f"описание {c.key}: «{m.group(0)}»"))
+        if m := SKIN_WORDS.search(text):
+            found.append(Finding("*", VIOLATION, "skin", f"{where}: «{m.group(0)}»"))
     for s in prod.shots:
         if s.id in ids:
             found.append(Finding(s.id, VIOLATION, "id", "id плана повторяется"))

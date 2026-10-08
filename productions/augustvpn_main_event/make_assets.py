@@ -160,7 +160,26 @@ def kit_prints() -> None:
     im.save(refs / "print_august.png")
 
 
+def padding_ref() -> None:
+    """Мат поверх сетки: только узор лиги. НАБЛЮДЕНО 2026-10-08, S02: на мате
+    ESPN, которое OCR не прочитал. Декорацию модели надо показать, а не только
+    запретить чужое (как с канвасом накануне)."""
+    w, h = 1600, 260
+    im = Image.new("RGB", (w, h), (12, 12, 14))
+    d = ImageDraw.Draw(im)
+    for y in (18, h - 22):
+        d.line((0, y, w, y), fill=(40, 40, 44), width=3)
+    f = font("Black", 70)
+    x = 30
+    while x < w:
+        d.polygon([(x, 95), (x + 50, 95), (x + 50, 140), (x + 25, 165), (x, 140)], fill=(235, 235, 235))
+        d.text((x + 70, 88), "SECURITY ARENA", font=f, fill=(235, 235, 235))
+        x += 70 + int(d.textlength("SECURITY ARENA", font=f)) + 80
+    im.save(HERE / "refs" / "ref_padding_security_arena.png")
+
+
 def main() -> None:
+    padding_ref()
     kit_prints()
     sfx()
     print(check_qr())

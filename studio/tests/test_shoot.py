@@ -142,6 +142,16 @@ class PlantedDefects(unittest.TestCase):
         self.assertNotIn("eyeline", _rules(dataclasses.replace(self.prod, shots=(a, b2))))
 
 
+class RefBrands(unittest.TestCase):
+    def test_brand_in_ref_description_is_caught(self) -> None:
+        # S03/S04 2026-10-08: «like the main sponsor on a real UFC fight kit» в описании печати
+        prod = _prod()
+        aug = prod.characters["august"]
+        ref = dataclasses.replace(aug.refs[0], what="printed like on a real UFC fight kit")
+        chars = dict(prod.characters, august=dataclasses.replace(aug, refs=(ref,)))
+        self.assertIn("brand", _rules(dataclasses.replace(prod, characters=chars)))
+
+
 class Reveal(unittest.TestCase):
     """2026-10-08: до развязки — настоящий бой, ни слова о продукте."""
 
@@ -202,9 +212,13 @@ class Compiler(unittest.TestCase):
         self.assertIn(RIGS[shot.rig].operator, c.prompt)
         self.assertIn("27 cm taller", c.prompt)
         self.assertEqual(c.prompt.count("cm taller"), 1)
-        self.assertEqual(len(c.refs), 6)
-        self.assertEqual(Path(c.refs[-1]).name, "ref_canvas_security_arena.png")
+        self.assertEqual(len(c.refs), 7)  # 3 лица + 2 печати на форме + канвас + мат
+        names = [Path(r).name for r in c.refs]
+        self.assertEqual(
+            names[-2:], ["ref_canvas_security_arena.png", "ref_padding_security_arena.png"]
+        )
         self.assertIn("The floor is printed exactly like <Picture 6>", c.prompt)
+        self.assertNotIn("UFC", c.prompt)  # 2026-10-08: «как у UFC» в описании рефа печатало UFC
         self.assertIn("gloves are plain matte black", c.prompt)
 
     def test_no_gloves_on_the_announcer(self) -> None:
