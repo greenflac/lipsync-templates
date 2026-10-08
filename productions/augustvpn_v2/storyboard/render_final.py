@@ -121,7 +121,7 @@ def graph(img: str, text: str, frames: int, seed: int, prefix: str, control: str
     if control:
         g["30"] = {"class_type": "LoadVideo", "inputs": {"file": control}}
         g["31"] = {"class_type": "GetVideoComponents", "inputs": {"video": ["30", 0]}}
-        g["32"] = {"class_type": "ModelPatchLoader", "inputs": {"name": "MiniMax-H3-Fun-Controlnet-Union-2.0.safetensors"}}
+        g["32"] = {"class_type": "ModelPatchLoader", "inputs": {"name": "minimax_h3_fun_controlnet_union_pruned_bf16.safetensors"}}
         g["33"] = {"class_type": "MiniMaxH3FunControlNetApply", "inputs": {"model": ["1", 0], "model_patch": ["32", 0], "vae": ["3", 0], "strength": strength, "start_percent": 0.0, "end_percent": 1.0, "control_video": ["31", 0]}}
         g["11"]["inputs"]["model"] = ["33", 0]
         g["13"]["inputs"]["model"] = ["33", 0]

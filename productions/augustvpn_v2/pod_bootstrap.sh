@@ -38,22 +38,21 @@ for f in diffusion_models/minimax_h3_ref2va_pruned_fp8_scaled.safetensors \
          diffusion_models/minimax_h3_fl2va_pruned_fp8_scaled.safetensors \
          text_encoders/qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors \
          vae/minimax_h3_video_vae_fp16.safetensors \
-         vae/minimax_h3_audio_vae_fp32.safetensors; do
+         vae/minimax_h3_audio_vae_fp32.safetensors \
+         model_patches/minimax_h3_fun_controlnet_union_pruned_bf16.safetensors; do
   [ -s "$W/h3/$f" ] || hf download "$H3_REPO" "$f" --revision "$H3_REV" --local-dir "$W/h3"
 done
 
-echo "== $(date -u +%T) Fun ControlNet Union 2.0 ($CN_REPO@${CN_REV:0:8})"
-f=MiniMax-H3-Fun-Controlnet-Union-2.0.safetensors
-[ -s "$W/cn/$f" ] || hf download "$CN_REPO" "$f" --revision "$CN_REV" --local-dir "$W/cn"
+# Fun ControlNet: нативный ModelPatchLoader ComfyUI v0.35 принимает только
+# перепаковку Comfy-Org (model_patches/ выше). Исходник alibaba-pai он не
+# узнаёт: «cannot access local variable 'model'» (замер 2026-10-08).
 
 echo "== $(date -u +%T) ссылки в ComfyUI"
 find "$M" -xtype l -delete
-for d in diffusion_models text_encoders vae; do
+for d in diffusion_models text_encoders vae model_patches; do
   mkdir -p "$M/$d"
   for x in "$W/h3/$d"/*.safetensors; do ln -sf "$x" "$M/$d/$(basename "$x")"; done
 done
-mkdir -p "$M/model_patches"
-ln -sf "$W/cn/$f" "$M/model_patches/$f"
 
 echo "== $(date -u +%T) проверка: ComfyUI видит модели"
 for d in diffusion_models text_encoders vae model_patches; do
