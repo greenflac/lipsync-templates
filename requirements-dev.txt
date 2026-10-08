@@ -24,3 +24,7 @@ uvicorn==0.52.4
 python-multipart==0.0.32
 # The chat agent (studio/mcp) — pinned to what was installed and measured on 2026-08-27.
 mcp==2.1.1
+# Канал к поду RunPod через терминал его JupyterLab (studio/shoot/pod.py): SSH,
+# API и документация RunPod из облачной сессии закрыты, открыт только HTTP-прокси
+# пода. Пин — версия, на которой 2026-10-07 гонялась подготовка пода.
+websocket-client==1.9.2

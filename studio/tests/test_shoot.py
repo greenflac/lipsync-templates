@@ -54,7 +54,7 @@ class NegativeControl(unittest.TestCase):
 class PlantedDefects(unittest.TestCase):
     def setUp(self) -> None:
         self.prod = _prod()
-        self.i = next(i for i, s in enumerate(self.prod.shots) if s.id == "S04_faceoff_wide")
+        self.i = next(i for i, s in enumerate(self.prod.shots) if s.id == "S05_faceoff")
         self.shot = self.prod.shots[self.i]
 
     def _beats(self, *extra: Beat) -> tuple[Beat, ...]:
@@ -142,10 +142,51 @@ class PlantedDefects(unittest.TestCase):
         self.assertNotIn("eyeline", _rules(dataclasses.replace(self.prod, shots=(a, b2))))
 
 
+class Reveal(unittest.TestCase):
+    """2026-10-08: до развязки — настоящий бой, ни слова о продукте."""
+
+    def test_product_word_before_reveal_is_caught(self) -> None:
+        prod = _prod()
+        i = next(k for k, s in enumerate(prod.shots) if s.id == "S08_booth")
+        line = Line(0.5, "caster_a", "He is lagging like a free VPN!")
+        found = validate.check(_with_shot(prod, i, dialogue=(line,)))
+        self.assertIn("reveal", {f.rule for f in found if f.severity == validate.VIOLATION})
+
+    def test_same_word_after_reveal_is_allowed(self) -> None:
+        prod = _prod()
+        i = next(k for k, s in enumerate(prod.shots) if s.id == "S10_disconnect")
+        beats = (*prod.shots[i].beats, Beat(5.0, "action", "A free VPN logo glows."))
+        self.assertNotIn("reveal", _rules(_with_shot(prod, i, beats=beats)))
+
+    def test_word_vs_stem(self) -> None:
+        pat = validate.secret_pattern(("lag", "бесплатн*"))
+        assert pat is not None
+        self.assertIsNone(pat.search("the frame lagging behind"))  # работа камеры, не продукт
+        self.assertIsNotNone(pat.search("a lag"))
+        self.assertIsNotNone(pat.search("бесплатного"))
+
+    def test_edit_subtitle_before_reveal_is_caught(self) -> None:
+        from studio.shoot import edit
+
+        prod = _prod()
+        e = edit.load(PRODUCTION.parent / "edit.json")
+        c = e.clips[0]
+        bad_sub = edit.Sub(0.1, 2.0, "Бесплатный против платного")
+        e2 = dataclasses.replace(e, clips=(dataclasses.replace(c, subs=(bad_sub,)), *e.clips[1:]))
+        found = edit.problems(
+            e2,
+            PRODUCTION.parent,
+            {s.id for s in prod.shots},
+            prod.reveal_from,
+            validate.secret_pattern(prod.secret_words),
+        )
+        self.assertTrue(any("до развязки" in p for p in found), found)
+
+
 class Compiler(unittest.TestCase):
     def test_prompt_sections_and_refs(self) -> None:
         prod = _prod()
-        shot = next(s for s in prod.shots if s.id == "S04_faceoff_wide")
+        shot = next(s for s in prod.shots if s.id == "S05_faceoff")
         c = compile_shot(prod, shot)
         for section in (
             "subject_definitions:",
@@ -169,7 +210,7 @@ class Compiler(unittest.TestCase):
     def test_no_gloves_on_the_announcer(self) -> None:
         # S01_announce, 2026-10-07: фраза о перчатках надела перчатку конферансье
         prod = _prod()
-        c = compile_shot(prod, next(s for s in prod.shots if s.id == "S01_announce"))
+        c = compile_shot(prod, next(s for s in prod.shots if s.id == "S02_announce"))
         self.assertNotIn("glove", c.prompt)
 
     def test_set_ref_only_in_its_scenes(self) -> None:
@@ -354,13 +395,13 @@ class Budget(unittest.TestCase):
 class Edit(unittest.TestCase):
     EDIT = PRODUCTION.parent / "edit.json"
 
-    def test_edit_sheet_is_clean_and_forty_seconds(self) -> None:
+    def test_edit_sheet_is_clean_and_about_forty_seconds(self) -> None:
         from studio.shoot import edit
 
         e = edit.load(self.EDIT)
         shots = {s.id for s in _prod().shots}
         self.assertEqual(edit.problems(e, self.EDIT.parent, shots), [])
-        self.assertAlmostEqual(e.length, 40.0, places=3)
+        self.assertTrue(38.0 <= e.length <= 45.0, e.length)  # ТЗ: около 40 с
         used = {c.shot for c in e.clips if not c.still}
         self.assertEqual(used, shots)  # каждый снятый план в монтаже
 
@@ -376,6 +417,25 @@ class Edit(unittest.TestCase):
         if Path(edit.FONT).exists():
             self.assertTrue(any("шире кадра" in p for p in found), found)
 
+    def test_global_graphics_follow_shots_not_seconds(self) -> None:
+        from studio.shoot import edit
+
+        e = edit.load(self.EDIT)
+        starts, t = {}, 0.0
+        for c in e.clips:
+            starts[c.shot] = t
+            t += c.length
+        bug = next(o for o in e.global_overlays if "scorebug" in o.img)
+        self.assertAlmostEqual(bug.t, starts["S06_bell_charge"], places=6)
+        self.assertTrue(edit.is_video(bug.img))
+
+    def test_watermark_is_separate_and_removable(self) -> None:
+        from studio.shoot import edit
+
+        e = edit.load(self.EDIT)
+        self.assertIsNotNone(e.watermark)
+        self.assertNotIn(e.watermark, e.global_overlays)  # снимается флагом, лист не трогаем
+
     def test_slate_wraps_lines(self) -> None:
         from studio.shoot.edit import _wrap
 
@@ -390,13 +450,13 @@ class Edit(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             e = edit.Edit(
                 clips=(
-                    edit.Clip("S01_announce", 0.0, 0.5),
-                    edit.Clip("packshot", 0.0, 0.5, still="gfx/packshot.png"),
+                    edit.Clip("S02_announce", 0.0, 0.5),
+                    edit.Clip("packshot", 0.0, 0.5, still="gfx/packshot.webm"),
                 )
             )
             out = Path(tmp) / "m.mp4"
             slates = edit.assemble(e, self.EDIT.parent, {}, {}, out)
-            self.assertEqual(slates, ["S01_announce"])
+            self.assertEqual(slates, ["S02_announce"])
             self.assertTrue(out.exists())
 
 

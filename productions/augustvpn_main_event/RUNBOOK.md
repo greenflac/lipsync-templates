@@ -5,7 +5,7 @@
 локально, рендерит одной очередью и сразу выключается.
 
 Оценка (`studio.shoot.render.estimate_usd`, медиана 55 GPU-с на секунду ролика):
-11 планов, 71 с видео — **$2.27 GPU**, плюс около 15 минут на подготовку пода.
+12 планов, 79 с видео — **$2.52 GPU**, плюс около 15 минут на подготовку пода.
 
 ## 0. До включения пода (бесплатно)
 
@@ -34,20 +34,21 @@ POD_JUPYTER_PW=… python -m studio.shoot.pod lcjxwt6oyt143l \
 `/root/h3`, подключает контрольный набор весов и показывает, пережил ли
 остановку рендер S02.
 
-## 3. Пробный пакет: два плана, проверка исправлений
+## 3. Пробный пакет: два плана, проверка исправлений (сценарий v3)
 
 ```bash
 export COMFY_URL=https://lcjxwt6oyt143l-8188.proxy.runpod.net GPU_RATE_USD_H=2.09
 export H3_UNET=minimax_h3_ref2va_pruned_fp8_scaled.safetensors
 export H3_CLIP=qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors
-python -m studio.shoot render productions/augustvpn_main_event/production.json OUT S04_faceoff_wide S01_announce
+python -m studio.shoot render productions/augustvpn_main_event/production.json OUT S01_hook_lookup S05_faceoff
 ```
 
 Глазами по контактным листам (`OUT/*.sheet.jpg`):
 
+* S01 (хук): крупно глаза Августа, тилт вверх, лицо Адгара сверху — читается за 1,5 с;
+* форма как на референсе UFC: один печатный спонсор в центре груди, без россыпи нашивок;
 * на канвасе нет UFC/OFC, только SECURITY ARENA (реф канваса);
-* у конферансье нет перчатки;
-* в S04 Адгар выше Августа, перчатки без букв.
+* в S05 Адгар на голову выше Августа, перчатки без букв.
 
 Не годно — исправить `production.json`, повторить шаг 3. Пока это делается,
 **под выключить**: правка промпта может занять больше 10 минут.
@@ -56,8 +57,8 @@ python -m studio.shoot render productions/augustvpn_main_event/production.json O
 
 ```bash
 python -m studio.shoot render productions/augustvpn_main_event/production.json OUT \
-    S02_intro_adgar S03_intro_august S05_ots_august S06_adgar_boast S07_bell_lag \
-    S08_booth S09_disconnect S10_popups S11_winner
+    S02_announce S03_walkout_adgar S04_walkout_august S06_bell_charge S07_pressure \
+    S08_booth S09_windup_freeze S10_disconnect S11_logo_reveal S12_winner
 ```
 
 Каждая попытка сама пишется в `journal.jsonl`. План, который QA забраковал,
@@ -79,6 +80,8 @@ python -m studio.shoot edit productions/augustvpn_main_event/production.json \
 
 В монтаж берётся самый свежий файл плана из `OUT`. Если принят не последний
 дубль, отбракованные убрать из `OUT`. Точки входа и выхода (`in`/`out`) и время
-стоп-кадра «лага» в S07 подогнать по реальным рендерам: в листе они стоят по
+сбоев (glitches) в S09–S10 подогнать по реальным рендерам: в листе они стоят по
 битам сценария. Графика и звуковые эффекты пересобираются командой
-`python productions/augustvpn_main_event/make_assets.py` (там же проверка QR).
+`python productions/augustvpn_main_event/render_gfx.py` (эфирный пакет) и
+`python productions/augustvpn_main_event/make_assets.py` (звук, печать на форме, проверка QR).
+Водяной знак снимается флагом `--no-watermark`.

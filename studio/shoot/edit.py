@@ -19,6 +19,7 @@
 from __future__ import annotations
 
 import json
+import re
 import shutil
 import subprocess
 import tempfile
@@ -30,8 +31,8 @@ W, H, FPS, AR = 1080, 1920, 24, 48000
 EDGE_FADE = 0.02  # секунд фейда звука на каждом стыке
 FONT = "/usr/share/fonts/opentype/inter/Inter-Bold.otf"
 #: Верх строки субтитра. Ниже ~1500 px вертикальный кадр закрывает интерфейс
-#: площадки, а 1080–1270 заняты нижними третями — субтитр между ними.
-SUB_Y = 1300
+#: площадки, а 960–1390 заняты эфирной графикой (render_gfx.py) — субтитр между.
+SUB_Y = 1400
 SUB_SIZE = 46
 SUB_MAX_W = W - 2 * 60  # строка субтитра с плашкой не шире кадра минус поля
 
@@ -72,6 +73,32 @@ class Hold:
 
 
 @dataclass(frozen=True)
+class Glitch:
+    """Сбой сигнала на кадре: сдвиг каналов и цифровой шум. Только в развязке."""
+
+    t: float
+    dur: float
+
+
+VIDEO_OVERLAY = (".mov", ".webm", ".mp4")
+
+
+def video_input(path: Path) -> list[str]:
+    """Входные опции ffmpeg для анимированной графики.
+
+    Альфу VP9 декодирует только libvpx: встроенный декодер ffmpeg молча отдаёт
+    непрозрачный кадр, и графика ложится чёрным прямоугольником.
+    """
+    pre = ["-c:v", "libvpx-vp9"] if path.suffix.lower() == ".webm" else []
+    return [*pre, "-i", str(path)]
+
+
+def is_video(path: str) -> bool:
+    """Анимированная графика (.mov с альфой из render_gfx.py), а не картинка."""
+    return path.lower().endswith(VIDEO_OVERLAY)
+
+
+@dataclass(frozen=True)
 class Clip:
     shot: str
     src_in: float
@@ -81,8 +108,9 @@ class Clip:
     subs: tuple[Sub, ...] = ()
     sfx: tuple[Sfx, ...] = ()
     holds: tuple[Hold, ...] = ()
-    still: str = ""  # картинка вместо рендера (пэкшот)
+    still: str = ""  # картинка или ролик вместо рендера (пэкшот)
     gain_db: float = 0.0
+    glitches: tuple[Glitch, ...] = ()
 
     @property
     def length(self) -> float:
@@ -93,6 +121,10 @@ class Clip:
 class Edit:
     clips: tuple[Clip, ...]
     global_overlays: tuple[Overlay, ...] = ()
+    #: Водяной знак — отдельно от графики: его снимают одним флагом
+    #: (`edit … --no-watermark`), не трогая лист. Владелец, 2026-10-08: «потом
+    #: должна быть возможность её убрать».
+    watermark: Overlay | None = None
     loudness_lufs: float = -14.0
     true_peak_db: float = -1.0
     extra: dict[str, Any] = field(default_factory=dict)
@@ -124,22 +156,58 @@ def load(path: str | Path) -> Edit:
             holds=tuple(Hold(float(h["t"]), float(h["dur"])) for h in c.get("holds", [])),
             still=c.get("still", ""),
             gain_db=float(c.get("gain_db", 0)),
+            glitches=tuple(Glitch(float(g["t"]), float(g["dur"])) for g in c.get("glitches", [])),
         )
         for c in raw["clips"]
     )
+    # Общая графика привязывается к планам («from»/«to» — id плана), а не к
+    # секундам: после подгонки in/out по реальным рендерам секунды уезжают.
+    starts, t0 = {}, 0.0
+    for c in clips:
+        starts[c.shot] = (t0, t0 + c.length)
+        t0 += c.length
+
+    def glob(items: list[dict[str, Any]]) -> tuple[Overlay, ...]:
+        out = []
+        for o in items:
+            if "from" in o:
+                a = starts[o["from"]][0]
+                b = starts[o.get("to", o["from"])][1]
+                out.append(Overlay(o["img"], a, b - a))
+            else:
+                out.append(Overlay(o["img"], float(o.get("t", 0)), float(o.get("dur", -1))))
+        return tuple(out)
+
     return Edit(
         clips=clips,
-        global_overlays=ovs(raw.get("global_overlays", [])),
+        global_overlays=glob(raw.get("global_overlays", [])),
+        watermark=ovs([raw["watermark"]])[0] if raw.get("watermark") else None,
         loudness_lufs=float(raw.get("loudness_lufs", -14)),
         true_peak_db=float(raw.get("true_peak_db", -1)),
     )
 
 
-def problems(e: Edit, base: Path, shots: set[str]) -> list[str]:
-    """Что не так с листом до сборки. Отсутствующий рендер — не проблема, а слейт."""
+def problems(
+    e: Edit,
+    base: Path,
+    shots: set[str],
+    reveal_from: str = "",
+    secret: re.Pattern[str] | None = None,
+) -> list[str]:
+    """Что не так с листом до сборки. Отсутствующий рендер — не проблема, а слейт.
+
+    `reveal_from`/`secret` — то же правило, что `validate.check_reveal`, для
+    субтитров: зритель читает их раньше, чем слышит реплику.
+    """
     out: list[str] = []
+    revealed = not reveal_from
     for i, c in enumerate(e.clips):
         tag = f"#{i + 1} {c.shot}"
+        revealed = revealed or c.shot == reveal_from
+        if secret is not None and not revealed:
+            for sub in c.subs:
+                if m := secret.search(sub.text):
+                    out.append(f"{tag}: субтитр «{m.group(0)}» до развязки раскрывает карты")
         if not c.still and c.shot not in shots:
             out.append(f"{tag}: плана нет в production.json")
         if c.src_out <= c.src_in:
@@ -162,10 +230,28 @@ def problems(e: Edit, base: Path, shots: set[str]) -> list[str]:
                 out.append(f"{tag}: субтитр «{s.text[:20]}…» не успеть прочитать (>20 знаков/с)")
         if c.still and not (base / c.still).exists():
             out.append(f"{tag}: нет картинки {c.still}")
-    for o in e.global_overlays:
+        for g in c.glitches:
+            if g.t < 0 or g.t + g.dur > c.length + 1e-6:
+                out.append(f"{tag}: сбой на {g.t} с выходит за план")
+    for o in (*e.global_overlays, *([e.watermark] if e.watermark else [])):
         if not (base / o.img).exists():
             out.append(f"общий оверлей: нет файла {o.img}")
+        if o.t < 0 or o.t >= e.length:
+            out.append(f"общий оверлей {o.img} на {o.t} с вне ролика длиной {e.length:.2f} с")
     return out
+
+
+def _overlay(idx: int, o: Overlay, cur: str, end: float, k: str) -> tuple[list[str], str]:
+    """Входы ffmpeg и звено цепочки, кладущее графику `o` поверх `cur` до `end`."""
+    if is_video(o.img):
+        # анимация стартует в момент o.t; после последнего кадра держится он же
+        # (у титров он пустой — они уходят сами, у плашки эфира — она остаётся)
+        prep = f"[{idx}:v]format=rgba,setpts=PTS-STARTPTS+{o.t:.3f}/TB[g{k}]"
+        lay = f"{cur}[g{k}]overlay=0:0:eof_action=repeat:enable='between(t,{o.t:.3f},{end:.3f})'"
+        return [prep, lay], "video"
+    prep = f"[{idx}:v]scale={W}:{H},format=rgba[g{k}]"
+    lay = f"{cur}[g{k}]overlay=0:0:enable='between(t,{o.t:.3f},{end:.3f})'"
+    return [prep, lay], "image"
 
 
 def _esc(text: str) -> str:
@@ -192,10 +278,16 @@ def _segment_cmd(c: Clip, src: Path | None, base: Path, out: Path, slate_text: s
     length = c.length
     inputs: list[str] = []
     if c.still:
-        inputs += ["-loop", "1", "-t", f"{length:.3f}", "-i", str(base / c.still)]
+        if is_video(c.still):
+            inputs += ["-t", f"{length:.3f}", *video_input(base / c.still)]
+        else:
+            inputs += ["-loop", "1", "-t", f"{length:.3f}", "-i", str(base / c.still)]
         inputs += ["-f", "lavfi", "-t", f"{length:.3f}", "-i", f"anullsrc=r={AR}:cl=stereo"]
         v, a = "[0:v]", "[1:a]"
-        chain = [f"{v}scale={W}:{H},fps={FPS},format=yuv420p[v0]"]
+        chain = [
+            f"color=c=black:s={W}x{H}:r={FPS}:d={length:.3f}[bk];{v}scale={W}:{H},fps={FPS}[st];"
+            "[bk][st]overlay=0:0:eof_action=repeat,format=yuv420p[v0]"
+        ]
     elif src is None:
         inputs += [
             "-f",
@@ -239,14 +331,20 @@ def _segment_cmd(c: Clip, src: Path | None, base: Path, out: Path, slate_text: s
     # графика плана
     idx = sum(1 for x in inputs if x == "-i")
     cur = "[v0]"
+    for k, g in enumerate(c.glitches):
+        nxt = f"[gl{k}]"
+        on = f"enable='between(t,{g.t:.3f},{g.t + g.dur:.3f})'"
+        chain.append(f"{cur}rgbashift=rh=-18:bh=18:{on},noise=alls=45:allf=t:{on}{nxt}")
+        cur = nxt
     for k, o in enumerate(c.overlays):
-        inputs += ["-loop", "1", "-t", f"{length:.3f}", "-i", str(base / o.img)]
+        if is_video(o.img):
+            inputs += video_input(base / o.img)
+        else:
+            inputs += ["-loop", "1", "-t", f"{length:.3f}", "-i", str(base / o.img)]
         end = length if o.dur < 0 else min(length, o.t + o.dur)
         nxt = f"[vo{k}]"
-        chain.append(
-            f"[{idx}:v]scale={W}:{H}[g{k}];{cur}[g{k}]overlay=0:0:"
-            f"enable='between(t,{o.t:.3f},{end:.3f})'{nxt}"
-        )
+        links, _ = _overlay(idx, o, cur, end, f"c{k}")
+        chain += [links[0], links[1] + nxt]
         cur, idx = nxt, idx + 1
     for k, s in enumerate(c.subs):
         nxt = f"[vs{k}]"
@@ -310,6 +408,7 @@ def assemble(
     renders: dict[str, Path],
     purposes: dict[str, str],
     out: Path,
+    watermark: bool = True,
 ) -> list[str]:
     """Собрать мастер. Возвращает список планов, ушедших в монтаж слейтом."""
     if not shutil.which("ffmpeg"):
@@ -335,13 +434,17 @@ def assemble(
         )
         inputs = ["-i", str(joined)]
         chain, cur = [], "[0:v]"
-        for k, o in enumerate(e.global_overlays):
-            inputs += ["-loop", "1", "-i", str(base / o.img)]
+        layers = list(e.global_overlays)
+        if watermark and e.watermark:
+            layers.append(e.watermark)
+        for k, o in enumerate(layers):
+            if is_video(o.img):
+                inputs += video_input(base / o.img)
+            else:
+                inputs += ["-loop", "1", "-t", f"{e.length:.3f}", "-i", str(base / o.img)]
             end = e.length if o.dur < 0 else o.t + o.dur
-            chain.append(
-                f"[{k + 1}:v]scale={W}:{H}[gg{k}];{cur}[gg{k}]overlay=0:0:shortest=1:"
-                f"enable='between(t,{o.t:.3f},{end:.3f})'[go{k}]"
-            )
+            links, _ = _overlay(k + 1, o, cur, end, f"g{k}")
+            chain += [links[0], links[1] + f"[go{k}]"]
             cur = f"[go{k}]"
         chain.append(f"{cur}format=yuv420p[vout]")
         chain.append(

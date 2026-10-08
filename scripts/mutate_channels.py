@@ -62,6 +62,27 @@ ROOT = Path(__file__).resolve().parents[1]
 MUTANTS: list[tuple[str, str, str, str, str]] = [
     # --- съёмка плана (studio/shoot): правила из замечаний владельца 2026-10-07 --
     (
+        "studio/shoot/edit.py",
+        "SUB_MAX_W = W - 2 * 60",
+        "SUB_MAX_W = W * 10",
+        "субтитры: строка шире кадра снова проходит",
+        "studio.tests.test_shoot",
+    ),
+    (
+        "studio/shoot/edit.py",
+        'VIDEO_OVERLAY = (".mov", ".webm", ".mp4")',
+        'VIDEO_OVERLAY = (".mov",)',
+        "графика: анимированный .webm снова считается картинкой",
+        "studio.tests.test_shoot",
+    ),
+    (
+        "studio/shoot/journal.py",
+        'NEEDS_OUTCOME = ("render", "qa", "review")',
+        'NEEDS_OUTCOME = ("qa",)',
+        "журнал: рендер без исхода снова проходит — постмортем не посчитает выход годного",
+        "studio.tests.test_shoot",
+    ),
+    (
         "studio/shoot/qa.py",
         "JITTER_HANDHELD_MIN = 0.30",
         "JITTER_HANDHELD_MIN = 0.10",

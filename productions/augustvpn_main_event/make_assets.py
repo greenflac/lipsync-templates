@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
-"""Эфирная графика и звуковые эффекты ролика — генерируются, а не скачиваются.
+"""Звуковые эффекты и печать на форме — генерируются, а не скачиваются.
+
+Эфирная графика живёт в `render_gfx.py` (HTML/CSS → .webm с альфой): статичные
+плашки Pillow, что были здесь до 2026-10-08, владелец назвал дешёвыми.
 
     python productions/augustvpn_main_event/make_assets.py
 
@@ -19,12 +22,11 @@ QR проверяется декодером (OpenCV), если тот уста�
 
 from __future__ import annotations
 
-import math
 import wave
 from pathlib import Path
 
 import numpy as np
-from PIL import Image, ImageDraw, ImageFilter, ImageFont
+from PIL import Image, ImageDraw, ImageFont
 
 HERE = Path(__file__).resolve().parent
 GFX, SFX = HERE / "gfx", HERE / "sfx"
@@ -52,144 +54,12 @@ def save(im: Image.Image, name: str) -> None:
     im.save(GFX / name)
 
 
-def bug() -> None:
-    """Плашка трансляции: лига + LIVE слева сверху, MAIN EVENT справа."""
-    im, d = canvas()
-    d.rounded_rectangle((40, 70, 420, 150), 10, fill=(10, 10, 12, 215))
-    d.text((62, 84), "SECURITY ARENA", font=font("Black", 30), fill=WHITE)
-    d.text((62, 118), "ГЛАВНЫЙ БОЙ ВЕЧЕРА", font=font("SemiBold", 20), fill=(200, 200, 200))
-    d.rounded_rectangle((440, 88, 560, 132), 8, fill=RED + (235,))
-    d.ellipse((456, 102, 472, 118), fill=WHITE)
-    d.text((482, 94), "LIVE", font=font("Black", 26), fill=WHITE)
-    save(im, "bug_live.png")
-
-
-def lower_third(name: str, file: str, brand: str, who: str, stats: str, color: tuple[int, ...]) -> None:
-    im, d = canvas()
-    y = 1080
-    assert y + 190 < SAFE_BOTTOM
-    d.rectangle((0, y, W, y + 190), fill=(10, 10, 12, 225))
-    d.rectangle((0, y, 18, y + 190), fill=color + (255,))
-    d.text((52, y + 20), brand, font=font("Black", 64), fill=color)
-    d.text((52, y + 100), who, font=font("Bold", 36), fill=WHITE)
-    d.text((52, y + 146), stats, font=font("Medium", 26), fill=(190, 190, 190))
-    save(im, file)
-
-
-def buffering() -> None:
-    im, d = canvas()
-    cx, cy, r = W // 2, H // 2 - 80, 70
-    for i in range(12):
-        a = 2 * math.pi * i / 12
-        alpha = int(60 + 195 * i / 11)
-        x, y = cx + r * math.cos(a), cy + r * math.sin(a)
-        d.ellipse((x - 13, y - 13, x + 13, y + 13), fill=(255, 255, 255, alpha))
-    t = "Буферизация… 3%"
-    f = font("SemiBold", 40)
-    d.text((cx - d.textlength(t, font=f) / 2, cy + 110), t, font=f, fill=WHITE)
-    save(im, "buffering.png")
-
-
-def connection_lost() -> None:
-    im, d = canvas()
-    d.rectangle((0, 0, W, H), fill=(0, 0, 0, 120))
-    rng = np.random.default_rng(3)
-    for _ in range(26):  # полосы «развалившегося» сигнала
-        y = int(rng.integers(0, H))
-        hgt = int(rng.integers(4, 26))
-        col = [(255, 0, 80, 110), (0, 220, 255, 110), (255, 255, 255, 70)][int(rng.integers(0, 3))]
-        d.rectangle((0, y, W, y + hgt), fill=col)
-    f1, f2 = font("Black", 92), font("SemiBold", 40)
-    for txt, f, y, col in (
-        ("CONNECTION", f1, 780, RED),
-        ("LOST", f1, 880, RED),
-        ("Соединение потеряно", f2, 1010, WHITE),
-    ):
-        d.text(((W - d.textlength(txt, font=f)) / 2, y), txt, font=f, fill=col)
-    save(im, "connection_lost.png")
-
-
-def popups() -> None:
-    """Всплывающая реклама поверх бойца: безобидный спам, без азартных игр и 18+."""
-    ads = [
-        ("ВНИМАНИЕ!", "Ваш телефон заражён\n47 вирусами", "ОЧИСТИТЬ", (40, 120, 255), (90, 250)),
-        ("ПОЗДРАВЛЯЕМ!", "Вы миллионный\nпосетитель", "ЗАБРАТЬ", (240, 150, 0), (380, 450)),
-        ("УСКОРИТЕЛЬ", "Интернет в 100 раз\nбыстрее! Скачать?", "ДА", (30, 170, 80), (110, 660)),
-        ("РЕКЛАМА", "Этот боец спонсируется\nвашими данными", "OK", (200, 30, 160), (340, 880)),
-    ]
-    for k in range(1, len(ads) + 1):
-        im, d = canvas()
-        for title, body, btn, col, (x, y) in ads[:k]:
-            box = (x, y, x + 640, y + 330)
-            shadow = Image.new("RGBA", (W, H), (0, 0, 0, 0))
-            ImageDraw.Draw(shadow).rectangle((x + 14, y + 18, x + 654, y + 348), fill=(0, 0, 0, 120))
-            im.alpha_composite(shadow.filter(ImageFilter.GaussianBlur(10)))
-            d.rectangle(box, fill=(245, 245, 245, 255), outline=(60, 60, 60, 255), width=3)
-            d.rectangle((x, y, x + 640, y + 70), fill=col + (255,))
-            d.text((x + 24, y + 14), title, font=font("Black", 36), fill=WHITE)
-            d.text((x + 590, y + 10), "×", font=font("Bold", 44), fill=WHITE)
-            d.multiline_text((x + 24, y + 96), body, font=font("SemiBold", 34), fill=INK, spacing=8)
-            d.rounded_rectangle((x + 24, y + 250, x + 260, y + 310), 8, fill=col + (255,))
-            d.text((x + 44, y + 262), btn, font=font("Black", 30), fill=WHITE)
-        save(im, f"popups_{k}.png")
-
-
-def win_card() -> None:
-    im, d = canvas()
-    d.rectangle((0, 1080, W, 1340), fill=(10, 10, 12, 230))
-    d.rectangle((0, 1080, W, 1092), fill=YELLOW + (255,))
-    f1, f2 = font("SemiBold", 34), font("Black", 88)
-    for txt, f, y, col in (("ПОБЕДА · WIN BY", f1, 1120, (200, 200, 200)), ("DISCONNECT", f2, 1175, YELLOW)):
-        d.text(((W - d.textlength(txt, font=f)) / 2, y), txt, font=f, fill=col)
-    save(im, "win_disconnect.png")
-
-
-def qr_image(size: int) -> Image.Image:
-    import qrcode
-
-    q = qrcode.QRCode(border=2, box_size=10, error_correction=qrcode.constants.ERROR_CORRECT_M)
-    q.add_data(URL)
-    q.make(fit=True)
-    img = q.make_image(fill_color="black", back_color="white").convert("RGB")
-    return img.resize((size, size), Image.Resampling.NEAREST)
-
-
-def packshot() -> None:
-    im = Image.new("RGBA", (W, H), INK + (255,))
-    d = ImageDraw.Draw(im)
-    glow = Image.new("RGBA", (W, H), (0, 0, 0, 0))
-    ImageDraw.Draw(glow).ellipse((140, 260, 940, 900), fill=YELLOW + (70,))
-    im.alpha_composite(glow.filter(ImageFilter.GaussianBlur(120)))
-    f_logo = font("Black", 128)
-    t = "АвгустVPN"
-    d.text(((W - d.textlength(t, font=f_logo)) / 2, 470), t, font=f_logo, fill=YELLOW)
-    f3 = font("Bold", 62)
-    for i, word in enumerate(("Быстрее.", "Надёжнее.", "Безопаснее.")):
-        d.text(((W - d.textlength(word, font=f3)) / 2, 680 + i * 84), word, font=f3, fill=WHITE)
-    d.rounded_rectangle((150, 1000, 930, 1120), 24, fill=YELLOW + (255,))
-    cta = "Попробовать 1 день за 10 ₽"
-    f4 = font("Black", 46)
-    d.text(((W - d.textlength(cta, font=f4)) / 2, 1032), cta, font=f4, fill=INK)
-    q = qr_image(340)
-    im.paste(q, ((W - 340) // 2, 1190))
-    f5 = font("SemiBold", 36)
-    d.text(((W - d.textlength("august-vpn.com", font=f5)) / 2, 1560), "august-vpn.com", font=f5, fill=WHITE)
-    save(im, "packshot.png")
-
-
-def watermark() -> None:
-    im, d = canvas()
-    f = font("SemiBold", 26)
-    d.text((W - 40 - d.textlength("@greenflac", font=f), 100), "@greenflac", font=f, fill=(255, 255, 255, 120))
-    save(im, "watermark.png")
-
-
 def check_qr() -> str:
     try:
         import cv2
     except ImportError:
         return "не смогли: нет OpenCV, QR не проверен"
-    img = cv2.imread(str(GFX / "packshot.png"))
+    img = cv2.imread(str(GFX / "packshot.still.png"))  # кадр пэкшота из render_gfx.py
     text, _, _ = cv2.QRCodeDetector().detectAndDecode(img)
     return "годно: QR читается" if text == URL else f"не годно: QR прочитан как {text!r}"
 
@@ -244,7 +114,9 @@ def sfx() -> None:
     # всплывающее окно: короткий «дзынь»
     n4 = int(SR * 0.35)
     t4 = np.arange(n4) / SR
-    ding = (np.sin(2 * np.pi * 1320 * t4) + 0.5 * np.sin(2 * np.pi * 1980 * t4)) * env(n4, 0.002, 0.08)
+    ding = (np.sin(2 * np.pi * 1320 * t4) + 0.5 * np.sin(2 * np.pi * 1980 * t4)) * env(
+        n4, 0.002, 0.08
+    )
     wav("popup.wav", ding)
     # отключение: падающий тон «выдернули шнур»
     n5 = int(SR * 0.9)
@@ -253,22 +125,43 @@ def sfx() -> None:
     wav("powerdown.wav", np.sin(2 * np.pi * np.cumsum(fdown) / SR) * np.linspace(1, 0, n5) ** 1.5)
 
 
+def kit_prints() -> None:
+    """Спонсор на груди — печать, а не нашивка: знак + надпись одним цветом.
+
+    НАБЛЮДЕНО 2026-10-08, владелец о форме Адгара: «патчи выглядят дёшево и
+    нереалистично, ориентируйся на референс формы UFC». На референсе один
+    главный спонсор в центре груди — плоская белая печать (знак над словом),
+    лига на плече, имя на шортах. Мультяшный шеврон с пунктирной строчкой и
+    два десятка разномастных нашивок так не выглядят ни у кого.
+    """
+    refs = HERE / "refs"
+    # FREE VPN: щит-знак и строчное слово, белая печать
+    im = Image.new("RGBA", (900, 520), (0, 0, 0, 0))
+    d = ImageDraw.Draw(im)
+    cx = 450
+    shield = [(cx - 70, 40), (cx + 70, 40), (cx + 70, 150), (cx, 215), (cx - 70, 150)]
+    d.polygon(shield, fill=WHITE + (255,))
+    d.polygon(
+        [(cx - 44, 66), (cx + 44, 66), (cx + 44, 140), (cx, 182), (cx - 44, 140)], fill=(0, 0, 0, 0)
+    )
+    d.rectangle((cx - 22, 110, cx + 22, 150), fill=WHITE + (255,))
+    d.arc((cx - 18, 82, cx + 18, 122), 180, 360, fill=WHITE + (255,), width=8)
+    f = ImageFont.truetype(str(HERE / "fonts" / "Oswald-Variable.ttf"), 190)
+    f.set_variation_by_axes([700])
+    t = "freevpn"
+    d.text(((900 - d.textlength(t, font=f)) / 2, 225), t, font=f, fill=WHITE)
+    im.save(refs / "print_freevpn.png")
+    # АвгустVPN: жёлтая надпись бренда, без плашки
+    im = Image.new("RGBA", (1100, 300), (0, 0, 0, 0))
+    d = ImageDraw.Draw(im)
+    f = font("Black", 170)
+    t = "АвгустVPN"
+    d.text(((1100 - d.textlength(t, font=f)) / 2, 50), t, font=f, fill=YELLOW)
+    im.save(refs / "print_august.png")
+
+
 def main() -> None:
-    bug()
-    lower_third(
-        "adgar", "lower_adgar.png", "FREE VPN", "Адгар «Бесплатный» Фрибетов",
-        "150 кг · скорость: не измерялась · реклама: включена", RED,
-    )
-    lower_third(
-        "august", "lower_august.png", "АвгустVPN", "Август Побединский",
-        "77 кг · быстрее · надёжнее · безопаснее", YELLOW,
-    )
-    buffering()
-    connection_lost()
-    popups()
-    win_card()
-    packshot()
-    watermark()
+    kit_prints()
     sfx()
     print(check_qr())
 

@@ -111,6 +111,10 @@ class Production:
     extra_brands: tuple[str, ...] = field(default=())
     set_refs: tuple[SetRef, ...] = field(default=())
     budget_usd: float = 0.0  # 0 — бюджет не задан
+    #: С какого плана карты раскрыты. До него — настоящий бой, и слова из
+    #: `secret_words` нигде не звучат и не пишутся (владелец, 2026-10-08).
+    reveal_from: str = ""
+    secret_words: tuple[str, ...] = ()
 
 
 def load(path: str | Path) -> Production:
@@ -158,6 +162,8 @@ def load(path: str | Path) -> Production:
         shots=shots,
         extra_brands=tuple(raw.get("extra_brands", [])),
         budget_usd=float(raw.get("budget_usd", 0)),
+        reveal_from=raw.get("reveal_from", ""),
+        secret_words=tuple(raw.get("secret_words", [])),
         set_refs=tuple(
             SetRef(r["file"], r["what"], tuple(r.get("scenes", [])))
             for r in raw.get("set_refs", [])

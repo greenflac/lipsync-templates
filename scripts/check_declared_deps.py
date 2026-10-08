@@ -89,6 +89,7 @@ IMPORT_TO_PACKAGE = {
     "dateutil": "python-dateutil",
     "multipart": "python-multipart",
     "sentence_transformers": "sentence-transformers",
+    "websocket": "websocket-client",
 }
 
 

@@ -226,6 +226,50 @@ def check_continuity(prod: Production) -> list[Finding]:
     return out
 
 
+def secret_pattern(words: tuple[str, ...]) -> re.Pattern[str] | None:
+    if not words:
+        return None
+    # «слово» — целиком; «основа*» — с любым окончанием (русские падежи)
+    alts = [re.escape(w[:-1]) + r"\w*" if w.endswith("*") else re.escape(w) + r"\b" for w in words]
+    return re.compile(r"\b(" + "|".join(alts) + r")", re.IGNORECASE)
+
+
+def check_reveal(prod: Production) -> list[Finding]:
+    """Карты не раскрываются раньше времени.
+
+    НАБЛЮДЕНО 2026-10-08, владелец о сценарии v2: реплики «Я бесплатный, мной
+    все пользуются» — «кринж и детский сад»; «до последнего момента всё должно
+    выглядеть как реальный бой, карты раскрываются в конце». Сценарий v2 называл
+    продукт в каждой сцене — и в репликах, и в звуке, и в назначении плана,
+    которое компилятор отдаёт модели в `summary`.
+    """
+    pat = secret_pattern(prod.secret_words)
+    if not prod.reveal_from:
+        return []
+    ids = [s.id for s in prod.shots]
+    if prod.reveal_from not in ids:
+        return [
+            Finding("*", VIOLATION, "reveal", f"reveal_from={prod.reveal_from!r}: нет такого плана")
+        ]
+    if pat is None:
+        return [
+            Finding("*", RISK, "reveal", "reveal_from задан, а secret_words пуст — проверять нечем")
+        ]
+    out: list[Finding] = []
+    for shot in prod.shots[: ids.index(prod.reveal_from)]:
+        for where, text in _texts(shot):
+            if m := pat.search(text):
+                out.append(
+                    Finding(
+                        shot.id,
+                        VIOLATION,
+                        "reveal",
+                        f"{where}: «{m.group(0)}» до развязки ({prod.reveal_from}) раскрывает карты",
+                    )
+                )
+    return out
+
+
 def check(prod: Production) -> list[Finding]:
     found: list[Finding] = []
     ids: set[str] = set()
@@ -252,6 +296,7 @@ def check(prod: Production) -> list[Finding]:
         ids.add(s.id)
         found.extend(check_shot(prod, s))
     found.extend(check_continuity(prod))
+    found.extend(check_reveal(prod))
     return found
 
 
