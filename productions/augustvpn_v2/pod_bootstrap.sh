@@ -54,6 +54,17 @@ for d in diffusion_models text_encoders vae model_patches; do
   for x in "$W/h3/$d"/*.safetensors; do ln -sf "$x" "$M/$d/$(basename "$x")"; done
 done
 
+# Без --disable-dynamic-vram контейнер падает на 0-м шаге сэмплера, как только
+# в графе есть Fun ControlNet: ComfyUI пишет «prepared for dynamic VRAM loading»
+# для патча и для H3, затем процесс умирает без ошибки Python и без OOM.
+# С флагом модели грузятся целиком и рендер проходит (замер 2026-10-08,
+# S04 c0.8, 376 с). /start.sh читает этот файл при старте контейнера, поэтому
+# на свежем поде после bootstrap нужен один перезапуск контейнера.
+A=/workspace/runpod-slim/comfyui_args.txt
+grep -qx -- --disable-dynamic-vram "$A" 2>/dev/null || printf -- '--disable-dynamic-vram\n--highvram\n' >> "$A"
+curl -s localhost:8188/system_stats | grep -q disable-dynamic-vram \
+  || echo "ВНИМАНИЕ: ComfyUI запущен без --disable-dynamic-vram — перезапустите контейнер"
+
 echo "== $(date -u +%T) проверка: ComfyUI видит модели"
 for d in diffusion_models text_encoders vae model_patches; do
   echo "$d: $(curl -s localhost:8188/models/$d)"
