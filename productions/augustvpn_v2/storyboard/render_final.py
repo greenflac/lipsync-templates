@@ -24,7 +24,7 @@ OUT = Path(sys.argv[1])
 # по видео скелета CONTROL[план] на силе 0.7 (Fun ControlNet Union, поза)
 ONLY = {a.split(":")[0] for a in sys.argv[2:]}
 STRENGTH = {a.split(":")[0]: float(a.split(":")[1]) for a in sys.argv[2:] if ":" in a}
-CONTROL = {"S04": "s04_pose.mp4"}
+CONTROL = {"S04": "s04_pose.mp4", "S06": "s06_pose.mp4"}
 
 AUG = "the lean blond fighter with a very short buzzcut in the black fight jersey with the yellow АвгустVPN print"
 ADG = "the giant bearded super-heavyweight in the dark red and black fight jersey with the white freevpn print"
