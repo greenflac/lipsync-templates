@@ -127,6 +127,15 @@ class Clip:
     #: на audio_tail с, с фейдом, — как в живом монтаже. None — значения листа.
     audio_lead: float | None = None
     audio_tail: float | None = None
+    #: Звук плана из другого дубля: имя рендера (без .mp4) и секунда в нём,
+    #: соответствующая src_in. 2026-10-08: принятый дубль S04 (движение по позе
+    #: из эфира) короче фразы диктора, имя Адгара есть только в длинном дубле
+    #: без позы. Голос диктора за кадром, губы не видны — звук берётся оттуда.
+    audio_from: str = ""
+    audio_in: float | None = None
+    #: Картинка из конкретного дубля плана (имя рендера без .mp4), а не из
+    #: принятого в `takes`: один план может стоять в монтаже кусками разных дублей.
+    take: str = ""
 
     @property
     def length(self) -> float:
@@ -149,6 +158,10 @@ class Edit:
     audio_tail: float = 0.35
     loudness_lufs: float = -14.0
     true_peak_db: float = -1.0
+    #: Принятый владельцем дубль плана: id плана → имя рендера без .mp4.
+    #: Без записи берётся самый свежий файл плана. 2026-10-08: свежий — не
+    #: значит принятый (S06 по позе отклонён, в монтаж идёт прежний S06).
+    takes: dict[str, str] = field(default_factory=dict)
     extra: dict[str, Any] = field(default_factory=dict)
 
     @property
@@ -184,14 +197,20 @@ def load(path: str | Path) -> Edit:
             mutes=tuple(Glitch(float(g["t"]), float(g["dur"])) for g in c.get("mutes", [])),
             audio_lead=float(c["audio_lead"]) if "audio_lead" in c else None,
             audio_tail=float(c["audio_tail"]) if "audio_tail" in c else None,
+            audio_from=c.get("audio_from", ""),
+            audio_in=float(c["audio_in"]) if "audio_in" in c else None,
+            take=c.get("take", ""),
         )
         for c in raw["clips"]
     )
     # Общая графика привязывается к планам («from»/«to» — id плана), а не к
     # секундам: после подгонки in/out по реальным рендерам секунды уезжают.
-    starts, t0 = {}, 0.0
+    # План может стоять в монтаже дважды (перебивка): «from» — его первое
+    # появление, «to» — последнее.
+    starts: dict[str, tuple[float, float]] = {}
+    t0 = 0.0
     for c in clips:
-        starts[c.shot] = (t0, t0 + c.length)
+        starts[c.shot] = (starts.get(c.shot, (t0, 0.0))[0], t0 + c.length)
         t0 += c.length
 
     def glob(items: list[dict[str, Any]]) -> tuple[Overlay, ...]:
@@ -218,6 +237,7 @@ def load(path: str | Path) -> Edit:
         audio_tail=float(raw.get("audio_tail", 0.35)),
         loudness_lufs=float(raw.get("loudness_lufs", -14)),
         true_peak_db=float(raw.get("true_peak_db", -1)),
+        takes=dict(raw.get("takes", {})),
     )
 
 
@@ -262,6 +282,8 @@ def problems(
                 out.append(f"{tag}: субтитр «{s.text[:20]}…» шире кадра — разбить на два")
             if len(s.text) / max(s.dur, 0.1) > 20:
                 out.append(f"{tag}: субтитр «{s.text[:20]}…» не успеть прочитать (>20 знаков/с)")
+        if c.audio_from and c.holds:
+            out.append(f"{tag}: стоп-кадр и звук из другого дубля вместе не поддержаны")
         if c.still and not (base / c.still).exists():
             out.append(f"{tag}: нет картинки {c.still}")
         for g in c.glitches:
@@ -315,6 +337,7 @@ def _segment_cmd(
     slate_text: str,
     fade_in: bool = True,
     fade_out: bool = True,
+    audio_src: Path | None = None,
 ) -> list[str]:
     """Команда ffmpeg, собирающая один план в промежуточный файл единого формата."""
     length = c.length
@@ -374,6 +397,12 @@ def _segment_cmd(
             f"fps={FPS},format=yuv420p[v0]"
         )
         a = "[ac]"
+        if audio_src is not None:
+            ai = c.src_in if c.audio_in is None else c.audio_in
+            inputs += ["-i", str(audio_src)]
+            chain.append("[ac]anullsink")
+            chain.append(f"[1:a]atrim={ai:.3f}:{ai + length:.3f},asetpts=PTS-STARTPTS[ax]")
+            a = "[ax]"
     # графика плана
     idx = sum(1 for x in inputs if x == "-i")
     cur = "[v0]"
@@ -471,7 +500,14 @@ def handles(e: Edit, c: Clip, src_len: float) -> tuple[float, float]:
         return 0.0, 0.0
     lead = e.audio_lead if c.audio_lead is None else c.audio_lead
     tail = e.audio_tail if c.audio_tail is None else c.audio_tail
-    return max(0.0, min(lead, c.src_in)), max(0.0, min(tail, src_len - c.src_out))
+    a_in, a_out = audio_span(c)
+    return max(0.0, min(lead, a_in)), max(0.0, min(tail, src_len - a_out))
+
+
+def audio_span(c: Clip) -> tuple[float, float]:
+    """Отрезок звукового исходника плана (свой рендер или `audio_from`)."""
+    a_in = c.src_in if c.audio_in is None else c.audio_in
+    return a_in, a_in + c.src_out - c.src_in
 
 
 def assemble(
@@ -493,19 +529,24 @@ def assemble(
         handle_parts: list[tuple[Path, float, float, float, str, float]] = []
         t0 = 0.0
         for i, c in enumerate(e.clips):
-            src = renders.get(c.shot)
+            src = renders.get(c.take or c.shot)
             if src is None and not c.still:
                 slates.append(c.shot)
-            lead, tail = handles(e, c, duration(src)) if src is not None else (0.0, 0.0)
+            asrc = renders.get(c.audio_from) if c.audio_from else src
+            lead, tail = handles(e, c, duration(asrc)) if asrc is not None else (0.0, 0.0)
             seg = Path(tmp) / f"seg{i:02d}.mkv"
             slate = f"{c.shot} · нет рендера\n{purposes.get(c.shot) or c.note}"
-            cmd = _segment_cmd(c, src, base, seg, slate, fade_in=lead <= 0, fade_out=tail <= 0)
+            cmd = _segment_cmd(
+                c, src, base, seg, slate, fade_in=lead <= 0, fade_out=tail <= 0,
+                audio_src=asrc if c.audio_from else None,
+            )
             subprocess.run(cmd, check=True)
             segs.append(seg)
-            if src is not None and lead > 0:
-                handle_parts.append((src, c.src_in - lead, lead, t0 - lead, "in", c.gain_db))
-            if src is not None and tail > 0:
-                handle_parts.append((src, c.src_out, tail, t0 + c.length, "out", c.gain_db))
+            a_in, a_out = audio_span(c)
+            if asrc is not None and lead > 0:
+                handle_parts.append((asrc, a_in - lead, lead, t0 - lead, "in", c.gain_db))
+            if asrc is not None and tail > 0:
+                handle_parts.append((asrc, a_out, tail, t0 + c.length, "out", c.gain_db))
             t0 += c.length
         lst = Path(tmp) / "list.txt"
         lst.write_text("".join(f"file '{s}'\n" for s in segs), encoding="utf-8")
@@ -552,11 +593,13 @@ def assemble(
                 f"adelay={ms}|{ms}[bed{k}]"
             )
             mix.append(f"[bed{k}]")
+        # alimiter по умолчанию сам поднимает уровень (level=true) и сводит на
+        # нет loudnorm: замер 2026-10-08 — −12.6 LUFS при цели −14
         chain.append(
             "".join(mix)
             + f"amix=inputs={len(mix)}:duration=first:normalize=0,"
             + f"loudnorm=I={e.loudness_lufs}:TP={e.true_peak_db}:LRA=11,"
-            f"alimiter=limit={10 ** (e.true_peak_db / 20):.4f},aresample={AR}[aout]"
+            f"alimiter=limit={10 ** (e.true_peak_db / 20):.4f}:level=disabled,aresample={AR}[aout]"
         )
         out.parent.mkdir(parents=True, exist_ok=True)
         subprocess.run(
@@ -568,3 +611,14 @@ def assemble(
             check=True,
         )
     return slates
+
+
+def integrated_lufs(path: Path) -> float | None:
+    log = subprocess.run(
+        ["ffmpeg", "-v", "info", "-i", str(path), "-af", "ebur128", "-f", "null", "-"],
+        capture_output=True,
+        text=True,
+    ).stderr
+    m = re.findall(r"I:\s+(-?[\d.]+) LUFS", log)
+    return float(m[-1]) if m else None
+

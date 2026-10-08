@@ -149,17 +149,29 @@ def _edit(path: str, edit_path: str, renders_dir: str, out: str, watermark: bool
     if bad:
         return 1
     renders: dict[str, Path] = {}
-    for shot in prod.shots:  # самый свежий файл плана; принятый дубль кладётся последним
+    for shot in prod.shots:  # принятый дубль из листа, иначе самый свежий файл плана
+        if shot.id in e.takes:
+            renders[shot.id] = Path(renders_dir) / f"{e.takes[shot.id]}.mp4"
+            continue
         found = sorted(Path(renders_dir).glob(f"{shot.id}*.mp4"), key=lambda p: p.stat().st_mtime)
         if found:
             renders[shot.id] = found[-1]
+    for c in e.clips:  # картинка или звук из другого дубля
+        for name in (c.take, c.audio_from):
+            if name:
+                renders[name] = Path(renders_dir) / f"{name}.mp4"
+    missing = [str(p) for p in renders.values() if not p.exists()]
+    for m in missing:
+        print("не годно: нет файла дубля", m)
+    if missing:
+        return 1
     # склейка не режет слово (2026-10-08: «монтаж рваный, обрезается ровно в
     # конце фразы»); слова берутся из Whisper и кэшируются рядом с рендером
     from studio.shoot import speech
 
     cut_bad: list[str] = []
     for c in e.clips:
-        src = renders.get(c.shot)
+        src = renders.get(c.audio_from or c.take or c.shot)
         if src is None or c.still:
             continue
         ws = speech.words(src)
@@ -167,7 +179,8 @@ def _edit(path: str, edit_path: str, renders_dir: str, out: str, watermark: bool
             print(f"не смогли: {c.shot} — нет faster-whisper, склейки по словам не проверены")
             continue
         lead, tail = edit.handles(e, c, edit.duration(src))
-        cut_bad += speech.cut_problems(c.shot, c.src_in, c.src_out, lead, tail, ws)
+        a_in, a_out = edit.audio_span(c)
+        cut_bad += speech.cut_problems(c.shot, a_in, a_out, lead, tail, ws)
     for b in cut_bad:
         print("не годно:", b)
     if cut_bad:
@@ -175,6 +188,7 @@ def _edit(path: str, edit_path: str, renders_dir: str, out: str, watermark: bool
     purposes = {s.id: s.purpose for s in prod.shots}
     slates = edit.assemble(e, base, renders, purposes, Path(out), watermark=watermark)
     print(f"{out}: {e.length:.1f} с; рендеров {len(renders)}, слейтов {len(slates)}")
+    print(f"  громкость {edit.integrated_lufs(Path(out))} LUFS при цели {e.loudness_lufs}")
     for sid, p in sorted(renders.items()):
         print(f"  {sid:20} ← {p.name}")
     return 0
