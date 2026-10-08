@@ -20,7 +20,11 @@ URL = "https://95ukq3ajnnl2f3-8188.proxy.runpod.net"
 SB = Path(__file__).parent
 KF = Path("/tmp/claude-0/-home-user-lipsync-templates/1e036219-dc10-53a7-8a45-91e1fc6e693e/scratchpad/sb")
 OUT = Path(sys.argv[1])
-ONLY = set(sys.argv[2:])
+# аргумент «S04» — план как есть; «S04:0.7» — план с управлением движением
+# по видео скелета CONTROL[план] на силе 0.7 (Fun ControlNet Union, поза)
+ONLY = {a.split(":")[0] for a in sys.argv[2:]}
+STRENGTH = {a.split(":")[0]: float(a.split(":")[1]) for a in sys.argv[2:] if ":" in a}
+CONTROL = {"S04": "s04_pose.mp4"}
 
 AUG = "the lean blond fighter with a very short buzzcut in the black fight jersey with the yellow АвгустVPN print"
 ADG = "the giant bearded super-heavyweight in the dark red and black fight jersey with the white freevpn print"
@@ -96,8 +100,8 @@ def prompt(desc: str, sound: str) -> str:
     )
 
 
-def graph(img: str, text: str, frames: int, seed: int, prefix: str) -> dict:
-    return {
+def graph(img: str, text: str, frames: int, seed: int, prefix: str, control: str = "", strength: float = 0.0) -> dict:
+    g = {
         "1": {"class_type": "UNETLoader", "inputs": {"unet_name": "minimax_h3_fl2va_pruned_fp8_scaled.safetensors", "weight_dtype": "default"}},
         "2": {"class_type": "CLIPLoader", "inputs": {"clip_name": "qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors", "type": "minimax", "device": "default"}},
         "3": {"class_type": "VAELoader", "inputs": {"vae_name": "minimax_h3_video_vae_fp16.safetensors"}},
@@ -114,6 +118,14 @@ def graph(img: str, text: str, frames: int, seed: int, prefix: str) -> dict:
         "18": {"class_type": "CreateVideo", "inputs": {"images": ["16", 0], "audio": ["17", 0], "fps": 24}},
         "19": {"class_type": "SaveVideo", "inputs": {"video": ["18", 0], "filename_prefix": prefix, "format": "mp4", "codec": "auto"}},
     }
+    if control:
+        g["30"] = {"class_type": "LoadVideo", "inputs": {"file": control}}
+        g["31"] = {"class_type": "GetVideoComponents", "inputs": {"video": ["30", 0]}}
+        g["32"] = {"class_type": "ModelPatchLoader", "inputs": {"name": "MiniMax-H3-Fun-Controlnet-Union-2.0.safetensors"}}
+        g["33"] = {"class_type": "MiniMaxH3FunControlNetApply", "inputs": {"model": ["1", 0], "model_patch": ["32", 0], "vae": ["3", 0], "strength": strength, "start_percent": 0.0, "end_percent": 1.0, "control_video": ["31", 0]}}
+        g["11"]["inputs"]["model"] = ["33", 0]
+        g["13"]["inputs"]["model"] = ["33", 0]
+    return g
 
 
 OUT.mkdir(parents=True, exist_ok=True)
@@ -126,8 +138,12 @@ for i, (sid, kf, frames, desc, sound) in enumerate(SHOTS):
     requests.post(f"{URL}/upload/image", files={"image": (name, p.read_bytes())}, data={"overwrite": "true"}, timeout=120)
     text = prompt(desc, sound)
     (OUT / f"{sid}.prompt.txt").write_text(text, encoding="utf-8")
-    r = requests.post(f"{URL}/prompt", json={"prompt": graph(name, text, frames, 500 + i, f"final/{sid}")}, timeout=60).json()
-    jobs[sid] = r.get("prompt_id")
+    st = STRENGTH.get(sid, 0.0)
+    ctl = CONTROL.get(sid, "") if st else ""
+    tag = f"{sid}_c{int(st * 100)}" if ctl else sid
+    r = requests.post(f"{URL}/prompt", json={"prompt": graph(name, text, frames, 500 + i, f"final/{tag}", ctl, st)}, timeout=60).json()
+    jobs[tag] = r.get("prompt_id")
+    sid = tag
     print(sid, "queued", r.get("prompt_id"), r.get("node_errors") or "", flush=True)
 
 t0 = time.time()
