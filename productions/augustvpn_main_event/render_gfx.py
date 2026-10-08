@@ -165,7 +165,7 @@ function render(t){
 
 
 name_super("name_adgar", "Adgar", "Fribetov", "18-0-0", "Red corner", "#ff5059", "#7a0d13")
-name_super("name_august", "August", "Pobedinsky", "21-1-0", "Blue corner", "#4f95ff", "#0b2f6b")
+name_super("name_august", "August", "Pobedinsky", "21-0-0", "Black corner", "#d9d9d9", "#2b2b2b")
 
 # ---------------------------------------------------------------- табло боя с идущими часами
 element(
