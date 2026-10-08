@@ -74,8 +74,14 @@ def panel(src, overlays, mark):
     if mark == "spinner":
         spinner(d, 860, 700)
     if mark == "dino":
-        d.rectangle([600, 1000, 1000, 1160], fill=(255, 255, 255, 200))
-        dino(d, 640, 1010)
+        # Адгар рассыпается на пиксели: мозаика по его телу
+        box = (720, 1000, 1080, 1560)
+        reg = im.crop(box)
+        reg = reg.resize((reg.width // 28, reg.height // 28), Image.NEAREST).resize(reg.size, Image.NEAREST)
+        im.paste(reg, box)
+        d = ImageDraw.Draw(im)
+        # динозаврик бежит по настилу от него к краю клетки, без подложки
+        dino(d, 380, 1420, 11)
     return im.convert("RGB")
 
 
