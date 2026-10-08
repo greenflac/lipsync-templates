@@ -29,15 +29,23 @@ def run(pod_id: str, command: str, timeout_s: int = 120, password: str = "") -> 
 
     base = f"https://{pod_id}-8888.proxy.runpod.net"
     s = requests.Session()
-    s.get(base + "/login", timeout=30)
-    r = s.post(
-        base + "/login",
-        data={"password": password, "_xsrf": s.cookies.get("_xsrf", "")},
-        timeout=30,
-        allow_redirects=False,
-    )
-    if r.status_code not in (200, 302):
-        raise RuntimeError(f"вход в JupyterLab пода не удался: HTTP {r.status_code}")
+    # НАБЛЮДЕНО 2026-10-08: сразу после старта пода прокси минуту-две отвечает
+    # то 404, то 502, пока поднимаются JupyterLab и ComfyUI. Это не отказ.
+    status = 0
+    for _ in range(12):
+        s.get(base + "/login", timeout=30)
+        r = s.post(
+            base + "/login",
+            data={"password": password, "_xsrf": s.cookies.get("_xsrf", "")},
+            timeout=30,
+            allow_redirects=False,
+        )
+        status = r.status_code
+        if status in (200, 302):
+            break
+        time.sleep(10)
+    else:
+        raise RuntimeError(f"вход в JupyterLab пода не удался: HTTP {status}")
     hdr = {"X-XSRFToken": s.cookies.get("_xsrf", "")}
     term = s.post(base + "/api/terminals", headers=hdr, timeout=30).json()["name"]
     cookie = "; ".join(f"{k}={v}" for k, v in s.cookies.items())
