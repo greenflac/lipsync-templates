@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+# Run the gate on exactly what CI will see, before pushing.
+#
+# WHY THIS EXISTS
+#
+# Two corpora are deliberately not committed — `gallery_prompts.jsonl` (4601
+# rows) and `civitai_prompts.jsonl` (473) — because this repository is public
+# and the material is a third party's. So a working copy always holds MORE than
+# CI does, and `scripts/check` here answers a question CI is not asked.
+#
+# That gap has now cost three red pushes in two days, every one of them green
+# locally: a gate that required a file only present here; tests that built the
+# real index; and a loader whose default quietly restored a source a test had
+# switched off. Each was found by CI disagreeing with a laptop, which is the
+# slowest and most public way to find anything.
+#
+# The mechanism is a detached worktree at HEAD. Git checks out exactly the
+# committed tree — no ignored files, no untracked ones — which IS CI's view.
+# Nothing in the real working copy is moved, hidden or restored, because the
+# hand-rolled version of this (mv the corpora away, run, mv them back) leaves
+# the repository broken if the run dies in the middle.
+#
+#     bash scripts/check_as_ci
+#
+# Exit code is the gate's own. Run it before every push; `scripts/check` alone
+# is necessary and not sufficient.
+#
+# ONE CAVEAT, AND IT MATTERS: this checks HEAD, not the working tree. That is
+# the point — CI checks HEAD too — but it means an uncommitted fix is invisible
+# here. Commit first, then run this, then push.
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+WORKTREE="$(mktemp -d)/ci"
+cleanup() {
+  git worktree remove --force "$WORKTREE" >/dev/null 2>&1 || true
+  rm -rf "$(dirname "$WORKTREE")"
+}
+trap cleanup EXIT
+
+echo "== клон только из закоммиченного (HEAD), как его видит CI"
+git worktree add --detach "$WORKTREE" HEAD >/dev/null 2>&1
+
+for corpus in gallery_prompts.jsonl civitai_prompts.jsonl; do
+  if [ -e "$WORKTREE/studio/knowledge/$corpus" ]; then
+    echo "ВНИМАНИЕ: $corpus оказался в коммите — этот прогон уже не как в CI"
+  fi
+done
+
+cd "$WORKTREE"
+bash scripts/check

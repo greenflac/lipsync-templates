@@ -1,0 +1,121 @@
+// Что АНГЛОЯЗЫЧНЫЙ заказчик УЖЕ ПРИНЁС: контрольный набор в обе стороны.
+//
+// ФОРМАТ ТОТ ЖЕ, что у `brought_inputs.jsonl`, и поле ожидания то же — `принёс`.
+// Второго формата для одного знания не заводится (Е1).
+//
+// ЗАЧЕМ. ИЗМЕРЕНО 2026-09-07 независимой приёмкой и перемерено этим набором:
+// английское владение узнавалось ВТРОЕ хуже русского. На наборе ниже
+// `planner.принесено` узнавал 6 строк из 54 (11%), тогда как русский
+// `brought_inputs.jsonl` — 28 из 28 (100%). Симптом у заказчика тот же, что
+// был на русской стороне: круг вопроса, из которого нет выхода —
+//
+//   'Lip sync our footage'                     -> вопрос: Do you already have the video shot…?
+//   'Lip sync our footage. The video is ready' -> ТОТ ЖЕ вопрос на ответ заказчика
+//
+// — и лишний оплачиваемый шаг `генерация_видео` с пометкой «видео никем не
+// производится и на входе его нет» на брифе, где сказано «our footage».
+//
+// ПОЛЕ `принёс` — КОНСТАНТА-РЕШЕНИЕ. Пустой список — тоже ожидание, и строки
+// с ним НЕГАТИВНЫЙ КОНТРОЛЬ (И5): английские притяжательные `my`/`our` сами
+// по себе владением НЕ являются — «I need my video made» это просьба, — и без
+// этих строк правило «считать принесённым всё, где есть my/our + слово входа»
+// прошло бы набор целиком.
+//
+// У КАЖДОЙ ПРЕДЛАГАЕМОЙ СТРОКИ РАЗБОРА ЕСТЬ ЗДЕСЬ СВОЙ КОНТРОЛЬ. Проверено
+// мутацией Т1: строки предложения снимались по одной, и на каждой краснел
+// хотя бы один id набора (у `my video` — три: en_v02, en_v24, en_v33). Строк
+// предложения, не покрасивших ничего, в наборе не оставлено: они из
+// предложения ВЫЧЕРКНУТЫ, а не оставлены «на всякий случай».
+//
+// Идентификаторы НЕ СПЛОШНЫЕ (нет `en_v04`): строка «my recording is done»
+// переехала вниз, в записанную границу — см. конец файла.
+{"id": "en_v01", "принёс": ["видео"], "бриф": "lip sync our footage"}
+{"id": "en_v02", "принёс": ["видео"], "бриф": "use my video"}
+{"id": "en_v03", "принёс": ["видео"], "бриф": "the clip is ready"}
+{"id": "en_v05", "принёс": ["видео"], "бриф": "the footage is here"}
+{"id": "en_v06", "принёс": ["видео"], "бриф": "we already have the footage, need lip sync"}
+{"id": "en_v07", "принёс": ["видео"], "бриф": "i have the video, please re-voice it"}
+{"id": "en_v08", "принёс": ["видео"], "бриф": "we shot the video last week"}
+{"id": "en_v09", "принёс": ["видео"], "бриф": "here is my clip, sync the lips"}
+{"id": "en_v10", "принёс": ["видео"], "бриф": "our video is ready for lip sync"}
+{"id": "en_v11", "принёс": ["видео"], "бриф": "attached is the mp4, make it talk"}
+{"id": "en_v12", "принёс": ["видео"], "бриф": "i uploaded the footage"}
+{"id": "en_v13", "принёс": ["видео"], "бриф": "i sent you the video"}
+{"id": "en_v14", "принёс": ["видео"], "бриф": "the video has been shot"}
+{"id": "en_v15", "принёс": ["видео"], "бриф": "we filmed the video on a phone, needs dubbing"}
+{"id": "en_v16", "принёс": ["видео"], "бриф": "lip sync on existing footage"}
+{"id": "en_v17", "принёс": ["видео"], "бриф": "please lip sync the video i provided"}
+{"id": "en_v18", "принёс": ["видео"], "бриф": "we've got a clip already"}
+{"id": "en_v19", "принёс": ["видео"], "бриф": "take our footage and re-dub it"}
+{"id": "en_v20", "принёс": ["видео"], "бриф": "the raw footage is done, budget $0.05 per second"}
+{"id": "en_v22", "принёс": ["видео"], "бриф": "lip sync my own video"}
+{"id": "en_v23", "принёс": ["видео"], "бриф": "my video is ready, need a new soundtrack"}
+{"id": "en_a01", "принёс": ["аудио"], "бриф": "i have the voiceover already, lip sync it"}
+{"id": "en_a02", "принёс": ["аудио"], "бриф": "my audio track is ready"}
+{"id": "en_a03", "принёс": ["аудио"], "бриф": "we recorded the narration, need lip sync"}
+{"id": "en_a04", "принёс": ["аудио"], "бриф": "here is my mp3 with the voiceover"}
+{"id": "en_b01", "принёс": ["аудио", "видео"], "бриф": "i have the video and the audio, just sync them"}
+{"id": "en_v24", "принёс": ["видео"], "бриф": "please lip sync my video"}
+{"id": "en_v25", "принёс": ["видео"], "бриф": "we need lip sync on our footage"}
+{"id": "en_a05", "принёс": ["аудио"], "бриф": "sync the lips to my voiceover"}
+{"id": "en_a06", "принёс": ["аудио"], "бриф": "please lip sync using our narration"}
+{"id": "en_v26", "принёс": ["видео"], "бриф": "i filmed the video yesterday"}
+{"id": "en_v27", "принёс": ["видео"], "бриф": "the video was shot last month"}
+{"id": "en_v28", "принёс": ["видео"], "бриф": "the clips are ready"}
+{"id": "en_v29", "принёс": ["видео"], "бриф": "we sent the footage over"}
+{"id": "en_v30", "принёс": ["видео"], "бриф": "we uploaded the clip"}
+{"id": "en_v31", "принёс": ["видео"], "бриф": "here is the mp4"}
+{"id": "en_v32", "принёс": ["видео"], "бриф": "i've got the footage"}
+{"id": "en_v33", "принёс": ["видео"], "бриф": "please dub my video"}
+{"id": "en_v34", "принёс": ["видео"], "бриф": "please use my footage"}
+{"id": "en_v35", "принёс": ["видео"], "бриф": "please take our clip and re-voice it"}
+{"id": "en_a07", "принёс": ["аудио"], "бриф": "please lip sync to our audio"}
+{"id": "en_a08", "принёс": ["аудио"], "бриф": "we provided the mp3"}
+{"id": "en_v36", "принёс": ["видео"], "бриф": "lip sync our video"}
+{"id": "en_v37", "принёс": ["видео"], "бриф": "sync my clip"}
+{"id": "en_v38", "принёс": ["видео"], "бриф": "our reel is ready"}
+{"id": "en_v39", "принёс": ["видео"], "бриф": "lip sync our reel"}
+{"id": "en_v40", "принёс": ["видео"], "бриф": "dub my reel"}
+{"id": "en_a09", "принёс": ["аудио"], "бриф": "lip sync to my audio"}
+{"id": "en_a10", "принёс": ["аудио"], "бриф": "lip sync to my narration"}
+{"id": "en_a11", "принёс": ["аудио"], "бриф": "lip sync to my mp3"}
+{"id": "en_a12", "принёс": ["аудио"], "бриф": "lip sync to our voiceover"}
+{"id": "en_a13", "принёс": ["аудио"], "бриф": "lip sync to our mp3"}
+{"id": "en_a14", "принёс": ["аудио"], "бриф": "please use our audio track"}
+{"id": "en_v41", "принёс": ["видео"], "бриф": "the reel is ready"}
+// НЕГАТИВНЫЕ КОНТРОЛИ (И5): владения нет, вход плана пуст.
+// en_n01..en_n09 — просьба без владения; en_n10, en_n13..en_n24 — притяжательное
+// ВНУТРИ просьбы («we want our video made»), то есть ровно тот вход, на котором
+// правило «my/our = владение» обязано сказать «нет».
+{"id": "en_n01", "принёс": [], "бриф": "I need a video"}
+{"id": "en_n02", "принёс": [], "бриф": "we want a clip"}
+{"id": "en_n03", "принёс": [], "бриф": "make me a talking head"}
+{"id": "en_n04", "принёс": [], "бриф": "no footage yet"}
+{"id": "en_n05", "принёс": [], "бриф": "the video is not ready"}
+{"id": "en_n06", "принёс": [], "бриф": "I need my video made"}
+{"id": "en_n07", "принёс": [], "бриф": "we don't have any footage"}
+{"id": "en_n08", "принёс": [], "бриф": "please make our clip from scratch"}
+{"id": "en_n09", "принёс": [], "бриф": "Write a blog post about the generative video market"}
+{"id": "en_n10", "принёс": [], "бриф": "we want our own video generated, nothing is shot"}
+{"id": "en_n11", "принёс": [], "бриф": "I want a 30 second product video for my skincare brand"}
+{"id": "en_n12", "принёс": [], "бриф": "create a commercial for us, no video available"}
+{"id": "en_n13", "принёс": [], "бриф": "we need our footage shot first"}
+{"id": "en_n14", "принёс": [], "бриф": "make my clip from scratch"}
+{"id": "en_n15", "принёс": [], "бриф": "i want you to make our video"}
+{"id": "en_n16", "принёс": [], "бриф": "we need a clip made for our brand"}
+{"id": "en_n17", "принёс": [], "бриф": "we want our own footage generated"}
+{"id": "en_n18", "принёс": [], "бриф": "we'd like our video created from scratch"}
+{"id": "en_n19", "принёс": [], "бриф": "generate our clip from the script"}
+{"id": "en_n20", "принёс": [], "бриф": "create my video for instagram"}
+{"id": "en_n21", "принёс": [], "бриф": "the clips are not ready yet"}
+{"id": "en_n22", "принёс": [], "бриф": "please make a video from our brand guidelines"}
+{"id": "en_n23", "принёс": [], "бриф": "we want our video made from scratch"}
+{"id": "en_n24", "принёс": [], "бриф": "i want my footage generated by ai"}
+// ЗАПИСАННАЯ ГРАНИЦА (И6), А НЕ ПОБЕДА. Слово `recording` в СЛОВА_ВХОДА НЕ
+// добавляется: по-английски оно означает и снятое видео, и записанную
+// дорожку, и ошибиться здесь в сторону «видео есть» значит МОЛЧА УКОРОТИТЬ
+// план. Продукт по этим двум строкам обязан ПЕРЕСПРОСИТЬ (вход пуст ->
+// задаётся вопрос про исходник), а не угадать: ошибка в эту сторону стоит
+// одного вопроса, в обратную — целого шага.
+{"id": "en_g01", "принёс": [], "бриф": "my recording is done"}
+{"id": "en_g02", "принёс": [], "бриф": "our recording is ready"}
