@@ -35,6 +35,7 @@ M=/workspace/runpod-slim/ComfyUI/models
 
 echo "== $(date -u +%T) веса H3 ($H3_REPO@${H3_REV:0:8})"
 for f in diffusion_models/minimax_h3_ref2va_pruned_fp8_scaled.safetensors \
+         diffusion_models/minimax_h3_fl2va_pruned_fp8_scaled.safetensors \
          text_encoders/qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors \
          vae/minimax_h3_video_vae_fp16.safetensors \
          vae/minimax_h3_audio_vae_fp32.safetensors; do
