@@ -448,6 +448,10 @@ from __future__ import annotations
             "prompt_upsampling",
             "prompt_upsampling_scope",
             "negative_prompts",
+            # Единственное число — имя параметра у большинства API; так его
+            # записали 2026-10-14 для minimax-h3/-h3-max. Одна семья с
+            # множественным: вопрос один — «как пишется отрицательный промт».
+            "negative_prompt",
             "lipsync_prompt_rule",
             "dialogue_prompt_rule",
             "hex_color_control",

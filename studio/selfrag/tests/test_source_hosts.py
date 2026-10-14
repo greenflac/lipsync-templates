@@ -420,6 +420,32 @@ class ComfyOrgIsAPlatformNotARepository(unittest.TestCase):
         assert got == "blog", got
 
 
+class NanoBananaIsGooglesName(unittest.TestCase):
+    """`nano-banana-pro` is `gemini-3-pro-image` under Google's product name;
+    since the 2026-10-14 id migration the facts read on ai.google.dev live under
+    it, and they must stay on the vendor rung."""
+
+    def test_google_docs_are_vendor_for_nano_banana_pro(self) -> None:
+        got = S.classify(
+            "nano-banana-pro",
+            "https://ai.google.dev/gemini-api/docs/image-generation",
+            vendor_tier="vendor",
+            portal_tier="portal",
+            blog_tier="blog",
+        )
+        assert got == "vendor", got
+
+    def test_THE_NEGATIVE_CONTROL_a_lookalike_name_is_not_google(self) -> None:
+        got = S.classify(
+            "nanobananas-lora",
+            "https://ai.google.dev/gemini-api/docs/image-generation",
+            vendor_tier="vendor",
+            portal_tier="portal",
+            blog_tier="blog",
+        )
+        assert got == "blog", got
+
+
 class ОткрывшиесяХосты(unittest.TestCase):
     """Хосты, объявленные 2026-09-02 после перепрощупывания карты отказов.
 

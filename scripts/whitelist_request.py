@@ -141,9 +141,8 @@ PORTAL: dict[str, str] = {
     # Заявлены 2026-10-07: генерация MiniMax H3 идёт на поде RunPod, а его API,
     # документация и MCP из облачной сессии закрыты — пульт доступен только
     # через MCP-коннектор, а инструкция для агентов не читается вовсе.
-    "runpod.io": "GPU cloud the production renders on — pod API and docs",
-    "runpod.ai": "the same vendor's REST and serverless API hosts",
-    "getrunpod.io": "the same vendor's MCP endpoint (mcp.getrunpod.io)",
+    # (Обе ветки завели эти три домена независимо; при слиянии 2026-10-14
+    # оставлена одна тройка — ниже, с уточнением, что уже открыто.)
     "eachlabs.ai": "hosted video and avatar models",
     "fal.run": "fal's API host (fal.ai pages already answer)",
     "runcomfy.com": "hosted ComfyUI — node and workflow compatibility",

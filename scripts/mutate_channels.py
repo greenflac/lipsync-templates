@@ -76,6 +76,27 @@ MUTANTS: list[tuple[str, str, str, str, str]] = [
         "studio.tests.test_shoot",
     ),
     (
+        "studio/shoot/speech.py",
+        "MAX_WORD_S = 1.3",
+        "MAX_WORD_S = 100.0",
+        "речь: рёв толпы длиной в секунды снова считается словом и рвёт склейку",
+        "studio.tests.test_shoot",
+    ),
+    (
+        "studio/shoot/speech.py",
+        "MIN_PROB = 0.5",
+        "MIN_PROB = 0.0",
+        "речь: слово с низкой уверенностью распознавания снова проверяется",
+        "studio.tests.test_shoot",
+    ),
+    (
+        "studio/shoot/speech.py",
+        "SLACK = 0.06",
+        "SLACK = 0.0",
+        "речь: дрожь границы слова у Whisper снова считается обрывом",
+        "studio.tests.test_shoot",
+    ),
+    (
         "studio/shoot/validate.py",
         "        if rig and not rig.in_round:",
         "        if rig and not rig.in_round and False:",
@@ -723,9 +744,23 @@ MUTANTS: list[tuple[str, str, str, str, str]] = [
     ),
     (
         "scripts/refill_queue.py",
-        '        if any(о.get("reason") == "answered" for о in ответы):\n            continue',
+        '        if any(о.get("reason") in ЗАКРЫВАЮТ_ПРОМАХ for о in ответы):\n            continue',
         "        if False:\n            continue",
         "очередь: промахи не пересчитываются по нынешней базе",
+        "studio.mcp.tests.test_refill_queue",
+    ),
+    (
+        "scripts/refill_queue.py",
+        'frozenset({"answered", "answered_some_contested"})',
+        'frozenset({"answered", "answered_some_contested", "answered_by_family"})',
+        "очередь: ответ семьёй закрывает промах о модели, о которой не записано ничего",
+        "studio.mcp.tests.test_refill_queue",
+    ),
+    (
+        "scripts/refill_queue.py",
+        'frozenset({"answered", "answered_some_contested"})',
+        'frozenset({"answered"})',
+        "очередь: ответ со спором по части атрибутов держит промах открытым",
         "studio.mcp.tests.test_refill_queue",
     ),
     # --- голден-сет задач (заведён 2026-09-03) ------------------------------
@@ -3097,7 +3132,7 @@ MUTANTS: list[tuple[str, str, str, str, str]] = [
     ),
     (
         "studio/pipeline.py",
-        "                    if not re.search(r\"(?:^|\\W)(?:не|not)\\s*$\", низ[: м.start()]):",
+        '                    if not re.search(r"(?:^|\\W)(?:не|not)\\s*$", низ[: м.start()]):',
         "                    if True:",
         "язык: «не только хинди» снова читается как «только хинди»",
         "studio.mcp.tests.test_pipeline",

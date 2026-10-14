@@ -537,7 +537,13 @@ def assemble(
             seg = Path(tmp) / f"seg{i:02d}.mkv"
             slate = f"{c.shot} · нет рендера\n{purposes.get(c.shot) or c.note}"
             cmd = _segment_cmd(
-                c, src, base, seg, slate, fade_in=lead <= 0, fade_out=tail <= 0,
+                c,
+                src,
+                base,
+                seg,
+                slate,
+                fade_in=lead <= 0,
+                fade_out=tail <= 0,
                 audio_src=asrc if c.audio_from else None,
             )
             subprocess.run(cmd, check=True)
@@ -621,4 +627,3 @@ def integrated_lufs(path: Path) -> float | None:
     ).stderr
     m = re.findall(r"I:\s+(-?[\d.]+) LUFS", log)
     return float(m[-1]) if m else None
-

@@ -167,6 +167,12 @@ VENDOR_SOURCES: dict[str, tuple[str, ...]] = {
     ),
     "imagen": ("cloud.google.com", "ai.google.dev", "deepmind.google"),
     "gemini": ("ai.google.dev", "cloud.google.com", "deepmind.google"),
+    # Google's own product name for the Gemini image models: `nano-banana-pro`
+    # is `gemini-3-pro-image`, `nano-banana` is `gemini-2.5-flash-image`.
+    # Added 2026-10-14 when the model-id migration folded `gemini-3-pro-image`
+    # into `nano-banana-pro`, and a fact read directly on ai.google.dev fell to
+    # `blog` because nothing declared Google the vendor under that name.
+    "nano-banana": ("ai.google.dev", "cloud.google.com", "deepmind.google"),
     # `elevenlabs-*` was declared; their own model ids are `eleven-*`.
     "eleven": ("elevenlabs.io", "help.elevenlabs.io", "docs.elevenlabs.io"),
     # A model card in the AUTHOR'S OWN Hugging Face organisation is the vendor's

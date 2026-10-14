@@ -180,6 +180,38 @@ class CutsAndSpeech(unittest.TestCase):
         self.assertEqual(edit.handles(e, e.clips[-1], 6.0), (0.0, 0.0))  # пэкшот без исходника
 
 
+class WhatCountsAsAWord(unittest.TestCase):
+    """Пороги `studio/shoot/speech.py` — решения, и у каждого есть тест,
+    который его ловит (заведено 2026-10-14 вместе с мутантами в
+    `scripts/mutate_channels.py`, когда сторож покрытия покраснел на модуле)."""
+
+    def test_crowd_roar_longer_than_a_word_is_not_checked(self) -> None:
+        """НАБЛЮДЕНО 2026-10-08: «sneeze» на 0–2,68 с — рёв толпы, не слово."""
+        from studio.shoot.speech import Word, cut_problems
+
+        roar = [Word("sneeze", 0.0, 2.68)]
+        self.assertEqual(cut_problems("S06", 1.0, 2.0, 0.0, 0.0, roar), [])
+        real = [Word("August", 0.9, 1.4)]
+        self.assertTrue(cut_problems("S06", 1.0, 2.0, 0.0, 0.0, real))  # негативный контроль
+
+    def test_low_confidence_word_is_not_checked(self) -> None:
+        from studio.shoot.speech import Word, cut_problems
+
+        unsure = [Word("Angels", 0.9, 1.4, prob=0.2)]
+        self.assertEqual(cut_problems("S07", 1.0, 2.0, 0.0, 0.0, unsure), [])
+        sure = [Word("Angels", 0.9, 1.4, prob=0.9)]
+        self.assertTrue(cut_problems("S07", 1.0, 2.0, 0.0, 0.0, sure))
+
+    def test_a_cut_within_whisper_jitter_of_the_word_end_is_not_a_cut(self) -> None:
+        """Граница слова у Whisper плавает на ~0,06 с: склейка за 0,03 с до
+        конца слова — не обрыв."""
+        from studio.shoot.speech import Word, cut_problems
+
+        ws = [Word("Pobedinsky", 4.5, 5.8)]
+        self.assertEqual(cut_problems("S04", 3.0, 5.77, 0.0, 0.0, ws), [])
+        self.assertTrue(cut_problems("S04", 3.0, 5.5, 0.0, 0.0, ws))
+
+
 class Reveal(unittest.TestCase):
     """2026-10-08: до развязки — настоящий бой, ни слова о продукте."""
 
@@ -481,6 +513,29 @@ class Edit(unittest.TestCase):
         if Path(edit.FONT).exists():
             self.assertTrue(any("шире кадра" in p for p in found), found)
 
+    def test_subtitle_wider_than_the_frame_is_caught_without_the_house_font(self) -> None:
+        """Тот же порог `SUB_MAX_W`, но без шрифта дома: ширина строки
+        подменена (25 px на знак), а шрифт — любым существующим файлом.
+        Заведено 2026-10-14: тест выше сторожит порог только там, где лежит
+        Inter, и мутант «строка шире кадра снова проходит» на машине без
+        шрифта (и в CI) выживал."""
+        from unittest import mock
+
+        from studio.shoot import edit
+
+        e = edit.load(self.EDIT)
+        c = e.clips[0]
+        wide = edit.Sub(0.1, 4.0, "x" * 50)  # 1250 px при полях 960
+        narrow = edit.Sub(0.1, 4.0, "x" * 30)  # 750 px
+        with (
+            mock.patch.object(edit, "FONT", __file__),
+            mock.patch.object(edit, "text_width", lambda text, size=0: 25.0 * len(text)),
+        ):
+            for sub, caught in ((wide, True), (narrow, False)):
+                bad = dataclasses.replace(e, clips=(dataclasses.replace(c, subs=(sub,)),))
+                found = edit.problems(bad, self.EDIT.parent, {c.shot})
+                self.assertEqual(caught, any("шире кадра" in p for p in found), found)
+
     def test_global_graphics_follow_shots_not_seconds(self) -> None:
         from studio.shoot import edit
 
@@ -507,7 +562,16 @@ class Edit(unittest.TestCase):
         self.assertEqual(lines[0], "S07 · нет рендера")
         self.assertTrue(all(len(x) <= 20 for x in lines[1:]))
 
-    @unittest.skipUnless(shutil.which("ffmpeg"), "нет ffmpeg")
+    # Сборке мастера нужны ДВЕ вещи окружения: бинарь ffmpeg с фильтром
+    # drawtext и шрифт дома (`edit.FONT`). Условие пропуска проверяло только
+    # первую — ИЗМЕРЕНО 2026-10-14: с ffmpeg на PATH и без шрифта тест падал
+    # ошибкой ffmpeg (exit 8 на drawtext), то есть красил гейт не дефектом
+    # кода, а машиной. Причина пропуска начинается со слов из списка «данных
+    # нет» в `scripts/check_skips.py`.
+    @unittest.skipUnless(
+        shutil.which("ffmpeg") and Path("/usr/share/fonts/opentype/inter/Inter-Bold.otf").exists(),
+        "нет ffmpeg или шрифта Inter в этом окружении — мастер собрать нечем",
+    )
     def test_assemble_slates_and_still(self) -> None:
         from studio.shoot import edit
 

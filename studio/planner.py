@@ -6663,6 +6663,12 @@ def _candidate_row(c: Candidate | None) -> dict | None:
         # снаружи — а именно им решается, кого продукт поставил первым.
         "against": c.against,
         "in_favour": c.in_favour,
+        # Ступень знака (`sign_rank`) — тем же числом, которым `rival_line`
+        # решает, печатать ли строку о проверенных. Без неё сторож снаружи
+        # (`scripts/check_planner.py`) держал свою копию «что считать тонким»
+        # только по числу строк и разошёлся с планировщиком, когда у
+        # выбранного оказалось 4 строки свидетелей и ни одной меры (2026-10-14).
+        "sign": sign_rank(c),
         "capability": c.capability,
         "unresolved": c.unresolved,
         "price": c.price,
