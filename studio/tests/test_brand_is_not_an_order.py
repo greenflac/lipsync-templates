@@ -375,6 +375,13 @@ class РодовоеСловоПослеНазвания(unittest.TestCase):
     def test_запятая_обрывает_поиск(self) -> None:
         self.assertTrue(planner.derive("need lipsync, the clip is for our app"))
 
+    def test_запятая_обрывает_поиск_и_перед_родовым_словом(self) -> None:
+        """Тест выше обрывался на служебном «the», а не на запятой, и мутант
+        «поиск перескакивает через запятую» выживал (найдено 2026-10-14).
+        Здесь за запятой сразу родовое слово: «studio» относится к качеству
+        звука, а не к названию, и заказ озвучки остаётся заказом."""
+        self.assertTrue(planner.derive("we need voiceover pro, studio quality sound"))
+
     def test_дальше_трёх_слов_не_смотрим(self) -> None:
         """Записанная граница (И6), а не обещание: имя длиннее трёх слов не ловится."""
         self.assertTrue(planner.derive("promo for lip sync one two three four studio"))
