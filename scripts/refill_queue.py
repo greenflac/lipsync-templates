@@ -143,6 +143,13 @@ def stale_work(today: date | None = None, path: Path | None = None) -> list[dict
     return found
 
 
+#: Причины `advice`, при которых промах считается закрытым. Литералы, а не
+#: импорт констант: `advice` импортируется ниже как модуль, и строки здесь —
+#: решение очереди, а не копия словаря причин (тест сверяет их с `REASONS`).
+ЗАКРЫВАЮТ_ПРОМАХ: frozenset[str] = frozenset({"answered", "answered_some_contested"})
+ОТВЕЧЕНО_СЕМЬЁЙ = "answered_by_family"
+
+
 def missed_work(path: Path | None = None) -> list[dict[str, Any]]:
     """Модели, о которых спрашивали не раз и база молчала — ПО НЫНЕШНЕЙ базе.
 
@@ -158,6 +165,18 @@ def missed_work(path: Path | None = None) -> list[dict[str, Any]]:
       * база отвечает -> строки нет вовсе, работа сделана;
       * база молчит, но держит ПОХОЖЕЕ имя -> `спросили другим написанием`;
       * база молчит совсем -> `спросили — не знаем`, работа читать источники.
+
+    КАКОЙ ОТВЕТ ЗАКРЫВАЕТ ПРОМАХ (интеграция аудита 2026-10-14, когда
+    `advice` завёл две новые причины при исходе `pass`):
+
+      * `answered` — закрыт;
+      * `answered_some_contested` — закрыт: база ОТВЕЧАЕТ, а спор по части
+        атрибутов — работа другой очереди (`propose_measurement`), не чтения
+        источников о молчащей модели;
+      * `answered_by_family` — НЕ закрыт: о самой модели не записано ничего,
+        ответ взят у семьи и помечен «это НЕ измерение спрошенной модели».
+        Работа читать источники о ней осталась; строка говорит, чьими
+        утверждениями база отвечает сейчас, чтобы читающий начал с них.
     """
     готово: list[dict[str, Any]] = []
     for row in misses.queue(misses.load(path)):
@@ -165,15 +184,29 @@ def missed_work(path: Path | None = None) -> list[dict[str, Any]]:
         ответы = [advice.advise(row["model"], attribute=а) for а in атрибуты]
         # Отвечает хотя бы на один спрошенный атрибут — промах закрыт: очередь
         # про остальные атрибуты той же модели заведётся из журнала сама.
-        if any(о.get("reason") == "answered" for о in ответы):
+        if any(о.get("reason") in ЗАКРЫВАЮТ_ПРОМАХ for о in ответы):
             continue
         соседи = sorted({и for о in ответы for и in (о.get("near") or [])})
+        семья = sorted(
+            {
+                str(у.get("about"))
+                for о in ответы
+                if о.get("reason") == ОТВЕЧЕНО_СЕМЬЁЙ
+                for у in (о.get("family_claims") or {}).values()
+                if isinstance(у, dict) and у.get("about")
+            }
+        )
         готово.append(
             {
                 "reason": ASKED_OTHER_SPELLING if соседи else ASKED_UNKNOWN,
                 "model": row["model"],
                 "detail": f"спрашивали {row['misses']} раз(а), последний {row['last_asked']}"
-                + (f"; база держит {', '.join(соседи[:3])}" if соседи else ""),
+                + (f"; база держит {', '.join(соседи[:3])}" if соседи else "")
+                + (
+                    f"; база отвечает только утверждениями семьи ({', '.join(семья[:3])})"
+                    if семья
+                    else ""
+                ),
                 "where": ", ".join(row["attributes"]) or "всё",
             }
         )

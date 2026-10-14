@@ -438,8 +438,17 @@ def model_advice(model: str, attribute: str = "", full: bool = False) -> str:
     """What is known about a generation model: values, tiers, dates, disputes.
 
     Call this before answering any question about what a model can do. It never
-    resolves a disagreement for you: sources that disagree come back as `fail`
-    with both sides.
+    resolves a disagreement for you: sources that disagree come back with both
+    sides. When EVERYTHING asked about is disputed, or the one attribute you
+    asked for is, the outcome is `fail` (reason `sources_disagree`). When only
+    SOME attributes of a full answer are disputed, the outcome is `pass` with
+    reason `answered_some_contested`: the disputed attributes are named in
+    `contested` and in the note, every side in `claims` — read them before
+    quoting a value. When nothing is recorded about the exact model but its
+    family or variants have claims (`veo-3.1` for `veo-3.1-lite`), the outcome
+    is `pass` with reason `answered_by_family`: every claim is labelled with
+    the name it is about (`about`, `scope`), and it is NOT a measurement of the
+    model you named — say so when you quote it.
 
     :param model: e.g. "kling-3.0", "veo-3.1", "flux-2".
     :param attribute: one attribute such as "max_seconds"; empty for everything.
@@ -472,6 +481,7 @@ def record_model_fact(
     fix: str = "",
     read_directly: bool | None = None,
     witnessed: str = "",
+    new_model: bool = False,
 ) -> str:
     """Write one thing you found on the web — or ran yourself — into the base.
 
@@ -516,6 +526,10 @@ def record_model_fact(
         refused by this environment, so False is the honest answer more often
         than it looks, and it is what stops a summary reading as a vendor
         statement.
+    :param new_model: set True ONLY for a genuinely new model whose name was
+        refused as probably a spelling of an existing one (the refusal names
+        that model). A spelling of a known model is stored under its canonical
+        id automatically, with your spelling kept in `asked_as`.
     """
     return _json(
         advice.record(
@@ -529,6 +543,7 @@ def record_model_fact(
             fix=fix,
             read_directly=read_directly,
             witnessed=witnessed,
+            new_model=new_model,
         )
     )
 

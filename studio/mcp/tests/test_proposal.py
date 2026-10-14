@@ -191,19 +191,25 @@ class Filing(unittest.TestCase):
 
     def test_a_CONTESTED_fact_is_exactly_when_measuring_is_worth_paying_for(self) -> None:
         """The negative control on the gate above. Without it, a rule that
-        blocked every attribute anybody had ever mentioned would pass."""
+        blocked every attribute anybody had ever mentioned would pass.
+
+        The dispute is between two VENDOR artefacts (the model card and the
+        code repository). Until 2026-10-14 it was vendor vs a portal (fal.ai);
+        since the audit a portal's own limit is a different SCOPE — what that
+        venue serves — not a contradiction of the vendor, so that fixture no
+        longer made a dispute at all and the test stopped testing its intent."""
         from studio.mcp import advice
 
         for value, url in (
             ("5", "https://huggingface.co/Wan-AI/Wan2.2-Animate-14B"),
-            ("10", "https://fal.ai/models/fal-ai/wan-animate"),
+            ("10", "https://github.com/Wan-Video/Wan2.2"),
         ):
             advice.record(
                 "wan-animate-replace",
                 "max_seconds",
                 value,
                 url,
-                "vendor" if "huggingface" in url else "portal",
+                "vendor",
                 "2026-08-01",
                 read_directly=True,
                 path=self.facts,

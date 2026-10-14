@@ -100,5 +100,39 @@ class TheDocstringCountsMustMatchTheServer(unittest.TestCase):
         assert "misses.note_question" in source
 
 
+class TheRecordToolPassesNewModelThrough(unittest.TestCase):
+    """Интеграция аудита 2026-10-14: `advice.record` научился отказывать имени,
+    похожему на написание известной модели, и снимать отказ `new_model=True`.
+    Инструмент этого флага не принимал — значит, агент, получивший отказ с
+    советом «повторите с new_model=True», повторить не мог ничем."""
+
+    def test_the_tool_accepts_new_model(self) -> None:
+        params = inspect.signature(S.record_model_fact).parameters
+        assert "new_model" in params
+        assert params["new_model"].default is False
+
+    def test_the_tool_hands_new_model_to_advice_record(self) -> None:
+        seen: dict = {}
+
+        def fake_record(*args: object, **kwargs: object) -> dict:
+            seen.update(kwargs)
+            return {"outcome": "pass"}
+
+        real = S.advice.record
+        S.advice.record = fake_record  # type: ignore[assignment]
+        try:
+            S.record_model_fact(
+                "m", "a", "v", "https://example.com", "blog", "2026-10-14", new_model=True
+            )
+        finally:
+            S.advice.record = real  # type: ignore[assignment]
+        assert seen.get("new_model") is True
+
+    def test_the_docstring_names_the_new_reasons(self) -> None:
+        doc = S.model_advice.__doc__ or ""
+        for reason in ("answered_some_contested", "answered_by_family"):
+            assert reason in doc, reason
+
+
 if __name__ == "__main__":
     unittest.main()

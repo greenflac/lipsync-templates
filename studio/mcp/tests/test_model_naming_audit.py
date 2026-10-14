@@ -11,6 +11,7 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from typing import Any
 
 from studio.mcp import advice
 
@@ -364,7 +365,8 @@ class П9_ОчередьПротухшего(База):
         self.assertEqual(got["checked"], 0)
 
     def test_не_целые_дни_отказ(self) -> None:
-        for плохое in (1.5, "30", True):
+        плохие: tuple[Any, ...] = (1.5, "30", True)  # нарочно не int: агент шлёт JSON
+        for плохое in плохие:
             self.assertEqual(advice.stale(days=плохое, path=self.старая_база(2))["outcome"], "fail")
 
     def test_ноль_дней_законен(self) -> None:

@@ -577,6 +577,37 @@ class ПромахПересчитываетсяПоНынешнейБазе(uni
         with mock.patch.object(refill.advice, "advise", self._ответ("answered")):
             self.assertEqual(refill.missed_work(путь), [])
 
+    def test_ответ_со_спором_по_части_атрибутов_промах_закрывает(self):
+        """База отвечает; спор — работа очереди замеров, не чтения источников."""
+        путь = self._журнал([self._промах("m"), self._промах("m")])
+        with mock.patch.object(refill.advice, "advise", self._ответ("answered_some_contested")):
+            self.assertEqual(refill.missed_work(путь), [])
+
+    def test_ответ_семьёй_промах_НЕ_закрывает_и_называет_семью(self):
+        """О самой модели не записано ничего: работа читать источники осталась."""
+        путь = self._журнал([self._промах("veo-3.1-lite"), self._промах("veo-3.1-lite")])
+
+        def ответ(model, attribute="", **kw):
+            return {
+                "reason": "answered_by_family",
+                "near": [],
+                "family_claims": {"max_seconds": {"about": "veo-3.1", "outcome": "pass"}},
+            }
+
+        with mock.patch.object(refill.advice, "advise", ответ):
+            строки = refill.missed_work(путь)
+        self.assertEqual(len(строки), 1)
+        self.assertEqual(строки[0]["reason"], refill.ASKED_UNKNOWN)
+        self.assertIn("veo-3.1", строки[0]["detail"])
+
+    def test_причины_очереди_существуют_в_словаре_advice(self):
+        """Опечатка в литерале молча оставила бы промах открытым навсегда."""
+        from studio.mcp import advice
+
+        self.assertLessEqual(refill.ЗАКРЫВАЮТ_ПРОМАХ, set(advice.REASONS))
+        self.assertIn(refill.ОТВЕЧЕНО_СЕМЬЁЙ, advice.REASONS)
+        self.assertNotIn(refill.ОТВЕЧЕНО_СЕМЬЁЙ, refill.ЗАКРЫВАЮТ_ПРОМАХ)
+
     def test_молчание_с_похожим_именем_это_другая_работа(self):
         """Не «идти читать источники», а «спросивший написал имя иначе»."""
         путь = self._журнал([self._промах("h3-max"), self._промах("h3-max")])
