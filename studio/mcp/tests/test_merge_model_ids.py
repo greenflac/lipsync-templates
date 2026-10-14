@@ -214,5 +214,106 @@ class ОтказПереносаОтличаетсяОтНегодностиСа
             self.assertIn("eleven-v3", записано[0])
 
 
+class СведениеПоСвёртке(unittest.TestCase):
+    """2026-10-14, аудит ae94057: план берёт ВСЕ группы, которые сводит
+    свёртка, применяется только по `--apply`, переносит строку целиком и
+    сохраняет прежнее написание в `asked_as`. Всё — на временной базе (Т5)."""
+
+    СТРОКИ = (
+        {
+            "model": "seedance2",
+            "attribute": "max_seconds",
+            "value": "15",
+            "source_url": "https://docs.dev.runwayml.com/openapi.json",
+            "tier": "portal",
+            "stated_on": "2026-08-27",
+            "note": "исходная нота",
+            "read_directly": True,
+            "witnessed": "",
+            "contra": None,
+        },
+        {
+            "model": "seedance-2.0",
+            "attribute": "fps",
+            "value": "24",
+            "source_url": "https://seed.bytedance.com/x",
+            "tier": "vendor",
+            "stated_on": "2026-08-27",
+        },
+        {
+            "model": "seedance-2.0",
+            "attribute": "fps",
+            "value": "24",
+            "source_url": "https://seed.bytedance.com/x",
+            "tier": "vendor",
+            "stated_on": "2026-08-27",
+        },
+        {
+            "model": "kling-3.0",
+            "attribute": "fps",
+            "value": "24",
+            "source_url": "https://kling.example/x",
+            "tier": "blog",
+            "stated_on": "2026-08-27",
+        },
+    )
+
+    def setUp(self) -> None:
+        import json
+
+        self._каталог = tempfile.TemporaryDirectory()
+        self.addCleanup(self._каталог.cleanup)
+        self.путь = Path(self._каталог.name) / "facts.jsonl"
+        self.путь.write_text(
+            "".join(json.dumps(r, ensure_ascii=False) + "\n" for r in self.СТРОКИ), encoding="utf-8"
+        )
+
+    def test_группа_свёртки_в_плане(self):
+        from studio.selfrag.facts import load_facts
+
+        self.assertEqual(
+            {"seedance2": "seedance-2.0"}, слияние.canonical_by_fold(load_facts(self.путь))
+        )
+
+    def test_по_умолчанию_ничего_не_пишется(self):
+        до = self.путь.read_bytes()
+        self.assertEqual(0, слияние.main(["--path", str(self.путь)]))
+        self.assertEqual(до, self.путь.read_bytes())
+
+    def test_применение_переносит_целиком_и_ничего_не_теряет(self):
+        import json
+
+        from studio.selfrag.facts import load_facts
+
+        до = len(load_facts(self.путь))
+        self.assertEqual(0, слияние.main(["--apply", "--path", str(self.путь)]))
+        стоят = load_facts(self.путь)
+        self.assertEqual(до, len(стоят))
+        self.assertEqual(
+            ["kling-3.0", "seedance-2.0", "seedance-2.0"], sorted(f.model for f in стоят)
+        )
+        перенесённая = [
+            json.loads(x)
+            for x in self.путь.read_text(encoding="utf-8").splitlines()
+            if '"asked_as"' in x
+        ]
+        self.assertEqual(1, len(перенесённая))
+        self.assertEqual("seedance2", перенесённая[0]["asked_as"])
+        self.assertEqual("исходная нота", перенесённая[0]["note"])
+        self.assertIs(True, перенесённая[0]["read_directly"])
+        self.assertEqual("portal", перенесённая[0]["tier"])
+        self.assertEqual(0, слияние._check(self.путь))
+
+    def test_повторный_прогон_ничего_не_дописывает(self):
+        слияние.main(["--apply", "--path", str(self.путь)])
+        после = self.путь.read_bytes()
+        слияние.main(["--apply", "--path", str(self.путь)])
+        self.assertEqual(после, self.путь.read_bytes())
+
+    def test_гейт_краснеет_на_неслитом(self):
+        """И5: `--check` до применения — красный."""
+        self.assertEqual(1, слияние._check(self.путь))
+
+
 if __name__ == "__main__":
     unittest.main()

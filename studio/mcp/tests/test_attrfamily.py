@@ -592,3 +592,38 @@ class СемьиЗаведённыеРадиR3(unittest.TestCase):
         ОБУЧЕНИЯ голоса/модели, а не предел входа."""
         self.assertNotIn("training_resolution", self.полe("resolution"))
         self.assertIn("training_resolution", self.полe("image_size"))
+
+
+class СпрошенноеИмяСамоВСемье(unittest.TestCase):
+    """Аудит ae94057, пункт 5: `price_per_second_usd` у veo-3.1 не записан, а
+    `price_per_second` записан — и вопрос первым именем отвечал «ничего»."""
+
+    def test_незаписанное_ценовое_имя_разворачивается_в_ценовую_семью(self):
+        self.assertEqual(
+            ["price_per_second"],
+            attrfamily.expand("price_per_second_usd", ["price_per_second", "fps"]),
+        )
+
+    def test_записанное_буквально_отвечает_само(self):
+        """И5: буквально записанное имя не разворачивается в соседей."""
+        self.assertEqual(
+            ["price_per_second"],
+            attrfamily.expand("price_per_second", ["price_per_second", "price_per_image_usd"]),
+        )
+
+    def test_исключение_семьи_держится_и_здесь(self):
+        """`price_relative` — не цена, а условие тарифа (семья `billing`):
+        спрошенный так, он не тянет цену за секунду (И5)."""
+        self.assertEqual("billing", attrfamily.семья_имени("price_relative"))
+        self.assertEqual(
+            ["billing_requirement"],
+            attrfamily.expand("price_relative", ["price_per_second", "billing_requirement"]),
+        )
+
+    def test_имя_без_семьи_остаётся_без_семьи(self):
+        self.assertEqual("", attrfamily.семья_имени("zzz_attr"))
+        self.assertEqual([], attrfamily.expand("zzz_attr", ["price_per_second"]))
+
+    def test_семья_имени_литералом(self):
+        self.assertEqual("price", attrfamily.семья_имени("price_per_second_usd"))
+        self.assertEqual("license", attrfamily.семья_имени("license_restriction"))

@@ -1,4 +1,4 @@
-"""The MCP server the owner talks to in chat. Fifteen tools, seven of which write.
+"""The MCP server the owner talks to in chat. Fifteen tools, eight of which write.
 
 THE NUMBERS IN THIS LINE ARE GATED, NOT PROSE
 
@@ -6,11 +6,14 @@ They said "twelve, three" while the server carried fourteen and seven — a
 docstring that drifted quietly because nothing checked it. `test_server_surface`
 now reads this very line and compares it to the live tool list, so the next
 tool that lands either updates this sentence or turns the build red. Three of
-the seven write KNOWLEDGE (record_model_fact, withdraw_model_fact,
-propose_measurement); the other four write the DENIAL JOURNAL as a side effect
-of reaching the network (fetch_url, search_web, reachable_hosts,
-probe_model_limit), which is a write nobody asked for and which a reader of
-this file deserves to know about.
+the eight write KNOWLEDGE (record_model_fact, withdraw_model_fact,
+propose_measurement); four write the DENIAL JOURNAL as a side effect of
+reaching the network (fetch_url, search_web, reachable_hosts,
+probe_model_limit); and `model_advice` appends every question it is asked to
+the misses journal (`studio/mcp/misses.py`) — it said "seven" until
+2026-10-14 while that eighth write had been there since the journal landed.
+Writes nobody asked for are exactly what a reader of this file deserves to
+know about.
 
 IT ANSWERS FOR THE FIELD, NOT FOR THIS REPOSITORY
 
@@ -33,6 +36,16 @@ the first time somebody edits the prompt for length (house rule C7).
 RUN IT
 
     python -m studio.mcp.server          # stdio, which is what Claude Code speaks
+    python -m studio.mcp.server --transport streamable-http --host 127.0.0.1 --port 8000
+
+Behind a reverse proxy, the HTTP transport's DNS-rebinding protection rejects
+any Host header it was not told about with 421. Name the public ones:
+
+    STUDIO_ALLOWED_HOSTS=studio.example.org,studio.example.org:443
+    STUDIO_ALLOWED_ORIGINS=https://studio.example.org
+
+The corpus index is built in the background as the server starts (lifespan),
+not on the first tool call; `STUDIO_MCP_WARM_INDEX=0` turns that off.
 
 `.mcp.json` at the repo root registers it, so it appears in the chat with no
 further setup.
@@ -60,9 +73,13 @@ denominator.
 
 from __future__ import annotations
 
+import argparse
+import contextlib
+import inspect
 import json
 import os
-from collections.abc import Mapping
+import threading
+from collections.abc import AsyncIterator, Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -231,8 +248,44 @@ def _общее_нечего_смотреть(просев: dict, текст: st
     }
 
 
+#: Выключатель прогрева индекса на старте. По умолчанию включён.
+WARM_INDEX_ENV = "STUDIO_MCP_WARM_INDEX"
+
+_INDEX_LOCK = threading.Lock()
+_WARMING: threading.Thread | None = None
+
+
+def warm_index(environ: Mapping[str, str] | None = None) -> threading.Thread | None:
+    """Начать сборку индекса в фоне, если ещё не начата. Возвращает поток или None.
+
+    ЗАЧЕМ. Индекс строился ЛЕНИВО — на первом вызове инструмента, и этот вызов
+    платил за сборку (секунды с кэшем векторов, минуты без него: клиенты
+    отваливались по таймауту, см. `DENSE_ON_SERVER_ENV`). Теперь сборка
+    начинается, когда сервер стартует, но В ФОНЕ: рукопожатие MCP не ждёт
+    индекса, а первый вызов, если индекс ещё не готов, ждёт его под замком,
+    а не строит второй.
+    """
+    global _WARMING
+    source = os.environ if environ is None else environ
+    if source.get(WARM_INDEX_ENV, "1") == "0":
+        return None
+    if _INDEX is not None or (_WARMING is not None and _WARMING.is_alive()):
+        return _WARMING
+    _WARMING = threading.Thread(target=_index, name="studio-index-warmup", daemon=True)
+    _WARMING.start()
+    return _WARMING
+
+
+@contextlib.asynccontextmanager
+async def _lifespan(_app: Any) -> AsyncIterator[dict]:
+    """Жизненный цикл сервера: прогреть индекс, ничего не держа на выходе."""
+    warm_index()
+    yield {}
+
+
 server = MCPServer(
     name="lipsync-studio",
+    lifespan=_lifespan,
     instructions=(
         "WHOSE SIDE YOU ARE ON. You survey the whole field. This repository "
         "contains a working engine and a corpus, and NEITHER is a default. When "
@@ -267,9 +320,12 @@ server = MCPServer(
         "`record_model_fact` with the value, the source URL, the source tier and "
         "the date the source stated it. `search_web` is the research entry point — "
         "start there rather than from memory. Prefer a VENDOR artefact over an article: "
-        "`fetch_url` reaches raw.githubusercontent.com, api.github.com, pypi.org, "
-        "huggingface.co and cloud.google.com, so an SDK source or an OpenAPI spec "
-        "is readable. For a numeric limit whose documentation host is blocked, use "
+        "an SDK source or an OpenAPI spec is often readable where the docs are not. "
+        "Which hosts `fetch_url` can open is a MEASUREMENT, not a fact: on "
+        "2026-08-27, from the development sandbox behind its egress proxy, "
+        "raw.githubusercontent.com, api.github.com, pypi.org, huggingface.co and "
+        "cloud.google.com answered; where you run, it may differ — `reachable_hosts` "
+        "re-measures it. For a numeric limit whose documentation host is blocked, use "
         "`probe_model_limit` — the vendor API's own refusal is the measurement, and "
         "it records at `probe` tier. A host the policy refuses is reported, never "
         "routed around: no mirror, no cache, no read-through proxy. "
@@ -335,7 +391,10 @@ def _index() -> Any:
     """
     global _INDEX
     if _INDEX is None:
-        _INDEX = knowledge.build_index(dense=dense_wanted())  # type: ignore[attr-defined]
+        # Под замком: фоновый прогрев и первый вызов не строят индекс дважды.
+        with _INDEX_LOCK:
+            if _INDEX is None:
+                _INDEX = knowledge.build_index(dense=dense_wanted())  # type: ignore[attr-defined]
     return _INDEX
 
 
@@ -503,7 +562,7 @@ def withdraw_model_fact(
 
 
 @server.tool()
-def analyse_creative(path: str, frames_dir: str = "") -> str:
+def analyse_creative(path: str, frames_dir: str = "", loop: bool = False) -> str:
     """Measure a creative you dropped in: what it looks like, what moves in it.
 
     Point it at an image OR a video — a reference you liked, a driving clip you
@@ -520,6 +579,13 @@ def analyse_creative(path: str, frames_dir: str = "") -> str:
         `imageio-ffmpeg`.
     :param frames_dir: frames you extracted yourself, in filename order. Given,
         it wins over decoding `path` — nobody should pay for a second decode.
+        Only image files count (dotfiles, notes and the video itself are
+        skipped and listed under `frames_dir.skipped`). A directory of
+        DIFFERENT stills — a storyboard — is detected and its motion is not
+        judged: continuity between unrelated pictures means nothing.
+    :param loop: True when the clip is MEANT to loop (a cinemagraph, a
+        background plate). Only then does a visible loop seam count against
+        it; otherwise the seam is reported as information.
 
     READ `input` FIRST — before `outcome`, before the numbers. It says which of
     three things happened to the file you named, and they are kept apart on
@@ -546,7 +612,7 @@ def analyse_creative(path: str, frames_dir: str = "") -> str:
     # до приборов движения и возвращался как «0 frame(s): the engine needs at
     # least 3» — теми же словами, что настоящий короткий клип.
     handed = creative.frames_in(frames_dir)
-    out = creative.analyse(path, frames=handed["frames"] or None)
+    out = creative.analyse(path, frames=handed["frames"] or None, loop=bool(loop))
     out["frames_dir"] = handed
     return _json(out)
 
@@ -748,10 +814,82 @@ def plan_pipeline(brief: str, creative: str = "", budget_usd: float = 0.0) -> st
     return _json(итог)
 
 
+def stale_call(
+    days: Any = STALE_AFTER_DAYS,
+    *,
+    model: str = "",
+    limit: int = 0,
+    full: bool = False,
+    stale_fn: Any = None,
+) -> dict:
+    """Позвать `advice.stale` с теми параметрами, которые он ПРИНИМАЕТ.
+
+    СОГЛАСОВАНО 2026-10-14 с агентом, который правит `advice.py` параллельно:
+    `stale` получает необязательные `model`, `full` и `top` (наш `limit`) и
+    проверку `days`.
+    Пока его правка не легла, сигнатура старая (`days`, `path`) — поэтому
+    параметр передаётся, только если сигнатура его называет. Непринятые
+    параметры не теряются молча: они перечислены в `ignored_params`.
+
+    `days` проверяется и здесь: отрицательное или нечисловое — отказ `fail`,
+    а не «ничего не устарело» (Р1).
+    """
+    fn = stale_fn or advice.stale
+    try:
+        age = int(days)
+    except (TypeError, ValueError):
+        age = -1
+    if age < 0 or isinstance(days, bool):
+        return {
+            "outcome": FAIL,
+            "checked": 1,
+            "violations": 1,
+            "unmeasured": 0,
+            "note": f"days must be a whole number of days, 0 or more; got {days!r}",
+        }
+    try:
+        accepted = set(inspect.signature(fn).parameters)
+    except (TypeError, ValueError):
+        accepted = {"days"}
+    wanted: dict[str, Any] = {}
+    if str(model or "").strip():
+        wanted["model"] = str(model).strip()
+    if int(limit or 0) > 0:
+        wanted["limit"] = int(limit)
+    if full:
+        wanted["full"] = True
+    # Агент `advice.py` назвал параметр `top` (2026-10-14); наш инструмент
+    # говорит `limit`. Одно и то же число, два имени — переводим, а не теряем.
+    if "limit" in wanted and "limit" not in accepted and "top" in accepted:
+        wanted["top"] = wanted.pop("limit")
+    passed = {k: v for k, v in wanted.items() if k in accepted}
+    ignored = sorted(set(wanted) - set(passed))
+    out = dict(fn(days=age, **passed))
+    if ignored:
+        out["ignored_params"] = ignored
+        out["note"] = (
+            f"{out.get('note', '')} [not applied — this server's advice.stale does "
+            f"not take {', '.join(ignored)} yet]"
+        ).strip()
+    return out
+
+
 @server.tool()
-def stale_model_facts(days: int = STALE_AFTER_DAYS) -> str:
-    """Which recorded claims are old enough to be worth re-checking on the web."""
-    return _json(advice.stale(days=days))
+def stale_model_facts(
+    days: int = STALE_AFTER_DAYS, model: str = "", limit: int = 0, full: bool = False
+) -> str:
+    """Which recorded claims are old enough to be worth re-checking on the web.
+
+    :param days: age after which a claim counts as stale (0 or more).
+    :param model: only this model's claims; empty for all.
+    :param limit: at most this many rows per list; 0 for the default.
+    :param full: every row in full rather than the compact listing.
+
+    `model`, `limit` and `full` are passed on only when the fact base's
+    `stale` accepts them; otherwise the answer names them under
+    `ignored_params` rather than pretending they were applied.
+    """
+    return _json(stale_call(days, model=model, limit=limit, full=full))
 
 
 def запрос_корпуса(intent: str) -> str:
@@ -907,24 +1045,27 @@ def check_lipsync_prompt(prompt: str) -> str:
 def search_web(query: str, site: str = "", count: int = 8) -> str:
     """Search the web. This is the research entry point — start here.
 
-    Two backends, both Google, both reachable through this session's egress
-    policy (measured 2026-08-27: Brave, Tavily, Exa, SerpAPI, Serper,
-    DuckDuckGo, Bing, SearxNG and Perplexity are all refused; GitHub answers
-    but blocks its search paths).
+    Backends are tried in order, each only when its key is set: Gemini
+    grounding (whole Google index), Serper (Google results), Programmable
+    Search (capped at 50 curated domains since March 2026), then Brave, Tavily
+    and Exa. When one cannot answer — billing (402), quota (429), permission
+    (403), a policy refusal, no sources — the next is tried. `backend` says
+    which one answered and `attempts` what each one said. Reachability is a
+    measurement with a vantage: from the development sandbox on 2026-10-14,
+    Gemini, Serper and Programmable Search answered; Brave, Tavily and Exa were
+    refused by its egress policy.
 
-    Gemini grounding is used when GEMINI_API_KEY is set — it searches the whole
-    index with no domain list. Programmable Search is the fallback and is
-    capped at 50 curated domains, because Google withdrew "search the entire
-    web" from new engines in March 2026. `backend` in the result says which
-    one answered.
+    If NO backend can answer, the result is `could not measure` with
+    `client_side`: ready-to-run queries for YOUR OWN web search tool. Run them,
+    and record what you find with `record_model_fact`.
 
     Every result says whether its host can also be OPENED. A host the policy
     refuses still gives you a title, a snippet and a URL you can cite — you
     just cannot read the page in full, and `fetch_url` will tell you the same.
 
-    Unconfigured, it returns `could not measure` with the two free credentials
-    it needs and where to get them. That is not a failure: nothing was
-    searched, which differs from searching and finding nothing.
+    Unconfigured, it returns `could not measure` with the credentials it can
+    use and where to get them. That is not a failure: nothing was searched,
+    which differs from searching and finding nothing.
 
     :param site: restrict to one domain, e.g. "kling.ai" — useful even when
         that domain is blocked, because the snippets still come back.
@@ -933,14 +1074,29 @@ def search_web(query: str, site: str = "", count: int = 8) -> str:
 
 
 @server.tool()
-def fetch_url(url: str, why_wanted: str = "") -> str:
+def fetch_url(
+    url: str,
+    why_wanted: str = "",
+    max_chars: int = fetch.PAGE_CHARS,
+    offset: int = 0,
+    raw: bool = False,
+) -> str:
     """Fetch a page or a file from the web through this session's egress policy.
 
     Use it to read a vendor's own artefact instead of somebody's article about
-    it. Measured 2026-08-27, these answer: raw.githubusercontent.com,
-    api.github.com, pypi.org, huggingface.co, cloud.google.com,
-    api.klingai.com, api.fal.ai. Vendor SDK source and OpenAPI specs on GitHub
-    are vendor-tier material and are reachable.
+    it. Measured 2026-08-27 from the development sandbox, these answered:
+    raw.githubusercontent.com, api.github.com, pypi.org, huggingface.co,
+    cloud.google.com, api.klingai.com, api.fal.ai — a measurement with a date
+    and a vantage, not a promise; `reachable_hosts` re-measures it.
+
+    An HTML page comes back as its TEXT (scripts, styles and navigation
+    dropped), in pieces: `total_chars`, `remaining_chars` and `next_offset`
+    say how much is left — call again with `offset=next_offset`. JSON and
+    plain text come back as they are, in the same pieces. `raw=True` returns
+    the markup itself.
+
+    Only http and https; private, loopback, link-local and cloud-metadata
+    addresses are refused before anything is sent (also after a redirect).
 
     A host the policy refuses comes back `could not measure` with `denied:
     true` and is recorded for the allowlist request. Do NOT look for a mirror,
@@ -948,12 +1104,18 @@ def fetch_url(url: str, why_wanted: str = "") -> str:
 
     :param why_wanted: what you were trying to learn. It is carried into the
         denial record, so the allowlist request explains itself.
+    :param max_chars: how much text to return in this call (default 20000,
+        at most 80000).
+    :param offset: where in the extracted text to start.
+    :param raw: return the body as received instead of extracted text.
     """
-    return _json(fetch.fetch(url, why_wanted=why_wanted))
+    return _json(
+        fetch.page(url, why_wanted=why_wanted, max_chars=max_chars, offset=offset, raw=raw)
+    )
 
 
 @server.tool()
-def blocked_hosts() -> str:
+def blocked_hosts(full: bool = False) -> str:
     """The allowlist request, assembled from hosts the policy actually refused.
 
     Hand this to whoever owns the egress policy. Every row under `hosts` is a
@@ -964,8 +1126,12 @@ def blocked_hosts() -> str:
     open, say. Nobody asked for those, so they are NOT part of the ask, and
     passing them off as one is how a request a human has to justify turns into
     noise. They are still listed, because a refusal is never swallowed.
+
+    :param full: every journal row as recorded. The default is the compact
+        form — counts, and per asked host only its reason and date; the
+        full form was 75 733 characters on 2026-10-14.
     """
-    return _json(fetch.wanted())
+    return _json(fetch.wanted(full=bool(full)))
 
 
 @server.tool()
@@ -976,6 +1142,9 @@ def reachable_hosts(hosts: str = "", why_wanted: str = "") -> str:
     date instead of trusting a comment.
 
     :param hosts: comma-separated hosts to probe instead of the default map.
+        `x.y`, `x.y:443` and `https://x.y/path` all mean host `x.y`; anything
+        that is not a host is listed under `invalid`, not probed and not
+        recorded. Internal addresses are refused.
     :param why_wanted: the question you are probing these hosts FOR. Give it
         when you are checking specific hosts you actually need — the refusals
         then join the allowlist request under that reason, which is what makes
@@ -1017,6 +1186,19 @@ def probe_model_limit(
                 "violations": 1,
                 "unmeasured": 0,
                 "note": f"payload_json is not JSON: {error}",
+            }
+        )
+    if not isinstance(payload, dict):
+        return _json(
+            {
+                "outcome": "fail",
+                "checked": 0,
+                "violations": 1,
+                "unmeasured": 0,
+                "note": (
+                    f"payload_json must be a JSON OBJECT, got {type(payload).__name__}; "
+                    "the probed field is written into it. Nothing was sent."
+                ),
             }
         )
     try:
@@ -1091,8 +1273,65 @@ def measurement_proposals(state: str = "") -> str:
     return _json(proposal.proposals(state=state))
 
 
-def main() -> None:
-    server.run()
+#: Переменные окружения для HTTP-транспорта за обратным прокси. Через запятую.
+ALLOWED_HOSTS_ENV = "STUDIO_ALLOWED_HOSTS"
+ALLOWED_ORIGINS_ENV = "STUDIO_ALLOWED_ORIGINS"
+
+
+def _csv(value: str) -> list[str]:
+    return [item.strip() for item in str(value or "").split(",") if item.strip()]
+
+
+def transport_security(host: str, environ: Mapping[str, str] | None = None) -> Any:
+    """`TransportSecuritySettings` для HTTP-транспорта, или None — оставить умолчание SDK.
+
+    ЗАЧЕМ. При `host=127.0.0.1` SDK сам включает защиту от DNS rebinding и
+    пускает только Host `127.0.0.1:*`/`localhost:*`. За обратным прокси Host
+    — публичное имя, и КАЖДЫЙ запрос получает 421. Здесь публичные имена
+    добавляются из окружения к локальным; защита остаётся ВКЛЮЧЁННОЙ — её
+    выключение было бы «починкой» ценой той самой атаки.
+
+    Без переменных возвращается None: поведение SDK не меняется.
+    """
+    from mcp.server.transport_security import TransportSecuritySettings
+
+    source = os.environ if environ is None else environ
+    hosts = _csv(source.get(ALLOWED_HOSTS_ENV, ""))
+    origins = _csv(source.get(ALLOWED_ORIGINS_ENV, ""))
+    if not hosts and not origins:
+        return None
+    local_hosts = ["127.0.0.1:*", "localhost:*", "[::1]:*"]
+    local_origins = ["http://127.0.0.1:*", "http://localhost:*", "http://[::1]:*"]
+    return TransportSecuritySettings(
+        enable_dns_rebinding_protection=True,
+        allowed_hosts=[*local_hosts, *hosts],
+        allowed_origins=[*local_origins, *origins],
+    )
+
+
+def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(prog="python -m studio.mcp.server")
+    parser.add_argument(
+        "--transport",
+        choices=("stdio", "streamable-http"),
+        default="stdio",
+        help="stdio (default; what Claude Code speaks) or streamable-http",
+    )
+    parser.add_argument("--host", default="127.0.0.1", help="HTTP bind address")
+    parser.add_argument("--port", type=int, default=8000, help="HTTP port")
+    return parser.parse_args(argv)
+
+
+def main(argv: Sequence[str] | None = None) -> None:
+    args = parse_args(argv)
+    if args.transport == "stdio":
+        server.run()
+        return
+    kwargs: dict[str, Any] = {"host": args.host, "port": args.port}
+    security = transport_security(args.host)
+    if security is not None:
+        kwargs["transport_security"] = security
+    server.run("streamable-http", **kwargs)
 
 
 if __name__ == "__main__":

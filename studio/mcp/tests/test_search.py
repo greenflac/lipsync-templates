@@ -261,8 +261,12 @@ class Search(unittest.TestCase):
         assert out["query"] == "site:kling.ai duration"
 
     def test_an_api_error_is_fail_and_repeats_the_setup(self) -> None:
+        """An INVALID key (400) is ours to fix: `fail`, with the setup text.
+
+        Until 2026-10-14 this case was a 403; 403 is now a permission/quota
+        refusal and is tested below as `could not measure`."""
         body = json.dumps({"error": {"message": "API key not valid"}}).encode()
-        error = urllib.error.HTTPError(search.ENDPOINT, 403, "Forbidden", {}, None)  # type: ignore[arg-type]
+        error = urllib.error.HTTPError(search.ENDPOINT, 400, "Bad Request", {}, None)  # type: ignore[arg-type]
         error.read = lambda n=-1: body  # type: ignore[method-assign]
         with mock.patch.dict("os.environ", CREDS, clear=True):
             with mock.patch.object(search.urllib.request, "urlopen", side_effect=error):
@@ -270,6 +274,17 @@ class Search(unittest.TestCase):
         assert out["outcome"] == "fail", "the backend answered; that is not 'could not measure'"
         assert "API key not valid" in out["note"]
         assert "programmablesearchengine" in out["note"]
+
+    def test_a_403_from_the_search_api_is_permission_not_a_broken_key(self) -> None:
+        body = json.dumps({"error": {"message": "Requests to this API are blocked."}}).encode()
+        error = urllib.error.HTTPError(search.ENDPOINT, 403, "Forbidden", {}, None)  # type: ignore[arg-type]
+        error.read = lambda n=-1: body  # type: ignore[method-assign]
+        with mock.patch.dict("os.environ", CREDS, clear=True):
+            with mock.patch.object(search.urllib.request, "urlopen", side_effect=error):
+                out = search.search("q")
+        assert out["outcome"] == "could not measure"
+        assert "PERMISSION" in out["note"]
+        assert "client_side" in out
 
     def test_a_policy_denial_is_could_not_measure_not_fail(self) -> None:
         error = urllib.error.URLError(DENIAL_TEXT)
@@ -478,6 +493,260 @@ class GeminiBackend(unittest.TestCase):
     def test_the_setup_text_leads_with_gemini_and_warns_about_the_cap(self) -> None:
         assert search.SETUP.index("GEMINI GROUNDING") < search.SETUP.index("PROGRAMMABLE SEARCH")
         assert "March" in search.SETUP and "50" in search.SETUP
+
+
+def _http_error(url: str, code: int, payload: dict | str) -> urllib.error.HTTPError:
+    body = (payload if isinstance(payload, str) else json.dumps(payload)).encode()
+    error = urllib.error.HTTPError(url, code, "x", {}, None)  # type: ignore[arg-type]
+    error.read = lambda n=-1: body  # type: ignore[method-assign]
+    return error
+
+
+def _router(routes: dict):  # type: ignore[no-untyped-def]
+    """A transport that answers by host: value is a payload dict or an exception."""
+
+    def _transport(request, *a, **k):  # type: ignore[no-untyped-def]
+        url = getattr(request, "full_url", str(request))
+        for needle, answer in routes.items():
+            if needle in url:
+                if isinstance(answer, BaseException):
+                    raise answer
+                return _Response(answer)
+        raise AssertionError(f"unexpected request to {url}")
+
+    return _transport
+
+
+SERPER = {"SERPER_KEY": "test-serper"}
+SERPER_HIT = {
+    "organic": [
+        {
+            "title": "Kling docs",
+            "link": "https://docs.klingai.test/a",
+            "snippet": " 10  s ",
+            "date": "2026-09-01",
+        }
+    ]
+}
+
+
+class BillingAndFallback(unittest.TestCase):
+    """2026-10-14, live: Gemini answered 402 (prepayment depleted) and the tool
+    said `fail` + "create an API key" beside a working key, while SERPER_KEY
+    sat unused. Literals below are the statuses and words that happened (T2)."""
+
+    def test_402_is_billing_could_not_measure_and_never_says_create_a_key(self) -> None:
+        error = _http_error(
+            "https://g", 402, {"error": {"message": "Your prepayment credits are depleted."}}
+        )
+        with mock.patch.dict("os.environ", GEMINI_CREDS, clear=True):
+            with mock.patch.object(search.urllib.request, "urlopen", side_effect=error):
+                out = search.search("q")
+        assert out["outcome"] == "could not measure", out["note"]
+        assert "BILLING" in out["note"]
+        assert "create an API key" not in out["note"], "the key exists; the account cannot pay"
+        assert out["client_side"]["queries"][0] == "q"
+
+    def test_the_status_alone_decides_without_any_telling_words(self) -> None:
+        """T1: the body here carries no billing/quota word, so only the status
+        set can make these `could not measure` — drop a code and it goes red."""
+        for code in (402, 403, 429, 432, 433):
+            with self.subTest(code=code):
+                error = _http_error("https://g", code, {"error": {"message": "x"}})
+                with mock.patch.dict("os.environ", GEMINI_CREDS, clear=True):
+                    with mock.patch.object(search.urllib.request, "urlopen", side_effect=error):
+                        out = search.search("q")
+                assert out["outcome"] == "could not measure", (code, out["note"])
+        error = _http_error("https://g", 401, {"error": {"message": "x"}})
+        with mock.patch.dict("os.environ", GEMINI_CREDS, clear=True):
+            with mock.patch.object(search.urllib.request, "urlopen", side_effect=error):
+                assert search.search("q")["outcome"] == "fail", "the other side: 401 is the key"
+
+    def test_429_is_quota(self) -> None:
+        error = _http_error("https://g", 429, {"error": {"message": "Resource has been exhausted"}})
+        with mock.patch.dict("os.environ", GEMINI_CREDS, clear=True):
+            with mock.patch.object(search.urllib.request, "urlopen", side_effect=error):
+                out = search.search("q")
+        assert out["outcome"] == "could not measure"
+        assert "QUOTA" in out["note"]
+
+    def test_gemini_402_falls_back_to_serper(self) -> None:
+        routes = {
+            "generativelanguage": _http_error("https://g", 402, {"error": {"message": "depleted"}}),
+            "google.serper.dev": SERPER_HIT,
+        }
+        with mock.patch.dict("os.environ", {**GEMINI_CREDS, **SERPER}, clear=True):
+            with mock.patch.object(search.urllib.request, "urlopen", side_effect=_router(routes)):
+                with mock.patch.object(search, "_fetchable", return_value=True):
+                    out = search.search("kling max seconds")
+        assert out["outcome"] == "pass"
+        assert out["backend"] == "serper"
+        assert [a["backend"] for a in out["attempts"]] == ["gemini", "serper"]
+        assert out["attempts"][0]["outcome"] == "could not measure"
+        assert out["results"][0]["host"] == "docs.klingai.test"
+        assert out["results"][0]["snippet"] == "10 s"
+        assert out["results"][0]["date"] == "2026-09-01"
+        assert "Fell back after: gemini" in out["note"]
+
+    def test_negative_control_gemini_that_works_is_not_skipped(self) -> None:
+        """И5: with Gemini healthy, Serper must NOT be called (it costs credits)."""
+        routes = {"generativelanguage": _grounded(["kling.ai"])}
+        with mock.patch.dict("os.environ", {**GEMINI_CREDS, **SERPER}, clear=True):
+            with mock.patch.object(search.urllib.request, "urlopen", side_effect=_router(routes)):
+                with mock.patch.object(search, "_fetchable", return_value=True):
+                    out = search.search("q")
+        assert out["backend"] == "gemini"
+        assert [a["backend"] for a in out["attempts"]] == ["gemini"]
+
+    def test_serper_out_of_credits_under_a_400_is_billing(self) -> None:
+        error = _http_error(
+            search.SERPER_ENDPOINT, 400, {"message": "Not enough credits", "statusCode": 400}
+        )
+        with mock.patch.dict("os.environ", SERPER, clear=True):
+            with mock.patch.object(search.urllib.request, "urlopen", side_effect=error):
+                out = search.search("q")
+        assert out["outcome"] == "could not measure"
+        assert "BILLING" in out["note"]
+
+    def test_serper_sends_its_key_as_a_header_and_never_returns_it(self) -> None:
+        seen: dict = {}
+
+        def _capture(request, timeout=None):  # type: ignore[no-untyped-def]
+            seen["url"] = request.full_url
+            seen["key"] = request.get_header("X-api-key")
+            seen["body"] = json.loads(request.data)
+            return _Response(SERPER_HIT)
+
+        with mock.patch.dict("os.environ", {"SERPER_API_KEY": "SECRET-serper-7"}, clear=True):
+            with mock.patch.object(search.urllib.request, "urlopen", side_effect=_capture):
+                out = search.search("q", site="kling.ai", check_fetchable=False)
+        assert seen["url"] == "https://google.serper.dev/search"
+        assert seen["key"] == "SECRET-serper-7"
+        assert seen["body"]["q"] == "site:kling.ai q"
+        assert "SECRET-serper-7" not in json.dumps(out)
+
+    def test_order_is_gemini_serper_cse_brave_tavily_exa(self) -> None:
+        assert [name for name, _c, _r in search.BACKENDS] == [
+            "gemini",
+            "serper",
+            "programmable-search",
+            "brave",
+            "tavily",
+            "exa",
+        ]
+
+    def test_every_backend_failing_gives_client_side_queries(self) -> None:
+        routes = {
+            "generativelanguage": _http_error("https://g", 402, {"error": {"message": "depleted"}}),
+            "google.serper.dev": _http_error("https://s", 429, {"message": "rate limit"}),
+        }
+        with mock.patch.dict("os.environ", {**GEMINI_CREDS, **SERPER}, clear=True):
+            with mock.patch.object(search.urllib.request, "urlopen", side_effect=_router(routes)):
+                out = search.search("veo 3.1 max resolution", site="ai.google.dev")
+        assert out["outcome"] == "could not measure"
+        assert out["checked"] == 0
+        assert [a["backend"] for a in out["attempts"]] == ["gemini", "serper"]
+        side = out["client_side"]
+        assert side["mode"] == "client-side search"
+        assert side["queries"][0] == "site:ai.google.dev veo 3.1 max resolution"
+        assert "record_model_fact" in side["then"]
+
+    def test_an_invalid_key_with_nothing_else_is_still_fail(self) -> None:
+        """P1: the backend refused OUR key, and no backend answered — `fail`."""
+        routes = {
+            "generativelanguage": _http_error("https://g", 402, {"error": {"message": "depleted"}}),
+            "google.serper.dev": _http_error("https://s", 401, {"message": "Unauthorized."}),
+        }
+        with mock.patch.dict("os.environ", {**GEMINI_CREDS, **SERPER}, clear=True):
+            with mock.patch.object(search.urllib.request, "urlopen", side_effect=_router(routes)):
+                out = search.search("q")
+        assert out["outcome"] == "fail"
+        assert out["violations"] == 1
+
+    def test_unconfigured_also_offers_client_side(self) -> None:
+        with mock.patch.dict("os.environ", {}, clear=True):
+            out = search.search("anything")
+        assert out["client_side"]["queries"][0] == "anything"
+        for name in ("SERPER_API_KEY", "BRAVE_SEARCH_API_KEY", "TAVILY_API_KEY", "EXA_API_KEY"):
+            assert name in out["note"]
+
+
+class OtherBackends(unittest.TestCase):
+    def _one(self, env: dict, payload: dict) -> tuple[dict, dict]:
+        seen: dict = {}
+
+        def _capture(request, timeout=None):  # type: ignore[no-untyped-def]
+            seen["url"] = request.full_url
+            seen["headers"] = dict(request.header_items())
+            seen["body"] = json.loads(request.data) if request.data else None
+            return _Response(payload)
+
+        with mock.patch.dict("os.environ", env, clear=True):
+            with mock.patch.object(search.urllib.request, "urlopen", side_effect=_capture):
+                out = search.search("q", count=3, check_fetchable=False)
+        return out, seen
+
+    def test_brave(self) -> None:
+        out, seen = self._one(
+            {"BRAVE_SEARCH_API_KEY": "b"},
+            {"web": {"results": [{"title": "T", "url": "https://x.test/1", "description": "d"}]}},
+        )
+        assert out["backend"] == "brave" and out["outcome"] == "pass"
+        assert seen["url"].startswith("https://api.search.brave.com/res/v1/web/search?")
+        assert seen["headers"]["X-subscription-token"] == "b"
+        assert out["results"][0]["host"] == "x.test"
+
+    def test_tavily(self) -> None:
+        out, seen = self._one(
+            {"TAVILY_API_KEY": "t"},
+            {"results": [{"title": "T", "url": "https://y.test/1", "content": "c"}]},
+        )
+        assert out["backend"] == "tavily" and out["outcome"] == "pass"
+        assert seen["url"] == "https://api.tavily.com/search"
+        assert seen["headers"]["Authorization"] == "Bearer t"
+        assert seen["body"]["max_results"] == 3
+
+    def test_tavily_plan_limit_432_is_quota(self) -> None:
+        error = _http_error(search.TAVILY_ENDPOINT, 432, {"detail": {"error": "plan limit"}})
+        with mock.patch.dict("os.environ", {"TAVILY_API_KEY": "t"}, clear=True):
+            with mock.patch.object(search.urllib.request, "urlopen", side_effect=error):
+                out = search.search("q")
+        assert out["outcome"] == "could not measure"
+
+    def test_exa(self) -> None:
+        out, seen = self._one(
+            {"EXA_API_KEY": "e"},
+            {"results": [{"title": "T", "url": "https://z.test/1", "publishedDate": "2026-01-02"}]},
+        )
+        assert out["backend"] == "exa" and out["outcome"] == "pass"
+        assert seen["url"] == "https://api.exa.ai/search"
+        assert seen["headers"]["X-api-key"] == "e"
+        assert out["results"][0]["date"] == "2026-01-02"
+
+    def test_zero_hits_on_a_backend_is_not_a_pass(self) -> None:
+        out, _ = self._one({"EXA_API_KEY": "e"}, {"results": []})
+        assert out["outcome"] == "could not measure"
+        assert out["checked"] == 0
+
+
+class GeminiModelFromEnv(unittest.TestCase):
+    def test_default_model_is_a_literal(self) -> None:
+        with mock.patch.dict("os.environ", {}, clear=True):
+            assert search.gemini_model() == "gemini-2.5-flash"
+
+    def test_env_overrides_the_model_in_the_url(self) -> None:
+        seen: dict = {}
+
+        def _capture(request, timeout=None):  # type: ignore[no-untyped-def]
+            seen["url"] = request.full_url
+            return _Response(_grounded(["kling.ai"]))
+
+        env = {**GEMINI_CREDS, "GEMINI_SEARCH_MODEL": "gemini-3-flash"}
+        with mock.patch.dict("os.environ", env, clear=True):
+            with mock.patch.object(search.urllib.request, "urlopen", side_effect=_capture):
+                with mock.patch.object(search, "_fetchable", return_value=True):
+                    search.search("q")
+        assert "/models/gemini-3-flash:generateContent" in seen["url"]
 
 
 if __name__ == "__main__":

@@ -64,6 +64,7 @@ from lipsync.fork_identity import FAIL, PASS, UNMEASURED
 
 from studio.mcp import advice
 from studio.selfrag.facts import TIER_PROBE
+from studio.selfrag.modelnames import fold
 
 __all__ = [
     "propose",
@@ -236,6 +237,25 @@ def _append(path: Path, row: dict) -> None:
         handle.write(json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n")
 
 
+#: Состояния, в которых заявка ещё ОТКРЫТА: ждёт решения или выполнения.
+OPEN_STATES: tuple[str, ...] = (STATE_PROPOSED, STATE_APPROVED)
+
+
+def _open_twin(latest: dict[str, dict], model: str, attribute: str) -> dict | None:
+    """Открытая заявка на ту же модель (по `modelnames.fold`) и тот же атрибут."""
+    want_model = fold(model)
+    want_attr = " ".join(str(attribute or "").split()).casefold()
+    for row in sorted(latest.values(), key=lambda r: str(r.get("filed_on", ""))):
+        if str(row.get("state")) not in OPEN_STATES:
+            continue
+        if fold(str(row.get("model", ""))) != want_model:
+            continue
+        if " ".join(str(row.get("attribute", "")).split()).casefold() != want_attr:
+            continue
+        return row
+    return None
+
+
 def _already_known(model: str, attribute: str, facts_path: Path | None) -> str:
     """ "" when the base cannot answer this. A sentence when it can.
 
@@ -351,7 +371,20 @@ def propose(
 
     ledger = path or DEFAULT_LEDGER_PATH
     identity = _identity(fields["model"], fields["attribute"], fields["test"])
-    standing = _latest(ledger).get(identity)
+    latest = _latest(ledger)
+    standing = latest.get(identity)
+    # ДУБЛЬ ПО СУТИ, А НЕ ПО БУКВАМ. НАЙДЕНО живым прогоном 2026-10-14: заявка
+    # на `veo-3.1 max_resolution` легла второй строкой (`mp-36c46e6926`) рядом
+    # с открытой `mp-5617b65d91` — тест был сформулирован другими словами, и
+    # тождество по (модель, атрибут, ТЕКСТ теста) их не склеило. Оператор
+    # видел бы две просьбы заплатить за один вопрос. Открытая заявка на ту же
+    # модель (по свёртке имени) и тот же атрибут — это та же заявка.
+    twin = False
+    if standing is None:
+        standing = _open_twin(latest, fields["model"], fields["attribute"])
+        if standing is not None:
+            identity = str(standing["id"])
+            twin = True
     if standing is not None:
         return {
             "outcome": UNMEASURED,
@@ -363,7 +396,16 @@ def propose(
             "note": (
                 f"already filed as {identity}, state {standing.get('state')!r} — "
                 "not filed twice, so the operator sees one ask"
+                + (
+                    f". It is an OPEN proposal for the same question "
+                    f"({standing.get('model')}.{standing.get('attribute')}) with a "
+                    "differently worded test; if yours measures something it does not, "
+                    "say so to the operator rather than filing a second ask"
+                    if twin
+                    else ""
+                )
             ),
+            "duplicate_of_open": twin,
         }
 
     row = {
@@ -644,15 +686,24 @@ def proposals(*, state: str = "", path: Path | None = None) -> dict:
             "note": f"no measurement proposals have ever been filed ({ledger})",
         }
     waiting = counts.get(STATE_PROPOSED, 0)
+    # НОТА ГОВОРИТ О ТОМ, ЧТО ПОКАЗАНО. До 2026-10-14 она была одной и той же
+    # при любом фильтре — «13 proposal(s)» над списком из трёх, — и читатель
+    # не мог понять, отфильтровано ли вообще.
+    shown_part = (
+        f"{len(shown)} shown with state {wanted!r} out of {len(rows)} proposal(s)"
+        if wanted
+        else f"{len(rows)} proposal(s), all shown"
+    )
     return {
         "outcome": PASS,
         "checked": len(rows),
         "violations": 0,
         "unmeasured": 0,
         "proposals": shown,
+        "state_filter": wanted,
         "by_state": counts,
         "note": (
-            f"{len(rows)} proposal(s); {waiting} waiting on the operator; "
+            f"{shown_part}; {waiting} waiting on the operator; "
             f"${sum(float(r.get('actual_cost_usd') or 0.0) for r in rows):.2f} spent so far"
         ),
     }

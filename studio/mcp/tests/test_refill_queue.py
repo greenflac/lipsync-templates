@@ -80,7 +80,10 @@ class ReasonsAreOneString(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as tmp:
             journal = Path(tmp) / "misses.jsonl"
-            row = '{"model":"h3-max","attribute":"","outcome":"could not measure",'
+            # Не `h3-max`: с 2026-10-14 это курируемая перепись к
+            # `minimax-h3-max`, база на него ОТВЕЧАЕТ, и промаха больше нет.
+            # `kling-3.0-turbo` в базе нет, а соседи по семье есть.
+            row = '{"model":"kling-3.0-turbo","attribute":"","outcome":"could not measure",'
             row += '"known":0,"asked_on":"2026-08-31"}\n'
             journal.write_text(row * 2, encoding="utf-8")
             produced |= {r["reason"] for r in refill.missed_work(journal)}

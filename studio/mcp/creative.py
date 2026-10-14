@@ -80,9 +80,11 @@ __all__ = [
     "analyse",
     "frames_in",
     "input_state",
+    "IMAGE_SUFFIXES",
     "look",
     "missing_reason",
     "motion_of",
+    "одна_съёмка",
 ]
 
 #: ТРИ СОСТОЯНИЯ ПОДАННОГО ВХОДА, и они НЕ сворачиваются друг в друга (Р1).
@@ -237,14 +239,36 @@ def frames_in(frames_dir: str | Path) -> dict:
             "frames": [],
             "why": f"каталога {directory} нет — кадры не читались",
         }
-    got = [str(p) for p in sorted(directory.glob("*")) if p.is_file()]
+    # ТОЛЬКО КАРТИНКИ, БЕЗ СКРЫТЫХ ФАЙЛОВ. НАЙДЕНО живым прогоном 2026-10-14:
+    # в каталоге раскадровки лежал `.ключ.json`, он первым шёл по алфавиту и
+    # уезжал в приборы движения кадром — разбор падал на «cannot identify
+    # image file» и отвечал «файл есть, но открыть нечем» про сам ролик.
+    файлы = [p for p in sorted(directory.glob("*")) if p.is_file()]
+    got = [
+        str(p) for p in файлы if not p.name.startswith(".") and p.suffix.lower() in IMAGE_SUFFIXES
+    ]
+    пропущено = [p.name for p in файлы if str(p) not in got]
     if not got:
         return {
             "state": FRAMES_MISSING,
             "frames": [],
-            "why": f"каталог {directory} есть, но файлов в нём нет",
+            "skipped": пропущено,
+            "why": (
+                f"каталог {directory} есть, но картинок в нём нет"
+                + (f" (пропущено не-кадров: {len(пропущено)})" if пропущено else "")
+            ),
         }
-    return {"state": FRAMES_GIVEN, "frames": got, "why": f"{len(got)} кадр(ов) из {directory}"}
+    return {
+        "state": FRAMES_GIVEN,
+        "frames": got,
+        "skipped": пропущено,
+        "why": f"{len(got)} кадр(ов) из {directory}"
+        + (
+            f"; пропущено {len(пропущено)} файл(ов), которые не кадры: " + ", ".join(пропущено[:8])
+            if пропущено
+            else ""
+        ),
+    }
 
 
 def input_state(path: str | Path, *, measured: int) -> dict:
@@ -438,8 +462,62 @@ def look(path: str | Path) -> dict:
     }
 
 
-def motion_of(frames: Sequence[str]) -> dict:
-    """Does the clip loop and does it move physically. Delegates to the engine.
+def одна_съёмка(frames: Sequence[str]) -> dict:
+    """Похожи ли кадры на ОДИН ролик, а не на набор разных картинок. Три исхода.
+
+    `{"sequence": True|False|None, "why": ..., "hist": медиана, "diff": медиана}`.
+    None — нечем мерить (нет Pillow/numpy) или кадр не открылся.
+    """
+    try:
+        import numpy as np
+        from PIL import Image
+    except ImportError as error:
+        return {"sequence": None, "why": f"нечем сравнить кадры: {error}"}
+    размеры = set()
+    массивы = []
+    try:
+        for path in frames:
+            with Image.open(path) as im:
+                размеры.add(im.size)
+                rgb = im.convert("RGB").resize((64, 64), Image.Resampling.BILINEAR)
+                массивы.append(np.asarray(rgb, dtype="float64"))
+    except Exception as error:  # noqa: BLE001 - неоткрываемый кадр это ответ
+        return {"sequence": None, "why": f"кадр не открылся: {type(error).__name__}: {error}"}
+    if len(размеры) > 1:
+        return {
+            "sequence": False,
+            "why": f"у кадров {len(размеры)} разных размера — это не кадры одного ролика",
+        }
+    пересечения: list[float] = []
+    разницы: list[float] = []
+    for a, b in zip(массивы, массивы[1:]):
+        ha = np.histogramdd(a.reshape(-1, 3), bins=(4, 4, 4), range=[(0, 256)] * 3)[0].ravel()
+        hb = np.histogramdd(b.reshape(-1, 3), bins=(4, 4, 4), range=[(0, 256)] * 3)[0].ravel()
+        пересечения.append(float(np.minimum(ha / ha.sum(), hb / hb.sum()).sum()))
+        разницы.append(float(np.abs(a.mean(2) - b.mean(2)).mean()))
+    hist = float(np.median(пересечения))
+    diff = float(np.median(разницы))
+    одна = hist >= SEQUENCE_HIST_MIN and diff <= SEQUENCE_DIFF_MAX
+    return {
+        "sequence": одна,
+        "hist": round(hist, 3),
+        "diff": round(diff, 1),
+        "why": (
+            f"соседние кадры: цвет совпадает на {hist:.2f} (порог {SEQUENCE_HIST_MIN}), "
+            f"яркость расходится на {diff:.1f} (порог {SEQUENCE_DIFF_MAX})"
+            + ("" if одна else " — это набор РАЗНЫХ картинок (раскадровка?), а не один ролик")
+        ),
+    }
+
+
+def motion_of(frames: Sequence[str], *, loop: bool = False) -> dict:
+    """Does the clip move physically — and, when asked, does it loop. Delegates to the engine.
+
+    :param loop: the clip is MEANT to loop (a cinemagraph, a background). Only
+        then is the loop seam a bar it can fail. Otherwise the seam is measured
+        and reported as information: a normal clip ends somewhere else than it
+        began, and that is not a defect. FOUND 2026-10-14 on a live run: an
+        ordinary talking clip got `fail` for "visible cut on repeat".
 
     `lipsync.motion` is imported, never reimplemented: it is the instrument the
     engine already judges clips with, and a second copy here would be a second
@@ -463,6 +541,21 @@ def motion_of(frames: Sequence[str]) -> dict:
             "loop": None,
             "quality": None,
         }
+    съёмка = одна_съёмка(paths)
+    if съёмка["sequence"] is False:
+        return {
+            **_house(
+                UNMEASURED,
+                0,
+                0,
+                1,
+                f"motion not judged: {съёмка['why']}. Loop and continuity are "
+                "properties of ONE clip; between unrelated stills they mean nothing",
+            ),
+            "loop": None,
+            "quality": None,
+            "sequence": съёмка,
+        }
     try:
         from lipsync import motion
     except ImportError as error:
@@ -470,6 +563,7 @@ def motion_of(frames: Sequence[str]) -> dict:
             **_house(UNMEASURED, 0, 0, 1, f"nothing to measure with: {error}"),
             "loop": None,
             "quality": None,
+            "sequence": съёмка,
         }
     try:
         seam = motion.loop_seam(paths)
@@ -481,18 +575,28 @@ def motion_of(frames: Sequence[str]) -> dict:
             ),
             "loop": None,
             "quality": None,
+            "sequence": съёмка,
         }
-    violations = int(not seam.get("seamless", False))
+    # Скачки — нарушение всегда: «конечности телепортируются» не бывает
+    # нормой. Шов — только для ролика, который ОБЯЗАН зацикливаться.
+    jumps = int(bool(quality.get("jumps")))
+    seam_bad = int(not seam.get("seamless", False)) if loop else 0
+    violations = jumps + seam_bad
+    seam_note = str(seam.get("note", ""))
+    if not loop and seam_note:
+        seam_note = f"(informational, the clip is not declared a loop) {seam_note}"
     return {
         **_house(
             FAIL if violations else PASS,
-            2,
+            2 if loop else 1,
             violations,
             0,
-            f"{seam.get('note', '')} {quality.get('note', '')}".strip(),
+            f"{seam_note} {quality.get('note', '')}".strip(),
         ),
         "loop": seam,
+        "loop_judged": bool(loop),
         "quality": quality,
+        "sequence": съёмка,
     }
 
 
@@ -516,11 +620,15 @@ def intake_of(path: str | Path) -> dict:
             "axes": {},
         }
     axes = report.get("axes") or {}
-    reasons = "; ".join(
-        f"{name}: {axis.get('note', '')}"
-        for name, axis in axes.items()
-        if str(axis.get("outcome")) != PASS
-    )
+    # ОДНА ПРИЧИНА — ОДИН РАЗ. НАЙДЕНО 2026-10-14: «No module named
+    # 'insightface'» повторялось в ответе шесть раз (по разу на ось и ещё в
+    # сводке), и настоящая новость тонула в повторе. Оси с одинаковой нотой
+    # сводятся в одну строку с перечнем осей.
+    по_ноте: dict[str, list[str]] = {}
+    for name, axis in axes.items():
+        if str(axis.get("outcome")) != PASS:
+            по_ноте.setdefault(str(axis.get("note", "")), []).append(str(name))
+    reasons = "; ".join(f"{', '.join(names)}: {note}" for note, names in по_ноте.items())
     return {
         **_house(
             str(report.get("outcome", UNMEASURED)),
@@ -535,6 +643,21 @@ def intake_of(path: str | Path) -> dict:
 
 #: Расширения, которые разбираются как ВИДЕО, а не как картинка.
 VIDEO_SUFFIXES = frozenset({".mp4", ".mov", ".webm", ".mkv", ".m4v", ".avi"})
+
+#: Расширения, которые принимаются КАДРОМ. Остальное в каталоге кадров —
+#: заметки, ключи, сам ролик — кадром не бывает.
+IMAGE_SUFFIXES = frozenset({".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tif", ".tiff", ".gif"})
+
+#: ОДНА ЛИ ЭТО СЪЁМКА. ИЗМЕРЕНО 2026-10-14 на живом материале (6 кадров на
+#: ролик, соседние пары, 64x64): по 10 настоящим роликам медиана пересечения
+#: цветовых гистограмм (4x4x4) — 0.93..0.99, медиана средней разницы яркости —
+#: 3.0..30.0 (из 255); по двум каталогам РАЗНЫХ картинок (раскадровка из 8
+#: ключевых кадров и 8 вариантов одного кадра от разных моделей) — 0.73 и 0.79,
+#: 62 и 47. Пороги ВЫБРАНЫ посередине зазора. Без этой проверки раскадровка
+#: отвечала «motion is continuous» — прибор движения меряет отношение шагов к
+#: их же медиане, и одинаково большие скачки выглядят для него гладкими.
+SEQUENCE_HIST_MIN = 0.88
+SEQUENCE_DIFF_MAX = 40.0
 
 #: Сколько кадров вынимать из ролика. ВЫБРАНО 6: столько же, сколько берёт
 #: раскадровка стенда-валидатора, и по той же причине — шести хватает, чтобы
@@ -635,7 +758,7 @@ def _video_seconds(exe: str, path: str | Path) -> float | None:
     return None
 
 
-def analyse(path: str | Path, *, frames: Sequence[str] | None = None) -> dict:
+def analyse(path: str | Path, *, frames: Sequence[str] | None = None, loop: bool = False) -> dict:
     """Everything measurable about one creative, and everything that was not.
 
     :param path: a still image, OR a video — `.mp4`, `.mov`, `.webm` and the
@@ -644,7 +767,9 @@ def analyse(path: str | Path, *, frames: Sequence[str] | None = None) -> dict:
         whole sequence.
     :param frames: a frame sequence you extracted yourself. Given, it wins over
         anything decoded from `path` — a caller who already has the frames
-        should not pay for a second decode.
+        should not pay for a second decode. Only image files count as frames;
+        `path` itself is never one of them.
+    :param loop: the clip is meant to loop; only then is the loop seam judged.
 
     THE FIRST FIELD TO READ IS `input`, not `outcome`. It carries one of three
     states, kept apart on purpose (P1): `INPUT_MISSING` — there is no file at
@@ -684,6 +809,22 @@ def analyse(path: str | Path, *, frames: Sequence[str] | None = None) -> dict:
         }
 
     still = Path(path)
+    # КАДР — ЭТО КАРТИНКА, И НЕ САМ РОЛИК. Найдено 2026-10-14: ролик, лежащий
+    # в каталоге кадров, и не-картинки уезжали в приборы движения.
+    if frames:
+        сам = still.expanduser().resolve()
+        frames = [
+            str(f)
+            for f in frames
+            if Path(f).suffix.lower() in IMAGE_SUFFIXES
+            and not Path(f).name.startswith(".")
+            and Path(f).expanduser().resolve() != сам
+        ]
+        # Ролик + свои кадры: внешний вид меряется на СРЕДНЕМ кадре, а не на
+        # самом ролике — ролик как картинку не открыть (и до 2026-10-14 из-за
+        # этого весь разбор отвечал «файл есть, но открыть нечем»).
+        if frames and still.suffix.lower() in VIDEO_SUFFIXES:
+            still = Path(frames[len(frames) // 2])
     decoded: dict | None = None
     temp: tempfile.TemporaryDirectory | None = None
     # `not frames`, а не `frames is None`: ПУСТОЙ список — это «кадров не
@@ -705,7 +846,7 @@ def analyse(path: str | Path, *, frames: Sequence[str] | None = None) -> dict:
             "intake": intake_of(still),
         }
         if frames:
-            parts["motion"] = motion_of(frames)
+            parts["motion"] = motion_of(frames, loop=loop)
         if decoded is not None and str(decoded.get("outcome")) == UNMEASURED:
             parts["video_decode"] = decoded
         return _finish(path, parts)

@@ -1,9 +1,32 @@
 #!/usr/bin/env python3
 """One model, one id. Merge the spellings that split a model's claims in two.
 
-    python scripts/merge_model_ids.py --dry-run
-    python scripts/merge_model_ids.py
+    python scripts/merge_model_ids.py             # план, НИЧЕГО не пишет (по умолчанию)
+    python scripts/merge_model_ids.py --apply     # применить план к базе
     python scripts/merge_model_ids.py --check     # red if a merged spelling returns
+
+ДОПОЛНЕНО 2026-10-14 (аудит ae94057). Кроме таблицы `MERGES` ниже, план
+теперь берёт ВСЕ группы, которые сводит свёртка имени
+(`studio/selfrag/modelnames.py`): после её усиления (`X.0` = `X`,
+`i2v` = `image-to-video`, вендор/площадка впереди, курируемые переписи) на
+живой базе таких групп 44, из них 21 новая — `seedance-2.0`/`seedance2`,
+`imagen-4`/`imagen-4.0`, `minimax-h3-i2v`/`minimax-h3-image-to-video`,
+`veo-3.1-i2v`/`veo3.1-image-to-video`, `eleven_v3`/`elevenlabs-tts-eleven-v3`,
+`wan-2.2-a14b-i2v`/`wan-v2.2-a14b-image-to-video` и т.д.; каждая проверена
+чтением строк как одна модель. Каноническое написание группы —
+`modelnames.canonical_spelling`: вендорское, если известно, иначе то, под
+которым строк больше.
+
+ПО УМОЛЧАНИЮ — СУХОЙ ПРОГОН. Раньше запуск без флагов писал в базу, а сухой
+прогон надо было просить; теперь наоборот, потому что запись в append-only
+журнал не откатывается.
+
+КАК ПЕРЕНОСИТСЯ СТРОКА ГРУППЫ. Не через `record`, а КОПИЕЙ стоящей строки
+(все поля — тир, даты, ноты, флаг чтения, `witnessed`, `contra`) с заменой
+одного `model` и полем `asked_as` = прежнее написание; затем `withdraw`
+прежней. `record` перепроверяет строку ПО НЫНЕШНИМ правилам и дописывает ноты
+(«зонда в журнале нет», «хост закрыт политикой»), то есть переписал бы
+происхождение — а переименование модели происхождения не меняет.
 
 THE DEFECT, MEASURED 2026-08-27
 
@@ -49,6 +72,7 @@ and re-running is a no-op, because `record` supersedes an identical row and
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 import tempfile
 from pathlib import Path
@@ -58,7 +82,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from lipsync.fork_identity import PASS  # noqa: E402
 
 from studio.mcp import advice  # noqa: E402
-from studio.selfrag.facts import DEFAULT_FACTS_PATH, load_facts  # noqa: E402
+from studio.selfrag import modelnames  # noqa: E402
+from studio.selfrag.facts import DEFAULT_FACTS_PATH, claim_key, load_facts  # noqa: E402
 
 #: spelling seen in the base -> the id its vendor uses. Every entry is a claim
 #: about what a vendor calls its own model, and every one of them was read out
@@ -112,24 +137,125 @@ WHY = (
 
 
 def _plan(path: Path | None = None) -> list:
-    """Every standing fact filed under a spelling that is not the vendor's."""
+    """Every standing fact filed under a spelling that is not the canonical one."""
     rows = load_facts(path or DEFAULT_FACTS_PATH)
-    return [f for f in rows if f.model in MERGES or f.attribute in ATTRIBUTE_MERGES]
+    группы = canonical_by_fold(rows)
+    return [
+        f for f in rows if f.model in MERGES or f.attribute in ATTRIBUTE_MERGES or f.model in группы
+    ]
 
 
-def canonical_of(fact) -> tuple[str, str]:
+def canonical_by_fold(rows) -> dict[str, str]:
+    """Написание -> каноническое, для каждой группы, которую сводит свёртка.
+
+    Только написания, отличные от канонического; таблица `MERGES` главнее
+    (вендорское свидетельство), поэтому её левые части здесь не повторяются.
+    """
+    счёт: dict[str, int] = {}
+    for f in rows:
+        счёт[f.model] = счёт.get(f.model, 0) + 1
+    out: dict[str, str] = {}
+    for names in modelnames.group(счёт).values():
+        канон = modelnames.canonical_spelling(names, счёт)
+        # Одиночка сводится, только если вендор назвал своё написание
+        # (`ПРЕДПОЧТЕНИЕ`): `gemini_image3.1_flash` -> `nano-banana-2`.
+        if len(names) < 2 and канон in names:
+            continue
+        for name in names:
+            if name != канон and name not in MERGES:
+                out[name] = канон
+    return out
+
+
+def canonical_of(fact, группы: dict[str, str] | None = None) -> tuple[str, str]:
     """Под какими именем модели и именем атрибута факт должен стоять."""
-    return MERGES.get(fact.model, fact.model), ATTRIBUTE_MERGES.get(fact.attribute, fact.attribute)
+    model = MERGES.get(fact.model) or (группы or {}).get(fact.model, fact.model)
+    return model, ATTRIBUTE_MERGES.get(fact.attribute, fact.attribute)
 
 
 def _check(path: Path | None = None) -> int:
     stale = _plan(path)
     for fact in stale[:10]:
         print(f"  всё ещё под чужим написанием: {fact.model}.{fact.attribute}")
-    print(f"\nпроверено {len(MERGES)} написаний имени модели")
+    группы = canonical_by_fold(load_facts(path or DEFAULT_FACTS_PATH))
+    print(f"\nпроверено {len(MERGES)} написаний имени модели по таблице")
+    print(f"проверено {len(группы)} написаний, сводимых свёрткой, ещё не слитых")
     print(f"проверено {len(ATTRIBUTE_MERGES)} написаний имени атрибута")
     print(f"не слито {len(stale)}")
     return 1 if stale else 0
+
+
+def стоящие_строки(path: Path) -> dict[tuple[str, str, str, str], dict]:
+    """Ключ утверждения -> СЫРАЯ последняя строка о нём, как она записана.
+
+    Тем же правилом, что `facts.load_facts` (последняя строка о ключе
+    побеждает, отзыв убирает), но со всеми полями строки — переносится
+    происхождение целиком, а не то, что знает датакласс `Fact`.
+    """
+    стоит: dict[tuple[str, str, str, str], dict | None] = {}
+    if not path.is_file():
+        return {}
+    for line in path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("//"):
+            continue
+        try:
+            row = json.loads(line)
+        except ValueError:
+            continue
+        if not isinstance(row, dict) or not row.get("model") or not row.get("attribute"):
+            continue
+        key = claim_key(
+            str(row["model"]),
+            str(row["attribute"]),
+            str(row.get("value", "")),
+            str(row.get("source_url", "")),
+        )
+        стоит[key] = None if row.get("withdrawn") else row
+    return {k: v for k, v in стоит.items() if v is not None}
+
+
+def перенести(fact, canonical: str, attribute: str, path: Path) -> tuple[str, dict | None]:
+    """Дописать копию стоящей строки под каноническими именами. (исход, строка).
+
+    Исход: `written` — дописана; `already` — такое утверждение под каноническим
+    именем уже стоит (переносить нечего, остаётся снять дубль); `missing` —
+    строки нет (кто-то снял её между планом и переносом).
+    """
+    стоит = стоящие_строки(path)
+    сырая = стоит.get(claim_key(fact.model, fact.attribute, fact.value, fact.source_url))
+    if сырая is None:
+        return "missing", None
+    if claim_key(canonical, attribute, fact.value, fact.source_url) in стоит:
+        return "already", None
+    копия = dict(сырая)
+    копия["model"] = canonical
+    копия["attribute"] = attribute
+    if canonical != fact.model and not копия.get("asked_as"):
+        копия["asked_as"] = fact.model
+    if attribute != fact.attribute and not копия.get("asked_as_attribute"):
+        копия["asked_as_attribute"] = fact.attribute
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(копия, ensure_ascii=False) + "\n")
+    return "written", копия
+
+
+def счёт_базы(path: Path) -> dict[str, int]:
+    """Числа до и после (Р2): строк в файле, стоящих утверждений, имён, групп."""
+    строк = (
+        sum(1 for line in path.read_text(encoding="utf-8").splitlines() if line.strip())
+        if path.is_file()
+        else 0
+    )
+    rows = load_facts(path)
+    имена = {f.model for f in rows}
+    return {
+        "строк в файле": строк,
+        "стоящих утверждений": len(rows),
+        "имён моделей": len(имена),
+        "групп из >1 написания": sum(1 for v in modelnames.group(имена).values() if len(v) > 1),
+    }
 
 
 ПОЧЕМУ_НЕ_ПЕРЕНОС = (
@@ -169,55 +295,61 @@ def отказ_из_за_самой_строки(fact, пробник: Path | No
 
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--dry-run", action="store_true", help="сухой прогон (и так по умолчанию)")
+    parser.add_argument("--apply", action="store_true", help="применить план к базе")
     parser.add_argument("--check", action="store_true")
+    parser.add_argument("--path", type=Path, default=None, help="другая база (для проверки)")
     args = parser.parse_args(argv)
+    target = Path(args.path or DEFAULT_FACTS_PATH)
 
     if args.check:
-        return _check()
+        return _check(target)
+
+    сухой = not args.apply or args.dry_run
+    план = _plan(target)
+    группы = canonical_by_fold(load_facts(target))
+    до = счёт_базы(target)
+    print("ПЛАН" + (" (сухой прогон: ничего не записано; --apply применит)" if сухой else ""))
+    по_парам: dict[tuple[str, str], int] = {}
+    for fact in план:
+        canonical, attribute = canonical_of(fact, группы)
+        по_парам[(fact.model, canonical)] = по_парам.get((fact.model, canonical), 0) + 1
+    for (было, стало), n in sorted(по_парам.items()):
+        print(f"  {было} -> {стало}  ({n} утв.)")
+    атрибуты = sum(1 for f in план if f.attribute in ATTRIBUTE_MERGES)
+    if атрибуты:
+        print(f"  + имён атрибутов к сведению: {атрибуты}")
 
     moved = kept = failed = не_смогли = 0
-    for fact in _plan():
-        canonical, attribute = canonical_of(fact)
-        if args.dry_run:
-            print(f"  {fact.model}.{fact.attribute} -> {canonical}.{attribute}")
-            moved += 1
-            continue
-        written = advice.record(
-            canonical,
-            attribute,
-            fact.value,
-            fact.source_url,
-            fact.tier,
-            fact.stated_on,
-            note=fact.note,
-            fix=fact.fix,
-            read_directly=fact.read_directly,
-        )
-        if written["outcome"] != PASS:
-            if отказ_из_за_самой_строки(fact):
+    if not сухой:
+        for fact in план:
+            canonical, attribute = canonical_of(fact, группы)
+            исход, _row = перенести(fact, canonical, attribute, target)
+            if исход == "missing":
                 не_смогли += 1
-                print(
-                    f"  НЕ СМОГЛИ {fact.model}.{fact.attribute}: {written['note'][:120]}\n"
-                    f"    {ПОЧЕМУ_НЕ_ПЕРЕНОС}"
-                )
-            else:
+                print(f"  НЕ СМОГЛИ {fact.model}.{fact.attribute}: строки уже нет в базе")
+                continue
+            removed = advice.withdraw(
+                fact.model, fact.attribute, fact.value, fact.source_url, WHY, path=target
+            )
+            if removed["outcome"] != PASS:
                 failed += 1
-                print(f"  НЕ ПЕРЕНЕСЕНО {fact.model}.{fact.attribute}: {written['note'][:120]}")
-            continue
-        removed = advice.withdraw(fact.model, fact.attribute, fact.value, fact.source_url, WHY)
-        if removed["outcome"] != PASS:
-            failed += 1
-            print(f"  НЕ СНЯТО {fact.model}.{fact.attribute}: {removed['note'][:120]}")
-            continue
-        if written["written"] is None:
-            kept += 1
-        moved += 1
+                print(f"  НЕ СНЯТО {fact.model}.{fact.attribute}: {removed['note'][:120]}")
+                continue
+            if исход == "already":
+                kept += 1
+            moved += 1
+    после = счёт_базы(target) if not сухой else до
 
     print(f"\nнаписаний в таблице {len(MERGES) + len(ATTRIBUTE_MERGES)}")
+    print(f"написаний, сводимых свёрткой {len(группы)}")
+    print(f"утверждений в плане {len(план)}")
     print(f"перенесено {moved}")
     print(f"из них уже стояло под каноническим id {kept}")
     print(f"не смогли {не_смогли}")
+    print(f"не перенесено {failed}")
+    for ключ in до:
+        print(f"{ключ}: до {до[ключ]}, после {после[ключ]}")
     return 1 if failed else (2 if не_смогли else 0)
 
 

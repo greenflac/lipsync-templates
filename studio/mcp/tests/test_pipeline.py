@@ -86,12 +86,91 @@ def шаг(model="модель-а", requires=(), produces=(), budget=0.30, use="
     )
 
 
-def план(*steps, name="план"):
-    return pl.Pipeline(name=name, steps=tuple(steps))
+def план(*steps, name="план", inputs=("селфи",)):
+    # С 2026-10-14 селфи — не вход плана «всегда», а то, что заказчик ПРИНЁС
+    # (`Pipeline.inputs`). Здоровые планы этого файла строятся на селфи
+    # клиента, поэтому оно объявляется принесённым; без него — разрыв
+    # (`ВходПланаОбъявляется`).
+    return pl.Pipeline(name=name, steps=tuple(steps), inputs=tuple(inputs))
 
 
 def исход(steps, facts, today=СЕГОДНЯ):
     return pl.pipeline_report(план(*steps), list(facts), today)
+
+
+class ВходПланаОбъявляется(unittest.TestCase):
+    """Живой прогон 2026-10-14: «ключевые кадры для MMA ролика» -> оживление
+    СЕЛФИ, которого никто не приносил, и `разрыв` молчал, потому что селфи
+    считалось существующим всегда. Т1 в обе стороны: без объявления — разрыв,
+    с объявлением — проходит."""
+
+    def test_селфи_не_принесено_это_разрыв(self):
+        шаги = [шаг(requires=["селфи"], produces=["кадр"])]
+        отчёт = pl.pipeline_report(план(*шаги, inputs=()), здоровые("модель-а"), СЕГОДНЯ)
+        self.assertEqual(отчёт["classes"], ["разрыв"])
+        self.assertEqual(отчёт["outcome"], "fail")
+
+    def test_селфи_принесено_разрыва_нет(self):
+        шаги = [шаг(requires=["селфи"], produces=["кадр"])]
+        отчёт = pl.pipeline_report(план(*шаги, inputs=("селфи",)), здоровые("модель-а"), СЕГОДНЯ)
+        self.assertEqual(отчёт["classes"], [])
+        self.assertEqual(отчёт["outcome"], "pass")
+
+    def test_селфи_больше_не_вход_всегда(self):
+        self.assertEqual(pl.AMBIENT_ARTEFACTS, frozenset({"бриф", "референс"}))
+
+    def test_входы_читаются_из_строки_данных(self):
+        труба = pl.parse_pipeline(
+            {"name": "п", "inputs": ["селфи"], "steps": [{"name": "к", "requires": ["селфи"]}]}
+        )
+        self.assertEqual(труба.inputs, ("селфи",))
+
+
+class ЯзыкСтроки(unittest.TestCase):
+    """Живой прогон 2026-10-14: английская озвучка отвергалась строками о
+    хинди и телугу. Строка, назвавшая ДРУГОЙ язык, речевой шаг не судит; строка
+    без языка и строка «только английский» — судят."""
+
+    def _факт(self, value):
+        return факт("модель-а", "degrades_when", value)
+
+    def test_строка_о_хинди_не_судит_английский_шаг(self):
+        f = self._факт("на хинди и телугу срыв ретрофлексов 40%")
+        self.assertFalse(pl.in_scope(f, ("english",)))
+        self.assertTrue(pl.in_scope(f, ("hindi",)))
+
+    def test_строка_без_языка_судит_всех(self):
+        f = self._факт("голос плывёт на длинной реплике")
+        self.assertTrue(pl.in_scope(f, ("english",)))
+        self.assertTrue(pl.in_scope(f, ()))
+
+    def test_только_английский_судит_русский_шаг(self):
+        f = self._факт("English-only text encoder, other languages degrade")
+        self.assertTrue(pl.in_scope(f, ("russian",)))
+
+    def test_не_только_это_не_исключительность(self):
+        self.assertFalse(pl.exclusive_language("не только WER на хинди"))
+        self.assertTrue(pl.exclusive_language("поддерживает только английский"))
+
+    def test_языки_называются_по_обеим_формам(self):
+        self.assertEqual(pl.languages_in("на телугу и in Tamil"), frozenset({"telugu", "tamil"}))
+        self.assertEqual(pl.languages_in("70+ voices"), frozenset())
+
+    def test_валидатор_не_отвергает_шаг_строкой_о_чужом_языке(self):
+        факты = здоровые("модель-а") + [
+            факт("модель-а", "degrades_when", "на телугу срыв ретрофлексов 40%", tier="paper")
+        ]
+        с_языком = pl.Step(
+            "озвучка", "модель-а", "лицо клиента не должно подмениться", ("селфи",), (),
+            None, languages=("english",),
+        )
+        без_языка = pl.Step(
+            "озвучка", "модель-а", "лицо клиента не должно подмениться", ("селфи",), (), None
+        )
+        вне = исход([с_языком], факты)["steps"][0]["probes"][2]
+        self.assertIn(pl.OUT_OF_SCOPE_NOTE, вне["note"])
+        внутри = исход([без_языка], факты)["steps"][0]["probes"][2]
+        self.assertNotIn(pl.OUT_OF_SCOPE_NOTE, внутри["note"])
 
 
 class СемьКлассов(unittest.TestCase):

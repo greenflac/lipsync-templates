@@ -199,7 +199,13 @@ class WhatTheBaseAlreadyHas(unittest.TestCase):
     def test_a_neighbour_is_not_reported_as_the_same_model(self):
         got = hf.already_known("OmniGen2/OmniGen2", self.store("omnihuman-1", "omniweaving"))
         self.assertEqual(got["exact"], [])
-        self.assertEqual(got["neighbours"], ["omnihuman-1", "omniweaving"])
+        # С 2026-10-14 (аудит ae94057) общие четыре знака `omni` — шум, а не
+        # сосед: первое звено `omnigen` не покрыто ни `omnihuman`, ни
+        # `omniweaving`. Положительная сторона (И5) — ниже.
+        self.assertEqual(got["neighbours"], [])
+        got = hf.already_known("ByteDance/OmniHuman", self.store("omnihuman-1", "omniweaving"))
+        self.assertEqual(got["exact"], [])
+        self.assertEqual(got["neighbours"], ["omnihuman-1"])
 
     def test_an_exact_match_is_reported_as_one(self):
         got = hf.already_known("krea/Krea-2", self.store("krea-2"))

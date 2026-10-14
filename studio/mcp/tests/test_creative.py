@@ -199,16 +199,28 @@ class Motion(unittest.TestCase):
         assert "at least 3" in out["note"]
 
     def test_a_clip_that_returns_where_it_started_passes(self) -> None:
-        out = creative.motion_of(self._frames(9, loop=True))
+        out = creative.motion_of(self._frames(9, loop=True), loop=True)
         assert out["outcome"] == "pass"
         assert out["loop"]["seamless"] is True
 
-    def test_a_clip_that_drifts_away_fails(self) -> None:
+    def test_a_clip_that_drifts_away_fails_WHEN_IT_IS_MEANT_TO_LOOP(self) -> None:
         """The negative control: without it a motion check that always passed
         would look identical in the output."""
-        out = creative.motion_of(self._frames(9, loop=False))
+        out = creative.motion_of(self._frames(9, loop=False), loop=True)
         assert out["outcome"] == "fail"
         assert out["violations"] == 1
+        assert out["loop_judged"] is True
+
+    def test_a_drift_in_an_ordinary_clip_is_information_not_a_fail(self) -> None:
+        """2026-10-14, live: a normal clip got `fail` for "visible cut on repeat".
+        A clip nobody declared a loop is not judged on its seam."""
+        out = creative.motion_of(self._frames(9, loop=False))
+        assert out["outcome"] == "pass", out["note"]
+        assert out["violations"] == 0
+        assert out["checked"] == 1
+        assert out["loop_judged"] is False
+        assert out["loop"]["seamless"] is False, "still measured, still reported"
+        assert "informational" in out["note"]
 
 
 class Analyse(unittest.TestCase):
@@ -248,7 +260,7 @@ class Analyse(unittest.TestCase):
             path = self.tmp / f"f{index}.png"
             image.save(path)
             frames.append(str(path))
-        out = creative.analyse(frames[0], frames=frames)
+        out = creative.analyse(frames[0], frames=frames, loop=True)
         assert out["outcome"] == "fail"
         assert out["violations"] >= 1
 
@@ -268,6 +280,102 @@ class TheVocabularyIsImportedNotRestated(unittest.TestCase):
 
         assert "high-key" in LIGHT_WORDS
         assert "low-key" in LIGHT_WORDS
+
+
+def _scene(
+    path: Path, base: tuple[int, int, int], shift: int, size: tuple[int, int] = (64, 64)
+) -> str:
+    """One frame of a 'shot': a fixed background with a small square that moves."""
+    image = Image.new("RGB", size, base)
+    image.paste(Image.new("RGB", (8, 8), (240, 240, 240)), (shift, 20))
+    image.save(path)
+    return str(path)
+
+
+class FramesDirectory(unittest.TestCase):
+    """2026-10-14, live: `.ключ.json` was picked as the first frame and the mp4
+    was decoded as an image — "the file is there, but nothing could open it"."""
+
+    def setUp(self) -> None:
+        self._dir = tempfile.TemporaryDirectory()
+        self.addCleanup(self._dir.cleanup)
+        self.tmp = Path(self._dir.name)
+
+    def test_dotfiles_and_non_images_are_not_frames(self) -> None:
+        (self.tmp / ".ключ.json").write_text("{}", encoding="utf-8")
+        (self.tmp / "notes.txt").write_text("x", encoding="utf-8")
+        (self.tmp / "clip.mp4").write_bytes(b"not really")
+        for n in range(3):
+            _scene(self.tmp / f"f{n}.png", (20, 20, 20), n * 3)
+        got = creative.frames_in(self.tmp)
+        assert [Path(f).name for f in got["frames"]] == ["f0.png", "f1.png", "f2.png"]
+        assert sorted(got["skipped"]) == [".ключ.json", "clip.mp4", "notes.txt"]
+
+    def test_the_video_itself_is_never_a_frame_and_look_reads_a_frame(self) -> None:
+        clip = self.tmp / "clip.mp4"
+        clip.write_bytes(b"not an image")
+        frames = [_scene(self.tmp / f"f{n}.png", (20, 20, 20), n * 3) for n in range(5)]
+        out = creative.analyse(clip, frames=[str(clip), *frames])
+        assert out["parts"]["look"]["outcome"] == "pass", out["parts"]["look"]["note"]
+        assert out["input"]["state"] == creative.INPUT_MEASURED
+        assert "motion" in out["parts"]
+
+
+class StoryboardIsNotAClip(unittest.TestCase):
+    """2026-10-14, live: a directory of DIFFERENT keyframes was reported as
+    "motion is continuous". Thresholds measured on real clips vs real still sets."""
+
+    def setUp(self) -> None:
+        self._dir = tempfile.TemporaryDirectory()
+        self.addCleanup(self._dir.cleanup)
+        self.tmp = Path(self._dir.name)
+
+    def test_thresholds_are_the_measured_literals(self) -> None:
+        assert creative.SEQUENCE_HIST_MIN == 0.88
+        assert creative.SEQUENCE_DIFF_MAX == 40.0
+
+    def test_unrelated_stills_are_not_judged_for_motion(self) -> None:
+        colours = [(200, 30, 30), (30, 200, 30), (30, 30, 200), (220, 220, 40), (20, 20, 20)]
+        frames = [_scene(self.tmp / f"k{n}.png", c, 10) for n, c in enumerate(colours)]
+        out = creative.motion_of(frames)
+        assert out["outcome"] == "could not measure", out["note"]
+        assert out["sequence"]["sequence"] is False
+        assert "continuous" not in out["note"]
+
+    def test_different_sizes_are_not_one_clip(self) -> None:
+        frames = [
+            _scene(self.tmp / "a.png", (20, 20, 20), 0),
+            _scene(self.tmp / "b.png", (20, 20, 20), 3, size=(80, 64)),
+            _scene(self.tmp / "c.png", (20, 20, 20), 6),
+        ]
+        assert creative.одна_съёмка(frames)["sequence"] is False
+
+    def test_negative_control_a_real_sequence_is_still_judged(self) -> None:
+        frames = [_scene(self.tmp / f"s{n}.png", (20, 20, 20), n * 3) for n in range(6)]
+        verdict = creative.одна_съёмка(frames)
+        assert verdict["sequence"] is True, verdict
+        assert creative.motion_of(frames)["outcome"] == "pass"
+
+
+class OneReasonOnce(unittest.TestCase):
+    def test_the_same_missing_package_is_named_once(self) -> None:
+        same = "nothing to ask with: ModuleNotFoundError: No module named 'insightface'"
+        report = {
+            "outcome": "could not measure",
+            "checked": 0,
+            "violations": 0,
+            "unmeasured": 3,
+            "axes": {
+                name: {"outcome": "could not measure", "note": same}
+                for name in ("face_found", "face_size", "one_person")
+            },
+        }
+        from unittest import mock
+
+        with mock.patch("lipsync.fork_intake.photo_intake", return_value=report):
+            out = creative.intake_of("x.png")
+        assert out["note"].count("insightface") == 1, out["note"]
+        assert out["note"].startswith("face_found, face_size, one_person: ")
 
 
 if __name__ == "__main__":

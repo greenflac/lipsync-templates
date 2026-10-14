@@ -94,6 +94,7 @@
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
@@ -140,6 +141,13 @@ __all__ = [
     "classes_fired",
     "comparable_prices",
     "facts_for",
+    "in_scope",
+    "languages_in",
+    "LANGUAGE_FORMS",
+    "EXCLUSIVE_WORDS",
+    "exclusive_language",
+    "OUT_OF_SCOPE_NOTE",
+    "split_by_scope",
     "load_controls",
     "outcome_of",
     "parse_pipeline",
@@ -198,8 +206,15 @@ MIN_FACTS_PER_MODEL = 1
 
 #: Артефакты, доступные ЛЮБОМУ шагу без того, чтобы их кто-то произвёл: это
 #: вход самого плана, а не выход шага. ВЫБРАНО по разбору настоящих брифов
-#: владельца: селфи клиента и текст брифа приходят снаружи всегда.
-AMBIENT_ARTEFACTS: frozenset[str] = frozenset({"бриф", "селфи", "референс"})
+#: владельца: текст брифа приходит снаружи всегда.
+#:
+#: `селфи` ОТСЮДА УБРАНО 2026-10-14. Живой прогон: бриф «ключевые кадры
+#: фотореалистичные для MMA ролика» получал план из ОДНОГО шага «оживление»
+#: с входом `селфи` — которого заказчик не приносил, — и `разрыв` молчал,
+#: потому что селфи считалось существующим всегда. Фото клиента — вход плана
+#: только тогда, когда его принесли; это решает планировщик (`inputs_of`) и
+#: подставляет `референс`, а здесь его больше не подразумевают.
+AMBIENT_ARTEFACTS: frozenset[str] = frozenset({"бриф", "референс"})
 
 #: На сколько шагов назад смотрит проверка `requires ⊆ produces`.
 #: ВЫБРАНО = 0, что здесь означает «на все предыдущие»: план — это не цепочка
@@ -332,6 +347,11 @@ class Step:
     produces: tuple[str, ...] = ()
     budget_usd: float | None = None
     use: str = USE_COMMERCIAL
+    #: Языки, о которых этот шаг. Пусто — шаг про язык ничего не говорит, и
+    #: отбора по языку нет. Заведено 2026-10-14 по живому прогону: шаг озвучки
+    #: английского брифа отвергался строками о ХИНДИ и ТЕЛУГУ — замер честный,
+    #: но про другой язык (см. `in_scope`).
+    languages: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -340,6 +360,11 @@ class Pipeline:
 
     name: str
     steps: tuple[Step, ...] = ()
+    #: Что заказчик ПРИНЁС: вход плана сверх `AMBIENT_ARTEFACTS`. Объявляется
+    #: явно, а не подразумевается — с 2026-10-14 селфи больше не считается
+    #: существующим всегда, и план, которому нужно фото клиента, обязан сказать,
+    #: что фото принесено.
+    inputs: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -379,6 +404,111 @@ class Control:
 
 def _norm(value: str) -> str:
     return " ".join(value.split()).strip().lower()
+
+
+# --------------------------------------------------------------------------
+# ЯЗЫК, О КОТОРОМ СТРОКА (заведено 2026-10-14)
+#
+# Живой прогон: «оживить фото и озвучить по-английски» и «рекламный ролик ...
+# говорящие персонажи» отвергались классом `применимость` по строкам
+# `elevenlabs-tts-eleven-v3` о ХИНДИ, ТЕЛУГУ и ТАМИЛЬСКОМ. Замер честный и
+# измеренный, но он про другой язык: на телугу срыв ретрофлексов ничего не
+# говорит об английской или русской речи. Строка, НАЗВАВШАЯ свой язык, судит
+# только шаг о том же языке. Строка, не назвавшая языка, судит всех — как и
+# раньше: молчание о языке не делает замер узким.
+# --------------------------------------------------------------------------
+
+#: Язык -> куски слов, которыми его называет строка базы (рус. и англ.).
+#: КОНСТАНТА-РЕШЕНИЕ, список закрытый: язык, которого здесь нет, просто не
+#: распознаётся, и строка остаётся общей (то есть судит, как раньше).
+LANGUAGE_FORMS: dict[str, tuple[str, ...]] = {
+    "english": ("english", "английск", "по-английски"),
+    "russian": ("russian", "русск", "по-русски"),
+    "hindi": ("hindi", "хинди"),
+    "telugu": ("telugu", "телугу"),
+    "tamil": ("tamil", "тамил"),
+    "bengali": ("bengali", "бенгал"),
+    "chinese": ("chinese", "mandarin", "cantonese", "китайск"),
+    "japanese": ("japanese", "японск"),
+    "korean": ("korean", "корейск"),
+    "arabic": ("arabic", "арабск"),
+    "spanish": ("spanish", "испанск"),
+    "french": ("french", "французск"),
+    "german": ("german", "немецк"),
+    "portuguese": ("portuguese", "португальск"),
+    "italian": ("italian", "итальянск"),
+    "turkish": ("turkish", "турецк"),
+    "ukrainian": ("ukrainian", "украинск"),
+    "vietnamese": ("vietnamese", "вьетнамск"),
+    "indic": ("indic", "indian language", "индийск"),
+}
+
+#: Обороты ИСКЛЮЧИТЕЛЬНОСТИ: строка «only English» говорит обо всех языках.
+#: Слово исключительности засчитывается только ВПЛОТНУЮ к имени языка (до двух
+#: слов между): «не только WER» в строке о хинди — не «только хинди».
+EXCLUSIVE_WORDS: tuple[str, ...] = ("only", "только", "лишь", "исключительно")
+
+
+def exclusive_language(text: str) -> bool:
+    """Говорит ли строка «только такой-то язык» (и тем — обо всех прочих)."""
+    низ = _norm(str(text or ""))
+    for формы in LANGUAGE_FORMS.values():
+        for ф in формы:
+            ф_ = re.escape(ф)
+            for слово in EXCLUSIVE_WORDS:
+                for м in re.finditer(
+                    rf"(?<![a-zа-яё]){слово}\W+(?:[a-zа-яё]+\W+){{0,2}}{ф_}", низ
+                ):
+                    # «не только», «not only» — оборот ВКЛЮЧЕНИЯ, а не исключения.
+                    if not re.search(r"(?:^|\W)(?:не|not)\s*$", низ[: м.start()]):
+                        return True
+            if re.search(rf"{ф_}[a-zа-яё]*[- ]only\b", низ):
+                return True
+    return False
+
+#: Что печатается о строках, отброшенных как написанные про другой язык.
+OUT_OF_SCOPE_NOTE = "вне языка шага отброшено"
+
+
+def languages_in(text: str) -> frozenset[str]:
+    """Языки, которые строка называет по имени. Пусто — языка строка не называет."""
+    низ = _norm(str(text or ""))
+    return frozenset(
+        язык
+        for язык, формы in LANGUAGE_FORMS.items()
+        if any(re.search(rf"(?<![a-zа-яё]){re.escape(ф)}", низ) for ф in формы)
+    )
+
+
+def in_scope(fact: Fact, languages: Sequence[str]) -> bool:
+    """Судит ли эта строка шаг о языках `languages`.
+
+    Три случая, и третий — главный:
+    * шаг языка не объявил — строка судит (отбора нет);
+    * строка языка не называет — строка судит (она общая);
+    * строка называет языки, и НИ ОДИН не совпал с языком шага — НЕ судит:
+      это замер про другую речь.
+    """
+    if not languages:
+        return True
+    текст = f"{fact.value} {fact.note}"
+    свои = languages_in(текст)
+    if not свои:
+        return True
+    if exclusive_language(текст):
+        # «only English», «только английский» — это утверждение и о ДРУГИХ
+        # языках: русскому брифу оно говорит «не поддерживается». Отбросить его
+        # как «про английский» значило бы потерять ровно ту плохую новость,
+        # ради которой его записали.
+        return True
+    return bool(свои & {str(я).lower() for я in languages})
+
+
+def split_by_scope(facts: Sequence[Fact], languages: Sequence[str]) -> tuple[list[Fact], list[Fact]]:
+    """Строки, которые судят шаг, и строки про другой язык — порознь, а не молча."""
+    свои = [f for f in facts if in_scope(f, languages)]
+    вне = [f for f in facts if not in_scope(f, languages)]
+    return свои, вне
 
 
 def facts_for(model: str, facts: Iterable[Fact]) -> list[Fact]:
@@ -425,14 +555,17 @@ def probe_no_model(step: Step, свои: Sequence[Fact]) -> Probe:
     return Probe(CLASS_NO_MODEL, True, False, PASS, f"утверждений о модели: {len(свои)}")
 
 
-def probe_gap(step: Step, earlier: Sequence[Step]) -> Probe:
+def probe_gap(step: Step, earlier: Sequence[Step], inputs: Sequence[str] = ()) -> Probe:
     """Есть ли у шага всё, что он требует: `requires ⊆ produces` плюс входы плана.
 
     Единственный оракул, которому факты не нужны вовсе, и единственный, который
     невозможно получить посшаговым валидатором: он смотрит НА ГРАНИЦУ.
+
+    `inputs` — то, что заказчик принёс (`Pipeline.inputs`), сверх того, что
+    есть у любого плана (`AMBIENT_ARTEFACTS`).
     """
     видимые = earlier if PRODUCES_LOOKBACK <= 0 else earlier[-PRODUCES_LOOKBACK:]
-    доступно = {_norm(a) for a in AMBIENT_ARTEFACTS}
+    доступно = {_norm(a) for a in AMBIENT_ARTEFACTS} | {_norm(a) for a in inputs}
     for предыдущий in видимые:
         доступно.update(_norm(a) for a in предыдущий.produces)
     нет = [a for a in step.requires if _norm(a) not in доступно]
@@ -454,7 +587,15 @@ def probe_applicability(step: Step, свои: Sequence[Fact], overrides: dict | 
     Ветки, печатающей «годно» по одной колонке способности, здесь нет — потому
     что её нет там, а второй такой развилки в репозитории не заводится.
     """
+    свои, вне = split_by_scope(свои, step.languages)
     вердикт = fa.step_verdict(step.name, step.requirement, fa.mark_all(свои, overrides))
+    if вне:
+        вердикт = dict(вердикт)
+        вердикт["note"] = (
+            f"{вердикт['note']}; {OUT_OF_SCOPE_NOTE}: {len(вне)} строк(и) о языке "
+            f"{', '.join(sorted(languages_in(f'{вне[0].value} {вне[0].note}') or {'?'}))}, а шаг — о "
+            f"{', '.join(step.languages)}"
+        )
     исход = вердикт["outcome"]
     if исход == PASS:
         return Probe(CLASS_APPLICABILITY, True, False, PASS, вердикт["note"])
@@ -751,6 +892,7 @@ def step_report(
     earlier: Sequence[Step] = (),
     today: date | None = None,
     overrides: dict | None = None,
+    inputs: Sequence[str] = (),
 ) -> dict:
     """Все семь оракулов по одному шагу и сведённый исход шага.
 
@@ -762,7 +904,7 @@ def step_report(
     """
     сегодня = today or date.today()
     свои = facts_for(step.model, facts)
-    пробы = [probe_no_model(step, свои), probe_gap(step, earlier)]
+    пробы = [probe_no_model(step, свои), probe_gap(step, earlier, inputs)]
     if пробы[0].fired:
         for k in (CLASS_APPLICABILITY, CLASS_LICENCE, CLASS_PRICE, CLASS_STALE):
             пробы.append(Probe(k, False, False, PASS, "база о модели молчит — оракулу не на чем"))
@@ -830,7 +972,9 @@ def pipeline_report(
     """
     шаги = []
     for i, шаг in enumerate(pipeline.steps):
-        шаги.append(step_report(шаг, facts, pipeline.steps[:i], today, overrides))
+        шаги.append(
+            step_report(шаг, facts, pipeline.steps[:i], today, overrides, pipeline.inputs)
+        )
 
     checked = sum(s["checked"] for s in шаги)
     violations = sum(s["violations"] for s in шаги)
@@ -935,6 +1079,7 @@ def parse_step(row: Mapping[str, object]) -> Step:
         produces=_strings(row.get("produces")),
         budget_usd=float(бюджет) if isinstance(бюджет, (int, float)) else None,
         use=str(row.get("use", USE_COMMERCIAL)),
+        languages=_strings(row.get("languages")),
     )
 
 
@@ -942,6 +1087,7 @@ def parse_pipeline(row: Mapping[str, object]) -> Pipeline:
     return Pipeline(
         name=str(row.get("name", "")),
         steps=tuple(parse_step(s) for s in _rows(row.get("steps"))),
+        inputs=_strings(row.get("inputs")),
     )
 
 

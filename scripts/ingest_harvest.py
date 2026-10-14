@@ -43,6 +43,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from lipsync.fork_identity import PASS  # noqa: E402
 
 from studio.mcp import advice  # noqa: E402
+from studio.selfrag.modelnames import fold  # noqa: E402
 from studio.selfrag.facts import (  # noqa: E402
     DEFAULT_FACTS_PATH,
     TIERS,
@@ -148,7 +149,11 @@ def _canonical(model: str) -> str:
     the merge has since retired still ends up in the right place.
     """
     name = ALIASES.get(str(model), str(model))
-    return MERGES.get(name, name)
+    name = MERGES.get(name, name)
+    # Третий шаг, 2026-10-14: написания, которые сводит свёртка имени, слиты в
+    # базе `scripts/merge_model_ids.py --apply` под каноническое — туда же
+    # смотрит и проверка харвеста. Тот же путь, что у `advice.record` (Е1).
+    return advice.каноническое_имя(name)[0] or name
 
 
 #: Строки харвеста, ПЕРЕНЕСЁННЫЕ в базе под другой атрибут, с причиной и датой.
@@ -174,7 +179,10 @@ MOVED: dict[tuple[str, str, str], str] = {
 def _moved_to(model: str, attribute: str, url: str) -> str:
     """Новый атрибут, если строку перенесли. Пусто — не переносили."""
     for (m, a, часть), новый in MOVED.items():
-        if m == model and a == attribute and часть in str(url or ""):
+        # По свёртке, а не по строке: `seedance2` слит в `seedance-2.0`
+        # (2026-10-14), и ключ таблицы обязан узнавать модель под любым её
+        # написанием.
+        if fold(m) == fold(model) and a == attribute and часть in str(url or ""):
             return новый
     return ""
 

@@ -190,11 +190,14 @@ class EndToEnd(unittest.TestCase):
     def test_the_journal_records_the_resolved_model_not_the_alias(self) -> None:
         """A report where 'veo', 'veo3' and 'veo-3.1' are three rows cannot
         count how often Veo failed."""
+        # `veo3` как псевдоним veo-3.1 убран 2026-10-14: Veo 3 — другая модель
+        # (аудит ae94057). Написание id карточки (`Veo 3.1`) сводится свёрткой.
         self.engineer.write(self.request(model="veo"))
-        self.engineer.write(self.request(model="veo3", camera="slow pan"))
+        self.engineer.write(self.request(model="Veo 3.1", camera="slow pan"))
         report = self.engineer.journal.report()
         self.assertIn("veo-3.1", report["by_model"])
-        self.assertNotIn("veo3", report["by_model"])
+        self.assertNotIn("veo", report["by_model"])
+        self.assertNotIn("Veo 3.1", report["by_model"])
 
     def test_feedback_changes_which_precedent_wins(self) -> None:
         before = self.engineer.write(self.request())

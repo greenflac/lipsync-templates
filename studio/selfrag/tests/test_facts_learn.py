@@ -187,7 +187,10 @@ class Facts(unittest.TestCase):
         decimals = FactStore(
             [
                 fact("k", "max_seconds", "2.5", TIER_VENDOR),
-                fact("k", "max_seconds", "2.9", TIER_PORTAL),
+                # Блог, а не площадка: с 2026-10-14 вендор против площадки —
+                # ОБЛАСТЬ (`FactStore._scoped`), и пара перестала бы проверять
+                # разбор дроби. Вендор против блога — спор при любой области.
+                fact("k", "max_seconds", "2.9", TIER_BLOG),
             ]
         )
         self.assertEqual(decimals.claims("k", "max_seconds")["outcome"], FAIL)

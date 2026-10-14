@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import tempfile
 import unittest
+from unittest import mock
 from pathlib import Path
 
 from studio.mcp import misses
@@ -262,11 +263,24 @@ class Wiring(unittest.TestCase):
         """
         from studio.mcp import server
 
-        with tempfile.TemporaryDirectory() as tmp:
+        # С 2026-10-14 попадание в журнал не пишется, поэтому строки, которые
+        # связка ПОСТРОИЛА, ловятся на входе `note_question`, а не в файле.
+        увидено: list[dict] = []
+        настоящая = misses.note_question
+
+        def перехват(*args, **kwargs):
+            got = настоящая(*args, **kwargs)
+            увидено.append(got)
+            return got
+
+        with (
+            tempfile.TemporaryDirectory() as tmp,
+            mock.patch.object(misses, "note_question", перехват),
+        ):
             path = Path(tmp) / "misses.jsonl"
             server.advise_and_note("kling-3.0", "   ", log=path)
             server.advise_and_note("kling-3.0", "", log=path)
-            blank, empty = misses.load(path)
+        blank, empty = увидено
         self.assertEqual(blank["attribute"], empty["attribute"])
         self.assertEqual(blank["known"], empty["known"])
         self.assertGreater(empty["known"], 0)
@@ -283,16 +297,81 @@ class Wiring(unittest.TestCase):
         self.assertEqual(rows[0]["outcome"], "could not measure")
         self.assertEqual(rows[0]["known"], 0)
 
-    def test_a_known_model_asked_as_a_whole_is_written_as_covered(self):
-        """Негативный контроль связки (И5): прибор обязан не только молчать
-        на незнакомом, но и шевельнуться на знакомом."""
+    def test_a_known_model_asked_as_a_whole_is_not_journaled(self):
+        """С 2026-10-14 журнал — только промахи (аудит ae94057): успешный
+        ответ не дописывает строку, а промах рядом — дописывает. Обе стороны
+        (И5): прибор, не пишущий ничего, прошёл бы первую половину."""
         from studio.mcp import server
 
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "misses.jsonl"
             server.advise_and_note("kling-3.0", "", log=path)
+            self.assertFalse(path.exists(), "попадание не пишется")
+            server.advise_and_note("совершенно-неизвестная-модель-xyz", "", log=path)
             rows = misses.load(path)
-        self.assertGreater(rows[0]["known"], 0)
+        self.assertEqual([r["model"] for r in rows], ["совершенно-неизвестная-модель-xyz"])
+        self.assertEqual(rows[0]["known"], 0)
+
+
+class ТолькоПромахиИКудаПисать(unittest.TestCase):
+    """Пункт 8 аудита ae94057: журнал рос на каждом вызове, и тесты с живыми
+    проверками писали в производственный файл."""
+
+    def test_попадание_не_пишется_промах_пишется(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "m.jsonl"
+            попадание = misses.note_question("kling-3.0", "", "pass", known=5, path=path)
+            self.assertFalse(path.exists())
+            self.assertFalse(попадание["journaled"])
+            промах = misses.note_question("zzz-9", "", "could not measure", known=0, path=path)
+            self.assertTrue(промах["journaled"])
+            self.assertEqual(len(misses.load(path)), 1)
+
+    def test_попадание_пишется_только_по_явной_просьбе(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "m.jsonl"
+            got = misses.note_question(
+                "kling-3.0", "", "pass", known=5, path=path, record_hits=True
+            )
+            self.assertTrue(got["journaled"])
+            self.assertEqual(misses.load(path)[0]["known"], 5)
+
+    def test_путь_из_среды(self):
+        """`STUDIO_MISSES_PATH` уводит запись из производственного файла."""
+        self.assertEqual(
+            misses.journal_path(environ={"STUDIO_MISSES_PATH": "/tmp/x/m.jsonl"}),
+            Path("/tmp/x/m.jsonl"),
+        )
+        self.assertEqual(misses.journal_path(environ={}), misses.STORE)
+
+    def test_выключатель_журнала(self):
+        """`STUDIO_NO_JOURNAL=1` — не писать; `0` и пусто — писать (Т1, обе стороны)."""
+        self.assertIsNone(misses.journal_path(environ={"STUDIO_NO_JOURNAL": "1"}))
+        self.assertEqual(misses.journal_path(environ={"STUDIO_NO_JOURNAL": "0"}), misses.STORE)
+        self.assertEqual(misses.journal_path(environ={"STUDIO_NO_JOURNAL": ""}), misses.STORE)
+
+    def test_явный_путь_сильнее_выключателя(self):
+        явный = Path("/tmp/y/m.jsonl")
+        self.assertEqual(misses.journal_path(явный, environ={"STUDIO_NO_JOURNAL": "1"}), явный)
+
+    def test_выключатель_действительно_не_пишет_в_производственный_файл(self):
+        """Производственный файл не трогается: STORE подменён временным, и
+        под выключателем он обязан остаться несозданным."""
+        with tempfile.TemporaryDirectory() as tmp:
+            подмена = Path(tmp) / "prod.jsonl"
+            with (
+                mock.patch.object(misses, "STORE", подмена),
+                mock.patch.dict("os.environ", {"STUDIO_NO_JOURNAL": "1"}),
+            ):
+                got = misses.note_question("zzz-9", "", "could not measure", known=0)
+            self.assertFalse(got["journaled"])
+            self.assertFalse(подмена.exists())
+            with (
+                mock.patch.object(misses, "STORE", подмена),
+                mock.patch.dict("os.environ", {"STUDIO_NO_JOURNAL": "", "STUDIO_MISSES_PATH": ""}),
+            ):
+                misses.note_question("zzz-9", "", "could not measure", known=0)
+            self.assertTrue(подмена.exists(), "без выключателя промах пишется")
 
 
 if __name__ == "__main__":
@@ -323,10 +402,19 @@ class UnknownNameStillPointsSomewhere(unittest.TestCase):
         self.assertNotIn("The base does hold", note)
 
     def test_the_note_no_longer_claims_the_base_knows_nothing(self):
+        """С 2026-10-14 `h3-max` разрешается ВЫВОДОМ по единственному соседу:
+        ответ идёт из строк `minimax-h3-max`, нота называет, как имя нашлось
+        (Е2), — но исход `could not measure` (голден g15: подсказкой можно,
+        фактом — нет), а не «нет ни в реестре, ни в базе»."""
         from studio.mcp import advice
 
-        note = advice.advise("h3-max")["note"]
-        self.assertIn("under that exact name", note)
+        got = advice.advise("h3-max")
+        self.assertEqual(got["outcome"], "could not measure")
+        self.assertEqual(got["reason"], "name_maybe_mistyped")
+        self.assertIn("ИМЯ ВЫВЕДЕНО ПО СОСЕДУ", got["note"])
+        self.assertGreater(len(got["claims"]), 0)
+        self.assertEqual(got["near"], ["minimax-h3-max"])
+        self.assertNotIn("under that exact name", got["note"])
 
 
 class EvidenceAndVerdictAgree(unittest.TestCase):

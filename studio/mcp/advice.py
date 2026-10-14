@@ -18,8 +18,8 @@ NOT refused is the assistant's own search tool, in the conversation where the
 owner is already standing.
 
 So the refresh is a two-step the assistant performs in the open: search the
-web, then call `record` with the value, the URL, the tier and the date the
-source stated it. Nothing is written without those four. A claim with no URL
+web, then call `record_model_fact` (this module's `record`) with the value,
+the URL, the tier and the date the source stated it. Nothing is written without those four. A claim with no URL
 cannot be checked later, and a claim with no date cannot go stale — and a
 claim that cannot go stale is the one that quietly rots.
 
@@ -48,7 +48,7 @@ from lipsync.fork_identity import FAIL, PASS, UNMEASURED
 
 from studio import lifecycle as _lifecycle
 from studio.mcp import fetch, probe
-from studio.selfrag import attrfamily, registry, source_hosts
+from studio.selfrag import attrfamily, modelnames, registry, source_hosts
 from studio.selfrag.facts import (
     DEFAULT_FACTS_PATH,
     STALE_AFTER_DAYS,
@@ -108,6 +108,15 @@ REASON_SOURCES_BLOG_ONLY = "sources_blog_only"
 REASON_SOURCES_DISAGREE = "sources_disagree"
 REASON_MODEL_UNUSABLE = "model_unusable"
 REASON_ANSWERED = "answered"
+#: Ответ есть, но на часть атрибутов источники расходятся (аудит ae94057,
+#: 2026-10-14). До этого ОДИН спорный атрибут делал `fail` всему ответу, и
+#: заголовок шёл обратно знанию: kling-3.0, veo-3.1, seedance-2.0 — `fail`,
+#: малоизвестные модели — `pass`. Спор не прячется: он в `contested` и в ноте.
+REASON_ANSWERED_SOME_CONTESTED = "answered_some_contested"
+#: У самой модели ничего не записано, ответ — с уровня СЕМЬИ (`veo-3.1` для
+#: `veo-3.1-lite`) или её вариантов (`seedvr2-7b` для `seedvr2`). Каждое
+#: утверждение помечено, о каком имени оно (`about`, `scope`).
+REASON_ANSWERED_BY_FAMILY = "answered_by_family"
 
 #: Весь словарь причин. Список — не украшение: он делает состав причин
 #: проверяемым тестом, а не памятью читающего.
@@ -121,6 +130,8 @@ REASONS: tuple[str, ...] = (
     REASON_SOURCES_DISAGREE,
     REASON_MODEL_UNUSABLE,
     REASON_ANSWERED,
+    REASON_ANSWERED_SOME_CONTESTED,
+    REASON_ANSWERED_BY_FAMILY,
 )
 
 
@@ -570,6 +581,45 @@ def _card_as_dict(card: object) -> dict | None:
 def advise(model: str, attribute: str = "", *, path: Path | None = None) -> dict:
     """What is known about one model, and how much of it is worth believing.
 
+    Тонкая обёртка над `_advise`: имя, найденное ВЫВОДОМ по единственному
+    соседу (`h3-max` -> `minimax-h3-max`, `happyhorse` -> `happyhorse_1_0`),
+    отдаёт ответ о соседе, но исходом `could not measure` (см. `_по_соседу`).
+    """
+    return _по_соседу(_advise(model, attribute, path=path))
+
+
+def _по_соседу(ответ: dict) -> dict:
+    """Ответ по соседу — подсказка, а не факт. Развилка вынесена (Т5).
+
+    Голден-задача g15, решение владельца: «Какая лицензия у h3-max?» —
+    «двигаться подсказкой можно, фактом — нет». Аудит ae94057 просил
+    разрешать единственного соседа автоматически и говорить об этом. Оба
+    требования выполняются вместе: данные соседа возвращаются целиком
+    (`claims`, `resolved_as`), а заголовок не утверждает их о спрошенном имени.
+    """
+    как = str((ответ.get("resolved_as") or {}).get("how") or "")
+    if как not in modelnames.HOW_INFERRED or ответ.get("outcome") == UNMEASURED:
+        return ответ
+    сосед = str((ответ.get("resolved_as") or {}).get("spellings", [""])[0] or "")
+    спрошено = str((ответ.get("resolved_as") or {}).get("asked") or "")
+    out = dict(ответ)
+    out["outcome"] = UNMEASURED
+    out["reason"] = REASON_NAME_MAYBE_MISTYPED
+    out["unmeasured"] = max(1, int(ответ.get("unmeasured") or 0))
+    out["near"] = [сосед] if сосед else []
+    out["inferred_answer_outcome"] = ответ.get("outcome")
+    out["note"] = (
+        f"ИМЯ ВЫВЕДЕНО ПО СОСЕДУ: {спрошено!r} в базе нет, единственный сосед — "
+        f"{сосед!r}. Ниже — ответ О {сосед!r} (его исход был "
+        f"{ответ.get('outcome')!r}), но это ПОДСКАЗКА, а не факт о {спрошено!r}: "
+        f"если это та же модель, спросите по {сосед!r}. " + str(ответ.get("note") or "")
+    )
+    return out
+
+
+def _advise(model: str, attribute: str = "", *, path: Path | None = None) -> dict:
+    """What is known about one model, and how much of it is worth believing.
+
     :param attribute: one attribute to focus on (`max_seconds`, `resolution`,
         ...). Empty means "everything recorded about this model".
     :returns: the house judging dict plus `availability` (the registry's
@@ -605,7 +655,17 @@ def advise(model: str, attribute: str = "", *, path: Path | None = None) -> dict
     # `flux.2-klein-9b` — одна модель в двух карманах, и спросивший первым
     # получал 2 атрибута из 6 при исходе `pass`.
     resolution = store.resolve(name)
+
+    # КАРТОЧКА РЕЕСТРА И БАЗА ФАКТОВ ОБЯЗАНЫ ГОВОРИТЬ ОБ ОДНОЙ МОДЕЛИ (аудит
+    # ae94057, 2026-10-14). Псевдоним реестра доходил до карточки, но не до
+    # базы: `advise("kling-3")` отвечал `nothing_recorded` при 12 атрибутах
+    # `kling-3.0`, а `advise("veo-3")` показывал карточку veo-3.1 над фактами
+    # veo-3 — две РАЗНЫЕ модели в одном ответе.
+    имя_в_базе, live, о_карточке = _сверить_с_карточкой(name, live, store, resolution)
+    if имя_в_базе != name:
+        resolution = store.resolve(имя_в_базе)
     known_here = bool(resolution.names)
+    роль, семья_ответа = _семья(store, имя_в_базе, attribute, known_here)
 
     # СПРОШЕННОЕ СЛОВО РАЗВОРАЧИВАЕТСЯ В ЗАПИСАННЫЕ ИМЕНА. ИЗМЕРЕНО
     # 2026-09-02: цена записана у 79 моделей, а на вопрос `price` отвечали 7
@@ -615,17 +675,17 @@ def advise(model: str, attribute: str = "", *, path: Path | None = None) -> dict
     # искать заново то, что уже лежит; правила разворота и его негативный
     # контроль — в `studio/selfrag/attrfamily.py`.
     if attribute:
-        attributes = attrfamily.expand(attribute, store.attributes(name))
+        attributes = attrfamily.expand(attribute, store.attributes(имя_в_базе))
         # Не нашлось родственников — спрашиваем ровно то, что спросили, чтобы
         # ветка `attribute_unknown` ниже сработала как прежде (Р1).
         attributes = attributes or [attribute]
     else:
-        attributes = store.attributes(name)
+        attributes = store.attributes(имя_в_базе)
     asked_as = attrfamily.как_отвечено(attribute, attributes) if attribute else ""
     claims: dict[str, dict] = {}
     contested: list[str] = []
     for attr in attributes:
-        verdict = store.claims(name, attr)
+        verdict = store.claims(имя_в_базе, attr)
         claims[attr] = verdict
         if verdict["outcome"] == FAIL:
             contested.append(attr)
@@ -637,6 +697,7 @@ def advise(model: str, attribute: str = "", *, path: Path | None = None) -> dict
     # такую модель в сравнение значит послать человека платить за 404.
     #
     # Правила разбора и их негативный контроль — `studio/lifecycle.py`.
+    свои_написания = set(store.spellings(имя_в_базе))
     lifecycle = [
         {
             "attribute": fact.attribute,
@@ -648,7 +709,7 @@ def advise(model: str, attribute: str = "", *, path: Path | None = None) -> dict
         # По ВСЕМ написаниям имени: `imagen-4` и `imagen-4.0` — одна модель в
         # двух карманах, и снятие записано у обоих по-разному.
         for fact in store.facts
-        if fact.model in set(store.spellings(name))
+        if fact.model.lower() in свои_написания
         and _lifecycle.разобрать(str(fact.value), fact.attribute).outcome != _lifecycle.ГОДНО
     ]
 
@@ -660,7 +721,7 @@ def advise(model: str, attribute: str = "", *, path: Path | None = None) -> dict
             "tier": fact.tier,
             "stated_on": fact.stated_on,
         }
-        for fact in store.failure_modes(name)
+        for fact in store.failure_modes(имя_в_базе)
     ]
 
     # Findings about the CLASS, in their own list and never folded into the
@@ -673,7 +734,7 @@ def advise(model: str, attribute: str = "", *, path: Path | None = None) -> dict
     # Separate rather than merged, because "said about the class" and
     # "measured on this model" are different claims and a reader has to be
     # able to tell them apart. They also never vote in a contradiction.
-    card_vs_base = _card_vs_base(live.get("card"), store, name)
+    card_vs_base = _card_vs_base(live.get("card"), store, имя_в_базе)
 
     # КАРТОЧКА ОТДАЁТСЯ СЛОВАРЁМ, А НЕ PYTHON-ОБЪЕКТОМ. Найдено чтением
     # собственной выдачи (П3, 2026-09-02): в ответе стояло
@@ -688,25 +749,25 @@ def advise(model: str, attribute: str = "", *, path: Path | None = None) -> dict
     live = dict(live)
     live["card"] = _card_as_dict(live.get("card"))
 
-    # The registry's note names the seven models it holds cards for, and it
-    # reads as the whole of what is known. It is not: the fact base holds 205
-    # ids. A blind evaluation asked about `omnihuman-1.5` and came away
-    # reporting that "the fact base contains no dedicated lip-sync model",
-    # having been shown a list of seven (OBSERVED 2026-08-27). So when the
-    # registry misses, the base's own nearest ids go out beside it.
+    # ОСЬ РЕЕСТРА НЕ ВЕДЁТСЯ ДЛЯ ЭТОЙ МОДЕЛИ — и это не «мы знаем семь
+    # моделей». Нота реестра раньше перечисляла его семь карточек, и читалась
+    # как весь объём знания (аудит ae94057). Теперь она говорит, что ось не
+    # ведётся, а что можно — выводится из записей базы о жизненном цикле.
     if live.get("card") is None:
-        near = store.near(name)
+        live["note"] = _доступность_по_базе(str(live.get("note", "")), lifecycle, known_here)
+        near = store.near(имя_в_базе)
         if near:
-            live = dict(live)
             live["note"] = (
                 str(live.get("note", ""))
                 + f" The FACT BASE is a different and much larger set: it holds "
                 f"{store.model_count()} ids, among them {', '.join(near)}."
             )
+    if о_карточке:
+        live["note"] = f"{о_карточке} {live.get('note', '')}".strip()
 
     every_class_fact = _spread_by_attribute(
         sorted(
-            store.class_claims(name),
+            store.class_claims(имя_в_базе),
             key=lambda f: (TIERS.index(f.tier) if f.tier in TIERS else len(TIERS), f.attribute),
         )
     )
@@ -732,6 +793,35 @@ def advise(model: str, attribute: str = "", *, path: Path | None = None) -> dict
         "strongest tier first. These were said about the field or about a vendor's "
         "line, NOT measured on this model."
     )
+    # Что едет в КАЖДЫЙ ответ ниже, одним словарём (Е1): раньше эти ключи
+    # повторялись в шести ветках, и новый ключ терялся в половине из них.
+    общее = {
+        "availability": live,
+        "failure_modes": failures,
+        "class_findings": class_findings,
+        "class_findings_total": len(every_class_fact),
+        "class_findings_note": class_findings_note,
+        "card_vs_base": card_vs_base,
+        "lifecycle": lifecycle,
+        "resolved_as": {
+            "asked": name,
+            "looked_up_as": имя_в_базе,
+            "spellings": list(resolution.names),
+            "how": resolution.how,
+            "note": resolution.note,
+        },
+        "family": роль,
+        "family_claims": семья_ответа,
+    }
+    # Разрешение по единственному соседу — вывод, а не совпадение (Е2): оно
+    # называется в главной ноте, а не только в поле.
+    авто = (
+        f" ИМЯ: {resolution.note}."
+        if resolution.how in (modelnames.HOW_VENDOR, *modelnames.HOW_INFERRED)
+        or (resolution.names and name.strip().lower() not in resolution.names)
+        else ""
+    )
+    семейное = _семейная_нота(роль, семья_ответа)
 
     if live["card"] is None and not known_here:
         # Соседние имена идут В ЭТУ ноту, а не только в `availability`. Ветка
@@ -741,6 +831,25 @@ def advise(model: str, attribute: str = "", *, path: Path | None = None) -> dict
         # и верхняя нота отвечала «нет ни в реестре, ни в базе». Формально про
         # эту строку — верно; по существу — нет, и читают именно её.
         neighbours = store.near(name)
+        # СЕМЬЯ БЕЗ СОБСТВЕННЫХ СТРОК (аудит ae94057): `seedvr2` в базе нет, а
+        # `seedvr2-3b`, `seedvr2-7b`, `seedvr2_comfyui` есть. Ответ — сводка по
+        # вариантам, каждое утверждение помечено своим именем, и в ноте
+        # сказано, что о самой `seedvr2` не записано ничего.
+        if роль.get("role") == "family" and семья_ответа:
+            ответ_семьи = _ответ_семьи(name, attribute, семья_ответа, "variant")
+            if ответ_семьи is not None:
+                # Ответ стоит на утверждениях семьи — они и едут в `claims`
+                # (ключ `атрибут@имя`, у каждого `about`/`scope`): иначе исход
+                # `pass` стоял бы без единого значения, а журнал промахов
+                # (`misses.evidence`) считал бы этот ответ пустым (Е1).
+                return {
+                    **ответ_семьи,
+                    **общее,
+                    "near": list(neighbours),
+                    "claims": семья_ответа,
+                    "own_claims": {},
+                    "contested": [],
+                }
         # Два РАЗНЫХ положения дел, и до 2026-09-02 они печатались одинаково:
         # база не знает такого имени вовсе — и база знает соседнее имя, то
         # есть спрашивавший, вероятнее всего, опечатался. Первое лечится
@@ -753,6 +862,7 @@ def advise(model: str, attribute: str = "", *, path: Path | None = None) -> dict
             else ""
         )
         return {
+            **общее,
             "outcome": UNMEASURED,
             "checked": 0,
             "violations": 0,
@@ -760,48 +870,44 @@ def advise(model: str, attribute: str = "", *, path: Path | None = None) -> dict
             "note": (
                 f"{name!r} is in neither the registry nor the fact base under "
                 "that exact name. Nothing was checked, which is not the same as "
-                "nothing being wrong. Search the web and call `record` to put it "
-                "there." + hint
+                "nothing being wrong. Search the web and call `record_model_fact` "
+                "to put it there." + hint
             ),
             "reason": REASON_NAME_MAYBE_MISTYPED if neighbours else REASON_MODEL_UNKNOWN,
             "near": list(neighbours),
-            "availability": live,
             "claims": {},
             # The class findings come back even here. They are true of the
             # field, not of this name, so an unknown model does not make them
             # less true — and the outcome stays `could not measure` with
             # `checked` at 0, so nothing reads as having been verified.
-            "failure_modes": [],
-            "class_findings": class_findings,
-            "class_findings_total": len(every_class_fact),
-            "class_findings_note": class_findings_note,
-            "card_vs_base": card_vs_base,
             "contested": [],
-            "lifecycle": lifecycle,
         }
 
     checked = len(claims) + (1 if live["card"] is not None else 0)
     if live["outcome"] == FAIL:
         return {
+            **общее,
             "outcome": FAIL,
             "checked": checked,
             "violations": 1,
             "unmeasured": len(contested),
             "reason": REASON_MODEL_UNUSABLE,
             "note": f"the model itself is unusable: {live['note']}",
-            "availability": live,
             "claims": claims,
-            "failure_modes": failures,
-            "class_findings": class_findings,
-            "class_findings_total": len(every_class_fact),
-            "class_findings_note": class_findings_note,
-            "card_vs_base": card_vs_base,
             "contested": contested,
-            "lifecycle": lifecycle,
         }
 
-    if contested:
+    отвечено = [attr for attr, verdict in claims.items() if verdict["outcome"] == PASS]
+    # СПОР ПО ЧАСТИ АТРИБУТОВ НЕ РОНЯЕТ ВЕСЬ ОТВЕТ (аудит ae94057). `fail`
+    # остаётся, когда спорно ВСЁ, о чём спросили, или спорен САМ спрошенный
+    # атрибут (`kling-3.0.max_seconds`): это и есть ответ на вопрос, и
+    # отвеченные соседи по семье атрибутов его не отменяют. Когда спорна
+    # часть полного ответа, заголовок отражает знание (`pass`), а спорные
+    # атрибуты названы в ноте и в `contested`, со всеми сторонами в `claims`.
+    спорен_спрошенный = bool(attribute) and (claims.get(attribute) or {}).get("outcome") == FAIL
+    if contested and (not отвечено or спорен_спрошенный):
         return {
+            **общее,
             "outcome": FAIL,
             "checked": checked,
             "violations": len(contested),
@@ -809,22 +915,16 @@ def advise(model: str, attribute: str = "", *, path: Path | None = None) -> dict
             "note": (
                 f"sources disagree on {', '.join(contested)}. Every side is "
                 "returned with its URL and its date; nothing here votes, "
-                "averages or takes the newest."
+                "averages or takes the newest." + авто + семейное
             ),
             "reason": REASON_SOURCES_DISAGREE,
-            "availability": live,
             "claims": claims,
-            "failure_modes": failures,
-            "class_findings": class_findings,
-            "class_findings_total": len(every_class_fact),
-            "class_findings_note": class_findings_note,
-            "card_vs_base": card_vs_base,
             "contested": contested,
-            "lifecycle": lifecycle,
         }
 
     if not claims:
         return {
+            **общее,
             "outcome": UNMEASURED,
             "checked": checked,
             "violations": 0,
@@ -834,16 +934,9 @@ def advise(model: str, attribute: str = "", *, path: Path | None = None) -> dict
                 "claim about it, so there is nothing to cite. " + str(live["note"])
             ),
             "reason": REASON_NOTHING_RECORDED,
-            "known_attributes": list(store.attributes(name)),
-            "availability": live,
+            "known_attributes": list(store.attributes(имя_в_базе)),
             "claims": {},
-            "failure_modes": failures,
-            "class_findings": class_findings,
-            "class_findings_total": len(every_class_fact),
-            "class_findings_note": class_findings_note,
-            "card_vs_base": card_vs_base,
             "contested": [],
-            "lifecycle": lifecycle,
         }
 
     unmeasured = sum(1 for v in claims.values() if v["outcome"] == UNMEASURED)
@@ -883,6 +976,23 @@ def advise(model: str, attribute: str = "", *, path: Path | None = None) -> dict
     )
     if unmeasured == len(claims):
         why = gap_reason(claims)
+        # ОТВЕТ С УРОВНЯ СЕМЬИ, когда у самого варианта атрибут не записан
+        # (аудит ae94057): `veo-3.1-lite.price` молчал, а цена Lite записана у
+        # `veo-3.1` — «$0.08/s Lite 1080p» со страницы вендора. Ответ помечен:
+        # это утверждение о семье, а не измерение варианта.
+        if семья_ответа:
+            ответ_семьи = _ответ_семьи(name, attribute, семья_ответа, роль.get("role", ""))
+            if ответ_семьи is not None:
+                return {
+                    **общее,
+                    **ответ_семьи,
+                    "note": ответ_семьи["note"] + авто + axis,
+                    "claims": семья_ответа,
+                    "own_claims": claims,
+                    "contested": [],
+                    "known_attributes": list(store.attributes(имя_в_базе)),
+                }
+        известные = list(store.attributes(имя_в_базе))
         gap_note = (
             f"nothing is recorded about {'.'.join(filter(None, (name, attribute)))}"
             if why == REASON_ATTRIBUTE_UNKNOWN
@@ -891,57 +1001,236 @@ def advise(model: str, attribute: str = "", *, path: Path | None = None) -> dict
                 "stale sources only, and repetition is not corroboration"
             )
         )
+        # ЧТО ЗАПИСАНО, НАЗЫВАЕТСЯ В НОТЕ (аудит ae94057): «не записано»
+        # без списка того, что есть, не даёт спросить правильным словом.
+        перечень = (
+            f" Recorded attributes for this model ({len(известные)}): "
+            + ", ".join(известные[:ПЕРЕЧЕНЬ_АТРИБУТОВ])
+            + (
+                f", … and {len(известные) - ПЕРЕЧЕНЬ_АТРИБУТОВ} more"
+                if len(известные) > ПЕРЕЧЕНЬ_АТРИБУТОВ
+                else ""
+            )
+            + "."
+            if why == REASON_ATTRIBUTE_UNKNOWN and известные
+            else ""
+        )
         return {
+            **общее,
             "outcome": UNMEASURED,
             "checked": checked,
             "violations": 0,
             "unmeasured": max(unmeasured, 1),
             "note": (
                 f"{gap_note}. The model itself IS in the fact base, so this is a "
-                "gap in what was recorded, not an unknown name." + axis
+                "gap in what was recorded, not an unknown name." + перечень + авто + axis
             ),
             "reason": why,
             # Что о модели ЕСТЬ. Без этого «не смогли» на опечатку в атрибуте
             # неотличимо от «не смогли» на настоящий пробел, и спрашивавшему
             # нечем сделать следующий шаг.
-            "known_attributes": list(store.attributes(name)),
-            "availability": live,
+            "known_attributes": известные,
             "claims": claims,
-            "failure_modes": failures,
-            "class_findings": class_findings,
-            "class_findings_total": len(every_class_fact),
-            "class_findings_note": class_findings_note,
-            "card_vs_base": card_vs_base,
             "contested": [],
-            "lifecycle": lifecycle,
         }
 
+    спорное = (
+        f" ОСПОРЕНО {len(contested)} из {len(claims)}: {', '.join(contested)} — источники "
+        "расходятся, все стороны с адресами в claims (в счёте — среди unmeasured); "
+        "на остальное ответ есть."
+        if contested
+        else ""
+    )
     return {
+        **общее,
         "outcome": PASS,
         "checked": checked,
+        # Спорный атрибут при исходе `pass` — НЕ нарушение проверки, а атрибут
+        # без единого значения: он считается в `unmeasured` (Р2), а `violations`
+        # у `pass` остаётся нулём (`scripts/check_headline.py`).
         "violations": 0,
-        "unmeasured": unmeasured,
+        "unmeasured": unmeasured + len(contested),
         "note": (
             f"{len(claims)} attribute(s) answered from {claims_found(claims)} recorded "
             f"statement(s) across {sources_behind(claims)} source(s), "
             f"{unmeasured} of them only weakly."
+            + спорное
             # Разворот спрошенного слова называется в ноте, а не только в
             # ключах: читают ноту, и «спросил price — получил price_per_minute»
             # обязано быть видно там же, где ответ.
             + (f" ВНИМАНИЕ: {asked_as}" if asked_as else "")
+            + авто
+            + семейное
             + axis
         ),
-        "reason": REASON_ANSWERED,
+        "reason": REASON_ANSWERED_SOME_CONTESTED if contested else REASON_ANSWERED,
         "asked_as": asked_as,
-        "availability": live,
         "claims": claims,
-        "failure_modes": failures,
-        "class_findings": class_findings,
-        "class_findings_total": len(every_class_fact),
-        "class_findings_note": class_findings_note,
-        "card_vs_base": card_vs_base,
-        "contested": [],
-        "lifecycle": lifecycle,
+        "contested": contested,
+    }
+
+
+#: Сколько записанных атрибутов назвать в ноте, когда спрошенного нет. ВЫБРАНО:
+#: у хорошо изученных моделей их 20–40, а нота — строка, которую читают.
+ПЕРЕЧЕНЬ_АТРИБУТОВ = 20
+
+#: Сколько вариантов семьи разворачивать в `family_claims`. ВЫБРАНО: у
+#: `flux-2` в базе 20 с лишним вариантов, включая общинные дообучения, и
+#: развернуть их все значит утопить ответ. Остаток считается (Р2).
+ВАРИАНТОВ_ПОКАЗАНО = 12
+
+
+def _сверить_с_карточкой(
+    name: str, live: dict, store: FactStore, resolution: Any
+) -> tuple[str, dict, str]:
+    """(имя для базы, ответ реестра, нота о сверке). Одна модель на ответ.
+
+    * Имя само разрешается в базе, и карточка — о ДРУГОЙ модели (`veo-3`
+      -> карточка `veo-3.1`): карточка снимается, ответ — о спрошенной модели.
+    * Имя в базе не разрешается, а реестр знает псевдоним (`kling` ->
+      `kling-3.0`): факты ищутся под id карточки, и это сказано в ноте.
+    """
+    card = live.get("card")
+    if card is None:
+        return name, live, ""
+    card_id = str(getattr(card, "model_id", "") or "")
+    if not card_id or card_id == name:
+        return name, live, ""
+    по_карточке = set(store.spellings(card_id))
+    # Псевдоним реестра — РЕШЕНИЕ, вывод по единственному соседу — догадка:
+    # при обоих побеждает решение.
+    if resolution.names and resolution.how not in modelnames.HOW_INFERRED:
+        if (
+            по_карточке
+            and set(resolution.names) != по_карточке
+            and modelnames.fold(card_id) != modelnames.fold(name)
+        ):
+            снято = {
+                "outcome": UNMEASURED,
+                "checked": 0,
+                "violations": 0,
+                "unmeasured": 1,
+                "note": (
+                    f"реестр свёл {name!r} к карточке {card_id!r}, но база фактов держит "
+                    f"{name!r} как ОТДЕЛЬНУЮ модель — карточка к ней не применена"
+                ),
+                "card": None,
+            }
+            return name, снято, ""
+        return name, live, ""
+    if по_карточке:
+        return (
+            card_id,
+            live,
+            (f"реестр знает {name!r} как псевдоним {card_id!r}; факты взяты под {card_id!r}."),
+        )
+    return name, live, ""
+
+
+def _доступность_по_базе(нота_реестра: str, lifecycle: list[dict], known_here: bool) -> str:
+    """Нота оси доступности для модели без карточки. Что можно — из базы."""
+    if not known_here:
+        return нота_реестра
+    if not lifecycle:
+        вывод = "записей о жизненном цикле (снятие, вывод из обслуживания) в базе нет"
+    else:
+        первое = lifecycle[0]
+        вывод = (
+            f"по записи базы {первое['attribute']} = {str(первое['value'])[:120]!r} "
+            f"({первое['tier']}, {первое['source_url']})"
+        )
+    return f"{нота_реестра} Из базы фактов: {вывод}."
+
+
+def _семья(store: FactStore, имя: str, attribute: str, known_here: bool) -> tuple[dict, dict]:
+    """Роль имени в семье и утверждения семьи, каждое помечено, о ком оно.
+
+    * `family`  — имя САМО семья (`veo-3.1`, `minimax-h3`, `seedvr2`):
+      утверждения её вариантов, ключ `атрибут@вариант`, `scope = variant`.
+    * `variant` — имя — вариант известной семьи (`veo-3.1-lite`): утверждения
+      семьи, ключ `атрибут@семья`, `scope = family`. Только если сам вариант
+      в базе есть: незнакомое имя рядом с семьёй — не та же модель (И5,
+      негативный контроль `test-model-pro`).
+
+    РАЗНЫЕ ВЕРСИИ НЕ СЕМЬЯ (И5): `veo-3` и `veo-3.1` друг другу не варианты —
+    см. `modelnames.family`.
+    """
+    варианты = store.family(имя)
+    if варианты:
+        показано = варианты[:ВАРИАНТОВ_ПОКАЗАНО]
+        роль = {
+            "role": "family",
+            "name": имя,
+            "variants": [names[0] for names in варианты],
+            "variants_total": len(варианты),
+            "variants_shown": len(показано),
+        }
+        return роль, _утверждения(store, [names[0] for names in показано], attribute, "variant")
+    if known_here:
+        родитель = store.parent(имя)
+        if родитель:
+            роль = {
+                "role": "variant",
+                "name": имя,
+                "family_name": родитель[0],
+                "family_spellings": родитель,
+            }
+            return роль, _утверждения(store, [родитель[0]], attribute, "family")
+    return {}, {}
+
+
+def _утверждения(store: FactStore, о_ком: list[str], attribute: str, scope: str) -> dict:
+    out: dict[str, dict] = {}
+    for about in о_ком:
+        записано = store.attributes(about)
+        имена = attrfamily.expand(attribute, записано) if attribute else записано
+        for attr in имена:
+            verdict = dict(store.claims(about, attr))
+            verdict["about"] = about
+            verdict["scope"] = scope
+            out[f"{attr}@{about}"] = verdict
+    return out
+
+
+def _семейная_нота(роль: dict, семья_ответа: dict) -> str:
+    if not роль:
+        return ""
+    if роль.get("role") == "family":
+        return (
+            f" СЕМЬЯ: у {роль['name']!r} {роль['variants_total']} вариант(а/ов) в базе "
+            f"({', '.join(роль['variants'][:6])}{', …' if роль['variants_total'] > 6 else ''}); "
+            f"их утверждения — в family_claims ({len(семья_ответа)}), каждое помечено "
+            "вариантом и НЕ голосует в ответе о самой модели."
+        )
+    return (
+        f" СЕМЬЯ: это вариант {роль['family_name']!r}; утверждения семьи — в "
+        f"family_claims ({len(семья_ответа)}), помечены scope=family."
+    )
+
+
+def _ответ_семьи(name: str, attribute: str, семья_ответа: dict, роль: str) -> dict | None:
+    """Ответ из утверждений семьи, когда своих нет. None — семья тоже молчит."""
+    годные = [k for k, v in семья_ответа.items() if v.get("outcome") == PASS]
+    спорные = [k for k, v in семья_ответа.items() if v.get("outcome") == FAIL]
+    if not годные:
+        return None
+    о_ком = sorted({str(семья_ответа[k].get("about")) for k in годные})
+    чьё = "вариантов семьи" if роль == "family" else "семьи"
+    return {
+        "outcome": PASS,
+        "checked": claims_found(семья_ответа),
+        # Как и у собственного ответа: спорное при `pass` — без единого
+        # значения, то есть среди `unmeasured`, а не нарушение (check_headline).
+        "violations": 0,
+        "unmeasured": len(семья_ответа) - len(годные),
+        "reason": REASON_ANSWERED_BY_FAMILY,
+        "note": (
+            f"о самой {name!r}{'.' + attribute if attribute else ''} не записано ничего; "
+            f"ответ — из утверждений {чьё} ({', '.join(о_ком)}): {len(годные)} из "
+            f"{len(семья_ответа)} в family_claims, каждое помечено, О КАКОМ ИМЕНИ оно. "
+            "Это НЕ измерение спрошенной модели."
+            + (f" Спорно: {', '.join(спорные)}." if спорные else "")
+        ),
     }
 
 
@@ -958,6 +1247,8 @@ def record(
     read_directly: bool | None = None,
     witnessed: str = "",
     contra: bool | None = None,
+    new_model: bool = False,
+    asked_as: str = "",
     path: Path | None = None,
 ) -> dict:
     """Write one web finding into the fact base, with who said it and when.
@@ -997,6 +1288,20 @@ def record(
 
     If the page turns out not to say what was recorded, this is the wrong
     door: `withdraw` is, and it takes a reason.
+
+    ОДНО ИМЯ — ОДНА МОДЕЛЬ И НА ЗАПИСИ (аудит ae94057, 2026-10-14). Имя
+    проходит разрешение (`modelnames`): написание уже известной модели
+    (`seedance2`, `kling-v3`, `ElevenLabs v3`) пишется под её каноническим id,
+    а спрошенное написание сохраняется в поле строки `asked_as`. Имя, которое
+    совпало с известным только через единственного соседа (`happyhorse` при
+    `happyhorse_1_0` в базе), НЕ пишется: ответ называет соседа, и запись
+    повторяется либо под его id, либо с `new_model=True`, если модель правда
+    новая.
+
+    :param new_model: явное «это новая модель», для имени, которое иначе было
+        бы отвергнуто как, вероятно, написание соседа.
+    :param asked_as: исходное написание, если вызывающий уже канонизировал
+        имя сам (так делает `scripts/merge_model_ids.py`).
     """
     fields = {
         "model": str(model or "").strip(),
@@ -1019,6 +1324,22 @@ def record(
             ),
             "written": None,
         }
+
+    target = path or DEFAULT_FACTS_PATH
+    имя, отказ_имени = каноническое_имя(fields["model"], target, new_model=new_model)
+    if отказ_имени:
+        return {
+            "outcome": FAIL,
+            "checked": len(fields),
+            "violations": 1,
+            "unmeasured": 0,
+            "note": отказ_имени,
+            "written": None,
+        }
+    спрошено_как = str(asked_as or "").strip()
+    if имя != fields["model"]:
+        спрошено_как = спрошено_как or fields["model"]
+        fields["model"] = имя
 
     # НЕЗНАНИЕ — ЭТО ИСХОД, А НЕ ЗНАЧЕНИЕ (Р1). Проверка стоит РАНЬШЕ разбора
     # тира и адреса нарочно (П2): она стоит микросекунду и не зависит ни от
@@ -1216,7 +1537,11 @@ def record(
         # под именем `holds_identity`, сделал план ложно ГОДНЫМ.
         "contra": None if contra is None else bool(contra),
     }
-    target = path or DEFAULT_FACTS_PATH
+    if спрошено_как and спрошено_как != fields["model"]:
+        # Исходное написание не теряется: оно стоит в строке рядом с
+        # каноническим id и читается глазами и `grep`-ом. В ключ утверждения
+        # оно не входит — модель одна.
+        row["asked_as"] = спрошено_как
     key = claim_key(fields["model"], fields["attribute"], fields["value"], fields["source_url"])
     before = {claim_key(f.model, f.attribute, f.value, f.source_url): f for f in load_facts(target)}
     standing = before.get(key)
@@ -1246,12 +1571,57 @@ def record(
         "note": (
             f"{what}. {row['model']}.{row['attribute']} now stands at "
             f"{after['outcome']!r} across {after.get('checked', 0)} source(s)."
+            + (
+                f" ИМЯ: спрошено как {row['asked_as']!r}, записано под каноническим "
+                f"id {row['model']!r} — это та же модель."
+                if row.get("asked_as")
+                else ""
+            )
             + (f" ПОМЕТКА К ЭТОЙ ЗАПИСИ:{поправка}" if поправка else "")
         ),
         "written": None if unchanged else row,
         "superseded": None if standing is None else _as_row(standing),
         "claims_now": after,
     }
+
+
+def каноническое_имя(
+    model: str, path: Path | None = None, *, new_model: bool = False
+) -> tuple[str, str]:
+    """(имя для записи, отказ). Отказ пуст — писать под возвращённым именем.
+
+    Развилка вынесена функцией (Т5): от неё зависит, в какой карман ляжет
+    строка, и тестом она проверяется без записи файла.
+
+    * Область (`*`, `eleven-*`) не разрешается: это не модель.
+    * Свёртка совпала с известной моделью — каноническое написание группы
+      (`FactStore.canonical`).
+    * Вендор впереди спрошенного, а без него имя известно
+      (`bytedance-seedance-…` при `seedance-…`) — то же, правило детерминированное.
+    * Совпало только с ЕДИНСТВЕННЫМ СОСЕДОМ (без вендора у спрошенного, или
+      как единственная версия) — отказ с указателем, если не `new_model`.
+    * Не совпало ни с чем — новая модель, пишется как названа.
+    """
+    имя = str(model or "").strip()
+    if not имя or имя.endswith("*"):
+        return имя, ""
+    store = store_for(path or DEFAULT_FACTS_PATH)
+    решение = store.resolve(имя)
+    if решение.outcome != PASS:
+        return имя, ""
+    канон = store.canonical(имя) or решение.canonical
+    if решение.how == modelnames.HOW_EXACT:
+        return (имя if канон.lower() == имя.lower() else канон), ""
+    if решение.how == modelnames.HOW_VENDOR:
+        return канон, ""
+    if new_model:
+        return имя, ""
+    return имя, (
+        f"ничего не записано: {имя!r} в базе нет, но {решение.note}. Если это та "
+        f"же модель — запишите под {канон!r}; если это ДРУГАЯ, новая модель — "
+        "повторите с new_model=True. Угадывать здесь нельзя: ошибка приписывает "
+        "модели чужие наблюдения."
+    )
 
 
 def _as_row(fact: Fact) -> dict:
@@ -1485,8 +1855,37 @@ def brief(model: str, attribute: str = "", *, path: Path | None = None) -> dict:
     полная_нота_доступности = str(доступность.get("note") or "")
     if полная_нота_доступности and полная_нота_доступности in нота:
         кратко["note"] = nota_bez_dostupnosti(нота, полная_нота_доступности, доступность)
+    кратко["claims"] = _сжать_утверждения(полный.get("claims") or {})
+    # Семья едет и в краткую форму (аудит ae94057): ответ «из утверждений
+    # семьи» без самих утверждений — это заголовок без содержания.
+    кратко["family"] = полный.get("family") or {}
+    кратко["family_claims"] = _сжать_утверждения(полный.get("family_claims") or {})
+    кратко["resolved_as"] = полный.get("resolved_as")
+    кратко["failure_modes"] = [
+        строка.get("value") if isinstance(строка, dict) else строка
+        for строка in (полный.get("failure_modes") or [])
+    ]
+    кратко["contested"] = полный.get("contested")
+    кратко["class_findings_total"] = полный.get("class_findings_total")
+    кратко["class_findings_note"] = полный.get("class_findings_note")
+    кратко["full_answer"] = (
+        "это КРАТКАЯ форма: разбор источников, ноты и находки о классе лежат в "
+        "полной выдаче — позовите тот же инструмент с `full=True`"
+    )
+    return кратко
+
+
+#: Сколько строк каждого списка отдаёт краткая форма `stale`. ВЫБРАНО: аудит
+#: ae94057 измерил 755 тысяч знаков на `days=30` — ответ, который съедает
+#: разговор целиком. Пятнадцать строк на список плюс счёт по моделям — это
+#: очередь, которую читают; всё остальное — по `full=True`.
+STALE_TOP = 15
+
+
+def _сжать_утверждения(утверждения: dict) -> dict:
+    """Утверждения в краткой форме: сравнимые величины без разбора источников."""
     сжатые: dict = {}
-    for атрибут, разбор in (полный.get("claims") or {}).items():
+    for атрибут, разбор in утверждения.items():
         источники = [
             и for строка in (разбор.get("claims") or []) for и in (строка.get("sources") or [])
         ]
@@ -1504,28 +1903,103 @@ def brief(model: str, attribute: str = "", *, path: Path | None = None) -> dict:
             "read_first_hand": any(и.get("read_directly") for и in источники),
             "example_url": ([и.get("url") for и in источники] or [""])[:КРАТКО_ИСТОЧНИКОВ],
         }
-    кратко["claims"] = сжатые
-    кратко["failure_modes"] = [
-        строка.get("value") if isinstance(строка, dict) else строка
-        for строка in (полный.get("failure_modes") or [])
-    ]
-    кратко["contested"] = полный.get("contested")
-    кратко["class_findings_total"] = полный.get("class_findings_total")
-    кратко["class_findings_note"] = полный.get("class_findings_note")
-    кратко["full_answer"] = (
-        "это КРАТКАЯ форма: разбор источников, ноты и находки о классе лежат в "
-        "полной выдаче — позовите тот же инструмент без `brief`"
-    )
-    return кратко
+        for ключ in ("about", "scope", "scoped_elsewhere"):
+            if ключ in разбор:
+                сжатые[атрибут][ключ] = разбор[ключ]
+    return сжатые
 
 
-def stale(*, days: int = STALE_AFTER_DAYS, path: Path | None = None) -> dict:
+def stale(
+    *,
+    days: int = STALE_AFTER_DAYS,
+    path: Path | None = None,
+    model: str = "",
+    full: bool = False,
+    top: int = STALE_TOP,
+) -> dict:
     """Which claims are old enough to need a fresh look on the web.
 
     A claim with no date is counted as unmeasured, not as fresh. That is the
     whole reason `record` insists on a date.
+
+    :param days: возраст, после которого утверждение протухло; целое ≥ 0.
+        Отрицательное и не-целое — отказ (`fail`, ничего не проверено), а не
+        тихая подмена: `days=-5` раньше объявлял протухшей ВСЮ базу.
+    :param model: только эта модель (все её написания, `modelnames`).
+        Неизвестное имя — третий исход с подсказкой, а не пустая «всё свежо».
+    :param full: все строки. По умолчанию — КРАТКАЯ форма: счёт по каждому
+        списку, счёт по моделям и первые `top` строк каждого списка.
     """
-    facts = load_facts(path or DEFAULT_FACTS_PATH)
+    if isinstance(days, bool) or not isinstance(days, int) or days < 0:
+        return {
+            "outcome": FAIL,
+            "checked": 0,
+            "violations": 1,
+            "unmeasured": 0,
+            "note": f"days={days!r} — нужно целое число ≥ 0; ничего не проверено",
+            "stale": [],
+            "undated": [],
+            "published_and_old": [],
+            "blocked_source": [],
+        }
+    if isinstance(top, bool) or not isinstance(top, int) or top < 1:
+        top = STALE_TOP
+    target = path or DEFAULT_FACTS_PATH
+    facts = load_facts(target)
+    имя = str(model or "").strip()
+    if имя:
+        склад = store_for(target)
+        свои = set(склад.spellings(имя))
+        if not свои:
+            соседи = склад.near(имя)
+            return {
+                "outcome": UNMEASURED,
+                "checked": 0,
+                "violations": 0,
+                "unmeasured": 1,
+                "note": (
+                    f"{имя!r} не найдено в базе фактов ни в одном написании — стареть нечему"
+                    + (f"; близкие имена: {', '.join(соседи)}" if соседи else "")
+                ),
+                "near": соседи,
+                "stale": [],
+                "undated": [],
+                "published_and_old": [],
+                "blocked_source": [],
+            }
+        facts = [f for f in facts if f.model.lower() in свои]
+    итог = _stale_rows(facts, days)
+    if имя:
+        итог["model"] = имя
+    return итог if full else _stale_brief(итог, top)
+
+
+def _stale_brief(итог: dict, top: int) -> dict:
+    """Краткая форма: счёт целиком, строки — первые `top` каждого списка (Р2)."""
+    списки = ("stale", "undated", "published_and_old", "blocked_source")
+    кратко = dict(итог)
+    счёт = {ключ: len(итог.get(ключ) or []) for ключ in списки}
+    по_моделям: dict[str, int] = {}
+    for ключ in ("stale", "undated", "blocked_source"):
+        for row in итог.get(ключ) or []:
+            по_моделям[str(row["model"])] = по_моделям.get(str(row["model"]), 0) + 1
+    for ключ in списки:
+        кратко[ключ] = list(итог.get(ключ) or [])[:top]
+    кратко["counts"] = счёт
+    кратко["by_model"] = dict(sorted(по_моделям.items(), key=lambda kv: (-kv[1], kv[0]))[:top])
+    кратко["models_with_work"] = len(по_моделям)
+    обрезано = any(счёт[ключ] > top for ключ in списки)
+    кратко["truncated"] = обрезано
+    if обрезано:
+        кратко["full_answer"] = (
+            f"КРАТКАЯ форма: в каждом списке не больше {top} строк, полный счёт — в "
+            "`counts`. Все строки — с full=True; одна модель — с model=<имя>."
+        )
+    return кратко
+
+
+def _stale_rows(facts: list[Fact], days: int) -> dict:
+    """Разбор возраста по уже отобранным строкам. Полная форма."""
     if not facts:
         return {
             "outcome": UNMEASURED,
@@ -1601,7 +2075,7 @@ def stale(*, days: int = STALE_AFTER_DAYS, path: Path | None = None) -> dict:
             "note": (
                 f"{len(old)} claim(s) older than {days} days and {len(undated)} "
                 f"with no date at all, out of {len(facts)} checked. Search the "
-                "web for these and call `record` with what you find. "
+                "web for these and call `record_model_fact` with what you find. "
                 f"Separately, {len(published)} claim(s) rest on a PUBLISHED "
                 "source (paper or benchmark) older than that: a paper does not "
                 "rot, so re-reading it changes nothing. If one of those models "

@@ -110,10 +110,19 @@ class LoadCorpus(unittest.TestCase):
 class Registry(unittest.TestCase):
     def test_aliases_resolve_and_unverified_names_do_not(self) -> None:
         kling = card_for("KLING")
-        veo = card_for("veo3")
+        veo = card_for("veo")
         assert kling is not None and veo is not None
         self.assertEqual(kling.model_id, "kling-3.0")
         self.assertEqual(veo.model_id, "veo-3.1")
+        # Написание id карточки сводится свёрткой (2026-10-14): `kling-v3`,
+        # `Kling 3`, `seedance2` — та же карточка.
+        self.assertEqual(getattr(card_for("kling-v3"), "model_id", None), "kling-3.0")
+        self.assertEqual(getattr(card_for("seedance2"), "model_id", None), "seedance-2.0")
+        # НЕГАТИВНЫЙ КОНТРОЛЬ (аудит ae94057): Veo 3 — другая модель, не 3.1,
+        # и FLUX.1 Kontext — не FLUX.2. Карточки чужой модели они не получают.
+        self.assertIsNone(card_for("veo3"))
+        self.assertIsNone(card_for("veo-3"))
+        self.assertIsNone(card_for("flux-kontext"))
         # The live example: no evidence 'kling-3.1' exists. Resolving it to 3.0
         # would build a prompt against limits nobody checked.
         self.assertIsNone(card_for("kling-3.1"))

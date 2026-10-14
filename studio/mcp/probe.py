@@ -55,7 +55,15 @@ from typing import Any
 from lipsync.fork_identity import FAIL, PASS, UNMEASURED
 
 from studio.mcp import credentials
-from studio.mcp.fetch import TIMEOUT_SECONDS, _DENIAL, _host, note_denial
+from studio.mcp.fetch import (
+    TIMEOUT_SECONDS,
+    _DENIAL,
+    _host,
+    _open,
+    note_denial,
+    ssrf_reason,
+    адрес_закрыт,
+)
 
 __all__ = ["probe_limit", "ABSURD_MIN", "KEY_ENV", "PROBES_PATH", "note_probe", "зонд_был"]
 
@@ -181,10 +189,52 @@ MEASURING_STATUSES: frozenset[int] = frozenset({400, 422})
 #: only, while the live variable was `KLING_KEY` — so the probe reported "no API
 #: key" with a working key sitting beside it. A credential lookup that guesses
 #: names must list the names somebody used, not the names somebody expected.
+_KLING_ENV = ("KLING_KEY", "KLING_API_KEY", "KLINGAI_API_KEY")
+_FAL_ENV = ("FAL_KEY", "FAL_API_KEY")
+
+#: НАЙДЕНО живым прогоном 2026-10-14: ключ был привязан только к `api.fal.ai`,
+#: а модели fal ЗАПУСКАЮТСЯ на `queue.fal.run` и `fal.run` — и зонд отвечал «no
+#: API key» при выставленном `FAL_KEY`. Третий раз одна и та же форма дефекта
+#: (см. `KLING_KEY` выше): таблица знала не те имена, что встречаются в жизни.
 KEY_ENV: dict[str, tuple[str, ...]] = {
-    "api.klingai.com": ("KLING_KEY", "KLING_API_KEY", "KLINGAI_API_KEY"),
-    "api.fal.ai": ("FAL_KEY", "FAL_API_KEY"),
+    "api.klingai.com": _KLING_ENV,
+    "api.fal.ai": _FAL_ENV,
+    "queue.fal.run": _FAL_ENV,
+    "fal.run": _FAL_ENV,
 }
+
+#: Хосты, которые совпадают по СУФФИКСУ: у fal у каждой модели может быть свой
+#: поддомен, перечислить их заранее нельзя. Точное совпадение выше главнее.
+KEY_ENV_SUFFIX: dict[str, tuple[str, ...]] = {
+    ".fal.run": _FAL_ENV,
+    ".fal.ai": _FAL_ENV,
+    ".klingai.com": _KLING_ENV,
+}
+
+#: Схема заголовка Authorization. fal принимает `Key <FAL_KEY>`, а не Bearer
+#: (документированный формат их REST и очереди); остальные — Bearer.
+AUTH_SCHEME_SUFFIX: dict[str, str] = {
+    "fal.run": "Key",
+    "fal.ai": "Key",
+}
+
+
+def _key_names(host: str) -> tuple[str, ...]:
+    host = str(host or "").lower()
+    if host in KEY_ENV:
+        return KEY_ENV[host]
+    for suffix, names in KEY_ENV_SUFFIX.items():
+        if host.endswith(suffix):
+            return names
+    return ()
+
+
+def _auth_scheme(host: str) -> str:
+    host = str(host or "").lower()
+    for suffix, scheme in AUTH_SCHEME_SUFFIX.items():
+        if host == suffix or host.endswith("." + suffix):
+            return scheme
+    return "Bearer"
 
 
 def _key_for(host: str) -> tuple[str, str]:
@@ -194,7 +244,7 @@ def _key_for(host: str) -> tuple[str, str]:
     the `KLING_API_KEY`/`KLING_KEY` defect lived, and it recurred once more
     before the lookup was moved to one place.
     """
-    return credentials.find(KEY_ENV.get(host, ()))
+    return credentials.find(_key_names(host))
 
 
 def probe_limit(
@@ -231,6 +281,20 @@ def probe_limit(
     if not str(field or "").strip():
         return _bad("no field was named, so there is nothing to probe")
 
+    # ТЕЛО ЗАПРОСА — ОБЪЕКТ JSON, И НИЧЕГО ДРУГОГО. НАЙДЕНО 2026-10-14:
+    # `payload_json='[1]'` доезжал до `dict(payload)` и ронял инструмент
+    # трассировкой. Поле пишется В объект; в список или число его не впишешь.
+    if payload is not None and not isinstance(payload, dict):
+        return _bad(
+            f"payload must be a JSON object (a dict), not {type(payload).__name__}; "
+            "nothing was sent"
+        )
+
+    # SSRF до всего остального: адрес берётся из вызова.
+    закрыт = адрес_закрыт(target)
+    if закрыт:
+        return _bad(f"{target!r} is refused before sending: {закрыт}. Nothing was sent")
+
     # The guard. It runs before a request object exists.
     if isinstance(absurd_value, bool) or not isinstance(absurd_value, (int, float, str)):
         return _bad(
@@ -252,7 +316,7 @@ def probe_limit(
     host = _host(target)
     key, key_from = _key_for(host)
     if not key:
-        names = ", ".join(KEY_ENV.get(host, ())) or "(none configured for this host)"
+        names = ", ".join(_key_names(host)) or "(none configured for this host)"
         return {
             "outcome": UNMEASURED,
             "checked": 0,
@@ -277,12 +341,12 @@ def probe_limit(
         method="POST",
         headers={
             "Content-Type": "application/json",
-            "Authorization": f"Bearer {key}",
+            "Authorization": f"{_auth_scheme(host)} {key}",
         },
     )
 
     try:
-        with urllib.request.urlopen(request, timeout=TIMEOUT_SECONDS) as response:
+        with _open(request, timeout=TIMEOUT_SECONDS) as response:
             text = response.read(20_000).decode("utf-8", "replace")
             status = response.status
     except urllib.error.HTTPError as error:
@@ -291,6 +355,9 @@ def probe_limit(
         text = error.read(20_000).decode("utf-8", "replace")
         status = error.code
     except urllib.error.URLError as error:
+        отказ_ssrf = ssrf_reason(error)
+        if отказ_ssrf:
+            return _bad(f"{target!r} was refused before sending: {отказ_ssrf}")
         reason = str(getattr(error, "reason", error))
         if _DENIAL.search(reason):
             note_denial(target, reason, why_wanted or f"probe {field} on {host}")

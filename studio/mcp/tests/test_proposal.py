@@ -134,18 +134,43 @@ class Filing(unittest.TestCase):
         rows = [json.loads(line) for line in self.ledger.read_text(encoding="utf-8").splitlines()]
         assert len(rows) == 1
 
-    def test_a_different_test_for_the_same_attribute_is_a_different_proposal(self) -> None:
-        """The other half: identity must move with the test, or a second,
-        better-designed measurement would be silently swallowed by the first."""
+    OTHER_TEST = (
+        "send one 6s 720p job to replicate.com/wan-animate instead, same reference "
+        "and plate, and measure the same ArcFace cosine drift for comparison"
+    )
+
+    def test_an_OPEN_ask_on_the_same_question_is_returned_not_duplicated(self) -> None:
+        """2026-10-14, live: `veo-3.1 max_resolution` was filed a second time
+        (`mp-36c46e6926`) beside the open `mp-5617b65d91`, because the test was
+        worded differently. Same model (folded) + same attribute while one is
+        open is the same ask. ИЗМЕНЕНО 2026-10-14: до этого тест требовал
+        ровно обратного — второй строки."""
         first = self._file()
-        second = self._file(
-            test=(
-                "send one 6s 720p job to replicate.com/wan-animate instead, same reference "
-                "and plate, and measure the same ArcFace cosine drift for comparison"
-            )
-        )
-        assert second["id"] != first["id"]
+        second = self._file(model="Wan Animate Replace", test=self.OTHER_TEST)
+        assert second["id"] == first["id"]
+        assert second["duplicate_of_open"] is True
         assert second["outcome"] == UNMEASURED
+        assert "OPEN proposal for the same question" in second["note"]
+        rows = [json.loads(line) for line in self.ledger.read_text(encoding="utf-8").splitlines()]
+        assert len(rows) == 1
+
+    def test_once_the_first_is_closed_a_different_test_is_a_new_proposal(self) -> None:
+        """The other half (И5): after a DECLINE the question may be asked again
+        with a better test; identity must still move with the test."""
+        first = self._file()
+        proposal.decide(str(first["id"]), "declined", operator="owner", path=self.ledger)
+        second = self._file(test=self.OTHER_TEST)
+        assert second["id"] != first["id"]
+        assert second.get("duplicate_of_open") is not True
+        assert second["state"] == proposal.STATE_PROPOSED
+
+    def test_a_different_attribute_is_not_a_twin(self) -> None:
+        first = self._file()
+        second = self._file(attribute="max_seconds", test=self.OTHER_TEST)
+        assert second["id"] != first["id"]
+
+    def test_open_states_are_the_literal_pair(self) -> None:
+        assert proposal.OPEN_STATES == ("proposed", "approved")
 
     def test_paying_to_re_learn_a_settled_fact_is_refused(self) -> None:
         from studio.mcp import advice
@@ -380,6 +405,25 @@ class Listing(unittest.TestCase):
         assert len(out["proposals"]) == 1
         assert out["by_state"] == {"approved": 1}
         assert "0 waiting on the operator" in out["note"]
+
+    def test_the_note_says_what_the_filter_showed(self) -> None:
+        """2026-10-14: the note was identical for every state filter."""
+        filed = proposal.propose(
+            "wan-animate-replace",
+            "holds_identity",
+            path=self.ledger,
+            facts_path=self.facts,
+            **GOOD,  # type: ignore[arg-type]
+        )
+        proposal.decide(str(filed["id"]), "approved", operator="owner", path=self.ledger)
+        notes = {
+            state: proposal.proposals(state=state, path=self.ledger)["note"]
+            for state in ("", "approved", "declined")
+        }
+        assert len(set(notes.values())) == 3, notes
+        assert notes["declined"].startswith("0 shown with state 'declined' out of 1")
+        assert notes["approved"].startswith("1 shown with state 'approved' out of 1")
+        assert notes[""].startswith("1 proposal(s), all shown")
 
     def test_an_unknown_state_filter_is_refused(self) -> None:
         out = proposal.proposals(state="maybe", path=self.ledger)

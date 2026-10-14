@@ -100,5 +100,18 @@ class ПоводНазываетсяСловамиЖурнала(unittest.TestCa
         self.assertIn(заявка.WANT_INCIDENTAL, текст)
 
 
+class RunpodОтнесёнКПорталу(unittest.TestCase):
+    def test_три_домена_runpod_в_тире_портала(self):
+        """2026-10-14 `--check` был красным на трёх доменах Runpod: GPU-облако,
+        которым владелец сам попросил пользоваться. Литералы (Т2)."""
+        for домен in ("runpod.io", "runpod.ai", "getrunpod.io"):
+            self.assertIn(домен, заявка.PORTAL)
+            self.assertNotIn(домен, заявка.EXCLUDED)
+            self.assertNotIn(домен, заявка.VENDOR)
+
+    def test_mcp_хост_сворачивается_в_getrunpod(self):
+        self.assertEqual("getrunpod.io", заявка.registrable("mcp.getrunpod.io"))
+
+
 if __name__ == "__main__":
     unittest.main()

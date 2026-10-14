@@ -355,13 +355,6 @@ MUTANTS: list[tuple[str, str, str, str, str]] = [
     # --- бриф: как сказал заказчик -----------------------------------------
     (
         "studio/planner.py",
-        'кроме=("фотосесси", "фотограф", "фотоаппарат"),',
-        "кроме=(),",
-        "бриф: фотосессия с фотографом снова заказ на оживление",
-        "studio.mcp.tests.test_brief_cues",
-    ),
-    (
-        "studio/planner.py",
         '            "права на голос",\n',
         "",
         "бриф: вопрос юриста о правах на голос снова заказ озвучки",
@@ -398,15 +391,15 @@ MUTANTS: list[tuple[str, str, str, str, str]] = [
     ),
     (
         "studio/planner.py",
-        "    операции, дописаны = замкнуть(операции, есть)",
+        "    операции, дописаны = замкнуть(операции, есть, brief)",
         "    дописаны: dict[str, str] = {}",
         "замыкание: выключено — «с нуля» снова даёт неполный план",
         "studio.tests.test_planner",
     ),
     (
         "studio/planner.py",
-        '                    f"{дописаны[op.name]} никем не производится и на входе его нет"',
-        '                    ""',
+        '            пометка = f"{дописаны[op.name]} никем не производится и на входе его нет"',
+        '            пометка = ""',
         "замыкание: дописанный шаг перестал помечаться — продукт дополняет заказ молча",
         "studio.tests.test_planner",
     ),
@@ -1542,7 +1535,7 @@ MUTANTS: list[tuple[str, str, str, str, str]] = [
     ),
     (
         "scripts/check_source_names_model.py",
-        "ПОТОЛОК = 10",
+        "ПОТОЛОК = 8",
         "ПОТОЛОК = 1000",
         "источник: потолок чужих карточек перестал что-либо запрещать",
         "studio.mcp.tests.test_source_names_model",
@@ -2998,9 +2991,37 @@ MUTANTS: list[tuple[str, str, str, str, str]] = [
     ),
     (
         "studio/pipeline.py",
-        'AMBIENT_ARTEFACTS: frozenset[str] = frozenset({"бриф", "селфи", "референс"})',
         'AMBIENT_ARTEFACTS: frozenset[str] = frozenset({"бриф", "референс"})',
-        "строже: селфи клиента перестало приходить снаружи",
+        'AMBIENT_ARTEFACTS: frozenset[str] = frozenset({"бриф", "селфи", "референс"})',
+        "слабее: селфи снова считается принесённым всегда (оживление несуществующего снимка)",
+        "studio.mcp.tests.test_pipeline",
+    ),
+    (
+        "studio/pipeline.py",
+        "    доступно = {_norm(a) for a in AMBIENT_ARTEFACTS} | {_norm(a) for a in inputs}",
+        "    доступно = {_norm(a) for a in AMBIENT_ARTEFACTS}",
+        "строже: принесённое заказчиком (`Pipeline.inputs`) перестало быть входом плана",
+        "studio.mcp.tests.test_pipeline",
+    ),
+    (
+        "studio/pipeline.py",
+        "    return bool(свои & {str(я).lower() for я in languages})",
+        "    return True",
+        "язык: строка о хинди снова судит английскую озвучку",
+        "studio.mcp.tests.test_pipeline",
+    ),
+    (
+        "studio/pipeline.py",
+        "    if not свои:\n        return True\n    if exclusive_language(текст):",
+        "    if not свои:\n        return False\n    if exclusive_language(текст):",
+        "язык: строка без языка перестала судить шаг",
+        "studio.mcp.tests.test_pipeline",
+    ),
+    (
+        "studio/pipeline.py",
+        "                    if not re.search(r\"(?:^|\\W)(?:не|not)\\s*$\", низ[: м.start()]):",
+        "                    if True:",
+        "язык: «не только хинди» снова читается как «только хинди»",
         "studio.mcp.tests.test_pipeline",
     ),
     (

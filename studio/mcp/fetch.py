@@ -60,10 +60,14 @@ claims into this base.
 
 from __future__ import annotations
 
+import html.parser
+import http.client
+import ipaddress
 import json
 import re
 import socket
 import urllib.error
+import urllib.parse
 import urllib.request
 from datetime import date
 from pathlib import Path
@@ -147,9 +151,327 @@ def причина_для_записи(текст: str) -> str:
     return стало
 
 
+#: Одна метка имени хоста по RFC 1123: буквы, цифры, дефис не по краям.
+_МЕТКА = re.compile(r"^(?!-)[a-z0-9-]{1,63}(?<!-)$")
+
+
+def имя_хоста_годно(host: str) -> bool:
+    """Похоже ли это на имя хоста, которое можно записать в журнал отказов.
+
+    ЗАЧЕМ. НАЙДЕНО живым прогоном 2026-10-14: `reachable_hosts('https://x.y/z')`
+    строил адрес `https://https://x.y/z/`, старый разбор регулярным выражением
+    брал из него хост `https` — и ЭТО слово уезжало в `denied_hosts.jsonl`, то
+    есть в заявку, которую читает владелец окружения. Мусор в заявке хуже, чем
+    пропуск: он учит читателя не верить остальным строкам.
+
+    Требуется хотя бы одна точка (имя без точки — это `https`, `localhost` или
+    опечатка, но не хост в интернете) либо IP-литерал. IDN проверяется в своей
+    ASCII-форме.
+    """
+    имя = str(host or "").strip().lower().rstrip(".")
+    if not имя or len(имя) > 253:
+        return False
+    try:
+        ipaddress.ip_address(имя)
+        return True
+    except ValueError:
+        pass
+    try:
+        ascii_имя = имя.encode("idna").decode("ascii")
+    except (UnicodeError, ValueError):
+        return False
+    метки = ascii_имя.split(".")
+    if len(метки) < 2:
+        return False
+    return all(_МЕТКА.match(м) for м in метки)
+
+
 def _host(url: str) -> str:
-    match = re.match(r"https?://([^/:]+)", str(url or ""), re.I)
-    return match.group(1).lower() if match else ""
+    """Хост из адреса, или "" если адрес не http(s) или хост не годен.
+
+    Разбирается `urlsplit`, а не регулярным выражением. Прежнее
+    `https?://([^/:]+)` отдавало `evil.com@127.0.0.1` за хост (часть с
+    `user@` — это не хост) и `https` за хост в `https://https://x.y/`.
+    """
+    text = str(url or "").strip()
+    try:
+        parts = urllib.parse.urlsplit(text)
+        host = parts.hostname or ""
+    except ValueError:
+        return ""
+    if parts.scheme.lower() not in ("http", "https"):
+        return ""
+    host = host.lower().rstrip(".")
+    return host if имя_хоста_годно(host) else ""
+
+
+def нормализовать_хост(text: str) -> tuple[str, str]:
+    """(хост, "") из того, что человек вписал как хост; ("", почему) — если это не хост.
+
+    Принимает `x.y`, `X.Y.`, `x.y:443`, `https://x.y/z` — всё это один хост
+    `x.y`. Отказ называет причину: строка, которую нельзя разобрать, не
+    пробуется и НЕ ПИШЕТСЯ в журнал отказов.
+    """
+    raw = str(text or "").strip()
+    if not raw:
+        return "", "пустая строка"
+    кандидат = raw if "://" in raw else f"https://{raw}"
+    try:
+        parts = urllib.parse.urlsplit(кандидат)
+    except ValueError as error:
+        return "", f"{raw!r} не разбирается как адрес: {error}"
+    if parts.scheme.lower() not in ("http", "https"):
+        return "", f"{raw!r}: схема {parts.scheme!r}, а пробуются только http и https"
+    host = _host(кандидат)
+    if not host:
+        return "", f"{raw!r} не похоже на имя хоста"
+    return host, ""
+
+
+# ---------------------------------------------------------------------------
+# SSRF. ЗАЧЕМ: сервер готовится к публичному хостингу, и `fetch_url`,
+# `reachable_hosts`, `probe_model_limit` берут адрес ИЗ ВЫЗОВА. Без этой
+# защиты любой клиент MCP читает через нас 169.254.169.254 (метаданные
+# облака с ключами), 127.0.0.1:<порт админки> и локальную сеть хоста.
+#
+# КАК УСТРОЕНО, И ПОЧЕМУ ТАК:
+#   1. ДО запроса: только http/https; имя годно; IP-литерал (в том числе
+#      старые формы `2130706433`, `0x7f.1`, которые резолвер честно
+#      превращает в 127.0.0.1) и служебные имена (`localhost`, `*.internal`,
+#      `metadata.google.internal`) отказываются сразу.
+#   2. ПРИ СОЕДИНЕНИИ: имя разрешается и КАЖДЫЙ адрес проверяется, после чего
+#      соединение открывается С ПРОВЕРЕННЫМ адресом — не «проверили одно,
+#      соединились с другим» (DNS rebinding). Это делает `_GuardedHTTP*`.
+#   3. НА ПЕРЕАДРЕСАЦИИ: новый адрес проходит пункт 1, а соединение — пункт 2;
+#      схема, отличная от http/https, отказывается.
+#
+# ГРАНИЦА, СКАЗАННАЯ ВСЛУХ. Когда запрос идёт через ПРОКСИ (как в этой
+# песочнице), имя разрешает прокси, а не мы, и пункт 2 проверить нечего:
+# остаются пункты 1 и 3 и собственная политика прокси. Разрешать имя у себя
+# «на всякий случай» нельзя: адрес, который увидим мы, не обязан совпасть с
+# тем, к которому подключится прокси, — это была бы защита на вид.
+# ---------------------------------------------------------------------------
+
+#: Сети, в которые запрос из вызова не уходит. Помимо того, что `ipaddress`
+#: и так считает частным/служебным, — CGNAT 100.64/10: в 3.11 он не
+#: `is_private`, а за ним в облаках бывают внутренние сервисы.
+_ЗАКРЫТЫЕ_СЕТИ = tuple(
+    ipaddress.ip_network(n)
+    for n in (
+        "0.0.0.0/8",
+        "10.0.0.0/8",
+        "100.64.0.0/10",
+        "127.0.0.0/8",
+        "169.254.0.0/16",
+        "172.16.0.0/12",
+        "192.168.0.0/16",
+        "::1/128",
+        "::/128",
+        "fc00::/7",
+        "fe80::/10",
+    )
+)
+
+#: Имена, которые по смыслу внутренние, — отказ без всякого DNS.
+_ЗАКРЫТЫЕ_ИМЕНА = ("localhost", "metadata.google.internal", "metadata")
+_ЗАКРЫТЫЕ_СУФФИКСЫ = (".localhost", ".internal", ".local", ".home.arpa", ".lan")
+
+
+class SSRFRefused(urllib.error.URLError):
+    """Адрес ведёт во внутреннюю сеть; запрос туда не отправлялся."""
+
+
+def ssrf_reason(error: BaseException) -> str:
+    """Текст отказа SSRF, если ошибка — он (urllib заворачивает его в URLError)."""
+    for candidate in (error, getattr(error, "reason", None)):
+        if isinstance(candidate, SSRFRefused):
+            return str(getattr(candidate, "reason", candidate))
+    return ""
+
+
+def ip_закрыт(ip: str) -> str:
+    """Почему по этому IP ходить нельзя; "" — можно."""
+    try:
+        адрес = ipaddress.ip_address(str(ip).split("%", 1)[0])
+    except ValueError:
+        return f"{ip!r} не IP-адрес"
+    mapped = getattr(адрес, "ipv4_mapped", None)
+    if mapped is not None:
+        адрес = mapped
+    for сеть in _ЗАКРЫТЫЕ_СЕТИ:
+        if адрес.version == сеть.version and адрес in сеть:
+            return f"{адрес} лежит во внутренней сети {сеть}"
+    if (
+        адрес.is_private
+        or адрес.is_loopback
+        or адрес.is_link_local
+        or адрес.is_multicast
+        or адрес.is_reserved
+        or адрес.is_unspecified
+    ):
+        return f"{адрес} — не публичный адрес"
+    return ""
+
+
+def _ipv4_литерал(host: str) -> str:
+    """Старые формы IPv4 (`2130706433`, `0x7f.1`, `0177.0.0.1`) -> точечная запись.
+
+    Разбирает `inet_aton` — ЛОКАЛЬНО, без DNS: ровно этим разбором их потом
+    понял бы резолвер. "" — это не IPv4-литерал.
+    """
+    if not re.fullmatch(r"[0-9a-fx.]+", host):
+        return ""
+    try:
+        return socket.inet_ntoa(socket.inet_aton(host))
+    except OSError:
+        return ""
+
+
+def адрес_закрыт(url: str) -> str:
+    """Почему этот адрес нельзя запрашивать (пункт 1 выше); "" — можно.
+
+    Без DNS: ни тест, ни прокси от этой проверки в сеть не ходят.
+    """
+    text = str(url or "").strip()
+    try:
+        parts = urllib.parse.urlsplit(text)
+    except ValueError as error:
+        return f"адрес не разбирается: {error}"
+    if parts.scheme.lower() not in ("http", "https"):
+        return f"схема {parts.scheme!r}: запрашиваются только http и https"
+    host = (parts.hostname or "").lower().rstrip(".")
+    if not host:
+        return "в адресе нет хоста"
+    try:
+        ipaddress.ip_address(host)
+        литерал = host
+    except ValueError:
+        литерал = _ipv4_литерал(host)
+    if литерал:
+        return ip_закрыт(литерал)
+    if host in _ЗАКРЫТЫЕ_ИМЕНА or host.endswith(_ЗАКРЫТЫЕ_СУФФИКСЫ):
+        return f"{host} — служебное внутреннее имя"
+    if not имя_хоста_годно(host):
+        return f"{host!r} не похоже на имя хоста"
+    return ""
+
+
+def _proxy_hosts() -> set[str]:
+    """Хосты настроенных прокси: соединение С НИМИ не проверяется на SSRF."""
+    out: set[str] = set()
+    for scheme, value in urllib.request.getproxies().items():
+        if scheme == "no":
+            continue
+        try:
+            host = urllib.parse.urlsplit(value if "://" in value else f"http://{value}").hostname
+        except ValueError:
+            continue
+        if host:
+            out.add(host.lower())
+    return out
+
+
+def _guarded_create_connection(
+    address, timeout=socket._GLOBAL_DEFAULT_TIMEOUT, source_address=None, **_kw
+):  # type: ignore[attr-defined]
+    """`socket.create_connection`, который соединяется только с проверенным адресом.
+
+    Разрешает имя САМ, проверяет КАЖДЫЙ полученный адрес и подключается к
+    одному из них — так проверенный адрес и есть тот, с которым говорим.
+    """
+    host, port = address
+    infos = socket.getaddrinfo(host, port, 0, socket.SOCK_STREAM)
+    for *_rest, sockaddr in infos:
+        причина = ip_закрыт(sockaddr[0])
+        if причина:
+            raise SSRFRefused(f"{host} разрешается во внутренний адрес: {причина}")
+    last: OSError | None = None
+    for family, kind, proto, _canon, sockaddr in infos:
+        sock = socket.socket(family, kind, proto)
+        try:
+            if timeout is not socket._GLOBAL_DEFAULT_TIMEOUT:  # type: ignore[attr-defined]
+                sock.settimeout(timeout)
+            if source_address:
+                sock.bind(source_address)
+            sock.connect(sockaddr)
+            return sock
+        except OSError as error:
+            last = error
+            sock.close()
+    raise last or OSError(f"{host}: getaddrinfo returned nothing")
+
+
+def _охранять(connection: Any) -> Any:
+    """Подменить соединению способ подключения на проверяющий (пункт 2)."""
+    original = connection._create_connection
+
+    def create(address, *args, **kwargs):  # type: ignore[no-untyped-def]
+        # Через туннель или к самому прокси — это соединение С ПРОКСИ, имя
+        # цели разрешает он; см. «границу» выше.
+        if getattr(connection, "_tunnel_host", None) or str(address[0]).lower() in _proxy_hosts():
+            return original(address, *args, **kwargs)
+        return _guarded_create_connection(address, *args, **kwargs)
+
+    connection._create_connection = create
+    return connection
+
+
+class _GuardedHTTPConnection(http.client.HTTPConnection):
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        _охранять(self)
+
+
+class _GuardedHTTPSConnection(http.client.HTTPSConnection):
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        _охранять(self)
+
+
+class _GuardedHTTPHandler(urllib.request.HTTPHandler):
+    def http_open(self, req):  # type: ignore[no-untyped-def]
+        return self.do_open(_GuardedHTTPConnection, req)
+
+
+class _GuardedHTTPSHandler(urllib.request.HTTPSHandler):
+    def https_open(self, req):  # type: ignore[no-untyped-def]
+        kwargs: dict[str, Any] = {"context": getattr(self, "_context", None)}
+        if hasattr(self, "_check_hostname"):
+            kwargs["check_hostname"] = self._check_hostname
+        return self.do_open(_GuardedHTTPSConnection, req, **kwargs)
+
+
+class _GuardedRedirect(urllib.request.HTTPRedirectHandler):
+    """Переадресация проходит ту же проверку, что и первый адрес (пункт 3)."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):  # type: ignore[no-untyped-def]
+        причина = адрес_закрыт(newurl)
+        if причина:
+            raise SSRFRefused(f"переадресация на {newurl} отказана: {причина}")
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+_STOCK_URLOPEN = urllib.request.urlopen
+_GUARDED_OPENER: Any = None
+
+
+def _open(request: urllib.request.Request, *, timeout: float) -> Any:
+    """Единственная дверь наружу для адресов из вызова: с охраной SSRF.
+
+    Если `urllib.request.urlopen` ПОДМЕНЁН (тестовый дублёр транспорта),
+    зовётся он: тест, заменивший транспорт, заменил его целиком, и сети нет.
+    Иначе — свой opener с охраняемыми соединениями и переадресацией. Он НЕ
+    ставится глобально (`install_opener`), чтобы не менять поведение чужих
+    модулей этого процесса.
+    """
+    global _GUARDED_OPENER
+    if urllib.request.urlopen is not _STOCK_URLOPEN:
+        return urllib.request.urlopen(request, timeout=timeout)
+    if _GUARDED_OPENER is None:
+        _GUARDED_OPENER = urllib.request.build_opener(
+            _GuardedHTTPHandler, _GuardedHTTPSHandler, _GuardedRedirect
+        )
+    return _GUARDED_OPENER.open(request, timeout=timeout)
 
 
 def имя_существует(host: str) -> bool | None:
@@ -556,13 +878,24 @@ def fetch(
         }
 
     host = _host(target)
+    # SSRF, ПУНКТ 1: до того как существует запрос. Отказ — `fail`: это адрес
+    # вызывающего, а не решение политики, и в журнал отказов он НЕ пишется —
+    # заявка на открытие внутренней сети была бы хуже мусора.
+    закрыт = адрес_закрыт(target)
+    if закрыт:
+        return _ssrf_refusal(target, закрыт)
     sent = {"User-Agent": _UA}
     sent.update({str(k): str(v) for k, v in (headers or {}).items()})
     request = urllib.request.Request(target, headers=sent, data=data)
     try:
-        with urllib.request.urlopen(request, timeout=TIMEOUT_SECONDS) as response:
+        with _open(request, timeout=TIMEOUT_SECONDS) as response:
             body, truncated = read_capped(response, max_bytes)
             text = body.decode("utf-8", "replace")
+            content_type = ""
+            try:
+                content_type = str(response.headers.get("Content-Type", "") or "")
+            except Exception:  # noqa: BLE001 - a double without headers is not a failure
+                content_type = ""
             # The host answered, so if it was in the ask it no longer belongs
             # there. Retiring it here rather than in the request generator
             # means ordinary use keeps the ask honest.
@@ -585,6 +918,7 @@ def fetch(
                 ),
                 "host": host,
                 "status": response.status,
+                "content_type": content_type,
                 "text": text,
                 "denied": False,
             }
@@ -616,6 +950,9 @@ def fetch(
             "denied": False,
         }
     except urllib.error.URLError as error:
+        отказ_ssrf = ssrf_reason(error)
+        if отказ_ssrf:
+            return _ssrf_refusal(target, отказ_ssrf)
         reason = str(getattr(error, "reason", error))
         if _DENIAL.search(reason):
             note_denial(target, reason, why_wanted, incidental=incidental)
@@ -660,6 +997,207 @@ def fetch(
         }
 
 
+# ---------------------------------------------------------------------------
+# ЧТЕНИЕ СТРАНИЦЫ ЧЕЛОВЕКОМ-АГЕНТОМ. ИЗМЕРЕНО 2026-10-14 живым прогоном
+# `fetch_url`: ai.google.dev отдал 264 тыс. символов, platform.minimax.io —
+# 424 тыс., и почти всё это разметка, скрипты и меню. Агент, которому вернули
+# такое, либо не дочитывает до сути, либо съедает на чтение весь контекст.
+# Поэтому инструмент по умолчанию отдаёт ТЕКСТ страницы, кусками, и говорит,
+# сколько осталось. `fetch()` для программ остаётся как был: ему нужен сырой
+# JSON и сырой HTML.
+# ---------------------------------------------------------------------------
+
+#: Сколько символов текста отдаётся за один вызов, если не попросили иначе.
+#: ВЫБРАНО: ~5 тыс. токенов — страница документации целиком или её большая
+#: часть, и при этом пять таких чтений не съедают контекст агента.
+PAGE_CHARS = 20_000
+
+#: Потолок `max_chars`, сколько бы ни попросили. ВЫБРАНО вчетверо выше
+#: умолчания: больше за один раз агенту читать незачем, для того и `offset`.
+PAGE_CHARS_MAX = 80_000
+
+#: Сколько байт тела скачивать для чтения кусками. 424 тыс. символов
+#: minimax — самый длинный ответ, что мы видели; 2 МБ покрывают его с запасом.
+PAGE_BYTES = 2_000_000
+
+#: Теги, содержимое которых — не текст страницы.
+_НЕ_ТЕКСТ = frozenset(
+    {"script", "style", "nav", "noscript", "svg", "template", "iframe", "head", "canvas"}
+)
+#: Теги, после которых в тексте начинается новая строка.
+_БЛОЧНЫЕ = frozenset(
+    {
+        "p", "div", "section", "article", "main", "header", "footer", "aside",
+        "br", "hr", "li", "ul", "ol", "dl", "dt", "dd", "tr", "table", "thead",
+        "tbody", "pre", "blockquote", "h1", "h2", "h3", "h4", "h5", "h6",
+        "figure", "figcaption", "form", "details", "summary",
+    }
+)  # fmt: skip
+
+
+class _Текст(html.parser.HTMLParser):
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.куски: list[str] = []
+        self.заголовок: list[str] = []
+        self._глубина_скрытого = 0
+        self._в_title = False
+        self._в_pre = 0
+
+    def handle_starttag(self, tag: str, attrs: Any) -> None:
+        tag = tag.lower()
+        if tag == "title":
+            self._в_title = True
+        if tag in _НЕ_ТЕКСТ:
+            self._глубина_скрытого += 1
+        if tag == "pre":
+            self._в_pre += 1
+        if tag in _БЛОЧНЫЕ:
+            self.куски.append("\n")
+        if tag in ("h1", "h2", "h3", "h4", "h5", "h6") and not self._глубина_скрытого:
+            self.куски.append("#" * int(tag[1]) + " ")
+        if tag == "li" and not self._глубина_скрытого:
+            self.куски.append("- ")
+
+    def handle_startendtag(self, tag: str, attrs: Any) -> None:
+        if tag.lower() in ("br", "hr"):
+            self.куски.append("\n")
+
+    def handle_endtag(self, tag: str) -> None:
+        tag = tag.lower()
+        if tag == "title":
+            self._в_title = False
+        if tag in _НЕ_ТЕКСТ and self._глубина_скрытого:
+            self._глубина_скрытого -= 1
+        if tag == "pre" and self._в_pre:
+            self._в_pre -= 1
+        if tag in _БЛОЧНЫЕ:
+            self.куски.append("\n")
+
+    def handle_data(self, data: str) -> None:
+        if self._в_title:
+            self.заголовок.append(data)
+            return
+        if self._глубина_скрытого:
+            return
+        self.куски.append(data if self._в_pre else re.sub(r"\s+", " ", data))
+
+
+def похоже_на_html(text: str, content_type: str = "") -> bool:
+    """HTML ли это: по заголовку ответа, а без него — по началу тела."""
+    if "html" in str(content_type or "").lower():
+        return True
+    if str(content_type or "").strip() and "text/plain" not in content_type.lower():
+        return False
+    начало = str(text or "")[:2048].lstrip().lower()
+    return начало.startswith(("<!doctype html", "<html")) or "<body" in начало
+
+
+def текст_страницы(markup: str) -> tuple[str, str]:
+    """(заголовок, текст) из HTML. Без скриптов, стилей и навигации."""
+    parser = _Текст()
+    try:
+        parser.feed(str(markup or ""))
+        parser.close()
+    except Exception:  # noqa: BLE001 - кривая разметка даёт то, что успели прочесть
+        pass
+    текст = "".join(parser.куски)
+    строки = [" ".join(s.split()) for s in текст.split("\n")]
+    # Пустые строки выбрасываются: на живых страницах их больше, чем текста, а
+    # агенту они стоят токенов и ничего не несут.
+    сжатый = [строка for строка in строки if строка]
+    return " ".join("".join(parser.заголовок).split()), "\n".join(сжатый).strip()
+
+
+def page(
+    url: str,
+    *,
+    why_wanted: str = "",
+    max_chars: int = PAGE_CHARS,
+    offset: int = 0,
+    raw: bool = False,
+) -> dict:
+    """Страница для чтения: текст вместо разметки, кусками, с остатком.
+
+    Обёртка над `fetch` для инструмента `fetch_url`. Все три исхода и запись
+    отказа — от `fetch`; здесь меняется только ТО, ЧТО отдаётся в `text`.
+
+    :param max_chars: сколько символов отдать (1 .. `PAGE_CHARS_MAX`).
+    :param offset: с какого символа ИЗВЛЕЧЁННОГО текста начать; следующий
+        кусок — `next_offset` из ответа.
+    :param raw: отдать тело как пришло (HTML-разметку, JSON) — тоже кусками.
+    """
+    try:
+        лимит = int(max_chars)
+    except (TypeError, ValueError):
+        лимит = PAGE_CHARS
+    лимит = max(1, min(лимит, PAGE_CHARS_MAX))
+    try:
+        начало = max(0, int(offset))
+    except (TypeError, ValueError):
+        начало = 0
+    out = fetch(url, why_wanted=why_wanted, max_bytes=PAGE_BYTES)
+    тело = str(out.get("text") or "")
+    вид = "raw"
+    заголовок = ""
+    if not raw and тело and похоже_на_html(тело, str(out.get("content_type") or "")):
+        заголовок, тело = текст_страницы(тело)
+        вид = "text extracted from HTML (script, style, nav dropped)"
+    всего = len(тело)
+    кусок = тело[начало : начало + лимит]
+    дальше = начало + len(кусок)
+    осталось = max(0, всего - дальше)
+    result = {
+        **out,
+        "text": кусок,
+        "title": заголовок,
+        "form": вид,
+        "offset": начало,
+        "max_chars": лимит,
+        "total_chars": всего,
+        "returned_chars": len(кусок),
+        "remaining_chars": осталось,
+        "next_offset": дальше if осталось else None,
+        "truncated": bool(осталось) or bool(out.get("truncated")),
+    }
+    if тело or начало:
+        хвост = (
+            f"; {всего} chars of {вид}, returned {начало}..{дальше}"
+            + (
+                f", {осталось} more — call again with offset={дальше}"
+                if осталось
+                else ", nothing more"
+            )
+            + (
+                f". THE DOWNLOAD ITSELF WAS CUT at {PAGE_BYTES} bytes, so the page is longer "
+                "than anything offset can reach"
+                if out.get("truncated")
+                else ""
+            )
+        )
+        result["note"] = str(out.get("note", "")) + хвост
+    return result
+
+
+def _ssrf_refusal(target: str, why: str) -> dict:
+    return {
+        "outcome": FAIL,
+        "checked": 1,
+        "violations": 1,
+        "unmeasured": 0,
+        "note": (
+            f"{target!r} is refused before sending: {why}. Requests from a tool call "
+            "never go to private, loopback, link-local or metadata addresses. Nothing "
+            "was sent and nothing was recorded in the denial journal."
+        ),
+        "host": _host(target),
+        "status": None,
+        "text": "",
+        "denied": False,
+        "ssrf": True,
+    }
+
+
 def reachability(hosts: Any = None, *, why_wanted: str = "") -> dict:
     """Probe hosts now rather than trusting the map in the docstring.
 
@@ -679,18 +1217,33 @@ def reachability(hosts: Any = None, *, why_wanted: str = "") -> dict:
         `note_denial` the first time somebody probes it WITH a question, so
         nothing is lost by defaulting to incidental.
     """
-    targets = list(hosts) if hosts else _DEFAULT_HOSTS
+    if isinstance(hosts, str):
+        hosts = [h for h in hosts.split(",") if h.strip()]
+    given = list(hosts) if hosts else list(_DEFAULT_HOSTS)
     asked_for = str(why_wanted or "").strip()
     open_hosts: list[str] = []
     closed: list[str] = []
     other: list[dict] = []
+    # ВХОД РАЗБИРАЕТСЯ ДО ПРОБЫ. Найдено живым прогоном 2026-10-14: строка
+    # `https://x.y/z` пробовалась как хост, и в журнал отказов уехал хост
+    # `https`. Негодная строка не пробуется, не пишется и называется в ответе.
+    targets: list[str] = []
+    invalid: list[dict] = []
+    for raw in given:
+        host, why = нормализовать_хост(raw)
+        if not host:
+            invalid.append({"input": str(raw), "why": why})
+        elif host not in targets:
+            targets.append(host)
     for host in targets:
         out = fetch(
             f"https://{host}/",
             why_wanted=asked_for or "refreshing the reachability map; nobody asked for this host",
             incidental=not asked_for,
         )
-        if out["denied"]:
+        if out.get("ssrf"):
+            invalid.append({"input": host, "why": out["note"]})
+        elif out["denied"]:
             closed.append(host)
         elif out["outcome"] in {PASS, FAIL}:
             # FAIL here means the host ANSWERED — 400 or 404 on a bare root is
@@ -708,20 +1261,25 @@ def reachability(hosts: Any = None, *, why_wanted: str = "") -> dict:
     # or DNS died". An agent branching on `outcome` could not tell "the policy
     # forbids nothing" from "we reached nobody".
     #
-    # The `if not targets` branch below was the only UNMEASURED path and it was
-    # DEAD: `targets` falls back to _DEFAULT_HOSTS, so it is never empty. Kept,
-    # because a caller could pass an empty tuple in future, but it is no longer
-    # the only way out.
-    if not targets:
+    # The branch below covers "nothing was probed": every input was junk or an
+    # internal address (2026-10-14), or no input at all. Junk is the caller's
+    # error and comes back as `fail` with `invalid` naming each one.
+    if not (open_hosts or closed or other):
         return {
-            "outcome": UNMEASURED,
-            "checked": 0,
-            "violations": 0,
-            "unmeasured": 1,
-            "note": "no hosts were given, so nothing was probed",
+            "outcome": FAIL if invalid else UNMEASURED,
+            "checked": len(invalid),
+            "violations": len(invalid),
+            "unmeasured": 0 if invalid else 1,
+            "note": (
+                f"none of the {len(invalid)} input(s) is a host that can be probed; "
+                "nothing was sent and nothing was recorded"
+                if invalid
+                else "no hosts were given, so nothing was probed"
+            ),
             "open": [],
             "closed": [],
             "unreached": [],
+            "invalid": invalid,
         }
 
     return {
@@ -733,6 +1291,12 @@ def reachability(hosts: Any = None, *, why_wanted: str = "") -> dict:
             f"{len(open_hosts)} open, {len(closed)} refused by policy, "
             f"{len(other)} unreached for other reasons, out of {len(targets)} probed"
             + (
+                f"; {len(invalid)} input(s) were not probeable hosts and were skipped "
+                "(see `invalid`) — nothing was recorded for them"
+                if invalid
+                else ""
+            )
+            + (
                 " — NOBODY answered, so this is not a map of what is allowed, it is "
                 "a map of nothing: treat it as не смогли, not as a clean bill"
                 if not open_hosts and not closed
@@ -742,11 +1306,66 @@ def reachability(hosts: Any = None, *, why_wanted: str = "") -> dict:
         "open": sorted(open_hosts),
         "closed": sorted(closed),
         "unreached": other,
+        "invalid": invalid,
+        # Карта — измерение с датой и точкой обзора: открыто ОТСЮДА и СЕЙЧАС.
+        "measured_on": date.today().isoformat(),
+        "vantage": "this server's process, through its configured egress"
+        + (" proxy" if _proxy_hosts() else " (no proxy)"),
     }
 
 
-def wanted() -> dict:
-    """The allowlist request, assembled from refusals that actually happened."""
+#: Сколько символов причины остаётся в КРАТКОЙ форме заявки. ВЫБРАНО: самая
+#: длинная настоящая причина — 289 символов (см. `ПОТОЛОК_ПРИЧИНЫ`), а
+#: краткой форме достаточно начала фразы, чтобы понять, о чём просили.
+КРАТКАЯ_ПРИЧИНА = 160
+
+
+def wanted(*, full: bool = True) -> dict:
+    """The allowlist request, assembled from refusals that actually happened.
+
+    :param full: every row as the journal stored it (the default, for scripts
+        that build the request document). False gives the compact form the MCP
+        tool returns by default: per asked host only host, reason (cut to
+        `КРАТКАЯ_ПРИЧИНА`) and date; the bulk-probe pile and the granted list
+        as counts plus host names. MEASURED 2026-10-14: the full form was
+        75 733 characters — more than an agent can afford to read to learn
+        that sixty hosts are being asked for.
+    """
+    out = _wanted_full()
+    if full:
+        return out
+
+    def _кратко(row: dict) -> dict:
+        причина = " ".join(str(row.get("why_wanted") or "").split())
+        if len(причина) > КРАТКАЯ_ПРИЧИНА:
+            причина = причина[:КРАТКАЯ_ПРИЧИНА] + "…"
+        item = {
+            "host": row.get("host", ""),
+            "why_wanted": причина,
+            "first_seen": row.get("first_seen", ""),
+        }
+        if row.get("also_answered"):
+            item["also_answered"] = row["also_answered"]
+        return item
+
+    return {
+        **{k: out[k] for k in ("outcome", "checked", "violations", "unmeasured", "note")},
+        "form": "compact — pass full=True for every row as recorded",
+        "counts": {
+            "asked": len(out["hosts"]),
+            "also_refused": len(out["also_refused"]),
+            "granted": len(out["granted"]),
+            "withdrawn": len(out["withdrawn"]),
+        },
+        "hosts": [_кратко(r) for r in out["hosts"]],
+        "also_refused": sorted(str(r.get("host", "")) for r in out["also_refused"]),
+        "granted": out["granted"],
+        "withdrawn": out["withdrawn"],
+    }
+
+
+def _wanted_full() -> dict:
+    """The full allowlist request; see `wanted`."""
     rows = _read_denied()
     if not rows:
         return {
@@ -772,9 +1391,24 @@ def wanted() -> dict:
     withdrawn = sorted(h for h, s in state.items() if s == STATE_UNWANTED)
 
     by_host: dict[str, dict] = {}
+    # Адреса этого хоста, которые ОТВЕЧАЛИ. Хост — не единица доступа (см.
+    # докстроку модуля: `docs.qingque.cn/` закрыт, а страница на нём открыта).
+    answered: dict[str, list[str]] = {}
+    for row in rows:
+        if str(row.get("state", STATE_REFUSED)) == STATE_OPEN and row.get("host"):
+            url = str(row.get("url") or "")
+            if url and url not in answered.setdefault(row["host"], []):
+                answered[row["host"]].append(url)
     for row in rows:
         host = row.get("host", "")
         if not host or state.get(host) in (STATE_OPEN, STATE_UNWANTED):
+            continue
+        # ТОЛЬКО СТРОКИ-ОТКАЗЫ ВЫБИРАЮТСЯ В ЗАЯВКУ. НАЙДЕНО 2026-10-14: у строки
+        # `open` нет поля `incidental`, она читалась как «не мазок» и
+        # вытесняла настоящую причину — в `hosts` уезжал `docs.qingque.cn` с
+        # `state: open` и без всякого `why_wanted`, а `unwanted`-строки
+        # Reddit — с причиной ОТКАЗА от хоста вместо причины просьбы.
+        if str(row.get("state", STATE_REFUSED)) != STATE_REFUSED:
             continue
         kept = by_host.get(host)
         # Two rules, in this order. A host wanted for a real question outranks
@@ -785,6 +1419,9 @@ def wanted() -> dict:
         if kept is None or not row.get("incidental", False):
             by_host[host] = row
 
+    for host, urls in answered.items():
+        if host in by_host:
+            by_host[host] = {**by_host[host], "also_answered": urls}
     asked = [by_host[h] for h in sorted(by_host) if not by_host[h].get("incidental", False)]
     swept = [by_host[h] for h in sorted(by_host) if by_host[h].get("incidental", False)]
 

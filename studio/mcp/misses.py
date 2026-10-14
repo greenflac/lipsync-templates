@@ -18,9 +18,18 @@
 
 ЧТО ПИШЕТСЯ
 
-КАЖДЫЙ вопрос, а не только промах. Журнал одних промахов растёт и при
-улучшении базы, и при ухудшении: без попаданий рядом он неотличим от счётчика
-активности. Строка — append-only, потому что журнал, а не таблица.
+С 2026-10-14 — ТОЛЬКО ПРОМАХИ (аудит ae94057): вопрос, на который у базы не
+нашлось ничего (`known == 0`: неизвестная модель или атрибут). До этого
+писался КАЖДЫЙ вопрос, включая успешные, и это дало две беды: журнал рос на
+каждом вызове `model_advice`, а тесты и живые проверки, зовущие инструмент,
+дописывали строки в производственный файл. Знаменатель покрытия этим
+теряется для новых строк — `coverage` по журналу после этой даты считает
+долю промахов среди ПРОМАХОВ и смысла не имеет; очередь дочитывания
+(`queue`), ради которой журнал и живёт, не теряет ничего.
+
+КУДА ПИШЕТСЯ. `STUDIO_MISSES_PATH` — другой файл (тесты, живые проверки);
+`STUDIO_NO_JOURNAL=1` — не писать вовсе, когда путь не передан явно.
+Строка — append-only, потому что журнал, а не таблица.
 
 # Долг закрыт 2026-08-31: `scripts/check_append_only.py` сверяет журнал с его
 # же прежней версией и краснеет на изменённой строке — и в рабочем дереве, и
@@ -41,6 +50,7 @@
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
@@ -53,6 +63,28 @@ from lipsync.fork_identity import FAIL, PASS, UNMEASURED
 from studio.mcp import advice
 
 STORE = Path(__file__).resolve().parents[1] / "knowledge" / "misses.jsonl"
+
+#: Другой файл журнала вместо производственного: тесты и живые проверки.
+PATH_ENV = "STUDIO_MISSES_PATH"
+#: Не вести журнал вовсе (любое значение, кроме пустого и `0`), когда путь не
+#: передан явно. Явный путь — явное намерение, и он пишется всегда.
+NO_JOURNAL_ENV = "STUDIO_NO_JOURNAL"
+
+
+def journal_path(path: Path | None = None, *, environ: dict[str, str] | None = None) -> Path | None:
+    """Куда писать журнал. None — не писать. Развилка вынесена (Т5).
+
+    Явный `path` побеждает всё; иначе `STUDIO_NO_JOURNAL` выключает запись,
+    `STUDIO_MISSES_PATH` переводит её в другой файл, а без них — `STORE`.
+    """
+    среда = os.environ if environ is None else environ
+    if path is not None:
+        return path
+    if str(среда.get(NO_JOURNAL_ENV, "") or "").strip() not in ("", "0"):
+        return None
+    другой = str(среда.get(PATH_ENV, "") or "").strip()
+    return Path(другой) if другой else STORE
+
 
 #: Исход одного вопроса, теми же тремя значениями, что и везде (правило Р1).
 #: Это исход КОНСУЛЬТАЦИИ, как его назвал `advise`. Промах считается не по
@@ -180,8 +212,12 @@ def note_question(
     asked_on: str = "",
     note: str = "",
     path: Path | None = None,
+    record_hits: bool = False,
 ) -> dict[str, Any]:
-    """Записать один заданный вопрос и его исход. Возвращает записанную строку.
+    """Записать один заданный вопрос, если это ПРОМАХ. Возвращает строку.
+
+    Пишется только промах (`known == 0`); попадание — только с явным
+    `record_hits=True`. Поле `journaled` в ответе говорит, легла ли строка.
 
     Молчит при любой ошибке записи НАРОЧНО: журнал наблюдает за консультацией,
     а не участвует в ней. Упавший диск не должен превращать ответ о модели в
@@ -197,15 +233,17 @@ def note_question(
         "note": note,
     }
     if problems(row):
-        return row
-    target = STORE if path is None else path
+        return {**row, "journaled": False}
+    target = journal_path(path)
+    if target is None or (covered(row) and not record_hits):
+        return {**row, "journaled": False}
     try:
         target.parent.mkdir(parents=True, exist_ok=True)
         with target.open("a", encoding="utf-8") as handle:
             handle.write(json.dumps(row, ensure_ascii=False) + "\n")
     except OSError:
-        pass
-    return row
+        return {**row, "journaled": False}
+    return {**row, "journaled": True}
 
 
 def read(path: Path | None = None) -> tuple[list[dict[str, Any]], list[int]]:
@@ -217,7 +255,8 @@ def read(path: Path | None = None) -> tuple[list[dict[str, Any]], list[int]]:
     — тот самый класс дефекта, который на этом проекте дороже всех. Найдено
     независимой проверкой 2026-08-31.
     """
-    target = STORE if path is None else path
+    другой = str(os.environ.get(PATH_ENV, "") or "").strip()
+    target = path if path is not None else (Path(другой) if другой else STORE)
     if not target.exists():
         return [], []
     rows: list[dict[str, Any]] = []

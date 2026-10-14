@@ -146,6 +146,16 @@ PORTAL: dict[str, str] = {
     "aimlapi.com": "reseller catalogue",
     "kie.ai": "reseller catalogue",
     "apiframe.ai": "reseller catalogue",
+    # GPU-ОБЛАКО, НА КОТОРОМ ВЛАДЕЛЕЦ САМ ПОПРОСИЛ ЗАПУСКАТЬ ВИДЕОГЕНЕРАЦИЮ
+    # (2026-10-07, «настроить RunPod по agent-setup.md»). Портал в прямом
+    # смысле этого тира: платформа, которая ЗАПУСКАЕТ чужие модели (поды,
+    # serverless, публичные эндпоинты), а не их автор. Владелец уже открыл
+    # api./rest./docs.runpod.io — в журнале они `open`; в заявке остаётся то,
+    # что всё ещё отказано: console./www.runpod.io, второй API-домен
+    # runpod.ai и MCP-сервер Runpod из официального плагина (mcp.getrunpod.io).
+    "runpod.io": "Runpod GPU cloud the owner asked to use — console and site (api/rest/docs already open)",
+    "runpod.ai": "Runpod's second API domain (api./rest.runpod.ai) — pods and serverless control",
+    "getrunpod.io": "Runpod's official MCP server (mcp.getrunpod.io) from the Runpod agent plugin",
 }
 
 #: Published evaluations. Rung 3, and the ONLY rung that can say a model is

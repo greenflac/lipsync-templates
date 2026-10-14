@@ -617,18 +617,65 @@ class FactStore:
         #: (`studio/selfrag/modelnames.py`), а не своя нормализация в каждом
         #: потребителе: своих было пять.
         self._spellings: dict[str, list[str]] = modelnames.group({m for m, _a in self._index})
+        #: Имена в том написании, в каком они записаны (не в нижнем регистре
+        #: индекса) — для подсчёта строк при выборе канонического написания.
+        self._rows_per_model: dict[str, int] = defaultdict(int)
+        for fact in self.facts:
+            self._rows_per_model[fact.model.lower()] += 1
+        #: Разрешение имени дорогое (свёртка всей базы), а `advise` спрашивает
+        #: его на каждый атрибут: кэш на время жизни склада, который и так
+        #: перестраивается при любой правке файла (`advice.store_for`).
+        self._resolved: dict[str, modelnames.Resolution] = {}
 
     def spellings(self, model: str) -> list[str]:
         """Все написания базы, под которыми лежит эта модель.
 
         Пусто — значит имя не разрешилось, и это третий исход, а не ноль
         фактов: `resolve` рядом печатает, чем именно оно не разрешилось.
+
+        С 2026-10-14 идёт через `resolve`, а не через голую свёртку: имя,
+        разрешённое по вендору впереди (`h3-max`) или как единственная версия
+        (`happyhorse`), обязано находить строки, а не только печатать ноту.
         """
-        return list(self._spellings.get(fold(model), ()))
+        return list(self.resolve(model).names)
 
     def resolve(self, model: str) -> modelnames.Resolution:
         """Три исхода разрешения имени: нашлось / такого нет / не назвали."""
-        return modelnames.resolve(model, {m for m, _a in self._index})
+        ключ = " ".join(str(model or "").split()).strip()
+        if ключ not in self._resolved:
+            self._resolved[ключ] = modelnames.resolve(
+                ключ, {m for m, _a in self._index}, groups=self._spellings
+            )
+        return self._resolved[ключ]
+
+    def canonical(self, model: str) -> str:
+        """Написание, под которым писать новое об этой модели; пусто — модели нет.
+
+        `modelnames.canonical_spelling`: написание вендора, если оно известно,
+        иначе то, под которым в базе больше строк.
+        """
+        names = self.spellings(model)
+        return modelnames.canonical_spelling(names, dict(self._rows_per_model)) if names else ""
+
+    def family(self, model: str) -> list[list[str]]:
+        """Варианты семьи этой модели, сгруппированные по написаниям.
+
+        `veo-3.1` -> [[veo-3.1-i2v, veo3.1-image-to-video], [veo-3.1-lite]].
+        Сама модель сюда не входит; РАЗНЫЕ версии (`veo-3`) — тоже (И5).
+        """
+        known = {m for m, _a in self._index}
+        свои = set(self.spellings(model))
+        out: dict[str, list[str]] = {}
+        for member in modelnames.family(model, known):
+            if member in свои:
+                continue
+            ключ = next((k for k, v in self._spellings.items() if member in v), fold(member))
+            out.setdefault(ключ, list(self._spellings.get(ключ, [member])))
+        return [names for _k, names in sorted(out.items())]
+
+    def parent(self, model: str) -> list[str]:
+        """Написания семьи, вариантом которой является эта модель; пусто — нет."""
+        return modelnames.parent(model, {m for m, _a in self._index})
 
     def attributes(self, model: str) -> list[str]:
         """Every attribute anybody has stated for this model.
@@ -661,6 +708,11 @@ class FactStore:
             for spelling in self.spellings(model)
             for fact in self._index.get((spelling, low_attribute), [])
         ]
+        return self._verdict(model, attribute, found)
+
+    def _verdict(self, model: str, attribute: str, found: list[Fact]) -> dict:
+        """Вердикт по найденным строкам. Отдельно от поиска, чтобы область
+        площадки (`_scoped`) судилась ТЕМ ЖЕ правилом, а не его копией (Е1)."""
         if not found:
             return {
                 "outcome": UNMEASURED,
@@ -707,6 +759,9 @@ class FactStore:
         # model)» и «80 (single-GPU 1280*720)» против «80 (без выгрузки); на
         # 4090 идёт с --offload_model» объявлялись расхождением источников.
         if len(by_value) > 1 and not multi and not _same_answer(list(by_value)):
+            по_области = self._scoped(model, attribute, found, rows)
+            if по_области is not None:
+                return по_области
             summary = "; ".join(f"{r['value']!r} ({r['best_tier']})" for r in rows)
             return {
                 "outcome": FAIL,
@@ -768,6 +823,104 @@ class FactStore:
             "sources_reading_unrecorded": len(unrecorded),
             "claims": rows,
             "values": sorted(by_value),
+        }
+
+    def _scoped(
+        self, model: str, attribute: str, found: list[Fact], rows: list[dict]
+    ) -> dict | None:
+        """Расхождение, которое на деле — ОБЛАСТЬ площадки, а не спор. Иначе None.
+
+        НАЙДЕНО АУДИТОМ ae94057 (2026-10-14). Хорошо изученные модели получали
+        `fail`, а малоизвестные — `pass`: заголовок шёл обратно знанию. Причина
+        у трёх из трёх: площадка-перепродавец сообщает предел СВОЕГО эндпоинта,
+        а вендор — модели. `veo-3.1.max_resolution`: Runway API отдаёт 1080p,
+        Google — 4K. Это не противоречие: оба верны, каждый про своё место.
+
+        Правило узкое (И5): спор снимается, только если БЕЗ строк площадки
+        (тир `portal`) оставшиеся источники согласны между собой и их вердикт
+        сам по себе — `pass` (то есть они не из одних блогов). Тогда ответ —
+        их значение, а значения площадок едут рядом с её адресом в
+        `scoped_elsewhere`, видимые, но не голосующие. Спор вендора с
+        вендором (`kling-3.0.max_seconds`: 15 против «5 или 10») и блога с
+        блогом остаётся спором.
+        """
+        площадки = [f for f in found if f.tier == TIER_PORTAL]
+        свои = [f for f in found if f.tier != TIER_PORTAL]
+        if not площадки:
+            return None
+        if not свои:
+            return self._by_venue(model, attribute, found, rows)
+        if not _same_answer(sorted({f.value for f in свои})):
+            return None
+        вердикт = self._verdict(model, attribute, свои)
+        if вердикт["outcome"] != PASS:
+            return None
+        где = sorted(
+            {(f.value, f.source_url.split("://", 1)[-1].split("/", 1)[0], f.tier) for f in площадки}
+        )
+        # `claims` — только строки, на которых стоит ответ: потребители
+        # (`proposal`, `brief`) берут значение отсюда, и строка площадки в
+        # общем списке читалась бы как ответ. Строки площадок — целиком, с
+        # адресами, — в `scoped_elsewhere`: видимы, но не голосуют.
+        ответные = {r["value"] for r in вердикт["claims"]}
+        вердикт = dict(вердикт)
+        вердикт["checked"] = len(found)
+        вердикт["scoped_elsewhere"] = [
+            {
+                "value": value,
+                "venue": host,
+                "tier": tier,
+                "sources": [
+                    src
+                    for r in rows
+                    if r["value"] == value and r["value"] not in ответные
+                    for src in r["sources"]
+                    if host in str(src.get("url") or "")
+                ],
+            }
+            for value, host, tier in где
+        ]
+        вердикт["note"] = (
+            f"{вердикт['note']}; ОБЛАСТЬ, НЕ СПОР: площадка(и) "
+            + ", ".join(f"{host} — {value!r}" for value, host, _t in где)
+            + " сообщают предел СВОЕГО эндпоинта, а не модели; оба ответа верны "
+            "каждый для своего места и показаны рядом"
+        )
+        return вердикт
+
+    def _by_venue(
+        self, model: str, attribute: str, found: list[Fact], rows: list[dict]
+    ) -> dict | None:
+        """Только площадки, и РАЗНЫЕ: каждая про свой эндпоинт. Иначе None.
+
+        `nano-banana-pro.max_resolution`: fal отдаёт «1K/2K/4K», Runway —
+        «4096:4096 / 6336:2688». Это две площадки, у каждой своя конфигурация,
+        и сами себе они не противоречат. Спор остаётся спором, если ОДНА
+        площадка называет два разных значения (И5).
+        """
+        по_хостам: dict[str, set[str]] = defaultdict(set)
+        for f in found:
+            по_хостам[f.source_url.split("://", 1)[-1].split("/", 1)[0]].add(f.value)
+        if len(по_хостам) < 2 or not all(_same_answer(sorted(v)) for v in по_хостам.values()):
+            return None
+        где = [
+            {"value": value, "venue": host, "tier": TIER_PORTAL}
+            for host, values in sorted(по_хостам.items())
+            for value in sorted(values)
+        ]
+        return {
+            "outcome": PASS,
+            "checked": len(found),
+            "violations": 0,
+            "unmeasured": 0,
+            "note": (
+                f"{model}.{attribute}: вендорского значения в базе нет; ПО ПЛОЩАДКАМ: "
+                + "; ".join(f"{g['venue']} — {g['value']!r}" for g in где)
+                + ". ОБЛАСТЬ, НЕ СПОР: каждая площадка сообщает предел своего эндпоинта"
+            ),
+            "claims": rows,
+            "values": sorted({f.value for f in found}),
+            "scoped_elsewhere": где,
         }
 
     def failure_modes(self, model: str) -> list[Fact]:

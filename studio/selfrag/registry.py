@@ -29,6 +29,8 @@ from typing import Mapping
 
 from lipsync.fork_identity import FAIL, PASS, UNMEASURED
 
+from studio.selfrag.modelnames import fold
+
 __all__ = [
     "CONFIDENCE_LEVELS",
     "MODEL_ALIASES",
@@ -382,10 +384,14 @@ MODEL_CARDS: dict[str, ModelCard] = {
 # Short names people actually type. A name NOT in this table and not a card id
 # resolves to nothing — it never falls back to "something similar", because a
 # prompt built to the wrong model's limits fails at the vendor, after payment.
+#
+# УБРАНЫ 2026-10-14 (аудит ae94057): `veo3` / `veo-3` -> `veo-3.1` и
+# `flux-kontext` -> `flux-2`. Это РАЗНЫЕ модели: Veo 3 вышла раньше Veo 3.1 и
+# лежит в базе фактов отдельно (`veo-3`, 5 строк), FLUX.1 Kontext — не FLUX.2
+# (`flux-kontext-dev`, `flux.1-kontext-pro` в базе). Псевдоним сводил их к чужой
+# карточке, и `advise("veo-3")` показывал карточку veo-3.1 над фактами veo-3.
 MODEL_ALIASES: dict[str, str] = {
     "veo": "veo-3.1",
-    "veo3": "veo-3.1",
-    "veo-3": "veo-3.1",
     "kling": "kling-3.0",
     "kling-3": "kling-3.0",
     "kling3": "kling-3.0",
@@ -396,7 +402,6 @@ MODEL_ALIASES: dict[str, str] = {
     "wan-2.6": "wan-2.6-flash",
     "seedance": "seedance-2.0",
     "flux": "flux-2",
-    "flux-kontext": "flux-2",
     "sora": "sora-2",
 }
 
@@ -422,7 +427,17 @@ def card_for(name: str) -> ModelCard | None:
     if key in MODEL_CARDS:
         return MODEL_CARDS[key]
     alias = MODEL_ALIASES.get(key)
-    return MODEL_CARDS.get(alias) if alias else None
+    if alias:
+        return MODEL_CARDS.get(alias)
+    # ОДНО ИМЯ — ОДНА МОДЕЛЬ И ЗДЕСЬ (2026-10-14): `kling-v3`, `seedance2`,
+    # `Kling 3` — написания id карточки, и свёртка имени у проекта одна
+    # (`modelnames.fold`, правило Е1). Сравнение — только с id КАРТОЧЕК, не с
+    # псевдонимами: псевдоним — решение, а свёртка — оформление.
+    свёрнуто = fold(key)
+    for model_id, card in MODEL_CARDS.items():
+        if fold(model_id) == свёрнуто:
+            return card
+    return None
 
 
 def availability(name: str, *, today: date | None = None) -> dict:
@@ -450,9 +465,15 @@ def availability(name: str, *, today: date | None = None) -> dict:
             "checked": 0,
             "violations": 0,
             "unmeasured": 1,
+            # НОТА НЕ ПЕРЕЧИСЛЯЕТ КАРТОЧКИ (аудит ae94057, 2026-10-14). «Known:
+            # <семь имён>» читалось как «мы знаем семь моделей» при пятистах в
+            # базе фактов. Реестр — ось ДОСТУПНОСТИ, вручную проверенная для
+            # нескольких моделей; что он молчит, не говорит о модели ничего.
             "note": (
-                f"{name!r} is not in the registry. Known: {', '.join(known_models())}. "
-                "Nothing was checked, which is not the same as nothing being wrong."
+                f"{name!r} is not in the registry: the registry axis (hand-checked "
+                f"availability cards) is maintained for {len(MODEL_CARDS)} models only "
+                "and is NOT maintained for this one. That says nothing about whether "
+                "the model exists or can be called; nothing was checked on this axis."
             ),
             "card": None,
         }

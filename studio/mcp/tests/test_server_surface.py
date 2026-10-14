@@ -32,8 +32,11 @@ WORDS = {
 
 #: Инструменты, которые трогают диск: три пишут знание, четыре — журнал отказов
 #: как побочный эффект похода в сеть. ИЗМЕРЕНО 2026-08-31 чтением исходников.
+#: ВОСЬМОЙ — `model_advice`: пишет каждый вопрос в журнал промахов
+#: (`misses.note_question`). Найдено аудитом 2026-10-14: строка говорила «seven».
 WRITERS = frozenset(
     {
+        "model_advice",
         "record_model_fact",
         "withdraw_model_fact",
         "propose_measurement",
@@ -68,7 +71,16 @@ class TheDocstringCountsMustMatchTheServer(unittest.TestCase):
     def test_a_named_writer_really_touches_the_disk(self) -> None:
         """И проверка не по имени, а по коду: инструмент из списка обязан
         где-то писать — иначе список превратится в предание."""
-        touching = ("record_", "withdraw_", "propose_", "fetch.fetch", "reachability", "search(")
+        touching = (
+            "record_",
+            "withdraw_",
+            "propose_",
+            "fetch.fetch",
+            "fetch.page",
+            "reachability",
+            "search(",
+            "advise_and_note",
+        )
         for name in sorted(WRITERS):
             fn = getattr(S, name)
             source = inspect.getsource(getattr(fn, "fn", fn))
@@ -80,7 +92,12 @@ class TheDocstringCountsMustMatchTheServer(unittest.TestCase):
         names = {t.name for t in _tools()}
         readers = names - WRITERS
         assert readers, "хотя бы один инструмент обязан быть только читающим"
-        assert "model_advice" in readers or "measurement_proposals" in readers
+        assert "measurement_proposals" in readers
+
+    def test_model_advice_really_writes_the_misses_journal(self) -> None:
+        """Почему он в списке: свидетельство по коду, а не по имени."""
+        source = inspect.getsource(S.advise_and_note)
+        assert "misses.note_question" in source
 
 
 if __name__ == "__main__":

@@ -645,3 +645,6 @@
 {"host": "api.runpod.io", "url": "https://api.runpod.io/", "state": "open", "first_seen": "2026-10-07"}
 {"host": "rest.runpod.io", "url": "https://rest.runpod.io/", "state": "open", "first_seen": "2026-10-07"}
 {"host": "mcp.getrunpod.io", "url": "https://mcp.getrunpod.io/", "reason": "Tunnel connection failed: 403 Forbidden", "why_wanted": "MCP-сервер Runpod из официального плагина", "incidental": false, "state": "refused", "first_seen": "2026-10-07"}
+{"host": "api.search.brave.com", "url": "https://api.search.brave.com/", "reason": "Tunnel connection failed: 403 Forbidden", "why_wanted": "refreshing the reachability map; nobody asked for this host", "incidental": true, "state": "refused", "first_seen": "2026-10-14"}
+{"host": "api.tavily.com", "url": "https://api.tavily.com/", "reason": "Tunnel connection failed: 403 Forbidden", "why_wanted": "refreshing the reachability map; nobody asked for this host", "incidental": true, "state": "refused", "first_seen": "2026-10-14"}
+{"host": "api.exa.ai", "url": "https://api.exa.ai/", "reason": "Tunnel connection failed: 403 Forbidden", "why_wanted": "refreshing the reachability map; nobody asked for this host", "incidental": true, "state": "refused", "first_seen": "2026-10-14"}

@@ -899,6 +899,10 @@ class VerdictFollowsEvidence(unittest.TestCase):
             "sources_disagree",
             "model_unusable",
             "answered",
+            # 2026-10-14, аудит ae94057: спор по части атрибутов больше не
+            # роняет весь ответ, и ответ с уровня семьи назван своим словом.
+            "answered_some_contested",
+            "answered_by_family",
         }
         self.assertEqual(set(advice.REASONS), declared, "словарь причин закреплён литералом")
         for args in [(""), ("test-model",), ("nope-9000",), ("test-model", "max_seconds")]:

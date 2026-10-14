@@ -254,3 +254,198 @@ class ПриставкаВерсии(unittest.TestCase):
         худшее, что умеет этот продукт.
         """
         self.assertNotEqual(fold("multitalk"), fold("infinitetalk"))
+
+
+class УсиленнаяСвёртка(unittest.TestCase):
+    """Аудит ae94057, пункт 1. Пары — литералы (Т2), обе стороны (И5)."""
+
+    ОДНА_И_ТА_ЖЕ = (
+        # X.0 = X
+        ("kling-3", "kling-3.0"),
+        ("kling-v3", "kling-3.0"),
+        ("seedance2", "seedance-2.0"),
+        ("imagen-4", "imagen-4.0"),
+        ("happyhorse_1_0", "happyhorse-1.0"),
+        # синонимы режима
+        ("minimax-h3-i2v", "minimax-h3-image-to-video"),
+        ("veo-3.1-i2v", "veo3.1-image-to-video"),
+        ("wan-2.2-a14b-i2v", "wan-v2.2-a14b-image-to-video"),
+        ("chatterbox-tts", "chatterbox-text-to-speech"),
+        ("x-t2v", "x-text-to-video"),
+        ("x-t2i", "x-text-to-image"),
+        # площадка и вендор впереди ПУТИ
+        ("fal-ai/kling-video/v3/pro/image-to-video", "kling-3.0-pro-i2v"),
+        ("google/nano-banana-2", "nano-banana-2"),
+        ("fal-ai/bytedance/omnihuman/v1.5", "omnihuman-1.5"),
+        # курируемые переписи
+        ("elevenlabs-v3", "eleven_v3"),
+        ("ElevenLabs v3", "eleven_v3"),
+        ("elevenlabs-tts-eleven-v3", "eleven_v3"),
+        ("nano-banana-2", "gemini-3.1-flash-image"),
+        ("nano-banana-2", "gemini_image3.1_flash"),
+        ("nano-banana-pro", "gemini-3-pro-image"),
+        ("ltx-2-3", "ltx-2.3"),
+        ("happy-horse", "happyhorse"),
+        ("veo-3.1-generate-001", "veo-3.1"),
+    )
+
+    РАЗНЫЕ = (
+        # версии — разные модели
+        ("veo-3", "veo-3.1"),
+        ("kling-3.0", "kling-3.1"),
+        ("omnihuman-1", "omnihuman-1.5"),
+        ("seedance-2.0", "seedance-2.5"),
+        # варианты — разные модели
+        ("veo-3.1", "veo-3.1-lite"),
+        ("veo-3.1", "veo-3.1-fast-generate-001"),
+        ("kling-3.0", "kling-3.0-pro-i2v"),
+        ("minimax-h3", "minimax-h3-max"),
+        ("x-i2v", "x-t2v"),
+        ("nano-banana-2", "nano-banana-pro"),
+        # дробь, не ноль, не срезается
+        ("x-2.05", "x-2"),
+        ("x-1.0.1", "x-1.1"),
+        # VEED — вендор и есть имя; ElevenLabs в ПУТИ не срезается
+        ("veed/lipsync/v2", "lipsync-v2"),
+    )
+
+    def test_одна_модель_сводится(self) -> None:
+        for а, б in self.ОДНА_И_ТА_ЖЕ:
+            self.assertEqual(fold(а), fold(б), f"{а} и {б} остались разными")
+
+    def test_разные_модели_не_сводятся(self) -> None:
+        for а, б in self.РАЗНЫЕ:
+            self.assertNotEqual(fold(а), fold(б), f"{а} и {б} склеены")
+
+    def test_свёртка_литералом(self) -> None:
+        self.assertEqual(fold("kling-3.0"), "kling3")
+        self.assertEqual(fold("veo3.1-image-to-video"), "veo31i2v")
+        self.assertEqual(fold("ElevenLabs v3"), "eleven3")
+
+
+class РазрешениеПротивСписка(unittest.TestCase):
+    """Вендор впереди ИМЕНИ снимается только против базы; соседи — выводом."""
+
+    def test_вендор_впереди_сводится_если_остаток_в_базе(self) -> None:
+        from studio.selfrag.modelnames import group
+
+        got = group(["bytedance-seedance-v1-pro-image-to-video", "seedance-1.0-pro-i2v"])
+        self.assertEqual(
+            list(got.values()),
+            [["bytedance-seedance-v1-pro-image-to-video", "seedance-1.0-pro-i2v"]],
+        )
+
+    def test_вендор_впереди_не_сводится_с_пустотой(self) -> None:
+        """И5: `elevenlabs-dubbing-v2` без вендора — `dubbing-v2`, имени нет."""
+        from studio.selfrag.modelnames import group
+
+        got = group(["elevenlabs-dubbing-v2", "kling-3.0"])
+        self.assertEqual(len(got), 2)
+
+    def test_единственный_сосед_с_вендором_разрешается_выводом(self) -> None:
+        got = resolve("h3-max", ("minimax-h3-max", "minimax-h3", "kling-3.0"))
+        self.assertEqual(got.outcome, "pass")
+        self.assertEqual(got.how, "unique_neighbour")
+        self.assertEqual(list(got.names), ["minimax-h3-max"])
+        self.assertIn("АВТОМАТИЧЕСКИ", got.note)
+
+    def test_единственная_версия_разрешается_выводом(self) -> None:
+        got = resolve("happyhorse", ("happyhorse_1_0", "kling-3.0"))
+        self.assertEqual(got.how, "only_version")
+        self.assertEqual(list(got.names), ["happyhorse_1_0"])
+
+    def test_две_версии_не_разрешаются(self) -> None:
+        """И5: `omnihuman` при `omnihuman-1` и `omnihuman-1.5` — не угадываем."""
+        got = resolve("omnihuman", ("omnihuman-1", "omnihuman-1.5"))
+        self.assertEqual(got.outcome, "could not measure")
+
+    def test_вариант_не_разрешается_в_семью(self) -> None:
+        """И5: `kling-3.0-turbo` — другой вариант, а не написание `kling-3.0`."""
+        got = resolve("kling-3.0-turbo", ("kling-3.0",))
+        self.assertEqual(got.outcome, "could not measure")
+        self.assertEqual(list(got.suggestions), ["kling-3.0"])
+
+
+class ПодсказкаБезШума(unittest.TestCase):
+    """`seedvr2` не подсказывает `seed_audio`, `minimax-h3` — не `minimax-m2.7`."""
+
+    def test_общее_начало_внутри_первого_звена_не_сосед(self) -> None:
+        self.assertEqual(
+            similar("seedvr2", ("seed_audio", "seedvr2-3b", "seedvr2-7b")),
+            ["seedvr2-3b", "seedvr2-7b"],
+        )
+
+    def test_вендор_общий_а_модель_другая_не_сосед(self) -> None:
+        self.assertEqual(
+            similar("minimax-h3", ("minimax-m2.7", "minimax-h3-max")), ["minimax-h3-max"]
+        )
+
+    def test_короткое_первое_звено_совпадает_целиком(self) -> None:
+        """`h` (из `minimax-h3`) — начало `hailuo`, но это другая модель."""
+        self.assertEqual(
+            similar("minimax-h3", ("minimax-hailuo-2.3-pro-i2v", "minimax-h3-max")),
+            ["minimax-h3-max"],
+        )
+
+    def test_первое_звено_покрыто_сосед(self) -> None:
+        """Положительная сторона (И5): `omni` покрыто `omnihuman`."""
+        self.assertEqual(similar("omni-thing", ("omnihuman-1",)), ["omnihuman-1"])
+
+
+class Семьи(unittest.TestCase):
+    база = (
+        "veo-3",
+        "veo-3-t2v",
+        "veo-3.1",
+        "veo-3.1-lite",
+        "veo-3.1-i2v",
+        "veo3.1-image-to-video",
+        "minimax-h3",
+        "minimax-h3-max",
+        "minimax_h3_hybrid",
+        "minimax-m2.7",
+        "latentsync",
+        "latentsync-1.5",
+        "seedvr2-3b",
+        "seedvr2-7b",
+    )
+
+    def test_семья_собирает_варианты(self) -> None:
+        from studio.selfrag.modelnames import family
+
+        self.assertEqual(
+            family("veo-3.1", self.база), ["veo-3.1-i2v", "veo-3.1-lite", "veo3.1-image-to-video"]
+        )
+        self.assertEqual(family("minimax-h3", self.база), ["minimax-h3-max", "minimax_h3_hybrid"])
+        self.assertEqual(family("seedvr2", self.база), ["seedvr2-3b", "seedvr2-7b"])
+
+    def test_другая_версия_не_вариант(self) -> None:
+        """И5: veo-3 и veo-3.1 — разные модели; latentsync-1.5 — другая версия."""
+        from studio.selfrag.modelnames import family
+
+        self.assertEqual(family("veo-3", self.база), ["veo-3-t2v"])
+        self.assertEqual(family("latentsync", self.база), [])
+
+    def test_родитель_варианта(self) -> None:
+        from studio.selfrag.modelnames import parent
+
+        self.assertEqual(parent("veo-3.1-lite", self.база), ["veo-3.1"])
+        self.assertEqual(parent("minimax-h3-max", self.база), ["minimax-h3"])
+        self.assertEqual(parent("veo-3-t2v", self.база), ["veo-3"])
+        self.assertEqual(parent("veo-3.1", self.база), [])
+
+
+class КаноническоеНаписание(unittest.TestCase):
+    def test_вендор_высказался(self) -> None:
+        from studio.selfrag.modelnames import canonical_spelling
+
+        self.assertEqual(
+            canonical_spelling(["seedance2", "seedance-2.0"], {"seedance2": 9}), "seedance-2.0"
+        )
+        self.assertEqual(canonical_spelling(["elevenlabs-tts-eleven-v3"], {}), "eleven_v3")
+
+    def test_иначе_больше_строк_затем_алфавит(self) -> None:
+        from studio.selfrag.modelnames import canonical_spelling
+
+        self.assertEqual(canonical_spelling(["a-x-1", "a.x.1"], {"a.x.1": 3, "a-x-1": 1}), "a.x.1")
+        self.assertEqual(canonical_spelling(["a.x.1", "a-x-1"], {}), "a-x-1")
