@@ -60,6 +60,84 @@ ROOT = Path(__file__).resolve().parents[1]
 #: Тесты названы поимённо: гонять весь набор на каждую мутацию — минуты вместо
 #: секунд, а прибор, которым лень пользоваться, не используется.
 MUTANTS: list[tuple[str, str, str, str, str]] = [
+    # --- съёмка плана (studio/shoot): правила из замечаний владельца 2026-10-07 --
+    (
+        "studio/shoot/edit.py",
+        "SUB_MAX_W = W - 2 * 60",
+        "SUB_MAX_W = W * 10",
+        "субтитры: строка шире кадра снова проходит",
+        "studio.tests.test_shoot",
+    ),
+    (
+        "studio/shoot/edit.py",
+        'VIDEO_OVERLAY = (".mov", ".webm", ".mp4")',
+        'VIDEO_OVERLAY = (".mov",)',
+        "графика: анимированный .webm снова считается картинкой",
+        "studio.tests.test_shoot",
+    ),
+    (
+        "studio/shoot/validate.py",
+        "        if rig and not rig.in_round:",
+        "        if rig and not rig.in_round and False:",
+        "раунд: плечевая камера в клетке посреди боя снова проходит",
+        "studio.tests.test_shoot",
+    ),
+    (
+        "studio/shoot/journal.py",
+        'NEEDS_OUTCOME = ("render", "qa", "review")',
+        'NEEDS_OUTCOME = ("qa",)',
+        "журнал: рендер без исхода снова проходит — постмортем не посчитает выход годного",
+        "studio.tests.test_shoot",
+    ),
+    (
+        "studio/shoot/qa.py",
+        "JITTER_HANDHELD_MIN = 0.30",
+        "JITTER_HANDHELD_MIN = 0.10",
+        "дрожь: порог ниже ИИ-наездов — гладкий наезд снова «оператор»",
+        "studio.tests.test_shoot",
+    ),
+    (
+        "studio/shoot/qa.py",
+        "JITTER_HANDHELD_MIN = 0.30",
+        "JITTER_HANDHELD_MIN = 0.45",
+        "дрожь: порог выше телевика op_B — живой оператор браковается",
+        "studio.tests.test_shoot",
+    ),
+    (
+        "studio/shoot/qa.py",
+        '"in_cage_handheld": 1.3,',
+        '"in_cage_handheld": 3.0,',
+        "зум: плечевая камера снова может наехать ×2.5 без дрожи",
+        "studio.tests.test_shoot",
+    ),
+    (
+        "studio/shoot/qa.py",
+        "CUT_RATIO = 6.0",
+        "CUT_RATIO = 600.0",
+        "склейки: склейка внутри генерации снова не видна",
+        "studio.tests.test_shoot",
+    ),
+    (
+        "studio/shoot/validate.py",
+        "MIN_SECONDS, MAX_SECONDS = 5, 15",
+        "MIN_SECONDS, MAX_SECONDS = 5, 30",
+        "длительность: план за окном обучения H3 снова идёт в рендер",
+        "studio.tests.test_shoot",
+    ),
+    (
+        "studio/shoot/validate.py",
+        "MIN_SECONDS, MAX_SECONDS = 5, 15",
+        "MIN_SECONDS, MAX_SECONDS = 1, 15",
+        "длительность: план короче окна обучения H3 снова идёт в рендер",
+        "studio.tests.test_shoot",
+    ),
+    (
+        "studio/shoot/validate.py",
+        "MAX_WORDS_PER_SECOND = 3.0",
+        "MAX_WORDS_PER_SECOND = 30.0",
+        "темп речи: скороговорку снова отдают модели",
+        "studio.tests.test_shoot",
+    ),
     # --- семьи атрибутов: пять вопросов, на которых ответ соврал -----------
     (
         "studio/selfrag/attrfamily.py",

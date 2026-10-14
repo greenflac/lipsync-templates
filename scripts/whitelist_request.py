@@ -138,6 +138,12 @@ PORTAL: dict[str, str] = {
     "together.xyz": "the same shape, second source",
     "segmind.com": "hosted diffusion endpoints",
     "runware.ai": "hosted inference, published rates",
+    # Заявлены 2026-10-07: генерация MiniMax H3 идёт на поде RunPod, а его API,
+    # документация и MCP из облачной сессии закрыты — пульт доступен только
+    # через MCP-коннектор, а инструкция для агентов не читается вовсе.
+    "runpod.io": "GPU cloud the production renders on — pod API and docs",
+    "runpod.ai": "the same vendor's REST and serverless API hosts",
+    "getrunpod.io": "the same vendor's MCP endpoint (mcp.getrunpod.io)",
     "eachlabs.ai": "hosted video and avatar models",
     "fal.run": "fal's API host (fal.ai pages already answer)",
     "runcomfy.com": "hosted ComfyUI — node and workflow compatibility",
