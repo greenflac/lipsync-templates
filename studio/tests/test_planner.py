@@ -315,6 +315,23 @@ class Цена(unittest.TestCase):
         ]
         self.assertEqual([f.attribute for f in pn.price_facts(свои)], [])
 
+    def test_цена_видна_под_любым_именем_семьи(self) -> None:
+        """Цену спрашивают ОДНИМ словом, а записана она под многими именами.
+
+        Заведено 2026-10-14: мутант «PRICE_ASKED -> одно имя вместо семьи»
+        выжил — после аудита ни тест, ни гейт не держали случай, когда у
+        модели записана цена и под `price_per_second_usd`, и под другим именем
+        семьи: буквально записанное имя отвечает только за себя, и соседняя
+        строка пропадала."""
+        свои = list(ЗДОРОВЫЕ) + [
+            факт("тестовая-i2v", "price_per_second_usd", "$0.05 per second", "vendor"),
+            факт("тестовая-i2v", "price_per_minute", "$0.6 per output minute", "vendor"),
+        ]
+        self.assertEqual(
+            sorted(f.attribute for f in pn.price_facts(свои)),
+            ["price_per_minute", "price_per_second_usd"],
+        )
+
 
 class РазборБюджета(unittest.TestCase):
     """Т5: потолок разбирается из фразы заказчика, и не выдумывается (И5)."""
