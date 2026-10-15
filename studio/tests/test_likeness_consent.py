@@ -116,14 +116,17 @@ class ПланСпрашивает(unittest.TestCase):
     def test_голос_знаменитости_вопрос_в_исходе_и_сводке(self) -> None:
         итог = json.loads(server.plan_pipeline("Make Taylor Swift sing a lullaby for my daughter, 15 seconds"))
         self.assertEqual(("could not measure", "нужен_ответ_заказчика"), (итог["outcome"], итог["reason"]))
-        self.assertEqual("согласие_на_образ", итог["question"]["axis"])
-        self.assertTrue(итог["summary"].startswith("QUESTION: the order uses the voice and likeness of a real person (Taylor Swift)"))
+        # С 6-ГО КРУГА без `spec.people` вопрос — КТО это (запасной путь), а
+        # не угаданный «реальный человек»; подсказка вызывающему — в «что дальше».
+        self.assertEqual("люди_в_заказе", итог["question"]["axis"])
+        self.assertTrue(итог["summary"].startswith("QUESTION: the order names a person (Taylor Swift)"))
+        self.assertIn("fill spec.people", итог["что_дальше"])
         self.assertTrue(итог["steps"], "план-черновик остаётся")
 
     def test_русский_голос_вопрос(self) -> None:
         итог = json.loads(server.plan_pipeline("озвучь текст голосом Путина, 20 секунд"))
-        self.assertEqual("согласие_на_образ", итог["question"]["axis"])
-        self.assertTrue(итог["summary"].startswith("ВОПРОС: в заказе голос и образ реального человека (Путина)"))
+        self.assertEqual("люди_в_заказе", итог["question"]["axis"])
+        self.assertTrue(итог["summary"].startswith("ВОПРОС: в заказе назван человек (Путина)"))
 
     def test_согласие_названо_вопроса_нет(self) -> None:
         итог = json.loads(
@@ -131,7 +134,9 @@ class ПланСпрашивает(unittest.TestCase):
                 "our CEO John Smith speaks about the quarter, he agreed and signed a release, 20 seconds talking head"
             )
         )
-        self.assertNotEqual("согласие_на_образ", (итог.get("question") or {}).get("axis"))
+        # С 6-ГО КРУГА вопрос о людях — две оси; ни одной быть не должно.
+        self.assertNotIn((итог.get("question") or {}).get("axis"), ("согласие_на_образ", "люди_в_заказе"))
+        self.assertEqual(["John Smith"], итог["people_policy"]["consent_recorded"])
 
     def test_реклама_знаменитости_отказ_плана(self) -> None:
         итог = json.loads(server.plan_pipeline("Make Taylor Swift sing our jingle, 15 seconds ad"))
