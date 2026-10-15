@@ -1572,10 +1572,10 @@ def sign_language(spec: Spec, текст: str = "") -> bool:
 
 def lipsync_default(spec: Spec) -> bool:
     """Двигать ли губы под новую речь: названо — как названо; иначе — да, когда
-    на выходе видео и речь не закадровая (`audio` != voiceover)."""
+    на выходе видео (или выход не назван) и речь не закадровая (`audio` != voiceover)."""
     if spec.lipsync is not None:
         return spec.lipsync
-    return "video" in spec.outputs and spec.audio != "voiceover"
+    return ("video" in spec.outputs or not spec.outputs) and spec.audio != "voiceover"
 
 
 def note_en(ru: str) -> str | None:
@@ -2051,7 +2051,7 @@ OPTIONAL_HELP: dict[str, str] = {
     ),
     "lipsync": (
         "for dub-translate — move the lips to the new speech: true | false; default true when outputs include "
-        "video and audio is not voiceover, else false (voice-over-only dubs get no lip sync)"
+        "video (or are not named) and audio is not voiceover, else false (voice-over-only dubs get no lip sync)"
     ),
     "characters": "how many recurring characters; 1 + shots N over images = one reference and N edits from it",
     "fps": "output frames per second; above the model's recorded rate a frame-interpolation step is added",

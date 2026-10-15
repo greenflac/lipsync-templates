@@ -450,8 +450,9 @@ class ПланПоSpec(unittest.TestCase):
         итог = план(
             {"task": "cut-to-shorts", "inputs": свой("video", сек=1800), "outputs": ["video"], "shots": 10, "per_shot_s": 60, "languages": ["en"]}
         )
-        self.assertEqual(["расшифровка", "правка_видео"], шаги(итог))
-        self.assertEqual(10, итог["steps"][1]["shots"])
+        # Седьмой круг: резать и перекадрировать — монтаж (ffmpeg, 0 usd);
+        # генеративной правки на каждую нарезку нет.
+        self.assertEqual(["расшифровка"], шаги(итог))
         self.assertTrue(any("picked from the transcript" in п for п in итог["assembly"]["why"]))
 
     def test_highlight_reel_with_music_adds_a_music_bed_not_a_voice(self) -> None:
@@ -459,7 +460,7 @@ class ПланПоSpec(unittest.TestCase):
             {"task": "cut-to-shorts", "inputs": свой("video", сек=7200), "outputs": ["video", "music", "speech"],
              "shots": 1, "per_shot_s": 180, "languages": ["en"]}
         )
-        self.assertEqual(["расшифровка", "правка_видео", "музыка"], шаги(итог))
+        self.assertEqual(["расшифровка", "музыка"], шаги(итог))
 
     def test_r2v_makes_the_reference_once(self) -> None:
         итог = план({"task": "r2v", "inputs": [], "outputs": ["video"], "duration_s": 30, "shots": 4})

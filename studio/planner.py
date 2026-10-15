@@ -10308,7 +10308,8 @@ def только_монтаж(
     строка_бюджета = _budget_row(бюджет)
     if бюджет.known and бюджет.amount is not None:
         строка_бюджета["outcome"] = PASS
-        строка_бюджета["note"] = f"{строка_бюджета['note']}; plan price 0 usd (no model step) fits the ceiling"
+        строка_бюджета["note"] = f"{строка_бюджета['note']}; цена плана 0 usd (шагов-моделей нет) — в потолок укладывается"
+        строка_бюджета["verdict"] = "в потолок укладывается"
     инструмент = (
         "edit / assembly -> ffmpeg or an editing app (not a model), 0 usd"
         if по_английски
@@ -11753,13 +11754,13 @@ def сверить_бюджет(строка: dict, бюджет: "Budget", це
     out = dict(строка)
     if цена.get("over_ceiling"):
         out["outcome"] = FAIL
-        out["verdict"] = "over the ceiling"
+        out["verdict"] = "дороже потолка"
     elif цена.get("outcome") == pricing.ГОДНО:
         out["outcome"] = PASS
-        out["verdict"] = "fits the ceiling"
+        out["verdict"] = "в потолок укладывается"
     else:
         out["outcome"] = UNMEASURED
-        out["verdict"] = "not compared: the plan price is incomplete"
+        out["verdict"] = "с потолком не сравнено: цена плана неполна"
     return out
 
 

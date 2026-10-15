@@ -115,15 +115,13 @@ class ПравкаВидео(unittest.TestCase):
         модель = (шаг["chosen"] or {})["model"]
         self.assertIn(ep.EDIT_REFRAME, ep.edit_intents(модель), модель)
 
-    def test_стабилизации_нет_ни_у_кого_не_измерено(self) -> None:
-        план, шаг = self._шаг(["stabilise"])
-        self.assertIsNone(шаг["chosen"])
-        self.assertEqual(["stabilise"], шаг["edit"]["not_measured"])
-        self.assertEqual("could not measure", план["outcome"])
-        self.assertIn(
-            "COULD NOT MEASURE: no endpoint in the registry names the edit stabilise",
-            план["summary"],
-        )
+    def test_стабилизации_нет_ни_у_кого_её_делает_монтаж(self) -> None:
+        """Седьмой круг: стабилизации нет ни у одного эндпоинта — её делает
+        монтаж (vidstab / Gyroflow, 0 usd), а не шаг без кандидата."""
+        план = _план({"task": "video-edit", "inputs": [_свой("video", 20)], "outputs": ["video"], "edit": ["stabilise"]})
+        self.assertEqual(([], "could not measure", "только_монтаж"), (план["steps"], план["outcome"], план["reason"]))
+        self.assertEqual(0.0, план["pipeline_price"]["смета"]["usd"])
+        self.assertTrue(план["assembly"]["why"][0].startswith("stabilisation: ffmpeg vidstab"), план["assembly"])
 
     def test_правка_исходника_до_апскейла_по_кадру_исходника(self) -> None:
         """w07: правка 2.7K-ролика считалась по кадру 4K, до которого его поднимет апскейл."""
