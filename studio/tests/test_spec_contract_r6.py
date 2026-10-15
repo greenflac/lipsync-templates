@@ -595,10 +595,6 @@ class Кратность(unittest.TestCase):
         self.assertNotIn("правка_видео", pn.ON_SOURCE_STEPS)
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class ПометкиПоАнглийски(unittest.TestCase):
     """Пометка маршрута доезжает до английского заказчика целиком: шаблон
     `l10n.EN` переводит её раньше, чем термин «видео» съест её середину."""
@@ -610,3 +606,7 @@ class ПометкиПоАнглийски(unittest.TestCase):
         self.assertGreaterEqual(len(пометки), 9)
         утекли = [п for п in пометки if l10n.CYR.search(str(l10n.localise(п, "en")))]
         self.assertEqual([], утекли)
+
+
+if __name__ == "__main__":
+    unittest.main()
