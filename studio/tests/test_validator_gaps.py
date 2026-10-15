@@ -228,6 +228,14 @@ class G7БюджетНаВесьРолик(unittest.TestCase):
             ),
             факт("п-lipsync", "price_per_run_usd", "$5 per run"),
             факт("н-lipsync", "architecture", "lipsync talking-head"),
+            # Шестой круг: заказываемый ⇔ есть маршрут — модель без цены, но в каталоге.
+            факт(
+                "н-lipsync",
+                "availability",
+                "on fal.ai as acme/n-lipsync (video-to-video); listing status public",
+                "portal",
+                "https://fal.ai/models/acme/n-lipsync",
+            ),
         ]
         потолок = pn.Budget(0.1, "usd", ("clip",), "pass", "")
         найдены = pn.candidates_for(оп("липсинк"), pn.FactIndex(facts=факты), budget=потолок)

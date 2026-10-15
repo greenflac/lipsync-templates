@@ -169,9 +169,20 @@ class МегапиксельВидео(unittest.TestCase):
         # ⌈8.2944 Мп × 480 кадров⌉ = 3982 Мп × 0.001205
         self.assertEqual(4.7983, o.usd)
 
-    def test_без_fps_цены_нет(self) -> None:
+    def test_без_fps_частота_допущена_и_названа(self) -> None:
+        """Шестой круг: частота не названа — считается по `ASSUMED_FPS` (30), и
+        допущение напечатано; прежде шаг оставался без цены (FlashVSR, LTX)."""
+        (o,) = pricing.estimate(
+            pricing.rates(LTX_MP, "price_unit_megapixel_usd"), pricing.Need(**self.НУЖДА)
+        )
+        # ⌈8.2944 Мп × 240 кадров (30 fps × 8 с)⌉ = 1991 Мп × 0.001205
+        self.assertEqual(2.3992, o.usd)
+        self.assertIn("30 fps — частота не названа, допущено", o.formula)
+
+    def test_без_кадра_цены_нет(self) -> None:
+        нужда = {**self.НУЖДА, "resolution": None}
         self.assertEqual(
-            [], pricing.estimate(pricing.rates(LTX_MP, "price_unit_megapixel_usd"), pricing.Need(**self.НУЖДА))
+            [], pricing.estimate(pricing.rates(LTX_MP, "price_unit_megapixel_usd"), pricing.Need(**нужда))
         )
 
     def test_мегапиксель_в_секунду_не_читается_за_секунду(self) -> None:

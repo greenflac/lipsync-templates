@@ -77,6 +77,8 @@ EN_PLANS: list[tuple[str, dict]] = [
     ("4K 9:16 20s ad from scratch with English VO and lipsync, quality over price", {}),
     # Пятый круг: работы, которые маршрут знает по `spec.task` (реестр эндпоинтов).
     ("Restore and colorize my old 2-minute family film", {"spec": {"task": "restore", "outputs": ["video"], "duration_s": 120, "inputs": ["video"]}, "full": True}),
+    # Шестой круг: раскраска — отдельный шаг (`раскраска`, работа `colorize`).
+    ("Colorize my old 2-minute black-and-white family film", {}),
     ("Smooth my 10s clip to 60fps", {"spec": {"task": "interpolate", "outputs": ["video"], "duration_s": 10, "inputs": ["video"]}}),
     ("Cut out the background of 20 product photos", {"spec": {"task": "remove-background", "outputs": ["image"], "shots": 20, "inputs": ["photo"]}}),
     ("Remove the background behind me in my 15s video", {"spec": {"task": "remove-background", "outputs": ["video"], "duration_s": 15, "inputs": ["video"]}}),

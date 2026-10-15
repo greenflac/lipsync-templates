@@ -55,7 +55,7 @@ from __future__ import annotations
 import hashlib
 import re
 from dataclasses import dataclass, field, replace
-from typing import Iterable, Mapping, Sequence
+from typing import Iterable, Iterator, Mapping, Sequence
 from urllib.parse import parse_qs, urlparse
 
 from studio.selfrag import modelnames
@@ -81,7 +81,12 @@ IMAGE_EDIT = "image-edit"
 BG_REMOVE = "bg-remove"
 UPSCALE_IMAGE = "upscale-image"
 UPSCALE_VIDEO = "upscale-video"
-RESTORE = "restore-colorize"
+#: Реставрация и раскраска — РАЗНЫЕ работы (шестой круг): `seedvr2-7b`
+#: восстанавливает (шум, царапины, резкость), но не раскрашивает; `ddcolor`
+#: раскрашивает, но не реставрирует. Общая работа «restore-colorize» отдавала
+#: реставратор на шаг раскраски.
+RESTORE = "restore"
+COLORIZE = "colorize"
 INTERPOLATE = "frame-interpolate"
 TRANSCRIBE = "transcribe-diarize"
 CAPTIONS = "captions"
@@ -107,6 +112,7 @@ FUNCTIONS: tuple[str, ...] = (
     UPSCALE_IMAGE,
     UPSCALE_VIDEO,
     RESTORE,
+    COLORIZE,
     INTERPOLATE,
     TRANSCRIBE,
     CAPTIONS,
@@ -126,6 +132,7 @@ VIDEO_FUNCTIONS: frozenset[str] = frozenset(
         FACE_SWAP,
         UPSCALE_VIDEO,
         RESTORE,
+        COLORIZE,
         INTERPOLATE,
         TURNTABLE,
     }
@@ -148,8 +155,20 @@ EVIDENCE_CURATED = "curated"
 #: (`dub` + `lipsync`). Апскейл раскладывается на картинку и видео отдельно
 #: (`_апскейл`), потому что звено «upscale» одно на оба.
 JOB_RULES: tuple[tuple[str, tuple[str, ...]], ...] = (
-    (r"lip-?sync(?:ing)?|lipsync", (LIPSYNC,)),
-    (r"(?:ai-)?avatars?|talking-?heads?|audio-to-video|a2v|s2v|speech-to-video", (AVATAR,)),
+    # `latentsync` (ByteDance LatentSync, «audio-conditioned latent diffusion
+    # for lip sync») — работа срослась с именем, как `i2vgen`.
+    (r"lip-?sync(?:ing)?|lipsync|latentsync", (LIPSYNC,)),
+    # «The avatar lip-syncs to the provided audio» — глагол в описании площадки.
+    (r"lip-?syncs", (LIPSYNC,)),
+    # `avatar4`, `avatar3-digital-twin` (HeyGen на fal): номер поколения
+    # прилип к звену — шестой круг, `heygen-avatar4-image-to-video` читался i2v.
+    (
+        r"(?:ai-)?avatars?\d*|talking-?heads?|talking-?videos?|audio-to-video|a2v|s2v|speech-to-video|digital-twin"
+        # «audio-driven talking/singing video from a start frame» (`hedra-
+        # character-3`, страница вендора) — снимок + звук -> говорящее видео.
+        r"|audio-driven",
+        (AVATAR,),
+    ),
     (r"face-?swap|faceswap|inswapper(?:-\d+)?|animate-replace|character-replace", (FACE_SWAP,)),
     (r"dub|dubbing", (DUB,)),
     (r"tts|text-to-speech|(?<!to-)speech(?!-to)", (TTS,)),
@@ -163,7 +182,8 @@ JOB_RULES: tuple[tuple[str, tuple[str, ...]], ...] = (
         (BG_REMOVE,),
     ),
     # `ddcolor`/`deoldify` — модели раскраски, названные по себе, без слова «colorize».
-    (r"coloriz\w*|colouriz\w*|restor\w*|ddcolor|deoldify", (RESTORE,)),
+    (r"coloriz\w*|colouriz\w*|colorization|ddcolor|deoldify", (COLORIZE,)),
+    (r"restor\w*", (RESTORE,)),
     (r"interpolat\w*|rife", (INTERPOLATE,)),
     (r"speech-to-text|transcri\w*|diariz\w*|scribe|whisper|asr|stt", (TRANSCRIBE,)),
     (r"auto-caption\w*|subtitl\w*", (CAPTIONS,)),
@@ -176,7 +196,9 @@ UPSCALE_RULE = r"upscal\w*|upacaler|super-?resolution|superresolution|vsr"
 #: РЕЖИМ генерации, названный в идентификаторе, — когда работы не названо.
 MODE_RULES: tuple[tuple[str, tuple[str, ...]], ...] = (
     (r"text-to-video|t2v|txt2vid|text2video", (T2V,)),
-    (r"image-to-video|i2v|img2vid|image2video|flf2v", (I2V,)),
+    # `i2vgen-xl` — «Image-to-Video GENeration»: режим, сросшийся с именем (шестой круг;
+    # хаб числит его «text-to-video», а без снимка он не запускается).
+    (r"image-to-video|i2v|img2vid|image2video|flf2v|i2vgen", (I2V,)),
     # «TI2V» — текст И/ИЛИ кадр в видео (`wan-2.2-ti2v-5b`): оба режима.
     (r"ti2v", (T2V, I2V)),
     (r"reference-to-video|r2v|ref2v", (R2V,)),
@@ -201,6 +223,28 @@ CATEGORY_FUNCTIONS: dict[str, tuple[str, ...]] = {
     "speech-to-text": (TRANSCRIBE,),
     "audio-to-video": (AVATAR,),
 }
+
+#: Атрибут, где записана задача весов, объявленная на хабе (HF `pipeline_tag`).
+PIPELINE_ATTRIBUTE = "pipeline_tag"
+
+#: Задача хаба -> работы. Только однозначные; «text-to-audio» (речь? музыка?
+#: шумы?), «any-to-any», «text-generation» — не наши работы, и это не пропуск,
+#: а ответ: такая модель на шаги студии не годится.
+PIPELINE_FUNCTIONS: dict[str, tuple[str, ...]] = {
+    "text-to-image": (T2I,),
+    "image-to-image": (IMAGE_EDIT,),
+    "text-to-video": (T2V,),
+    "image-to-video": (I2V,),
+    "video-to-video": (V2V_EDIT,),
+    "text-to-speech": (TTS,),
+    "automatic-speech-recognition": (TRANSCRIBE,),
+}
+
+#: Единица цены в имени атрибута -> работа (младший канал, `classify` шаг 5).
+EVIDENCE_PRICE_UNIT = "price-unit"
+PRICE_UNIT_FUNCTIONS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    (r"^price_per_image(?:_usd)?(?:_via_|$)", (T2I,)),
+)
 
 #: Описательные атрибуты, чьи значения — слова вендора или площадки о том, ЧТО
 #: модель делает. Строки провалов и наблюдений сюда нарочно не входят: «лицо
@@ -229,6 +273,53 @@ SHAPE_RULES: dict[tuple[frozenset[str], str], str] = {
     (frozenset({"текст"}), "изображение"): T2I,
     (frozenset({"изображение", "текст"}), "изображение"): IMAGE_EDIT,
 }
+
+#: ПОДПИСЬ РАБОТЫ (шестой круг): (виды входа, которые работа вправе ТРЕБОВАТЬ;
+#: виды выхода, один из которых она обязана ОТДАВАТЬ). Работа, которой
+#: объявленная схема противоречит (`consistent`), снимается: модель, отдающая
+#: картинку, не делает t2v; модель, без звука не запускающаяся, — не i2v.
+#:
+#: ПРОТИВОРЕЧИЕ — ТОЛЬКО ПО ОБЯЗАТЕЛЬНЫМ ВХОДАМ И ПО ВЫХОДУ. Список
+#: ПРИНИМАЕМЫХ входов читатель схемы собирает по именам полей и бывает неполон
+#: (`veo-3.1-flf2v`: поля кадров не узнаны, «принимает текст»), поэтому
+#: отсутствие вида среди принимаемых противоречием не считается. Пусто — вид
+#: не проверяется. КОНСТАНТА-РЕШЕНИЕ: сторожит свойство-тест по всему реестру.
+_ВИДЕО, _КАРТИНКА, _ЗВУК, _ТЕКСТ = "видео", "изображение", "аудио", "текст"
+SIGNATURES: dict[str, tuple[frozenset[str], frozenset[str]]] = {
+    T2V: (frozenset({_ТЕКСТ}), frozenset({_ВИДЕО})),
+    I2V: (frozenset({_КАРТИНКА, _ТЕКСТ}), frozenset({_ВИДЕО})),
+    R2V: (frozenset({_КАРТИНКА, _ВИДЕО, _ТЕКСТ, _ЗВУК}), frozenset({_ВИДЕО})),
+    V2V_EDIT: (frozenset({_ВИДЕО, _КАРТИНКА, _ТЕКСТ}), frozenset({_ВИДЕО})),
+    LIPSYNC: (frozenset({_ЗВУК, _ВИДЕО, _КАРТИНКА, _ТЕКСТ}), frozenset({_ВИДЕО})),
+    AVATAR: (frozenset({_ЗВУК, _КАРТИНКА, _ТЕКСТ, _ВИДЕО}), frozenset({_ВИДЕО})),
+    FACE_SWAP: (frozenset({_КАРТИНКА, _ВИДЕО, _ТЕКСТ}), frozenset({_ВИДЕО, _КАРТИНКА})),
+    DUB: (frozenset({_ВИДЕО, _ЗВУК, _ТЕКСТ}), frozenset({_ВИДЕО, _ЗВУК})),
+    TTS: (frozenset({_ТЕКСТ, _ЗВУК}), frozenset({_ЗВУК})),
+    VOICE_CLONE: (frozenset({_ЗВУК, _ТЕКСТ}), frozenset({_ЗВУК, _ТЕКСТ})),
+    MUSIC: (frozenset({_ТЕКСТ, _ЗВУК}), frozenset({_ЗВУК})),
+    SFX: (frozenset({_ТЕКСТ, _ВИДЕО}), frozenset({_ЗВУК, _ВИДЕО})),
+    T2I: (frozenset({_ТЕКСТ}), frozenset({_КАРТИНКА})),
+    IMAGE_EDIT: (frozenset({_КАРТИНКА, _ТЕКСТ}), frozenset({_КАРТИНКА})),
+    BG_REMOVE: (frozenset({_КАРТИНКА, _ВИДЕО}), frozenset({_КАРТИНКА, _ВИДЕО})),
+    UPSCALE_IMAGE: (frozenset({_КАРТИНКА, _ТЕКСТ}), frozenset({_КАРТИНКА})),
+    UPSCALE_VIDEO: (frozenset({_ВИДЕО, _ТЕКСТ}), frozenset({_ВИДЕО})),
+    RESTORE: (frozenset({_КАРТИНКА, _ВИДЕО, _ТЕКСТ}), frozenset({_КАРТИНКА, _ВИДЕО})),
+    COLORIZE: (frozenset({_КАРТИНКА, _ВИДЕО, _ТЕКСТ}), frozenset({_КАРТИНКА, _ВИДЕО})),
+    INTERPOLATE: (frozenset({_КАРТИНКА, _ВИДЕО}), frozenset({_ВИДЕО})),
+    TRANSCRIBE: (frozenset({_ЗВУК, _ВИДЕО}), frozenset({_ТЕКСТ})),
+    CAPTIONS: (frozenset({_ВИДЕО, _ЗВУК, _ТЕКСТ}), frozenset({_ВИДЕО})),
+    TURNTABLE: (frozenset({_КАРТИНКА, _ТЕКСТ}), frozenset({_ВИДЕО})),
+}
+
+
+def consistent(function: str, required: Iterable[str], outputs: Iterable[str]) -> bool:
+    """Не противоречит ли работа объявленной схеме: обязательные входы и выход."""
+    нужны, выходы = set(required), set(outputs)
+    вправе, отдаёт = SIGNATURES.get(function, (frozenset(), frozenset()))
+    if нужны and вправе and not нужны <= вправе:
+        return False
+    return not (выходы and отдаёт and not (выходы & отдаёт))
+
 
 #: Работы, чья подпись — ОБЯЗАТЕЛЬНЫЙ звук на входе видеомодели: форма схемы
 #: старше категории площадки и режима в имени (см. `classify`, шаг 1б).
@@ -331,6 +422,10 @@ class Endpoint:
     ids: tuple[str, ...] = ()
     #: Кто продаёт или где запускать: fal, replicate, маршруты строк цены, self-host.
     routes: tuple[str, ...] = ()
+    #: МАРШРУТ = (кто продаёт, под каким идентификатором): `("fal", "fal-ai/
+    #: rife/video")`, `("elevenlabs", "eleven_v3")`, `("self-host", "<страница
+    #: весов>")`. Заказываемый узел ⇔ маршрутов хотя бы один (шестой круг).
+    route_ids: tuple[tuple[str, str], ...] = ()
     orderable: bool = True
     why_not_orderable: str = ""
     #: Веса открыты (страница весов с лицензией): узел запускается на СВОЁМ GPU,
@@ -450,6 +545,84 @@ def endpoint_ids(rows: Sequence[Fact]) -> tuple[tuple[str, ...], tuple[str, ...]
     return tuple(dict.fromkeys(ids)), tuple(dict.fromkeys(категории))
 
 
+def _схема_эндпоинта(url: str) -> str:
+    """`...openapi.json?endpoint_id=<id>` -> id; иначе пусто."""
+    запрос = parse_qs(urlparse(url or "").query).get("endpoint_id")
+    return запрос[0] if запрос else ""
+
+
+def own_routes(
+    model: str,
+    rows: Sequence[Fact],
+    *,
+    family: bool,
+    price_routes: Sequence[str] = (),
+    vendor_hosts: Mapping[str, str] | None = None,
+    weights_page: str = "",
+) -> tuple[tuple[str, str], ...]:
+    """Маршруты узла: (кто продаёт, идентификатор). Пусто — заказать не у кого.
+
+    СВОИ идентификаторы — строка каталога («on fal.ai as <id>»), адрес схемы
+    (`openapi.json?endpoint_id=<id>`) и адрес страницы, с которой снята ЦЕНА.
+    Адрес страницы-источника без цены своим считается только у узла, у
+    которого нет вариантов: у семьи `kling-3.0` лежат строки со страниц
+    motion-control эндпоинтов — это соседи, а не её заказ.
+
+    Без идентификатора площадки маршрут даёт: строка цены (маршрут строки,
+    идентификатор — имя модели у продавца); страница API самого вендора
+    (`vendor_hosts`, не у семьи); страница весов с лицензией (`self-host`).
+    """
+    vendor_hosts = vendor_hosts or {}
+    маршруты: list[tuple[str, str]] = []
+
+    def площадка(url: str) -> str:
+        хост = (urlparse(url or "").hostname or "").lower()
+        return next(
+            (имя for h, имя in ROUTE_HOSTS.items() if хост == h or хост.endswith("." + h)), ""
+        )
+
+    for f in rows:
+        if f.attribute == "availability":
+            м = _AVAILABILITY.search(str(f.value))
+            if м:
+                имя = ROUTE_HOSTS.get(м.group(1).lower(), м.group(1).lower())
+                маршруты.append((имя, м.group(2)))
+                continue
+        кто = площадка(f.source_url or "")
+        if not кто:
+            continue
+        ид = _схема_эндпоинта(f.source_url or "")
+        if not ид and (not family or "price" in f.attribute):
+            ид = next(iter(endpoint_ids([f])[0]), "")
+        # У СЕМЬИ схема соседа — не её заказ: под `kling-3.0` лежит схема
+        # `…/v3/standard/motion-control`, под `minimax-speech-02` — схема
+        # `…/minimax/voice-clone`. Свой — идентификатор, свёрнутый в имя узла
+        # (`fal-ai/hunyuan-video` у `hunyuan-video`).
+        if ид and family and "price" not in f.attribute and fold(ид) != fold(model):
+            continue
+        if ид:
+            маршруты.append((кто, ид))
+    продавцы = {кто for кто, _ in маршруты}
+    for кто in price_routes:
+        if кто not in продавцы:
+            маршруты.append((кто, model))
+            продавцы.add(кто)
+    if not family:
+        for f in rows:
+            if f.tier != "vendor":
+                continue
+            хост = (urlparse(f.source_url or "").hostname or "").lower()
+            кто = next(
+                (имя for h, имя in vendor_hosts.items() if хост == h or хост.endswith("." + h)), ""
+            )
+            if кто and кто not in продавцы:
+                маршруты.append((кто, model))
+                продавцы.add(кто)
+    if weights_page:
+        маршруты.append((ROUTE_SELF_HOST, weights_page))
+    return tuple(dict.fromkeys(маршруты))
+
+
 def _виды(rows: Sequence[Fact], атрибут: str) -> set[str]:
     виды: set[str] = set()
     for f in rows:
@@ -463,7 +636,43 @@ def classify(
     rows: Sequence[Fact],
     curated: Mapping[str, tuple[tuple[str, ...], str, str]] | None = None,
 ) -> tuple[tuple[str, ...], str, str]:
-    """Работы модели по её строкам: (работы, канал, чем найдено). Пусто — не установлено."""
+    """Работы модели по её строкам: (работы, канал, чем найдено). Пусто — не установлено.
+
+    ПОСЛЕДНЕЕ СЛОВО — ЗА ОБЪЯВЛЕННОЙ СХЕМОЙ (шестой круг): работа, которой
+    схема противоречит (`consistent`), снимается, и это сказано в ноте. Сняты
+    все — работы нет, а не «работа по имени вопреки схеме».
+    """
+    входы = _виды(rows, "requires_inputs")
+    выходы = _виды(rows, "produces_outputs")
+    подпись = f"схема: {', '.join(sorted(входы)) or '—'} -> {', '.join(sorted(выходы)) or '—'}"
+    отвергнуто: list[str] = []
+    for работы, канал, нота in _каналы(model, rows, curated):
+        годные = tuple(ф for ф in работы if consistent(ф, входы, выходы))
+        снятые = ", ".join(ф for ф in работы if ф not in годные)
+        if not годные:
+            отвергнуто.append(f"{канал}: {снятые}")
+            continue
+        хвост = f"; снято схемой: {снятые} ({подпись})" if снятые else ""
+        if отвергнуто:
+            хвост += f"; отвергнуто схемой: {'; '.join(отвергнуто)} ({подпись})"
+        return годные, канал, нота + хвост
+    if отвергнуто:
+        return (), "", f"{'; '.join(отвергнуто)} — противоречит схеме ({подпись})"
+    return (), "", ""
+
+
+def _каналы(
+    model: str,
+    rows: Sequence[Fact],
+    curated: Mapping[str, tuple[tuple[str, ...], str, str]] | None = None,
+) -> Iterator[tuple[tuple[str, ...], str, str]]:
+    """Ответы каналов по старшинству: (работы, канал, чем найдено).
+
+    Генератор, а не одно значение (шестой круг): ответ, которому противоречит
+    схема, не обрывает разбор — `classify` берёт следующий канал. Так
+    `infinitalk-single-text` (площадка: «text-to-video», схема: снимок +
+    текст) находит работу в описании площадки — говорящий аватар.
+    """
     curated = CURATED if curated is None else curated
     ids, категории = endpoint_ids(rows)
     выходы = _виды(rows, "produces_outputs")
@@ -472,10 +681,13 @@ def classify(
     имя_курированное = next((к for к in curated if fold(к) == fold(model)), "")
     if имя_курированное:
         что, почему, источник = curated[имя_курированное]
-        return _порядок(set(что)), EVIDENCE_CURATED, f"{почему} ({источник})"
+        yield _порядок(set(что)), EVIDENCE_CURATED, f"{почему} ({источник})"
     # 1. Идентификаторы: имя в базе и адреса площадки.
     работы: set[str] = set()
     режимы: set[str] = set()
+    #: Режимы, названные ИДЕНТИФИКАТОРОМ ПЛОЩАДКИ (не именем в базе): это имя
+    #: самого заказываемого эндпоинта, и оно не могло прийти из семьи.
+    режимы_площадки: set[str] = set()
     откуда: list[str] = []
     for ид in (model, *ids):
         р, м = _работы_имени(_звенья(ид), выходы, категория)
@@ -483,8 +695,10 @@ def classify(
             откуда.append(ид)
         работы |= р
         режимы |= м
+        if ид in ids:
+            режимы_площадки |= м
     if работы:
-        return _порядок(работы), EVIDENCE_ID, "; ".join(откуда)
+        yield _порядок(работы), EVIDENCE_ID, "; ".join(откуда)
     # 1б. ОБЯЗАТЕЛЬНЫЙ ЗВУК НА ВХОДЕ ВИДЕОМОДЕЛИ — подпись работы, а не режим:
     # `omnihuman-1.5` площадка числит «image-to-video», `latentsync` —
     # «video-to-video», а схема обоих требует аудио. Модель, без звука не
@@ -495,21 +709,39 @@ def classify(
         # (`infinitalk` требует аудио, изображение и текст).
         работа = SHAPE_RULES.get((frozenset(нужны - {"текст"}), выход))
         if работа in AUDIO_DRIVEN:
-            return (работа,), EVIDENCE_SHAPE, f"requires {', '.join(sorted(нужны))} -> {выход}"
+            yield (работа,), EVIDENCE_SHAPE, f"requires {', '.join(sorted(нужны))} -> {выход}"
     # 2. Категория каталога (если она есть) уточняет и дополняет режимы имени.
     из_категории = {ф for к in категории for ф in CATEGORY_FUNCTIONS.get(к, ())}
     if режимы:
+        if из_категории and режимы_площадки and not (режимы_площадки & из_категории):
+            # ПУТЬ ЭНДПОИНТА УЖЕ КАТЕГОРИИ (шестой круг): `bytedance/seedance-2.5/
+            # reference-to-video` площадка числит «image-to-video», а
+            # `wan/v2.6/reference-to-video/flash` — «video-to-video». Категория
+            # — полка каталога, путь — имя этого эндпоинта: верится пути.
+            yield (
+                _порядок(режимы_площадки),
+                EVIDENCE_ID,
+                f"{', '.join(i for i in ids if _работы_имени(_звенья(i), выходы, категория)[1])}"
+                f" (категория площадки: {категория})",
+            )
         if из_категории and not (режимы & из_категории):
             # Категория площадки и звено имени спорят — верится площадке, которая
             # продаёт ЭТОТ эндпоинт: имя могло прийти из семьи.
-            return (
+            yield (
                 _порядок(из_категории),
                 EVIDENCE_CATEGORY,
                 f"{категория} (имя: {', '.join(откуда)})",
             )
-        return _порядок(режимы), EVIDENCE_ID, "; ".join(откуда)
+        yield _порядок(режимы), EVIDENCE_ID, "; ".join(откуда)
     if из_категории:
-        return _порядок(из_категории), EVIDENCE_CATEGORY, ", ".join(категории)
+        yield _порядок(из_категории), EVIDENCE_CATEGORY, ", ".join(категории)
+    # 2б. Задача, которую автор весов ОБЪЯВИЛ на хабе (`pipeline_tag` HF):
+    # та же полка каталога, только каталог — хаб весов, а не площадка API.
+    for f in rows:
+        if f.attribute == PIPELINE_ATTRIBUTE and f.tier in DOC_TIERS:
+            что = PIPELINE_FUNCTIONS.get(str(f.value).strip().lower(), ())
+            if что:
+                yield _порядок(что), EVIDENCE_CATEGORY, f"{PIPELINE_ATTRIBUTE} = {f.value} ({f.source_url})"
     # 3. Описательные строки вендора/площадки — значение, а у строк схемы и
     # документации ещё и ИМЯ атрибута (`ratio_enum_text_to_video`,
     # `prompt_rule_i2v`: вендор записал предел ДЛЯ РЕЖИМА — режим есть).
@@ -517,7 +749,7 @@ def classify(
         if f.tier in DOC_TIERS and f.attribute in DOC_ATTRIBUTES and f.attribute != "availability":
             р, м = _работы_имени(_звенья(f.value), выходы, "")
             if р or м:
-                return (
+                yield (
                     _порядок(р or м),
                     EVIDENCE_DOCS,
                     f"{f.attribute} = «{str(f.value)[:80]}» ({f.source_url})",
@@ -532,14 +764,14 @@ def classify(
                 по_именам |= м
                 имена.append(f.attribute)
     if по_именам:
-        return _порядок(по_именам), EVIDENCE_DOCS, "атрибуты: " + ", ".join(dict.fromkeys(имена))
+        yield _порядок(по_именам), EVIDENCE_DOCS, "атрибуты: " + ", ".join(dict.fromkeys(имена))
     # 4. Объявленная форма: обязательные входы; без них — принимаемые, и тогда
     # каждый принимаемый вид картинки или текста — свой режим (`hunyuanvideo-1.5`
     # принимает текст и изображение — делает и t2v, и i2v).
     for выход in sorted(выходы):
         работа = SHAPE_RULES.get((frozenset(нужны), выход))
         if работа:
-            return (работа,), EVIDENCE_SHAPE, f"requires {', '.join(sorted(нужны))} -> {выход}"
+            yield (работа,), EVIDENCE_SHAPE, f"requires {', '.join(sorted(нужны))} -> {выход}"
     берёт = _виды(rows, "accepts_inputs")
     if not нужны and берёт and not (берёт & {"аудио", "видео"}):
         режимы = {
@@ -549,12 +781,19 @@ def classify(
             if (frozenset({вид}), выход) in SHAPE_RULES
         }
         if режимы:
-            return (
+            yield (
                 _порядок(режимы),
                 EVIDENCE_SHAPE,
                 f"accepts {', '.join(sorted(берёт))} -> {', '.join(sorted(выходы))}",
             )
-    return (), "", ""
+    # 5. ЕДИНИЦА ЦЕНЫ В ИМЕНИ АТРИБУТА (шестой круг): «price_per_image» —
+    # продавец берёт деньги за КАРТИНКУ на выходе. Картиночная модель, о
+    # которой больше не сказано ничего, рисует по тексту (`gen4_image`,
+    # `gemini-2.5-flash-image`, `imagen-4.0-ultra`): младший канал.
+    for f in rows:
+        for образец, что in PRICE_UNIT_FUNCTIONS:
+            if re.match(образец, f.attribute):
+                yield что, EVIDENCE_PRICE_UNIT, f"{f.attribute} = {str(f.value)[:40]} ({f.source_url})"
 
 
 def _порядок(работы: Iterable[str]) -> tuple[str, ...]:
@@ -623,34 +862,42 @@ def _собрать(facts: Sequence[Fact]) -> Registry:
     реестр = Registry()
     for к, rows in по_ключу.items():
         имя = написание[к]
-        ids, _ = endpoint_ids(rows)
         цены = pn.price_facts(rows)
-        ставки = [r for f in цены for r in pricing.rates(f.value, f.attribute)]
-        маршруты = list(dict.fromkeys(pn.маршрут(f)[0] for f in цены))
-        for ид_ in ids:
-            for f in rows:
-                хост = (urlparse(f.source_url or "").hostname or "").lower()
-                for h, имя_маршрута in ROUTE_HOSTS.items():
-                    if (хост == h or хост.endswith("." + h)) and имя_маршрута not in маршруты:
-                        маршруты.append(имя_маршрута)
-            break
+        ставки = pricing.compute_twins(
+            [(pn.маршрут(f)[0], pricing.rates(f.value, f.attribute)) for f in цены]
+        )
         веса, _ = hn.weights_own(rows)
-        свои_веса = веса == hn.WEIGHTS_YES or any(
-            any((urlparse(f.source_url or "").hostname or "").endswith(h) for h in WEIGHTS_HOSTS)
-            and "licen" in f.attribute
-            for f in rows
+        страница_весов = next(
+            (
+                f.source_url
+                for f in rows
+                if any((urlparse(f.source_url or "").hostname or "").endswith(h) for h in WEIGHTS_HOSTS)
+                and hn._repo_page(f.source_url)
+                and ("licen" in f.attribute or f.attribute == "open_weights")
+            ),
+            "",
         )
-        if свои_веса:
-            маршруты.append(ROUTE_SELF_HOST)
-        # СВОЙ МАРШРУТ — цена или строка каталога «on <площадка> as <id>».
-        # Адрес площадки в строке-источнике маршрутом узла не считается: у
-        # `kling-3.0` лежат строки со страниц motion-control эндпоинтов — это
-        # строки о соседях, а не заказ семьи.
-        свой_маршрут = bool(цены) or any(
-            f.attribute == "availability" and _AVAILABILITY.search(str(f.value)) for f in rows
-        )
+        свои_веса = веса == hn.WEIGHTS_YES or bool(страница_весов)
         мои_варианты = tuple(sorted(варианты.get(к, ())))
-        orderable = not (мои_варианты and not свой_маршрут)
+        # ЗАКАЗЫВАЕМЫЙ ⇔ ЕСТЬ МАРШРУТ (шестой круг): кто продаёт и под каким
+        # идентификатором (`own_routes`). Прежде узел без вариантов считался
+        # заказываемым по умолчанию — `lustify-v2.0` и `wan2-1-14b-fusionx`
+        # (строки только с civitai) стояли в реестре заказываемыми без единого
+        # маршрута, а `hunyuan-video` с адресом схемы fal — нет.
+        маршруты_ид = own_routes(
+            имя,
+            rows,
+            family=bool(мои_варианты),
+            price_routes=list(dict.fromkeys(pn.маршрут(f)[0] for f in цены)),
+            vendor_hosts=pn.МАРШРУТ_ХОСТА,
+            # Веса СЕМЬИ запускают под именами вариантов: маршрутом узла семьи
+            # страница весов не становится (на своём GPU он кандидат по
+            # `self_hostable`, как и прежде).
+            weights_page=(страница_весов or "weights") if свои_веса and not мои_варианты else "",
+        )
+        маршруты = list(dict.fromkeys(кто for кто, _ in маршруты_ид))
+        ids = tuple(dict.fromkeys(ид for кто, ид in маршруты_ид if кто in ROUTE_HOSTS.values()))
+        orderable = bool(маршруты_ид)
         работы, канал, нота = classify(имя, rows)
         прогон = pn.предел_прогона(rows)
         основание = "своя запись" if прогон is not None else ""
@@ -669,12 +916,16 @@ def _собрать(facts: Sequence[Fact]) -> Registry:
             variants=мои_варианты,
             ids=ids,
             routes=tuple(dict.fromkeys(маршруты)),
+            route_ids=маршруты_ид,
             orderable=orderable,
             self_hostable=свои_веса,
             why_not_orderable=(
-                f"узел семьи: вариантов в базе {len(мои_варианты)}, своей цены и идентификатора площадки нет"
-                if not orderable
-                else ""
+                ""
+                if orderable
+                else f"узел семьи: вариантов в базе {len(мои_варианты)}, своей цены и идентификатора площадки нет"
+                if мои_варианты
+                else "маршрута нет: ни идентификатора площадки, ни строки цены, ни страницы API вендора, "
+                "ни страницы весов с лицензией"
             ),
             functions=работы,
             evidence=канал,
@@ -682,7 +933,9 @@ def _собрать(facts: Sequence[Fact]) -> Registry:
             inputs=tuple(sorted(_виды(rows, "requires_inputs") or _виды(rows, "accepts_inputs"))),
             outputs=tuple(sorted(_виды(rows, "produces_outputs"))),
             price_units=tuple(sorted({r.per for r in ставки if r.per})),
-            priced=any(r.unit == "usd" and r.amount > 0 for r in ставки),
+            # ЦЕНА — ставка в долларах ЗА ИЗВЕСТНУЮ ЕДИНИЦУ (шестой круг): «$1 per
+            # unit (billing unit 'units')» у `gpt-image-2` — заглушка площадки.
+            priced=any(r.unit == "usd" and r.amount > 0 and r.per in pricing.PER for r in ставки),
             run_s=прогон,
             run_basis=основание,
             resolutions=tuple(

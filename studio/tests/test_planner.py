@@ -1419,6 +1419,13 @@ class ПочемуНеСосед(unittest.TestCase):
     ),
     факт("проверенный-lipsync", "architecture", "lipsync talking-head", "vendor"),
     факт("проверенный-lipsync", "license", "apache-2.0", "vendor"),
+    # Шестой круг: заказываемый ⇔ есть маршрут. Проверенный — тоже товар.
+    факт(
+        "проверенный-lipsync",
+        "availability",
+        "on fal.ai as acme/proven-lipsync (video-to-video); listing status public",
+        "portal",
+    ),
 )
 
 

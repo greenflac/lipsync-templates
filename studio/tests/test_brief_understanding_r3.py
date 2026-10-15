@@ -287,6 +287,9 @@ class Находка8ОдинИТотЖеПерсонаж(unittest.TestCase):
     факт("м-music-tts", "architecture", "text-to-speech and music generation"),
     факт("м-music-tts", "price_per_1000_chars_usd", "$0.01 per 1000 characters"),
     факт("н-text-to-audio", "architecture", "text-to-speech style text-to-audio"),
+    # Шестой круг: заказываемый ⇔ есть маршрут; без строки каталога модель
+    # ушла бы в «не заказывается», а не в «работа не установлена».
+    факт("н-text-to-audio", "availability", "on fal.ai as acme/n-audio (text-to-audio); listing status public"),
 )
 
 
