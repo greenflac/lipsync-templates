@@ -544,5 +544,291 @@ class StaleParamsAreGuarded(unittest.TestCase):
                 assert out["outcome"] == "fail"
 
 
+# --- G11 (validator 2026-10-14): a global cap, name and budget guards --------
+
+
+class ResponseCap(unittest.TestCase):
+    def test_the_cap_is_a_literal(self) -> None:
+        assert S.MAX_RESPONSE_CHARS == 40_000
+
+    def test_a_small_answer_is_untouched(self) -> None:
+        payload = {"outcome": "pass", "note": "n", "rows": [1, 2, 3]}
+        assert S.cap_response(payload) == S._dump(payload)
+
+    def test_the_boundary_both_ways(self) -> None:
+        """T1: at the limit nothing is cut; one character over, it is."""
+        payload = {"outcome": "pass", "note": "", "blob": ""}
+        bare = len(S._dump(payload))
+        payload["blob"] = "x" * (S.MAX_RESPONSE_CHARS - bare)
+        assert len(S._dump(payload)) == S.MAX_RESPONSE_CHARS
+        assert "response_cap" not in json.loads(S.cap_response(payload))
+        payload["blob"] += "x"
+        assert "response_cap" in json.loads(S.cap_response(payload))
+
+    def test_a_big_list_is_cut_announced_and_still_valid_json(self) -> None:
+        payload = {
+            "outcome": "fail",
+            "checked": 7,
+            "violations": 2,
+            "unmeasured": 0,
+            "note": "the verdict",
+            "rows": [{"i": i, "text": "y" * 200} for i in range(2_000)],
+        }
+        text = S.cap_response(payload)
+        assert len(text) <= S.MAX_RESPONSE_CHARS
+        out = json.loads(text)
+        assert out["outcome"] == "fail" and out["violations"] == 2, "the verdict survives"
+        assert out["response_cap"]["original_chars"] > S.MAX_RESPONSE_CHARS
+        cut = out["response_cap"]["trimmed"][0]
+        assert cut["field"] == "rows" and cut["total"] == 2_000
+        assert cut["shown"] == len(out["rows"])
+        assert out["note"].startswith("the verdict ")
+        assert "RESPONSE CUT" in out["note"] and "offset" in out["note"]
+
+    def test_a_page_is_cut_so_that_next_offset_continues_exactly(self) -> None:
+        body = "".join(chr(ord("a") + i % 26) for i in range(100_000))
+        payload = {
+            "outcome": "pass",
+            "note": "page",
+            "text": body[10:90_010],
+            "offset": 10,
+            "total_chars": 100_000,
+            "returned_chars": 90_000,
+            "remaining_chars": 9_990,
+            "next_offset": 90_010,
+            "truncated": True,
+        }
+        out = json.loads(S.cap_response(payload))
+        assert len(S._dump(out)) <= S.MAX_RESPONSE_CHARS
+        got = out["text"]
+        assert got == body[10 : 10 + len(got)]
+        assert out["next_offset"] == 10 + len(got)
+        assert out["returned_chars"] == len(got)
+        assert out["remaining_chars"] == 100_000 - out["next_offset"]
+
+    def test_the_real_tool_output_goes_through_the_cap(self) -> None:
+        big = {"outcome": "pass", "note": "", "rows": ["z" * 100] * 5_000}
+        with mock.patch.object(S.proposal, "proposals", return_value=big):
+            text = S.measurement_proposals()
+        assert len(text) <= S.MAX_RESPONSE_CHARS
+        assert "response_cap" in json.loads(text)
+
+
+class ModelNameLength(unittest.TestCase):
+    def test_the_attribute_ceiling_is_200_as_a_literal(self) -> None:
+        assert S.MAX_NAME_CHARS == 200
+
+    def test_the_model_ceiling_is_the_naming_layer_s_own(self) -> None:
+        """Е1: one ceiling per name. The naming layer names 120 (2026-10-14)."""
+        from studio.selfrag import modelnames
+
+        assert S.model_name_limit() == getattr(modelnames, "MAX_NAME_LENGTH", 200)
+        with mock.patch.object(modelnames, "MAX_NAME_LENGTH", 7, create=True):
+            assert S.model_name_limit() == 7
+
+    def test_a_name_over_the_ceiling_is_refused_before_advice_and_the_journal(self) -> None:
+        with mock.patch.object(S, "advise_and_note") as asked:
+            out = json.loads(S.model_advice("k" * (S.model_name_limit() + 1)))
+        assert asked.call_count == 0
+        assert out["outcome"] == "fail"
+        assert out["reason"] == "name_too_long"
+
+    def test_exactly_at_the_ceiling_is_still_a_name(self) -> None:
+        with mock.patch.object(S, "advise_and_note", return_value={"outcome": "pass"}) as asked:
+            S.model_advice("k" * S.model_name_limit())
+        assert asked.call_count == 1
+
+    def test_201_is_refused_with_today_s_ceilings(self) -> None:
+        with mock.patch.object(S, "advise_and_note") as asked:
+            json.loads(S.model_advice("k" * 201))
+        assert asked.call_count == 0
+
+    def test_the_attribute_has_the_same_ceiling(self) -> None:
+        with mock.patch.object(S, "advise_and_note") as asked:
+            out = json.loads(S.model_advice("kling-3.0", "a" * 201))
+        assert asked.call_count == 0
+        assert out["reason"] == "attribute_too_long"
+
+
+class BudgetAndFull(unittest.TestCase):
+    def test_bad_budgets_are_fail(self) -> None:
+        for bad in (-0.01, float("nan"), float("inf"), "cheap", True):
+            with self.subTest(bad=bad):
+                out = S.budget_refusal(bad)
+                assert out is not None and out["outcome"] == "fail"
+                assert out["reason"] == "budget_invalid"
+
+    def test_good_budgets_pass(self) -> None:
+        for good in (0, 0.0, 1.5, 100):
+            with self.subTest(good=good):
+                assert S.budget_refusal(good) is None
+
+    def test_the_tool_refuses_before_the_planner_runs(self) -> None:
+        with mock.patch.object(S.planner, "plan") as plan:
+            out = json.loads(S.plan_pipeline("липсинк ролика", budget_usd=-5))
+        assert plan.call_count == 0
+        assert out["outcome"] == "fail" and out["steps"] == []
+
+    def test_full_is_passed_when_the_planner_takes_it(self) -> None:
+        seen: dict = {}
+
+        def _new(brief, facts=None, *, creative="", budget_usd=None, full=False):  # type: ignore[no-untyped-def]
+            seen["full"] = full
+            return {"outcome": "pass"}
+
+        out, ignored = S.plan_call("b", full=True, plan_fn=_new)
+        assert seen["full"] is True and ignored == []
+
+    def test_full_is_named_when_the_planner_does_not_take_it(self) -> None:
+        def _old(brief, facts=None, *, creative="", budget_usd=None):  # type: ignore[no-untyped-def]
+            return {"outcome": "pass"}
+
+        out, ignored = S.plan_call("b", full=True, plan_fn=_old)
+        assert ignored == ["full"]
+
+    def test_full_false_passes_nothing_extra(self) -> None:
+        def _old(brief, facts=None, *, creative="", budget_usd=None):  # type: ignore[no-untyped-def]
+            return {"outcome": "pass"}
+
+        assert S.plan_call("b", plan_fn=_old)[1] == []
+
+
+class StaleFullPages(unittest.TestCase):
+    @staticmethod
+    def _stale(*, days=180, path=None, model="", full=False, top=20):  # type: ignore[no-untyped-def]
+        rows = [{"model": f"m{i}"} for i in range(10)]
+        return {"outcome": "pass", "note": "n", "stale": rows, "undated": rows[:2]}
+
+    def test_full_with_offset_and_limit_is_paged_by_the_server(self) -> None:
+        out = S.stale_call(full=True, offset=3, limit=4, stale_fn=self._stale)
+        assert [r["model"] for r in out["stale"]] == ["m3", "m4", "m5", "m6"]
+        assert out["undated"] == []
+        assert out["page"]["next_offset"] == 7
+        assert out["page"]["totals"] == {"stale": 10, "undated": 2}
+        assert "ignored_params" not in out
+
+    def test_the_last_page_says_so(self) -> None:
+        out = S.stale_call(full=True, offset=8, limit=4, stale_fn=self._stale)
+        assert out["page"]["next_offset"] is None
+        assert "last page" in out["note"]
+
+    def test_an_advice_that_pages_itself_gets_the_offset(self) -> None:
+        seen: dict = {}
+
+        def _own(*, days=180, path=None, full=False, offset=0, limit=0):  # type: ignore[no-untyped-def]
+            seen.update(offset=offset, limit=limit)
+            return {"outcome": "pass", "note": "n"}
+
+        out = S.stale_call(full=True, offset=5, limit=2, stale_fn=_own)
+        assert seen == {"offset": 5, "limit": 2}
+        assert "page" not in out
+
+    def test_the_brief_form_is_not_paged_and_offset_is_named_as_ignored(self) -> None:
+        out = S.stale_call(offset=5, stale_fn=self._stale)
+        assert "page" not in out
+        assert out["ignored_params"] == ["offset"]
+
+
+class StaleFullPageFitsUnderTheCap(unittest.TestCase):
+    """Сборка 2026-10-15: страница полной формы ужимается ВЫЗОВОМ, а не потолком.
+
+    Иначе `cap_response` резал списки вдвое, а `next_offset` от `advice`
+    указывал за показанное — строки посередине не видел никто."""
+
+    @staticmethod
+    def _fat(*, days=180, path=None, full=False, top=100, offset=0):  # type: ignore[no-untyped-def]
+        rows = [{"model": f"m{i}", "pad": "x" * 900} for i in range(300)]
+        page = rows[offset : offset + top]
+        nxt = offset + top if offset + top < len(rows) else None
+        return {"outcome": "pass", "note": "n", "stale": page, "next_offset": nxt}
+
+    def test_the_page_fits_and_the_next_offset_follows_what_was_shown(self) -> None:
+        out = S.stale_call(0, full=True, stale_fn=self._fat)
+        assert len(S._dump(out)) <= S.MAX_RESPONSE_CHARS - S._CAP_RESERVE
+        shown = len(out["stale"])
+        assert 1 <= shown < 100
+        assert out["page_rows"] == shown
+        assert out["next_offset"] == shown
+        assert "response_cap" not in json.loads(S._json(out))
+
+    def test_paging_through_sees_every_row_once(self) -> None:
+        seen: list[str] = []
+        offset: int | None = 0
+        while offset is not None:
+            out = S.stale_call(0, full=True, offset=offset, stale_fn=self._fat)
+            seen += [r["model"] for r in out["stale"]]
+            offset = out["next_offset"]
+        assert seen == [f"m{i}" for i in range(300)]
+
+    def test_a_small_page_is_not_shrunk(self) -> None:
+        out = S.stale_call(0, full=True, limit=5, stale_fn=self._fat)
+        assert len(out["stale"]) == 5
+        assert "page_rows" not in out
+
+
+class FullAdvicePagesInsteadOfBeingCut(unittest.TestCase):
+    """Сборка 2026-10-15: полная справка шире потолка листается по атрибутам."""
+
+    @staticmethod
+    def _answer(n: int = 60, family: int = 40) -> dict:
+        return {
+            "outcome": "pass",
+            "note": "base note",
+            "class_findings": [{"f": "y" * 200}],
+            "claims": {f"a{i:02d}": {"values": ["v" * 1500]} for i in range(n)},
+            "family_claims": {f"b{i:02d}@v": {"values": ["w" * 1500]} for i in range(family)},
+        }
+
+    def test_a_small_answer_is_returned_untouched(self) -> None:
+        small = self._answer(2, 1)
+        assert S.page_full_advice(small) is small
+
+    def test_pages_cover_every_key_once_and_each_fits(self) -> None:
+        answer = self._answer()
+        keys: list[str] = []
+        offset: int | None = 0
+        pages = 0
+        while offset is not None:
+            page = S.page_full_advice(answer, offset)
+            text = S._json(page)
+            assert len(text) <= S.MAX_RESPONSE_CHARS
+            assert "response_cap" not in json.loads(text)
+            assert page["class_findings"] == answer["class_findings"]
+            keys += list(page["claims"]) + list(page["family_claims"])
+            offset = page["page"]["next_offset"]
+            pages += 1
+        assert keys == list(answer["claims"]) + list(answer["family_claims"])
+        assert pages > 1
+        assert "last page" in page["note"]
+
+    def test_the_first_page_is_full_not_a_stub(self) -> None:
+        page = S.page_full_advice(self._answer(), 0)
+        assert page["page"]["shown"] >= 15
+        assert page["page"]["total"] == 100
+        assert page["page"]["next_offset"] == page["page"]["shown"]
+        assert "base note" in page["note"]
+
+    def test_an_offset_past_the_end_is_an_empty_last_page(self) -> None:
+        page = S.page_full_advice(self._answer(), 500)
+        assert page["claims"] == {} and page["family_claims"] == {}
+        assert page["page"]["next_offset"] is None
+
+    def test_the_tool_takes_offset_and_does_not_journal_page_two(self) -> None:
+        from studio.mcp import misses
+
+        noted: list[tuple] = []
+        with (
+            mock.patch.object(misses, "note_question", lambda *a, **k: noted.append(a)),
+            mock.patch.object(S.advice, "advise", lambda m, a="": self._answer()),
+        ):
+            first = json.loads(S.model_advice("x-model", full=True))
+            second = json.loads(
+                S.model_advice("x-model", full=True, offset=first["page"]["next_offset"])
+            )
+        assert len(noted) == 1
+        assert second["page"]["offset"] == first["page"]["next_offset"]
+        assert not set(first["claims"]) & set(second["claims"])
+
+
 if __name__ == "__main__":
     unittest.main()

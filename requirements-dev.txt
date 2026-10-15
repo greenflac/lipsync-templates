@@ -7,6 +7,12 @@ pillow==12.3.0
 # которому он понадобился, уронил сборку 2026-08-31. Необъявленная зависимость
 # не «почти работает» — она работает ровно там, где её случайно поставили.
 imageio-ffmpeg==0.6.0
+# Детектор лиц YuNet (`cv2.FaceDetectorYN`) — запасной пробник лица в
+# `studio/mcp/creative.py`, когда insightface не стоит; модель лежит в
+# studio/mcp/models/ (MIT, см. NOTICE). Пин — версия, на которой детектор
+# измерен 2026-10-14. Без объявления локально лицо ИЗМЕРЯЛОСЬ, а в CI был бы
+# «нечем спросить» — тот же разъезд, что у imageio-ffmpeg выше.
+opencv-python-headless==5.0.0.93
 # Tooling — pinned so local runs and CI run the same checks.
 # Keep in sync with .pre-commit-config.yaml rev.
 ruff==0.15.8

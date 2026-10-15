@@ -97,10 +97,6 @@ class ПоследнееСостояниеПобеждаетПрежнее(unitt
         self.assertGreater(закрытых, 0, "и закрытые тоже")
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class РешениеПоСтрокеБезДискаИСети(unittest.TestCase):
     """`decide` — сердце перетирания, и до 2026-09-06 его не касался ни один тест.
 
@@ -165,3 +161,71 @@ class РешениеПоСтрокеБезДискаИСети(unittest.TestCase
         итог = перетир.decide(self.строка(fix="что делать", witnessed="прогон"), set())
         self.assertEqual("что делать", итог["fix"])
         self.assertEqual("прогон", итог["witnessed"])
+
+    def test_ступень_оператора_не_перезаписывается_адресом(self):
+        """Сборка 2026-10-15: прежний список «не трогать» не знал `operator`,
+        и сухой прогон переносил 9 строк оператора на `blog`."""
+        итог = перетир.decide(self.строка(tier="operator"), set())
+        self.assertEqual("operator", итог["tier"])
+
+    def test_строка_отзыва_не_получает_ступени(self):
+        отзыв = {
+            "model": "eleven_v3",
+            "attribute": "max_chars",
+            "value": "300",
+            "source_url": self.ВЕНДОР,
+            "withdrawn": True,
+            "note": "снято",
+        }
+        self.assertEqual(отзыв, перетир.decide(dict(отзыв), {"elevenlabs.io"}))
+
+    def test_явное_прочитано_не_переворачивается_отказом(self):
+        """Отказ хоста — состояние на дату; «прочитано» записавшего — его слово."""
+        итог = перетир.decide(self.строка(read_directly=True), {"elevenlabs.io"})
+        self.assertIs(True, итог["read_directly"])
+
+
+class ПеретираниеДописывает(unittest.TestCase):
+    """С 2026-10-15 перетирание ДОПИСЫВАЕТ решённую строку, а не правит файл:
+    журнал фактов под охраной `check_append_only` («прежние на месте»)."""
+
+    @staticmethod
+    def _строки(*rows: dict) -> list[str]:
+        return ["// шапка"] + [json.dumps(r, ensure_ascii=False) for r in rows]
+
+    def _строка(self, **поля) -> dict:
+        row = {
+            "model": "eleven_v3",
+            "attribute": "max_chars",
+            "value": "300",
+            "source_url": "https://elevenlabs.io/docs/models",
+            "tier": "blog",
+            "stated_on": "2026-09-05",
+            "note": "n",
+        }
+        row.update(поля)
+        return row
+
+    def test_решается_только_последняя_строка_утверждения(self):
+        старая = self._строка(tier="blog")
+        новая = self._строка(tier="vendor", note="перечитано")
+        self.assertEqual([], перетир.plan(self._строки(старая, новая), set()))
+
+    def test_отозванное_не_воскрешается(self):
+        отзыв = {k: v for k, v in self._строка().items() if k not in ("tier", "stated_on")}
+        отзыв["withdrawn"] = True
+        self.assertEqual([], перетир.plan(self._строки(self._строка(), отзыв), set()))
+
+    def test_дописанная_строка_несёт_метку_и_второй_прогон_пуст(self):
+        строки = self._строки(self._строка())
+        план = перетир.plan(строки, set())
+        self.assertEqual(1, len(план))
+        _, решено = план[0]
+        self.assertEqual("vendor", решено["tier"])
+        self.assertIn(перетир.RETIER_NOTE, решено["note"])
+        после = строки + [json.dumps(решено, ensure_ascii=False)]
+        self.assertEqual([], перетир.plan(после, set()))
+
+
+if __name__ == "__main__":
+    unittest.main()

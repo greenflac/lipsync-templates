@@ -240,6 +240,7 @@ MYPYPATH=. python -m mypy --explicit-package-bases --strict --follow-imports=sil
     scripts/ingest_hf.py scripts/ingest_portal.py scripts/ingest_schema.py \
     scripts/recheck_vendor.py scripts/poll_catalogs.py scripts/discover_models.py \
     scripts/collect_civitai.py scripts/find_signals.py \
+    scripts/sync_fal_catalog.py scripts/import_litellm_prices.py \
     --ignore-missing-imports
 
 step "tests (mcp)"
@@ -613,6 +614,25 @@ HF=$?
 set -e
 [ "$HF" = "1" ] && { echo "ПРОВАЛ: тир записанного с HuggingFace не отвечает адресу"; exit 1; }
 [ "$HF" = "2" ] && echo "(ограничения лицензии без самой лицензии — это не провал)"
+
+# Каналы второго раунда (2026-10-15): страницы и OpenAPI эндпоинтов fal для
+# семей из таблицы и прайс LiteLLM. Обёртка та же, что у восьми каналов выше:
+# красит только код 1 (порча записанного), код 2 — «не смогли» по данным.
+step "fal: строки канала против адреса, тира и каталога"
+set +e
+python scripts/sync_fal_catalog.py --check
+FALSYNC=$?
+set -e
+[ "$FALSYNC" = "1" ] && { echo "ПРОВАЛ: строки канала fal испорчены"; exit 1; }
+[ "$FALSYNC" = "2" ] && echo "(сверять не с чем — это не провал)"
+
+step "LiteLLM: строки прайса против адреса и тира"
+set +e
+python scripts/import_litellm_prices.py --check
+LITELLM=$?
+set -e
+[ "$LITELLM" = "1" ] && { echo "ПРОВАЛ: строки прайса LiteLLM испорчены"; exit 1; }
+[ "$LITELLM" = "2" ] && echo "(сверять не с чем — это не провал)"
 
 # Валидатор-2: он принимает ПАЙПЛАЙН, а не факт. Разрыв между шагами (выход
 # шага N не является допустимым входом шага N+1) не виден ни одному посшаговому

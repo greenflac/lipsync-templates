@@ -49,6 +49,7 @@ from pathlib import Path
 
 from lipsync.fork_identity import FAIL, PASS, UNMEASURED
 
+from studio.mcp import fetch as _fetch
 from studio.mcp.fetch import DENIED_PATH, _host
 from studio.selfrag import source_hosts
 
@@ -142,7 +143,11 @@ OPEN_HUBS: dict[str, str] = {
 def _denial_states(path: Path | None = None) -> dict[str, tuple[str, str]]:
     """host -> (его ПОСЛЕДНИЙ статус, дата этой строки). Чужих хостов нет."""
     states: dict[str, tuple[str, str]] = {}
-    target = path or DENIED_PATH
+    # Путь журнала спрашивается у `fetch.denied_path` (Е1): `STUDIO_DENIED_PATH`
+    # и подмена `fetch.DENIED_PATH` в тесте видны и здесь. До 2026-10-15 этот
+    # читатель брал имя, импортированное при загрузке, и мимо обоих читал
+    # репозиторный журнал.
+    target = path or _fetch.denied_path() or DENIED_PATH
     if not target.is_file():
         return states
     for line in target.read_text(encoding="utf-8").splitlines():

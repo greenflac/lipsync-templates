@@ -51,6 +51,7 @@ __all__ = [
     "USER_WRITTEN_SEGMENTS",
     "PORTALS_WHERE_USERS_ARE_THE_POINT",
     "FAMILY_SEPARATORS",
+    "FAMILY_SPELLINGS",
     "PORTAL_SOURCES",
     "VENDOR_SOURCES",
     "classify",
@@ -367,6 +368,73 @@ VENDOR_SOURCES: dict[str, tuple[str, ...]] = {
 for _семья, _хосты in ОТКРЫЛИСЬ_2026_09_02.items():
     VENDOR_SOURCES[_семья] = tuple(dict.fromkeys(VENDOR_SOURCES[_семья] + _хосты))
 
+#: ВЕНДОРЫ, ЧЬИ МОДЕЛИ ПРИШЛИ В БАЗУ ВТОРЫМ РАУНДОМ СБОРА (2026-10-15).
+#: Каталог fal и таблица цен LiteLLM дописали ~2000 строк о моделях, чьи
+#: собственные документации не были объявлены ни разу: факт со страницы
+#: самого вендора ложился на `blog` — так в базе лежали 6 строк с `docs.x.ai`
+#: о `xai-grok-imagine-video-1.5` и 2 строки с прайса Model Studio о HappyHorse.
+#: Правило то же, что у таблицы выше: вендор — это хозяин модели ЭТОЙ семьи,
+#: ключ — семья, хост общий у разных хозяев — только с путём.
+#:
+#: Ключей по два там, где вендор пишет имя двумя способами (`grok` и `xai`):
+#: совпадение идёт по началу имени, и один ключ до второго написания не
+#: дотягивается (та же ловушка, что `hunyuan`/`hunyuanvideo` выше). Когда два
+#: написания сворачиваются в ОДНО имя (`happy-horse` и `happyhorse`), второе
+#: идёт не ключом, а в `FAMILY_SPELLINGS`: два объявленных семейства с одной
+#: свёрткой — нарушение `scripts/discover_models.py --check` (новая модель
+#: второго спряталась бы за первым).
+#:
+#: `help.aliyun.com` — снова С ПУТЁМ `/zh/model-studio/`: под хостом вся
+#: документация Alibaba Cloud. Страница цен HappyHorse лежит ровно там
+#: (`/zh/model-studio/model-pricing`), рядом со страницами Wan.
+ВТОРОЙ_РАУНД_2026_10_15: dict[str, tuple[str, ...]] = {
+    # xAI: документация API Grok Imagine.
+    "grok": ("docs.x.ai",),
+    "xai": ("docs.x.ai",),
+    # Alibaba: HappyHorse — модель Model Studio, как Wan.
+    "happy-horse": ("help.aliyun.com/zh/model-studio/", "tongyi.aliyun.com"),
+    # ByteDance: Seedream — та же документация BytePlus ModelArk, что у Seedance.
+    "seedream": ("docs.byteplus.com", "byteplus.com", "seed.bytedance.com"),
+    "bytedance-seedream": ("docs.byteplus.com", "byteplus.com", "seed.bytedance.com"),
+    # Sync Labs: модели lipsync-* под именем `sync-lipsync-*` у порталов.
+    # Организация `synchronicity-labs` — их собственный SDK: README прочитан
+    # 2026-10-15 через raw.githubusercontent.com (200), ссылается на
+    # docs.sync.so и зовёт `model="lipsync-2"`. Это и есть открытый путь к
+    # вендору: `sync.so` отказан политикой 2026-10-14 (гейт «у каждой семьи
+    # есть открытый путь» без него краснел).
+    "sync": (
+        "sync.so",
+        "github.com/synchronicity-labs/",
+        "raw.githubusercontent.com/synchronicity-labs/",
+    ),
+    # VEED: Fabric и липсинк VEED.
+    "veed": ("veed.io",),
+    # HeyGen: аватары и липсинк, документация API. Организация `heygen-com`
+    # на GitHub — их собственная (README `heygen-com/hyperframes` прочитан
+    # 2026-10-15, 200, ведёт на hyperframes.heygen.com); `docs.heygen.com`
+    # отказан политикой 2026-10-14, и открытый путь к вендору — репозиторий.
+    "heygen": (
+        "docs.heygen.com",
+        "github.com/heygen-com/",
+        "raw.githubusercontent.com/heygen-com/",
+    ),
+    # Topaz Labs: апскейлеры изображения и видео.
+    "topaz": ("topazlabs.com",),
+    # Lightricks: собственные сайт и документация LTX, рядом с их HF-организацией.
+    "ltx": ("ltx.io", "docs.ltx.video"),
+    "lightricks-ltx": ("huggingface.co/Lightricks/", "ltx.io", "docs.ltx.video"),
+}
+
+#: Написание имени -> объявленное семейство, когда написание сворачивается в
+#: то же имя, что и семейство (`modelnames.fold`), и потому отдельным ключом
+#: быть не может. Совпадение по началу имени — как у ключей.
+FAMILY_SPELLINGS: dict[str, str] = {
+    "happyhorse": "happy-horse",
+}
+
+for _семья, _хосты in ВТОРОЙ_РАУНД_2026_10_15.items():
+    VENDOR_SOURCES[_семья] = tuple(dict.fromkeys(VENDOR_SOURCES.get(_семья, ()) + _хосты))
+
 #: CHOSEN the same way. A portal here is a platform that RUNS models or hosts
 #: the artifacts people made with them — it publishes what its own API takes,
 #: or the prompts and results themselves. An aggregator that merely resells API
@@ -402,6 +470,15 @@ for _семья, _хосты in ОТКРЫЛИСЬ_2026_09_02.items():
 PORTAL_SOURCES: tuple[str, ...] = (
     "apiframe.ai",
     "raw.githubusercontent.com/Comfy-Org/",
+    # Добавлены 2026-10-15 (второй раунд сбора). `api.fal.ai` — ценовой API
+    # fal (`/v1/models/pricing`): цена ЗАПУЩЕННОГО эндпоинта, то есть голос
+    # площадки, как и её страницы на `fal.ai`; хост сравнивается точно, и
+    # `fal.ai` его не покрывал. `raw.githubusercontent.com/BerriAI/` — таблица
+    # цен LiteLLM (`model_prices_and_context_window.json`): прокси, который
+    # ЗАПУСКАЕТ чужие модели по их API и публикует, что за запуск берут; только
+    # организация BerriAI, остальной `raw.githubusercontent.com` — чьё угодно.
+    "api.fal.ai",
+    "raw.githubusercontent.com/BerriAI/",
     "atlascloud.ai",
     "civitai.com",
     "docs.dev.runwayml.com",
@@ -559,7 +636,7 @@ def vendor_sources_for(model: str) -> tuple[str, ...]:
     if not name:
         return ()
     best = ""
-    for family in VENDOR_SOURCES:
+    for family in [*VENDOR_SOURCES, *FAMILY_SPELLINGS]:
         low = family.lower()
         слитная_версия = name.startswith(low) and len(name) > len(low) and name[len(low)].isdigit()
         if (
@@ -569,7 +646,7 @@ def vendor_sources_for(model: str) -> tuple[str, ...]:
         ):
             if len(low) > len(best):
                 best = low
-    return VENDOR_SOURCES[best] if best else ()
+    return VENDOR_SOURCES[FAMILY_SPELLINGS.get(best, best)] if best else ()
 
 
 def classify(model: str, url: str, *, vendor_tier: str, portal_tier: str, blog_tier: str) -> str:

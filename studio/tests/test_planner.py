@@ -33,6 +33,14 @@ from studio import pricing
 from studio.factindex import FactIndex
 from studio.selfrag.facts import Fact
 
+
+def _полный_план(*args, **kwargs):
+    """ПОЛНЫЙ ответ плана (G11, 2026-10-14): этот набор проверяет доказательства,
+    положения соседей и пробы валидатора — их краткий ответ по умолчанию не несёт."""
+    kwargs.setdefault("full", True)
+    return pn.plan(*args, **kwargs)
+
+
 СЕГОДНЯ = date(2026, 9, 2)
 
 
@@ -275,7 +283,7 @@ class ГраницыПечати(unittest.TestCase):
     """Сколько кандидатов и сколько доказательств доходит до читателя."""
 
     def _план(self) -> dict:
-        return pn.plan("оживить селфи клиента", facts=list(МНОГО), today=СЕГОДНЯ)
+        return _полный_план("оживить селфи клиента", facts=list(МНОГО), today=СЕГОДНЯ)
 
     def test_кандидатов_печатается_ровно_три(self) -> None:
         шаг = self._план()["steps"][0]
@@ -348,15 +356,22 @@ class РазборБюджета(unittest.TestCase):
         self.assertEqual(b.per, ("second",))
 
     def test_за_что_названо_словами(self) -> None:
+        # 2026-10-14 (G7): «за ролик» — ВЕСЬ ролик, а не прогон шага.
         b = pn.budget_from("не дороже 2 долларов за ролик")
         self.assertEqual(b.amount, 2.0)
+        self.assertEqual(sorted(b.per), ["clip"])
+
+    def test_за_шаг_названо_словами(self) -> None:
+        b = pn.budget_from("не дороже 2 долларов за шаг")
+        self.assertEqual(sorted(b.per), ["step"])
+        b = pn.budget_from("не дороже 2 долларов за прогон")
         self.assertEqual(sorted(b.per), ["generation", "run"])
 
-    def test_за_что_не_названо_принимается_за_прогон(self) -> None:
+    def test_за_что_не_названо_принимается_за_весь_ролик(self) -> None:
         b = pn.budget_from("бюджет 1 доллар")
-        # Литерал (Т2): «за прогон шага» — это то, куда уходит число.
-        self.assertEqual(sorted(b.per), ["generation", "run"])
-        self.assertIn("за прогон шага", b.note)
+        # Литерал (Т2): заказчик называет деньги за работу целиком (G7).
+        self.assertEqual(sorted(b.per), ["clip"])
+        self.assertIn("на ВЕСЬ РОЛИК", b.note)
 
     def test_число_без_единицы_третий_исход(self) -> None:
         # И5, негативный контроль: 50 чего — из брифа не следует.
@@ -643,7 +658,7 @@ class КадрПротивПредела(unittest.TestCase):
     def test_без_кадра_порядок_не_меняется_вовсе(self) -> None:
         # НЕГАТИВНЫЙ КОНТРОЛЬ (а): без креатива не должно измениться ни строки,
         # ни порядка.
-        без = pn.plan("оживить селфи клиента", facts=list(ПРЕДЕЛЫ), today=СЕГОДНЯ)
+        без = _полный_план("оживить селфи клиента", facts=list(ПРЕДЕЛЫ), today=СЕГОДНЯ)
         шаг = без["steps"][0]
         self.assertEqual(шаг["chosen"]["fit_state"], "")
         for а in шаг["alternatives"]:
@@ -654,7 +669,7 @@ class КадрПротивПредела(unittest.TestCase):
     def test_с_кадром_не_принимающий_уходит_вниз(self) -> None:
         # НЕГАТИВНЫЙ КОНТРОЛЬ (б), первая половина: отказ обязан быть виден и
         # обязан быть последним.
-        with_ = pn.plan(
+        with_ = _полный_план(
             "оживить селфи клиента",
             facts=list(ПРЕДЕЛЫ),
             creative=str(СЕЛФИ),
@@ -689,7 +704,7 @@ class КадрПротивПредела(unittest.TestCase):
         # находить проблему там, где её нет.
         мелкий = Path(tempfile.mkdtemp()) / "мелкий.png"
         Image.new("RGB", (64, 64), (128, 128, 128)).save(мелкий)
-        итог = pn.plan(
+        итог = _полный_план(
             "оживить селфи клиента",
             facts=list(ПРЕДЕЛЫ),
             creative=str(мелкий),
@@ -848,7 +863,8 @@ class ЗапретНаВход(unittest.TestCase):
     def test_вход_шага_включает_лицо_у_лицевых_операций(self) -> None:
         # Мост между «вход объявлен артефактами» и «запрет написан про лицо».
         лицевые = {op.name for op in pn.OPERATIONS if op.face_input}
-        self.assertEqual(лицевые, {"оживление", "замена_персонажа", "липсинк"})
+        # 2026-10-14: говорящий аватар берёт СНИМОК лица — та же стена запрета.
+        self.assertEqual(лицевые, {"оживление", "замена_персонажа", "липсинк", "говорящий_аватар"})
         липсинк = next(o for o in pn.OPERATIONS if o.name == "липсинк")
         self.assertIn("селфи", pn.step_inputs(липсинк))
         озвучка = next(o for o in pn.OPERATIONS if o.name == "озвучка")
@@ -897,7 +913,7 @@ class ЗапретНаВход(unittest.TestCase):
             ),
             факт("запрет-лицо", "architecture", "image-to-video i2v", "vendor"),
         ]
-        итог = pn.plan("оживить селфи клиента", facts=свои, today=СЕГОДНЯ)
+        итог = _полный_план("оживить селфи клиента", facts=свои, today=СЕГОДНЯ)
         напечатано = pn.render(итог)
         # Литерал (Т2): одно и то же утверждение не может быть одновременно
         # основанием выбора и причиной отказа.
@@ -911,7 +927,7 @@ class ЗапретНаВход(unittest.TestCase):
             факт("запрет-лицо", "architecture", "image-to-video i2v", "vendor"),
             факт("чистый", "architecture", "image-to-video i2v", "vendor"),
         ]
-        итог = pn.plan("оживить селфи клиента", facts=свои, today=СЕГОДНЯ)
+        итог = _полный_план("оживить селфи клиента", facts=свои, today=СЕГОДНЯ)
         шаг = итог["steps"][0]
         self.assertEqual(шаг["chosen"]["model"], "чистый")
         self.assertEqual(шаг["banned_count"], 1)
@@ -925,7 +941,7 @@ class ЗапретНаВход(unittest.TestCase):
         свои = list(НЕ_ЗАПРЕТЫ) + [
             факт("м", "architecture", "image-to-video i2v", "vendor"),
         ]
-        итог = pn.plan("оживить селфи клиента", facts=свои, today=СЕГОДНЯ)
+        итог = _полный_план("оживить селфи клиента", facts=свои, today=СЕГОДНЯ)
         шаг = итог["steps"][0]
         self.assertEqual(шаг["banned_count"], 0)
         self.assertEqual(шаг["banned_input"], "")
@@ -1011,7 +1027,7 @@ class КонецСлужбы(unittest.TestCase):
             факт("снята-2026-08", "architecture", "image-to-video i2v", "vendor"),
             факт("живая", "architecture", "image-to-video i2v", "vendor"),
         ]
-        итог = pn.plan("оживить селфи клиента", facts=свои, today=СЕГОДНЯ)
+        итог = _полный_план("оживить селфи клиента", facts=свои, today=СЕГОДНЯ)
         шаг = итог["steps"][0]
         self.assertEqual(шаг["chosen"]["model"], "живая")
         self.assertEqual(шаг["retired_count"], 1)
@@ -1022,7 +1038,7 @@ class КонецСлужбы(unittest.TestCase):
     def test_снимать_некого_молчит(self) -> None:
         # И5, вторая сторона: на базе без снятий ни строки об этом.
         свои = [факт("живая", "architecture", "image-to-video i2v", "vendor")]
-        итог = pn.plan("оживить селфи клиента", facts=свои, today=СЕГОДНЯ)
+        итог = _полный_план("оживить селфи клиента", facts=свои, today=СЕГОДНЯ)
         шаг = итог["steps"][0]
         self.assertEqual(шаг["retired_count"], 0)
         self.assertEqual(шаг["banned_input"], "")
@@ -1035,7 +1051,7 @@ class КонецСлужбы(unittest.TestCase):
             СНЯТИЯ[2],
             факт("объявлена", "architecture", "image-to-video i2v", "vendor"),
         ]
-        итог = pn.plan("оживить селфи клиента", facts=свои, today=СЕГОДНЯ)
+        итог = _полный_план("оживить селфи клиента", facts=свои, today=СЕГОДНЯ)
         шаг = итог["steps"][0]
         self.assertEqual(шаг["chosen"]["model"], "объявлена")
         self.assertEqual(шаг["retired_count"], 0)
@@ -1122,7 +1138,7 @@ class ВыходШага(unittest.TestCase):
             факт("отдаёт-звук", "produces_outputs", "аудио", "portal"),
             факт("отдаёт-звук", "architecture", "tts text-to-speech", "vendor"),
         ]
-        итог = pn.plan("нужна озвучка по тексту", facts=свои, today=СЕГОДНЯ)
+        итог = _полный_план("нужна озвучка по тексту", facts=свои, today=СЕГОДНЯ)
         шаг = итог["steps"][0]
         self.assertEqual(шаг["step"], "озвучка")
         self.assertEqual(шаг["chosen"]["model"], "отдаёт-звук")
@@ -1139,7 +1155,7 @@ class ВыходШага(unittest.TestCase):
             факт("отдаёт-звук", "produces_outputs", "аудио", "portal"),
             факт("отдаёт-звук", "architecture", "tts text-to-speech", "vendor"),
         ]
-        итог = pn.plan("нужна озвучка по тексту", facts=свои, today=СЕГОДНЯ)
+        итог = _полный_план("нужна озвучка по тексту", facts=свои, today=СЕГОДНЯ)
         шаг = итог["steps"][0]
         self.assertEqual(шаг["wrong_output_count"], 0)
         self.assertEqual(шаг["banned_input"], "")
@@ -1149,7 +1165,7 @@ class ВыходШага(unittest.TestCase):
         # НЕГАТИВНЫЙ КОНТРОЛЬ, вторая сторона: кандидат без записанного выхода
         # не должен ни отсекаться, ни считаться подходящим.
         свои = [факт("молчит", "architecture", "tts text-to-speech", "vendor")]
-        итог = pn.plan("нужна озвучка по тексту", facts=свои, today=СЕГОДНЯ)
+        итог = _полный_план("нужна озвучка по тексту", facts=свои, today=СЕГОДНЯ)
         шаг = итог["steps"][0]
         self.assertEqual(шаг["chosen"]["model"], "молчит")
         self.assertEqual(шаг["wrong_output_count"], 0)
@@ -1327,7 +1343,7 @@ class ПереводЗаЧто(unittest.TestCase):
             факт("м-lipsync", "architecture", "lipsync talking-head", "vendor"),
             факт("м-lipsync", "license", "apache-2.0", "vendor"),
         ]
-        посекундный = pn.plan(
+        посекундный = _полный_план(
             "из готового ролика сделай липсинк под другой язык, бюджет $0.10 за секунду",
             facts=свои,
             today=СЕГОДНЯ,
@@ -1343,13 +1359,22 @@ class ПереводЗаЧто(unittest.TestCase):
             факт("м-lipsync", "architecture", "lipsync talking-head", "vendor"),
             факт("м-lipsync", "license", "apache-2.0", "vendor"),
         ]
-        пошаговый = pn.plan(
-            "из готового ролика сделай липсинк под другой язык, бюджет $0.10 за ролик",
+        # 2026-10-14 (G7): пошаговым потолок становится, только когда назван
+        # «за шаг» (или «за прогон»); «за ролик» — бюджет всего ролика.
+        пошаговый = _полный_план(
+            "из готового ролика сделай липсинк под другой язык, бюджет $0.10 за шаг",
             facts=свои,
             today=СЕГОДНЯ,
         )
         self.assertIn("цена", пошаговый["classes"])
         self.assertNotIn("НЕ передан", пошаговый["budget"]["note"])
+        на_ролик = _полный_план(
+            "из готового ролика сделай липсинк под другой язык, бюджет $0.10 за ролик",
+            facts=свои,
+            today=СЕГОДНЯ,
+        )
+        self.assertNotIn("цена", на_ролик["classes"])
+        self.assertIn("НЕ передан", на_ролик["budget"]["note"])
 
 
 class ПочемуНеСосед(unittest.TestCase):
@@ -1373,7 +1398,9 @@ class ПочемуНеСосед(unittest.TestCase):
     def test_неразличимые_названы_неразличимыми(self) -> None:
         a = pn.Candidate("одинаково", (), 1, 1, 0, "", anchored=1)
         сказано = pn.why_not(a, a)
-        self.assertIn("неразличимы", сказано)
+        # 2026-10-14 (G4): ничья не выдаётся за выбор по алфавиту.
+        self.assertIn("НИЧЬЯ", сказано)
+        self.assertIn("данные между ними не выбирают", сказано)
 
 
 #: Дешёвая непроверенная модель и дорогая проверенная — набор, на котором
@@ -1485,7 +1512,7 @@ class ВытесненныйЦеной(unittest.TestCase):
         # Ветка «выбран непроверенный, а проверенный есть» достижима ТОЛЬКО
         # когда цена переставила порядок, и это следует из ключа, а не из
         # отдельного флага. Без потолка старшим ключом становится применимость.
-        итог = pn.plan(
+        итог = _полный_план(
             "нужен липсинк на готовое видео",
             facts=list(ЦЕНА_ПРОТИВ_ДОКАЗАТЕЛЬСТВА),
             today=СЕГОДНЯ,
@@ -1500,7 +1527,7 @@ class ВытесненныйЦеной(unittest.TestCase):
     def test_с_потолком_вытесненный_назван(self) -> None:
         # Та же база, тот же бриф плюс потолок: цена переставляет порядок, и
         # строка обязана появиться.
-        итог = pn.plan(
+        итог = _полный_план(
             "нужен липсинк на готовое видео, бюджет 1 доллар за ролик",
             facts=list(ЦЕНА_ПРОТИВ_ДОКАЗАТЕЛЬСТВА),
             today=СЕГОДНЯ,
@@ -1511,7 +1538,7 @@ class ВытесненныйЦеной(unittest.TestCase):
         self.assertIn("проверенный-lipsync", шаг["proven_rival"])
 
     def test_числа_вытеснения_стоят_в_ноте(self) -> None:
-        итог = pn.plan(
+        итог = _полный_план(
             "нужен липсинк на готовое видео, бюджет 1 доллар за ролик",
             facts=list(ЦЕНА_ПРОТИВ_ДОКАЗАТЕЛЬСТВА),
             today=СЕГОДНЯ,
@@ -1520,7 +1547,7 @@ class ВытесненныйЦеной(unittest.TestCase):
         self.assertIn("проверенных нет вовсе 0", итог["note"])
 
     def test_строка_печатается_сразу_под_моделью(self) -> None:
-        итог = pn.plan(
+        итог = _полный_план(
             "нужен липсинк на готовое видео, бюджет 1 доллар за ролик",
             facts=list(ЦЕНА_ПРОТИВ_ДОКАЗАТЕЛЬСТВА),
             today=СЕГОДНЯ,
@@ -1534,7 +1561,7 @@ class ТриИсхода(unittest.TestCase):
     """Р1: годно / не годно / не смогли, и каждый достижим."""
 
     def test_годно(self) -> None:
-        итог = pn.plan(
+        итог = _полный_план(
             "оживить селфи клиента",
             facts=list(ЗДОРОВЫЕ),
             today=СЕГОДНЯ,
@@ -1545,7 +1572,7 @@ class ТриИсхода(unittest.TestCase):
         self.assertEqual(итог["classes"], [])
 
     def test_не_годно_валидатор_назвал_класс(self) -> None:
-        итог = pn.plan("оживить селфи клиента", facts=list(БОЛЬНЫЕ), today=СЕГОДНЯ)
+        итог = _полный_план("оживить селфи клиента", facts=list(БОЛЬНЫЕ), today=СЕГОДНЯ)
         self.assertEqual(итог["outcome"], "fail")
         self.assertEqual(итог["reason"], "валидатор_отверг")
         self.assertIn("применимость", итог["classes"])
@@ -1553,7 +1580,7 @@ class ТриИсхода(unittest.TestCase):
         self.assertEqual(итог["steps"][0]["chosen"]["model"], "тестовая-i2v")
 
     def test_не_смогли_шаги_не_выведены(self) -> None:
-        итог = pn.plan("сделай красиво", facts=list(ЗДОРОВЫЕ), today=СЕГОДНЯ)
+        итог = _полный_план("сделай красиво", facts=list(ЗДОРОВЫЕ), today=СЕГОДНЯ)
         self.assertEqual(итог["outcome"], "could not measure")
         self.assertEqual(итог["reason"], "шаги_не_выведены")
         self.assertEqual(итог["steps"], [])
@@ -1562,7 +1589,7 @@ class ТриИсхода(unittest.TestCase):
     def test_не_смогли_шаг_без_кандидатов(self) -> None:
         # План НЕ пуст: первый шаг собран, второй назван пустым. Свернуть это в
         # «шагов нет» значило бы потерять то, что человек должен увидеть.
-        итог = pn.plan(
+        итог = _полный_план(
             "оживить селфи и добавить фоновые звуки",
             facts=list(ЗДОРОВЫЕ),
             today=СЕГОДНЯ,
@@ -1573,7 +1600,7 @@ class ТриИсхода(unittest.TestCase):
         self.assertIsNone(итог["steps"][1]["chosen"])
 
     def test_модель_по_умолчанию_не_подставляется(self) -> None:
-        итог = pn.plan("добавить фоновые звуки, foley", facts=list(ЗДОРОВЫЕ), today=СЕГОДНЯ)
+        итог = _полный_план("добавить фоновые звуки, foley", facts=list(ЗДОРОВЫЕ), today=СЕГОДНЯ)
         self.assertEqual(итог["reason"], "шаг_без_кандидатов")
         self.assertIsNone(итог["steps"][0]["chosen"])
         # И в собранной трубе модель шага пустая, а не «какая-нибудь».
@@ -1598,7 +1625,7 @@ class ТриИсхода(unittest.TestCase):
             факт("тестовый-липсинк", "architecture", "lipsync talking-head", "vendor"),
             факт("тестовый-липсинк", "license", "apache-2.0", "vendor"),
         ]
-        итог = pn.plan("сделай липсинк", facts=свои, today=СЕГОДНЯ)
+        итог = _полный_план("сделай липсинк", facts=свои, today=СЕГОДНЯ)
         self.assertNotIn("разрыв", итог["classes"])
         # Требования словаря операций закрываются ровно двумя способами.
         закрыто = set(pl.AMBIENT_ARTEFACTS) | set(pn.ЗАКРЫВАЕТ_НЕХВАТКУ)
@@ -1612,7 +1639,7 @@ class ТриИсхода(unittest.TestCase):
             факт("тестовый-липсинк", "architecture", "lipsync talking-head", "vendor"),
             факт("тестовый-липсинк", "license", "apache-2.0", "vendor"),
         ]
-        итог = pn.plan("сделай липсинк", facts=свои, today=СЕГОДНЯ)
+        итог = _полный_план("сделай липсинк", facts=свои, today=СЕГОДНЯ)
         имена = [ш["step"] for ш in итог["steps"]]
         self.assertEqual(имена, ["озвучка", "генерация_видео", "липсинк"])
         дописанные = {ш["step"]: ш["inferred"] for ш in итог["steps"] if ш["inferred"]}
@@ -1636,7 +1663,7 @@ class ТриИсхода(unittest.TestCase):
             факт("тестовый-липсинк", "architecture", "lipsync talking-head", "vendor"),
             факт("тестовый-липсинк", "license", "apache-2.0", "vendor"),
         ]
-        текст = pn.render(pn.plan("сделай липсинк", facts=свои, today=СЕГОДНЯ))
+        текст = pn.render(_полный_план("сделай липсинк", facts=свои, today=СЕГОДНЯ))
         self.assertIn("шаг озвучка: ДОПИСАН ПЛАНОМ", текст)
         self.assertIn("шаг генерация_видео: ДОПИСАН ПЛАНОМ", текст)
         # Заказанный шаг такой строки НЕ получает.
@@ -1670,7 +1697,7 @@ class ТриИсхода(unittest.TestCase):
             факт("тестовый-липсинк", "architecture", "lipsync talking-head", "vendor"),
             факт("тестовый-липсинк", "license", "apache-2.0", "vendor"),
         ]
-        итог = pn.plan("сделай липсинк под мою озвучку", facts=свои, today=СЕГОДНЯ)
+        итог = _полный_план("сделай липсинк под мою озвучку", facts=свои, today=СЕГОДНЯ)
         дописанные = sorted(ш["step"] for ш in итог["steps"] if ш["inferred"])
         self.assertNotIn("озвучка", дописанные)
 
@@ -1684,7 +1711,7 @@ class ТриИсхода(unittest.TestCase):
             факт("тестовый-дубляж", "architecture", "dubbing dub", "vendor"),
             факт("тестовый-дубляж", "license", "apache-2.0", "vendor"),
         ]
-        итог = pn.plan(
+        итог = _полный_план(
             "из готового ролика сделай липсинк под другой язык", facts=свои, today=СЕГОДНЯ
         )
         self.assertNotIn("разрыв", итог["classes"])
@@ -1767,10 +1794,6 @@ class Контракт(unittest.TestCase):
         # «не запускалось» и красное «упало» — разные вещи, и красное
         # «добавили случай» не является ни тем, ни другим).
         self.assertGreaterEqual(len(pn.briefs()), 8)
-
-
-if __name__ == "__main__":
-    unittest.main()
 
 
 class СписокВходовИзСхемы(unittest.TestCase):
@@ -1975,7 +1998,7 @@ class ЦенаВсегоПайплайна(unittest.TestCase):
     """
 
     def test_нет_ни_одной_цены_это_не_ноль(self) -> None:
-        итог = pn.plan("сделай липсинк", facts=list(ЗДОРОВЫЕ), today=СЕГОДНЯ)
+        итог = _полный_план("сделай липсинк", facts=list(ЗДОРОВЫЕ), today=СЕГОДНЯ)
         цена = итог["pipeline_price"]
         self.assertEqual("не смогли", цена["outcome"])
         self.assertEqual(0, цена["steps_priced"])
@@ -1991,7 +2014,7 @@ class ЦенаВсегоПайплайна(unittest.TestCase):
             факт("тестовый-липсинк", "license", "apache-2.0", "vendor"),
             факт("тестовый-липсинк", "price_per_run_usd", "$0.4 per run", "portal"),
         ]
-        итог = pn.plan("сделай липсинк", facts=свои, today=СЕГОДНЯ)
+        итог = _полный_план("сделай липсинк", facts=свои, today=СЕГОДНЯ)
         цена = итог["pipeline_price"]
         self.assertEqual("не смогли", цена["outcome"])
         self.assertGreaterEqual(цена["steps_priced"], 1)
@@ -2000,7 +2023,7 @@ class ЦенаВсегоПайплайна(unittest.TestCase):
 
     def test_строка_цены_печатается_всегда(self) -> None:
         """Молчание о цене читается как «нисколько»."""
-        текст = pn.render(pn.plan("сделай липсинк", facts=list(ЗДОРОВЫЕ), today=СЕГОДНЯ))
+        текст = pn.render(_полный_план("сделай липсинк", facts=list(ЗДОРОВЫЕ), today=СЕГОДНЯ))
         self.assertIn("цена пайплайна:", текст)
 
     def test_разбор_цены_не_повторяется_вторым_способом(self) -> None:
@@ -2028,9 +2051,50 @@ class ЦенаВсегоПайплайна(unittest.TestCase):
             факт("тестовый-липсинк", "license", "apache-2.0", "vendor"),
             факт("тестовый-липсинк", "price_per_run_usd", "$0.4 per run", "portal"),
         ]
-        итог = pn.plan("сделай липсинк", facts=свои, today=СЕГОДНЯ)
+        итог = _полный_план("сделай липсинк", facts=свои, today=СЕГОДНЯ)
         нижняя = итог["pipeline_price"]["lower_bound"]
         self.assertTrue(нижняя, "цена не нашлась — тест перестал воспроизводить случай")
         for ключ in нижняя:
             self.assertIsInstance(ключ, str)
         json.dumps(итог["pipeline_price"])  # не должно бросать
+
+
+class ВердиктЦеныНеОтрезается(unittest.TestCase):
+    """Сборка 2026-10-15: краткий план резал ноту цены на 600 знаках, а вердикт
+    против потолка стоит В КОНЦЕ — после расклада по шагам; заказчик видел
+    «не годно» без слова «почему»."""
+
+    РАСКЛАД = "ЦЕНА РОЛИКА: 600 с × ставки шагов = 3.81 usd (" + "шаг: формула; " * 80 + ")"
+
+    def test_вердикт_превышения_доживает_до_краткой_ноты(self) -> None:
+        нота = self.РАСКЛАД + " — ПОТОЛОК 3 ПРЕВЫШЕН (usd): 3.81 против 3, это дороже в 1.3 раза"
+        коротко = pn._коротко_с_вердиктом(нота, 600)
+        self.assertLessEqual(len(коротко), 600)
+        self.assertTrue(коротко.endswith("это дороже в 1.3 раза"), коротко[-80:])
+        self.assertTrue(коротко.startswith("ЦЕНА РОЛИКА: 600 с"), коротко[:40])
+        self.assertIn("…", коротко)
+
+    def test_каждый_вердикт_опознаётся(self) -> None:
+        for хвост in (
+            " — ПОТОЛОК 0: работа столько не стоит",
+            " — в потолок 3 влезает только на дешёвых тарифах: Lite 1.00",
+            ". Потолок назван за second, а посчитана цена ВСЕГО РОЛИКА",
+        ):
+            with self.subTest(хвост):
+                self.assertTrue(pn._коротко_с_вердиктом(self.РАСКЛАД + хвост, 600).endswith(хвост))
+
+    def test_короткая_нота_не_трогается_и_без_вердикта_режется_как_прежде(self) -> None:
+        self.assertEqual(
+            "цена 1 usd — ПОТОЛОК 3", pn._коротко_с_вердиктом("цена 1 usd — ПОТОЛОК 3", 600)
+        )
+        self.assertEqual(pn._коротко(self.РАСКЛАД, 600), pn._коротко_с_вердиктом(self.РАСКЛАД, 600))
+
+    def test_длинный_вердикт_сам_укорачивается_и_не_теряет_начала(self) -> None:
+        нота = "расклад " + " — ПОТОЛОК 3 ПРЕВЫШЕН: " + "причина " * 200
+        коротко = pn._коротко_с_вердиктом(нота, 600)
+        self.assertLessEqual(len(коротко), 600)
+        self.assertTrue(коротко.startswith("ПОТОЛОК 3 ПРЕВЫШЕН"), коротко[:40])
+
+
+if __name__ == "__main__":
+    unittest.main()

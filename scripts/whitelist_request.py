@@ -123,6 +123,12 @@ VENDOR: dict[str, str] = {
     "ideogram.ai": "Ideogram — typography-focused image model",
     "hedra.com": "Hedra Character — audio-driven avatar",
     "sync.so": "sync.so lipsync API",
+    # Вендоры второго раунда сбора (2026-10-15): их доки отказаны политикой
+    # 2026-10-14 (`denied_hosts.jsonl`), а в `source_hosts.py` они объявлены
+    # вендорами своих семей — HeyGen, Lightricks (LTX), Topaz Labs.
+    "heygen.com": "HeyGen avatars and lipsync — API docs, limits, pricing",
+    "ltx.video": "Lightricks LTX — the vendor's own model docs",
+    "topazlabs.com": "Topaz Labs upscalers — limits and pricing",
     "deepgram.com": "Deepgram speech models",
     "leonardo.ai": "Leonardo image models",
     "comfy.org": "ComfyUI itself (api.comfy.org answers, the site does not)",

@@ -55,7 +55,9 @@ THE TOOLS THAT WRITE
 `record_model_fact` and `withdraw_model_fact` append to
 `studio/knowledge/model_facts.jsonl`, and `fetch_url` appends a refused host to
 `denied_hosts.jsonl` so the allowlist request assembles itself. Everything else
-reads. Neither writer deletes: the fact file is a log where the latest row
+reads. (`STUDIO_DENIED_PATH` moves the denial journal elsewhere and
+`STUDIO_NO_JOURNAL=1` turns those side writes off — added 2026-10-14, G13.)
+Neither writer deletes: the fact file is a log where the latest row
 about a claim wins, so how a claim was argued stays readable after it changes.
 
 That asymmetry is deliberate and worth stating in the tool list a model sees: an assistant deciding on its own to "tidy" the knowledge base is a
@@ -77,6 +79,7 @@ import argparse
 import contextlib
 import inspect
 import json
+import math
 import os
 import threading
 from collections.abc import AsyncIterator, Mapping, Sequence
@@ -398,8 +401,176 @@ def _index() -> Any:
     return _INDEX
 
 
-def _json(payload: Any) -> str:
+#: ЖЁСТКИЙ ПОТОЛОК ОТВЕТА ЛЮБОГО ИНСТРУМЕНТА, в символах JSON. НАЙДЕНО
+#: валидатором 2026-10-14 (G11): потолки стояли поштучно (`model_advice`,
+#: `blocked_hosts`, `fetch_url`), а инструмент без своего потолка отдавал
+#: сколько выйдет — `stale_model_facts(full=True)` 27 669 символов,
+#: `blocked_hosts(full=True)` 75 733. Ответ, который не помещается в контекст
+#: агента, обрезается ТАМ молча и посередине; здесь он режется с объявлением и
+#: с тем, как взять остальное. ВЫБРАНО: 40 000 символов (~10 тыс. токенов) —
+#: вдвое больше самого длинного ответа, который тулы отдают по умолчанию, и
+#: втрое меньше полного `blocked_hosts`. Символы, а не байты: агенту стоит
+#: длина текста, а кириллица в UTF-8 удвоила бы потолок для русских ответов.
+MAX_RESPONSE_CHARS = 40_000
+
+#: Как взять остальное — по инструментам, которые умеют отдавать частями.
+HOW_TO_PAGE = (
+    "Ask for less or page: fetch_url — call again with offset=next_offset "
+    "(and/or a smaller max_chars); stale_model_facts — offset/limit (or model=); "
+    "blocked_hosts — full=False; model_advice — offset=page.next_offset, or one attribute; "
+    "measurement_proposals — state=…; search_web — a smaller count."
+)
+
+#: Сколько оставить себе под объявление об обрезке.
+_CAP_RESERVE = 1_500
+
+
+def _dump(payload: Any) -> str:
     return json.dumps(payload, ensure_ascii=False, indent=2, default=str)
+
+
+def _lists_in(work: dict) -> list[tuple[tuple[str, ...], list]]:
+    """Списки ответа (верхний уровень и один уровень вложенных словарей)."""
+    found: list[tuple[tuple[str, ...], list]] = []
+    for key, value in work.items():
+        if isinstance(value, list):
+            found.append(((key,), value))
+        elif isinstance(value, dict):
+            for inner, deeper in value.items():
+                if isinstance(deeper, list):
+                    found.append(((key, inner), deeper))
+    return found
+
+
+def _set_at(work: dict, path: tuple[str, ...], value: Any) -> None:
+    target = work
+    for key in path[:-1]:
+        target = target[key]
+    target[path[-1]] = value
+
+
+def cap_response(payload: Any, limit: int = MAX_RESPONSE_CHARS) -> str:
+    """JSON ответа, не длиннее `limit` символов; обрезка ОБЪЯВЛЯЕТСЯ в ответе.
+
+    Порядок (дешёвое и точное раньше грубого):
+      1. ответ-страница (`text` + `offset` + `total_chars`, это `fetch_url`) —
+         укорачивается `text`, и `next_offset`/`remaining_chars` пересчитываются,
+         так что следующий вызов продолжает ровно с места обрыва;
+      2. иначе самые большие списки укорачиваются вдвое, пока не влезет, и
+         каждый назван: сколько было, сколько показано;
+      3. иначе режутся самые длинные строки;
+      4. и только если не помогло ничего — остаётся домовой словарь с нотой.
+    """
+    text = _dump(payload)
+    if len(text) <= limit:
+        return text
+    if not isinstance(payload, dict):
+        payload = {"value": payload}
+    work: dict = json.loads(_dump(payload))
+    budget = max(1_000, limit - _CAP_RESERVE)
+    trimmed: list[dict] = []
+
+    def size() -> int:
+        return len(_dump(work))
+
+    if (
+        isinstance(work.get("text"), str)
+        and isinstance(work.get("offset"), int)
+        and isinstance(work.get("total_chars"), int)
+    ):
+        body = str(work["text"])
+        начало = int(work["offset"])
+
+        def _page(cut: str) -> None:
+            # Поля страницы пересчитываются ВМЕСТЕ с текстом: их длина тоже
+            # входит в размер ответа.
+            дальше_ = начало + len(cut)
+            осталось_ = max(0, int(work["total_chars"]) - дальше_)
+            work.update(
+                text=cut,
+                returned_chars=len(cut),
+                next_offset=дальше_ if осталось_ else None,
+                remaining_chars=осталось_,
+                truncated=bool(осталось_) or bool(work.get("truncated")),
+            )
+
+        _page(body)
+        while body and size() > budget:
+            лишнее = size() - budget
+            body = body[: max(0, len(body) - max(лишнее, len(body) // 10))]
+            _page(body)
+        дальше = начало + len(body)
+        trimmed.append({"field": "text", "shown_chars": len(body), "next_offset": дальше})
+
+    guard = 0
+    while size() > budget and guard < 200:
+        guard += 1
+        lists = [(path, lst) for path, lst in _lists_in(work) if len(lst) > 0]
+        if not lists:
+            break
+        path, biggest = max(lists, key=lambda item: len(_dump(item[1])))
+        keep = len(biggest) // 2
+        name = ".".join(path)
+        record = next((t for t in trimmed if t.get("field") == name), None)
+        if record is None:
+            record = {"field": name, "total": len(biggest)}
+            trimmed.append(record)
+        record["shown"] = keep
+        _set_at(work, path, biggest[:keep])
+
+    guard = 0
+    while size() > budget and guard < 50:
+        guard += 1
+        # `note` несёт вердикт словами, а `text` страницы уже укорочен с
+        # пересчётом `next_offset` — резать его вслепую значило бы сломать paging.
+        strings = [
+            (k, v)
+            for k, v in work.items()
+            if isinstance(v, str) and k != "note" and not (k == "text" and trimmed)
+        ]
+        if not strings:
+            break
+        key, longest = max(strings, key=lambda item: len(item[1]))
+        if len(longest) < 200:
+            break
+        keep = max(0, len(longest) - (size() - budget) - 100)
+        if keep >= len(longest):
+            keep = len(longest) // 2
+        work[key] = longest[:keep] + f" …[cut from {len(longest)} chars]"
+        trimmed.append({"field": key, "total_chars": len(longest), "shown_chars": keep})
+
+    if size() > budget:
+        work = {
+            key: work.get(key)
+            for key in ("outcome", "checked", "violations", "unmeasured")
+            if key in work
+        }
+        work["note"] = str(payload.get("note", ""))[:2_000]
+        trimmed.append({"field": "*", "why": "nothing smaller than the whole answer could be cut"})
+
+    notice = (
+        f"[RESPONSE CUT by the server's {limit}-character cap: the full answer was "
+        f"{len(text)} characters. Cut: "
+        + ", ".join(
+            f"{t['field']} ({t.get('shown', t.get('shown_chars', 0))} of "
+            f"{t.get('total', t.get('total_chars', '?'))})"
+            for t in trimmed
+        )
+        + f". {HOW_TO_PAGE}]"
+    )
+    work["note"] = f"{work.get('note', '')} {notice}".strip()
+    work["response_cap"] = {
+        "limit_chars": limit,
+        "original_chars": len(text),
+        "trimmed": trimmed,
+        "how_to_page": HOW_TO_PAGE,
+    }
+    return _dump(work)
+
+
+def _json(payload: Any) -> str:
+    """Every tool answers through here, so the cap is one rule, not ten (Е1)."""
+    return cap_response(payload)
 
 
 def advise_and_note(
@@ -433,8 +604,61 @@ def advise_and_note(
     return advice.brief(model, attribute) if brief else answer
 
 
+#: Словари полной справки, которые листаются по ключам (атрибут или
+#: `атрибут@вариант`): только они и растут с базой.
+ADVICE_PAGED = ("claims", "family_claims")
+
+
+def page_full_advice(answer: dict, offset: int = 0, limit: int = MAX_RESPONSE_CHARS) -> dict:
+    """Полная справка СТРАНИЦЕЙ, а не обрубком (сборка 2026-10-15).
+
+    ИЗМЕРЕНО: `model_advice("minimax-h3", full=True)` — 186 тыс. знаков, из них
+    164 тыс. в двух словарях утверждений (`claims` 33 атрибута,
+    `family_claims` 97 атрибутов вариантов). Потолок ответа сервера (40 000)
+    режет списки и строки, а словари резать не умеет — и полная справка
+    сваливалась в последний шаг потолка: исход и нота, ~3 тыс. знаков, то есть
+    КОРОЧЕ краткой формы. Здесь ключи обоих словарей идут одним рядом
+    (сначала `claims`, потом `family_claims`), и страница берёт их по порядку,
+    пока ответ влезает; остальные поля справки повторяются на каждой странице.
+    `page.next_offset` — номер первого ключа, которого нет на этой странице.
+    """
+    ключи = [(поле, к) for поле in ADVICE_PAGED for к in (answer.get(поле) or {})]
+    начало = max(0, int(offset or 0))
+    if начало == 0 and len(_dump(answer)) <= limit:
+        return answer
+    budget = max(1_000, limit - _CAP_RESERVE)
+    страница = dict(answer)
+    for поле in ADVICE_PAGED:
+        if isinstance(answer.get(поле), dict):
+            страница[поле] = {}
+    показано: list[tuple[str, str]] = []
+    размер = len(_dump(страница)) + 400  # запас под `page`
+    for поле, к in ключи[начало:]:
+        кусок = len(_dump({к: answer[поле][к]})) + 4
+        if показано and размер + кусок > budget:
+            break
+        страница[поле][к] = answer[поле][к]
+        показано.append((поле, к))
+        размер += кусок
+    дальше = начало + len(показано)
+    страница["page"] = {
+        "offset": начало,
+        "shown": len(показано),
+        "total": len(ключи),
+        "next_offset": дальше if дальше < len(ключи) else None,
+        "paged": list(ADVICE_PAGED),
+        "how": "the same call with offset=next_offset gives the next attributes",
+    }
+    страница["note"] = (
+        f"{answer.get('note', '')} [page of the full answer: attributes {начало}.."
+        f"{дальше - 1 if показано else начало} of {len(ключи)}"
+        + (f"; next page offset={дальше}]" if дальше < len(ключи) else "; last page]")
+    ).strip()
+    return страница
+
+
 @server.tool()
-def model_advice(model: str, attribute: str = "", full: bool = False) -> str:
+def model_advice(model: str, attribute: str = "", full: bool = False, offset: int = 0) -> str:
     """What is known about a generation model: values, tiers, dates, disputes.
 
     Call this before answering any question about what a model can do. It never
@@ -465,8 +689,76 @@ def model_advice(model: str, attribute: str = "", full: bool = False) -> str:
     best tier, whether sources disagree, how fresh they are, how many there
     were. Nothing that distinguishes this base from your memory is dropped —
     the third outcome, the dispute and the availability axis are all in it.
+
+    WHY THE FULL FORM PAGES. The full answer for a model with many variants is
+    larger than this server's response cap (`minimax-h3`: 186 000 characters
+    on 2026-10-15). Rather than being cut, it comes in pages of whole
+    attributes: `page.next_offset` names where the next page starts — call
+    again with `full=True, offset=<next_offset>`. Asking for one `attribute`
+    is the cheaper way when you know what you need.
+
+    :param offset: with `full=True`, the first attribute of the page.
     """
-    return _json(advise_and_note(model, attribute, brief=not full))
+    refused = name_too_long(model, attribute)
+    if refused is not None:
+        return _json(refused)
+    if not full:
+        return _json(advise_and_note(model, attribute, brief=True))
+    # Журнал вопросов пишется на первой странице: листание — тот же вопрос.
+    if int(offset or 0) > 0:
+        answer = advice.advise(model, attribute)
+    else:
+        answer = advise_and_note(model, attribute, brief=False)
+    return _json(page_full_advice(answer, offset))
+
+
+#: ПОТОЛОК ДЛИНЫ АТРИБУТА (и имени модели, если слой имён своего не назвал).
+#: НАЙДЕНО валидатором 2026-10-14 (G11): имя любой длины уходило в `advice`
+#: (свёртка всей базы на каждое имя) и в журнал вопросов `misses.jsonl`.
+#: ВЫБРАНО 200: валидатор назвал это число; 200 знаков — уже не имя, а
+#: вставленный текст.
+MAX_NAME_CHARS = 200
+
+
+def model_name_limit() -> int:
+    """Потолок имени МОДЕЛИ — у слоя имён (`modelnames.MAX_NAME_LENGTH`, Е1).
+
+    Слой имён правит другой агент, и он назвал своё число (120) раньше, чем
+    сюда пришло требование «≤ 200»; два потолка на одно имя разъехались бы.
+    Без его константы (старый слой) действует `MAX_NAME_CHARS`.
+    """
+    from studio.selfrag import modelnames
+
+    return int(getattr(modelnames, "MAX_NAME_LENGTH", MAX_NAME_CHARS))
+
+
+def name_too_long(model: str, attribute: str = "") -> dict | None:
+    """Отказ `fail` для слишком длинного имени; None — имя годно.
+
+    Проверка ДО консультации и ДО записи в журнал вопросов: отказанное имя
+    не должно оставлять следа нигде. (`advice.advise` отказывает тоже, но
+    уже после того, как вопрос записан бы в `misses.jsonl`.)
+    """
+    limits = {"model": model_name_limit(), "attribute": MAX_NAME_CHARS}
+    for label, value in (("model", model), ("attribute", attribute)):
+        length = len(str(value or ""))
+        if length > limits[label]:
+            return {
+                "outcome": FAIL,
+                "checked": 1,
+                "violations": 1,
+                "unmeasured": 0,
+                "reason": (
+                    getattr(advice, "REASON_NAME_TOO_LONG", "name_too_long")
+                    if label == "model"
+                    else "attribute_too_long"
+                ),
+                "note": (
+                    f"{label} is {length} characters; at most {limits[label]}. Nothing was "
+                    "looked up and nothing was journaled — pass the bare name, e.g. 'kling-3.0'"
+                ),
+            }
+    return None
 
 
 @server.tool()
@@ -633,7 +925,9 @@ def analyse_creative(path: str, frames_dir: str = "", loop: bool = False) -> str
 
 
 @server.tool()
-def plan_pipeline(brief: str, creative: str = "", budget_usd: float = 0.0) -> str:
+def plan_pipeline(
+    brief: str, creative: str = "", budget_usd: float = 0.0, full: bool = False
+) -> str:
     """Build a PIPELINE from what the customer said, then judge it immediately.
 
     This is the tool for "here is the job, what do I run" — the question that
@@ -667,7 +961,11 @@ def plan_pipeline(brief: str, creative: str = "", budget_usd: float = 0.0) -> st
         the ceiling is read out of the BRIEF itself — "бюджет 0.5 доллара",
         "не дороже 2 долларов за ролик" — and the currency must be named: a
         bare number is reported as unreadable rather than guessed at. Nothing
-        is ever treated as "free".
+        is ever treated as "free". A negative, NaN or infinite ceiling is
+        refused (`fail`) before anything is planned.
+    :param full: the planner's full form (every candidate and its evidence)
+        instead of the compact one. Passed on only when this server's planner
+        accepts it; otherwise `ignored_params` names it.
 
     WHEN A CEILING IS KNOWN, PRICE IS THE SENIOR SORT KEY, because the money is
     the customer's decision and not the tool's. Each candidate comes back in one
@@ -767,6 +1065,12 @@ def plan_pipeline(brief: str, creative: str = "", budget_usd: float = 0.0) -> st
     # «те же слова отвергаются в брифе» — утверждение о поведении продукта,
     # которого у продукта не было: проверку запрещённых тем не звал никто.
     # Теперь это правда, и правдой её делает код, а не нота.
+    # БЮДЖЕТ ПРОВЕРЯЕТСЯ ПЕРВЫМ — это самая дешёвая проверка (П2).
+    # НАЙДЕНО валидатором 2026-10-14 (G11): `budget_usd=-5` молча значил «не
+    # задан» (ветка `> 0`), а NaN проходил сравнением, которое всегда ложно.
+    ошибка_бюджета = budget_refusal(budget_usd)
+    if ошибка_бюджета is not None:
+        return _json(ошибка_бюджета)
     просев = screen.просеять(brief)
     if просев["outcome"] == UNMEASURED:
         # БЕССЛОВЕСНЫЙ БРИФ — ТРЕТИЙ ИСХОД, А НЕ ОТКАЗ. НАЙДЕНО восьмой
@@ -797,10 +1101,8 @@ def plan_pipeline(brief: str, creative: str = "", budget_usd: float = 0.0) -> st
             }
         )
 
-    итог = planner.plan(
-        brief,
-        creative=creative,
-        budget_usd=budget_usd if budget_usd > 0 else None,
+    итог, пропущено = plan_call(
+        brief, creative=creative, budget_usd=float(budget_usd or 0.0), full=bool(full)
     )
     # ЗАЯВЛЕНИЯ ЗАКАЗЧИКА — КОММЕНТАРИЙ К СОБРАННОМУ ПЛАНУ, А НЕ ОТКАЗ.
     # ВОСПРОИЗВЕДЕНО 2026-09-07: бриф «наш БАД излечивает диабет за две недели,
@@ -826,7 +1128,69 @@ def plan_pipeline(brief: str, creative: str = "", budget_usd: float = 0.0) -> st
     итог["checked"] = int(итог.get("checked") or 0) + просев["checked"]
     if просев["risks"]:
         итог["note"] = f"{итог.get('note', '')}. {screen.предупреждение(просев['risks'])}"
+    if пропущено:
+        итог["ignored_params"] = пропущено
+        итог["note"] = (
+            f"{итог.get('note', '')} [not applied — this server's planner does not take "
+            f"{', '.join(пропущено)} yet]"
+        ).strip()
     return _json(итог)
+
+
+def budget_refusal(budget_usd: Any) -> dict | None:
+    """Отказ `fail` для негодного потолка бюджета; None — годен (0 = «не задан»)."""
+    try:
+        value = float(budget_usd)
+    except (TypeError, ValueError):
+        value = float("nan")
+    if isinstance(budget_usd, bool) or math.isnan(value) or math.isinf(value) or value < 0:
+        return {
+            "outcome": FAIL,
+            "checked": 1,
+            "violations": 1,
+            "unmeasured": 0,
+            "reason": "budget_invalid",
+            "classes": [],
+            "steps": [],
+            "question": None,
+            "note": (
+                f"budget_usd={budget_usd!r} is not a ceiling: it must be a finite number, "
+                "0 or more (0 means 'read it from the brief'). Nothing was planned"
+            ),
+        }
+    return None
+
+
+def plan_call(
+    brief: str,
+    *,
+    creative: str = "",
+    budget_usd: float = 0.0,
+    full: bool = False,
+    plan_fn: Any = None,
+) -> tuple[dict, list[str]]:
+    """Позвать планировщик с теми параметрами, которые он ПРИНИМАЕТ.
+
+    Та же форма, что `stale_call`: `full` добавляет агент планировщика
+    параллельно (2026-10-14), и пока его правка не легла, параметр не
+    передаётся — но и не теряется молча: он возвращается в списке пропущенных.
+    """
+    fn = plan_fn or planner.plan
+    kwargs: dict[str, Any] = {
+        "creative": creative,
+        "budget_usd": budget_usd if budget_usd > 0 else None,
+    }
+    try:
+        accepted = set(inspect.signature(fn).parameters)
+    except (TypeError, ValueError):
+        accepted = set()
+    ignored: list[str] = []
+    if full:
+        if "full" in accepted:
+            kwargs["full"] = True
+        else:
+            ignored.append("full")
+    return dict(fn(brief, **kwargs)), ignored
 
 
 def stale_call(
@@ -835,6 +1199,7 @@ def stale_call(
     model: str = "",
     limit: int = 0,
     full: bool = False,
+    offset: int = 0,
     stale_fn: Any = None,
 ) -> dict:
     """Позвать `advice.stale` с теми параметрами, которые он ПРИНИМАЕТ.
@@ -875,11 +1240,49 @@ def stale_call(
         wanted["full"] = True
     # Агент `advice.py` назвал параметр `top` (2026-10-14); наш инструмент
     # говорит `limit`. Одно и то же число, два имени — переводим, а не теряем.
+    try:
+        начало = max(0, int(offset or 0))
+    except (TypeError, ValueError):
+        начало = 0
+    # ПОЛНАЯ ФОРМА ЛИСТАЕТСЯ. НАЙДЕНО валидатором 2026-10-14 (G11):
+    # `full=True` отдавал все строки разом (27 669 символов на живой базе).
+    # Если `advice.stale` сам умеет `offset` — ему и листать. Если нет, листает
+    # сервер: `top` у `advice` действует только на краткую форму, так что
+    # передавать его в полную бессмысленно.
+    листать_здесь = (
+        bool(full)
+        and "full" in accepted
+        and "offset" not in accepted
+        and (начало > 0 or ("limit" in wanted and "limit" not in accepted))
+    )
+    if листать_здесь:
+        страница = int(wanted.pop("limit", 0) or 0)
+    elif начало > 0:
+        wanted["offset"] = начало
     if "limit" in wanted and "limit" not in accepted and "top" in accepted:
         wanted["top"] = wanted.pop("limit")
     passed = {k: v for k, v in wanted.items() if k in accepted}
     ignored = sorted(set(wanted) - set(passed))
     out = dict(fn(days=age, **passed))
+    # СТРАНИЦА ОБЯЗАНА ВЛЕЗТЬ ПОД ПОТОЛОК ЦЕЛИКОМ (сборка 2026-10-15). Полная
+    # форма `advice.stale` листает по 100 строк (~100 КБ), а `cap_response`
+    # режет списки вдвое — и `next_offset=100` от `advice` пропускал строки
+    # 50–99: их не показал ни этот ответ, ни следующий. Страница ужимается
+    # ЗДЕСЬ, вызовом с меньшим `top`, и тогда `next_offset` честен.
+    if full and "top" in accepted and "offset" in accepted and not листать_здесь:
+        страница_ = int(passed.get("top") or 0) or int(getattr(advice, "STALE_FULL_PAGE", 100))
+        предел = MAX_RESPONSE_CHARS - _CAP_RESERVE
+        while страница_ > 1 and len(_dump(out)) > предел:
+            # Первая оценка — по доле (один перевызов вместо трёх-четырёх
+            # делений пополам: каждый вызов перечитывает базу); если строки
+            # неровные и не влезло — дальше пополам.
+            доля = предел / max(1, len(_dump(out)))
+            страница_ = max(1, min(страница_ // 2, int(страница_ * доля * 0.9)))
+            passed["top"] = страница_
+            out = dict(fn(days=age, **passed))
+            out["page_rows"] = страница_
+    if листать_здесь:
+        out = _page_lists(out, начало, страница)
     if ignored:
         out["ignored_params"] = ignored
         out["note"] = (
@@ -889,9 +1292,39 @@ def stale_call(
     return out
 
 
+#: Списки ответа `advice.stale`, которые листаются.
+STALE_LISTS = ("stale", "undated", "published_and_old", "blocked_source")
+
+
+def _page_lists(out: dict, offset: int, limit: int) -> dict:
+    """Срез каждого списка `STALE_LISTS` [offset : offset+limit] и где продолжить."""
+    totals = {key: len(out.get(key) or []) for key in STALE_LISTS if key in out}
+    end = offset + limit if limit > 0 else None
+    for key in totals:
+        out[key] = list(out.get(key) or [])[offset:end]
+    more = end is not None and any(n > end for n in totals.values())
+    out["page"] = {
+        "offset": offset,
+        "limit": limit,
+        "totals": totals,
+        "next_offset": end if more else None,
+        "paged_by": "server",
+    }
+    out["note"] = (
+        f"{out.get('note', '')} [page: rows {offset}..{end if end is not None else 'end'} of "
+        + ", ".join(f"{k} {n}" for k, n in totals.items())
+        + (f"; next page offset={end}]" if more else "; last page]")
+    ).strip()
+    return out
+
+
 @server.tool()
 def stale_model_facts(
-    days: int = STALE_AFTER_DAYS, model: str = "", limit: int = 0, full: bool = False
+    days: int = STALE_AFTER_DAYS,
+    model: str = "",
+    limit: int = 0,
+    full: bool = False,
+    offset: int = 0,
 ) -> str:
     """Which recorded claims are old enough to be worth re-checking on the web.
 
@@ -899,12 +1332,15 @@ def stale_model_facts(
     :param model: only this model's claims; empty for all.
     :param limit: at most this many rows per list; 0 for the default.
     :param full: every row in full rather than the compact listing.
+    :param offset: with `full=True`, the first row of each list to return;
+        together with `limit` this pages the full form (`page.next_offset`
+        says where the next page starts).
 
     `model`, `limit` and `full` are passed on only when the fact base's
     `stale` accepts them; otherwise the answer names them under
     `ignored_params` rather than pretending they were applied.
     """
-    return _json(stale_call(days, model=model, limit=limit, full=full))
+    return _json(stale_call(days, model=model, limit=limit, full=full, offset=offset))
 
 
 def запрос_корпуса(intent: str) -> str:
@@ -1070,6 +1506,12 @@ def search_web(query: str, site: str = "", count: int = 8) -> str:
     Gemini, Serper and Programmable Search answered; Brave, Tavily and Exa were
     refused by its egress policy.
 
+    A billing or quota refusal is remembered for an hour in this process and
+    that backend is then SKIPPED (named in `attempts` with `skipped: true`)
+    rather than asked again. Yandex Search is the last backend and runs only
+    with `STUDIO_SEARCH_ALLOW_YANDEX=1`. `query` is echoed on every answer,
+    refusals included.
+
     If NO backend can answer, the result is `could not measure` with
     `client_side`: ready-to-run queries for YOUR OWN web search tool. Run them,
     and record what you find with `record_model_fact`.
@@ -1120,7 +1562,9 @@ def fetch_url(
     :param why_wanted: what you were trying to learn. It is carried into the
         denial record, so the allowlist request explains itself.
     :param max_chars: how much text to return in this call (default 20000,
-        at most 80000).
+        at most 80000 — but every answer of this server is held under
+        `MAX_RESPONSE_CHARS` (40000) characters of JSON, so a larger piece is
+        cut there and `next_offset` points at the first character NOT returned).
     :param offset: where in the extracted text to start.
     :param raw: return the body as received instead of extracted text.
     """
@@ -1282,8 +1726,13 @@ def propose_measurement(
 def measurement_proposals(state: str = "") -> str:
     """What measurements have been filed, and what is waiting on the operator.
 
-    :param state: "proposed", "approved", "declined" or "recorded"; empty for
-        all of them.
+    :param state: "proposed", "approved", "declined", "recorded" or
+        "answered_by_base"; empty for all of them.
+
+    An OPEN proposal the fact base has since come to answer is marked
+    `answered_by_base` in the listing (and named in the note) — do not ask the
+    operator to pay for it. The listing never writes; closing such proposals
+    is the operator's `python scripts/measurement.py close-answered`.
     """
     return _json(proposal.proposals(state=state))
 

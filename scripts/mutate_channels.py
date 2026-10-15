@@ -704,6 +704,43 @@ MUTANTS: list[tuple[str, str, str, str, str]] = [
         "схемы: молчащий хост переспрашивается пять раз",
         "studio.mcp.tests.test_ingest_schema",
     ),
+    # --- синхронизация каталога fal (scripts/sync_fal_catalog.py) -----------
+    (
+        "scripts/sync_fal_catalog.py",
+        "    if any(к in НЕ_МОДЕЛЬ for к in куски):\n        return False",
+        "    if False:\n        return False",
+        "каталог fal: LoRA и тренеры попадают в охват как модели",
+        "studio.tests.test_sync_fal_catalog",
+    ),
+    (
+        "scripts/sync_fal_catalog.py",
+        "        if с.однородная and кусок in БАЗОВЫЙ_РЕЖИМ:\n            continue",
+        "        if False:\n            continue",
+        "каталог fal: картиночная модель получает суффикс режима и расходится с базой",
+        "studio.tests.test_sync_fal_catalog",
+    ),
+    (
+        "scripts/sync_fal_catalog.py",
+        'and float(биллинг["price"]) > 0:',
+        ":",
+        "каталог fal: нулевая цена compute-секунд записывается как «$0»",
+        "studio.tests.test_sync_fal_catalog",
+    ),
+    # --- импорт цен LiteLLM (scripts/import_litellm_prices.py) ---------------
+    (
+        "scripts/import_litellm_prices.py",
+        "        if к in КАЧЕСТВО and not остаток:",
+        "        if False:",
+        "LiteLLM: качество из ключа читается как часть имени модели",
+        "studio.tests.test_import_litellm_prices",
+    ),
+    (
+        "scripts/import_litellm_prices.py",
+        '        if not isinstance(поля, dict) or поля.get("mode") not in РЕЖИМЫ:',
+        "        if not isinstance(поля, dict):",
+        "LiteLLM: чатовые модели идут в медийные цены",
+        "studio.tests.test_import_litellm_prices",
+    ),
     # --- канал портала ------------------------------------------------------
     (
         "scripts/ingest_portal.py",
@@ -1480,8 +1517,8 @@ MUTANTS: list[tuple[str, str, str, str, str]] = [
     ),
     (
         "scripts/retier_facts.py",
-        'METHOD_TIERS = ("probe", "paper", "benchmark")',
-        "METHOD_TIERS = ()",
+        "IDENTITY_TIERS = (TIER_VENDOR, TIER_PORTAL, TIER_BLOG)",
+        'IDENTITY_TIERS = (TIER_VENDOR, TIER_PORTAL, TIER_BLOG, "probe", "paper", "benchmark", "operator")',
         "перетир: ступень-метод перезаписывается по адресу — решаем за записавшего, чем была находка",
         "studio.mcp.tests.test_retier_reads_states",
     ),
@@ -1490,6 +1527,20 @@ MUTANTS: list[tuple[str, str, str, str, str]] = [
         '        out["read_directly"] = row.get("read_directly")',
         '        out["read_directly"] = False',
         "перетир: неизвестное объявляется непрочитанным — 1007 строк зря",
+        "studio.mcp.tests.test_retier_reads_states",
+    ),
+    (
+        "scripts/retier_facts.py",
+        '    if row.get("withdrawn"):\n        return out\n',
+        "",
+        "перетир: строке отзыва штампуется ступень — отзыв перестаёт выглядеть отзывом",
+        "studio.mcp.tests.test_retier_reads_states",
+    ),
+    (
+        "scripts/retier_facts.py",
+        '    elif host and host in refused and row.get("read_directly") is not True:',
+        "    elif host and host in refused:",
+        "перетир: явное «прочитано» записавшего переворачивается поздним отказом хоста",
         "studio.mcp.tests.test_retier_reads_states",
     ),
     (

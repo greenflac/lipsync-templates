@@ -49,7 +49,21 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from studio.mcp import routes  # noqa: E402
+from studio.mcp import fetch  # noqa: E402
 from studio.mcp.fetch import DENIED_PATH, STATE_REFUSED, note_open  # noqa: E402
+
+
+def журнал_отказов(*, writing: bool = False) -> Path | None:
+    """Журнал, который читают и пишут, — по `fetch.denied_path` (Е1).
+
+    До 2026-10-15 скрипт брал `DENIED_PATH` напрямую и мимо
+    `STUDIO_DENIED_PATH` / `STUDIO_NO_JOURNAL` дописывал в репозиторный
+    журнал. None — только для записи, когда она выключена.
+    """
+    if writing:
+        return fetch.denied_path(writing=True)
+    return fetch.denied_path() or DENIED_PATH
+
 
 #: Подпись прокси под отказом ПОЛИТИКИ. Всё остальное — не отказ: 502 от
 #: туннеля значит «шлюз лёг», и записать его отказом значит закрыть себе хост
@@ -127,7 +141,10 @@ def подтвердить_отказ(host: str, url: str, причина: str, 
     остаётся протухшим и перепрощупывается каждый заход. Поэтому строка
     пишется здесь и помечена `incidental`, чтобы не раздувать заявку.
     """
-    with DENIED_PATH.open("a", encoding="utf-8") as handle:
+    путь = журнал_отказов(writing=True)
+    if путь is None:
+        return
+    with путь.open("a", encoding="utf-8") as handle:
         handle.write(
             json.dumps(
                 {
@@ -154,7 +171,7 @@ def свести(*, today: str = "", path: Path | None = None) -> dict:
         сегодня закрытых протухшим отказом семей нет, и проверка, которая
         никогда не краснела, неотличима от проверки, которая не умеет.
     """
-    журнал = path or DENIED_PATH
+    журнал = path or журнал_отказов() or DENIED_PATH
     прочитано, битых = строки(журнал)
     последнее: dict[str, dict] = {}
     for row in прочитано:
@@ -210,7 +227,7 @@ def main() -> int:
         return 0
 
     today = args.today or date.today().isoformat()
-    цели = протухшие(DENIED_PATH, today=today)
+    цели = протухшие(журнал_отказов() or DENIED_PATH, today=today)
     if args.limit:
         цели = цели[: args.limit]
     if not цели:

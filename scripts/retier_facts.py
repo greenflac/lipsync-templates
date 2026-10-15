@@ -27,6 +27,17 @@ guessing either way would invent evidence.
 
 Run:  python scripts/retier_facts.py [--write]
 Without `--write` it only prints what it would change.
+
+APPEND-ONLY SINCE 2026-10-15. `--write` used to rewrite the whole file, and
+the file is a log guarded by `scripts/check_append_only.py` («прежние на
+месте»). A rewrite would also have stamped a tier onto the 581 withdrawal rows
+(`"withdrawn": true` rows carry no tier) and re-tiered `operator` rows, a
+method rung this script predates. Now: only the LATEST live row of each claim
+(the row `load_facts` reads) is decided, and where the decision differs, the
+decided row is APPENDED — the latest row wins, so the claim moves and the
+history stays. A second run appends nothing. `read_directly` is only filled
+in (None -> False); an explicit True stated by the recorder is not flipped by
+a refusal measured later.
 """
 
 from __future__ import annotations
@@ -48,8 +59,15 @@ from studio.selfrag.facts import (  # noqa: E402
     TIER_VENDOR,
 )
 
-#: Rungs decided by how the fact was obtained, which this script never rewrites.
-METHOD_TIERS = ("probe", "paper", "benchmark")
+#: The only rungs a URL decides. Anything else — the method rungs (`probe`,
+#: `paper`, `benchmark`), `operator`, and whatever the ladder gains later — is
+#: the recorder's to state. NAMED BY WHAT IS REWRITTEN since 2026-10-15: the
+#: earlier list of rungs NOT to rewrite (`METHOD_TIERS`) predated `operator`,
+#: and a dry run would have moved 9 operator rows to `blog`.
+IDENTITY_TIERS = (TIER_VENDOR, TIER_PORTAL, TIER_BLOG)
+
+#: Appended to the note of a re-tiered row, so the duplicate says why it exists.
+RETIER_NOTE = "[retier: source_hosts]"
 
 #: The phrase the earlier session used when it recorded a vendor page it had
 #: only seen quoted. Matched as a substring, lowercased.
@@ -81,8 +99,10 @@ def refused_hosts() -> set[str]:
 def decide(row: dict, refused: set[str]) -> dict:
     """The row as it should read. Pure: same inputs, same output, every run."""
     out = dict(row)
+    if row.get("withdrawn"):
+        return out
     tier = str(row.get("tier", "")).strip().lower()
-    if tier not in METHOD_TIERS:
+    if tier in IDENTITY_TIERS or not tier:
         out["tier"] = source_hosts.classify(
             str(row.get("model", "")),
             str(row.get("source_url", "")),
@@ -96,10 +116,44 @@ def decide(row: dict, refused: set[str]) -> dict:
         out["read_directly"] = True
     elif SUMMARY_MARKER in str(row.get("note", "")).lower():
         out["read_directly"] = False
-    elif host and host in refused:
+    elif host and host in refused and row.get("read_directly") is not True:
         out["read_directly"] = False
     else:
         out["read_directly"] = row.get("read_directly")
+    return out
+
+
+def claim_key(row: dict) -> tuple[str, str, str, str]:
+    """The key `load_facts` reads a claim by (model, attribute, value, URL)."""
+    return (
+        str(row.get("model", "")).strip().lower(),
+        str(row.get("attribute", "")).strip().lower(),
+        str(row.get("value", "")),
+        str(row.get("source_url", "")),
+    )
+
+
+def plan(lines: list[str], refused: set[str]) -> list[tuple[dict, dict]]:
+    """(latest row, decided row) for every live claim whose decision differs."""
+    latest: dict[tuple[str, str, str, str], dict] = {}
+    for line in lines:
+        stripped = line.strip()
+        if not stripped or stripped.startswith("//"):
+            continue
+        row = json.loads(stripped)
+        latest[claim_key(row)] = row
+    out: list[tuple[dict, dict]] = []
+    for row in latest.values():
+        if row.get("withdrawn"):
+            continue
+        new = decide(row, refused)
+        if new.get("tier") != row.get("tier") or new.get("read_directly") != row.get(
+            "read_directly"
+        ):
+            note = str(new.get("note") or "")
+            if RETIER_NOTE not in note:
+                new["note"] = f"{note} {RETIER_NOTE}".strip()
+            out.append((row, new))
     return out
 
 
@@ -108,43 +162,33 @@ def main() -> int:
     refused = refused_hosts()
     print(f"hosts measured refused: {len(refused)}")
 
-    lines = DEFAULT_FACTS_PATH.read_text(encoding="utf-8").splitlines()
-    out_lines: list[str] = []
+    text = DEFAULT_FACTS_PATH.read_text(encoding="utf-8")
+    changes = plan(text.splitlines(), refused)
     moved: Counter[str] = Counter()
-    read_flags: Counter[str] = Counter()
-    changed = 0
-
-    for line in lines:
-        stripped = line.strip()
-        if not stripped or stripped.startswith("//"):
-            out_lines.append(line)
-            continue
-        row = json.loads(stripped)
-        new = decide(row, refused)
-        if new["tier"] != row.get("tier"):
-            moved[f"{row.get('tier')} -> {new['tier']}"] += 1
-            changed += 1
-            print(
-                f"  {row['model']:16} {row['attribute']:24} "
-                f"{row.get('tier'):8} -> {new['tier']:8} "
-                f"{source_hosts.host_of(str(row.get('source_url', '')))}"
-            )
-        read_flags[str(new.get("read_directly"))] += 1
-        out_lines.append(json.dumps(new, ensure_ascii=False))
-
-    print(
-        f"\nrows {len([x for x in lines if x.strip() and not x.startswith('//')])}, "
-        f"tier changed {changed}"
-    )
+    for row, new in changes:
+        what = (
+            f"{row.get('tier')} -> {new.get('tier')}"
+            if new.get("tier") != row.get("tier")
+            else f"read_directly {row.get('read_directly')} -> {new.get('read_directly')}"
+        )
+        moved[what] += 1
+        print(
+            f"  {str(row.get('model')):16} {str(row.get('attribute')):24} {what:24} "
+            f"{source_hosts.host_of(str(row.get('source_url', '')))}"
+        )
+    print(f"\nclaims to re-state: {len(changes)}")
     for move, n in sorted(moved.items()):
-        print(f"  {move:24} {n}")
-    print("read_directly:", dict(sorted(read_flags.items())))
+        print(f"  {move:32} {n}")
 
-    if write:
-        DEFAULT_FACTS_PATH.write_text("\n".join(out_lines) + "\n", encoding="utf-8")
-        print(f"\nwritten to {DEFAULT_FACTS_PATH}")
-    else:
-        print("\ndry run; pass --write to apply")
+    if write and changes:
+        tail = "" if text.endswith("\n") else "\n"
+        with DEFAULT_FACTS_PATH.open("a", encoding="utf-8") as fh:
+            fh.write(
+                tail + "".join(json.dumps(new, ensure_ascii=False) + "\n" for _, new in changes)
+            )
+        print(f"\nappended {len(changes)} row(s) to {DEFAULT_FACTS_PATH}")
+    elif not write:
+        print("\ndry run; pass --write to append")
     return 0
 
 

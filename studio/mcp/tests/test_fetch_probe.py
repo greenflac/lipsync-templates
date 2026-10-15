@@ -499,5 +499,133 @@ class FactTiers(unittest.TestCase):
         assert store.claims("m", "a")["outcome"] == "could not measure"
 
 
+class DenialJournalFollowsTheEnvironment(unittest.TestCase):
+    """G13, 2026-10-14: read-only tools (`search_web`, `fetch_url`) appended to
+    the git-tracked `denied_hosts.jsonl` even with `STUDIO_NO_JOURNAL=1`.
+
+    The default path is replaced by a temp file in BOTH names — `DENIED_PATH`
+    and `_DEFAULT_DENIED_PATH` — so the module believes nobody patched it and
+    the environment decides; a defect then writes to the temp file, never to
+    the real journal."""
+
+    def setUp(self) -> None:
+        self._dir = TemporaryDirectory()
+        self.addCleanup(self._dir.cleanup)
+        self.default = Path(self._dir.name) / "default.jsonl"
+        for name in ("DENIED_PATH", "_DEFAULT_DENIED_PATH"):
+            patcher = mock.patch.object(fetch, name, self.default)
+            patcher.start()
+            self.addCleanup(patcher.stop)
+
+    def _deny(self, env: dict) -> dict:
+        error = urllib.error.URLError(DENIAL_TEXT)
+        with mock.patch.dict("os.environ", env, clear=True):
+            with mock.patch.object(fetch.urllib.request, "urlopen", side_effect=error):
+                return fetch.fetch("https://arxiv.org/abs/1", why_wanted="a paper")
+
+    def test_no_journal_writes_nothing_and_says_so(self) -> None:
+        out = self._deny({"STUDIO_NO_JOURNAL": "1"})
+        assert out["denied"] is True
+        assert not self.default.exists(), "STUDIO_NO_JOURNAL=1 must stop the write"
+        assert "NOT recorded" in out["note"]
+
+    def test_no_journal_0_still_writes(self) -> None:
+        """Negative control: `0` is the documented "off" value of the switch."""
+        self._deny({"STUDIO_NO_JOURNAL": "0"})
+        assert self.default.exists()
+
+    def test_by_default_the_owner_journal_is_written_as_before(self) -> None:
+        out = self._deny({})
+        assert json.loads(self.default.read_text(encoding="utf-8"))["host"] == "arxiv.org"
+        assert "Recorded" in out["note"]
+
+    def test_the_path_can_be_redirected(self) -> None:
+        other = Path(self._dir.name) / "elsewhere.jsonl"
+        self._deny({"STUDIO_DENIED_PATH": str(other)})
+        assert not self.default.exists()
+        assert json.loads(other.read_text(encoding="utf-8"))["host"] == "arxiv.org"
+        with mock.patch.dict("os.environ", {"STUDIO_DENIED_PATH": str(other)}, clear=True):
+            assert fetch.последние_состояния().get("arxiv.org") == "refused", "reads follow too"
+
+    def test_note_open_obeys_the_switch_too(self) -> None:
+        self.default.write_text(
+            json.dumps({"host": "x.test", "state": "refused"}) + "\n", encoding="utf-8"
+        )
+        before = self.default.read_text(encoding="utf-8")
+        with mock.patch.dict("os.environ", {"STUDIO_NO_JOURNAL": "1"}, clear=True):
+            got = fetch.note_open("https://x.test/")
+        assert got["recorded"] is False
+        assert self.default.read_text(encoding="utf-8") == before
+
+    def test_an_explicitly_patched_path_beats_the_environment(self) -> None:
+        explicit = Path(self._dir.name) / "explicit.jsonl"
+        with mock.patch.object(fetch, "DENIED_PATH", explicit):
+            self._deny({"STUDIO_NO_JOURNAL": "1"})
+        assert explicit.exists()
+
+    def test_routes_reads_the_redirected_journal(self) -> None:
+        """Сборка 2026-10-15: `routes` брал имя `DENIED_PATH`, импортированное
+        при загрузке, и мимо среды читал репозиторный журнал."""
+        from studio.mcp import routes
+
+        other = Path(self._dir.name) / "elsewhere.jsonl"
+        other.write_text(
+            json.dumps({"host": "x.test", "state": "refused", "first_seen": "2026-10-01"}) + "\n",
+            encoding="utf-8",
+        )
+        with mock.patch.dict("os.environ", {"STUDIO_DENIED_PATH": str(other)}, clear=True):
+            assert routes._denial_states().get("x.test", ("",))[0] == "refused"
+        with mock.patch.dict("os.environ", {}, clear=True):
+            assert "x.test" not in routes._denial_states()
+
+    def test_reprobe_confirmation_obeys_the_switch_and_the_path(self) -> None:
+        import importlib.util
+
+        spec = importlib.util.spec_from_file_location(
+            "reprobe_hosts_under_test",
+            Path(__file__).resolve().parents[3] / "scripts" / "reprobe_hosts.py",
+        )
+        assert spec is not None and spec.loader is not None
+        reprobe = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(reprobe)
+        with mock.patch.dict("os.environ", {"STUDIO_NO_JOURNAL": "1"}, clear=True):
+            reprobe.подтвердить_отказ("x.test", "https://x.test/", "403", "2026-10-15")
+        assert not self.default.exists(), "STUDIO_NO_JOURNAL=1 must stop the reprobe write"
+        other = Path(self._dir.name) / "elsewhere.jsonl"
+        with mock.patch.dict("os.environ", {"STUDIO_DENIED_PATH": str(other)}, clear=True):
+            reprobe.подтвердить_отказ("x.test", "https://x.test/", "403", "2026-10-15")
+            assert reprobe.журнал_отказов() == other
+        assert not self.default.exists()
+        assert json.loads(other.read_text(encoding="utf-8"))["host"] == "x.test"
+
+
+class InvalidIpLiterals(unittest.TestCase):
+    """G13: `reachable_hosts('999.999.999.999')` was taken for a host name and
+    journaled — every label is digits, and digits are allowed in a label."""
+
+    def test_bad_ipv4_literals_are_not_hosts(self) -> None:
+        for raw in ("999.999.999.999", "256.1.1.1", "1.2.3", "https://300.1.1.1/x"):
+            with self.subTest(raw=raw):
+                host, why = fetch.нормализовать_хост(raw)
+                assert host == ""
+                assert "invalid IP literal" in why
+
+    def test_good_literals_and_names_still_pass(self) -> None:
+        assert fetch.нормализовать_хост("8.8.8.8") == ("8.8.8.8", "")
+        assert fetch.нормализовать_хост("a1.example.com") == ("a1.example.com", "")
+        assert fetch.нормализовать_хост("123.example.com") == ("123.example.com", "")
+
+    def test_reachability_neither_probes_nor_records_it(self) -> None:
+        with TemporaryDirectory() as tmp:
+            denied = Path(tmp) / "d.jsonl"
+            with mock.patch.object(fetch, "DENIED_PATH", denied):
+                with mock.patch.object(fetch, "fetch") as probe_call:
+                    out = fetch.reachability(["999.999.999.999"])
+            assert probe_call.call_count == 0
+            assert not denied.exists()
+        assert out["outcome"] == "fail"
+        assert out["invalid"][0]["input"] == "999.999.999.999"
+
+
 if __name__ == "__main__":
     unittest.main()

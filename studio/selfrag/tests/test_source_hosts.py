@@ -369,10 +369,6 @@ class TheHostIsNotAlwaysTheAuthor(unittest.TestCase):
         )
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class ComfyOrgIsAPlatformNotARepository(unittest.TestCase):
     """A path prefix, added 2026-08-30, and why it is not the whole host.
 
@@ -574,3 +570,57 @@ class ДлинныйКлючНеБеднееКороткого(unittest.TestCase
                 and set(S.VENDOR_SOURCES[k]) - set(S.VENDOR_SOURCES[d])
             ]
             self.assertEqual(беднее, ["вендор2"])
+
+
+def _тир(model: str, url: str) -> str:
+    return S.classify(model, url, vendor_tier="vendor", portal_tier="portal", blog_tier="blog")
+
+
+class ВторойРаундСбора(unittest.TestCase):
+    """2026-10-15: вендоры и порталы, чьи строки пришли каталогом fal и LiteLLM."""
+
+    def test_вендорские_доки_своей_семьи_это_vendor(self) -> None:
+        for модель, адрес in (
+            ("xai-grok-imagine-video-1.5", "https://docs.x.ai/docs/models"),
+            ("grok-imagine-image", "https://docs.x.ai/docs/models"),
+            ("happyhorse-1.0-i2v", "https://help.aliyun.com/zh/model-studio/model-pricing"),
+            ("happy-horse-1.1", "https://help.aliyun.com/zh/model-studio/model-pricing"),
+            ("seedream-5-pro", "https://docs.byteplus.com/en/docs/ModelArk"),
+            ("sync-lipsync-v3", "https://sync.so/pricing"),
+            (
+                "sync-lipsync-2",
+                "https://raw.githubusercontent.com/synchronicity-labs/sync-python-sdk/main/README.md",
+            ),
+            ("veed-fabric-1.0", "https://veed.io/"),
+            ("heygen-avatar4-image-to-video", "https://docs.heygen.com/"),
+            ("topaz-upscale-video-precision", "https://www.topazlabs.com/"),
+            ("ltx-2.3", "https://docs.ltx.video/"),
+            ("lightricks-ltx-2", "https://ltx.io/"),
+        ):
+            with self.subTest(модель):
+                self.assertEqual("vendor", _тир(модель, адрес))
+
+    def test_чужая_семья_на_тех_же_доках_это_blog(self) -> None:
+        """И5: хост вендора не делает вендором любую модель."""
+        self.assertEqual("blog", _тир("veo-3.1", "https://docs.x.ai/docs/models"))
+        self.assertEqual("blog", _тир("kling-3.0", "https://sync.so/pricing"))
+
+    def test_ценовой_api_fal_и_прайс_litellm_это_portal(self) -> None:
+        self.assertEqual("portal", _тир("veo-3.1", "https://api.fal.ai/v1/models/pricing"))
+        прайс = "https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json"
+        self.assertEqual("portal", _тир("veo-3.1", прайс))
+        # Остальной raw.githubusercontent.com — по-прежнему чей угодно.
+        self.assertEqual(
+            "blog", _тир("veo-3.1", "https://raw.githubusercontent.com/someone/x/main/a.json")
+        )
+
+    def test_написание_ведёт_к_семье_а_не_становится_семьёй(self) -> None:
+        self.assertNotIn("happyhorse", S.VENDOR_SOURCES)
+        self.assertEqual(S.vendor_sources_for("happyhorse_1_0"), S.VENDOR_SOURCES["happy-horse"])
+        self.assertEqual((), S.vendor_sources_for("happyhorses"))
+        for написание, семья in S.FAMILY_SPELLINGS.items():
+            self.assertIn(семья, S.VENDOR_SOURCES, написание)
+
+
+if __name__ == "__main__":
+    unittest.main()
