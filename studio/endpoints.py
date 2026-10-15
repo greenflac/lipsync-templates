@@ -1026,7 +1026,8 @@ JOB_WORDS: dict[str, tuple[str, ...]] = {
     ),
     UPSCALE_IMAGE: ("upscale-image", "image upscale", "upscale image", "апскейл изображен"),
     UPSCALE_VIDEO: ("upscale-video", "video upscale", "upscale video", "апскейл видео"),
-    RESTORE: ("restore-colorize", "restoration", "colorize", "colourise", "реставрац", "раскрас"),
+    RESTORE: ("restore", "restoration", "реставрац"),
+    COLORIZE: ("colorize", "colourise", "colorization", "раскрас"),
     INTERPOLATE: ("frame-interpolate", "frame interpolation", "interpolation", "slow motion", "интерполяц"),
     TRANSCRIBE: (
         "transcribe-diarize",
@@ -1056,6 +1057,7 @@ BROAD_JOB_WORDS: dict[str, tuple[str, ...]] = {
     "audio": (TTS, MUSIC, SFX),
     "speech": (TTS,),
     "voice": (TTS, VOICE_CLONE),
+    "restore-colorize": (RESTORE, COLORIZE),
 }
 
 #: Короче этого — фраза ловится только целым словом (`tts`, `i2v`, `dub`).
