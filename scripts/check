@@ -416,6 +416,7 @@ async def main() -> None:
         "blocked_hosts",
         "check_lipsync_prompt",
         "fetch_url",
+        "find_models",
         "measurement_proposals",
         "model_advice",
         "plan_pipeline",
