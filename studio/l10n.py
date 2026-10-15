@@ -658,6 +658,16 @@ EN: tuple[tuple[str, str], ...] = (
     (r" — ПОТОЛОК ([\d.]+): работа столько не стоит: самый дешёвый записанный кандидат шага (\S+) стоит ([\d.]+) (\w+)",
      r" — CEILING \1: the work does not cost that little: the cheapest recorded candidate of step \2 costs \3 \4"),
     (r"ПРЕВЫШЕН — наименьшая известная стоимость ([\d.]+) usd", r"over budget — the least known cost is \1 usd"),
+    (r"шаг один стоит ([\d.]+) usd \(", r"this step alone costs \1 usd ("),
+    (r"\) — ВЫШЕ потолка ([\d.]+) usd на весь ролик", r") — ABOVE the ceiling \1 usd for the whole clip"),
+    (r"\) — ВЫШЕ потолка ([\d.]+) usd на шаг", r") — ABOVE the ceiling \1 usd per step"),
+    (r"; и после перевыбора ([\d.]+) usd ВЫШЕ потолка ([\d.]+) usd — дешевле можно только ниже по доводам",
+     r"; and after re-selection \1 usd is ABOVE the ceiling \2 usd — cheaper is only lower on evidence"),
+    (r"; юрисдикцию не спрашиваем — отодвинутая лицензией модель не выиграла бы и при ответе («Q»): ",
+     r"; jurisdiction not asked — the model pushed aside by its licence would not win even with the answer \1: "),
+    (r"веса семьи (\S+): ", r"family weights \1: "),
+    (r"; что этот вариант — опубликованный чекпойнт, в базе НЕ записано",
+     "; that this variant is a published checkpoint is NOT recorded in the base"),
     # --- смета дороже потолка (planner.дороже_потолка)
     (r"смета дороже потолка: наименьшая известная стоимость ([\d.]+) usd против потолка ([\d.]+) usd, в ([\d.]+) раза; ",
      r"the estimate is over the ceiling: the least known cost is \1 usd against a ceiling of \2 usd, \3 times over; "),
@@ -766,6 +776,9 @@ EN_FRAGMENTS: tuple[tuple[str, str], ...] = (
     (r"кадр: ", "frame: "),
     (r", цена: ", ", price: "),
     (r"\. выбран ", ". chose "),
+    (r"(?<![\w-])семья (\S+): ", r"family \1: "),
+    (r" ВЫШЕ потолка ", " ABOVE the ceiling "),
+    (r" на весь ролик", " for the whole clip"),
     (r"\bи\b", "and"),
 )
 
@@ -1170,8 +1183,14 @@ def localise_payload(
             if ks in TRANSPORT_SUBTREES:
                 out[k] = v
                 continue
-            if lang == "en" and not ks.endswith(EN_SUFFIX) and isinstance(obj.get(ks + EN_SUFFIX), str):
-                v = obj[ks + EN_SUFFIX]
+            близнец = obj.get(ks + EN_SUFFIX)
+            # Близнец-список тоже (`options`/`options_en` противоречия брифа,
+            # валидатор 5-го круга): раньше брался только строковый.
+            if lang == "en" and not ks.endswith(EN_SUFFIX) and (
+                isinstance(близнец, str)
+                or (isinstance(близнец, list) and isinstance(v, list) and len(близнец) == len(v))
+            ):
+                v = близнец
             out[k] = localise_payload(
                 v,
                 lang,
