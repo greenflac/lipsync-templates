@@ -348,11 +348,11 @@ import re
         # не деньги. Слово `cost` в имени без денег в значении — ровно та же
         # форма, что у документированного `price_relative`; в семье «условия
         # оплаты» он был единственным ответом и читался как цена.
-        "exact": ("storage_cost",),
         # `gpu_count_recommended` (сколько карт в рецепте вендора) и
         # `gpu_price_per_hour_usd` (ставка аренды карты) — 2026-10-15: оба
         # отвечают на «пойдёт ли на моей карте и во что встанет её час».
-        "подстроки": ("vram", "runs_on", "parameter_count", "gpu_count", "gpu_price"),
+        "exact": ("storage_cost", "gpu_count_recommended", "gpu_price_per_hour_usd"),
+        "подстроки": ("vram", "runs_on", "parameter_count"),
     },
     # НА КАКИХ ЯЗЫКАХ. Подстрока «language» ловит `languages`,
     # `prompt_language`, `language_control`.
