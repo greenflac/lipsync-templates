@@ -324,10 +324,13 @@ class ПослаблениеНеСнимаетЗаслон(unittest.TestCase):
 
     def test_то_же_слово_вне_названия_снова_тема(self) -> None:
         """И5: послабление кончается, как только слово стоит само по себе."""
+        # С 6-ГО КРУГА `king` — титул под политикой людей (`ТИТУЛЫ_ПОД_ПОЛИТИКОЙ`)
+        # и голым словом не отказывается; та же граница — на `celebrity`.
         self.assertIn(
-            "recognisable third parties: king",
-            screen.просеять("Burger King, нужен king в кадре")["banned"],
+            "recognisable third parties: celebrity",
+            screen.просеять("promo for Celebrity Cruises, нужен celebrity в кадре")["banned"],
         )
+        self.assertEqual([], screen.просеять("promo for Celebrity Cruises, 30 seconds")["banned"])
 
     def test_родовое_слово_внутри_пары_не_человек(self) -> None:
         """«Сбер Банка» — не живой человек, хотя пара заглавных налицо."""

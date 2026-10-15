@@ -686,6 +686,24 @@ def _признак_это_имя(метка: str, текст: str) -> bool:
     return not any(с.startswith(признак) for с in слова)
 
 
+#: ТИТУЛЫ, КОТОРЫЕ ЧУЖОЙ СПИСОК (`studio/style.py`, Ц2) ОТКАЗЫВАЕТ ГОЛЫМ
+#: СЛОВОМ, а политика людей (конец модуля) решает по человеку. Валидатор
+#: 6-го круга: «a fictional president of a made-up country announces
+#: elections» и «King prawns on the grill» получали отказ по слову, а «the
+#: president announces a new tax» — отказ там, где правило — вопрос «кто это».
+#: Титул с именем или с глаголом речи ловит `титулованные`; публичный с
+#: заявлением или рекламой — отказ по двум признакам, как и прежде.
+ТИТУЛЫ_ПОД_ПОЛИТИКОЙ: frozenset[str] = frozenset({"president", "pope", "king", "queen"})
+
+
+def _титул_под_политикой(метка: str) -> bool:
+    группа, _, признак = str(метка).partition(":")
+    return (
+        группа.strip() == "recognisable third parties"
+        and признак.strip().lower() in ТИТУЛЫ_ПОД_ПОЛИТИКОЙ
+    )
+
+
 def _роль_без_имени(метка: str, текст: str) -> bool:
     """Названа профессия — и ни имени человека, ни слова о известности рядом.
 
@@ -1002,6 +1020,22 @@ _ИМЯ_ФАМИЛИЯ = re.compile(r"\b([А-ЯЁ][а-яё]+\s+[А-ЯЁ][а-яё
     "звучит как",
     "поздрав",
     "congratulat",
+    "declar",
+    "speech",
+    "речь",
+    "речью",
+    # ОБЪЯВЛЕНИЕ И ЗАЯВЛЕНИЕ — ТОЖЕ ПОЯВЛЕНИЕ (валидатор 6-го круга): «Макрон
+    # объявляет о закрытии границ» без слова «голосом» не называл никого.
+    # «Держит» и «пьёт» — так пишут рекламу с человеком в кадре («Pope Leo XIV
+    # holding our energy drink»).
+    "объявл",
+    "заявл",
+    "заявил",
+    "hold",
+    "держ",
+    "drink",
+    "пьёт",
+    "пьет",
 )
 
 #: СЛОВОСОЧЕТАНИЯ, КОТОРЫЕ НАЗЫВАЮТ ЖАНР, А НЕ ДЕЙСТВИЕ ЧЕЛОВЕКА. Вырезаются
@@ -1351,6 +1385,10 @@ _СЕРИЯ_ЗАГЛАВНЫХ = re.compile(rf"(?<![\w'’-])({_ЗАГЛАВНО
     "шакир",
     "beckham",
     "бекхэм",
+    # ОДНО СЛОВО С ЗАГЛАВНОЙ ВНУТРИ (валидатор 6-го круга): «MrBeast says use
+    # promo code» — серия заглавных его не видит, список — единственный признак
+    # имени, а реклама — второй признак (без пары отказа нет).
+    "mrbeast",
 )
 
 #: КОММЕРЧЕСКИЙ ЗАКАЗ — реклама, продвижение, «наш продукт». Подстрокой по
@@ -1401,6 +1439,16 @@ _СЕРИЯ_ЗАГЛАВНЫХ = re.compile(rf"(?<![\w'’-])({_ЗАГЛАВНО
     "слоган",
     "our logo",
     "наш логотип",
+    # ПРОМОКОД — РЕКЛАМА (валидатор 6-го круга: «MrBeast says use promo code»).
+    "promo code",
+    "promocode",
+    "discount code",
+    "use code",
+    "coupon",
+    "промокод",
+    "купон",
+    "скидк",
+    "% off",
 )
 
 #: СОГЛАСИЕ НАЗВАНО — заказчик говорит, что права на образ/голос у него есть.
@@ -1441,6 +1489,16 @@ _СЕРИЯ_ЗАГЛАВНЫХ = re.compile(rf"(?<![\w'’-])({_ЗАГЛАВНО
     "с её разрешения",
     "с ее разрешения",
     "с разрешения",
+    # КОРОТКИЕ ФОРМЫ (валидатор 6-го круга): «Our CEO, she consented» и «он
+    # согласен» снова спрашивали о согласии. Отрицания — в `БЕЗ_СОГЛАСИЯ`.
+    "consented",
+    "she consents",
+    "he consents",
+    "they consent",
+    "agreed to",
+    "согласен",
+    "согласна",
+    "согласны",
 )
 
 #: ОТРИЦАНИЕ СОГЛАСИЯ сильнее слова «согласие» рядом.
@@ -1455,6 +1513,18 @@ _СЕРИЯ_ЗАГЛАВНЫХ = re.compile(rf"(?<![\w'’-])({_ЗАГЛАВНО
     "без её согласия",
     "без ее согласия",
     "без разрешения",
+    "not consented",
+    "n't consented",
+    "never consented",
+    "not agreed",
+    "n't agreed",
+    "не согласен",
+    "не согласна",
+    "не согласны",
+    "не давал согласия",
+    "не давала согласия",
+    "не дал согласия",
+    "не дала согласия",
 )
 
 #: ОДНО ЗАГЛАВНОЕ СЛОВО ПОСЛЕ СЛОВА О ГОЛОСЕ/ЛИЦЕ — тоже человек: «голосом
@@ -1603,15 +1673,38 @@ def сходство(текст: str) -> dict:
     голос = any(
         о in низ for о in ("голос", "озвуч", "voice", "sounds like", " sing", "поёт", "поет")
     )
+    # ТИТУЛ С ИМЕНЕМ — ТОЖЕ ЧЕЛОВЕК И ТОЖЕ ПУБЛИЧНЫЙ (валидатор 6-го круга):
+    # «Pope Leo XIV», «президент Франции Макрон». Роль без имени («the
+    # president announces») — человек, но не признак публичности: им может
+    # быть выдуманный президент, и это вопрос, а не вердикт.
+    титулы = титулованные(строка) if люди or _есть_появление(строка) else []
+    for фраза, _именной in титулы:
+        if not any(_тот_же(фраза, и) for и in люди):
+            люди.append(фраза)
     знаменитые = [и for и in люди if знаменитость(и, строка)]
+    публичные = [
+        и
+        for и in люди
+        if и in знаменитые or any(именной and _тот_же(и, ф) for ф, именной in титулы)
+    ]
     коммерция = any(о in низ for о in КОММЕРЦИЯ)
+    заявление = заявление_о_политике(строка)
     return {
         "people": люди,
         "consent_stated": согласие,
         "voice": голос,
         "celebrities": знаменитые,
         "commercial": коммерция,
-        "celebrity_endorsement": bool(знаменитые) and коммерция,
+        # С 6-ГО КРУГА — ПУБЛИЧНЫЕ, А НЕ ТОЛЬКО ИЗ СПИСКА: «Pope Leo XIV holding
+        # our energy drink» в список не входит, но титул с именем — публичность.
+        "celebrity_endorsement": bool(публичные) and коммерция,
+        "public": публичные,
+        "statement": заявление,
+        # ДВА ПРИЗНАКА, А НЕ ОДИН — та же форма, что у рекламы знаменитости:
+        # публичный человек (список, титул с именем или слово о известности)
+        # И политическое/новостное заявление в тексте. Одно имя без заявления
+        # — вопрос; одно заявление без публичного человека — ничего.
+        "public_statement": bool(публичные) and bool(заявление),
     }
 
 
@@ -1633,16 +1726,7 @@ def _люди_в_заказе(текст: str) -> list[str]:
     # 2026-09-08: «промо для Talking Tom, видео готово» — основа `talk` сидит
     # в самом названии, и название объявляло себя человеком. Действие человека
     # называется рядом с именем, а не внутри него.
-    без_пар = _ИМЯ_ФАМИЛИЯ.sub(" ", строка)
-    без_терминов = привести(без_пар)
-    for термин in ТЕРМИНЫ_РЕМЕСЛА:
-        без_терминов = без_терминов.replace(термин, " ")
-    if not any(
-        (re.search(rf"\b{re.escape(г)}", без_терминов) is not None)
-        if г.isascii()
-        else (г in без_терминов)
-        for г in ПОЯВЛЯЕТСЯ
-    ):
+    if not _есть_появление(строка):
         return []
     найдено: list[str] = []
     кандидаты: list[tuple[str, int]] = []
@@ -1681,7 +1765,8 @@ def _люди_в_заказе(текст: str) -> list[str]:
     # ОДНО ИМЯ ИЗ КУРИРУЕМОГО СПИСКА где угодно («ролик, где Путин поздравляет»):
     # глагол появления уже проверен выше, а фамилия знаменитости и одна —
     # узнаваемый человек. Список здесь — один признак из двух, не единственный.
-    for м in re.finditer(r"(?<![\w-])([A-ZА-ЯЁ][a-zа-яё]{2,})(?![\w-])", строка):
+    # ЗАГЛАВНАЯ ВНУТРИ СЛОВА ДОПУСТИМА («MrBeast»): фильтр — сам список.
+    for м in re.finditer(r"(?<![\w-])([A-ZА-ЯЁ][A-Za-zА-ЯЁа-яё]{2,})(?![\w-])", строка):
         слово = м.group(1)
         if слово in чужие_слова:
             continue
@@ -1698,6 +1783,20 @@ def _люди_в_заказе(текст: str) -> list[str]:
                 continue
             найдено.append(слово)
     return найдено
+
+
+def _есть_появление(строка: str) -> bool:
+    """Глагол появления или голоса ВНЕ пар заглавных и без терминов ремесла."""
+    без_пар = _ИМЯ_ФАМИЛИЯ.sub(" ", строка)
+    без_терминов = привести(без_пар)
+    for термин in ТЕРМИНЫ_РЕМЕСЛА:
+        без_терминов = без_терминов.replace(термин, " ")
+    return any(
+        (re.search(rf"\b{re.escape(г)}", без_терминов) is not None)
+        if г.isascii()
+        else (г in без_терминов)
+        for г in ПОЯВЛЯЕТСЯ
+    )
 
 
 #: Формы компаний — БЕРУТСЯ У ПЛАНИРОВЩИКА (Е1). Вторая копия этого списка
@@ -1734,6 +1833,9 @@ except Exception:  # pragma: no cover
 ПОДДЕЛКА = "passing off as real"
 #: Метка отказа: реклама, вложенная в уста реальной знаменитости.
 ЗНАМЕНИТОСТЬ_В_РЕКЛАМЕ = "celebrity endorsement"
+#: Метка отказа: заявление (политика, новости), вложенное в уста реального
+#: публичного человека (валидатор 6-го круга; политика — в конце модуля).
+ЗАЯВЛЕНИЕ_ПУБЛИЧНОГО = "public figure statement"
 
 
 def _заявления(текст: str) -> list[str]:
@@ -1823,6 +1925,9 @@ def предупреждение(риски: Sequence[str]) -> str:
     "financial claim": "обещание дохода",
     "passing off as real": "выдать сделанное за настоящую запись",
     "celebrity endorsement": "реклама от имени реальной знаменитости",
+    "public figure statement": (
+        "заявление от имени реального публичного человека (политика, новости, война, выборы)"
+    ),
 }
 
 
@@ -1841,6 +1946,9 @@ def предупреждение(риски: Sequence[str]) -> str:
     "financial claim": "a promise of income",
     "passing off as real": "passing a made clip off as a real recording",
     "celebrity endorsement": "an advert put in the mouth of a real celebrity",
+    "public figure statement": (
+        "a statement put in the mouth of a real public figure (politics, news, war, elections)"
+    ),
 }
 
 
@@ -1903,6 +2011,9 @@ def просеять(текст: str) -> dict:
                 "celebrities": [],
                 "commercial": False,
                 "celebrity_endorsement": False,
+                "public": [],
+                "statement": [],
+                "public_statement": False,
             },
             "words": 0,
             "note": (
@@ -1930,6 +2041,7 @@ def просеять(текст: str) -> dict:
         and not _роль_без_имени(м, строка)
         and not _метка_про_аудиторию(м, строка)
         and not _признак_это_имя(м, строка)
+        and not _титул_под_политикой(м)
     ]
     темы = чужие + _русские_темы(строка)
     указания = [о for о in ЧУЖИЕ_УКАЗАНИЯ if о in низ or о in похоже]
@@ -1947,14 +2059,27 @@ def просеять(текст: str) -> dict:
     свой = any(о in низ_текста for о in СВОЙ_ЧЕЛОВЕК)
     лик = сходство(строка)
     if свой:
-        лик = {**лик, "people": [], "celebrities": [], "celebrity_endorsement": False}
+        лик = {
+            **лик,
+            "people": [],
+            "celebrities": [],
+            "celebrity_endorsement": False,
+            "public": [],
+            "public_statement": False,
+        }
     риски += [f"person's likeness: {имя}" for имя in лик["people"]]
     # РЕКЛАМА ОТ ИМЕНИ ЗНАМЕНИТОСТИ — ОТКАЗ (валидатор 5-го круга). Не
     # комментарий: синтетическая реклама, вложенная в уста реального
     # знаменитого человека, вводит зрителя в заблуждение, а согласие мы
     # проверить не можем; лицензированную рекламу снимают с самим человеком.
     if лик["celebrity_endorsement"]:
-        темы = темы + [f"{ЗНАМЕНИТОСТЬ_В_РЕКЛАМЕ}: {и}" for и in лик["celebrities"]]
+        темы = темы + [f"{ЗНАМЕНИТОСТЬ_В_РЕКЛАМЕ}: {и}" for и in лик["public"]]
+        беды = len(темы) + len(указания)
+    # ЗАЯВЛЕНИЕ ОТ ИМЕНИ ПУБЛИЧНОГО ЧЕЛОВЕКА — ОТКАЗ при любом названном
+    # согласии (валидатор 6-го круга: «Зеленский говорит, что война окончена»
+    # получал план). См. `ПОЛИТИКА_ЛЮДЕЙ` ниже.
+    if лик["public_statement"]:
+        темы = темы + [f"{ЗАЯВЛЕНИЕ_ПУБЛИЧНОГО}: {и}" for и in лик["public"]]
         беды = len(темы) + len(указания)
     return {
         "outcome": FAIL if беды else PASS,
@@ -1989,3 +2114,620 @@ def чисто(текст: str) -> bool:
     первый ради удобства вызывающего — тот самый Р1, ради которого весь пакет.
     """
     return просеять(текст)["outcome"] == PASS
+
+
+# ============================================================================
+# ПОЛИТИКА ЛЮДЕЙ: РЕАЛЬНЫЙ ЧЕЛОВЕК В РОЛИКЕ (валидатор 6-го круга, 2026-10-15)
+# ============================================================================
+#
+# ЧТО СЛОМАЛОСЬ. Сторож на списках слов пропускал пять из восьми брифов
+# проверки: «Зеленский говорит, что война окончена» (дезинформация о войне) —
+# план; Папа Лев XIV рекламирует энергетик — план; промокод от MrBeast — план;
+# Макрон объявляет о закрытии границ — только вопрос о согласии; «наш CEO, она
+# согласна» — снова вопрос о согласии. Список имён бесконечен, а КТО перед
+# нами — реальный ли, публичный ли — лучше всех знает вызывающая модель.
+#
+# ПОЛИТИКА. Главный признак — `spec.people`, который заполняет вызывающая
+# модель: [{name, real, public_figure, consent: stated|none|unknown,
+# claim: none|endorsement|political|news|other}]. Сервер применяет к нему
+# правила ДЕТЕРМИНИРОВАННО, по человеку, и берёт худший исход:
+#
+#   real=false (вымышленный, сгенерированный)          -> proceed
+#   публичный + claim political|news                   -> refuse, при ЛЮБОМ
+#       названном согласии: студия согласие не проверяет, а реалистичное
+#       заявление реального публичного лица, которого он не делал
+#       (объявление, война, выборы, здоровье, закон), — дезинформация, и
+#       пометка «пародия» её не снимает: после пересылки ролик читается как
+#       запись. Исторический (умерший) человек — так же.
+#   публичный + claim endorsement                      -> refuse; при
+#       `ЛИЦЕНЗИЯ_ОТКРЫВАЕТ_РЕКЛАМУ` (РЕШЕНИЕ ВЛАДЕЛЬЦА, по умолчанию выключено)
+#       и consent=stated и словах о правах/лицензии в брифе -> question:
+#       реквизиты лицензионного договора.
+#   публичный + claim none|other, частный + любой claim:
+#       consent=stated -> proceed, согласие записывается в план
+#       none|unknown   -> question о согласии (для умершего — наследников)
+#   поле не заполнено или значение вне списка          -> question: какое поле
+#
+# ЗАПАСНОЙ ПУТЬ — `spec.people` не передан. Сторож на тексте ОСТОРОЖЕН: имена
+# (серия заглавных, кириллица с падежами), титулы с именем («President
+# Macron», «Pope Leo XIV», «президент Франции», «CEO of Tesla») и роль с
+# глаголом речи («the president announces», «министр заявляет»). Найденный
+# человек — это ВОПРОС к вызывающему: заполнить `spec.people`, а не
+# угаданный вердикт. Два исключения, оба — ДВА признака сразу, и оба
+# действуют при любом `spec` (их проверяет `просеять`): публичный человек
+# (курируемый список, титул с именем или слово о известности) + реклама —
+# отказ (с 5-го круга); публичный + политическое/новостное заявление — отказ.
+# Список знаменитостей никогда не единственный признак. Частный человек с
+# названным в тексте согласием и без признаков публичности — proceed.
+#
+# НЕГАТИВНЫЕ КОНТРОЛИ — бренды, выдуманные персонажи, места, обычные имена
+# («Ivan»), названия продуктов, «Apple CEO keynote style» без человека — в
+# `studio/tests/test_real_person_policy.py`.
+
+#: РЕШЕНИЕ ВЛАДЕЛЬЦА, НЕ ПРИНЯТОЕ. Владелец спрашивал, пропускать ли рекламу от
+#: имени публичного человека, если у заказчика есть лицензия. Пока решения нет,
+#: отказ — по умолчанию: студия не может проверить договор, а цена ошибки —
+#: реклама, вложенная в уста человека, который её не делал. `True` включает
+#: путь «согласие названо + права в брифе -> вопрос о реквизитах договора».
+#: OWNER DECISION — меняет только владелец.
+ЛИЦЕНЗИЯ_ОТКРЫВАЕТ_РЕКЛАМУ: bool = False
+
+#: Значения полей `spec.people`. Литералы протокола с вызывающей моделью.
+СОГЛАСИЯ: frozenset[str] = frozenset({"stated", "none", "unknown"})
+ЗАЯВКИ: frozenset[str] = frozenset({"none", "endorsement", "political", "news", "other"})
+#: Заявки, при которых публичный человек — отказ при любом согласии.
+ЗАЯВКИ_ОТКАЗА: frozenset[str] = frozenset({"political", "news"})
+
+#: Порядок исходов: худший у человека — исход заказа.
+ТЯЖЕСТЬ: dict[str, int] = {"none": 0, "proceed": 1, "question": 2, "refuse": 3}
+
+#: Оси вопросов. `согласие_на_образ` — та же, что с 5-го круга.
+ОСЬ_СОГЛАСИЕ = "согласие_на_образ"
+ОСЬ_КТО = "люди_в_заказе"
+ОСЬ_ЛИЦЕНЗИЯ = "лицензия_на_рекламу"
+
+#: ТИТУЛЫ. Английские — целым словом; русские — основой с падежным окончанием
+#: из закрытого списка: «принцип» и «мэрия» титулами не становятся.
+_ТИТУЛ_EN = re.compile(
+    r"\b(president|pope|prime minister|minister|chancellor|king|queen|prince|princess|"
+    r"senator|governor|mayor|patriarch|ayatollah|ceo)\b",
+    re.IGNORECASE,
+)
+_ПАДЕЖ = r"(?:а|у|ом|е|ы|ов|ам|ами|ах)?"
+_ТИТУЛ_RU = re.compile(
+    r"(?<![а-яёА-ЯЁ])("
+    r"(?:президент|премьер(?:[- ]министр)?|министр|канцлер|губернатор|сенатор|депутат|"
+    rf"патриарх|понтифик|принц|мэр){_ПАДЕЖ}"
+    r"|корол(?:ь|я|ю|ём|ем|е|ева|евы|еве|еву|евой)"
+    r"|принцесс(?:а|ы|е|у|ой)"
+    r"|пап(?:а|ы|е|у|ой) римск[а-яё]*"
+    r")(?![а-яё])",
+    re.IGNORECASE,
+)
+
+#: Титул, который без имени человеком НЕ считается: «the CEO says» — чаще всего
+#: свой директор, и роль без имени здесь — шум, а не сигнал.
+ТИТУЛ_ТОЛЬКО_С_ИМЕНЕМ: frozenset[str] = frozenset({"ceo"})
+
+#: Чей титул: «our CEO», «наш президент», «president of our club» — свой человек.
+СВОИ: frozenset[str] = frozenset(
+    {
+        "our",
+        "my",
+        "your",
+        "наш",
+        "наша",
+        "нашей",
+        "нашего",
+        "нашим",
+        "наше",
+        "нашему",
+        "мой",
+        "моя",
+        "моей",
+        "моего",
+        "свой",
+        "своей",
+        "своего",
+        "ваш",
+        "вашей",
+        "вашего",
+    }
+)
+
+#: Глаголы речи для РОЛИ БЕЗ ИМЕНИ: «the president announces», «министр
+#: заявляет». Начала слов.
+РЕЧЬ_РОЛИ: tuple[str, ...] = (
+    "say",
+    "said",
+    "announc",
+    "declar",
+    "tell",
+    "speak",
+    "address",
+    "speech",
+    "говор",
+    "сказал",
+    "заявл",
+    "заявил",
+    "объяв",
+    "сообща",
+    "обраща",
+    "выступа",
+    "речь",
+    "обращени",
+)
+
+#: ПОЛИТИЧЕСКОЕ ИЛИ НОВОСТНОЕ ЗАЯВЛЕНИЕ. Латиница — целым словом (`war` не
+#: сидит в `warm`), кириллица — с начала слова («двойник» содержит «войн» не с
+#: начала) и с закрытыми окончаниями там, где основа живёт в обиходе («выбор
+#: цвета», «указатель»).
+_ЗАЯВЛЕНИЕ_EN = re.compile(
+    r"\b(wars?|warfare|ceasefire|peace (?:deal|talks|treaty)|elections?|vot(?:e|es|ing)|"
+    r"ballots?|referendum|borders?|sanctions?|mobili[sz]ation|martial law|invasion|"
+    r"invad\w*|surrender\w*|nuclear|coup|resign\w*|impeach\w*|parliament|government|"
+    r"breaking news|news report|pandemic|vaccines?|lockdown|announc\w*|declar\w*|"
+    r"address(?:es)? the nation)\b",
+    re.IGNORECASE,
+)
+_ЗАЯВЛЕНИЕ_RU = re.compile(
+    r"(?<![а-яё])("
+    r"войн[а-яё]*|военн[а-яё]*|выбор(?:ы|ах|ов|ам)|голосовани[а-яё]*|референдум[а-яё]*|"
+    r"границ[а-яё]*|санкци[а-яё]*|мобилизаци[а-яё]*|перемири[а-яё]*|капитуляци[а-яё]*|"
+    r"вторжени[а-яё]*|ядерн[а-яё]*|переворот[а-яё]*|отставк[а-яё]*|импичмент[а-яё]*|"
+    r"правительств[а-яё]*|парламент[а-яё]*|закон(?:а|у|ом|е|ы|ов)?|указ(?:а|ом|е|ы)?|"
+    r"налог[а-яё]*|пандеми[а-яё]*|вакцин[а-яё]*|локдаун[а-яё]*|карантин[а-яё]*|"
+    r"новост[а-яё]*|объявл[а-яё]*|объявил[а-яё]*|заявл[а-яё]*|заявил[а-яё]*|"
+    r"обращени[а-яё]* к (?:нации|народу|гражданам)"
+    r")(?![а-яё])",
+)
+
+#: Слова о ПРАВАХ на рекламу — для пути лицензии (решение владельца).
+ПРАВА_НА_РЕКЛАМУ: tuple[str, ...] = (
+    "licence",
+    "license",
+    "licensed",
+    "we have the rights",
+    "we own the rights",
+    "endorsement deal",
+    "endorsement contract",
+    "лицензи",
+    "права на рекламу",
+    "права на образ",
+    "договор",
+)
+
+#: ПАРОДИЯ И САТИРА — не снимают отказ, но называются в ноте.
+ПАРОДИЯ: tuple[str, ...] = (
+    "parody",
+    "satire",
+    "satirical",
+    "spoof",
+    "пароди",
+    "сатир",
+)
+
+#: ИСТОРИЧЕСКИЙ ИЛИ УМЕРШИЙ ЧЕЛОВЕК: согласие дают наследники.
+ИСТОРИЯ: tuple[str, ...] = (
+    "archival",
+    "archive",
+    "historical",
+    "historic",
+    "deceased",
+    "the late",
+    "архивн",
+    "архив",
+    "историческ",
+    "покойн",
+    "умерш",
+    "ушедш",
+)
+
+#: Правила, при которых согласие записывается в план как названное заказчиком.
+СОГЛАСИЕ_ЗАПИСАНО: frozenset[str] = frozenset({"consent_stated", "text_consent_stated"})
+
+
+def _заглавное_слово(слово: str) -> bool:
+    return bool(слово) and слово[0].isupper() and слово.lower() not in НАЧАЛО_ФРАЗЫ
+
+
+def _общее_начало(х: str, у: str) -> int:
+    n = 0
+    while n < min(len(х), len(у)) and х[n] == у[n]:
+        n += 1
+    return n
+
+
+def _тот_же(а: str, б: str) -> bool:
+    """Одно ли лицо по двум написаниям: общее слово с точностью до падежа.
+
+    «Путина» ~ «Путин», «Франции Макрон» ~ «президент Франции Макрон». Разные
+    алфавиты НЕ сводятся: транслитерация — не наша задача, и промах здесь
+    оставляет отказ отказом (см. `с_политикой`).
+    """
+    for х in str(а).lower().split():
+        for у in str(б).lower().split():
+            if х == у and len(х) >= 3:
+                return True
+            общее = _общее_начало(х, у)
+            if общее >= 4 and общее >= min(len(х), len(у)) - 3:
+                return True
+    return False
+
+
+def титулованные(текст: str) -> list[tuple[str, bool]]:
+    """Титулы людей в тексте: (фраза, с именем ли).
+
+    С именем — «Pope Leo XIV», «президент Франции Макрон», «CEO of Tesla»:
+    публичный человек. Без имени, но с глаголом речи — «the president
+    announces»: человек, но кто — неизвестно (может быть выдуманным).
+    Свой титул («our CEO», «наш президент», «president of our club») не
+    считается ни тем, ни другим.
+    """
+    строка = str(текст or "")
+    найдено: list[tuple[str, bool]] = []
+    совпадения = sorted(
+        [*_ТИТУЛ_EN.finditer(строка), *_ТИТУЛ_RU.finditer(строка)], key=lambda м: м.start()
+    )
+    for м in совпадения:
+        титул = м.group(0)
+        до = привести(строка[: м.start()]).split()[-2:]
+        if any(с in СВОИ for с in до):
+            continue
+        после = re.findall(r"[\w'’-]+", строка[м.end() :])[:5]
+        i = 0
+        связка = ""
+        if len(после) > 1 and после[0].lower() == "of":
+            связка = " of"
+            i = 1
+        if i < len(после) and после[i].lower() in СВОИ:
+            continue
+        имя: list[str] = []
+        while i < len(после) and len(имя) < 3 and _заглавное_слово(после[i]):
+            имя.append(после[i])
+            i += 1
+        if имя:
+            найдено.append((f"{титул}{связка} {' '.join(имя)}", True))
+        elif титул.lower() not in ТИТУЛ_ТОЛЬКО_С_ИМЕНЕМ and any(
+            с.lower().startswith(р) for с in после[:4] for р in РЕЧЬ_РОЛИ
+        ):
+            найдено.append((титул, False))
+    return найдено
+
+
+def заявление_о_политике(текст: str) -> list[str]:
+    """Слова политического или новостного заявления в тексте. Пусто — нет."""
+    строка = str(текст or "")
+    найдено = [м.group(0).lower() for м in _ЗАЯВЛЕНИЕ_EN.finditer(строка)]
+    найдено += [м.group(0) for м in _ЗАЯВЛЕНИЕ_RU.finditer(строка.lower())]
+    return list(dict.fromkeys(найдено))
+
+
+def люди_из_spec(spec: object, известные_поля: Sequence[str] = ()) -> tuple[object, object]:
+    """(`spec.people` или None, если поле не передано; spec для планировщика).
+
+    `people` вынимается из spec, пока планировщик его не знает (поле заводит
+    другой агент в `brief_spec.SPEC_FIELDS`): иначе весь spec отвергался бы
+    как «unknown field». Знает — spec уходит как есть.
+    """
+    if not isinstance(spec, dict) or "people" not in spec:
+        return None, spec
+    люди = spec.get("people")
+    if "people" in известные_поля:
+        return люди, spec
+    остальное = {к: з for к, з in spec.items() if к != "people"}
+    return люди, (остальное or None)
+
+
+def _в_тексте(низ: str, основы: Sequence[str]) -> bool:
+    return any(о in низ for о in основы)
+
+
+def политика_людей(текст: str, люди: object = None, лик: dict | None = None) -> dict:
+    """Решение о реальных людях в заказе: none | proceed | question | refuse.
+
+    `люди` — `spec.people` от вызывающей модели (главный признак); None —
+    не передан, и решает осторожный сторож текста (вопрос, а не вердикт).
+    Политика целиком — в комментарии над разделом.
+    """
+    строка = str(текст or "")
+    лик = лик if лик is not None else сходство(строка)
+    низ = f" {привести(строка)} "
+    общее = {
+        "parody": _в_тексте(низ, ПАРОДИЯ),
+        "historical": _в_тексте(низ, ИСТОРИЯ),
+        "voice": bool(лик.get("voice")),
+    }
+    итог = _по_тексту(лик) if люди is None else _по_spec(люди, низ)
+    return {**итог, **общее}
+
+
+def _итог(источник: str, люди: list[dict], ошибки: list[str]) -> dict:
+    решение = max((ч["verdict"] for ч in люди), key=lambda в: ТЯЖЕСТЬ[в], default="none")
+    правила = {ч["rule"] for ч in люди if ч["verdict"] == "question"}
+    ось = None
+    if правила & {"text_unidentified", "spec_invalid"}:
+        ось = ОСЬ_КТО
+    elif "public_endorsement_licence" in правила:
+        ось = ОСЬ_ЛИЦЕНЗИЯ
+    elif правила:
+        ось = ОСЬ_СОГЛАСИЕ
+    return {
+        "source": источник,
+        "decision": решение,
+        "people": люди,
+        "banned": [ч["label"] for ч in люди if ч.get("label")],
+        "question_axis": ось,
+        "consent_recorded": [ч["name"] for ч in люди if ч["rule"] in СОГЛАСИЕ_ЗАПИСАНО],
+        "errors": ошибки,
+    }
+
+
+def _по_тексту(лик: dict) -> dict:
+    """Запасной путь: найденный человек — вопрос, кроме частного с согласием."""
+    люди: list[dict] = []
+    for имя in лик.get("people") or []:
+        публичный = имя in (лик.get("public") or []) or знаменитость(имя)
+        if публичный or not лик.get("consent_stated"):
+            люди.append({"name": имя, "verdict": "question", "rule": "text_unidentified"})
+        else:
+            люди.append({"name": имя, "verdict": "proceed", "rule": "text_consent_stated"})
+    return _итог("text", люди, [])
+
+
+def _по_spec(люди: object, низ: str) -> dict:
+    if not isinstance(люди, list):
+        return _итог(
+            "spec",
+            [{"name": "?", "verdict": "question", "rule": "spec_invalid"}],
+            ["spec.people: expected a list of {name, real, public_figure, consent, claim}"],
+        )
+    итог: list[dict] = []
+    ошибки: list[str] = []
+    for i, запись in enumerate(люди):
+        ч, о = _решить(i, запись, низ)
+        итог.append(ч)
+        ошибки += о
+    return _итог("spec", итог, ошибки)
+
+
+def _решить(i: int, запись: object, низ: str) -> tuple[dict, list[str]]:
+    """Один человек из `spec.people` -> вердикт по политике."""
+    где = f"spec.people[{i}]"
+    if not isinstance(запись, dict):
+        return (
+            {"name": "?", "verdict": "question", "rule": "spec_invalid"},
+            [f"{где}: expected an object with name, real, public_figure, consent, claim"],
+        )
+    имя = str(запись.get("name") or "").strip()
+    ошибки: list[str] = []
+    if not имя:
+        ошибки.append(f"{где}.name: missing")
+    реальный = запись.get("real")
+    if not isinstance(реальный, bool):
+        ошибки.append(f"{где}.real: expected true or false")
+    ч: dict = {"name": имя or "?", "real": реальный}
+    if реальный is False and not ошибки:
+        return {**ч, "verdict": "proceed", "rule": "fictional"}, []
+    публичный = запись.get("public_figure")
+    согласие = запись.get("consent", "unknown")
+    заявка = запись.get("claim")
+    if not isinstance(публичный, bool):
+        ошибки.append(f"{где}.public_figure: expected true or false")
+    if согласие not in СОГЛАСИЯ:
+        ошибки.append(f"{где}.consent: expected one of {', '.join(sorted(СОГЛАСИЯ))}")
+    if заявка not in ЗАЯВКИ:
+        ошибки.append(f"{где}.claim: expected one of {', '.join(sorted(ЗАЯВКИ))}")
+    ч = {**ч, "public_figure": публичный, "consent": согласие, "claim": заявка}
+    if ошибки:
+        return {**ч, "verdict": "question", "rule": "spec_invalid"}, ошибки
+    # ТЕКСТ «БЕЗ СОГЛАСИЯ» СИЛЬНЕЕ ПОЛЯ «stated»: противоречие — вопрос.
+    if согласие == "stated" and _в_тексте(низ, БЕЗ_СОГЛАСИЯ):
+        согласие = "unknown"
+    if публичный and заявка in ЗАЯВКИ_ОТКАЗА:
+        метка = f"{ЗАЯВЛЕНИЕ_ПУБЛИЧНОГО}: {имя}"
+        return {**ч, "verdict": "refuse", "rule": "public_statement", "label": метка}, []
+    if публичный and заявка == "endorsement":
+        if ЛИЦЕНЗИЯ_ОТКРЫВАЕТ_РЕКЛАМУ and согласие == "stated" and _в_тексте(низ, ПРАВА_НА_РЕКЛАМУ):
+            return {**ч, "verdict": "question", "rule": "public_endorsement_licence"}, []
+        метка = f"{ЗНАМЕНИТОСТЬ_В_РЕКЛАМЕ}: {имя}"
+        return {**ч, "verdict": "refuse", "rule": "public_endorsement", "label": метка}, []
+    if согласие == "stated":
+        return {**ч, "verdict": "proceed", "rule": "consent_stated"}, []
+    return {**ч, "verdict": "question", "rule": "consent_missing"}, []
+
+
+def с_политикой(просев: dict, политика: dict) -> dict:
+    """Просев с отказами политики людей; исход и счёт пересчитаны.
+
+    Отказ политики ДОБАВЛЯЕТСЯ к найденному в тексте; метка того же лица и
+    той же группы второй раз не пишется. Путь лицензии (решение владельца)
+    снимает текстовый отказ рекламы ТОЛЬКО для того же лица по написанию: имя
+    в другом алфавите не сводится, и отказ остаётся.
+    """
+    banned = list(просев.get("banned") or [])
+    лицензия = [
+        ч["name"]
+        for ч in политика.get("people") or []
+        if ч.get("rule") == "public_endorsement_licence"
+    ]
+    if лицензия:
+        banned = [
+            м
+            for м in banned
+            if not (
+                м.startswith(f"{ЗНАМЕНИТОСТЬ_В_РЕКЛАМЕ}: ")
+                and any(_тот_же(м.split(": ", 1)[1], и) for и in лицензия)
+            )
+        ]
+    for метка in политика.get("banned") or []:
+        группа, _, имя = метка.partition(": ")
+        if not any(
+            м.startswith(f"{группа}: ") and _тот_же(м.split(": ", 1)[1], имя) for м in banned
+        ):
+            banned.append(метка)
+    беды = len(banned) + len(просев.get("injection") or [])
+    return {**просев, "banned": banned, "violations": беды, "outcome": FAIL if беды else PASS}
+
+
+Строки = tuple[str, str, tuple[str, ...]]
+
+
+def вопрос_людей(политика: dict) -> tuple[str, Строки, Строки]:
+    """(ось, по-русски, по-английски) вопроса политики: (текст, почему, варианты)."""
+    ось = политика.get("question_axis") or ОСЬ_СОГЛАСИЕ
+    правила_оси = {
+        ОСЬ_КТО: {"text_unidentified", "spec_invalid"},
+        ОСЬ_ЛИЦЕНЗИЯ: {"public_endorsement_licence"},
+        ОСЬ_СОГЛАСИЕ: {"consent_missing"},
+    }[ось]
+    кто = ", ".join(ч["name"] for ч in политика.get("people") or [] if ч.get("rule") in правила_оси)
+    история = bool(политика.get("historical"))
+    наследники_ru = " (для умершего — его наследников или правообладателя)" if история else ""
+    наследники_en = " (for a deceased person — their estate or rights holder)" if история else ""
+    if ось == ОСЬ_КТО:
+        return (
+            ось,
+            (
+                f"в заказе назван человек ({кто}). Это реальный человек или вымышленный "
+                "персонаж? Если реальный — публичный ли он, есть ли у вас его письменное "
+                f"согласие{наследники_ru}, и что он говорит в ролике?",
+                "реальному публичному человеку нельзя вложить в уста политическое или "
+                "новостное заявление или рекламу, а частному нужно его согласие; по одному "
+                "имени студия этого не решает — она спрашивает",
+                (
+                    "вымышленный персонаж",
+                    "реальный человек, согласие есть",
+                    "реальный человек, согласия нет — заменить на своего актёра",
+                ),
+            ),
+            (
+                f"the order names a person ({кто}). Is this a real person or a fictional "
+                "character? If real — are they a public figure, do you have their written "
+                f"consent{наследники_en}, and what do they say in the clip?",
+                "a real public figure cannot be made to deliver a political or news statement "
+                "or an advert, and a private person needs their consent; a name alone does not "
+                "tell the studio which — so it asks",
+                (
+                    "a fictional character",
+                    "a real person, we have consent",
+                    "a real person, no consent — use our own actor",
+                ),
+            ),
+        )
+    if ось == ОСЬ_ЛИЦЕНЗИЯ:
+        return (
+            ось,
+            (
+                f"реклама от имени публичного человека ({кто}) делается только по "
+                "лицензионному договору: укажите его номер и дату или иной реквизит "
+                "документа, по которому у вас есть права на эту рекламу",
+                "студия не может проверить договор — она записывает, на какой документ "
+                "сослался заказчик",
+                ("реквизиты договора", "договора нет — убрать человека из рекламы"),
+            ),
+            (
+                f"an advert in the name of a public figure ({кто}) is made only under a "
+                "licence agreement: give its number and date, or another reference to the "
+                "document that grants you the rights for this advert",
+                "the studio cannot verify the agreement — it records which document the "
+                "customer referred to",
+                ("the agreement reference", "no agreement — remove the person from the advert"),
+            ),
+        )
+    что, what = (
+        ("голос и образ", "voice and likeness") if политика.get("voice") else ("образ", "likeness")
+    )
+    return (
+        ось,
+        (
+            f"в заказе {что} реального человека ({кто}): есть ли у вас его письменное "
+            f"согласие{наследники_ru} или права на это использование?",
+            "права на образ и голос принадлежат самому человеку; без согласия такой ролик "
+            "делать нельзя, а проверить его студия не может — может только спросить",
+            (
+                "да, согласие/права есть",
+                "нет — заменить на вымышленного персонажа или своего актёра",
+            ),
+        ),
+        (
+            f"the order uses the {what} of a real person ({кто}): do you have their written "
+            f"consent{наследники_en} or the rights for this use?",
+            "a person's likeness and voice belong to them; without consent this clip must not "
+            "be made, and the studio cannot check consent — it can only ask",
+            (
+                "yes, we have consent / the rights",
+                "no — use a fictional character or our own actor",
+            ),
+        ),
+    )
+
+
+#: Подсказка ВЫЗЫВАЮЩЕМУ на оси `люди_в_заказе`: он заполняет `spec.people`.
+ПОДСКАЗКА_SPEC = (
+    "заполните spec.people — для каждого человека name, real, public_figure, "
+    "consent (stated|none|unknown), claim (none|endorsement|political|news|other) — "
+    "и вызовите снова; если не знаете, задайте вопрос заказчику",
+    "fill spec.people — for each person name, real, public_figure, consent "
+    "(stated|none|unknown), claim (none|endorsement|political|news|other) — and call "
+    "again; if you do not know, put the question to the customer",
+)
+
+
+def нота_людей(политика: dict, англ: bool) -> str:
+    """Что дописать к ноте: пародия при отказе, записанное согласие. Пусто — нечего."""
+    куски: list[str] = []
+    if политика.get("decision") == "refuse" and политика.get("parody"):
+        куски.append(
+            "parody does not change this: a realistic clip of a real public figure saying "
+            "what they did not say reads as a real recording once it is shared"
+            if англ
+            else "пародия этого не меняет: реалистичный ролик, где реальный публичный человек "
+            "говорит то, чего не говорил, после пересылки читается как настоящая запись"
+        )
+    записано = ", ".join(политика.get("consent_recorded") or [])
+    if записано:
+        куски.append(
+            f"consent recorded as stated by the customer, not verified by the studio: {записано}"
+            if англ
+            else f"согласие записано со слов заказчика, студия его не проверяла: {записано}"
+        )
+    return ". ".join(куски)
+
+
+#: Поля человека, которые печатаются в `people_policy`.
+ПОЛЯ_ОТЧЁТА: tuple[str, ...] = (
+    "name",
+    "real",
+    "public_figure",
+    "consent",
+    "claim",
+    "verdict",
+    "rule",
+)
+
+
+def отчёт_политики(политика: dict) -> dict:
+    """Поле `people_policy` ответа: откуда решение, какое, по кому и почему."""
+    return {
+        "source": политика.get("source"),
+        "decision": политика.get("decision"),
+        "people": [{к: ч[к] for к in ПОЛЯ_ОТЧЁТА if к in ч} for ч in политика.get("people") or []],
+        "consent_recorded": list(политика.get("consent_recorded") or []),
+        "parody": bool(политика.get("parody")),
+        "historical": bool(политика.get("historical")),
+        "errors": list(политика.get("errors") or []),
+    }
+
+
+def просеять_с_людьми(
+    текст: str, люди: object = None, просев: dict | None = None
+) -> tuple[dict, dict]:
+    """(просев с отказами политики, политика людей) — ОДНО место сборки (Е1).
+
+    Им пользуются `plan_pipeline` и тесты политики: исход заказа по людям —
+    `fail` у просева (отказ) или `decision` политики.
+    """
+    просев = просев if просев is not None else просеять(текст)
+    политика = политика_людей(текст, люди, просев.get("likeness"))
+    return с_политикой(просев, политика), политика

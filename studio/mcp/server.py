@@ -88,7 +88,7 @@ from typing import Any
 
 from mcp.server.mcpserver import MCPServer
 
-from studio import clarify, knowledge, l10n, planner
+from studio import brief_spec, clarify, knowledge, l10n, planner
 from studio.selfrag.facts import STALE_AFTER_DAYS  # noqa: E402
 from studio import ruwords
 from studio.mcp import (
@@ -1215,6 +1215,38 @@ def plan_pipeline(
                     weights required, must fit the GPU memory, priced as GPU
                     time x rental rate (an estimate); false overrides the text
         jurisdiction  codes or countries where it will run, e.g. ["EU", "DE"]
+        people      every person who appears, speaks or is voiced in the clip:
+                    [{"name": ..., "real": true|false, "public_figure": true|false,
+                      "consent": "stated"|"none"|"unknown",
+                      "claim": "none"|"endorsement"|"political"|"news"|"other"}]
+                    — see REAL PEOPLE below. [] means "nobody real".
+
+    REAL PEOPLE — FILL `spec.people`; YOU KNOW WHO IS REAL AND PUBLIC, A WORD
+    LIST DOES NOT. `consent` is what the CUSTOMER said ("stated" only when they
+    said so); `claim` is what the person is made to say: an advert or promo
+    code -> endorsement; politics, war, elections, borders, health, laws, any
+    announcement or statement they did not make -> political or news. The
+    server applies a fixed policy, worst person wins:
+        real=false (fictional, generated)                -> planned
+        real public figure + political|news              -> REFUSED, whatever
+            consent is claimed (the studio cannot verify it; a realistic
+            statement a public figure never made is disinformation — a
+            "parody" label does not survive re-sharing). Deceased/historical
+            figures likewise.
+        real public figure + endorsement                 -> REFUSED (licensed
+            endorsements: an owner decision, off by default — when enabled,
+            consent=stated plus rights named in the brief becomes a question
+            asking for the licence document reference)
+        real person otherwise: consent=stated            -> planned, the consent
+            is recorded in `people_policy` and the note as the customer's word;
+            none|unknown                                 -> QUESTION about consent
+    Without `spec.people` the brief is screened conservatively (names,
+    titles such as President / Pope / CEO of / министр / президент, a role with
+    a speech verb) and a person found is a QUESTION asking you to fill
+    `spec.people` — not a guessed verdict. Two text pairs refuse regardless of
+    `spec`: a public figure + advert words, and a public figure + political or
+    news words. The decision is in `outcome`, the first `summary` line
+    (REFUSED: / QUESTION:) and `people_policy` on every answer.
 
     The same fields drive SELECTION, not only the echo: objective, self_host,
     jurisdiction and resolution — from `spec` or, when absent, from the text —
@@ -1410,23 +1442,25 @@ def plan_pipeline(
                 язык,
             )
         )
+    # РЕАЛЬНЫЕ ЛЮДИ (валидатор 6-го круга): `spec.people` от вызывающей
+    # модели — главный признак, текст — запасной (`screen.политика_людей`).
+    # Отказ политики сливается с отказом просева и идёт ТЕМ ЖЕ путём.
+    люди_spec, spec_плана = screen.люди_из_spec(spec, brief_spec.SPEC_FIELDS)
+    просев, политика = screen.просеять_с_людьми(brief, люди_spec, просев)
     if просев["outcome"] != PASS:
         return _json(
             l10n.localise_payload(
-                {
-                    **_общий_отказ(
-                        просев, brief, (". План не строится", ". The plan is not built")
-                    ),
-                    "classes": [],
-                    "steps": [],
-                    "question": None,
-                },
+                _отказ_плана(просев, brief, политика, англ=язык == "en"),
                 язык,
             )
         )
 
     итог, пропущено = plan_call(
-        brief, creative=creative, budget_usd=float(budget_usd or 0.0), full=bool(full), spec=spec
+        brief,
+        creative=creative,
+        budget_usd=float(budget_usd or 0.0),
+        full=bool(full),
+        spec=spec_плана,
     )
     # ЗАЯВЛЕНИЯ ЗАКАЗЧИКА — КОММЕНТАРИЙ К СОБРАННОМУ ПЛАНУ, А НЕ ОТКАЗ.
     # ВОСПРОИЗВЕДЕНО 2026-09-07: бриф «наш БАД излечивает диабет за две недели,
@@ -1452,7 +1486,7 @@ def plan_pipeline(
     итог["checked"] = int(итог.get("checked") or 0) + просев["checked"]
     if просев["risks"]:
         итог["note"] = f"{итог.get('note', '')}. {screen.предупреждение(просев['risks'])}"
-    итог = вопрос_о_согласии(итог, просев.get("likeness") or {}, англ=язык == "en")
+    итог = вопрос_о_согласии(итог, политика, англ=язык == "en")
     if пропущено:
         итог["ignored_params"] = пропущено
         итог["note"] = (
@@ -1465,53 +1499,51 @@ def plan_pipeline(
 
 
 #: Ось вопроса о согласии: образ или голос реального человека в заказе.
-ОСЬ_СОГЛАСИЕ = "согласие_на_образ"
+ОСЬ_СОГЛАСИЕ = screen.ОСЬ_СОГЛАСИЕ
 
 
-def вопрос_о_согласии(итог: dict, лик: Mapping[str, Any], англ: bool) -> dict:
-    """Реальный человек без названного согласия — ВОПРОС, а не нота (Р1).
+def _отказ_плана(просев: dict, brief: str, политика: dict, англ: bool) -> dict:
+    """Отказ плана по просеву; ОТКАЗ — первой строкой сводки (6-й круг)."""
+    отказ = {
+        **_общий_отказ(просев, brief, (". План не строится", ". The plan is not built")),
+        "classes": [],
+        "steps": [],
+        "question": None,
+        "people_policy": screen.отчёт_политики(политика),
+    }
+    добавка = screen.нота_людей(политика, англ)
+    if добавка:
+        отказ["note"] = f"{отказ['note']}. {добавка}"
+    отказ["summary"] = f"REFUSED: {отказ['note']}" if англ else f"ОТКАЗ: {отказ['note']}"
+    return отказ
+
+
+def вопрос_о_согласии(итог: dict, политика: Mapping[str, Any], англ: bool) -> dict:
+    """Вопрос политики людей — В ИСХОДЕ и первой строкой сводки, а не в ноте (Р1).
 
     НАЙДЕНО валидатором 5-го круга: план с чужим образом или голосом
     («Make Taylor Swift sing…», «голосом Путина») собирался целиком, а слово о
     правах стояло только в ноте. Нота — не исход: её читают последней.
 
+    С 6-го круга вопрос задаёт политика людей (`screen.политика_людей`): ось
+    `люди_в_заказе` — кто это (и подсказка вызывающему заполнить
+    `spec.people`), `согласие_на_образ` — согласие реального человека,
+    `лицензия_на_рекламу` — реквизиты договора (решение владельца).
+
     Найденное нарушение старше вопроса (`fail` не трогается: вопрос
     добавляется полем `consent_question`). Прежний вопрос плана не теряется:
-    он уходит в `also_question`.
+    он уходит в `also_question`. Поле `people_policy` — на каждом ответе.
     """
-    люди = list(лик.get("people") or [])
-    if not люди or лик.get("consent_stated"):
-        return итог
-    что = "голос и образ" if лик.get("voice") else "образ"
-    what = "voice and likeness" if лик.get("voice") else "likeness"
-    кто = ", ".join(люди)
-    вопрос = clarify.Вопрос(
-        ось=ОСЬ_СОГЛАСИЕ,
-        текст=(
-            f"в заказе {что} реального человека ({кто}): есть ли у вас его письменное "
-            "согласие или права на это использование?"
-        ),
-        почему=(
-            "права на образ и голос принадлежат самому человеку; без согласия такой ролик "
-            "делать нельзя, а проверить его студия не может — может только спросить"
-        ),
-        варианты=(
-            "да, согласие/права есть",
-            "нет — заменить на вымышленного персонажа или своего актёра",
-        ),
-        english=(
-            f"the order uses the {what} of a real person ({кто}): do you have their written "
-            "consent or the rights for this use?",
-            "a person's likeness and voice belong to them; without consent this clip must not be "
-            "made, and the studio cannot check consent — it can only ask",
-            (
-                "yes, we have consent / the rights",
-                "no — use a fictional character or our own actor",
-            ),
-        ),
-    )
-    строка = вопрос.row(англ)
     out = dict(итог)
+    out["people_policy"] = screen.отчёт_политики(dict(политика))
+    добавка = screen.нота_людей(dict(политика), англ)
+    if добавка:
+        out["note"] = f"{out.get('note', '')}. {добавка}".lstrip(". ")
+    if политика.get("decision") != "question":
+        return out
+    ось, ru, en = screen.вопрос_людей(dict(политика))
+    вопрос = clarify.Вопрос(ось=ось, текст=ru[0], почему=ru[1], варианты=ru[2], english=en)
+    строка = вопрос.row(англ)
     первая = f"QUESTION: {строка['text']}" if англ else f"ВОПРОС: {строка['text']}"
     out["summary"] = f"{первая}\n{out.get('summary') or ''}".strip()
     if out.get("outcome") == FAIL:
@@ -1522,11 +1554,12 @@ def вопрос_о_согласии(итог: dict, лик: Mapping[str, Any], 
     out["question"] = строка
     out["outcome"] = UNMEASURED
     out["reason"] = planner.REASON_NEED_ANSWER
+    подсказка = screen.ПОДСКАЗКА_SPEC[1 if англ else 0] if ось == screen.ОСЬ_КТО else ""
     out["что_дальше"] = (
         f"answer the question first: {строка['text']}"
         if англ
         else f"сначала ответьте на вопрос: {строка['text']}"
-    )
+    ) + (f"; {подсказка}" if подсказка else "")
     out["note"] = (
         f"{строка['text']} — the plan below is a draft until this is answered. {out.get('note', '')}"
         if англ
