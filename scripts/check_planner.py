@@ -74,6 +74,10 @@ def run(path: Path = pn.DEFAULT_BRIEFS_PATH) -> dict[str, Any]:
             today=сегодня,
             overrides=разметка,
             index=индекс,
+            # Строка с `spec` — план по ПОЛНОЙ спецификации (контракт шестого
+            # круга): так его строит `plan_pipeline`, текст брифа — для нот.
+            spec=row.get("spec"),
+            spec_only=bool(row.get("spec")),
         )
         шаги = tuple(s["step"] for s in итог["steps"])
         ждали = tuple(str(x) for x in (row.get("expect_steps") or ()))
