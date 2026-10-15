@@ -88,7 +88,7 @@ from typing import Any
 
 from mcp.server.mcpserver import MCPServer
 
-from studio import knowledge, planner
+from studio import knowledge, l10n, planner
 from studio.selfrag.facts import STALE_AFTER_DAYS  # noqa: E402
 from studio import ruwords
 from studio.mcp import advice, contract, creative, fetch, misses, probe, proposal, search
@@ -574,7 +574,12 @@ def _json(payload: Any) -> str:
 
 
 def advise_and_note(
-    model: str, attribute: str = "", *, log: Path | None = None, brief: bool = False
+    model: str,
+    attribute: str = "",
+    *,
+    log: Path | None = None,
+    brief: bool = False,
+    lang: str = "",
 ) -> dict:
     """Проконсультировать и записать, что вопрос БЫЛ задан.
 
@@ -601,7 +606,20 @@ def advise_and_note(
         note=str(answer.get("note") or "")[:200],
         path=log,
     )
-    return advice.brief(model, attribute) if brief else answer
+    if brief:
+        return advice.brief(model, attribute, lang=lang)
+    return l10n.localise_payload(answer, lang) if lang else answer
+
+
+def advice_lang(model: str, attribute: str = "", lang: str = "") -> str:
+    """Язык справки: названный явно (`en`/`ru`) или язык самого вопроса.
+
+    Вопрос справки — имя модели и атрибут, и оба почти всегда латиницей; без
+    кириллицы в вопросе ответ английский (аудит 4-го круга: английский вопрос
+    получал русские ноты). Русскому оператору — `lang="ru"`.
+    """
+    явный = str(lang or "").strip().lower()
+    return явный if явный in ("en", "ru") else l10n.lang_of(model, attribute)
 
 
 #: Словари полной справки, которые листаются по ключам (атрибут или
@@ -658,7 +676,9 @@ def page_full_advice(answer: dict, offset: int = 0, limit: int = MAX_RESPONSE_CH
 
 
 @server.tool()
-def model_advice(model: str, attribute: str = "", full: bool = False, offset: int = 0) -> str:
+def model_advice(
+    model: str, attribute: str = "", full: bool = False, offset: int = 0, lang: str = ""
+) -> str:
     """What is known about a generation model: values, tiers, dates, disputes.
 
     Call this before answering any question about what a model can do. It never
@@ -698,18 +718,23 @@ def model_advice(model: str, attribute: str = "", full: bool = False, offset: in
     is the cheaper way when you know what you need.
 
     :param offset: with `full=True`, the first attribute of the page.
+    :param lang: `en` or `ru` — the language of the answer's own sentences.
+        Left empty, it is the language of the question (Latin -> English).
+        Quotes from the fact base stay verbatim in «…»; a Russian quote in an
+        English answer carries a short English gloss `[ru: …]`.
     """
     refused = name_too_long(model, attribute)
     if refused is not None:
         return _json(refused)
+    язык = advice_lang(model, attribute, lang)
     if not full:
-        return _json(advise_and_note(model, attribute, brief=True))
+        return _json(advise_and_note(model, attribute, brief=True, lang=язык))
     # Журнал вопросов пишется на первой странице: листание — тот же вопрос.
     if int(offset or 0) > 0:
-        answer = advice.advise(model, attribute)
+        answer = l10n.localise_payload(advice.advise(model, attribute), язык)
     else:
-        answer = advise_and_note(model, attribute, brief=False)
-    return _json(page_full_advice(answer, offset))
+        answer = advise_and_note(model, attribute, brief=False, lang=язык)
+    return _json(l10n.localise_payload(page_full_advice(answer, offset), язык))
 
 
 #: ПОТОЛОК ДЛИНЫ АТРИБУТА (и имени модели, если слой имён своего не назвал).
@@ -1068,9 +1093,13 @@ def plan_pipeline(
     # БЮДЖЕТ ПРОВЕРЯЕТСЯ ПЕРВЫМ — это самая дешёвая проверка (П2).
     # НАЙДЕНО валидатором 2026-10-14 (G11): `budget_usd=-5` молча значил «не
     # задан» (ветка `> 0`), а NaN проходил сравнением, которое всегда ложно.
+    # ЯЗЫК ОТВЕТА — язык брифа, и на ВСЁМ ответе, включая отказ просева и
+    # ноты, дописанные здесь после планировщика (аудит 4-го круга, `l10n`).
+    # Бриф без единой буквы языка не несёт: ответ — на языке дома, русском.
+    язык = l10n.lang_of(brief) if any(ch.isalpha() for ch in str(brief or "")) else "ru"
     ошибка_бюджета = budget_refusal(budget_usd)
     if ошибка_бюджета is not None:
-        return _json(ошибка_бюджета)
+        return _json(l10n.localise_payload(ошибка_бюджета, язык))
     просев = screen.просеять(brief)
     if просев["outcome"] == UNMEASURED:
         # БЕССЛОВЕСНЫЙ БРИФ — ТРЕТИЙ ИСХОД, А НЕ ОТКАЗ. НАЙДЕНО восьмой
@@ -1080,25 +1109,32 @@ def plan_pipeline(
         # объяснением, чужим советом и «проверено 0, нарушений 0» рядом с
         # вердиктом: Р1, Р2 и Е2 разом.
         return _json(
-            {
-                # СОВЕТ НАПИСАН ОДИН РАЗ (Е1). Он стоял в этом словаре ДВАЖДЫ —
-                # раз аргументом, раз значением поля, — в том самом коммите,
-                # чей текст объясняет, почему так нельзя (десятая приёмка).
-                **_общее_нечего_смотреть(просев, brief, "бриф_пуст", ПУСТОЙ_БРИФ),
-                "classes": [],
-                "steps": [],
-                "question": None,
-                "что_дальше": ПУСТОЙ_БРИФ,
-            }
+            l10n.localise_payload(
+                {
+                    # СОВЕТ НАПИСАН ОДИН РАЗ (Е1). Он стоял в этом словаре
+                    # ДВАЖДЫ — раз аргументом, раз значением поля, — в том самом
+                    # коммите, чей текст объясняет, почему так нельзя
+                    # (десятая приёмка).
+                    **_общее_нечего_смотреть(просев, brief, "бриф_пуст", ПУСТОЙ_БРИФ),
+                    "classes": [],
+                    "steps": [],
+                    "question": None,
+                    "что_дальше": ПУСТОЙ_БРИФ,
+                },
+                язык,
+            )
         )
     if просев["outcome"] != PASS:
         return _json(
-            {
-                **_общий_отказ(просев, brief, (". План не строится", ". The plan is not built")),
-                "classes": [],
-                "steps": [],
-                "question": None,
-            }
+            l10n.localise_payload(
+                {
+                    **_общий_отказ(просев, brief, (". План не строится", ". The plan is not built")),
+                    "classes": [],
+                    "steps": [],
+                    "question": None,
+                },
+                язык,
+            )
         )
 
     итог, пропущено = plan_call(
@@ -1134,7 +1170,7 @@ def plan_pipeline(
             f"{итог.get('note', '')} [not applied — this server's planner does not take "
             f"{', '.join(пропущено)} yet]"
         ).strip()
-    return _json(итог)
+    return _json(l10n.localise_payload(итог, язык))
 
 
 def budget_refusal(budget_usd: Any) -> dict | None:

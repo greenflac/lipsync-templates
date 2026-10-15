@@ -338,8 +338,10 @@ ALIASES: dict[str, str] = {
 #: едет в ответ (`Resolution.evidence`), когда имя разрешилось через перепись, —
 #: спросивший видит, ПОЧЕМУ `hailuo3` отвечается фактами о `minimax-h3`.
 #: Ключ — левая часть переписи. Перепись без строки здесь — красный тест.
+#: Строки — ПО-АНГЛИЙСКИ (4-й круг): это свидетельство, которое едет в ответ
+#: любому спросившему, и его источники английские.
 SYNONYM_EVIDENCE: dict[tuple[str, ...], str] = {
-    ("kling", "video"): "fal: каталог `fal-ai/kling-video/v3/...` = Kling 3.0",
+    ("kling", "video"): "fal: catalogue `fal-ai/kling-video/v3/...` = Kling 3.0",
     (
         "elevenlabs",
         "tts",
@@ -351,28 +353,28 @@ SYNONYM_EVIDENCE: dict[tuple[str, ...], str] = {
     ("elevenlabs", "turbo"): "ElevenLabs API id `eleven_turbo_v2_5`",
     ("elevenlabs", "flash"): "ElevenLabs API id `eleven_flash_v2_5`",
     ("elevenlabs", "3"): "ElevenLabs «Eleven v3» = API id `eleven_v3`",
-    ("ltx", "2", "3"): "Lightricks пишет «LTX-2.3», HF-слаги — `ltx-2-3`",
+    ("ltx", "2", "3"): "Lightricks writes «LTX-2.3», HF slugs `ltx-2-3`",
     ("gemini", "3.1", "flash", "image"): "Google: Nano Banana 2 = Gemini 3.1 Flash Image",
     ("gemini", "image", "3.1", "flash"): "Runway `gemini_image3.1_flash` = Nano Banana 2",
     ("gemini", "3", "pro", "image"): "fal: nano-banana-pro.underlying_model = Gemini 3 Pro Image",
     ("gemini", "image", "3", "pro"): "Runway `gemini_image3_pro` = Nano Banana Pro",
-    ("happy", "horse"): "HappyHorse пишут слитно и через дефис; в базе `happyhorse_1_0`",
+    ("happy", "horse"): "HappyHorse is written joined and hyphenated; base id `happyhorse_1_0`",
     ("hailuo", "3"): (
-        "Runway openapi: `hailuo3` («Hailuo 3.0 supports 768p and 2k») в одной линейке с "
-        "`h3_max` («MiniMax H3 Max»); 768P/2K и 15 с — как у MiniMax-H3 на platform.minimax.io"
+        "Runway openapi: `hailuo3` («Hailuo 3.0 supports 768p and 2k») in one line with "
+        "`h3_max` («MiniMax H3 Max»); 768P/2K and 15 s — as MiniMax-H3 on platform.minimax.io"
     ),
-    ("minimax", "hailuo", "3"): "то же, что `hailuo3`: Hailuo 3 = MiniMax H3",
+    ("minimax", "hailuo", "3"): "same as `hailuo3`: Hailuo 3 = MiniMax H3",
     ("hailuo", "02"): (
         "MiniMax API model `MiniMax-Hailuo-02` (platform.minimax.io/docs/guides/video-generation); "
         "fal `fal-ai/minimax/hailuo-02/...` «MiniMax Hailuo-02»"
     ),
-    ("hailou", "02"): "опечатка `hailou` = `hailuo`: MiniMax `MiniMax-Hailuo-02`",
-    ("minimax", "hailou"): "опечатка `hailou` = `hailuo` (MiniMax пишет «Hailuo»)",
+    ("hailou", "02"): "typo `hailou` = `hailuo`: MiniMax `MiniMax-Hailuo-02`",
+    ("minimax", "hailou"): "typo `hailou` = `hailuo` (MiniMax writes «Hailuo»)",
     # Целые имена из `ALIASES` (ключ — звенья спрошенного имени):
     ("kling", "3", "pro"): (
-        "fal `fal-ai/kling-video/v3/pro/image-to-video` «Kling V3 (pro)»: режим pro "
-        "той же Kling 3.0 (fal.ai/api/openapi/queue/openapi.json?endpoint_id=fal-ai/kling-video/v3/pro/image-to-video); "
-        "pro text-to-video — вариант `kling-3.0-pro-t2v`"
+        "fal `fal-ai/kling-video/v3/pro/image-to-video` «Kling V3 (pro)»: the pro mode "
+        "of Kling 3.0 (fal.ai/api/openapi/queue/openapi.json?endpoint_id=fal-ai/kling-video/v3/pro/image-to-video); "
+        "pro text-to-video is the variant `kling-3.0-pro-t2v`"
     ),
     ("heygen", "avatar", "4"): (
         "fal `fal-ai/heygen/avatar4/image-to-video`: «Generate a video from a photo using "
@@ -385,20 +387,22 @@ SYNONYM_EVIDENCE: dict[tuple[str, ...], str] = {
     ): "HeyGen Avatar IV = Avatar 4; fal `fal-ai/heygen/avatar4/image-to-video`",
     ("topaz", "starlight"): (
         "fal `topaz/upscale/video/generative`: «Topaz Generative Video Upscale (Starlight)», "
-        "поле model: Starlight Precise 2.6/HQ/Mini/Sharp/Fast 2 "
+        "field model: Starlight Precise 2.6/HQ/Mini/Sharp/Fast 2 "
         "(fal.ai/api/openapi/queue/openapi.json?endpoint_id=topaz/upscale/video/generative)"
     ),
-    ("starlight",): "Topaz Starlight — модели эндпоинта fal `topaz/upscale/video/generative`",
+    (
+        "starlight",
+    ): "Topaz Starlight — the models of the fal endpoint `topaz/upscale/video/generative`",
     (
         "flux",
         "kontext",
         "pro",
-    ): "fal `fal-ai/flux-pro/kontext` = «FLUX.1 Kontext [pro]»; BFL (bfl.ai/pricing) то же имя",
+    ): "fal `fal-ai/flux-pro/kontext` = «FLUX.1 Kontext [pro]»; BFL (bfl.ai/pricing) uses the same name",
     (
         "flux",
         "kontext",
         "max",
-    ): "BFL «FLUX.1 Kontext [max]» (bfl.ai/pricing); в базе `flux-1-kontext-max`",
+    ): "BFL «FLUX.1 Kontext [max]» (bfl.ai/pricing); base id `flux-1-kontext-max`",
     (
         "lipsync",
         "2",
@@ -955,7 +959,15 @@ def resolve(
         evidence=свидетельство,
         note=(
             f"{asked!r} разрешено в {canonical!r}{как}"
-            + (f" [тождество по курируемой таблице: {свидетельство}]" if свидетельство else "")
+            # Свидетельство — цитатой: это запись таблицы со своими источниками,
+            # а не наш текст (4-й круг, `studio/l10n.py`).
+            + (
+                " [тождество по курируемой таблице: «"
+                + свидетельство.replace("«", "‹").replace("»", "›")
+                + "»]"
+                if свидетельство
+                else ""
+            )
             + (
                 f"; та же модель записана и как {', '.join(n for n in names if n != canonical)}"
                 if len(names) > 1

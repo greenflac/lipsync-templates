@@ -46,6 +46,7 @@ from typing import Any
 
 from lipsync.fork_identity import FAIL, PASS, UNMEASURED
 
+from studio import l10n
 from studio import lifecycle as _lifecycle
 from studio.mcp import fetch, probe
 from studio.selfrag import attrfamily, modelnames, registry, source_hosts
@@ -2159,7 +2160,7 @@ def размер(ответ: object) -> int:
     return len(json.dumps(ответ, ensure_ascii=False, indent=2, default=str).encode("utf-8"))
 
 
-def brief(model: str, attribute: str = "", *, path: Path | None = None) -> dict:
+def brief(model: str, attribute: str = "", *, path: Path | None = None, lang: str = "") -> dict:
     """Та же выдача, но в размере, который не съедает ответ пользователю.
 
     ЗАЧЕМ. ИЗМЕРЕНО 2026-09-02: полный ответ по `minimax-h3` — 23 751 символ.
@@ -2178,6 +2179,11 @@ def brief(model: str, attribute: str = "", *, path: Path | None = None) -> dict:
     доступности.
     """
     полный = advise(model, attribute, path=path)
+    # ЯЗЫК — ДО СЖАТИЯ (аудит 4-го круга): краткая форма режет ноты
+    # (`_коротко`), а обрезанный посреди слова шаблон таблица `l10n` не узнаёт.
+    # Пустой `lang` — ответ на языке шаблонов, как раньше.
+    if lang:
+        полный = l10n.localise_payload(полный, lang)
     кратко: dict = {
         ключ: полный[ключ]
         for ключ in (
@@ -2242,7 +2248,10 @@ def brief(model: str, attribute: str = "", *, path: Path | None = None) -> dict:
         "полной выдаче — позовите тот же инструмент с `full=True` (или с "
         "`attribute=<имя>`, чтобы получить один атрибут целиком)"
     )
-    return _в_потолок(кратко, полный, attribute)
+    if not lang:
+        return _в_потолок(кратко, полный, attribute)
+    кратко = l10n.localise_payload(кратко, lang)
+    return l10n.localise_payload(_в_потолок(кратко, полный, attribute), lang)
 
 
 def _сводка_семьи(семейные: dict) -> dict:

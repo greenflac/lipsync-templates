@@ -325,17 +325,20 @@ class ЖивыеБрифы(unittest.TestCase):
             ],
             [(ш["step"], ш["chosen"]["model"]) for ш in итог["steps"]],
         )
-        self.assertTrue(итог["resolution_carry"].startswith("кадр 1080x1920 пронесён от шага оживление (wan-3.0-i2v:"))
+        # Бриф английский — и ответ целиком английский (4-й круг, `studio/l10n.py`).
+        self.assertTrue(
+            итог["resolution_carry"].startswith("frame 1080x1920 carried from step photo to video (wan-3.0-i2v:")
+        )
         self.assertTrue(
             итог["resolution_carry"].endswith(
-                "через липсинк (sync-lipsync): о разрешении их выхода база "
-                "молчит, и принято, что проход кадр сохраняет — допущение, не замер"
+                "through lip sync (sync-lipsync): the base is silent on their output resolution, "
+                "and the pass is assumed to keep the frame — an assumption, not a measurement"
             )
         )
         видео = итог["steps"][3]
         self.assertEqual("minimax-h3", видео["licence_alternative"]["model"])
         self.assertIn(
-            "условия API-площадки — другой документ: в базе НЕ записаны",
+            "the API platform's terms are another document: NOT recorded in the base",
             видео["licence_alternative"]["licence_risk"],
         )
         self.assertEqual("юрисдикция", итог["question"]["axis"])
@@ -363,9 +366,11 @@ class ЖивыеБрифы(unittest.TestCase):
         self.assertEqual("total 3.58 usd is over the clip ceiling 3 usd", оптимум["why_en"])
         self.assertEqual("годно", итог["pipeline_price"]["outcome"])
         self.assertIn(
+            # С 4-го круга английская сводка говорит по-английски и здесь
+            # (`studio/l10n.py`): прежде «traded off» вёл в русские доводы.
             "re-selected for the budget: sync-lipsync 1.50 -> latentsync 0.20 usd; traded off: "
-            "sync-lipsync: измерено, но есть плохая новость, строк применимости 3 (за 2, против 1) "
-            "-> latentsync: измерено, но есть плохая новость, строк применимости 4 (за 1, против 3)",
+            "sync-lipsync: measured, but there is bad news, applicability rows 3 (for 2, against 1) "
+            "-> latentsync: measured, but there is bad news, applicability rows 4 (for 1, against 3)",
             итог["summary"],
         )
         self.assertIn("BUDGET OPTIMISED (total 3.58 usd is over the clip ceiling 3 usd): 3.58 -> 2.28 usd", итог["summary"])

@@ -105,9 +105,10 @@ class Находка5СколькоКадров(unittest.TestCase):
         )
         шаг = итог["steps"][0]
         self.assertEqual("б-text-to-image", шаг["chosen"]["model"])
-        self.assertEqual("0.60 usd за шаг: через example — 6 кадр(ов) × 0.1 usd = 0.60 usd", шаг["chosen"]["price"])
+        # Английский бриф — английские формы во всём ответе (4-й круг, `l10n`).
+        self.assertEqual("0.60 usd per step: via example — 6 image(s) × 0.1 usd = 0.60 usd", шаг["chosen"]["price"])
         self.assertEqual(
-            ["а-text-to-image:6.00 usd за шаг: через example — 6 прогон(ов) × 1 usd (прогон = 1 кадр) = 6.00 usd"],
+            ["а-text-to-image:6.00 usd per step: via example — 6 run(s) × 1 usd (run = 1 image) = 6.00 usd"],
             [f"{а['model']}:{а['price']}" for а in шаг["alternatives"]],
         )
         self.assertIn("price: 0.60 usd per step: via example — 6 image(s) × 0.1 usd = 0.60 usd", итог["summary"])
@@ -330,8 +331,10 @@ class Находка14СоседиИЯзык(unittest.TestCase):
                 "0.06 usd per step: 1 image(s) × 3 MP × 0.02 usd"
             ),
             "ffmpeg или монтажная программа (не модель)": "ffmpeg or an editing app (not a model)",
+            # С 4-го круга (`studio/l10n.py`) имена шагов переводятся и внутри
+            # строки: одна функция языка на весь ответ.
             "видео сводится с отдельными дорожками: музыка": (
-                "the video is mixed with separate tracks: музыка"
+                "the video is mixed with separate tracks: music"
             ),
             "о речи на языке брифа (english) у minimax-h3 ничего не записано — проверить "
             "пробным прогоном до заказа": (
@@ -341,9 +344,10 @@ class Находка14СоседиИЯзык(unittest.TestCase):
             "лицензия исключает территории EU, UK — где работает заказчик?": (
                 "the licence excludes territories EU, UK — where will you use it?"
             ),
-            # Цитата из базы остаётся на языке источника.
+            # Цитата из базы остаётся на языке источника; к русской — глосс.
             "«рот плывёт за 10 с» — при условии: текст в кадре": (
-                "«рот плывёт за 10 с» — when: text in frame"
+                "«рот плывёт за 10 с» [ru: operator's note in Russian, kept as recorded] "
+                "— when: text in frame"
             ),
             "по пути clip.mp4 файла нет": "nothing at clip.mp4",
         }

@@ -290,7 +290,8 @@ class Имена(unittest.TestCase):
     def test_написания_сводятся(self) -> None:
         self.assertEqual(self.разрешить("hailou 02"), ("minimax-hailuo-02",))
         self.assertEqual(self.разрешить("hailuo-02"), ("minimax-hailuo-02",))
-        self.assertEqual(self.разрешить("kling3 pro"), ("kling-3.0",))
+        # 4-й круг: «kling 3 pro» — вариант pro, а не корень (аудит имён).
+        self.assertEqual(self.разрешить("kling3 pro"), ("kling-3.0-pro-i2v",))
         self.assertEqual(self.разрешить("heygen avatar 4"), ("heygen-avatar4-image-to-video",))
         self.assertEqual(self.разрешить("topaz starlight"), ("topaz-upscale-video-generative",))
         self.assertEqual(self.разрешить("flux-kontext-pro"), ("flux.1-kontext-pro",))

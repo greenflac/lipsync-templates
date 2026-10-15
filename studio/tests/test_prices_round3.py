@@ -201,9 +201,10 @@ class ЦенаПоМаршруту(unittest.TestCase):
         self.assertEqual([("fal", 0.1)], [(м, o.usd) for м, o in с.other_routes])
         self.assertEqual(
             [
-                "elevenlabs: 0.08 usd (vendor: price_per_1000_chars = $0.08 per 1K characters "
-                "(API)) против 0.18 usd (LiteLLM: price_per_character_usd_via_elevenlabs = "
-                "$0.00018) — в смету взято 0.08 usd (ступень vendor)"
+                # Значение источника — цитатой «…» (4-й круг, `studio/l10n.py`).
+                "elevenlabs: 0.08 usd (vendor: price_per_1000_chars = «$0.08 per 1K characters "
+                "(API)») против 0.18 usd (LiteLLM: price_per_character_usd_via_elevenlabs = "
+                "«$0.00018») — в смету взято 0.08 usd (ступень vendor)"
             ],
             list(с.contradictions),
         )
@@ -223,8 +224,8 @@ class ЦенаПоМаршруту(unittest.TestCase):
         self.assertEqual(("fal", 3.0), (с.route, с.default.usd))
         self.assertEqual(
             [
-                "fal: 3 usd (portal: price_per_minute = Your request will cost $3 per minute "
-                "of video.) против 0.7 usd (portal: price_unit_minute_usd = $0.7 per minute) — "
+                "fal: 3 usd (portal: price_per_minute = «Your request will cost $3 per minute "
+                "of video.») против 0.7 usd (portal: price_unit_minute_usd = «$0.7 per minute») — "
                 "в смету взято 3 usd (ступень portal, из равных по ступени — дороже)"
             ],
             list(с.contradictions),

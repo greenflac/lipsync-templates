@@ -44,6 +44,9 @@ def _написания(имя: str) -> dict[str, str]:
 
 
 class ВсеИменаБазы(unittest.TestCase):
+    known: list[str]
+    groups: dict[str, list[str]]
+
     @classmethod
     def setUpClass(cls) -> None:
         from studio.mcp import advice

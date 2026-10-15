@@ -531,7 +531,9 @@ def _card_availability(name: str, *, today: date | None = None) -> dict:
     if stale:
         warnings.append(f"card is {age_days} days old, past the {STALE_AFTER_DAYS}-day limit")
     if card.note:
-        warnings.append(card.note)
+        # Нота карточки — запись того, кто карточку составил: цитатой, чтобы
+        # ответ на любом языке отличал её от наших шаблонов (`studio/l10n.py`).
+        warnings.append(f"«{card.note}»")
 
     if card.status == STATUS_RETIRED:
         return {
