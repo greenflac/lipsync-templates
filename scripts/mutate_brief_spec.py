@@ -24,14 +24,41 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 
-НАБОРЫ = ("studio.tests.test_brief_spec_r4",)
+НАБОРЫ = (
+    "studio.tests.test_brief_spec_r4",
+    # Интеграция круга 4: жёсткие требования из той же спецификации
+    # (`brief_spec.hard` -> `hardneed.Hard`) и язык ответа (`studio/l10n.py`).
+    # Только модульные классы — секунды, а не минуты на мутанта.
+    "studio.tests.test_integration_r4.ОднаСпецификация",
+    "studio.tests.test_hard_constraints_r4.ТребованияИзБрифа",
+    "studio.tests.test_hard_constraints_r4.ВесаИПамять",
+    "studio.tests.test_hard_constraints_r4.ЦенаСвоегоЗапуска",
+    "studio.tests.test_localisation.Прибор",
+)
 
 BS = "studio/brief_spec.py"
 PN = "studio/planner.py"
 PR = "studio/pricing.py"
+HN = "studio/hardneed.py"
+L10N = "studio/l10n.py"
 
 #: (файл, было, стало, что ломается). Каждая константа — строже и слабее.
 MUTANTS: tuple[tuple[str, str, str, str], ...] = (
+    # --- hardneed: память, веса, цель (через `brief_spec.hard` — в отбор)
+    (HN, "BYTES_PER_PARAM_FLOOR = 1.0", "BYTES_PER_PARAM_FLOOR = 2.0", "оценка памяти по FP16, а не по FP8"),
+    (HN, "BYTES_PER_PARAM_FLOOR = 1.0", "BYTES_PER_PARAM_FLOOR = 0.5", "оценка памяти по 4 битам"),
+    (HN, '"rtx-4090": 24.0,', '"rtx-4090": 16.0,', "память RTX 4090 из таблицы меньше паспортной"),
+    (HN, 'r"quality over (?:price|cost)",', 'r"quality over nothing",', "«quality over price» больше не цель"),
+    (HN, '"huggingface.co", "github.com"', '"github.com"', "страница весов на HF не считается"),
+    # --- l10n: прибор утечек и глосс
+    (L10N, 'GLOSS_MARK = "[ru:"', 'GLOSS_MARK = "[en:"', "глосс русской цитаты не узнаётся"),
+    (L10N, '        "step",\n        "requires",', '        "requires",', "имя шага — код — снова в счёт утечек"),
+    (
+        L10N,
+        'GLOSS_DEFAULT = "operator\'s note in Russian, kept as recorded"',
+        'GLOSS_DEFAULT = "Russian note"',
+        "глосс по умолчанию другой",
+    ),
     (BS, "POSSESSIVE_WINDOW = 3", "POSSESSIVE_WINDOW = 2", "окно притяжательного уже"),
     (BS, "POSSESSIVE_WINDOW = 3", "POSSESSIVE_WINDOW = 4", "окно притяжательного шире"),
     (BS, "OBJECT_WINDOW = 4", "OBJECT_WINDOW = 3", "окно объекта уже"),
