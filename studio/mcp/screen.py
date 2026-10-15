@@ -2270,17 +2270,22 @@ def чисто(текст: str) -> bool:
     (ОСЬ_СОГЛАСИЕ, frozenset({"consent_missing"})),
 )
 
+#: Граница названия — латиница и кириллица, НЕ любая `\w`: «BBC風» по-японски
+#: пишется слитно, и `\w` (иероглиф — тоже буква) прятал бренд.
+_НЕ_БУКВА_ДО = r"(?<![A-Za-zА-Яа-яЁё0-9-])"
+_НЕ_БУКВА_ПОСЛЕ = r"(?![A-Za-zА-Яа-яЁё0-9-])"
+
 #: НОВОСТНЫЕ БРЕНДЫ — курируемый список реальных СМИ (7-й круг). Аббревиатуры
 #: — с учётом регистра и целым словом («cnn» в нике — не CNN); названия —
 #: без регистра. Список — один признак из двух, никогда не единственный.
 _БРЕНДЫ_СМИ_РЕГИСТР = re.compile(
-    r"(?<![\w-])(BBC|CNN|MSNBC|CNBC|NHK|CCTV|TASS|ТАСС|РИА|РБК|НТВ|ZDF|ARD|DW|AFP|AP News)(?![\w-])"
+    rf"{_НЕ_БУКВА_ДО}(BBC|CNN|MSNBC|CNBC|NHK|CCTV|TASS|ТАСС|РИА|РБК|НТВ|ZDF|ARD|DW|AFP|AP News){_НЕ_БУКВА_ПОСЛЕ}"
 )
 _БРЕНДЫ_СМИ = re.compile(
-    r"(?<![\w-])(fox news|sky news|nbc news|cbs news|abc news|reuters|associated press|"
+    rf"{_НЕ_БУКВА_ДО}(fox news|sky news|nbc news|cbs news|abc news|reuters|associated press|"
     r"bloomberg|al jazeera|euronews|deutsche welle|france 24|le monde|new york times|"
     r"washington post|the guardian|tagesschau|xinhua|ria novosti|interfax|интерфакс|"
-    r"первый канал|россия[- ]24|риа новости|медуза|meduza|新华社|朝日新聞|読売新聞)(?![\w-])",
+    rf"первый канал|россия[- ]24|риа новости|медуза|meduza|新华社|朝日新聞|読売新聞){_НЕ_БУКВА_ПОСЛЕ}",
     re.IGNORECASE,
 )
 #: Слова о ПОДДЕЛКЕ (вторая половина пары «бренд + подделка»).
