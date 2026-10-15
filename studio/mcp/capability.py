@@ -132,7 +132,11 @@ def язык_слова(слово: str) -> str:
     if теги:
         return bs.language_name(теги[0])
     тег = bs.language_tag(низ)
-    return bs.language_name(тег) if тег else ""
+    if not тег:
+        return ""
+    имя = bs.language_name(тег)
+    # Язык вне словаря базы — ПЕРВИЧНЫЙ подтег: «kk-KZ» ищется как «kk».
+    return имя if имя != тег else тег.split("-")[0].lower()
 
 
 LANGUAGE_LIST_MIN = 3
@@ -241,7 +245,9 @@ def _норм(текст: object) -> str:
 def _фраза_в(фраза: str, текст: str) -> bool:
     """Фраза целиком (по границе слова) в тексте."""
     ф = _норм(фраза)
-    return bool(ф) and re.search(rf"(?<![\w-]){re.escape(ф)}(?![\w])", _норм(текст)) is not None
+    # Русская фраза — основой: «удаление объект» ловит «удаление объектов».
+    хвост = r"\w*" if re.search(r"[а-яё]$", ф) else ""
+    return bool(ф) and re.search(rf"(?<![\w-]){re.escape(ф)}{хвост}(?![\w])", _норм(текст)) is not None
 
 
 # --- возможности, правки, память, кадры (седьмой круг) ------------------------------
@@ -981,7 +987,7 @@ def find(
                 отсеяно.append(
                     {
                         "model": у.model,
-                        "why": f"vram: needs >= {нужно:g} GB, asked {вопрос.память:g} GB — "
+                        "why": f"vram: needs >= {нужно:.3g} GB, asked {вопрос.память:g} GB — "
                         f"{_коротко(откуда, 140)}",
                     }
                 )
@@ -991,7 +997,7 @@ def find(
                 требования[ключ_памяти] = {"outcome": PASS, "why": _коротко(откуда, 200)}
                 опора = _строка_памяти(строки)
                 if опора is not None:
-                    опоры_памяти = [(опора, f"needs {нужно:g} GB <= {вопрос.память:g} GB")]
+                    опоры_памяти = [(опора, f"needs {нужно:.3g} GB <= {вопрос.память:g} GB")]
                 else:
                     опоры_памяти = []
             else:

@@ -944,9 +944,10 @@ def find_models(
     :param function: a job of the endpoint registry — t2v | i2v | r2v |
         v2v-edit | lipsync | talking-avatar | face-swap | dub-translate | tts |
         voice-clone | music | sfx | t2i | image-edit | bg-remove | upscale-image
-        | upscale-video | restore-colorize | frame-interpolate |
+        | upscale-video | restore | colorize | frame-interpolate |
         transcribe-diarize | captions | turntable-360 — or a word for one
-        ("faceswap", "background removal"). Broad words (video, image,
+        ("faceswap", "background removal"). Restoration (noise, scratches,
+        blur) and colorization are separate jobs. Broad words (video, image,
         upscale, audio) are narrowed by the job the question names.
     :param terms: comma-separated words of the question ("profile, side
         view", "logo, legible", "fps"). Words are mapped to recorded
@@ -955,9 +956,14 @@ def find_models(
         literally and count only as information. Leave empty to take them
         from `need`.
     :param require: comma-separated hard requirements: open (open weights) |
-        commercial (licence must permit commercial use) | a language (russian,
-        ru, spanish…). A model whose record VIOLATES one is dropped with the
-        reason; one where it is unrecorded is ranked after the confirmed ones.
+        commercial (licence must permit commercial use) | a language, any
+        BCP-47 tag or name (ru, kk, he, pt-BR, kazakh, hebrew…) | GPU memory
+        ("12gb"; also read from `need`: "runs on 12GB VRAM", "RTX 3060"). A
+        model whose record VIOLATES one is dropped with the reason (a VRAM
+        need above yours, read from its VRAM rows or a parameter-count lower
+        bound). For `open`, a model whose weights status is NOT RECORDED is
+        dropped too and listed under `gaps.excluded_unknown` — not proof it is
+        closed. Other unrecorded requirements rank after the confirmed ones.
         Words not understood are named in `require_not_understood`.
     :param top: how many ranked models to return (the total is always given).
     :param conditions: comma-separated shooting conditions ("profile face",
@@ -965,8 +971,14 @@ def find_models(
 
     Good news is only what was DECLARED good (the record's `contra=false`) or
     a value read per attribute against your constraint (the language is in
-    the list, the duration limit covers the asked length, the licence permits
-    commercial use). A row with no declared polarity is "informational",
+    the list, the duration limit covers the asked length, fps or an fps
+    multiplier reaches the asked rate, the VRAM need fits, native audio is on
+    in `audio_output`). An endpoint id that NAMES the asked video edit
+    (".../clean-plate" for object removal) is good news labelled
+    `polarity: catalog` — capability from the catalog/schema, not measured
+    applicability; say which it is. A confirmed licence or weights
+    requirement counts as good news only when the question asks nothing
+    else. A row with no declared polarity is "informational",
     never good news; price rows are never evidence of capability. Ranking:
     good news only, then informational only, then mixed, then bad news only;
     within that, confirmed requirements, source tier, benchmark number,
