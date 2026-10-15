@@ -228,7 +228,7 @@ class ЖивойСвойGpu(unittest.TestCase):
     def test_цена_временем_gpu_и_это_оценка(self) -> None:
         цена = self.итог["steps"][0]["chosen"]["price"]
         self.assertTrue(
-            цена.startswith("0.11 usd за шаг: через свой GPU — ОЦЕНКА: 540 GPU-с на клип 5 с"), цена
+            цена.startswith("0.11 usd per step: via own GPU — ESTIMATE: 540 GPU-s per 5 s clip"), цена
         )
         self.assertIn("CONSTRAINTS: own GPU (rtx-4090 24 GB)", self.итог["summary"])
 
@@ -259,7 +259,8 @@ class ЖивоеКачество(unittest.TestCase):
         self.assertEqual("kling-3.0-4k-t2v", шаг["chosen"]["model"])
         # Родной 720p у seedance-2.0 (карточка вендора) — отсев, хоть тариф 2160p и продаётся.
         отсеяны = {о["model"]: о["why"] for о in шаг["hard_excluded"]}
-        self.assertTrue(any("родной кадр НИЖЕ заказанного" in п for п in отсеяны.values()), отсеяны)
+        # Ответ на английский бриф — по-английски (`studio/l10n.py`).
+        self.assertTrue(any("the native frame is BELOW the one asked" in п for п in отсеяны.values()), отсеяны)
         self.assertNotIn("апскейл", [ш["step"] for ш in итог["steps"]])
 
     def test_по_русски_то_же(self) -> None:

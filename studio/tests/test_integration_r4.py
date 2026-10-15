@@ -60,7 +60,11 @@ class ОднаСпецификация(unittest.TestCase):
 
 
 class СквозныеБрифы(unittest.TestCase):
-    """Бриф -> план на живой базе: требования доходят до выбора модели."""
+    """Бриф -> план на живой базе: требования доходят до выбора модели.
+
+    Ответ на английский бриф — по-английски (`studio/l10n.py`): ноты сверяются
+    английскими формами.
+    """
 
     def test_4k_качество_родная_4k_модель(self) -> None:
         итог = pn.plan("4K 24fps cinematic 6s, no audio, quality over price", full=True)
@@ -69,7 +73,7 @@ class СквозныеБрифы(unittest.TestCase):
         )
         модель = _модели(итог)["генерация_видео"]
         self.assertIn("4k", модель or "")
-        self.assertIn("родной", итог["steps"][0]["hard_note"])
+        self.assertIn("the frame asked is native", итог["steps"][0]["hard_note"])
         # Апскейл не дописан: кадр родной.
         self.assertNotIn("апскейл", _модели(итог))
 
@@ -86,12 +90,12 @@ class СквозныеБрифы(unittest.TestCase):
         шаг = итог["steps"][0]
         self.assertEqual("генерация_видео", шаг["step"])
         self.assertEqual("wan-2.2-ti2v-5b", шаг["chosen"]["model"])
-        self.assertIn("веса открыты", шаг["hard_note"])
-        self.assertIn("влезает в память GPU", шаг["hard_note"])
+        self.assertIn("weights open", шаг["hard_note"])
+        self.assertIn("fits the GPU memory", шаг["hard_note"])
         self.assertGreater(шаг["hard_excluded_count"], 0)
 
     def test_свой_gpu_текстом(self) -> None:
-        self._свой_gpu(pn.plan("self-host on one RTX 4090, 1080p 5s", full=True), "бриф")
+        self._свой_gpu(pn.plan("self-host on one RTX 4090, 1080p 5s", full=True), "brief")
 
     def test_свой_gpu_через_spec(self) -> None:
         итог = pn.plan(

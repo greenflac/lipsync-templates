@@ -8943,6 +8943,15 @@ HARD_EXCLUDED_SHOWN = 5
 }
 
 
+#: Допущение о кадре, по которому считается цена СВОЕГО видео заказчика,
+#: когда кадр не назван (интеграция круга 4): не самый дешёвый тариф (480p)
+#: молча, а стандарт сдачи рекламы — и вслух.
+ASSUMED_PRICE_FRAME = (
+    f"your video's resolution is not named — {bs.DEFAULT_VIDEO_RESOLUTION} assumed for pricing "
+    "(ad delivery standard), not the cheapest tier; pass spec.resolution to change"
+)
+
+
 def длительности_плана(brief: str, понято: "bs.Spec") -> tuple["dur.Запрос", "dur.Запрос"]:
     """(весь ролик, один шот). Без шота — одно и то же число."""
     if понято.per_shot_s:
@@ -9475,16 +9484,9 @@ def plan(
     # печатается в `understood_as`. Кадр ОТБОРА не меняется: апскейл чужого
     # ролика из допущения не дописывается.
     кадр_цены = заказанный_кадр or кадр
-    if кадр_цены is None and "video" in понято.inputs:
+    кадр_цены_допущен = кадр_цены is None and "video" in понято.inputs
+    if кадр_цены_допущен:
         кадр_цены = bs.frame(replace(понято, resolution=bs.DEFAULT_VIDEO_RESOLUTION))
-        понято = replace(
-            понято,
-            assumptions=(
-                *понято.assumptions,
-                f"your video's resolution is not named — {bs.DEFAULT_VIDEO_RESOLUTION} assumed for "
-                "pricing (ad delivery standard), not the cheapest tier; pass spec.resolution to change",
-            ),
-        )
 
     выбор: list[tuple[Operation, Candidate | None]] = []
     строки_шагов: list[dict] = []
@@ -10025,7 +10027,15 @@ def plan(
             + ("" if длительность.разобрано else f"; ВНИМАНИЕ: {длительность.нота}")
         ),
         "brief": brief,
-        "understood_as": bs.echo(понято, [оп.name for оп, _ in выбор]),
+        "understood_as": bs.echo(
+            # Допущение о кадре цены печатается, когда оно ЦЕНУ решило: тариф
+            # выбранного шага привязан к кадру. Иначе оно — шум.
+            replace(понято, assumptions=(*понято.assumptions, ASSUMED_PRICE_FRAME))
+            if кадр_цены_допущен
+            and any(к is not None and к.cost is not None and к.cost.default.resolution for _, к in выбор)
+            else понято,
+            [оп.name for оп, _ in выбор],
+        ),
         "languages": list(языки),
         "unmeasured_requirements": требования_без_ответа(brief, по_английски),
         "pipeline_price": цена_пайплайна,
