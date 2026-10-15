@@ -94,7 +94,6 @@ CODE_KEYS: frozenset[str] = frozenset(
         "name",
         "how",
         "asked",
-        "asked_as",
         "looked_up_as",
         "spellings",
         "variants",
@@ -791,6 +790,8 @@ LABELS_EN: dict[str, str] = {
     "требования заказчика (свой GPU, качество) подтверждены записью, а не молчанием":
         "customer's hard requirements (own GPU, quality) confirmed by a record, not by silence",
     "качество": "quality",
+    # Ответ заказчика, который планировщик приводит в «ёлочках» (нота о юрисдикции).
+    "не исключена": "not excluded",
     "нельзя ли этим воспользоваться": "can it be used at all",
     "делает ли модель эту работу, а не соседнюю": "does the model do this job, not a neighbouring one",
     "принимает ли кадр": "does it accept the frame",
