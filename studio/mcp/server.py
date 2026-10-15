@@ -1435,7 +1435,9 @@ def _план(
     # модели — главный признак, текст — запасной (`screen.политика_людей`).
     # Отказ политики сливается с отказом просева и идёт ТЕМ ЖЕ путём.
     люди_spec, spec_плана = screen.люди_из_spec(spec, bs.SPEC_FIELDS)
-    просев, политика = screen.просеять_с_людьми(brief, люди_spec, просев)
+    просев, политика = screen.просеять_с_людьми(
+        brief, люди_spec, просев, screen.события_из_spec(spec)
+    )
     if просев["outcome"] != PASS:
         return _json(
             l10n.localise_payload(
@@ -1543,7 +1545,7 @@ def вопрос_о_согласии(итог: dict, политика: Mapping[s
     out["question"] = строка
     out["outcome"] = UNMEASURED
     out["reason"] = planner.REASON_NEED_ANSWER
-    подсказка = screen.ПОДСКАЗКА_SPEC[1 if англ else 0] if ось == screen.ОСЬ_КТО else ""
+    подсказка = screen.подсказка_оси(ось, англ)
     out["что_дальше"] = (
         f"answer the question first: {строка['text']}"
         if англ
