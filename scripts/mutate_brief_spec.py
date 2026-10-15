@@ -144,7 +144,7 @@ MUTANTS: tuple[tuple[str, str, str, str], ...] = (
     (PN, "    if not set(работы) & ep.FAMILY_MODES:\n        return False\n", "", "аватар берёт строки генератора"),
     (PN, "    if семья is None or семья.orderable:", "    if семья is None:", "заказываемая семья одалживает"),
     (PN, "            elif узел.functions and not set(узел.functions) & set(работы):", "            elif False:", "видеомодель снова кандидат на липсинк"),
-    (PN, "            if (\n                not узел.orderable\n                and not (hard is not None and hard.self_host and узел.self_hostable)\n", "            if (\n                False\n                and not (hard is not None and hard.self_host and узел.self_hostable)\n", "узел семьи снова кандидат"),
+    (PN, "            if (\n                (not узел.orderable or только_у_себя)\n                and not (hard is not None and hard.self_host and узел.self_hostable)\n", "            if (\n                False\n                and not (hard is not None and hard.self_host and узел.self_hostable)\n", "узел семьи снова кандидат"),
     (PN, "    if not реестр.orderable_for(работа) and op.name in ЗАПАСНАЯ_РАБОТА:", "    if False:", "оборот без запасной работы"),
     (PN, "    if предел_прогона(все) is not None:\n        return None\n", "", "допущение поверх своей записи"),
     (PN, "        op.name in ТОЛЬКО_РЕЕСТР or any(реестр.orderable_for(р) for р in работы)", "        op.name in ТОЛЬКО_РЕЕСТР", "неустановленные остаются при известной работе"),

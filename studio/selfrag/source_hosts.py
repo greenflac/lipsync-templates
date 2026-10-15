@@ -170,6 +170,9 @@ VENDOR_SOURCES: dict[str, tuple[str, ...]] = {
     ),
     # OpenAI's speech models (`tts-1`, `tts-1-hd`) are named by neither key above.
     "tts-1": ("openai.com", "platform.openai.com", "developers.openai.com"),
+    # `openai-tts-1`: OpenAI's `tts-1` under a name that does not merge with
+    # `xai-tts-v1` (the name layer reads bare `tts-1` as xAI's model).
+    "openai-tts": ("openai.com", "platform.openai.com", "developers.openai.com"),
     # …but Kyutai's `tts-1.6b-en_fr` is not OpenAI's: the longer key wins.
     "tts-1.6b": ("huggingface.co/kyutai/",),
     # Google Cloud Text-to-Speech voices (`chirp-3-hd`).

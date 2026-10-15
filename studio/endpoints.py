@@ -1168,13 +1168,13 @@ EDIT_RULES: dict[str, str] = {
 #: `find_models` различает эти два свидетельства (способность по каталогу
 #: против «может, если попросить»).
 EDIT_NAMED: dict[str, str] = {
-    EDIT_REFRAME: r"reframe|outpaint",
+    # Правила без звена правки по инструкции — те же (Е1: выводятся, не копируются).
+    **{п: о for п, о in EDIT_RULES.items() if not о.startswith(_ПРАВКА_ПО_ИНСТРУКЦИИ)},
     EDIT_REPLACE_OBJECT: r"replace-object|object-replace\w*",
-    EDIT_REMOVE_OBJECT: r"clean-plate|object-removal|remove-object|object-remov\w*|inpaint\w*",
-    EDIT_REPLACE_SKY: r"sky-replace\w*|replace-sky",
-    EDIT_STABILISE: r"stabili[sz]\w*",
-    EDIT_RELIGHT: r"relight\w*|day-to-night|hdr",
-    EDIT_RESTYLE: r"recast|render-to-real|restyle|style-transfer",
+    # `inpaint` в правиле по инструкции общий; прямо названное удаление — здесь.
+    EDIT_REMOVE_OBJECT: EDIT_RULES[EDIT_REMOVE_OBJECT].removeprefix(_ПРАВКА_ПО_ИНСТРУКЦИИ + "|")
+    + r"|object-remov\w*|inpaint\w*",
+    EDIT_REPLACE_SKY: EDIT_RULES[EDIT_REPLACE_SKY].removeprefix(_ПРАВКА_ПО_ИНСТРУКЦИИ + "|"),
 }
 
 
