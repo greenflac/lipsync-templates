@@ -6626,6 +6626,11 @@ def отбор_правки(
     }
 
 
+def семья_только_у_себя(узел: ep.Endpoint) -> bool:
+    """Узел семьи, чей единственный маршрут — свои веса: в API-плане не кандидат."""
+    return bool(узел.variants) and bool(узел.routes) and set(узел.routes) == {ep.ROUTE_SELF_HOST}
+
+
 def реестр_шага(
     работы: Sequence[str],
     запасная_нота: str,
@@ -6789,8 +6794,12 @@ def candidates_for(
             узел = реестр.by_key.get(ключ)
             if узел is None:
                 continue
+            # УЗЕЛ СЕМЬИ СО СВОИМИ ВЕСАМИ (седьмой круг, `flux.2-klein-9b`):
+            # заказывается — но только «запустить у себя». Через API его не
+            # купить, и в API-плане он не кандидат (`семья_только_у_себя`).
+            только_у_себя = семья_только_у_себя(узел)
             if (
-                not узел.orderable
+                (not узел.orderable or только_у_себя)
                 and not (hard is not None and hard.self_host and узел.self_hostable)
                 # БЕЗ МАРШРУТА, НО И НЕ СЕМЬЯ (шестой круг): отсеивается только
                 # строго — когда реестр знает заказываемые эндпоинты работы. В
@@ -6800,7 +6809,11 @@ def candidates_for(
             ):
                 # Узел семьи не купить через API; на СВОЁМ GPU веса семьи —
                 # маршрут (`wan-2.2-ti2v-5b`: варианты есть, цены нет, веса открыты).
-                не_заказываются[написание[ключ]] = узел.why_not_orderable
+                не_заказываются[написание[ключ]] = (
+                    "узел семьи: через API не купить — только свои веса (self-host)"
+                    if только_у_себя and узел.orderable
+                    else узел.why_not_orderable
+                )
                 del по_модели[ключ]
             elif узел.functions and not set(узел.functions) & set(работы):
                 чужая_по_реестру[написание[ключ]] = (
@@ -6822,7 +6835,7 @@ def candidates_for(
             у
             for р in работы
             for у in реестр.by_function.get(р, [])
-            if у.orderable
+            if (у.orderable and not семья_только_у_себя(у))
             or (hard is not None and hard.self_host and у.self_hostable)
             # Без маршрута, не семья, и реестр работы строго не знает — та же
             # мягкость, что и в отсеве выше.

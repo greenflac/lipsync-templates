@@ -360,7 +360,10 @@ VRAM_ORDER: dict[str, int] = {VRAM_FITS: 0, VRAM_UNKNOWN: 1, VRAM_OVER: 2}
 BYTES_PER_PARAM_FLOOR = 1.0
 
 _VRAM_ATTR = re.compile(r"vram|gpu_memory|min_gpu_mem", re.I)
-_GB = re.compile(r"(\d{1,3}(?:\.\d+)?)\s*(?:gb|гб)?", re.I)
+#: Число в строке памяти — не хвост слова: «--t5_cpu» не «5 ГБ» (седьмой круг,
+#: валидатор v7 f18: `wan-2.2-ti2v-5b` с «24 (e.g. RTX 4090) … --t5_cpu»
+#: читалась как «нужно 5 ГБ»).
+_GB = re.compile(r"(?<![\w.])(\d{1,3}(?:\.\d+)?)\s*(?:gb|гб)?", re.I)
 _PARAMS = re.compile(r"(\d{1,4}(?:\.\d+)?)\s*(?:b\b|billion|млрд)", re.I)
 _PARAMS_RAW = re.compile(r"\b(\d{1,3}(?:,\d{3}){3,})\b")
 

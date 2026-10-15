@@ -442,9 +442,13 @@ class Отбор(unittest.TestCase):
         ]
         e = ep.build(база).get("kappa-1")
         assert e is not None
-        # Шестой круг: веса СЕМЬИ — не маршрут узла семьи (их запускают под
-        # именами вариантов), поэтому маршрутов нет и узел не заказывается.
-        self.assertEqual((False, True, ()), (e.orderable, e.self_hostable, e.route_ids))
+        # Седьмой круг (валидатор v7, `flux.2-klein-9b`): у узла семьи СВОЯ
+        # страница весов с лицензией — это опубликованный чекпойнт, и маршрут
+        # «запустить у себя» у него есть (прежде: не заказывался вовсе).
+        self.assertEqual(
+            (True, True, (("self-host", "https://huggingface.co/acme/kappa-1"),)),
+            (e.orderable, e.self_hostable, e.route_ids),
+        )
         op = операция("генерация_видео")
         через_api = [c.model for c in pn.candidates_for(op, FactIndex(facts=база))]
         свой_gpu = [

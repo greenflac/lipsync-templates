@@ -184,6 +184,14 @@ JOB_RULES: tuple[tuple[str, tuple[str, ...]], ...] = (
     # `ddcolor`/`deoldify` — модели раскраски, названные по себе, без слова «colorize».
     (r"coloriz\w*|colouriz\w*|colorization|ddcolor|deoldify", (COLORIZE,)),
     (r"restor\w*", (RESTORE,)),
+    # Шумодав, удаление смаза и артефактов сжатия — реставрация (седьмой
+    # круг): `topaz/denoise/video`, `fal-ai/ltx-2.3-quality/deblur` и
+    # `…/decompression` площадка числит «video-to-video», и работа
+    # `restore` оставалась без единого эндпоинта с ценой. Работа `v2v-edit`
+    # за ними СОХРАНЯЕТСЯ (полка площадки — правка видео; шаг правки сам
+    # отбирает по под-работе, `edit_intents`), у картиночных её снимает
+    # подпись (`consistent`: выход — картинка).
+    (r"denois\w*|deblur\w*|decompression", (RESTORE, V2V_EDIT)),
     (r"interpolat\w*|rife", (INTERPOLATE,)),
     (r"speech-to-text|transcri\w*|diariz\w*|scribe|whisper|asr|stt", (TRANSCRIBE,)),
     (r"auto-caption\w*|subtitl\w*", (CAPTIONS,)),
@@ -385,6 +393,31 @@ CURATED: dict[str, tuple[tuple[str, ...], str, str]] = {
         (INTERPOLATE,),
         "fal.ai lists fal-ai/film/video: the FILM frame-interpolation model applied to a video",
         "https://fal.ai/models/fal-ai/film/video",
+    ),
+    # Седьмой круг (валидатор v7, «промахи реестра»): заказываемые узлы без
+    # работы. Имена ElevenLabs и Google работу не называют.
+    "eleven_flash_v2": (
+        (TTS,),
+        "ElevenLabs models page: Flash v2 — text-to-speech, English only, ~30 minutes of audio per request",
+        "https://elevenlabs.io/docs/models.md",
+    ),
+    "eleven_flash_v2_5": (
+        (TTS,),
+        "ElevenLabs models page: Flash v2.5 — low-latency text-to-speech (~75 ms), 40,000 characters per request",
+        "https://elevenlabs.io/docs/models.md",
+    ),
+    "chirp-3-hd": (
+        (TTS,),
+        "Google Cloud Text-to-Speech pricing: Chirp 3: HD voices, billed per character of synthesised text",
+        "https://cloud.google.com/text-to-speech/pricing",
+    ),
+    # FLUX.1 Kontext [max] multi — правка картинки по НЕСКОЛЬКИМ опорным
+    # снимкам (`image_urls`); категории у эндпоинта на площадке нет.
+    "flux-1-kontext-max-multi": (
+        (IMAGE_EDIT,),
+        "fal.ai OpenAPI of fal-ai/flux-pro/kontext/max/multi: image edit from several reference images "
+        "(image_urls array) — multi-reference",
+        "https://fal.ai/api/openapi/queue/openapi.json?endpoint_id=fal-ai/flux-pro/kontext/max/multi",
     ),
     "seedvr2-3b": (
         (UPSCALE_VIDEO, UPSCALE_IMAGE, RESTORE),
@@ -891,9 +924,17 @@ def _собрать(facts: Sequence[Fact]) -> Registry:
             price_routes=list(dict.fromkeys(pn.маршрут(f)[0] for f in цены)),
             vendor_hosts=pn.МАРШРУТ_ХОСТА,
             # Веса СЕМЬИ запускают под именами вариантов: маршрутом узла семьи
-            # страница весов не становится (на своём GPU он кандидат по
-            # `self_hostable`, как и прежде).
-            weights_page=(страница_весов or "weights") if свои_веса and not мои_варианты else "",
+            # страница весов не становится — КРОМЕ узла, у которого СВОЯ
+            # страница весов с лицензией (седьмой круг, валидатор v7):
+            # `flux.2-klein-9b` — опубликованный чекпойнт black-forest-labs/
+            # FLUX.2-klein-9B, а числился «узлом семьи без маршрута».
+            weights_page=(
+                страница_весов
+                if страница_весов
+                else "weights"
+                if свои_веса and not мои_варианты
+                else ""
+            ),
         )
         маршруты = list(dict.fromkeys(кто for кто, _ in маршруты_ид))
         ids = tuple(dict.fromkeys(ид for кто, ид in маршруты_ид if кто in ROUTE_HOSTS.values()))
@@ -1102,6 +1143,31 @@ EDIT_RULES: dict[str, str] = {
     EDIT_RELIGHT: r"relight\w*|day-to-night|hdr",
     EDIT_RESTYLE: r"recast|render-to-real|restyle|style-transfer",
 }
+
+#: Под-работа, НАЗВАННАЯ идентификатором прямо (седьмой круг): без звена
+#: правки по инструкции (`edit`), которое `EDIT_RULES` засчитывает каждой
+#: замене и удалению. `fal-ai/ltx-2.3-quality/clean-plate` называет удаление
+#: объекта; `kling-video/o3/.../video-to-video/edit` — только правку словами.
+#: `find_models` различает эти два свидетельства (способность по каталогу
+#: против «может, если попросить»).
+EDIT_NAMED: dict[str, str] = {
+    EDIT_REFRAME: r"reframe|outpaint",
+    EDIT_REPLACE_OBJECT: r"replace-object|object-replace\w*",
+    EDIT_REMOVE_OBJECT: r"clean-plate|object-removal|remove-object|object-remov\w*|inpaint\w*",
+    EDIT_REPLACE_SKY: r"sky-replace\w*|replace-sky",
+    EDIT_STABILISE: r"stabili[sz]\w*",
+    EDIT_RELIGHT: r"relight\w*|day-to-night|hdr",
+    EDIT_RESTYLE: r"recast|render-to-real|restyle|style-transfer",
+}
+
+
+def edit_named(endpoint: "Endpoint | str") -> frozenset[str]:
+    """Правки, которые идентификатор НАЗЫВАЕТ прямо (`EDIT_NAMED`); пусто — не названо."""
+    тексты = (endpoint,) if isinstance(endpoint, str) else (endpoint.model, *endpoint.ids)
+    return frozenset(
+        п for п, образец in EDIT_NAMED.items() for т in тексты if _звено(образец, _звенья(т))
+    )
+
 
 #: Звенья, при которых эндпоинт работы `v2v-edit` — НЕ правка ролика
 #: заказчика: он делает новое видео (продление, по референсу, по движению,

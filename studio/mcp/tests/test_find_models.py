@@ -239,14 +239,16 @@ def _верх(итог: dict, n: int = 3) -> list[str]:
         ["eps-lipsync", "zeta-lipsync"],
         ["alpha-lipsync", "beta-lipsync", "delta-lipsync", "gamma-lipsync"],
     ),
-    # Веса не записаны — не «закрыта», а пробел.
+    # Веса не записаны — не «закрыта» и не «прошла»: седьмой круг (валидатор
+    # v7) отсеивает их в `excluded_unknown` (см. `ТребованиеНеЗаписано`), и
+    # пробелов «без свидетельства» не остаётся.
     (
         "open-weights lipsync",
         "lipsync",
         "",
         "open",
         ["delta-lipsync", "zeta-lipsync"],
-        ["alpha-lipsync", "beta-lipsync", "eps-lipsync", "gamma-lipsync"],
+        [],
     ),
     # 11-15: TTS. CC BY-NC — открытые веса (nc-tts первой: свежесть равна, имя).
     # nolang-tts: веса открыты, язык не записан — после подтвердивших оба.

@@ -64,6 +64,7 @@ from collections.abc import Iterable, Sequence
 from pathlib import Path
 
 from lipsync.fork_identity import FAIL, PASS, UNMEASURED
+from studio import brief_spec as bs
 from studio import endpoints as ep
 from studio import factaxis as fa
 from studio import hardneed as hn
@@ -102,29 +103,38 @@ BENCHMARK_METRICS: dict[str, tuple[str, str, bool]] = {
     "vtr-bench": (r"\bwer\s*([0-9]*\.?[0-9]+)", "WER", True),
 }
 
-#: ISO-коды языков, которыми пишут СПИСКИ языков (`ar, da, de, …, ru`).
-#: Читаются только в строке-списке (`LANGUAGE_LIST_MIN` кодов через запятую):
-#: «it» в английской фразе — местоимение, а не итальянский.
-ISO_LANGUAGES: dict[str, str] = {
-    "en": "english",
-    "ru": "russian",
-    "es": "spanish",
-    "fr": "french",
-    "de": "german",
-    "zh": "chinese",
-    "ja": "japanese",
-    "ko": "korean",
-    "ar": "arabic",
-    "hi": "hindi",
-    "pt": "portuguese",
-    "it": "italian",
-    "tr": "turkish",
-    "uk": "ukrainian",
-    "vi": "vietnamese",
-    "bn": "bengali",
-    "ta": "tamil",
-    "te": "telugu",
-}
+#: КОДЫ ЯЗЫКОВ, которыми пишут СПИСКИ языков (`ar, da, de, …, ru`), — у
+#: нормализатора BCP-47 плановщика (`brief_spec.CODE_TO_LANGUAGE` и
+#: `EXTRA_LANGUAGE_FORMS`), а не своим списком (Е1). Седьмой круг (валидатор
+#: v7, f07/f10): здесь жил свой словарь из 18 кодов, и `kk`, `kazakh`, `he`,
+#: `hebrew` уходили в `require_not_understood` — плановщик те же теги
+#: принимал. Читаются только в строке-списке (`LANGUAGE_LIST_MIN` кодов через
+#: запятую): «it» в английской фразе — местоимение, а не итальянский.
+def _коды_языков() -> frozenset[str]:
+    return frozenset(bs.CODE_TO_LANGUAGE) | frozenset(bs.EXTRA_LANGUAGE_FORMS)
+
+
+def язык_слова(слово: str) -> str:
+    """Язык, названный словом вопроса: имя базы («russian») или тег BCP-47 («kk»).
+
+    Пусто — не язык. Порядок: имена базы (`pipeline.languages_in`, рус. и
+    англ.), формы вне словаря базы (`brief_spec.languages_in_text`), тег или
+    имя через `brief_spec.language_tag`. Язык вне словаря базы остаётся ТЕГОМ:
+    о нём ничего не записано, и это «не измерено», а не «не понято».
+    """
+    низ = _норм(слово)
+    if not низ:
+        return ""
+    имена = sorted(pl.languages_in(низ))
+    if имена:
+        return имена[0]
+    теги = bs.languages_in_text(низ)
+    if теги:
+        return bs.language_name(теги[0])
+    тег = bs.language_tag(низ)
+    return bs.language_name(тег) if тег else ""
+
+
 LANGUAGE_LIST_MIN = 3
 
 #: Сколько свидетельств показывать у модели (счёт печатается целиком).
@@ -215,12 +225,129 @@ REQ_COMMERCIAL = "commercial"
     "коммерческое": REQ_COMMERCIAL,
     "коммерция": REQ_COMMERCIAL,
 }
+#: Требования, при которых НЕЗАПИСАННОЕ отсеивает, а не ранжирует ниже.
+#: КОНСТАНТА-РЕШЕНИЕ (седьмой круг, валидатор v7 f18): «open» без записи о
+#: весах — не «прошла», а «неизвестно»; такая модель в выдаче выглядела
+#: открытой. Отсеянные по незаписанному названы списком `excluded_unknown`.
+REQUIRE_RECORDED: frozenset[str] = frozenset({REQ_OPEN})
 _ОТКРЫТО_В_ВОПРОСЕ = re.compile(r"\bopen[- ]?(?:weights?|source)\b|\bopen\b|открыт", re.I)
 _КОММЕРЦИЯ_В_ВОПРОСЕ = re.compile(r"(?<!non-)(?<!non )\bcommercial|коммерч", re.I)
 
 
 def _норм(текст: object) -> str:
     return " ".join(str(текст or "").lower().split())
+
+
+def _фраза_в(фраза: str, текст: str) -> bool:
+    """Фраза целиком (по границе слова) в тексте."""
+    ф = _норм(фраза)
+    return bool(ф) and re.search(rf"(?<![\w-]){re.escape(ф)}(?![\w])", _норм(текст)) is not None
+
+
+# --- возможности, правки, память, кадры (седьмой круг) ------------------------------
+
+#: ВОЗМОЖНОСТЬ, спрошенная фразой: (фразы вопроса, атрибуты, где она записана,
+#: образец «да», образец «нет»). Седьмой круг (валидатор v7, f05): на «t2v с
+#: нативным звуком» строки `audio_output` Veo и Kling («native audio switch:
+#: schema field generate_audio (default true)») шли «информацией», и ответ
+#: был `could not measure`. Значение читается ПО АТРИБУТУ против спрошенного,
+#: как язык и длительность. Это СПОСОБНОСТЬ по схеме или странице вендора, а
+#: не применимость — так и подписывается (`why`).
+CAP_NATIVE_AUDIO = "native_audio"
+ВОЗМОЖНОСТИ: dict[str, dict] = {
+    CAP_NATIVE_AUDIO: {
+        "фразы": (
+            "native audio",
+            "native sound",
+            "generates audio",
+            "generate audio",
+            "audio generation",
+            "with audio",
+            "synced audio",
+            "synchronized audio",
+            "joint audio",
+            "нативный звук",
+            "нативным звуком",
+            "со звуком",
+            "генерирует звук",
+        ),
+        "атрибуты": ("audio_output", "native_audio", "generate_audio", "audio_generation"),
+        "нет": r"^\s*(?:no|none|false|нет)\b|\bno (?:native )?audio\b|without audio|silent only|без звука",
+        "да": r"native audio|generate_audio|joint audio|synchroni[sz]ed audio|audio track|audio on\b"
+        r"|with audio|audio\+video|^\s*(?:yes|true|да)\b",
+    },
+}
+
+#: ПРАВКА ВИДЕО, спрошенная фразой -> под-работа реестра (`endpoints.EDIT_INTENTS`).
+#: Свидетельство — ИДЕНТИФИКАТОР эндпоинта, НАЗВАВШИЙ правку
+#: (`endpoints.edit_named`: `fal-ai/ltx-2.3-quality/clean-plate`): это каталог
+#: и схема, то есть СПОСОБНОСТЬ, а не применимость (валидатор v7, f16).
+ПРАВКИ_В_ВОПРОСЕ: dict[str, tuple[str, ...]] = {
+    ep.EDIT_REMOVE_OBJECT: (
+        "object removal",
+        "remove object",
+        "remove objects",
+        "remove an object",
+        "remove the object",
+        "inpainting",
+        "inpaint",
+        "clean plate",
+        "clean-plate",
+        "удаление объект",
+        "удалить объект",
+        "убрать объект",
+    ),
+    ep.EDIT_REPLACE_SKY: ("sky replacement", "replace the sky", "replace sky", "замена неба"),
+    ep.EDIT_RELIGHT: ("relight", "relighting", "переосвещ"),
+    ep.EDIT_STABILISE: ("stabilise", "stabilize", "stabilization", "stabilisation", "стабилиз"),
+    ep.EDIT_REFRAME: ("reframe", "reframing", "outpaint", "outpainting"),
+}
+POLARITY_CATALOG = "catalog"
+
+#: Слова, при которых число ГБ в вопросе — ПАМЯТЬ GPU, а не размер файла.
+_ПАМЯТЬ_КОНТЕКСТ = re.compile(
+    r"vram|gpu|видеопамят|видеокарт|graphics card|\bcard\b|runs? on|run it on|запуска|памят", re.I
+)
+_ГБ = re.compile(r"(\d{1,3}(?:\.\d+)?)\s*(?:gb|гб|gib)\b", re.I)
+_GPU = re.compile(r"\b(rtx\s*a?\s*\d{4}|l40s|l4|a100|h100|h200)\b", re.I)
+
+
+def _память(текст: str, *, требование: bool = False) -> float | None:
+    """Память GPU, названная текстом, ГБ: «12GB VRAM», «RTX 3060»; None — не названа.
+
+    В тексте вопроса ГБ читаются только рядом со словами о памяти или запуске
+    (`_ПАМЯТЬ_КОНТЕКСТ`); в `require` («12gb», «vram 12») — всегда.
+    """
+    низ = _норм(текст)
+    м = _ГБ.search(низ)
+    if м and (требование or _ПАМЯТЬ_КОНТЕКСТ.search(низ)):
+        return float(м.group(1))
+    if требование:
+        м = re.fullmatch(r"vram\s*[:=<]*\s*(\d{1,3}(?:\.\d+)?)", низ)
+        if м:
+            return float(м.group(1))
+    g = _GPU.search(низ)
+    if g:
+        return hn.GPU_VRAM_GB.get(hn.gpu_key(g.group(1)))
+    return None
+
+
+#: Частота ИСХОДНОГО ролика, если вопрос её назвал («from 24 to 120 fps»,
+#: «30fps footage to 120»): меньшее из двух чисел fps. Множитель интерполяции
+#: (`frame_multiplier`) судится только против неё; не названа — информация с
+#: порогом, а не выдуманный исходник.
+def _исходные_кадры(текст: str) -> float | None:
+    числа = [float(ч) for ч in re.findall(r"(\d{2,3})\s*(?:fps|к/с|кадр)", текст)]
+    м = re.search(r"(?:from|с|из)\s+(\d{2,3})\s*(?:fps)?\s*(?:to|до|в|->|→)\s*(\d{2,3})", текст)
+    if м:
+        return float(м.group(1))
+    if len(set(числа)) >= 2:
+        return min(числа)
+    return None
+
+
+#: Атрибут МНОЖИТЕЛЯ частоты (интерполяция: «up to 4x input fps»).
+FRAME_MULTIPLIER_ATTRIBUTE = "frame_multiplier"
 
 
 # --- вопрос ----------------------------------------------------------------------
@@ -254,7 +381,25 @@ class Вопрос:
                 у = attrfamily.условие(фраза)
                 if у not in self.условия:
                     self.условия.append(у)
+        #: Возможности (`ВОЗМОЖНОСТИ`) и правки (`ПРАВКИ_В_ВОПРОСЕ`), названные фразой.
+        self.возможности: list[str] = [
+            к for к, правило in ВОЗМОЖНОСТИ.items() if any(_фраза_в(ф, текст) for ф in правило["фразы"])
+        ]
+        self.правки: list[str] = [
+            п for п, фразы in ПРАВКИ_В_ВОПРОСЕ.items() if any(_фраза_в(ф, текст) for ф in фразы)
+        ]
+        занято = [
+            ф
+            for к in self.возможности
+            for ф in ВОЗМОЖНОСТИ[к]["фразы"]
+        ] + [ф for п in self.правки for ф in ПРАВКИ_В_ВОПРОСЕ[п]]
         for т in [*сырые, *[str(c) for c in conditions]]:
+            if _память(текст) is not None and (_память(т, требование=True) is not None or т == "vram"):
+                # Память понята числом (`Вопрос.память`), в строках не ищется.
+                continue
+            if any(_фраза_в(ф, т) or _фраза_в(т, ф) for ф in занято):
+                # Слово уже понято возможностью или правкой — в строках не ищется.
+                continue
             у = attrfamily.условие(т)
             if у:
                 if у not in self.условия:
@@ -278,14 +423,19 @@ class Вопрос:
         self.требования: list[str] = []
         self.языки: list[str] = []
         self.непонятые: list[str] = []
+        #: Память GPU, названная вопросом («runs on 12GB», «RTX 3060»), ГБ.
+        self.память: float | None = _память(текст)
         for сырое in re.split(r"[,;]", require or ""):
             слово = сырое.strip().lower()
             if not слово:
                 continue
             ключ = ТРЕБОВАНИЯ_СИНОНИМЫ.get(слово)
-            язык = ISO_LANGUAGES.get(слово) or next(iter(sorted(pl.languages_in(слово))), "")
+            язык = "" if ключ else язык_слова(слово)
+            память = _память(слово, требование=True)
             if ключ:
                 self._требование(ключ)
+            elif память is not None:
+                self.память = память
             elif язык:
                 if язык not in self.языки:
                     self.языки.append(язык)
@@ -295,9 +445,14 @@ class Вопрос:
             self._требование(REQ_COMMERCIAL)
         if _ОТКРЫТО_В_ВОПРОСЕ.search(_норм(need)):
             self._требование(REQ_OPEN)
-        for язык in sorted(pl.languages_in(текст)):
+        for язык in [
+            *sorted(pl.languages_in(текст)),
+            *[bs.language_name(т) for т in bs.languages_in_text(текст)],
+        ]:
             if язык not in self.языки:
                 self.языки.append(язык)
+        if self.память is not None and "hardware" not in self.семьи:
+            self.семьи.append("hardware")
         if self.языки and "languages" not in self.семьи:
             self.семьи.append("languages")
         # Числа со своими единицами. Длительность — ограничение, только когда
@@ -313,7 +468,10 @@ class Вопрос:
         self.кадров = _кадров(текст)
         if self.кадров is not None and "frame_rate" not in self.семьи:
             self.семьи.append("frame_rate")
-        if из_вопроса and (self.семьи or self.условия or self.требования or self.языки):
+        self.исходные_кадры = _исходные_кадры(текст)
+        if из_вопроса and (
+            self.семьи or self.условия or self.требования or self.языки or self.возможности or self.правки
+        ):
             self.слова = []
 
     def _требование(self, ключ: str) -> None:
@@ -322,12 +480,35 @@ class Вопрос:
 
     @property
     def пусто(self) -> bool:
-        return not (self.семьи or self.условия or self.слова or self.требования or self.языки)
+        return not (
+            self.семьи
+            or self.условия
+            or self.слова
+            or self.требования
+            or self.языки
+            or self.возможности
+            or self.правки
+        )
+
+    @property
+    def только_требования(self) -> bool:
+        """Спрошены ли ТОЛЬКО требования (веса, лицензия, язык) — без предмета.
+
+        Тогда подтверждённое требование и есть ответ («open-weights background
+        removal»). Если предмет есть (память, звук, условие, длина), лицензия —
+        фильтр, а не довод: валидатор v7, f18 — «i2v на 12GB» ранжировался
+        лицензией, а память не читалась вовсе.
+        """
+        предмет = [с for с in self.семьи if с not in ("languages", "license")]
+        return not (предмет or self.условия or self.слова or self.возможности or self.правки)
 
     def описание(self) -> list[str]:
         return [
             *[f"family:{с}" for с in self.семьи],
             *[f"condition:{у}" for у in self.условия],
+            *[f"capability:{к}" for к in self.возможности],
+            *[f"edit:{п}" for п in self.правки],
+            *([f"vram<={self.память:g}GB"] if self.память is not None else []),
             *self.слова,
         ]
 
@@ -383,14 +564,19 @@ def _кадров(текст: str) -> float | None:
 
 
 def _языки_строки(значение: str) -> frozenset[str]:
-    """Языки, которые строка НАЗЫВАЕТ: имена и (в строке-списке) ISO-коды."""
+    """Языки, которые строка НАЗЫВАЕТ: имена и (в строке-списке) коды BCP-47.
+
+    Имена — словарь базы и формы вне его (`brief_spec.languages_in_text`:
+    «Kazakh», «Hebrew»); коды — у нормализатора BCP-47 (`_коды_языков`).
+    """
     низ = _норм(значение)
-    имена = set(pl.languages_in(низ))
-    коды = re.findall(r"(?<![\w-])([a-z]{2})(?:-[a-z]{2})?(?![\w-])", низ)
-    if sum(1 for к in коды if к in ISO_LANGUAGES) >= LANGUAGE_LIST_MIN or re.search(
+    имена = set(pl.languages_in(низ)) | {bs.language_name(т) for т in bs.languages_in_text(низ)}
+    коды = re.findall(r"(?<![\w-])([a-z]{2,3})(?:-[a-z]{2})?(?![\w-])", низ)
+    известные = _коды_языков()
+    if sum(1 for к in коды if к in известные) >= LANGUAGE_LIST_MIN or re.search(
         r"\(\s*[a-z]{2}\s*\)", низ
     ):
-        имена |= {ISO_LANGUAGES[к] for к in коды if к in ISO_LANGUAGES}
+        имена |= {bs.language_name(к) for к in коды if к in известные}
     return frozenset(имена)
 
 
@@ -422,6 +608,42 @@ def знак(f: Fact, вопрос: Вопрос | None = None) -> tuple[str, st
     if семья == "price":
         return INFO, POLARITY_NONE, "price is not evidence of capability"
     if вопрос is not None:
+        for к in вопрос.возможности:
+            правило = ВОЗМОЖНОСТИ[к]
+            if f.attribute in правило["атрибуты"]:
+                низ = _норм(f.value)
+                if re.search(правило["нет"], низ):
+                    return BAD, POLARITY_CONSTRAINT, f"{f.attribute} says no {к}"
+                if re.search(правило["да"], низ):
+                    return (
+                        GOOD,
+                        POLARITY_CONSTRAINT,
+                        f"{f.attribute} records {к} ({f.tier}) — capability by schema/vendor, "
+                        "not measured applicability",
+                    )
+        if f.attribute == FRAME_MULTIPLIER_ATTRIBUTE and вопрос.кадров is not None:
+            м = re.search(r"(\d+(?:\.\d+)?)\s*[x×]", _норм(f.value))
+            if м:
+                множитель = float(м.group(1))
+                if вопрос.исходные_кадры is not None:
+                    итог = вопрос.исходные_кадры * множитель
+                    if итог >= вопрос.кадров:
+                        return (
+                            GOOD,
+                            POLARITY_CONSTRAINT,
+                            f"x{множитель:g} of {вопрос.исходные_кадры:g} fps = {итог:g} fps >= asked {вопрос.кадров:g}",
+                        )
+                    return (
+                        BAD,
+                        POLARITY_CONSTRAINT,
+                        f"x{множитель:g} of {вопрос.исходные_кадры:g} fps = {итог:g} fps < asked {вопрос.кадров:g}",
+                    )
+                return (
+                    INFO,
+                    POLARITY_NONE,
+                    f"x{множитель:g} of the source: reaches {вопрос.кадров:g} fps only from a source of "
+                    f">= {вопрос.кадров / множитель:g} fps — name the source fps to check",
+                )
         if семья == "languages" and вопрос.языки:
             есть = _языки_строки(f.value)
             нужные = [я for я in вопрос.языки if я in есть]
@@ -488,6 +710,10 @@ def _об_условии(f: Fact, у: str) -> bool:
 def _относится(f: Fact, вопрос: Вопрос) -> bool:
     if attrfamily.семья_имени(f.attribute) == "price":
         return False
+    if any(f.attribute in ВОЗМОЖНОСТИ[к]["атрибуты"] for к in вопрос.возможности):
+        return True
+    if f.attribute == FRAME_MULTIPLIER_ATTRIBUTE and "frame_rate" in вопрос.семьи:
+        return True
     if attrfamily.семья_имени(f.attribute) in вопрос.семьи:
         return True
     if any(_об_условии(f, у) for у in вопрос.условия):
@@ -621,6 +847,30 @@ def _строка(f: Fact, sign: str, polarity: str, why: str = "") -> dict:
     }
 
 
+def _строка_памяти(rows: Sequence[Fact]) -> Fact | None:
+    """Строка, из которой `hardneed.vram_need` взял число памяти (для показа)."""
+    лучшая: tuple[float, Fact] | None = None
+    for f in rows:
+        if not re.search(r"vram|gpu_memory|min_gpu_mem", f.attribute, re.I):
+            continue
+        for м in hn._GB.finditer(f.value):
+            x = float(м.group(1))
+            if 1 <= x <= 200 and (лучшая is None or x < лучшая[0]):
+                лучшая = (x, f)
+    return лучшая[1] if лучшая else None
+
+
+def _строка_каталога(узел: ep.Endpoint, rows: Sequence[Fact]) -> Fact | None:
+    """Строка, несущая ИДЕНТИФИКАТОР эндпоинта: каталог площадки или адрес схемы."""
+    for f in rows:
+        if f.attribute == "availability" and any(i in str(f.value) for i in узел.ids):
+            return f
+    for f in rows:
+        if any(i in (f.source_url or "") for i in узел.ids):
+            return f
+    return None
+
+
 def _ступень(f: Fact) -> int:
     return TIERS.index(f.tier) if f.tier in TIERS else len(TIERS)
 
@@ -694,6 +944,9 @@ def find(
     узлы = {у.key: у for р in работы for у in реестр.by_function.get(р, [])}
     модели = sorted(узлы.values(), key=lambda у: у.model)
     отсеяно: list[dict] = []
+    #: Отсеяны, потому что требование НЕ ЗАПИСАНО (веса при `open`): не
+    #: «прошли», но и не «нарушили» — названы отдельным списком (валидатор v7).
+    неизвестно: list[dict] = []
     ранжировано: list[dict] = []
     без_свидетельства: list[str] = []
     for у in модели:
@@ -705,25 +958,94 @@ def find(
         требования: dict[str, dict] = {}
         опоры: list[tuple[Fact, str]] = []
         нарушено = ""
+        не_записано = ""
         for ключ in вопрос.требования:
             исход, почему, основания = _требование(ключ, свои, семья, у.model)
             требования[ключ] = {"outcome": исход, "why": _коротко(почему, 200)}
             if исход == FAIL and not нарушено:
                 нарушено = f"{ключ}: {_коротко(почему, 160)}"
+            if исход == UNMEASURED and ключ in REQUIRE_RECORDED and not не_записано:
+                не_записано = f"{ключ}: {_коротко(почему, 160)}"
             if исход == PASS:
                 опоры += [(f, почему) for f in основания]
         if нарушено:
             отсеяно.append({"model": у.model, "why": нарушено})
             continue
+        if не_записано:
+            неизвестно.append({"model": у.model, "why": не_записано})
+            continue
+        if вопрос.память is not None:
+            нужно, откуда, оценка = hn.vram_need(строки)
+            положение = hn.vram_state(нужно, оценка, вопрос.память)
+            if положение == hn.VRAM_OVER:
+                отсеяно.append(
+                    {
+                        "model": у.model,
+                        "why": f"vram: needs >= {нужно:g} GB, asked {вопрос.память:g} GB — "
+                        f"{_коротко(откуда, 140)}",
+                    }
+                )
+                continue
+            ключ_памяти = f"vram<={вопрос.память:g}GB"
+            if положение == hn.VRAM_FITS:
+                требования[ключ_памяти] = {"outcome": PASS, "why": _коротко(откуда, 200)}
+                опора = _строка_памяти(строки)
+                if опора is not None:
+                    опоры_памяти = [(опора, f"needs {нужно:g} GB <= {вопрос.память:g} GB")]
+                else:
+                    опоры_памяти = []
+            else:
+                требования[ключ_памяти] = {
+                    "outcome": UNMEASURED,
+                    "why": _коротко(откуда, 200)
+                    + ("; a parameter-count estimate is only a lower bound" if оценка else ""),
+                }
+                опоры_памяти = []
+        else:
+            опоры_памяти = []
         найдено = [f for f in строки if _относится(f, вопрос)]
         с_знаком = []
         for f in найдено:
             з, откуда, почему = знак(f, вопрос)
             с_знаком.append((f, з, откуда, почему))
-        # Подтверждённое требование — хорошая новость, прочитанная по атрибуту.
         уже = {id(f) for f, *_ in с_знаком}
+        # Память, прочитанная против спрошенной, — хорошая новость о предмете.
+        for f, почему in опоры_памяти:
+            с_знаком = [t for t in с_знаком if t[0] is not f]
+            с_знаком.append((f, GOOD, POLARITY_CONSTRAINT, почему))
+            уже.add(id(f))
+        # Правка, НАЗВАННАЯ идентификатором эндпоинта, — способность по каталогу.
+        for п in вопрос.правки:
+            if ep.not_an_edit(у):
+                continue
+            опора = _строка_каталога(у, свои)
+            if опора is None:
+                continue
+            if п in ep.edit_named(у):
+                с_знаком.append(
+                    (
+                        опора,
+                        GOOD,
+                        POLARITY_CATALOG,
+                        f"endpoint id names {п} ({', '.join(у.ids[:2]) or у.model}): capability by "
+                        "catalog/schema, not measured applicability",
+                    )
+                )
+            elif п in ep.edit_intents(у):
+                с_знаком.append(
+                    (
+                        опора,
+                        INFO,
+                        POLARITY_NONE,
+                        f"instruction edit ({', '.join(у.ids[:2]) or у.model}): may do {п} by prompt; "
+                        "the id does not name it",
+                    )
+                )
+            уже.add(id(опора))
+        # Подтверждённое требование — хорошая новость, прочитанная по атрибуту, —
+        # только когда спрошены ОДНИ требования (`Вопрос.только_требования`).
         for f, почему in опоры:
-            if id(f) not in уже:
+            if id(f) not in уже and вопрос.только_требования:
                 с_знаком.append((f, GOOD, POLARITY_CONSTRAINT, _коротко(почему, 160)))
                 уже.add(id(f))
         if вопрос.языки:
@@ -821,13 +1143,23 @@ def find(
     спрошено = ", ".join(вопрос.описание()[:6]) or (
         "(requirements only)" if англ else "(только требования)"
     )
-    требования_все = [*вопрос.требования, *вопрос.языки]
+    требования_все = [
+        *вопрос.требования,
+        *вопрос.языки,
+        *([f"vram<={вопрос.память:g}GB"] if вопрос.память is not None else []),
+    ]
     if англ:
         нота = (
             f"scope: {как} -> {', '.join(работы)}; {len(модели)} endpoint(s) of that job in the registry; "
             + (
                 f"{len(отсеяно)} dropped for violating {', '.join(требования_все)}; "
                 if требования_все
+                else ""
+            )
+            + (
+                f"{len(неизвестно)} dropped because the requirement is NOT RECORDED for them "
+                f"(excluded_unknown — not proof they fail it); "
+                if неизвестно
                 else ""
             )
             + f"{len(ранжировано)} have rows about {спрошено}, {len(с_хорошей)} of them with good news "
@@ -858,6 +1190,12 @@ def find(
             + (
                 f"отсеяно за нарушение ({', '.join(требования_все)}): {len(отсеяно)}; "
                 if требования_все
+                else ""
+            )
+            + (
+                f"отсеяно, потому что требование у них НЕ ЗАПИСАНО: {len(неизвестно)} "
+                "(excluded_unknown — не доказательство, что не проходят); "
+                if неизвестно
                 else ""
             )
             + f"со строками о {спрошено}: {len(ранжировано)}, из них с хорошей новостью {len(с_хорошей)} "
@@ -904,6 +1242,8 @@ def find(
             "examples": без_свидетельства[:ПРОБЕЛОВ_ПОКАЗАНО],
             "excluded_by_requirement": len(отсеяно),
             "excluded_examples": отсеяно[:ПРОБЕЛОВ_ПОКАЗАНО],
+            "excluded_unknown": len(неизвестно),
+            "excluded_unknown_examples": неизвестно[:ПРОБЕЛОВ_ПОКАЗАНО],
         },
         "class_findings": о_классе,
     }
