@@ -20,7 +20,7 @@ from studio.mcp import screen, server
 
 
 def _план(бриф: str) -> dict:
-    return json.loads(server.plan_pipeline(бриф))
+    return json.loads(server.план_по_тексту(бриф))
 
 
 ЗАЯВЛЕНИЕ = "Ролик: наш БАД излечивает диабет за две недели, липсинк, 20 секунд"

@@ -1078,7 +1078,7 @@ MUTANTS: list[tuple[str, str, str, str, str]] = [
     ),
     (
         "studio/planner.py",
-        "                        if not _есть_кириллица(brief)",
+        "                        if not _есть_кириллица(текст)",
         "                        if False",
         "ответ: англоязычному заказчику снова не сказано, почему не поняли",
         "studio.mcp.tests.test_guess_is_not_an_answer",

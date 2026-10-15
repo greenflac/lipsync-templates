@@ -88,7 +88,8 @@ from typing import Any
 
 from mcp.server.mcpserver import MCPServer
 
-from studio import brief_spec, clarify, knowledge, l10n, planner
+from studio import brief_spec as bs
+from studio import clarify, knowledge, l10n, planner
 from studio.selfrag.facts import STALE_AFTER_DAYS  # noqa: E402
 from studio import ruwords
 from studio.mcp import (
@@ -353,7 +354,14 @@ server = MCPServer(
         "(2) Write lipsync prompts: call `write_lipsync_prompt`. It fills "
         "the engine's card from the owner's words and the corpus, and refuses "
         "with a question when a slot is unresolved. Do not answer the question "
-        "on the owner's behalf — ask them."
+        "on the owner's behalf — ask them. "
+        "(3) Plan a production with `plan_pipeline`: YOU are the parser of the "
+        "customer's words. ALWAYS fill `spec` — task, inputs (each with kind and "
+        "owned), outputs, duration_s or shots, languages as BCP-47 tags — because "
+        "the plan is built from spec only and the brief text is kept for notes. "
+        "Without those fields the tool returns no plan, only `spec_needed` with an "
+        "unconfirmed draft: confirm it with the customer, never fill a field they "
+        "did not state, and call again."
     ),
 )
 
@@ -1198,6 +1206,67 @@ def analyse_creative(path: str, frames_dir: str = "", loop: bool = False) -> str
     return _json(out)
 
 
+#: Причина ответа «спецификация неполна» (шестой круг). Исход — третий (Р1):
+#: план не построен, потому что решающих полей нет, а не потому, что он плох.
+REASON_SPEC_NEEDED = "нужна_спецификация"
+
+
+def spec_question(brief: str, spec: Any, нехватка: list[dict[str, str]], англ: bool) -> dict:
+    """Ответ «назовите поля»: что не хватает, допустимые значения, ЧЕРНОВИК из текста.
+
+    Черновик — для того, кто спрашивает заказчика (языковая модель или
+    человек): он экономит круг, но планом не становится никогда — шагов и цены
+    в этом ответе нет, и это проверяется тестом на двадцати с лишним брифах.
+    """
+    черновик = bs.draft(brief, spec if isinstance(spec, Mapping) else None)
+    поля = ", ".join(н["field"] for н in нехватка)
+    вопрос = clarify.Вопрос(
+        ось="спецификация",
+        текст=f"для плана не хватает полей спецификации: {поля} — подтвердите черновик с заказчиком и назовите их",
+        почему=(
+            "план строится только по спецификации: догадка по словам брифа и была тем, что "
+            "превращало принесённое видео в генерацию с нуля"
+        ),
+        варианты=(
+            "передать spec с этими полями",
+            "ответить словами — черновик поправит вызывающий",
+        ),
+        english=(
+            f"the plan needs these spec fields: {поля} — confirm the draft with the customer and fill them",
+            "the plan is built only from spec: a guess from the brief's words is what turned a "
+            "customer's own footage into a from-scratch generation",
+            ("pass spec with these fields", "answer in words — the caller corrects the draft"),
+        ),
+    )
+    return {
+        "outcome": UNMEASURED,
+        "reason": REASON_SPEC_NEEDED,
+        "checked": len(bs.SPEC_DECIDING),
+        "violations": 0,
+        "unmeasured": len(нехватка),
+        "note": (
+            f"spec is incomplete ({поля}): no plan was built and nothing was priced. "
+            + bs.SPEC_INSTRUCTION
+        ),
+        "question": вопрос.row(англ),
+        "spec_needed": {
+            "missing": нехватка,
+            "instruction": bs.SPEC_INSTRUCTION,
+            "draft": черновик,
+            "example": bs.EXAMPLE_SPEC,
+        },
+        "brief": brief,
+        "steps": [],
+        "classes": [],
+        "pipeline_price": {},
+        "что_дальше": (
+            "confirm the draft spec with the customer, fill the missing fields, call plan_pipeline again with spec"
+            if англ
+            else "подтвердите черновик спецификации с заказчиком, назовите недостающие поля и вызовите план снова"
+        ),
+    }
+
+
 @server.tool()
 def plan_pipeline(
     brief: str,
@@ -1207,44 +1276,50 @@ def plan_pipeline(
     spec: dict | None = None,
     offset: int = 0,
 ) -> str:
-    """Build a PIPELINE from what the customer said, then judge it immediately.
+    """Plan a production PIPELINE (steps, a model per step, price) and validate it.
 
-    FILL `spec` — YOU UNDERSTAND THE BRIEF BETTER THAN A WORD LIST DOES. The
-    text of the brief is read structurally (numbers with units, media nouns,
-    "my ... video" within a few words), but that reading is the FALLBACK. Every
-    field you name in `spec` overrides it. Pass what the customer actually
-    said; leave out what they did not say (do not guess on their behalf):
+    YOU ARE THE PARSER. The plan is built ONLY from `spec`; the brief text is
+    kept for notes, echo and the reply language. Read the customer's words,
+    fill `spec`, ask the customer for anything they did not say. A call whose
+    spec lacks a deciding field gets NO plan: it gets `reason:
+    "нужна_спецификация"`, a `question`, and `spec_needed` = {missing: [{field,
+    allowed, why}], draft, instruction, example}. The draft is read from the
+    text by a keyword parser, marked UNCONFIRMED, and is never a plan — correct
+    it with the customer and call again (a human caller can confirm it in one
+    round-trip).
 
-        task        one of generate | animate | lipsync | dub-translate |
-                    face-replace | avatar | upscale | edit | restore |
-                    remove-background | interpolate | transcribe |
-                    voice-clone | turntable | captions (the last seven work on
-                    material you bring; candidates come from the endpoint
-                    registry by job, not from words in the brief)
-        outputs     list of video | image | speech | music | sfx | text
-        duration_s  length of the whole clip, seconds
-        shots       how many shots / images / clips (e.g. "3 product shots" -> 3)
-        per_shot_s  seconds per shot ("animate each 5s" -> 5)
-        characters  distinct people on screen (2+ -> a keyframe per shot)
-        resolution  480p | 720p | 1080p | 1440p | 2k | 4k | 8k | WIDTHxHEIGHT
-        aspect      9:16 | 16:9 | 1:1 | 4:5 | ... (or vertical / horizontal / square)
-        fps         frames per second
-        audio       none | native (sound made by the video model) | voiceover
-        languages   languages of the SPEECH in the output, e.g. ["spanish"]
-        inputs      what the customer ALREADY HAS: photo | video | audio | script.
-                    A list given here is complete: [] means "nothing".
-        objective   cheapest | balanced | quality ("quality" requires a model
-                    whose NATIVE frame is the one asked; price stops ranking)
-        budget_usd  ceiling for the whole clip (used when budget_usd is 0)
-        self_host   {"gpu": "RTX 4090", "vram_gb": 24}, or true / false: open
-                    weights required, must fit the GPU memory, priced as GPU
-                    time x rental rate (an estimate); false overrides the text
-        jurisdiction  codes or countries where it will run, e.g. ["EU", "DE"]
-        people      every person who appears, speaks or is voiced in the clip:
-                    [{"name": ..., "real": true|false, "public_figure": true|false,
-                      "consent": "stated"|"none"|"unknown",
-                      "claim": "none"|"endorsement"|"political"|"news"|"other"}]
-                    — see REAL PEOPLE below. [] means "nobody real".
+    DECIDING fields (all required):
+        task      generate | animate | lipsync | dub-translate | face-replace |
+                  avatar | upscale | edit | video-edit | restore |
+                  remove-background | interpolate | transcribe | voice-clone |
+                  turntable | captions | r2v | music-visualiser | sing-photo |
+                  cut-to-shorts — or a chain list ["video-edit", "upscale"].
+                  video-edit: stabilise / reframe / sky replace / object removal
+                  on the customer's video. r2v: one consistent character across
+                  shots. music-visualiser: visuals under the customer's track
+                  (no music generated). sing-photo: customer photo + audio ->
+                  singing/talking avatar. cut-to-shorts: customer's long video ->
+                  transcript -> picked moments -> cut/reframed shorts (nothing
+                  generated).
+        inputs    what the customer ALREADY HAS: [{kind: video|image|audio|text|
+                  model-weights, owned: true|false, duration_s?, count?,
+                  resolution?}]; [] = nothing.
+        outputs   [video | image | speech | music | sfx | text]
+        duration_s  output seconds — or shots + per_shot_s; for work on the
+                  customer's material inputs[].duration_s is enough; images:
+                  shots = how many.
+        languages BCP-47 tags of output speech/text (any tag: "kk", "pl", "he",
+                  "pt-BR"); required when speech/text is output. Support per
+                  model is reported as recorded / unmeasured, never refused.
+    OPTIONAL: shots, per_shot_s, characters, resolution (480p..8k or WxH),
+    aspect (any W:H, "2.39:1"), fps, audio (none|native|voiceover), objective
+    (cheapest|balanced|quality), budget {amount, currency: ISO 4217} (non-USD
+    converts only at a recorded rate, else no verdict), self_host {gpu,
+    vram_gb | unified_memory_gb} (Apple silicon memory is not CUDA VRAM),
+    open_weights, jurisdiction, people [{name, real, public_figure, consent:
+    stated|none|unknown, claim: none|endorsement|political|news|other}],
+    conditions ["profile face", "logo legible", "hands"] (passed to ranking).
+    Speech steps are priced × languages; clip steps × shots.
 
     REAL PEOPLE — FILL `spec.people`; YOU KNOW WHO IS REAL AND PUBLIC, A WORD
     LIST DOES NOT. `consent` is what the CUSTOMER said ("stated" only when they
@@ -1273,191 +1348,80 @@ def plan_pipeline(
     news words. The decision is in `outcome`, the first `summary` line
     (REFUSED: / QUESTION:) and `people_policy` on every answer.
 
-    The same fields drive SELECTION, not only the echo: objective, self_host,
-    jurisdiction and resolution — from `spec` or, when absent, from the text —
-    become the hard constraints (`hard` in the answer, with the source of each)
-    that filter and rank the candidates (`hard_excluded`, `hard_note`).
+    Example — "translate our 90 s product video into Polish and Turkish, keep
+    the CEO's voice, lips must match, $40":
+        spec={"task": "dub-translate",
+              "inputs": [{"kind": "video", "owned": true, "duration_s": 90}],
+              "outputs": ["video", "speech"], "duration_s": 90,
+              "languages": ["pl", "tr"], "aspect": "16:9",
+              "budget": {"amount": 40, "currency": "USD"},
+              "people": [{"name": "our CEO", "real": true, "public_figure": false,
+                          "consent": "stated", "claim": "none"}],
+              "conditions": ["profile face"]}
 
-    Example: "3 product shots, then animate each 5s, 1080p vertical, $4" ->
-    spec={"task": "animate", "shots": 3, "per_shot_s": 5, "resolution": "1080p",
-    "aspect": "9:16", "inputs": [], "budget_usd": 4}. A field the planner does
-    not know, or a value outside the lists above, is refused (`fail`,
-    `spec_errors` names each one) — nothing is planned on a half-read spec.
-
-    EVERY ANSWER CARRIES `understood_as`: each field with its value and where
-    it came from (`spec`, `text`, `default` — an assumption made for the
-    customer, also listed in `assumptions` — or `derived`, e.g. shots computed
-    as ceil(duration / the chosen model's max run)). Read it before you quote
-    the plan: if it misread the brief, call again with `spec` correcting it.
-    When nothing could be derived but the brief is about media, `question`
-    names what is missing instead of returning empty steps.
-
-    This is the tool for "here is the job, what do I run" — the question that
-    comes before every other tool here. It derives the studio's own operations
-    from the brief, proposes a model for each from the FACT BASE, and hands the
-    whole plan to the pipeline validator (`studio/pipeline.py`, seven failure
-    classes) without re-deciding anything the validator already decides.
-
-    :param brief: the customer's own words. Russian is expected — the brief is
-        matched against the operations vocabulary, and the models are then
-        matched against the base in ENGLISH, which is the language the base is
-        written in.
-    :param creative: a ready-made creative, if there is one. Its extension says
-        whether the plan's video comes from the customer rather than from a
-        step, AND — since 2026-09-02 — its frame is measured, by the same
-        instrument `analyse_creative` uses, and checked against what each
-        candidate model records as its resolution limit. A model whose recorded
-        limit cannot take your frame is ranked last and named out loud, with the
-        vendor's own line and its URL beside the verdict.
-
-        Four positions, and the middle two are both "could not tell": the frame
-        is accepted / the limit is recorded but unparseable / no limit is
-        recorded at all / the frame is refused. "No limit recorded" is NOT
-        "accepted" — on the live base only 41 models of 505 record one, so
-        folding that silence into consent would quietly bless 92% of candidates.
-
-        The frame outranks price in the ordering: a model that cannot take the
-        frame will not run at all, while a model over budget will run and do the
-        work, merely expensively.
-    :param budget_usd: a per-step ceiling, if you have one to pass. Left at 0
-        the ceiling is read out of the BRIEF itself — "бюджет 0.5 доллара",
-        "не дороже 2 долларов за ролик" — and the currency must be named: a
-        bare number is reported as unreadable rather than guessed at. Nothing
-        is ever treated as "free". A negative, NaN or infinite ceiling is
-        refused (`fail`) before anything is planned.
-    :param full: the planner's full form (every candidate and its evidence)
-        instead of the compact one. Passed on only when this server's planner
-        accepts it; otherwise `ignored_params` names it. A full plan larger
-        than the response cap comes in PAGES: every step is on every page
-        with its chosen model (bulky fields folded and named in `paged`);
-        details come as chunks — each step in full, then the other plan
-        fields — listed in `page.chunks_here`. Call again with the same
-        brief/spec, `full=True, offset=page.next_offset` for the next chunks.
-    :param offset: with `full=True`, the first chunk of the page (`page.chunks_order`).
-
-    WHEN A CEILING IS KNOWN, PRICE IS THE SENIOR SORT KEY, because the money is
-    the customer's decision and not the tool's. Each candidate comes back in one
-    of four positions — in budget / price recorded but not comparable to the
-    ceiling / no price recorded at all / over budget — and the middle two are
-    both "could not compare", kept apart on purpose: one of them has a number
-    you can read, the other has nothing. With no ceiling, price sorts nothing.
-
-    Each step also carries `why_not_next`: which field of the selection key the
-    chosen candidate differed from the runner-up on. Read it before assuming the
-    choice was close.
-
-    AND `proven_rival`, which is the line to read first when a ceiling is in
-    play. A named ceiling can lift models nobody has ever measured above models
-    somebody has, and the ones with evidence then fall out of the shortlist
-    entirely — every visible line still true, the impression false. So the step
-    says, in one line: either that a proven candidate exists and price pushed it
-    down (naming it and what it lost on), or — in different words, never the
-    same silence — that not one of the candidates found has measured
-    applicability at all. When the chosen candidate is itself proven, the line
-    is absent, because then it would be noise.
-
-    THREE OUTCOMES, and the third is the one to read. `could not measure` means
-    either that no operation could be derived from the brief at all, or that a
-    derived step has no candidate in the base. A step with no candidate stays
-    EMPTY: a default model is never substituted, because an invented step goes
-    into production and comes back a week later. `fail` returns the plan AND
-    the class the validator named — a refusal without a plan gives you nothing
-    to fix.
-
-    EVERY CANDIDATE CARRIES WHAT IT WAS CHOSEN BY: the attribute, the value,
-    the source tier, the date, and the KIND of evidence on the second axis
-    (schema / claim / measurement / witness). A model the base knows only from
-    a vendor schema comes back marked `применимость не измерена` — applicability
-    not measured — in the answer itself, not in a footnote. Read that mark
-    before you quote a model to anybody: it is the difference between "the API
-    accepts this input" and "somebody ran it and the result held".
-
-    Prices are not invented. A step whose model has no comparable price line
-    says `цена не записана`.
-
-    AND A MODEL THAT DOES NOT PRODUCE WHAT THE STEP MUST PRODUCE IS RANKED LAST
-    TOO. A lipsync model can carry a list of TTS voices in its schema because
-    its speech synthesis is internal — but what comes out of the endpoint is a
-    video, so it cannot serve a step whose job is to hand the next step an audio
-    track. Inputs and outputs are now checked symmetrically; "no output
-    recorded" is a third answer, not consent (44 models of 543 record one).
-
-    AND A MODEL WHOSE OWN VENDOR FORBIDS THE STEP'S INPUT IS RANKED LAST AND
-    SAID SO. Some models state outright that they reject human faces on input,
-    or take no video at all. That is not a quality complaint you can weigh
-    against price — it is a wall: the step cannot run. So it outranks every
-    other consideration, the refused candidates are named in one line per step
-    with the vendor's sentence and URL, and — this is the defect that started
-    it — such a sentence is never printed as a REASON THE MODEL WAS CHOSEN. One
-    and the same claim cannot be both the grounds for a choice and the cause of
-    a refusal. Three positions again, and "nothing recorded about a ban" is not
-    "allowed": absence cannot be proven from this base.
-
-    A price recorded per MINUTE is compared against a per-SECOND ceiling, and
-    vice versa, because sixty is the definition of the unit and not anybody's
-    exchange rate. The converted figure is labelled as ours and printed beside
-    the recorded one — "$0.6 за минуту = $0.01 за секунду" — so you can always
-    see which number the vendor wrote and which one we worked out. Nothing else
-    converts: a price in credits is never turned into dollars (that rate is the
-    vendor's decision and is recorded nowhere), and neither is per-image against
-    per-megapixel, or per-1000-chars against per-token. Those stay "could not
-    compare", which is an answer, not a failure.
-
-    `pipeline_price` ANSWERS "WHAT WILL THIS COST" — AND USUALLY ANSWERS "WE
-    CANNOT ADD IT UP", WHICH IS THE POINT. It sums ONLY prices in the same unit
-    and per the same thing; anything else is listed separately, because a total
-    with a third of its terms missing reads as complete unless you say so. Two
-    numbers travel with it: `steps_priced` and `steps_without_price`. The
-    outcome drops to "не смогли" the moment ANY step lacks a price, even when
-    the steps that do have one added up cleanly — a sum over one step out of
-    three is a lower bound, not a price. Quote the bound AND the missing steps;
-    quoting the bound alone is how a customer hears a number that is not true.
-
-    THE `question` FIELD IS FOR YOU TO ASK, NOT TO ANSWER. Some briefs cannot
-    be planned because one fact is missing from them, not because the words are
-    unknown: "нужен вертикальный ролик для маркетплейса" does not say whether
-    anything has been filmed. When that happens the plan comes back with
-    `reason: "нужен_ответ_заказчика"` and one question in `question` — put that
-    question to the customer verbatim and call this tool again with their
-    answer folded into the brief. Do NOT pick an option yourself and do not
-    guess: the field exists precisely because the guess is what the owner
-    refused. The field is present on EVERY answer (null when there is nothing
-    to ask), and a question may also arrive beside a plan that WAS built — then
-    the steps stand as measured and the question only names what is still
-    undecided.
+    READ IN THE ANSWER: `understood_as` (every field and its source),
+    `question` (ask it verbatim, do not answer it yourself), per step `chosen`
+    with its evidence kind (`применимость не измерена` = nobody measured the
+    result), `proven_rival`, `language_support`, `apple_silicon`, and
+    `pipeline_price` — a sum only over steps priced in the same unit; any
+    unpriced step makes it "could not measure", so quote the bound AND the
+    missing steps. Three outcomes: pass / fail (plan + the validator's class) /
+    could not measure (a question, a step without candidates, or an
+    unpriced/unconfirmed plan). An invalid spec field is `fail` with
+    `spec_errors`. `budget_usd` (the parameter) is a ceiling for the whole clip
+    and wins over spec.budget. `creative`: a file of the customer's; its frame
+    is measured and checked against each model's recorded limit. `full=True`
+    returns every candidate and its evidence, paged with `offset`.
     """
+    return _план(brief, creative, budget_usd, full, spec, offset, по_тексту=False)
+
+
+def план_по_тексту(
+    brief: str,
+    creative: str = "",
+    budget_usd: float = 0.0,
+    full: bool = False,
+    spec: dict | None = None,
+    offset: int = 0,
+) -> str:
+    """ТЕКСТОВЫЙ ПУТЬ плана — тот, которым инструмент был до шестого круга. НЕ инструмент.
+
+    Тот же просев, тот же планировщик, те же риски, согласие и язык ответа, что
+    у `plan_pipeline`, — но без контракта «план только по полной spec»: шаги
+    выводятся из слов брифа (`spec`, если дан, лежит поверх текста). Нужен
+    голден-сету и тестам того, КАК план говорит с заказчиком (язык, ноты,
+    вопросы), — им важна отрисовка плана, а не то, кто понял бриф. Заказчик
+    этим путём не ходит: вызывающий инструмент получает вопрос с черновиком.
+    """
+    return _план(brief, creative, budget_usd, full, spec, offset, по_тексту=True)
+
+
+def _план(
+    brief: str,
+    creative: str,
+    budget_usd: float,
+    full: bool,
+    spec: dict | None,
+    offset: int,
+    по_тексту: bool,
+) -> str:
+    """Тело `plan_pipeline`: бюджет, просев, контракт spec (кроме `по_тексту`), план, риски, язык."""
     # БРИФ ПРОСЕИВАЕТСЯ ДО ТОГО, КАК СТРОИТСЯ ПЛАН. Найдено проверкой продукта
     # 2026-09-06: на бриф «Хочу дипфейк Илона Маска: его лицо на моём видео»
     # инструмент собирал полный план производства из трёх шагов и жаловался
-    # только на применимость. При этом `check_lipsync_prompt` писал в ноте, что
-    # «те же слова отвергаются в брифе» — утверждение о поведении продукта,
-    # которого у продукта не было: проверку запрещённых тем не звал никто.
-    # Теперь это правда, и правдой её делает код, а не нота.
+    # только на применимость. Теперь запрещённые темы проверяются до плана.
     # БЮДЖЕТ ПРОВЕРЯЕТСЯ ПЕРВЫМ — это самая дешёвая проверка (П2).
-    # НАЙДЕНО валидатором 2026-10-14 (G11): `budget_usd=-5` молча значил «не
-    # задан» (ветка `> 0`), а NaN проходил сравнением, которое всегда ложно.
-    # ЯЗЫК ОТВЕТА — язык брифа, и на ВСЁМ ответе, включая отказ просева и
-    # ноты, дописанные здесь после планировщика (аудит 4-го круга, `l10n`).
-    # Бриф без единой буквы языка не несёт: ответ — на языке дома, русском.
+    # ЯЗЫК ОТВЕТА — язык брифа, и на ВСЁМ ответе (аудит 4-го круга, `l10n`).
     язык = l10n.lang_of(brief) if any(ch.isalpha() for ch in str(brief or "")) else "ru"
     ошибка_бюджета = budget_refusal(budget_usd)
     if ошибка_бюджета is not None:
         return _json(l10n.localise_payload(ошибка_бюджета, язык))
     просев = screen.просеять(brief)
     if просев["outcome"] == UNMEASURED:
-        # БЕССЛОВЕСНЫЙ БРИФ — ТРЕТИЙ ИСХОД, А НЕ ОТКАЗ. НАЙДЕНО восьмой
-        # приёмкой 2026-09-07: ветка отказа строила ноту только из `banned` и
-        # `injection`, а третий случай — «в тексте нет ни одного слова» — не
-        # покрыт ни одной половиной. Заказчик получал «не годно» с ПУСТЫМ
-        # объяснением, чужим советом и «проверено 0, нарушений 0» рядом с
-        # вердиктом: Р1, Р2 и Е2 разом.
+        # БЕССЛОВЕСНЫЙ БРИФ — ТРЕТИЙ ИСХОД, А НЕ ОТКАЗ (восьмая приёмка 2026-09-07).
         return _json(
             l10n.localise_payload(
                 {
-                    # СОВЕТ НАПИСАН ОДИН РАЗ (Е1). Он стоял в этом словаре
-                    # ДВАЖДЫ — раз аргументом, раз значением поля, — в том самом
-                    # коммите, чей текст объясняет, почему так нельзя
-                    # (десятая приёмка).
                     **_общее_нечего_смотреть(просев, brief, "бриф_пуст", ПУСТОЙ_БРИФ),
                     "classes": [],
                     "steps": [],
@@ -1470,7 +1434,7 @@ def plan_pipeline(
     # РЕАЛЬНЫЕ ЛЮДИ (валидатор 6-го круга): `spec.people` от вызывающей
     # модели — главный признак, текст — запасной (`screen.политика_людей`).
     # Отказ политики сливается с отказом просева и идёт ТЕМ ЖЕ путём.
-    люди_spec, spec_плана = screen.люди_из_spec(spec, brief_spec.SPEC_FIELDS)
+    люди_spec, spec_плана = screen.люди_из_spec(spec, bs.SPEC_FIELDS)
     просев, политика = screen.просеять_с_людьми(brief, люди_spec, просев)
     if просев["outcome"] != PASS:
         return _json(
@@ -1480,34 +1444,34 @@ def plan_pipeline(
             )
         )
 
+    # КОНТРАКТ ШЕСТОГО КРУГА: план — только по полной спецификации. Ошибка
+    # формы spec уходит в планировщик (он отвечает `fail` с `spec_errors`);
+    # неполная — вопрос с черновиком, без плана и без цены.
+    _, ошибки_spec, нехватка = bs.gaps(spec)
+    if not по_тексту and not ошибки_spec and нехватка:
+        итог = spec_question(brief, spec, нехватка, англ=язык == "en")
+        итог["risks"] = просев["risks"]
+        итог["risky"] = просев["risky"]
+        итог["checked"] = int(итог["checked"]) + просев["checked"]
+        if просев.get("risks"):
+            итог["note"] = f"{итог['note']}. {screen.предупреждение(просев['risks'])}"
+        return _json(l10n.localise_payload(итог, язык), tool="plan_pipeline")
+
     итог, пропущено = plan_call(
         brief,
         creative=creative,
         budget_usd=float(budget_usd or 0.0),
         full=bool(full),
         spec=spec_плана,
+        spec_only=not по_тексту and not ошибки_spec,
     )
-    # ЗАЯВЛЕНИЯ ЗАКАЗЧИКА — КОММЕНТАРИЙ К СОБРАННОМУ ПЛАНУ, А НЕ ОТКАЗ.
-    # ВОСПРОИЗВЕДЕНО 2026-09-07: бриф «наш БАД излечивает диабет за две недели,
-    # липсинк» проходил просев (запрещённых тем в нём нет — и правильно, что
-    # нет), собирал три шага и получал замечание ТОЛЬКО про применимость
-    # модели. Про само утверждение продукт молчал.
-    #
-    # Судить, правда ли препарат лечит, мы не можем и не беремся: отказ был бы
-    # ложным. Но и молчать нельзя — молчание студия продаёт как согласие.
-    # Поэтому предупреждение дописывается к УЖЕ СОБРАННОМУ ответу: исход,
-    # шаги и счётчики остаются ровно теми, что вернул планировщик.
-    # ПОЛЕ НА КАЖДОМ ОТВЕТЕ, А НЕ ЧЕРЕЗ РАЗ. Найдено седьмой приёмкой
-    # 2026-09-07: `risks` появлялось только когда есть что сказать, а
-    # `screen.просеять` в собственном докстринге ровно это и запрещает —
-    # вызывающий читает такое поле через `.get`, и молчание становится
-    # неотличимо от «нечего сказать». Мой же коммит нарушил своё правило.
+    # ЗАЯВЛЕНИЯ ЗАКАЗЧИКА — КОММЕНТАРИЙ К СОБРАННОМУ ПЛАНУ, А НЕ ОТКАЗ
+    # (воспроизведено 2026-09-07: «наш БАД излечивает диабет»). Исход, шаги и
+    # счётчики остаются теми, что вернул планировщик; `risks` — на КАЖДОМ
+    # ответе (седьмая приёмка), четвёртая проверка входит в `checked` (Р2).
     итог = dict(итог)
     итог["risks"] = просев["risks"]
     итог["risky"] = просев["risky"]
-    # ЧЕТВЁРТАЯ ПРОВЕРКА ВХОДИТ В `checked`. Её и заводили ради Р2 («проверка,
-    # которой нет в счёте, читается как непроведённая»), а в ответ плана она
-    # не попадала: `checked` считал только проверки валидатора.
     итог["checked"] = int(итог.get("checked") or 0) + просев["checked"]
     if просев["risks"]:
         итог["note"] = f"{итог.get('note', '')}. {screen.предупреждение(просев['risks'])}"
@@ -1625,6 +1589,7 @@ def plan_call(
     full: bool = False,
     plan_fn: Any = None,
     spec: Any = None,
+    spec_only: bool = False,
 ) -> tuple[dict, list[str]]:
     """Позвать планировщик с теми параметрами, которые он ПРИНИМАЕТ.
 
@@ -1652,6 +1617,11 @@ def plan_call(
             kwargs["spec"] = spec
         else:
             ignored.append("spec")
+    if spec_only:
+        if "spec_only" in accepted:
+            kwargs["spec_only"] = True
+        else:
+            ignored.append("spec_only")
     return dict(fn(brief, **kwargs)), ignored
 
 

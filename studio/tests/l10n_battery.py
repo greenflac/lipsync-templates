@@ -94,6 +94,17 @@ EN_PLANS: list[tuple[str, dict]] = [
     ),
     ("Make Taylor Swift sing a lullaby for my daughter, 15 seconds", {}),
     ("Make Taylor Swift sing our jingle, 15 seconds ad", {}),
+    # Шестой круг: работы, которые называет только spec (правка своего видео,
+    # один персонаж по референсу через все шоты).
+    (
+        "Stabilise our shaky 20s drone clip",
+        {"spec": {"task": "video-edit", "inputs": [{"kind": "video", "owned": True, "duration_s": 20}],
+                  "outputs": ["video"]}},
+    ),
+    (
+        "One consistent mascot across 4 shots, 20 seconds",
+        {"spec": {"task": "r2v", "inputs": [], "outputs": ["video"], "duration_s": 20, "shots": 4}},
+    ),
 ]
 
 #: То же по-русски: русский ответ не должен нести английских шаблонов.

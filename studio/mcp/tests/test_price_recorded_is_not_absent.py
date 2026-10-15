@@ -73,7 +73,7 @@ class ПродуктНеОтрицаетТогоЧтоЗнает(unittest.TestCa
         from studio.mcp import server
 
         ответ = json.loads(
-            server.plan_pipeline("нужен ролик, женщина говорит в камеру, 15 секунд, для кофейни")
+            server.план_по_тексту("нужен ролик, женщина говорит в камеру, 15 секунд, для кофейни")
         )
         озвучка = [ш for ш in ответ["steps"] if ш["step"] == "озвучка"]
         self.assertTrue(озвучка, ответ["steps"])

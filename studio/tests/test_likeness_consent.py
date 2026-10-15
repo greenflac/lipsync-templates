@@ -114,7 +114,7 @@ class ПланСпрашивает(unittest.TestCase):
         os.environ["STUDIO_NO_JOURNAL"] = "1"
 
     def test_голос_знаменитости_вопрос_в_исходе_и_сводке(self) -> None:
-        итог = json.loads(server.plan_pipeline("Make Taylor Swift sing a lullaby for my daughter, 15 seconds"))
+        итог = json.loads(server.план_по_тексту("Make Taylor Swift sing a lullaby for my daughter, 15 seconds"))
         self.assertEqual(("could not measure", "нужен_ответ_заказчика"), (итог["outcome"], итог["reason"]))
         # С 6-ГО КРУГА без `spec.people` вопрос — КТО это (запасной путь), а
         # не угаданный «реальный человек»; подсказка вызывающему — в «что дальше».
@@ -124,13 +124,13 @@ class ПланСпрашивает(unittest.TestCase):
         self.assertTrue(итог["steps"], "план-черновик остаётся")
 
     def test_русский_голос_вопрос(self) -> None:
-        итог = json.loads(server.plan_pipeline("озвучь текст голосом Путина, 20 секунд"))
+        итог = json.loads(server.план_по_тексту("озвучь текст голосом Путина, 20 секунд"))
         self.assertEqual("люди_в_заказе", итог["question"]["axis"])
         self.assertTrue(итог["summary"].startswith("ВОПРОС: в заказе назван человек (Путина)"))
 
     def test_согласие_названо_вопроса_нет(self) -> None:
         итог = json.loads(
-            server.plan_pipeline(
+            server.план_по_тексту(
                 "our CEO John Smith speaks about the quarter, he agreed and signed a release, 20 seconds talking head"
             )
         )
@@ -139,7 +139,7 @@ class ПланСпрашивает(unittest.TestCase):
         self.assertEqual(["John Smith"], итог["people_policy"]["consent_recorded"])
 
     def test_реклама_знаменитости_отказ_плана(self) -> None:
-        итог = json.loads(server.plan_pipeline("Make Taylor Swift sing our jingle, 15 seconds ad"))
+        итог = json.loads(server.план_по_тексту("Make Taylor Swift sing our jingle, 15 seconds ad"))
         self.assertEqual(("fail", "запрещённая_тема", []), (итог["outcome"], итог["reason"], итог["steps"]))
         self.assertIn("an advert put in the mouth of a real celebrity", итог["note"])
 

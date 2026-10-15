@@ -355,11 +355,13 @@ class СпецификацияСтаршеТекста(unittest.TestCase):
         self.assertEqual(
             [
                 "spec.colour: unknown field (known: task, outputs, duration_s, shots, per_shot_s, characters, "
-                "resolution, aspect, fps, audio, languages, inputs, objective, budget_usd, self_host, jurisdiction)",
+                "resolution, aspect, fps, audio, languages, inputs, objective, budget_usd, self_host, jurisdiction, "
+                "budget, people, conditions, open_weights)",
                 "spec.task: dance not in generate, animate, lipsync, dub-translate, face-replace, avatar, upscale, edit, "
-                "restore, remove-background, interpolate, transcribe, voice-clone, turntable, captions",
+                "restore, remove-background, interpolate, transcribe, voice-clone, turntable, captions, "
+                "video-edit, r2v, music-visualiser, sing-photo, cut-to-shorts",
                 "spec.duration_s=-1: must be a finite number above 0",
-                "spec.resolution='big': not a resolution (use one of 8k, 4k, 2160p, 1440p, 2k, 1080p, full hd, "
+                "spec.resolution='big': not a resolution (use one of 8k, 4k, 2160p, 2.7k, 1440p, 2k, 1080p, full hd, "
                 "fullhd, fhd, 720p, hd, 540p, 480p or WIDTHxHEIGHT)",
             ],
             итог["spec_errors"],

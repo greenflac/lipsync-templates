@@ -55,11 +55,11 @@ def _прогон() -> dict:
         прежнее = _без_журнала()
         try:
             _ПРОГОН["планы_en"] = {
-                (б, json.dumps(п)): json.loads(server.plan_pipeline(б, **п))
+                (б, json.dumps(п)): json.loads(server.план_по_тексту(б, **п))
                 for б, п in набор.EN_PLANS
             }
             _ПРОГОН["планы_ru"] = {
-                (б, json.dumps(п)): json.loads(server.plan_pipeline(б, **п))
+                (б, json.dumps(п)): json.loads(server.план_по_тексту(б, **п))
                 for б, п in набор.RU_PLANS
             }
             _ПРОГОН["справки_en"] = {

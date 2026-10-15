@@ -45,7 +45,7 @@ class АнглийскийБриф(unittest.TestCase):
     def test_каждый_бриф_кончается_ожидаемым(self) -> None:
         расхождения = []
         for строка in _набор():
-            ответ = json.loads(server.plan_pipeline(строка["бриф"]))
+            ответ = json.loads(server.план_по_тексту(строка["бриф"]))
             факт = исход(ответ)
             if факт != строка["ждём"]:
                 расхождения.append(f"{строка['id']}: ждём {строка['ждём']}, вышло {факт}")
@@ -69,7 +69,7 @@ class АнглийскийБриф(unittest.TestCase):
         # слова продукта, а чужие видны читателю в кавычках.
         по_русски = []
         for строка in _набор():
-            ответ = json.loads(server.plan_pipeline(строка["бриф"]))
+            ответ = json.loads(server.план_по_тексту(строка["бриф"]))
             куски = [str(ответ.get("что_дальше") or "")]
             вопрос = ответ.get("question") or {}
             куски += [str(вопрос.get("text") or ""), str(вопрос.get("why") or "")]
@@ -81,7 +81,7 @@ class АнглийскийБриф(unittest.TestCase):
 
     def test_русский_бриф_по_прежнему_отвечается_по_русски(self) -> None:
         """И5: продукт, заговоривший по-английски со всеми, «починен» неверно."""
-        ответ = json.loads(server.plan_pipeline("нужен ролик 30 секунд для крема"))
+        ответ = json.loads(server.план_по_тексту("нужен ролик 30 секунд для крема"))
         self.assertTrue(КИРИЛЛИЦА.search(ответ["что_дальше"]))
         self.assertTrue(КИРИЛЛИЦА.search(ответ["question"]["text"]))
 
@@ -96,10 +96,10 @@ class АнглийскийБриф(unittest.TestCase):
     def test_английский_близнец_даёт_те_же_шаги_что_русский(self) -> None:
         """Самая сильная форма критерия: не «план есть», а «план тот же»."""
         англ = json.loads(
-            server.plan_pipeline("make a talking avatar ad in english, vertical for tiktok")
+            server.план_по_тексту("make a talking avatar ad in english, vertical for tiktok")
         )
         рус = json.loads(
-            server.plan_pipeline(
+            server.план_по_тексту(
                 "сделай ролик с говорящим аватаром на английском, вертикальный для тиктока"
             )
         )
@@ -112,7 +112,7 @@ class АнглийскийБриф(unittest.TestCase):
     def test_непонятый_английский_бриф_называет_понятные_обороты(self) -> None:
         """Прежняя нота велела «назвать работу по-русски» — лишняя работа для
         того, кто написал по-английски намеренно."""
-        ответ = json.loads(server.plan_pipeline("What is your pricing for enterprise customers?"))
+        ответ = json.loads(server.план_по_тексту("What is your pricing for enterprise customers?"))
         self.assertEqual([], ответ["steps"])
         self.assertIn("talking head", ответ["note"])
         self.assertNotIn("словарь операций русский", ответ["note"])

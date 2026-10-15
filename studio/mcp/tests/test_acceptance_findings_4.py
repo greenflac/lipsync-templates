@@ -20,7 +20,7 @@ from studio.planner import в_ролик
 
 
 def _план(бриф: str) -> dict:
-    return json.loads(server.plan_pipeline(бриф))
+    return json.loads(server.план_по_тексту(бриф))
 
 
 def _ставка(значение: float = 0.0225) -> dict:

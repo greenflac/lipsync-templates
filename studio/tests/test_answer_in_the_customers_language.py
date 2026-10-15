@@ -38,12 +38,12 @@ class ВопросГоворитНаЯзыкеБрифа(unittest.TestCase):
             self.assertFalse(КИРИЛЛИЦА.search(текст), ось)
 
     def test_английский_бриф_получает_английский_вопрос(self) -> None:
-        итог = json.loads(server.plan_pipeline("We want a short clip for instagram"))
+        итог = json.loads(server.план_по_тексту("We want a short clip for instagram"))
         self.assertFalse(КИРИЛЛИЦА.search(итог["question"]["text"]))
 
     def test_русский_бриф_получает_русский_вопрос(self) -> None:
         """И5: продукт, заговоривший по-английски со всеми, «починен» неверно."""
-        итог = json.loads(server.plan_pipeline("нужен ролик для маркетплейса"))
+        итог = json.loads(server.план_по_тексту("нужен ролик для маркетплейса"))
         self.assertTrue(КИРИЛЛИЦА.search(итог["question"]["text"]))
 
 
@@ -103,7 +103,7 @@ class ЧислоКандидатовНеЗавышается(unittest.TestCase):
 class ПродуктГоворитЭтоЗаказчику(unittest.TestCase):
     def test_английский_план_несёт_английский_совет(self) -> None:
         итог = json.loads(
-            server.plan_pipeline("Add sound effects and ambience to our clip, budget $5")
+            server.план_по_тексту("Add sound effects and ambience to our clip, budget $5")
         )
         свои_слова = re.sub(r"«[^»]*»", "", итог["что_дальше"])
         self.assertTrue(ЛАТИНИЦА.search(свои_слова))
@@ -112,7 +112,7 @@ class ПродуктГоворитЭтоЗаказчику(unittest.TestCase):
     def test_цитата_из_базы_в_кавычках(self) -> None:
         """Читатель обязан видеть границу: дальше не наши слова."""
         итог = json.loads(
-            server.plan_pipeline("ролик 1 минута, говорящая голова, бюджет 100000 долларов")
+            server.план_по_тексту("ролик 1 минута, говорящая голова, бюджет 100000 долларов")
         )
         self.assertRegex(итог["что_дальше"], r"«[^»]+»")
 
@@ -163,14 +163,14 @@ class ЧужаяБедаНеВыдаётсяЗаВашу(unittest.TestCase):
         # вовсе (`pipeline.in_scope`), и оговорке там не на чем стоять. Здесь
         # чужая запись — о крупном плане зубов, она по-прежнему судит шаг.
         строка = json.loads(
-            server.plan_pipeline("реклама кофейни в Казани, нужен talking head, 30 секунд")
+            server.план_по_тексту("реклама кофейни в Казани, нужен talking head, 30 секунд")
         )["что_дальше"]
         self.assertIn("в вашем брифе не названы", строка)
         self.assertIn("исключить провал мы не можем", строка)
 
     def test_на_своём_заказе_оговорки_нет(self) -> None:
         строка = json.loads(
-            server.plan_pipeline("нужна озвучка на телугу для индийского рынка, 20 секунд")
+            server.план_по_тексту("нужна озвучка на телугу для индийского рынка, 20 секунд")
         )["что_дальше"]
         self.assertNotIn("в вашем брифе не названы", строка)
 
@@ -181,14 +181,14 @@ class ЧислаВОтветеНеСпорят(unittest.TestCase):
     всем числам ответа сразу."""
 
     def test_оба_числа_названы_рядом_и_подписаны(self) -> None:
-        строка = json.loads(server.plan_pipeline("ролик про кофейню, говорящая голова, 20 секунд"))[
+        строка = json.loads(server.план_по_тексту("ролик про кофейню, говорящая голова, 20 секунд"))[
             "что_дальше"
         ]
         self.assertRegex(строка, r"пригодных \d+ из \d+")
 
     def test_совет_не_рассогласован_по_роду(self) -> None:
         """«подать свою звуковую дорожку, если ОНО есть» — в главной строке."""
-        строка = json.loads(server.plan_pipeline("ролик про кофейню, говорящая голова, 20 секунд"))[
+        строка = json.loads(server.план_по_тексту("ролик про кофейню, говорящая голова, 20 секунд"))[
             "что_дальше"
         ]
         self.assertNotIn("если оно есть", строка)
@@ -199,7 +199,7 @@ class ЧислаВОтветеНеСпорят(unittest.TestCase):
         строка = re.sub(
             r"«[^»]*»",
             "",
-            json.loads(server.plan_pipeline("Add sound effects to our clip, budget $5"))[
+            json.loads(server.план_по_тексту("Add sound effects to our clip, budget $5"))[
                 "что_дальше"
             ],
         )
@@ -289,11 +289,11 @@ class ХвостОтказаНаЯзыкеЗаказчика(unittest.TestCase):
     ничего: мутант молчал на 770 тестах."""
 
     def test_русский_хвост_в_русском_отказе(self) -> None:
-        итог = json.loads(server.plan_pipeline("дипфейк Илона Маска"))
+        итог = json.loads(server.план_по_тексту("дипфейк Илона Маска"))
         self.assertIn("План не строится", итог["note"])
 
     def test_английский_хвост_в_английском_отказе(self) -> None:
-        итог = json.loads(server.plan_pipeline("I want a deepfake of Elon Musk"))
+        итог = json.loads(server.план_по_тексту("I want a deepfake of Elon Musk"))
         self.assertIn("The plan is not built", итог["note"])
         self.assertNotIn("План не строится", итог["note"])
 
@@ -308,7 +308,7 @@ class ХвостОтказаНаЯзыкеЗаказчика(unittest.TestCase):
         """Р2: «не смогли» с ненулевыми нарушениями — вердикт, спорящий с
         собственным счётом."""
         for текст in ("", "   "):
-            self.assertEqual(0, json.loads(server.plan_pipeline(текст))["violations"])
+            self.assertEqual(0, json.loads(server.план_по_тексту(текст))["violations"])
             self.assertEqual(0, json.loads(server.write_lipsync_prompt(текст))["violations"])
 
 
@@ -332,7 +332,7 @@ class ЧужаяЗаписьНеПерваяФраза(unittest.TestCase):
     СВОЙ = "нужна озвучка на телугу и тамильском, ретрофлексы важны"
 
     def _совет(self, бриф: str) -> str:
-        return str(json.loads(server.plan_pipeline(бриф)).get("что_дальше") or "")
+        return str(json.loads(server.план_по_тексту(бриф)).get("что_дальше") or "")
 
     def test_на_чужом_заказе_первой_идёт_работа(self) -> None:
         совет = self._совет(self.ЧУЖОЙ)
