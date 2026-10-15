@@ -91,7 +91,17 @@ from mcp.server.mcpserver import MCPServer
 from studio import clarify, knowledge, l10n, planner
 from studio.selfrag.facts import STALE_AFTER_DAYS  # noqa: E402
 from studio import ruwords
-from studio.mcp import advice, capability, contract, creative, fetch, misses, probe, proposal, search
+from studio.mcp import (
+    advice,
+    capability,
+    contract,
+    creative,
+    fetch,
+    misses,
+    probe,
+    proposal,
+    search,
+)
 from lipsync.fork_identity import FAIL, PASS, UNMEASURED  # noqa: E402
 from studio.mcp import screen  # noqa: E402
 
@@ -468,7 +478,9 @@ def _set_at(work: dict, path: tuple[str, ...], value: Any) -> None:
 #: Списки, которые потолок НЕ укорачивает по счёту (валидатор 5-го круга):
 #: `steps` плана — сам план; обрезка «0 из 5 шагов» отдавала план без плана.
 #: Внутри шагов режутся строки, а листание — у самого инструмента.
-CAP_PROTECTED_LISTS: frozenset[tuple[str, ...]] = frozenset({("steps",)})
+#: Интеграция пятого круга: и `validator.steps` — вердикт по КАЖДОМУ шагу;
+#: страница полного плана с 6 шагами печатала «validator.steps (3 of 6)».
+CAP_PROTECTED_LISTS: frozenset[tuple[str, ...]] = frozenset({("steps",), ("validator", "steps")})
 
 
 def cap_response(payload: Any, limit: int = MAX_RESPONSE_CHARS, tool: str = "") -> str:
@@ -566,6 +578,19 @@ def cap_response(payload: Any, limit: int = MAX_RESPONSE_CHARS, tool: str = "") 
         work[key] = longest[:keep] + f" …[cut from {len(longest)} chars]"
         trimmed.append({"field": key, "total_chars": len(longest), "shown_chars": keep})
 
+    # ШАГИ СВОРАЧИВАЮТСЯ, А НЕ ВЫПАДАЮТ (интеграция пятого круга): прежде чем
+    # бросить всё, кроме вердикта, — каждый шаг в краткий вид (`_свернуть`:
+    # крупные поля названы в `paged.folded`), счёт шагов не меняется.
+    if size() > budget and isinstance(work.get("steps"), list):
+        work["steps"] = [
+            _свернуть(ш, f"steps[{i}]") if isinstance(ш, dict) else ш
+            for i, ш in enumerate(work["steps"])
+        ]
+        n = len(work["steps"])
+        trimmed.append(
+            {"field": "steps.*", "total": n, "shown": n, "why": "each step folded; every step kept"}
+        )
+
     if size() > budget:
         шаги = work.get("steps")
         work = {
@@ -590,7 +615,9 @@ def cap_response(payload: Any, limit: int = MAX_RESPONSE_CHARS, tool: str = "") 
         trimmed.append({"field": "*", "why": "nothing smaller than the whole answer could be cut"})
 
     подсказка = (
-        f"Ask for less or page: {HOW_TO_PAGE_BY_TOOL[tool]}" if tool in HOW_TO_PAGE_BY_TOOL else HOW_TO_PAGE
+        f"Ask for less or page: {HOW_TO_PAGE_BY_TOOL[tool]}"
+        if tool in HOW_TO_PAGE_BY_TOOL
+        else HOW_TO_PAGE
     )
     notice = (
         f"[RESPONSE CUT by the server's {limit}-character cap: the full answer was "
@@ -628,8 +655,20 @@ PLAN_FOLD_CHARS = 250
 PLAN_PAGE_RESERVE = 3_000
 #: Поля плана, которые стоят на КАЖДОЙ странице: вердикт и то, что читают первым.
 PLAN_PAGE_HEADER = (
-    "summary", "outcome", "reason", "checked", "violations", "unmeasured", "note",
-    "question", "что_дальше", "budget", "hard", "full", "risks", "risky",
+    "summary",
+    "outcome",
+    "reason",
+    "checked",
+    "violations",
+    "unmeasured",
+    "note",
+    "question",
+    "что_дальше",
+    "budget",
+    "hard",
+    "full",
+    "risks",
+    "risky",
 )
 
 
@@ -1375,7 +1414,9 @@ def plan_pipeline(
         return _json(
             l10n.localise_payload(
                 {
-                    **_общий_отказ(просев, brief, (". План не строится", ". The plan is not built")),
+                    **_общий_отказ(
+                        просев, brief, (". План не строится", ". The plan is not built")
+                    ),
                     "classes": [],
                     "steps": [],
                     "question": None,
@@ -1454,13 +1495,19 @@ def вопрос_о_согласии(итог: dict, лик: Mapping[str, Any], 
             "права на образ и голос принадлежат самому человеку; без согласия такой ролик "
             "делать нельзя, а проверить его студия не может — может только спросить"
         ),
-        варианты=("да, согласие/права есть", "нет — заменить на вымышленного персонажа или своего актёра"),
+        варианты=(
+            "да, согласие/права есть",
+            "нет — заменить на вымышленного персонажа или своего актёра",
+        ),
         english=(
             f"the order uses the {what} of a real person ({кто}): do you have their written "
             "consent or the rights for this use?",
             "a person's likeness and voice belong to them; without consent this clip must not be "
             "made, and the studio cannot check consent — it can only ask",
-            ("yes, we have consent / the rights", "no — use a fictional character or our own actor"),
+            (
+                "yes, we have consent / the rights",
+                "no — use a fictional character or our own actor",
+            ),
         ),
     )
     строка = вопрос.row(англ)
@@ -1935,7 +1982,10 @@ def fetch_url(
     if isinstance(ответ, dict) and "text" in ответ:
         # Тело страницы — чужой текст, а не наша нота: не переводится.
         тело = ответ["text"]
-        ответ = {**l10n.localise_payload({k: v for k, v in ответ.items() if k != "text"}, язык), "text": тело}
+        ответ = {
+            **l10n.localise_payload({k: v for k, v in ответ.items() if k != "text"}, язык),
+            "text": тело,
+        }
     else:
         ответ = l10n.localise_payload(ответ, язык)
     return _json(ответ, tool="fetch_url")

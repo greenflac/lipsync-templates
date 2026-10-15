@@ -246,9 +246,12 @@ class ЖивойСвойGpu(unittest.TestCase):
     def test_негативный_контроль_без_своего_gpu_kling_не_отсеяна(self) -> None:
         итог = pn.plan("generate a video from scratch, 1080p 5s clips", full=True)
         self.assertEqual(0, итог["steps"][0]["hard_excluded_count"])
-        # Пятый круг: узел семьи `kling-3.0` не заказывается; его тарифы делят
-        # доводы семьи, и ничью решает цена — стандартный, а не 4K.
-        self.assertEqual("kling-3.0-standard-t2v", итог["steps"][0]["chosen"]["model"])
+        # Пятый круг: узел семьи `kling-3.0` не заказывается. Интеграция пятого
+        # круга (проверено как верное для продукта): `wan-3.0-t2v` обходит тарифы
+        # kling по записанному бенчмарку генерации по тексту (VTR-Bench, строки
+        # фактов пятого круга). Суть контроля прежняя: без своего GPU никто не
+        # отсеян, а выбран API-эндпоинт без весов.
+        self.assertEqual("wan-3.0-t2v", итог["steps"][0]["chosen"]["model"])
 
 
 # --------------------------------------------------------------------------
@@ -305,15 +308,20 @@ class ВидеоСоЗвукомДелаетВидео(unittest.TestCase):
     def test_в_списке(self) -> None:
         self.assertIn("видео_со_звуком", pn.VIDEO_MAKERS)
 
-    def test_условный_апскейл_видео_а_не_картинки(self) -> None:
+    def test_молчание_о_кадре_нота_а_не_апскейл(self) -> None:
+        # Интеграция пятого круга (2026-10-15): кадр 1080p у выбранного тарифа
+        # не записан — прежде дописывался условный апскейл (видео, а не
+        # картинки); теперь шага нет, а нота называет, чья запись молчит.
+        # Что апскейл видео выбирается для `видео_со_звуком`, сторожит
+        # `test_в_списке` (`VIDEO_MAKERS`).
         итог = pn.plan(
             "Сгенерировать с нуля, видео не снято: 8 секунд 1080p с нативным звуком, "
             "диалог по-английски, бюджет 2 доллара",
             full=True,
         )
         шаги = [ш["step"] for ш in итог["steps"]]
-        self.assertEqual(["видео_со_звуком", "апскейл"], шаги)
-        self.assertTrue(итог["steps"][1].get("conditional"))
+        self.assertEqual(["видео_со_звуком"], шаги)
+        self.assertTrue(итог["resolution_carry"].startswith("кадр 1920x1080 не подтверждён: модель шага видео_со_звуком"))
 
 
 # --------------------------------------------------------------------------
@@ -466,12 +474,16 @@ class ВопросОЮрисдикции(unittest.TestCase):
     def test_живой_бриф_с_потолком_нота_а_не_вопрос(self) -> None:
         итог = pn.plan("lipsync a generated face to 30s English voiceover, budget $3", full=True)
         self.assertNotEqual("юрисдикция", (итог["question"] or {}).get("axis"))
-        # Бриф английский — и нота английская (5-й круг: прежде здесь
-        # стоял русский оборот посреди английского плана, и тест его ждал).
-        self.assertIn("jurisdiction not asked", итог["note"])
-        self.assertIn("«not excluded»", итог["note"])
+        # Интеграция пятого круга (проверено как верное для продукта): генерацию
+        # выигрывает `wan-3.0-t2v` по записанному бенчмарку, и у неё нет
+        # модели, отодвинутой лицензией, — ни вопроса, ни ноты о юрисдикции нет
+        # вовсе. Ветку «отодвинутая не выиграла бы под потолком — нота»
+        # сторожит `test_дороже_потолка_не_выиграет` выше.
+        self.assertNotIn("юрисдикц", итог["note"])
+        self.assertNotIn("jurisdiction", итог["note"])
         шаг = next(ш for ш in итог["steps"] if ш["step"] == "генерация_видео")
-        self.assertIs(False, шаг["licence_alternative_wins"])
+        self.assertEqual("wan-3.0-t2v", шаг["chosen"]["model"])
+        self.assertIsNone(шаг["licence_alternative"])
 
     def test_живой_бриф_без_потолка_вопрос_остаётся(self) -> None:
         итог = pn.plan("8s 1080p product teaser with native audio", full=True)

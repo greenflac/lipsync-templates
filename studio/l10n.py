@@ -324,6 +324,14 @@ EN: tuple[tuple[str, str], ...] = (
     (r"цена ЗАПИСАНА, но с потолком несравнима: ", "price RECORDED but not comparable with the ceiling: "),
     (r" и ещё (\d+) — шагу нужен вход («Q»), а схема эндпоинта такого поля не имеет: ",
      r" and \1 more — the step needs the input \2, and the endpoint schema has no such field: "),
+    # Интеграция пятого круга: общие формы `blocked_line` (снята, выход не тот).
+    (r"ВОСПОЛЬЗОВАТЬСЯ НЕЛЬЗЯ \(", "CANNOT BE USED ("),
+    (r" и ещё (\d+) — ", r" and \1 more — "),
+    # Условный запрет лицензии (`pipeline`, проба лицензии): тариф заказчика неизвестен.
+    (r"лицензия (\S+) содержит («Q»), но запрет условный: он снимается («Q»)\. "
+     r"Тариф заказчика неизвестен — проверить не смогли",
+     r"licence \1 contains \2, but the ban is conditional: it is lifted by \3. "
+     r"The customer's plan is unknown — could not check"),
     (r"о снятии не сказано", "no retirement stated"),
     (r"снятие объявлено, срок впереди", "retirement announced, date ahead"),
     (r"снята: срок прошёл", "retired: the date has passed"),
@@ -409,9 +417,14 @@ EN: tuple[tuple[str, str], ...] = (
      "not in the clip price nor in the budget verdict: needed only if the previous step's output turns out smaller than the ordered frame"),
     (r"одна модель вместо (\d+) шагов \(([^)]*)\); валидатор: ", r"one model instead of \1 steps (\2); validator: "),
     # --- кадр (planner.resolution_carry)
+    (r"кадр (\S+) не подтверждён: модель шага (\S+) \((\S+)\) его не подтверждает и не опровергает — ",
+     r"frame \1 not confirmed: the model of step \2 (\3) neither confirms nor refutes it — "),
+    (r"; апскейл не дописан — молчание базы не повод платить",
+     "; no upscale step added — the base's silence is no reason to pay"),
     (r"кадр (\S+) пронесён от шага (\S+) \(", r"frame \1 carried from step \2 ("),
     (r"тариф шага посчитан в (\d+p) — ниже (\d+p)", r"the step's rate is priced at \1 — below \2"),
     (r"тариф шага посчитан в (\d+p)", r"the step's rate is priced at \1"),
+    (r"по записи семьи (\S+): ", r"on the family's record \1: "),
     (r"в брифе заказан кадр (\S+), а у модели шага (\S+) \((\S+)\) он ниже по записи — ",
      r"the brief asks for a \1 frame, and the model of step \2 (\3) is below it on record — "),
     # --- кадр против предела (planner.fit, studio/resolution.py)
@@ -449,6 +462,8 @@ EN: tuple[tuple[str, str], ...] = (
     (r" В отборе кандидатов потолок при этом участвует полностью", " In candidate selection the ceiling still counts in full"),
     (r"шаг ([\d.]+) usd \((.*)\) при потолке ([\d.]+) usd на весь ролик", r"step \1 usd (\2) against a ceiling of \3 usd for the whole clip"),
     (r"нижняя цена ([\d.]+) usd за (\w+) \(([^)]*)\) укладывается в потолок ([\d.]+)", r"the lowest price \1 usd per \2 (\3) fits the ceiling \4"),
+    (r"нижняя цена ([\d.]+) usd (?:за|per) (\w+)( \[[^\]]*\])? \(([^)]*)\); потолка заказчик не назвал — сравнивать не с чем",
+     r"the lowest price \1 usd per \2\3 (\4); the customer named no ceiling — nothing to compare with"),
     (r"ценовых строк (\d+), сравнимых с потолком (\d+) \(", r"price rows \1, comparable with the ceiling \2 ("),
     (r"ценовых строк (\d+): посмотреть нечего", r"price rows \1: nothing to look at"),
     # --- смета (planner/pricing): цены и формулы
@@ -789,6 +804,13 @@ EN_FRAGMENTS: tuple[tuple[str, str], ...] = (
         r"no run length recorded for the model or its family — \1 s assumed (cautious: more runs)",
     ),
     (r"длина прогона — семья (\S+): ([\d.]+) с", r"run length from the family \1: \2 s"),
+    # Интеграция пятого круга: вес, перенесённый у семьи (`hardneed.weights_stance`).
+    # СТОИТ ПОСЛЕ правил длины прогона: раньше них он съедал «семья X:» внутри
+    # «(прогон = 10 с; длина прогона — семья X: 10 с)», и та оставалась русской.
+    (r"(?<![а-яё])семья (\S+): ", r"family \1: "),
+    # Ключ сравнения кандидатов (`why_not`): поле-флаг печатается «да»/«нет».
+    (r"\(да vs нет\)", "(yes vs no)"),
+    (r"\(нет vs да\)", "(no vs yes)"),
     (r"шагов выведено (\d+), из них без единого кандидата (\d+): модель по умолчанию не подставляется",
      r"steps derived \1, of them without a single candidate \2: no default model is substituted"),
     (r"о модели в базе (\d+) утверждений при пороге (\d+): опереть шаг не на что",

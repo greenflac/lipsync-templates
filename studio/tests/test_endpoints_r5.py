@@ -172,6 +172,32 @@ class Работа(unittest.TestCase):
             with self.subTest(имя=имя):
                 self.assertEqual((работа,), ep.classify(имя, [])[0])
 
+    def test_утилиты_названные_по_себе_не_правка_картинки(self) -> None:
+        """Интеграция пятого круга: площадка числит их «image-to-image», а работа другая."""
+        for имя, ид, категория, работа in (
+            ("bria-rmbg-2.0", "fal-ai/bria/background/remove", "image-to-image", "bg-remove"),
+            ("ddcolor", "fal-ai/ddcolor", "image-to-image", "restore-colorize"),
+            ("film", "fal-ai/film", "image-to-image", "frame-interpolate"),
+            ("film-video", "fal-ai/film/video", "video-to-video", "frame-interpolate"),
+        ):
+            with self.subTest(имя=имя):
+                self.assertEqual((работа,), ep.classify(имя, [на_фал(имя, ид, категория)])[0])
+
+    def test_живой_реестр_утилит_пятого_круга(self) -> None:
+        """Строки входа/выхода утилит переписаны после того, как у плановщика
+        появились их работы: у каждой работы есть заказываемые с ценой."""
+        реестр = ep.build(FactIndex().facts)
+        for работа, модели in (
+            ("bg-remove", {"birefnet", "bria-rmbg-2.0"}),
+            ("frame-interpolate", {"rife", "film", "film-video", "topaz-interpolate-video"}),
+            ("restore-colorize", {"ddcolor"}),
+        ):
+            with self.subTest(работа=работа):
+                есть = {e.model for e in реестр.orderable_for(работа)}
+                self.assertLessEqual(модели, есть)
+                self.assertTrue(any(e.priced for e in реестр.orderable_for(работа)))
+        self.assertEqual(("изображение",), реестр.get("birefnet").outputs)  # type: ignore[union-attr]
+
 
 class КурированноеСоСсылкой(unittest.TestCase):
     """Курированная строка без своего адреса в базе — выдумка, а не прочитанное."""

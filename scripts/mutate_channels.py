@@ -2835,8 +2835,10 @@ MUTANTS: list[tuple[str, str, str, str, str]] = [
         # третьего исхода для бессловесного брифа.
         # ПЕРЕНАЦЕЛЕН 2026-09-07: обе ветки отказа сведены в общую функцию.
         # ПЕРЕНАЦЕЛЕН 2026-10-15: отказ идёт через язык ответа (`l10n`).
-        '    if просев["outcome"] != PASS:\n        return _json(\n            l10n.localise_payload(\n                {\n                    **_общий_отказ(просев, brief',
-        "    if False:\n        return _json(\n            l10n.localise_payload(\n                {\n                    **_общий_отказ(просев, brief",
+        # ПЕРЕНАЦЕЛЕН 2026-10-15 (интеграция пятого круга): `ruff format` перенёс
+        # аргументы `_общий_отказ(` на свою строку.
+        '    if просев["outcome"] != PASS:\n        return _json(\n            l10n.localise_payload(\n                {\n                    **_общий_отказ(\n                        просев, brief',
+        "    if False:\n        return _json(\n            l10n.localise_payload(\n                {\n                    **_общий_отказ(\n                        просев, brief",
         "план: бриф снова не просеивается — продукт строит план производства дипфейка",
         "studio.mcp.tests.test_screen_customer_words",
     ),
@@ -3647,6 +3649,63 @@ MUTANTS: list[tuple[str, str, str, str, str]] = [
         "        if False:",
         "просев: «Сбер Банка» снова живой человек с правами на образ",
         "studio.tests.test_named_person_is_not_ours",
+    ),
+    # --- интеграция пятого круга (2026-10-15): кадр, семья, потолок ответа ----
+    (
+        "studio/planner.py",
+        '        return (\n            "",\n            False,\n            f"кадр {кадр} не подтверждён:',
+        '        return (\n            "УСЛОВНО",\n            True,\n            f"кадр {кадр} не подтверждён:',
+        "кадр: молчание записи снова дописывает условный апскейл",
+        "studio.tests.test_budget_resolution_licence.РазрешениеСквозьПроход",
+    ),
+    (
+        "studio/planner.py",
+        '        if их == FIT_OVER:\n            return REACH_NO, f"по записи семьи',
+        '        if False:\n            return REACH_NO, f"по записи семьи',
+        "кадр: предел семьи ниже заказа снова не одалживается варианту",
+        "studio.tests.test_budget_resolution_licence.РазрешениеСквозьПроход",
+    ),
+    (
+        "studio/planner.py",
+        '        if их == FIT_OVER:\n            return REACH_NO, f"по записи семьи',
+        '        if их in (FIT_OVER, FIT_IN):\n            return REACH_NO, f"по записи семьи',
+        "кадр: у семьи одалживается и «принимает» — тариф получает чужой кадр",
+        "studio.tests.test_budget_resolution_licence.РазрешениеСквозьПроход",
+    ),
+    (
+        "studio/mcp/server.py",
+        'frozenset({("steps",), ("validator", "steps")})',
+        'frozenset({("steps",)})',
+        "потолок ответа: вердикт по шагам снова укорачивается вдвое",
+        "studio.mcp.tests.test_plan_paging",
+    ),
+    (
+        "studio/mcp/server.py",
+        '    if size() > budget and isinstance(work.get("steps"), list):',
+        "    if False:",
+        "потолок ответа: шаги снова не сворачиваются — план падает в голый вердикт",
+        "studio.mcp.tests.test_plan_paging",
+    ),
+    (
+        "studio/mcp/capability.py",
+        '    "open": (\n        ("license",),',
+        '    "open": (\n        ("languages",),',
+        "find_models: «открытые веса» снова ищутся не в лицензии",
+        "studio.mcp.tests.test_find_models",
+    ),
+    (
+        "studio/mcp/capability.py",
+        '    r"\\b(no(?=\\s+[a-z])|not|fails?|failure|',
+        '    r"\\b(zzz_never|',
+        "find_models: плохая новость без объявленного знака снова читается как хорошая",
+        "studio.mcp.tests.test_find_models",
+    ),
+    (
+        "studio/endpoints.py",
+        r'background-remove|bg-remov\w*|rembg|rmbg|birefnet|matting',
+        r'bg-remov\w*|rembg|birefnet|matting',
+        "реестр: BRIA RMBG снова «правка картинки», а не удаление фона",
+        "studio.tests.test_endpoints_r5",
     ),
 ]
 

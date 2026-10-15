@@ -156,8 +156,14 @@ JOB_RULES: tuple[tuple[str, tuple[str, ...]], ...] = (
     (r"voice-?clon\w*", (VOICE_CLONE,)),
     (r"music|song", (MUSIC,)),
     (r"sound-effects?|sfx|foley|video-to-audio|v2a", (SFX,)),
-    (r"background-removal|remove-background|bg-remov\w*|rembg|birefnet|matting", (BG_REMOVE,)),
-    (r"coloriz\w*|colouriz\w*|restor\w*", (RESTORE,)),
+    # `rmbg` (BRIA RMBG) и `background-remove` (`fal-ai/bria/background/remove`):
+    # интеграция пятого круга — без них площадка числила их «image-to-image».
+    (
+        r"background-removal|remove-background|background-remove|bg-remov\w*|rembg|rmbg|birefnet|matting",
+        (BG_REMOVE,),
+    ),
+    # `ddcolor`/`deoldify` — модели раскраски, названные по себе, без слова «colorize».
+    (r"coloriz\w*|colouriz\w*|restor\w*|ddcolor|deoldify", (RESTORE,)),
     (r"interpolat\w*|rife", (INTERPOLATE,)),
     (r"speech-to-text|transcri\w*|diariz\w*|scribe|whisper|asr|stt", (TRANSCRIBE,)),
     (r"auto-caption\w*|subtitl\w*", (CAPTIONS,)),
@@ -276,6 +282,18 @@ CURATED: dict[str, tuple[tuple[str, ...], str, str]] = {
         (TTS,),
         "suno/bark model card: a transformer text-to-audio model that speaks the prompt",
         "https://huggingface.co/suno/bark",
+    ),
+    # Интеграция пятого круга: FILM — интерполяция кадров, но имя работы не
+    # называет, а площадка числит его «image-to-image» / «video-to-video».
+    "film": (
+        (INTERPOLATE,),
+        "google-research/frame-interpolation (licence row): FILM is built for frame interpolation with large motion",
+        "https://raw.githubusercontent.com/google-research/frame-interpolation/main/LICENSE",
+    ),
+    "film-video": (
+        (INTERPOLATE,),
+        "fal.ai lists fal-ai/film/video: the FILM frame-interpolation model applied to a video",
+        "https://fal.ai/models/fal-ai/film/video",
     ),
     "seedvr2-3b": (
         (UPSCALE_VIDEO, UPSCALE_IMAGE, RESTORE),
