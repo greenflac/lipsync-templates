@@ -698,6 +698,11 @@ def _деньги(r: Rate, need: Need) -> tuple[float, str] | None:
                 r.amount + лишние * r.over_per_second,
                 f"{r.amount:g} usd за первые {r.run_seconds:g} с + {лишние:g} с × {r.over_per_second:g} usd/с",
             )
+        if сек is None and need.images > 1:
+            # Картиночный шаг с ценой «за запрос»: прогон — один кадр, и шесть
+            # заказанных кадров — шесть прогонов (2026-10-15, аудит третьего круга).
+            прогонов = math.ceil(need.images)
+            return r.amount * прогонов, f"{прогонов} прогон(ов) × {r.amount:g} usd (прогон = 1 кадр)"
         покрывает = r.run_seconds or need.max_run_seconds
         прогонов = math.ceil(сек / покрывает) if сек and покрывает else 1
         if сек and not покрывает:

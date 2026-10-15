@@ -1508,6 +1508,39 @@ KEYFRAME_CUES: tuple[str, ...] = (
     "text-to-image",
 )
 
+#: Люди, о которых говорят «один и тот же» (подсказки консистентности).
+#: Закрытый список: только ЧЕЛОВЕК, чтобы «consistent lighting», «same style»
+#: и «same model» не заказывали кадры по референсу.
+_ЛЮДИ_EN = (
+    r"(?:characters?|persons?|people|fighters?|heroe?s?|actors?|actress(?:es)?|faces?"
+    r"|presenters?|hosts?|mascots?|man|men|woman|women|girls?|boys?|guys?|warriors?"
+    r"|boxers?|athletes?|influencers?|avatars?|protagonists?|spokes(?:person|man|woman))"
+)
+_ЛЮДИ_RU = (
+    r"(?:бойц|бое[цв]|персонаж|геро|человек|люд|лиц(?:а|о|у|е|ом|ами|ах)?\b|актёр|актер|актрис|ведущ"
+    r"|девушк|парн|мужчин|женщин|спортсмен|боксёр|боксер|аватар|блогер|маскот)"
+)
+CONSISTENT_PERSON_EN = (
+    r"re:\b(?:consistent|identical|same)\s+(?:[a-z-]+\s+){0,2}?" + _ЛЮДИ_EN + r"\b"
+)
+#: «keep the faces consistent», «characters stay identical across shots».
+CONSISTENT_PERSON_EN_AFTER = (
+    r"re:\b" + _ЛЮДИ_EN + r"\s+(?:[a-z-]+\s+){0,2}?(?:consistent|identical)\b"
+)
+CONSISTENT_PERSON_RU = r"re:(?:одинаков|идентичн)[а-яё]*\s+(?:[а-яё]+\s+){0,2}?" + _ЛЮДИ_RU
+SAME_PERSON_RU = (
+    r"re:(?:тот|та|те|того|той|тех|тем|теми)\s+же\s+(?:[а-яё]+\s+){0,1}?" + _ЛЮДИ_RU
+)
+
+#: «open-weights video model to self-host», «видеомодель с открытыми весами»:
+#: заказано видео с нуля на своей машине. Слово о видео обязательно — открытые
+#: веса бывают и у липсинка, и у озвучки.
+OPEN_WEIGHTS_VIDEO = (
+    r"re:(?:\bopen[ -]weights?\b|\bself[ -]?host|открыт[а-яё]* вес)[^.;]*?"
+    r"(?:\bvideo\b|\bclips?\b|видео|ролик|клип)"
+    r"|(?:\bvideo\b|видео)[^.;]*?(?:\bopen[ -]weights?\b|\bself[ -]?host|открыт[а-яё]* вес)"
+)
+
 #: Имя операции говорящего аватара (см. её запись в `OPERATIONS`).
 AVATAR_STEP = "говорящий_аватар"
 
@@ -1554,6 +1587,16 @@ OPERATIONS: tuple[Operation, ...] = (
             "consistent character",
             "character consistency",
             "same character",
+            # ПЕРСОНАЖ НАЗВАН СВОИМ ИМЕНЕМ, А НЕ СЛОВОМ «CHARACTER» (2026-10-15,
+            # аудит третьего круга): «two consistent realistic fighters» и «два
+            # одинаковых бойца» давали план без кадров по референсу — t2v, где
+            # лицо от клипа к клипу плывёт. Признак — прилагательное тождества
+            # и через 0–2 слова существительное-ЧЕЛОВЕК; «consistent lighting»
+            # и «same model» сюда не попадают: в списке только люди.
+            CONSISTENT_PERSON_EN,
+            CONSISTENT_PERSON_EN_AFTER,
+            CONSISTENT_PERSON_RU,
+            SAME_PERSON_RU,
             "image edit",
             "edit the image",
             "edit the photo",
@@ -1623,6 +1666,18 @@ OPERATIONS: tuple[Operation, ...] = (
         # речи; десять таких строк перевешивали три строки `elevenlabs-ivc`.
         # Якорь обязан называть ОПЕРАЦИЮ, а не встречаться в разговоре о ней.
         anchors=("tts", "text-to-speech", "text2speech", "voice-cloning", "speech-synthesis"),
+        # РЕЧЬ, А НЕ МУЗЫКА (2026-10-15, аудит третьего круга): у озвучки и
+        # музыки один вид выхода — «аудио», и `elevenlabs-music-v2.5` стоял
+        # соседом в плане TTS. Эндпоинт, названный музыкой или эффектами, —
+        # чужая работа. Так же `text-to-audio` (`ltx-2.3-quality-t2a`): звук по
+        # описанию, а не речь по тексту.
+        чужие=(
+            r"music",
+            r"sound-effect",
+            r"(?<![a-z0-9])sfx(?![a-z0-9])",
+            r"(?<![a-z0-9])t2a(?![a-z0-9])",
+            r"text-to-audio",
+        ),
         requires=(ARTEFACT_BRIEF,),
         produces=(ARTEFACT_AUDIO,),
         requirement=(
@@ -1720,6 +1775,16 @@ OPERATIONS: tuple[Operation, ...] = (
             "from this photo",
             "selfie",
             "still photo",
+            # Способ назван ТЕРМИНОМ (2026-10-15, аудит третьего круга):
+            # «cheapest native 1080p image-to-video» и «I have a still image.
+            # Animate it» не выводили ни одной операции.
+            "image-to-video",
+            "image to video",
+            "i2v",
+            "still image",
+            "animate it",
+            "из картинки",
+            "из изображения",
         ),
         # «фотосессия» и «фотограф» — соседнее ремесло: там снимают, а не
         # оживляют. Подсказка `фото` ловила оба слова целиком.
@@ -1816,6 +1881,12 @@ OPERATIONS: tuple[Operation, ...] = (
             "generate video",
             "text to video",
             "no footage",
+            # Термин и открытые веса (2026-10-15, аудит третьего круга):
+            # «8 second 1080p text-to-video», «open-weights video model to
+            # self-host … 5 second clips» не выводили ни одной операции.
+            "text-to-video",
+            "t2v",
+            OPEN_WEIGHTS_VIDEO,
         ),
         anchors=("text-to-video", "t2v", "txt2vid", "text2video"),
         requires=(ARTEFACT_BRIEF,),
@@ -2955,8 +3026,15 @@ def замкнуть(
         and ролик_заказан(brief)
         # «ключевые кадры для MMA ролика»: ролик — НАЗНАЧЕНИЕ кадров, а не заказ
         # (тот же признак, по которому `clarify` не спрашивает о видео).
+        # «30 s instrumental music for an ad», «музыка для рекламы» — то же
+        # самое для ДОРОЖКИ (2026-10-15, аудит третьего круга): ролик — её
+        # назначение, и шаг генерации видео к музыке не дописывается.
         and not (
-            any(ARTEFACT_IMAGE in по_имени[имя].produces for имя in имена)
+            any(
+                OUTPUT_KINDS.get(а) in ("изображение", "аудио")
+                for имя in имена
+                for а in по_имени[имя].produces
+            )
             and clarify.ДЛЯ_РОЛИКА.search(_norm(brief))
         )
         and not any(OUTPUT_KINDS.get(а) == "видео" for имя in имена for а in по_имени[имя].produces)
@@ -3042,7 +3120,14 @@ def вопрос_по_плану(
         # нашей догадки, а не из слов заказчика.
         дописано=sorted(set((дописаны or {}).values())),
         артефакт_кадр=ARTEFACT_IMAGE,
+        назначение_не_видео=_АРТЕФАКТЫ_ВИДА("аудио"),
+        артефакты_видео=_АРТЕФАКТЫ_ВИДА("видео"),
     )
+
+
+def _АРТЕФАКТЫ_ВИДА(вид: str) -> tuple[str, ...]:
+    """Все артефакты, чей выход — этого вида (`OUTPUT_KINDS`), в порядке словаря."""
+    return tuple(а for а, в in OUTPUT_KINDS.items() if в == вид)
 
 
 #: СЛОВА АРТЕФАКТОВ ГЛАЗАМИ ЗАКАЗЧИКА. Заказчик называет вход не именем
@@ -3427,6 +3512,11 @@ PHOTO_WORDS: tuple[str, ...] = (
     r"\bselfies?\b",
     r"\bheadshots?\b",
     r"\bportrait(?! mode)\b",
+    # «I have a still image. Animate it» (2026-10-15, аудит третьего круга):
+    # снимок принесён, а план начинался с генерации ключевого кадра.
+    r"\bstill (?:image|picture|frame)s?\b",
+    r"\b(?:my|our) (?:own )?(?:image|picture)s?\b",
+    r"(?<![а-яё])(?:мо[яюей]|сво[яюей]|наш[аеуй]) картинк[а-яё]*",
 )
 
 
@@ -4174,10 +4264,19 @@ class Стоимость:
 
 
 def нужда_шага(
-    op: "Operation", длительность: "dur.Запрос", кадр: tuple[int, int] | None
+    op: "Operation",
+    длительность: "dur.Запрос",
+    кадр: tuple[int, int] | None,
+    кадров: int | None = None,
 ) -> pricing.Need:
-    """Что шаг должен выдать на ЭТОМ брифе — от этого зависит строка таблицы цен."""
-    секунды = длительность.секунды if длительность.разобрано else None
+    """Что шаг должен выдать на ЭТОМ брифе — от этого зависит строка таблицы цен.
+
+    :param кадров: сколько картинок заказано (`кадров_заказано`); считается
+        только у шага, который отдаёт КАРТИНКУ, и у него же снимаются секунды:
+        длина ролика картинке не мера, а прогон картиночной модели — кадр.
+    """
+    картинка = {OUTPUT_KINDS.get(а) for а in op.produces} == {"изображение"}
+    секунды = длительность.секунды if длительность.разобрано and not картинка else None
     речь = op.name in ("озвучка", "дубляж")
     return pricing.Need(
         seconds=секунды,
@@ -4187,7 +4286,9 @@ def нужда_шага(
         # Шагу, который отдаёт ВИДЕО, цена «за картинку / мегапиксель» не цена:
         # сколько кадров в ролике, вендор так не считает (`ltx` с ценой за Мп
         # выходил в смету шагом за 0.00 usd).
-        images=0.0 if {OUTPUT_KINDS.get(а) for а in op.produces} & {"видео"} else 1.0,
+        images=0.0
+        if {OUTPUT_KINDS.get(а) for а in op.produces} & {"видео"}
+        else float(кадров or 1) if картинка else 1.0,
         megapixels=(кадр[0] * кадр[1] / 1e6) if кадр else 1.0,
         mode=РЕЖИМ_ШАГА.get(op.name, ""),
     )
@@ -5917,6 +6018,42 @@ def кадр_из_брифа(brief: str) -> tuple[int, int] | None:
     return None
 
 
+#: Числа словами, которыми заказывают кадры («six keyframes», «шесть кадров»).
+ЧИСЛА_СЛОВАМИ: dict[str, int] = {
+    "one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7,
+    "eight": 8, "nine": 9, "ten": 10, "eleven": 11, "twelve": 12,
+    "один": 1, "одна": 1, "одну": 1, "два": 2, "две": 2, "три": 3, "четыре": 4,
+    "пять": 5, "шесть": 6, "семь": 7, "восемь": 8, "девять": 9, "десять": 10,
+    "одиннадцать": 11, "двенадцать": 12,
+}  # fmt: skip
+
+#: «6 images», «six keyframes», «6 ключевых кадров», «4 картинки»: число, до
+#: двух слов описания и слово о КАДРЕ. «24 кадра в секунду» и «30 frames per
+#: second» — частота, а не заказ, и отсекаются хвостом.
+_КАДРОВ_ЗАКАЗАНО = re.compile(
+    r"(?<![\w.])(?P<n>\d{1,3}|" + "|".join(ЧИСЛА_СЛОВАМИ) + r")\s+"
+    r"(?:[a-zа-яё-]+\s+){0,2}?"
+    r"(?:images?\b|key ?frames?\b|pictures?\b|stills?\b|frames?\b"
+    r"|кадр[а-яё]*|картин[а-яё]*|изображени[а-яё]*)(?![а-яё])"
+    r"(?!\s*(?:в секунду|per second|a second|/\s*s\b|fps))"
+)
+
+
+def кадров_заказано(brief: str) -> int | None:
+    """Сколько КАДРОВ (картинок) заказано: «6 images» -> 6. Не названо — None.
+
+    Заведено 2026-10-15 по аудиту третьего круга: бриф «photoreal keyframe
+    images for a storyboard, 6 images, budget $1» получал цену ОДНОЙ картинки
+    (`images=1.0` в нужде шага), и шесть кадров «укладывались» в доллар.
+    """
+    м = _КАДРОВ_ЗАКАЗАНО.search(_norm(brief))
+    if м is None:
+        return None
+    n = м.group("n")
+    число = int(n) if n.isdigit() else ЧИСЛА_СЛОВАМИ[n]
+    return число if число >= 1 else None
+
+
 def дата_свидетельства(e: dict) -> str:
     """Дата строки так, чтобы её нельзя было принять за возраст утверждения.
 
@@ -7001,6 +7138,92 @@ def _по_английски(текст: str) -> str:
     return t
 
 
+#: ФОРМЫ, КОТОРЫЕ ПЛАНИРОВЩИК И СМЕТА СТРОЯТ ПО-РУССКИ, — английскому заказчику.
+#: НАЙДЕНО аудитом третьего круга 2026-10-15: английский бриф получал «0.08 usd
+#: за шаг: ≈450 знаков × …», «ffmpeg или монтажная программа (не модель)»,
+#: строки лицензии и «о речи на языке брифа …» по-русски посреди английского
+#: плана. Переводятся только ФОРМЫ (шаблоны строк); цитаты из базы в «ёлочках»
+#: остаются на языке того, кто их записал. Порядок важен: длинные обороты
+#: раньше коротких, иначе «usd за шаг» съест «за».
+ФОРМЫ_ПО_АНГЛИЙСКИ: tuple[tuple[str, str], ...] = (
+    (r"ffmpeg или монтажная программа \(не модель\)", "ffmpeg or an editing app (not a model)"),
+    (r"0 usd \(не модель\)", "0 usd (not a model)"),
+    (r"видео сводится с отдельными дорожками: ", "the video is mixed with separate tracks: "),
+    (r"озвучка за кадром", "off-screen voiceover"),
+    (r"за один прогон ролик не отдаёт", "cannot deliver the clip in one run"),
+    (r"ролик собирается из нескольких клипов", "the clip is assembled from several clips"),
+    (r"ролик ([\d.]+) с ДЛИННЕЕ предела ([\d.]+) с", r"clip \1 s is LONGER than the \2 s limit"),
+    (r"предел ([\d.]+) с: ", r"limit \1 s: "),
+    (
+        r"о речи на языке брифа \(([^)]*)\) у (\S+) ничего не записано — проверить пробным "
+        r"прогоном до заказа",
+        r"nothing is recorded about \2 speaking the brief's language (\1) — "
+        r"test it with a trial run before ordering",
+    ),
+    (r"лицензия ИСКЛЮЧАЕТ вашу территорию", "the licence EXCLUDES your territory"),
+    (r"лицензия исключает территории ", "the licence excludes territories "),
+    (r"лицензия исключает ", "the licence excludes "),
+    (r"; ваша \(([^)]*)\) не исключена", r"; yours (\1) is not excluded"),
+    (r" — где работает заказчик\?", " — where will you use it?"),
+    (r"порог выручки ", "revenue threshold "),
+    (r" — выше него нужна отдельная лицензия", " — above it a separate licence is needed"),
+    (
+        r"лицензия записана о ВЕСАХ \(самостоятельный запуск\); при доступе через API-площадку "
+        r"действуют условия площадки — прочитать их отдельно",
+        "the licence recorded is for the WEIGHTS (self-hosting); through an API platform its own "
+        "terms apply — read them separately",
+    ),
+    (r" — при условии: ", " — when: "),
+    (r"текст в кадре", "text in frame"),
+    (r"USD в год", "USD a year"),
+    (r"usd за шаг: ", "usd per step: "),
+    (r"; дешевле: ", "; cheaper: "),
+    (
+        r"usd за прогон \(сколько секунд даёт прогон — не записано\)",
+        "usd per run (seconds per run not recorded)",
+    ),
+    (r"\(прогон = 1 кадр\)", "(run = 1 image)"),
+    (r"\(прогон = ([\d.]+) с\)", r"(run = \1 s)"),
+    (r"usd за первые ([\d.]+) с", r"usd for the first \1 s"),
+    (r"прогон\(ов\)", "run(s)"),
+    (r"кадр\(ов\)", "image(s)"),
+    (r"знаков", "chars"),
+    (r"usd за 1000_chars", "usd per 1000 chars"),
+    (r"usd за знак", "usd per char"),
+    (r"usd/мин", "usd/min"),
+    (r"usd/с\b", "usd/s"),
+    (r"(\d) с\b", r"\1 s"),
+    (r"(\d) Мп\b", r"\1 MP"),
+    (r"по пути (.+) файла нет", r"nothing at \1"),
+    (r"путь к креативу не назван", "no path to the creative was given"),
+    (r" — это адрес в сети, а не путь к файлу на диске", " is a web address, not a path to a file on disk"),
+    (r" — это каталог, а не файл", " is a directory, not a file"),
+    (r" существует, но это не обычный файл", " exists but is not a regular file"),
+)
+
+
+def _форма_по_английски(текст: object) -> str:
+    """Строка, построенная по-русски шаблоном, — по-английски (`ФОРМЫ_ПО_АНГЛИЙСКИ`).
+
+    Цитаты в «ёлочках» не трогаются: это слова источника, а не наши.
+    """
+    куски = re.split(r"(«[^»]*»)", str(текст or ""))
+    for i, кусок in enumerate(куски):
+        if кусок.startswith("«"):
+            continue
+        for образец, замена in ФОРМЫ_ПО_АНГЛИЙСКИ:
+            кусок = re.sub(образец, замена, кусок)
+        куски[i] = кусок
+    return "".join(куски)
+
+
+def _шаги_по_английски(текст: str) -> str:
+    """Имена шагов внутри строки («оживление: …», «дорожками: музыка») — по-английски."""
+    for имя in sorted({оп.name for оп in OPERATIONS}, key=len, reverse=True):
+        текст = re.sub(rf"(?<![а-яё_]){re.escape(имя)}(?![а-яё_])", шаг_словами(имя, True), текст)
+    return текст
+
+
 def _имя_шага(имя: object, англ: bool) -> str:
     """Имя шага для человека: по-английски — английское, по-русски — без подчёркиваний."""
     имя = str(имя or "")
@@ -7033,9 +7256,12 @@ def _цена_словами(итог: dict, англ: bool) -> str:
     смета = цена.get("смета") or {}
     if цена.get("no_clip_price"):
         return (
-            "NO CLIP PRICE: no step of the plan makes the video itself — only the audio steps are priced"
+            # «звуковые» было неправдой о плане из одних кадров (2026-10-15).
+            "NO CLIP PRICE: no step of the plan makes the video itself — only the steps that "
+            "make images or audio are priced"
             if англ
-            else "ЦЕНЫ РОЛИКА НЕТ: ни один шаг плана не делает сам ролик — посчитаны только звуковые шаги"
+            else "ЦЕНЫ РОЛИКА НЕТ: ни один шаг плана не делает сам ролик — посчитаны только "
+            "шаги, которые делают кадры или звук"
         )
     if смета:
         return _смета_словами(итог, смета, англ)
@@ -7213,7 +7439,11 @@ def сводка(итог: dict) -> str:
             хвост.append(
                 ("why: " if англ else "почему: ") + (_по_английски(метка) if англ else метка)
             )
-            хвост.append(("price: " if англ else "цена: ") + _коротко(выбран.get("price"), 60))
+            цена_шага = выбран.get("price")
+            хвост.append(
+                ("price: " if англ else "цена: ")
+                + _коротко(_форма_по_английски(цена_шага) if англ else цена_шага, 60)
+            )
             риск = _риск_шага(итог, шаг, англ)
             if риск:
                 хвост.append(("risk: " if англ else "риск: ") + риск)
@@ -7228,7 +7458,13 @@ def сводка(итог: dict) -> str:
                 )
             if выбран.get("licence_risk"):
                 хвост.append(
-                    ("licence: " if англ else "лицензия: ") + _коротко(выбран["licence_risk"], 220)
+                    ("licence: " if англ else "лицензия: ")
+                    + _коротко(
+                        _форма_по_английски(выбран["licence_risk"])
+                        if англ
+                        else выбран["licence_risk"],
+                        220,
+                    )
                 )
             if выбран.get("failures_outside_brief"):
                 хвост.append(
@@ -7237,7 +7473,12 @@ def сводка(итог: dict) -> str:
                         if англ
                         else "не про ваш заказ (условия провала в брифе нет): "
                     )
-                    + _коротко(выбран["failures_outside_brief"][0], 160)
+                    + _коротко(
+                        _форма_по_английски(выбран["failures_outside_brief"][0])
+                        if англ
+                        else выбран["failures_outside_brief"][0],
+                        160,
+                    )
                 )
             if выбран.get("superseded"):
                 хвост.append(
@@ -7249,7 +7490,8 @@ def сводка(итог: dict) -> str:
                     ("speakers: " if англ else "голоса: ") + _коротко(шаг["speakers_note"], 220)
                 )
             соседи = [
-                f"{а.get('model')} ({_коротко(а.get('price'), 48)})"
+                f"{а.get('model')} "
+                f"({_коротко(_форма_по_английски(а.get('price')) if англ else а.get('price'), 48)})"
                 for а in (шаг.get("alternatives") or [])[:2]
                 if а and а.get("model")
             ]
@@ -7261,8 +7503,11 @@ def сводка(итог: dict) -> str:
         строки.append(
             f" {len(шаги) + 1}. "
             + (шаг_словами(ASSEMBLY_STEP, True) if англ else ШАГ_ПО_РУССКИ[ASSEMBLY_STEP])
-            + f" -> {сборка['tool']}, 0 usd"
-            + "".join(f"\n      {п}" for п in сборка.get("why") or [])
+            + f" -> {_форма_по_английски(сборка['tool']) if англ else сборка['tool']}, 0 usd"
+            + "".join(
+                f"\n      {_шаги_по_английски(_форма_по_английски(п)) if англ else п}"
+                for п in сборка.get("why") or []
+            )
         )
     вариант = итог.get("native_audio_variant")
     if вариант:
@@ -7291,7 +7536,16 @@ def сводка(итог: dict) -> str:
                     if англ
                     else f"проверка: {fa.OUTCOME_WORDS.get(вариант.get('outcome'), вариант.get('outcome'))}"
                 )
-                + (f"; {вариант['language_note']}" if вариант.get("language_note") else "")
+                + (
+                    "; "
+                    + (
+                        _форма_по_английски(вариант["language_note"])
+                        if англ
+                        else вариант["language_note"]
+                    )
+                    if вариант.get("language_note")
+                    else ""
+                )
             )
         else:
             строки.append(
@@ -7397,7 +7651,7 @@ def plan(
                 ),
                 варианты=("поправить путь", "строить план без креатива"),
                 english=(
-                    f"there is no file at this path: {нет_файла}",
+                    f"there is no file at this path: {_форма_по_английски(нет_файла)}",
                     "the frame was never measured, and «the customer has video» was "
                     "inferred from the string's extension rather than from the file: "
                     "a plan on such an input would assert what nobody has seen",
@@ -7639,7 +7893,7 @@ def plan(
             sorted(есть),
             языки if op.name in SPEECH_STEPS else (),
             use,
-            нужда_шага(op, длительность, кадр_из_брифа(brief) or кадр),
+            нужда_шага(op, длительность, кадр_из_брифа(brief) or кадр, кадров_заказано(brief)),
             bool(COMMUNITY_ASKED.search(brief)),
             условия,
             юрисдикции,
@@ -7695,7 +7949,18 @@ def plan(
                 "input_of_plan": подменено,
                 "duration_asked": длительность.нота,
                 "chosen": _candidate_row(лучший),
-                "alternatives": [_alternative_row(c) for c in предложены[1:CANDIDATES_SHOWN]],
+                # Чужая работа соседом не показывается (2026-10-15): модель
+                # музыки — не «альтернатива» синтезу речи. Видна в счёте
+                # `foreign_count`; если чужим оказался сам выбранный — соседи
+                # показываются все, чтобы было видно, с кем он сравнивался.
+                "alternatives": [
+                    _alternative_row(c)
+                    for c in [
+                        к
+                        for к in предложены[1:]
+                        if not к.foreign or (лучший is not None and лучший.foreign)
+                    ][: CANDIDATES_SHOWN - 1]
+                ],
                 "candidates_found": len(предложены),
                 "proven_rival": строка_о_проверенных,
                 "rejected_by_frame": frame_rejects_line(предложены),
