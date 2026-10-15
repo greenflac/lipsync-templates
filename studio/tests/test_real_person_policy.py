@@ -22,7 +22,9 @@ from studio import l10n
 from studio.mcp import screen, server
 
 
-def _ч(name: str, real: bool = True, public: bool = True, consent: str = "unknown", claim: str = "none") -> dict:
+def _ч(
+    name: str, real: bool = True, public: bool = True, consent: str = "unknown", claim: str = "none"
+) -> dict:
     return {"name": name, "real": real, "public_figure": public, "consent": consent, "claim": claim}
 
 
@@ -61,7 +63,11 @@ CEO = "Our CEO, she consented, says welcome to new employees, 30s talking head l
     # пять находок валидатора
     (ЗЕЛЕНСКИЙ, [_ч("Владимир Зеленский", claim="news", consent="stated")], "refuse"),
     (ПАПА, [_ч("Pope Leo XIV", consent="stated", claim="endorsement")], "refuse"),
-    (БИСТ + ", we have a license", [_ч("MrBeast", consent="stated", claim="endorsement")], "refuse"),
+    (
+        БИСТ + ", we have a license",
+        [_ч("MrBeast", consent="stated", claim="endorsement")],
+        "refuse",
+    ),
     (МАКРОН, [_ч("Emmanuel Macron", consent="stated", claim="political")], "refuse"),
     (CEO, [_ч("our CEO", public=False, consent="stated")], "proceed"),
     # частный человек
@@ -206,7 +212,9 @@ class СоSpec(unittest.TestCase):
 
     def test_вымышленный_не_публичный_правило(self) -> None:
         _, п = screen.просеять_с_людьми("x", [_ч("Zorg", real=False)])
-        self.assertEqual(("spec", "proceed", "fictional"), (п["source"], п["decision"], п["people"][0]["rule"]))
+        self.assertEqual(
+            ("spec", "proceed", "fictional"), (п["source"], п["decision"], п["people"][0]["rule"])
+        )
 
     def test_худший_исход_заказа(self) -> None:
         """Вопрос о соседе не перекрывает отказ по политику: решение — refuse."""
@@ -326,7 +334,9 @@ class БезSpec(unittest.TestCase):
 
 class ЛюдиИзSpec(unittest.TestCase):
     def test_поле_вынимается_пока_планировщик_его_не_знает(self) -> None:
-        self.assertEqual(([1], {"task": "lipsync"}), screen.люди_из_spec({"people": [1], "task": "lipsync"}))
+        self.assertEqual(
+            ([1], {"task": "lipsync"}), screen.люди_из_spec({"people": [1], "task": "lipsync"})
+        )
         self.assertEqual(([], None), screen.люди_из_spec({"people": []}))
         self.assertEqual((None, {"task": "x"}), screen.люди_из_spec({"task": "x"}))
 
@@ -358,9 +368,15 @@ class План(unittest.TestCase):
         ):
             with self.subTest(бриф=бриф):
                 итог = self._план(бриф, люди)
-                self.assertEqual(("fail", "запрещённая_тема", []), (итог["outcome"], итог["reason"], итог["steps"]))
+                self.assertEqual(
+                    ("fail", "запрещённая_тема", []),
+                    (итог["outcome"], итог["reason"], итог["steps"]),
+                )
                 первая = итог["summary"].splitlines()[0]
-                self.assertTrue(первая.startswith("ОТКАЗ: " if l10n.lang_of(бриф) == "ru" else "REFUSED: "), первая)
+                self.assertTrue(
+                    первая.startswith("ОТКАЗ: " if l10n.lang_of(бриф) == "ru" else "REFUSED: "),
+                    первая,
+                )
                 self.assertEqual("refuse", итог["people_policy"]["decision"])
                 self.assertEqual([], l10n.leaks(итог, l10n.lang_of(бриф)))
 
@@ -371,17 +387,27 @@ class План(unittest.TestCase):
     def test_ceo_с_согласием_план(self) -> None:
         итог = self._план(CEO, [_ч("our CEO", public=False, consent="stated")], АВАТАР_CEO)
         self.assertNotIn(итог["outcome"], ("fail",))
-        self.assertNotIn((итог.get("question") or {}).get("axis"), ("согласие_на_образ", "люди_в_заказе"))
+        self.assertNotIn(
+            (итог.get("question") or {}).get("axis"), ("согласие_на_образ", "люди_в_заказе")
+        )
         self.assertEqual(["our CEO"], итог["people_policy"]["consent_recorded"])
         self.assertIn("consent recorded as stated by the customer", итог["note"])
         self.assertTrue(итог["steps"])
 
     def test_вопрос_о_согласии_со_spec(self) -> None:
         итог = self._план(
-            "Make Taylor Swift sing a lullaby for my daughter, 15 seconds", [_ч("Taylor Swift")], ПЕСНЯ_ГОЛОСОМ
+            "Make Taylor Swift sing a lullaby for my daughter, 15 seconds",
+            [_ч("Taylor Swift")],
+            ПЕСНЯ_ГОЛОСОМ,
         )
-        self.assertEqual(("could not measure", "согласие_на_образ"), (итог["outcome"], итог["question"]["axis"]))
-        self.assertTrue(итог["summary"].startswith("QUESTION: the order uses the voice and likeness of a real person (Taylor Swift)"))
+        self.assertEqual(
+            ("could not measure", "согласие_на_образ"), (итог["outcome"], итог["question"]["axis"])
+        )
+        self.assertTrue(
+            итог["summary"].startswith(
+                "QUESTION: the order uses the voice and likeness of a real person (Taylor Swift)"
+            )
+        )
 
     def test_пародия_политика_отказ_с_нотой(self) -> None:
         итог = self._план(
