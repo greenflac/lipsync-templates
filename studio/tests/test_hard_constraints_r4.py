@@ -466,7 +466,10 @@ class ВопросОЮрисдикции(unittest.TestCase):
     def test_живой_бриф_с_потолком_нота_а_не_вопрос(self) -> None:
         итог = pn.plan("lipsync a generated face to 30s English voiceover, budget $3", full=True)
         self.assertNotEqual("юрисдикция", (итог["question"] or {}).get("axis"))
-        self.assertIn("юрисдикцию не спрашиваем", итог["note"])
+        # Бриф английский — и нота английская (5-й круг: прежде здесь
+        # стоял русский оборот посреди английского плана, и тест его ждал).
+        self.assertIn("jurisdiction not asked", итог["note"])
+        self.assertIn("«not excluded»", итог["note"])
         шаг = next(ш for ш in итог["steps"] if ш["step"] == "генерация_видео")
         self.assertIs(False, шаг["licence_alternative_wins"])
 

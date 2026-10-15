@@ -718,6 +718,23 @@ def _advise(model: str, attribute: str = "", *, path: Path | None = None) -> dic
     else:
         attributes = store.attributes(имя_в_базе)
     asked_as = attrfamily.как_отвечено(attribute, attributes) if attribute else ""
+    # СМЕЖНОЕ — НЕ ОТВЕТ (валидатор 5-го круга): `negative_prompt` у
+    # `kling-3.0` отвечался строкой `prompt_skeleton` с исходом `pass`.
+    # Члены той же ТЕМЫ, что не отвечают на спрошенное, едут отдельным полем
+    # `substitutes`, каждый с `substitute_for` и `counts_as_answer: false`, и
+    # ни в `claims`, ни в счёт исхода не входят. Ответ ищется сначала тем же
+    # атрибутом у вариантов и семьи (`family_claims`), смежное — последним.
+    заменители = (
+        attrfamily.substitutes(attribute, store.attributes(имя_в_базе)) if attribute else []
+    )
+    substitutes = {
+        attr: {
+            **store.claims(имя_в_базе, attr),
+            "substitute_for": attribute,
+            "counts_as_answer": False,
+        }
+        for attr in заменители
+    }
     claims: dict[str, dict] = {}
     contested: list[str] = []
     for attr in attributes:
@@ -865,6 +882,14 @@ def _advise(model: str, attribute: str = "", *, path: Path | None = None) -> dic
         },
         "family": роль,
         "family_claims": семья_ответа,
+        "substitutes": substitutes,
+        "substitutes_note": (
+            f"RELATED, NOT AN ANSWER: recorded for {name!r} under the same topic as "
+            f"{attribute!r}, but each answers a different question and none is counted as "
+            f"answering {attribute!r}: {', '.join(substitutes)} (in substitutes)."
+            if substitutes
+            else ""
+        ),
     }
     # Разрешение по единственному соседу — вывод, а не совпадение (Е2): оно
     # называется в главной ноте, а не только в поле.
@@ -1085,6 +1110,7 @@ def _advise(model: str, attribute: str = "", *, path: Path | None = None) -> dic
                         if срезы
                         else ""
                     )
+                    + (f" {общее['substitutes_note']}" if substitutes else "")
                     + авто
                     + axis,
                     "claims": семья_ответа,
@@ -1123,7 +1149,11 @@ def _advise(model: str, attribute: str = "", *, path: Path | None = None) -> dic
             "unmeasured": max(unmeasured, 1),
             "note": (
                 f"{gap_note}. The model itself IS in the fact base, so this is a "
-                "gap in what was recorded, not an unknown name." + перечень + авто + axis
+                "gap in what was recorded, not an unknown name."
+                + (f" {общее['substitutes_note']}" if substitutes else "")
+                + перечень
+                + авто
+                + axis
             ),
             "reason": why,
             # Что о модели ЕСТЬ. Без этого «не смогли» на опечатку в атрибуте
@@ -2218,6 +2248,13 @@ def brief(model: str, attribute: str = "", *, path: Path | None = None, lang: st
     семейные = полный.get("family_claims") or {}
     кратко["family_claims"] = _сжать_утверждения(семейные)
     кратко["family_claims_summary"] = _сводка_семьи(семейные)
+    if полный.get("substitutes"):
+        кратко["substitutes"] = {
+            k: {**v, "substitute_for": полный["substitutes"][k].get("substitute_for"),
+                "counts_as_answer": False}
+            for k, v in _сжать_утверждения(полный["substitutes"]).items()
+        }
+        кратко["substitutes_note"] = полный.get("substitutes_note")
     if полный.get("variant_slices"):
         кратко["variant_slices"] = {
             k: {

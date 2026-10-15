@@ -83,6 +83,15 @@ EN_PLANS: list[tuple[str, dict]] = [
     ("Transcribe our 10-minute podcast with speaker labels", {"spec": {"task": "transcribe", "outputs": ["text"], "duration_s": 600, "inputs": ["audio"]}}),
     ("Clone my voice from my sample and read 5 minutes of my script", {"spec": {"task": "voice-clone", "outputs": ["speech"], "duration_s": 300, "inputs": ["audio", "script"]}}),
     ("A 360 turntable of my sneaker photo, 6 seconds", {"spec": {"task": "turntable", "outputs": ["video"], "duration_s": 6, "inputs": ["photo"]}, "full": True}),
+    # Пятый круг: просьба без предмета, смета дороже потолка, чужой образ.
+    ("make it look good", {}),
+    (
+        "cheapest possible but best quality, 8s 4K 60fps with native audio, budget $0.10, "
+        "must be open-source and commercially licensed",
+        {},
+    ),
+    ("Make Taylor Swift sing a lullaby for my daughter, 15 seconds", {}),
+    ("Make Taylor Swift sing our jingle, 15 seconds ad", {}),
 ]
 
 #: То же по-русски: русский ответ не должен нести английских шаблонов.
@@ -99,6 +108,8 @@ RU_PLANS: list[tuple[str, dict]] = [
     ("самое дешёвое и лучшее качество, ролик 10 секунд, бюджет 5 долларов", {"full": True}),
     # Бриф без единой буквы языка не несёт; ответ — на языке дома (русском).
     ("", {}),
+    ("сделай красиво", {}),
+    ("озвучь текст голосом Путина, 20 секунд", {}),
 ]
 
 #: (модель, атрибут, full) — справка; язык английский (имя латиницей).
@@ -117,12 +128,43 @@ EN_ADVICE: list[tuple[str, str, bool]] = [
     ("seedance-2.5-t2v", "", False),
     ("kling-3.0", "max_seconds", True),
     ("speech-02-hd", "", False),
+    # Пятый круг: разворот спрошенного, ответ семьи, смежное (валидатор).
+    ("kling-3.0", "negative_prompt", False),
+    ("veo-3.1", "negative_prompt", True),
+    ("veo-3.1", "price", False),
+    ("minimax-h3", "license", False),
+    ("omnihuman-1.5", "failure_mode", False),
+    ("wan-2.2", "min_vram_gb", False),
+    ("seedvr2", "license", False),
+    ("veo-3.1", "languages", False),
 ]
 
 #: Справка, заказанная по-русски (`lang="ru"`).
 RU_ADVICE: list[tuple[str, str, bool]] = [
     ("kling-3.0", "", False),
+    ("kling-3.0", "negative_prompt", False),
+    ("flux-2-max", "max_seconds", False),
+    ("seedvr2", "price", False),
     ("Hailuo 2.3", "", False),
     ("sync-lipsync", "", True),
     ("no-such-model-xyz", "", False),
 ]
+
+
+#: Отказы `fetch_url` до отправки (SSRF, схема, негодный хост) — английский
+#: вопрос (пустой `why_wanted` — латиница). Сеть не трогается: отказ — до запроса.
+EN_FETCH: list[str] = [
+    "http://169.254.169.254/latest/meta-data/",
+    "http://127.1/",
+    "http://0x7f000001/",
+    "http://[::ffff:127.0.0.1]/",
+    "http://localhost:8080/",
+    "file:///etc/passwd",
+    "http://2130706433/",
+    "http://[::1]/",
+    "http://metadata.google.internal/",
+    "http://999.1.1.1/",
+]
+
+#: Те же отказы по-русски (`lang="ru"`).
+RU_FETCH: list[str] = ["http://127.1/", "http://localhost:8080/", "file:///etc/passwd"]

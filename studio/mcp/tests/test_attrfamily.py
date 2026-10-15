@@ -613,12 +613,15 @@ class СпрошенноеИмяСамоВСемье(unittest.TestCase):
 
     def test_исключение_семьи_держится_и_здесь(self):
         """`price_relative` — не цена, а условие тарифа (семья `billing`):
-        спрошенный так, он не тянет цену за секунду (И5)."""
+        спрошенный так, он не тянет цену за секунду (И5).
+
+        С 5-го круга `billing` — ТЕМАТИЧЕСКАЯ семья: `billing_requirement` на
+        вопрос «насколько дешевле другой» тоже не отвечает, он — заменитель
+        (`substitutes`), а не ответ (см. `test_substitute_labelled.py`)."""
         self.assertEqual("billing", attrfamily.семья_имени("price_relative"))
-        self.assertEqual(
-            ["billing_requirement"],
-            attrfamily.expand("price_relative", ["price_per_second", "billing_requirement"]),
-        )
+        записано = ["price_per_second", "billing_requirement"]
+        self.assertEqual([], attrfamily.expand("price_relative", записано))
+        self.assertEqual(["billing_requirement"], attrfamily.substitutes("price_relative", записано))
 
     def test_имя_без_семьи_остаётся_без_семьи(self):
         self.assertEqual("", attrfamily.семья_имени("zzz_attr"))

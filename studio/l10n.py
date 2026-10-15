@@ -94,7 +94,6 @@ CODE_KEYS: frozenset[str] = frozenset(
         "name",
         "how",
         "asked",
-        "asked_as",
         "looked_up_as",
         "spellings",
         "variants",
@@ -648,6 +647,64 @@ EN: tuple[tuple[str, str], ...] = (
     (r"память: ", "memory: "),
     (r" — нужно ([\d.]+) ГБ при ([\d.]+) ГБ", r" — needs \1 GB of \2 GB"),
     (r"источники расходятся в (\S+): (.+) — сторона не выбирается", r"sources disagree on \1: \2 — no side is taken"),
+    # --- справка: разворот спрошенного и ответ семьи (attrfamily.как_отвечено,
+    # advice._ответ_семьи) — валидатор 5-го круга нашёл их по-русски в
+    # английском ответе.
+    (r"спрошено ('[^']*'), а записано под именами: (.+?)\. Единицы у них РАЗНЫЕ и между собой не переводятся — сравнивать значения можно только внутри одного имени\.",
+     r"asked \1, recorded under the names: \2. Their units DIFFER and do not convert into each other — compare values only within one name."),
+    (r"спрошено ('[^']*'), а записано под именем ('[^']*') — единица ответа в этом имени, не в вопросе\.",
+     r"asked \1, recorded under the name \2 — the unit of the answer is in that name, not in the question."),
+    (r"о самой ('[^']*')((?:\.[\w.\-]+)?) не записано ничего; ответ — из утверждений вариантов семьи \(([^)]*)\): (\d+) из (\d+) в family_claims, каждое помечено, О КАКОМ ИМЕНИ оно\. Это НЕ измерение спрошенной модели\.",
+     r"nothing is recorded about \1\2 itself; the answer comes from the family's variants (\3): \4 of \5 in family_claims, each labelled with the NAME it is about. This is NOT a measurement of the model asked about."),
+    (r"о самой ('[^']*')((?:\.[\w.\-]+)?) не записано ничего; ответ — из утверждений семьи \(([^)]*)\): (\d+) из (\d+) в family_claims, каждое помечено, О КАКОМ ИМЕНИ оно\. Это НЕ измерение спрошенной модели\.",
+     r"nothing is recorded about \1\2 itself; the answer comes from the family (\3): \4 of \5 in family_claims, each labelled with the NAME it is about. This is NOT a measurement of the model asked about."),
+    (r" Спорно: ", " Contested: "),
+    (r"ВНИМАНИЕ: ", "WARNING: "),
+    # --- отказ SSRF и разбор хоста (studio/mcp/fetch.py)
+    (r"(\S+) лежит во внутренней сети (\S+)", r"\1 lies in the internal network \2"),
+    (r"(\S+) — не публичный адрес", r"\1 is not a public address"),
+    (r"(\S+) — служебное внутреннее имя", r"\1 is a reserved internal name"),
+    (r"('[^']*') похоже на IP-адрес, но адресом не является \(invalid IP literal\)", r"\1 looks like an IP address but is not one (invalid IP literal)"),
+    (r"('[^']*') не похоже на имя хоста", r"\1 does not look like a host name"),
+    (r"('[^']*') не IP-адрес", r"\1 is not an IP address"),
+    (r"('[^']*') не разбирается как адрес: ", r"\1 does not parse as an address: "),
+    (r"('[^']*'): схема ('[^']*'), а пробуются только http и https", r"\1: scheme \2, and only http and https are probed"),
+    (r"адрес не разбирается: ", "the address does not parse: "),
+    (r"схема ('[^']*'): запрашиваются только http и https", r"scheme \1: only http and https are requested"),
+    (r"в адресе нет хоста", "the address has no host"),
+    (r"^пустая строка$", "an empty string"),
+    # --- вердикты потолка в смете (planner: цена ролика) — валидатор 5-го круга
+    (r" — ПОТОЛОК ([\d.]+) ПРЕВЫШЕН \(usd\): наименьшая известная стоимость ([\d.]+) против ([\d.]+) даже на самых дешёвых тарифах, это дороже в ([\d.]+) раза",
+     r" — CEILING \1 EXCEEDED (usd): the least known cost is \2 vs \3 even on the cheapest tiers, \4 times over"),
+    (r" — и это без шагов, у которых цены нет или она нижняя граница",
+     " — and that is without the steps that have no price or only a lower bound"),
+    (r" — ПОТОЛОК ([\d.]+) ПРЕВЫШЕН \(([^)]*)\): ([\d.]+) против ([\d.]+), это дороже в ([\d.]+) раза",
+     r" — CEILING \1 EXCEEDED (\2): \3 vs \4, \5 times over"),
+    (r" — в потолок ([\d.]+) влезает только нижний край неоднозначных ставок \(([\d.]+) usd\); по наибольшей ([\d.]+) usd — ПРЕВЫШЕН\. Не проверить",
+     r" — only the lower edge of the ambiguous rates fits the ceiling \1 (\2 usd); at the highest, \3 usd — EXCEEDED. Cannot be checked"),
+    (r" — ПОТОЛОК ([\d.]+): работа столько не стоит: самый дешёвый записанный кандидат шага (\S+) стоит ([\d.]+) (\w+)",
+     r" — CEILING \1: the work does not cost that little: the cheapest recorded candidate of step \2 costs \3 \4"),
+    (r"ПРЕВЫШЕН — наименьшая известная стоимость ([\d.]+) usd", r"over budget — the least known cost is \1 usd"),
+    (r"шаг один стоит ([\d.]+) usd \(", r"this step alone costs \1 usd ("),
+    (r"\) — ВЫШЕ потолка ([\d.]+) usd на весь ролик", r") — ABOVE the ceiling \1 usd for the whole clip"),
+    (r"\) — ВЫШЕ потолка ([\d.]+) usd на шаг", r") — ABOVE the ceiling \1 usd per step"),
+    (r"; и после перевыбора ([\d.]+) usd ВЫШЕ потолка ([\d.]+) usd — дешевле можно только ниже по доводам",
+     r"; and after re-selection \1 usd is ABOVE the ceiling \2 usd — cheaper is only lower on evidence"),
+    (r"; юрисдикцию не спрашиваем — отодвинутая лицензией модель не выиграла бы и при ответе («Q»): ",
+     r"; jurisdiction not asked — the model pushed aside by its licence would not win even with the answer \1: "),
+    (r"веса семьи (\S+): ", r"family weights \1: "),
+    (r"; что этот вариант — опубликованный чекпойнт, в базе НЕ записано",
+     "; that this variant is a published checkpoint is NOT recorded in the base"),
+    # --- смета дороже потолка (planner.дороже_потолка)
+    (r"смета дороже потолка: наименьшая известная стоимость ([\d.]+) usd против потолка ([\d.]+) usd, в ([\d.]+) раза; ",
+     r"the estimate is over the ceiling: the least known cost is \1 usd against a ceiling of \2 usd, \3 times over; "),
+    (r"смета дороже потолка: наименьшая известная стоимость ([\d.]+) usd против потолка ([\d.]+) usd; ",
+     r"the estimate is over the ceiling: the least known cost is \1 usd against a ceiling of \2 usd; "),
+    # --- страница полного плана (server.page_full_plan)
+    (r"\[страница полного плана: шагов (\d+) из (\d+), подробно — куски (\d+)\.\.(-?\d+) из (\d+); следующая страница offset=(\d+)\]",
+     r"[page of the full plan: steps \1 of \2, in full — chunks \3..\4 of \5; next page offset=\6]"),
+    (r"\[страница полного плана: шагов (\d+) из (\d+), подробно — куски (\d+)\.\.(-?\d+) из (\d+); последняя страница\]",
+     r"[page of the full plan: steps \1 of \2, in full — chunks \3..\4 of \5; last page]"),
 )
 
 
@@ -775,6 +832,9 @@ EN_FRAGMENTS: tuple[tuple[str, str], ...] = (
     (r"кадр: ", "frame: "),
     (r", цена: ", ", price: "),
     (r"\. выбран ", ". chose "),
+    (r"(?<![\w-])семья (\S+): ", r"family \1: "),
+    (r" ВЫШЕ потолка ", " ABOVE the ceiling "),
+    (r" на весь ролик", " for the whole clip"),
     (r"\bи\b", "and"),
 )
 
@@ -787,6 +847,8 @@ LABELS_EN: dict[str, str] = {
     "требования заказчика (свой GPU, качество) подтверждены записью, а не молчанием":
         "customer's hard requirements (own GPU, quality) confirmed by a record, not by silence",
     "качество": "quality",
+    # Ответ заказчика, который планировщик приводит в «ёлочках» (нота о юрисдикции).
+    "не исключена": "not excluded",
     "нельзя ли этим воспользоваться": "can it be used at all",
     "делает ли модель эту работу, а не соседнюю": "does the model do this job, not a neighbouring one",
     "принимает ли кадр": "does it accept the frame",
@@ -817,6 +879,26 @@ LABELS_EN: dict[str, str] = {
 # ---------------------------------------------------------------------------
 
 RU: tuple[tuple[str, str], ...] = (
+    # --- пробел в записанном (advice: ветка «атрибут не записан»)
+    (r"nothing is recorded about (\S+)\. The model itself IS in the fact base, so this is a gap in what was recorded, not an unknown name\.",
+     r"о \1 ничего не записано. Сама модель В базе фактов есть, так что это пробел в записанном, а не незнакомое имя."),
+    (r"(\d+) of (\d+) attribute\(s\) rest on blog-tier or stale sources only, and repetition is not corroboration\. The model itself IS in the fact base, so this is a gap in what was recorded, not an unknown name\.",
+     r"атрибутов \1 из \2 стоят только на источниках ступени blog или устаревших, а повтор — не подтверждение. Сама модель В базе фактов есть, так что это пробел в записанном, а не незнакомое имя."),
+    (r" Recorded attributes for this model \((\d+)\): ", r" Записанные атрибуты этой модели (\1): "),
+    (r", … and (\d+) more\.", r", … и ещё \1."),
+    (r"the model itself is unusable: ", "сама модель непригодна: "),
+    (r" The base does hold (.+?) — if that is the same model under another name, ask again by that id\.",
+     r" В базе есть \1 — если это та же модель под другим именем, спросите по нему."),
+    # --- смежное, не ответ (advice, валидатор 5-го круга)
+    (r"RELATED, NOT AN ANSWER: recorded for ('[^']*') under the same topic as ('[^']*'), but each answers a different question and none is counted as answering ('[^']*'): (.+?) \(in substitutes\)\.",
+     r"СМЕЖНОЕ, НЕ ОТВЕТ: у \1 записано на ту же тему, что \2, но каждое отвечает на другой вопрос, и ничто из этого не считается ответом на \3: \4 (в substitutes)."),
+    # --- отказ SSRF (fetch_url по-русски)
+    (r"('[^']*') is refused before sending: (.+?)\. Requests from a tool call never go to private, loopback, link-local or metadata addresses\. Nothing was sent and nothing was recorded in the denial journal\.",
+     r"\1 отвергнут до отправки: \2. Запросы инструмента не ходят на частные, петлевые, локальные и служебные (metadata) адреса. Ничего не отправлено и ничего не записано в журнал отказов."),
+    (r"('[^']*') is not an http\(s\) URL, so nothing was attempted", r"\1 — не адрес http(s), поэтому ничего не запрашивалось"),
+    # --- потолок ответа и листание плана (server)
+    (r"plan_pipeline — call again with the same brief/spec, full=True and offset=page\.next_offset \(the next chunk of steps and plan fields not yet shown in full\); or full=False for the compact plan",
+     "plan_pipeline — тот же бриф/spec, full=True и offset=page.next_offset (следующий кусок шагов и полей плана, ещё не показанный целиком); или full=False — краткий план"),
     (r"\[page of the full answer: attributes (\d+)\.\.(\d+) of (\d+); next page offset=(\d+)\]",
      r"[страница полного ответа: атрибуты \1..\2 из \3; следующая страница — offset=\4]"),
     (r"\[page of the full answer: attributes (\d+)\.\.(\d+) of (\d+); last page\]",
@@ -1159,8 +1241,14 @@ def localise_payload(
             if ks in TRANSPORT_SUBTREES:
                 out[k] = v
                 continue
-            if lang == "en" and not ks.endswith(EN_SUFFIX) and isinstance(obj.get(ks + EN_SUFFIX), str):
-                v = obj[ks + EN_SUFFIX]
+            близнец = obj.get(ks + EN_SUFFIX)
+            # Близнец-список тоже (`options`/`options_en` противоречия брифа,
+            # валидатор 5-го круга): раньше брался только строковый.
+            if lang == "en" and not ks.endswith(EN_SUFFIX) and (
+                isinstance(близнец, str)
+                or (isinstance(близнец, list) and isinstance(v, list) and len(близнец) == len(v))
+            ):
+                v = близнец
             out[k] = localise_payload(
                 v,
                 lang,

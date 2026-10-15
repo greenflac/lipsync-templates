@@ -69,6 +69,10 @@ def _прогон() -> dict:
                 (м, а, ф): json.loads(server.model_advice(м, а, ф, lang="ru"))
                 for м, а, ф in набор.RU_ADVICE
             }
+            _ПРОГОН["отказы_en"] = {у: json.loads(server.fetch_url(у)) for у in набор.EN_FETCH}
+            _ПРОГОН["отказы_ru"] = {
+                у: json.loads(server.fetch_url(у, lang="ru")) for у in набор.RU_FETCH
+            }
         finally:
             _вернуть(прежнее)
     return _ПРОГОН
@@ -112,6 +116,26 @@ class АнглийскийОтвет(Набор):
         провалы = {к: l10n.leaks(о, "en")[:3] for к, о in self.справки_en.items() if l10n.leaks(о, "en")}
         self.assertEqual({}, провалы)
 
+    def test_отказы_fetch_url_без_кириллицы(self) -> None:
+        """Пятый круг: причина SSRF («лежит во внутренней сети») шла по-русски."""
+        self.assertTrue(all(о["outcome"] == "fail" for о in self.отказы_en.values()))
+        провалы = {у: l10n.leaks(о, "en")[:3] for у, о in self.отказы_en.items() if l10n.leaks(о, "en")}
+        self.assertEqual({}, провалы)
+        self.assertIn(
+            "127.0.0.1 lies in the internal network 127.0.0.0/8", self.отказы_en["http://127.1/"]["note"]
+        )
+
+    def test_пятый_круг_формы_справки_и_плана(self) -> None:
+        """Т2: литералы форм, найденных валидатором 5-го круга."""
+        текст = "\n".join(
+            s for о in [*self.справки_en.values(), *self.планы_en.values()] for _, _, s, _ in l10n._walk(о)
+        )
+        for было in ("ВНИМАНИЕ", "Единицы у них РАЗНЫЕ", "ПОТОЛОК", "mostly Russian", "о самой"):
+            self.assertNotIn(было, текст)
+        план = self.планы_en[("make it look good", "{}")]
+        self.assertEqual("нужен_ответ_заказчика", план["reason"])
+        self.assertIsNotNone(план["question"])
+
     def test_названные_аудитом_формы_переведены(self) -> None:
         """Т2: ожидаемое — литералы, по одному на каждую форму из отчёта аудита."""
         # Только ЗНАЧЕНИЯ: ключи словаря (`"usd за megapixel"` в `lower_bound`)
@@ -146,6 +170,10 @@ class РусскийОтвет(Набор):
 
     def test_справка_без_английских_шаблонов(self) -> None:
         провалы = {к: l10n.leaks(о, "ru")[:3] for к, о in self.справки_ru.items() if l10n.leaks(о, "ru")}
+        self.assertEqual({}, провалы)
+
+    def test_отказы_fetch_url_по_русски(self) -> None:
+        провалы = {у: l10n.leaks(о, "ru")[:3] for у, о in self.отказы_ru.items() if l10n.leaks(о, "ru")}
         self.assertEqual({}, провалы)
 
     def test_русский_план_остаётся_русским(self) -> None:
