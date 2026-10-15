@@ -653,3 +653,4 @@
 {"host": "docs.heygen.com", "url": "https://docs.heygen.com/", "reason": "Tunnel connection failed: 403 Forbidden", "why_wanted": "vendor pricing/limits for model base (task 3)", "incidental": false, "state": "refused", "first_seen": "2026-10-14"}
 {"host": "www.topazlabs.com", "url": "https://www.topazlabs.com/", "reason": "Tunnel connection failed: 403 Forbidden", "why_wanted": "vendor pricing/limits for model base (task 3)", "incidental": false, "state": "refused", "first_seen": "2026-10-14"}
 {"host": "docs.ltx.video", "url": "https://docs.ltx.video/", "reason": "Tunnel connection failed: 403 Forbidden", "why_wanted": "vendor pricing/limits for model base (task 3)", "incidental": false, "state": "refused", "first_seen": "2026-10-14"}
+{"host": "www.runpod.io", "url": "https://www.runpod.io/pricing", "state": "open", "first_seen": "2026-10-15"}

@@ -349,26 +349,31 @@ class ЖивыеБрифы(unittest.TestCase):
         self.assertEqual(("fail", "валидатор_отверг"), (итог["outcome"], итог["reason"]))
         оптимум = итог["pipeline_price"]["optimised"]
         # ПОТОЛОК — НЕ «САМОЕ ДЕШЁВОЕ» (2026-10-15): перебор 0.58 usd закрывает
-        # одна замена липсинка; озвучка и видео остаются прежними.
-        # eleven_v3 теперь по маршруту вендора: ≈450 знаков × 0.08 usd / 1000.
+        # одна замена. РАУНД 4 (2026-10-15): не липсинка — измеренный
+        # `sync-lipsync` (за 2, против 1) на `latentsync` (за 1, против 3) отдавал
+        # баланс доводов, — а неизмеренного видео на неизмеренное, ничьей по
+        # доводам: такая замена не отдаёт ничего измеренного.
         self.assertEqual(
-            [("липсинк", "sync-lipsync", "latentsync")],
+            [("генерация_видео", "wan-3.0-prime-t2v", "gemini-omni-flash-v1.1-t2v")],
             [(о["step"], о["from"], о["to"]) for о in оптимум["swaps"]],
         )
         self.assertEqual(
-            [("озвучка", "eleven_v3"), ("генерация_видео", "wan-3.0-prime-t2v"), ("липсинк", "latentsync")],
+            [
+                ("озвучка", "eleven_v3"),
+                ("генерация_видео", "gemini-omni-flash-v1.1-t2v"),
+                ("липсинк", "sync-lipsync"),
+            ],
             [(ш["step"], ш["chosen"]["model"]) for ш in итог["steps"]],
         )
-        self.assertEqual((3.576, 2.276), (оптимум["before_usd"], оптимум["after_usd"]))
+        self.assertEqual((3.576, 2.436), (оптимум["before_usd"], оптимум["after_usd"]))
         self.assertEqual("total 3.58 usd is over the clip ceiling 3 usd", оптимум["why_en"])
         self.assertEqual("годно", итог["pipeline_price"]["outcome"])
         self.assertIn(
-            "re-selected for the budget: sync-lipsync 1.50 -> latentsync 0.20 usd; traded off: "
-            "sync-lipsync: измерено, но есть плохая новость, строк применимости 3 (за 2, против 1) "
-            "-> latentsync: измерено, но есть плохая новость, строк применимости 4 (за 1, против 3)",
+            "re-selected for the budget: wan-3.0-prime-t2v 2.04 -> gemini-omni-flash-v1.1-t2v 0.90 usd",
             итог["summary"],
         )
-        self.assertIn("BUDGET OPTIMISED (total 3.58 usd is over the clip ceiling 3 usd): 3.58 -> 2.28 usd", итог["summary"])
+        self.assertNotIn("sync-lipsync 1.50 -> latentsync", итог["summary"])
+        self.assertIn("BUDGET OPTIMISED (total 3.58 usd is over the clip ceiling 3 usd): 3.58 -> 2.44 usd", итог["summary"])
 
     def test_липсинк_заказано_самое_дешёвое_меняет_всё(self) -> None:
         """Обратное направление: «cheapest» — каждый шаг к минимуму своей полосы."""

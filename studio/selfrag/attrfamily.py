@@ -197,7 +197,9 @@ import re
         # мутацией, которая его показывает. Сейчас это сторожит мутант
         # «приставка стала подстрокой»: он краснеет.
         "prefixes": ("license", "licence"),
-        "exact": ("architecture_and_license",),
+        # `open_weights` (2026-10-15): опубликованы ли веса — вопрос лицензии
+        # весов, а не API; его читает фильтр своего GPU (`studio/hardneed.py`).
+        "exact": ("architecture_and_license", "open_weights"),
     },
     "max_seconds": {
         "prefixes": (),
@@ -262,7 +264,16 @@ import re
         # звучанию. `latency_penalty` — качественное («синтезирует медленнее»),
         # но именно о скорости работы; `realtime_dubbing` — о том, успевает ли
         # модель в реальное время. Оба отвечают на «как быстро».
-        "exact": ("generation_time", "latency", "latency_penalty", "realtime_dubbing"),
+        # `gpu_seconds_per_clip` (2026-10-15): время GPU на клип своего запуска —
+        # тот же вопрос «как быстро», в GPU-секундах; из него считается цена
+        # самостоятельного запуска (`studio/hardneed.py`).
+        "exact": (
+            "generation_time",
+            "latency",
+            "latency_penalty",
+            "realtime_dubbing",
+            "gpu_seconds_per_clip",
+        ),
     },
     # === ПЯТЬ СЕМЕЙ, ЗАВЕДЁННЫХ 2026-09-04 ПО ЗАМЕРУ НЕДОСТИЖИМОСТИ =======
     #
@@ -338,7 +349,10 @@ import re
         # форма, что у документированного `price_relative`; в семье «условия
         # оплаты» он был единственным ответом и читался как цена.
         "exact": ("storage_cost",),
-        "подстроки": ("vram", "runs_on", "parameter_count"),
+        # `gpu_count_recommended` (сколько карт в рецепте вендора) и
+        # `gpu_price_per_hour_usd` (ставка аренды карты) — 2026-10-15: оба
+        # отвечают на «пойдёт ли на моей карте и во что встанет её час».
+        "подстроки": ("vram", "runs_on", "parameter_count", "gpu_count", "gpu_price"),
     },
     # НА КАКИХ ЯЗЫКАХ. Подстрока «language» ловит `languages`,
     # `prompt_language`, `language_control`.

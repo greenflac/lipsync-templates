@@ -815,26 +815,84 @@ def probe_licence(step: Step, свои: Sequence[Fact]) -> Probe:
 #: Юрисдикция -> как её называют бриф и строка лицензии. КОНСТАНТА-РЕШЕНИЕ,
 #: список закрытый (G8): незнакомая страна не распознаётся, и тогда исход
 #: «не смогли», а не «разрешено».
+#:
+#: ТОЛЬКО ИМЕНА СТРАН И РЕГИОНОВ, И ТОЛЬКО ЦЕЛЫМ СЛОВОМ (2026-10-15, валидатор
+#: раунда 4). Прежние основы без границ ловили не место, а что попало:
+#: «Japanese voice» давало JP (`\bjapan` внутри «japanese»), «for us» — US
+#: (`\busa?\b`), «поскорее» — KR (`коре` внутри слова), «штатный диктор» —
+#: US (`штат`), «европейский стиль» — EU. Национальность и язык — не
+#: юрисдикция: японская озвучка ничего не говорит о том, где покажут ролик.
+#: Поэтому прилагательные («japanese», «корейский», «american») не ловятся
+#: вовсе, а русские имена стран — только в падежных формах самого имени.
+#: «US» ловится ТОЛЬКО заглавными (`US_UPPER`): строчное «us» — местоимение.
 JURISDICTIONS: dict[str, str] = {
-    "EU": r"\beu\b|european union|\beurope|евросоюз|\bес\b|европ|германи|франци|испани|итали|нидерланд|польш",
-    "UK": r"\buk\b|united kingdom|britain|англи(?:я|и)\b|великобритан|лондон",
-    "US": r"\busa?\b|united states|америк|\bсша\b|штат",
-    "KR": r"south korea|\bkorea|коре",
-    "CN": r"\bchina\b|\bprc\b|китай|\bкнр\b",
-    "RU": r"\brussia|росси|\bрф\b",
-    "JP": r"\bjapan|япони",
-    "IN": r"\bindia\b|инди(?:я|и)\b",
+    "EU": (
+        r"\beu\b|european union|\beurope\b|\bевросоюз\w*|\bес\b|\bевроп(?:а|е|у|ы|ой)\b"
+    ),
+    "UK": (
+        r"\buk\b|united kingdom|great britain|\bbritain\b|\bengland\b|\blondon\b"
+        r"|\bвеликобритани(?:я|и|ю|ей)\b|\bангли(?:я|и|ю|ей)\b|\bлондон(?:а|е|у|ом)?\b"
+    ),
+    "US": (
+        r"\busa\b|united states|\bamerica\b|\bсша\b|\bамерик(?:а|е|и|у|ой)\b"
+        r"|соединённ\w* штат\w*|соединенн\w* штат\w*|\bв штатах\b|\bштаты\b"
+    ),
+    # Код блока целым словом («excludes territories EU, KR, UK, US» — так
+    # пишет и наша собственная нота): `kr` не слово ни в одном из языков брифа.
+    "KR": r"\bsouth korea\b|\bkorea\b|\bkr\b|\bкоре(?:я|и|е|ю|ей)\b",
+    "CN": r"\bchina\b|\bprc\b|\bкита(?:й|я|е|ю|ем)\b|\bкнр\b",
+    "RU": r"\brussia\b|\bросси(?:я|и|ю|ей)\b|\bрф\b",
+    "JP": r"\bjapan\b|\bяпони(?:я|и|ю|ей)\b",
+    "IN": r"\bindia\b|\bинди(?:я|и|ю|ей)\b",
 }
+
+#: «US» заглавными — страна; строчное «us» — местоимение («a promo for us»).
+#: Читается по ИСХОДНОМУ регистру, а не по `_norm`.
+US_UPPER = re.compile(r"\bU\.?S\.?(?:A\.?)?(?![\w.])|\bUS\b")
+
+#: Страна -> (её код, блок юрисдикции лицензии). Лицензии называют БЛОКИ
+#: (EU), заказчик — СТРАНУ («client in Germany»): страна ЕС — это EU, и её
+#: код печатается рядом (`countries_in`). Список закрытый, как и выше.
+COUNTRIES: dict[str, tuple[str, str]] = {
+    "DE": ("EU", r"\bgermany\b|\bгермани(?:я|и|ю|ей)\b"),
+    "FR": ("EU", r"\bfrance\b|\bфранци(?:я|и|ю|ей)\b"),
+    "ES": ("EU", r"\bspain\b|\bиспани(?:я|и|ю|ей)\b"),
+    "IT": ("EU", r"\bitaly\b|\bитали(?:я|и|ю|ей)\b"),
+    "NL": ("EU", r"\bnetherlands\b|\bholland\b|\bнидерланд(?:ы|ах|ов|ам)\b|\bголланди(?:я|и|ю|ей)\b"),
+    "PL": ("EU", r"\bpoland\b|\bпольш(?:а|е|и|у|ей)\b"),
+    "AT": ("EU", r"\baustria\b|\bавстри(?:я|и|ю|ей)\b"),
+    "BE": ("EU", r"\bbelgium\b|\bбельги(?:я|и|ю|ей)\b"),
+    "SE": ("EU", r"\bsweden\b|\bшвеци(?:я|и|ю|ей)\b"),
+    "IE": ("EU", r"\bireland\b|\bирланди(?:я|и|ю|ей)\b"),
+    "PT": ("EU", r"\bportugal\b|\bпортугали(?:я|и|ю|ей)\b"),
+    "FI": ("EU", r"\bfinland\b|\bфинлянди(?:я|и|ю|ей)\b"),
+    "DK": ("EU", r"\bdenmark\b|\bдани(?:я|и|ю|ей)\b"),
+    "CZ": ("EU", r"\bczechia\b|\bczech republic\b|\bчехи(?:я|и|ю|ей)\b"),
+    "GR": ("EU", r"\bgreece\b|\bгреци(?:я|и|ю|ей)\b"),
+    "RO": ("EU", r"\bromania\b|\bрумыни(?:я|и|ю|ей)\b"),
+}
+
+
+def countries_in(text: str) -> dict[str, str]:
+    """Страны, названные в тексте: {код: блок} — «client in Germany» -> {DE: EU}."""
+    низ = _norm(str(text or ""))
+    return {к: блок for к, (блок, r) in COUNTRIES.items() if re.search(r, низ, re.I)}
+
+
+def jurisdictions_in(text: str) -> tuple[str, ...]:
+    """Юрисдикции, названные в тексте (брифе или строке лицензии): блоки лицензий."""
+    сырой = str(text or "")
+    низ = _norm(сырой)
+    найдены = {к for к, r in JURISDICTIONS.items() if re.search(r, низ, re.I)}
+    if US_UPPER.search(сырой):
+        найдены.add("US")
+    найдены |= set(countries_in(сырой).values())
+    return tuple(sorted(найдены))
+
 
 #: Строки лицензии, которые СУЖАЮТ её не по применению, а по месту и деньгам.
 TERRITORY_MARKERS: tuple[str, ...] = ("territor", "region", "jurisdic", "территор")
 REVENUE_MARKERS: tuple[str, ...] = ("revenue", "выручк", "monthly active", "mau")
-
-
-def jurisdictions_in(text: str) -> tuple[str, ...]:
-    """Юрисдикции, названные в тексте (брифе или строке лицензии)."""
-    низ = _norm(str(text or ""))
-    return tuple(sorted(к for к, r in JURISDICTIONS.items() if re.search(r, низ, re.I)))
 
 
 def licence_reservations(свои: Sequence[Fact]) -> tuple[list[Fact], list[Fact]]:

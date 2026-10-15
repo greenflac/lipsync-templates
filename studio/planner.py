@@ -231,6 +231,7 @@ from lipsync.fork_identity import FAIL, PASS, UNMEASURED
 from studio import clarify
 from studio import duration as dur
 from studio import factaxis as fa
+from studio import hardneed as hn
 from studio import lifecycle as life
 from studio import pipeline as pl
 from studio import pricing
@@ -1041,6 +1042,13 @@ BAN_EVIDENCE_LABEL = "ЗАПРЕТ НА ВХОД, а не довод"
 #: отдельным фильтром, а не ключом.
 CONSTRAINT_KEYS = 5
 
+#: Поле ключа ЖЁСТКИХ ТРЕБОВАНИЙ ЗАКАЗЧИКА (`studio/hardneed.py`, 2026-10-15):
+#: свой GPU (веса, память, цена GPU-временем) и цель «качество» (родной кадр,
+#: доводы семьи). Нарушившие требование отсеяны ДО ключа; здесь — только
+#: «подтверждено записью» против «не записано». Без требований поле пустое у
+#: всех и порядка не меняет.
+HARD_KEY_FIELD = "требования заказчика (свой GPU, качество) подтверждены записью, а не молчанием"
+
 KEY_FIELDS: tuple[str, ...] = (
     "нельзя ли этим воспользоваться",
     "делает ли модель эту работу, а не соседнюю",
@@ -1048,6 +1056,7 @@ KEY_FIELDS: tuple[str, ...] = (
     "влезает ли по длительности",
     "положение по цене",
     "лицензия исключает территории, а юрисдикция заказчика не названа",
+    HARD_KEY_FIELD,
     "отдаёт ли заказанный кадр сам, без апскейла",
     "модель сообщества (воркфлоу, LoRA, мёрж), а не продукт",
     "вытеснена более новым поколением",
@@ -2283,6 +2292,10 @@ class Candidate:
     #: видеомодель 0, аватар-продукт 1). Полоса бюджета (`полоса`) его не
     #: пересекает: дешёвый аватар не заменяет видеомодель ради денег.
     kind_rank: int = 0
+    #: Поле ключа жёстких требований (`HARD_KEY_FIELD`): пусто — требований нет.
+    hard_rank: tuple = ()
+    #: Чем требования заказчика подтверждены или нет — словами (веса, VRAM, кадр).
+    hard_note: str = ""
 
     @property
     def measured(self) -> bool:
@@ -2923,8 +2936,11 @@ def _фото_без_движения(
 
 
 #: Операции, после которых в плане есть ВИДЕО, а значит апскейл — видео.
+#: `видео_со_звуком` встал сюда 2026-10-15 (валидатор раунда 4): после
+#: замены цепочки нативным звуком в плане не оставалось ни одного «видео-
+#: делателя», и условный апскейл выбирал апскейлер КАРТИНКИ поверх ролика.
 VIDEO_MAKERS: frozenset[str] = frozenset(
-    {"оживление", "генерация_видео", "липсинк", "замена_персонажа", "дубляж", AVATAR_STEP}
+    {"оживление", "генерация_видео", "липсинк", "замена_персонажа", "дубляж", AVATAR_STEP, NATIVE_AUDIO_STEP}
 )
 
 
@@ -5359,6 +5375,13 @@ def by_evidence(c: Candidate) -> tuple:
         # (`licence_blocked`). Старше доводов, младше цены: это ограничение
         # заказчика, как бюджет, а не наше мнение о модели.
         int(c.territory_unasked),
+        # ЖЁСТКИЕ ТРЕБОВАНИЯ ЗАКАЗЧИКА (2026-10-15, `studio/hardneed.py`): на
+        # своём GPU модель с ЗАПИСАННЫМИ весами и памятью старше той, о
+        # которой «не записано»; при цели «качество» родной кадр с тарифом
+        # старше родного без цены. Не прошедшие требование сюда не доходят —
+        # отсеяны в `candidates_for`. Младше лицензии: та — тоже заказчик, но
+        # её нарушение — запрет, а здесь — степень уверенности.
+        c.hard_rank,
         # НЕ ДОТЯГИВАЕТ ДО ЗАКАЗАННОГО КАДРА — ПОСЛЕ ЛИЦЕНЗИИ (2026-10-15). На
         # брифе «8 секунд 1080p с нативным звуком» впереди вставала модель,
         # чей тариф есть только в 720p («ниже заказанного 1080p — нужен
@@ -5454,6 +5477,7 @@ def _поле(c: Candidate, i: int) -> str:
         )
         if c.territory_unasked
         else "нет",
+        c.hard_note or "требований нет",
         "по записи ниже заказанного кадра" if c.below_frame else "не ниже по записи",
         "сообщество" if c.community else "продукт",
         f"вытеснена: {c.superseded}" if c.superseded else "текущее поколение",
@@ -5615,6 +5639,245 @@ def rival_line(chosen: Candidate | None, found: Sequence[Candidate]) -> str:
     )
 
 
+# --------------------------------------------------------------------------
+# ЖЁСТКИЕ ТРЕБОВАНИЯ ЗАКАЗЧИКА: СВОЙ GPU И ЦЕЛЬ «КАЧЕСТВО» (2026-10-15)
+#
+# Валидатор раунда 4: «self-host on one RTX 4090, 1080p 5s» выбирал
+# `kling-3.0`, у которой открытых весов нет вовсе, а «4K … quality over price»
+# — `kling-3.0` без цены и без тарифа в 4K при живом `kling-3.0-4k-t2v`.
+# Значения требований приходят простыми полями (`hardneed.Hard`) — из брифа
+# или из структурированной спецификации, фильтру всё равно откуда.
+# --------------------------------------------------------------------------
+
+
+class Кандидаты(list):
+    """Список кандидатов шага и те, кого жёсткие требования ОТСЕЯЛИ, с причиной.
+
+    Обычный список для всех, кто его читает; отсеянные — рядом, а не в нём:
+    модель, которую на своём GPU не запустить, — не сосед, а отказ, и
+    печатается счётом и причинами (`hard_excluded`).
+    """
+
+    def __init__(self, items: Iterable[Candidate] = (), исключены: Mapping[str, str] | None = None):
+        super().__init__(items)
+        self.исключены: dict[str, str] = dict(исключены or {})
+
+
+@dataclass(frozen=True)
+class Жёсткое:
+    """Что жёсткие требования сказали об одном кандидате."""
+
+    исключить: str = ""
+    ранг: tuple = ()
+    нота: str = ""
+    свой_gpu: bool = False
+    стоимость: "Стоимость | None" = None
+    без_цены: str = ""
+
+
+def _семья_строк(
+    имя: str, по_имени: Mapping[str, Sequence[Fact]], известные: Sequence[str]
+) -> list[tuple[str, Sequence[Fact]]]:
+    """Родители модели с их строками, от ближнего к дальнему (`FAMILY_LICENCE_DEPTH`)."""
+    from studio.selfrag import modelnames
+
+    семья: list[tuple[str, Sequence[Fact]]] = []
+    текущее = имя
+    for _ in range(FAMILY_LICENCE_DEPTH):
+        родители = modelnames.parent(текущее, известные)
+        if not родители:
+            break
+        семья.append((родители[0], [f for р in родители for f in по_имени.get(fold(р), [])]))
+        текущее = родители[0]
+    return семья
+
+
+#: Строка о разрешении говорит о РОДНОМ выходе модели, а не о тарифе площадки.
+NATIVE_WORDS = re.compile(r"\bnative\b|родн", re.I)
+
+
+def _кадр_родной(
+    op: Operation,
+    все: Sequence[Fact],
+    сколько: "Стоимость | None",
+    кадр: tuple[int, int],
+    семья: Sequence[tuple[str, Sequence[Fact]]] = (),
+) -> bool | None:
+    """Отдаёт ли модель заказанный кадр САМА — по тарифу шага или по пределу.
+
+    РОДНОЙ ВЫХОД СТАРШЕ ТАРИФА (2026-10-15): у `seedance-2.0` перепродавец
+    продаёт 2160p, а карточка вендора говорит «480p and 720p native output».
+    Тариф в 4K у модели с родным 720p — апскейл площадки, а не родной кадр.
+    Строки о РОДНОМ разрешении читаются у модели и у её семьи.
+    """
+    родные = [
+        f
+        for f in [*все, *(f for _, строки in семья for f in строки)]
+        if f in limit_facts([f]) and (f.attribute == "native_resolution" or NATIVE_WORDS.search(f.value))
+    ]
+    # Оговорка после тире («— contradicts the 3840x2160 read off a reseller's
+    # schema») — пересказ ЧУЖОГО числа, а не предел: читается голова строки.
+    from dataclasses import replace as _replace
+
+    if any(
+        fit_stance([_replace(f, value=re.split(r"\s+—\s+|\s+\(", f.value)[0])], кадр)[0] == FIT_OVER
+        for f in родные
+    ):
+        return False
+    if ниже_кадра(op, все, сколько, кадр):
+        return False
+    if сколько is not None and сколько.default.resolution:
+        return сколько.default.resolution >= min(кадр)
+    положение, _ = fit_stance(все, кадр)
+    if положение == FIT_IN:
+        return True
+    if положение == FIT_OVER:
+        return False
+    return None
+
+
+def требования_заказчика(
+    op: Operation,
+    имя: str,
+    все: Sequence[Fact],
+    сколько: "Стоимость | None",
+    hard: "hn.Hard | None",
+    по_имени: Mapping[str, Sequence[Fact]],
+    известные: Sequence[str],
+    need: pricing.Need | None,
+    brief_frame: tuple[int, int] | None,
+) -> Жёсткое:
+    """Жёсткие требования к ОДНОМУ кандидату: отсеять, или ранг и нота.
+
+    СВОЙ GPU. Веса — фильтр: открыты по своей записи или по записи семьи
+    (перенос помечен и ранжируется ниже); «нет» и «не записано» отсеиваются —
+    запускать нечего, пока веса не найдены. Память — фильтр по ЗАПИСИ или по
+    оценке снизу из числа параметров; «не записано» проходит с пометкой и
+    ниже записанного. Цена — GPU-секунды × ставка аренды, всегда ОЦЕНКА.
+
+    КАЧЕСТВО. При заказанном кадре и картинке на выходе: родной кадр ниже
+    заказа — отсев (апскейл не замена, когда цена не важна); родной с тарифом
+    старше родного без цены, тот — старше молчания.
+    """
+    if hard is None or not hard.active:
+        return Жёсткое()
+    ранг: list = []
+    ноты: list[str] = []
+    свой = False
+    стоимость_gpu: Стоимость | None = None
+    без_цены = ""
+    if hard.weights_required:
+        семья = _семья_строк(имя, по_имени, известные)
+        веса, нота_весов = hn.weights_state(все, семья)
+        if веса not in (hn.WEIGHTS_YES, hn.WEIGHTS_FAMILY):
+            return Жёсткое(
+                исключить=f"{'свой GPU' if hard.self_host else 'нужны открытые веса'}: {веса} — {нота_весов}"
+            )
+        ранг.append(hn.WEIGHTS_ORDER[веса])
+        ноты.append(f"веса: {веса} ({нота_весов})")
+    if hard.self_host:
+        свой = True
+        память, откуда, оценка = hn.vram_need(все)
+        if память is None:
+            for р, строки in семья:
+                память, откуда, оценка = hn.vram_need(строки)
+                if память is not None:
+                    откуда = f"по семье {р}: {откуда}"
+                    break
+        влезает = hn.vram_state(память, оценка, hard.vram_gb)
+        if влезает == hn.VRAM_OVER:
+            return Жёсткое(
+                исключить=f"свой GPU {hard.gpu or ''} {hard.vram_gb:g} ГБ: нужно {память:.0f} ГБ — {откуда}"
+            )
+        ставка = hn.gpu_rate(по_имени.get(fold(hn.RATE_MODEL_PREFIX + (hard.gpu or "")), []), hard.gpu)
+        режим = need.mode if need else ""
+        время = hn.gpu_time(все, режим) or next(
+            (t for _, строки in семья if (t := hn.gpu_time(строки, режим)) is not None), None
+        )
+        if ставка is not None and время is not None:
+            оценено = hn.self_host_cost(время, ставка, need.seconds if need else None)
+            варианты = (
+                pricing.Option(round(оценено.high, 4), "secure cloud", None, оценено.formula),
+                pricing.Option(round(оценено.low, 4), "community cloud", None, оценено.formula),
+            )
+            стоимость_gpu = Стоимость(варианты, варианты[0], варианты[1], ставка.source, route="свой GPU")
+        else:
+            без_цены = (
+                "свой GPU: цена — время GPU × ставка аренды; "
+                + ("ставка не записана" if ставка is None else "")
+                + ("; " if ставка is None and время is None else "")
+                + ("время GPU на клип не записано" if время is None else "")
+                + (f" (GPU {hard.gpu})" if hard.gpu else " (GPU не назван)")
+            )
+        ранг += [hn.VRAM_ORDER[влезает], int(стоимость_gpu is None)]
+        ноты.append(
+            f"память: {влезает}"
+            + (
+                f" — нужно {память:.0f} ГБ при {hard.vram_gb:g} ГБ ({откуда})"
+                if память is not None and hard.vram_gb
+                else f" ({откуда})"
+            )
+        )
+    картинка = bool({OUTPUT_KINDS.get(а) for а in op.produces} & {"видео", "изображение"})
+    if hard.objective == hn.OBJECTIVE_QUALITY and hard.resolution and картинка:
+        кадр = brief_frame or (round(hard.resolution * 16 / 9), hard.resolution)
+        родной = hn.native_state(
+            _кадр_родной(op, все, сколько, кадр, _семья_строк(имя, по_имени, известные)),
+            сколько is not None,
+        )
+        if родной == hn.NATIVE_BELOW:
+            return Жёсткое(
+                исключить=f"цель «качество»: {родной} ({min(кадр)}p) — апскейл не замена, когда цена не важна"
+            )
+        # Второе число — знак доводов СЕМЬИ (ставится в `доводы_семьи`).
+        ранг += [hn.NATIVE_ORDER[родной], SIGN_SILENT]
+        ноты.append(f"кадр {min(кадр)}p: {родной}")
+    return Жёсткое(
+        ранг=tuple(ранг),
+        нота="; ".join(ноты),
+        свой_gpu=свой,
+        стоимость=стоимость_gpu,
+        без_цены=без_цены,
+    )
+
+
+def доводы_семьи(найдены: Sequence[Candidate], известные: Sequence[str]) -> list[Candidate]:
+    """При цели «качество» — знак доводов СЕМЬИ у неизмеренного варианта.
+
+    `kling-3.0-4k-t2v` (родной 4K, не измерен) и `ltx-2.5-t2v-fast` (тоже)
+    различались бы только именем; а у первого измерена семья `kling-3.0`.
+    Когда цена не решает, доводы о семье — единственное, что отличает тариф
+    измеренной модели от тарифа неизмеренной. Своя применимость есть — берётся
+    своя. Это ПЕРЕНОС: в ноте сказано, чья применимость.
+    """
+    from studio.selfrag import modelnames
+
+    по_ключу = {fold(c.model): c for c in найдены}
+    итог: list[Candidate] = []
+    for c in найдены:
+        if len(c.hard_rank) < 2:
+            итог.append(c)
+            continue
+        свой_знак = sign_rank(c)
+        знак, чей = свой_знак, ""
+        if свой_знак == SIGN_SILENT:
+            for р in modelnames.parent(c.model, известные):
+                родитель = по_ключу.get(fold(р))
+                if родитель is not None and sign_rank(родитель) < знак:
+                    знак, чей = sign_rank(родитель), р
+        итог.append(
+            Candidate(
+                **{
+                    **c.__dict__,
+                    "hard_rank": (*c.hard_rank[:-1], знак),
+                    "hard_note": c.hard_note
+                    + (f"; доводы семьи {чей}: {SIGN_WORDS[знак]} (перенос, не замер варианта)" if чей else ""),
+                }
+            )
+        )
+    return итог
+
+
 def candidates_for(
     op: Operation,
     index: FactIndex,
@@ -5631,8 +5894,13 @@ def candidates_for(
     conditions: Sequence[str] | None = None,
     юрисдикции: tuple[str, ...] | None = None,
     brief_frame: tuple[int, int] | None = None,
-) -> list[Candidate]:
+    hard: "hn.Hard | None" = None,
+) -> "Кандидаты":
     """Кандидаты на операцию: модели, о которых база говорит СЛОВАМИ ОПЕРАЦИИ.
+
+    :param hard: жёсткие требования заказчика (`studio/hardneed.py`): свой GPU
+        и цель «качество». Не прошедшие их в список НЕ попадают — они в
+        `Кандидаты.исключены` с причиной (2026-10-15).
 
     :param brief_frame: кадр, заказанный В БРИФЕ (не поданный креатив): по нему
         ставится `Candidate.below_frame` у шагов, отдающих картинку.
@@ -5717,6 +5985,7 @@ def candidates_for(
 
     wanted = wanted if wanted is not None else dur.Запрос(None, "длительность не спрашивали")
     найдены: list[Candidate] = []
+    исключены: dict[str, str] = {}
     for ключ, свои in по_модели.items():
         имя = _написание(по_имени.get(ключ, []), написание[ключ])
         свои = [f for f in свои if pl.in_scope(f, languages)]
@@ -5755,6 +6024,14 @@ def candidates_for(
         свёрнутое = имя.lower()
         все = по_имени.get(fold(имя), [])
         сколько = стоимость(все, need)
+        жёсткое = требования_заказчика(op, имя, все, сколько, hard, по_имени, известные, need, brief_frame)
+        if жёсткое.исключить:
+            исключены[имя] = жёсткое.исключить
+            continue
+        if жёсткое.свой_gpu:
+            # СВОЙ GPU — ЦЕНА ВРЕМЕНЕМ GPU, А НЕ ТАРИФОМ API: тариф площадки
+            # платит тот, кто запускает у неё, а не на своей карте.
+            сколько = жёсткое.стоимость
         положение, нота = price_stance(все, потолок, сколько)
         по_кадру, нота_кадра = fit_stance(все, frame)
         по_длительности, нота_длительности = duration_stance(все, wanted)
@@ -5774,8 +6051,14 @@ def candidates_for(
                 against=против,
                 capability=способность,
                 unresolved=не_смогли,
-                price=сколько.словами() if сколько else цена_словами,
-                price_value=цена_разобранная,
+                price=(
+                    сколько.словами()
+                    if сколько
+                    else (жёсткое.без_цены if жёсткое.свой_gpu else цена_словами)
+                ),
+                price_value=None if жёсткое.свой_gpu else цена_разобранная,
+                hard_rank=жёсткое.ранг,
+                hard_note=жёсткое.нота,
                 cost=сколько,
                 anchored=len(свои),
                 named=any(якорь.lower() in свёрнутое for якорь in op.anchors),
@@ -5823,6 +6106,8 @@ def candidates_for(
             )
         )
     найдены = поколения(найдены, по_имени, сообщество_просили)
+    if hard is not None and hard.objective == hn.OBJECTIVE_QUALITY:
+        найдены = доводы_семьи(найдены, известные)
     # НИКТО С ЗАПИСАННОЙ ЦЕНОЙ В ПОТОЛОК НЕ ВЛЕЗАЕТ — ЦЕНА ПОРЯДКА НЕ РЕШАЕТ
     # (2026-10-14, G7). Иначе при бюджете, которого не хватает ни одной
     # модели с ценой, наверх вставали модели, о цене которых база молчит, —
@@ -5837,10 +6122,12 @@ def candidates_for(
         потолок.known
         and not any(c.price_state == PRICE_IN for c in годные)
         and any(c.price_state == PRICE_OVER for c in годные)
-    ):
+    ) or (hard is not None and hard.objective == hn.OBJECTIVE_QUALITY):
+        # «КАЧЕСТВО ВАЖНЕЕ ЦЕНЫ» — цена порядка не решает (2026-10-15): потолок,
+        # если назван, по-прежнему судит смета ролика, но выбор — по доводам.
         найдены = [Candidate(**{**c.__dict__, "price_rank_off": True}) for c in найдены]
     найдены.sort(key=by_evidence)
-    return найдены
+    return Кандидаты(найдены, исключены)
 
 
 #: Сколько месяцев между датами выпуска делают модель «прошлым поколением».
@@ -6016,6 +6303,41 @@ def лучший_вне_исключений(
     if первый is None or первый is выбран or not первый.territory_unasked:
         return None
     return первый
+
+
+def отодвинутая_не_выиграет(
+    выбран: Candidate | None,
+    вне: Candidate | None,
+    найдены: Sequence[Candidate],
+    сумма: float,
+    потолок_ролика: float | None,
+    дешевле_просят: bool,
+) -> str:
+    """Почему отодвинутая лицензией модель НЕ встала бы и при ответе «не исключена».
+
+    Пусто — встала бы, и вопрос о юрисдикции имеет смысл. Иначе — причина
+    словами: ответ заказчика выбора не изменит, и спрашивать незачем.
+
+    * потолок ролика назван, и с ней сумма плана выше потолка — оптимизатор
+      её тут же заменил бы (её цены нет — тоже не встанет: сумма не проверяема);
+    * заказано самое дешёвое, а в её полосе есть дешевле — встал бы тот.
+    """
+    if выбран is None or вне is None:
+        return ""
+    свободна = Candidate(**{**вне.__dict__, "territory_unasked": False})
+    if потолок_ролика is not None:
+        if вне.cost is None or выбран.cost is None:
+            return f"цены нет, а потолок ролика {потолок_ролика:g} usd назван"
+        с_ней = сумма - выбран.cost.default.usd + вне.cost.default.usd
+        if с_ней > потолок_ролика + 1e-9:
+            return (
+                f"с ней план стоит {с_ней:.2f} usd — выше потолка ролика {потолок_ролика:g} usd"
+            )
+    if дешевле_просят:
+        дешевле = дешевле_в_полосе(свободна, [свободна, *[c for c in найдены if c is not вне]])
+        if дешевле is not None:
+            return f"заказано самое дешёвое, а {дешевле.model} в той же полосе дешевле"
+    return ""
 
 
 def вопрос_о_юрисдикции(модели: Sequence[str]) -> clarify.Вопрос:
@@ -7200,6 +7522,39 @@ def дешевле_в_полосе(
     return лучший
 
 
+#: Ступени обмена под потолок, от дешёвой к дорогой ПО ОТДАННОМУ. КОНСТАНТА-
+#: РЕШЕНИЕ (2026-10-15, валидатор раунда 4): ничья ничего не отдаёт; замена
+#: одной неизмеренной модели другой неизмеренной отдаёт только место в списке;
+#: замена при том же балансе доводов (за/против) — место; замена на ХУДШИЙ
+#: баланс отдаёт измеренное, и она последняя.
+SWAP_TIE = 0
+SWAP_UNMEASURED = 1
+SWAP_SAME_BALANCE = 2
+SWAP_WORSE_BALANCE = 3
+
+
+def потеря_доводов(был: Candidate, стал: Candidate) -> int:
+    """Насколько хуже баланс доводов замены: меньше «за» плюс больше «против».
+
+    `sync-lipsync` (за 2, против 1) -> `latentsync` (за 1, против 3): 1 + 2 = 3.
+    Лучше или равно — 0: прибыль не зачитывается, баланс не «вычитается».
+    """
+    return max(0, был.in_favour - стал.in_favour) + max(0, стал.against - был.against)
+
+
+def ступень_обмена(был: Candidate, стал: Candidate) -> int:
+    """Что отдаёт замена: ничья / неизмеренная на неизмеренную / тот же баланс / хуже."""
+    цена = KEY_FIELDS.index(PRICE_KEY_FIELD)
+    свой, чужой = by_evidence(был), by_evidence(стал)
+    if свой[:цена] + свой[цена + 1 : -1] == чужой[:цена] + чужой[цена + 1 : -1]:
+        return SWAP_TIE
+    if потеря_доводов(был, стал):
+        return SWAP_WORSE_BALANCE
+    if not был.measured and not стал.measured:
+        return SWAP_UNMEASURED
+    return SWAP_SAME_BALANCE
+
+
 def подобрать_под_потолок(
     шаги: Sequence[tuple[Operation, Candidate | None]],
     найдено: Mapping[str, Sequence[Candidate]],
@@ -7209,15 +7564,22 @@ def подобрать_под_потолок(
 
     ПРАВИЛО (2026-10-15, интеграция): потолок превышен — это не «заказано самое
     дешёвое». Менять КАЖДЫЙ шаг на самый дешёвый в полосе значило отдавать
-    порядок там, где хватило бы одной замены. Жадно, по шагу за раз:
+    порядок там, где хватило бы одной замены. Жадно, по шагу за раз.
 
-    * потеря ранга замены — на сколько мест она ниже нынешнего выбора шага в
-      его списке кандидатов (список уже отсортирован по доводам);
-    * если одна замена закрывает весь перебор, берётся та, что теряет МЕНЬШЕ
-      всего мест (при равенстве — с большей экономией): меньше замен, меньше
-      отдано;
-    * иначе берётся лучшая по «экономия на место потери», и круг повторяется;
-      шаг можно заменить повторно, ниже по своему списку.
+    ЧТО ОТДАНО — РАНГ ПОТЕРИ, И БАЛАНС ДОВОДОВ В НЁМ СТАРШЕ МЕСТА (2026-10-15,
+    валидатор раунда 4). Прежде потеря мерилась только местами в списке, и
+    «lipsync 30 s, budget $3» менял ИЗМЕРЕННЫЙ `sync-lipsync` (за 2, против 1)
+    на `latentsync` (за 1, против 3) — одно место, но втрое больше плохих
+    новостей, — хотя на соседнем шаге лежала замена, не отдающая ничего:
+    `wan-3.0-t2v` 1.50 вместо ничейного `wan-3.0-prime-t2v` 2.04. Теперь:
+
+    * каждый круг берёт замены только из НИЖНЕЙ доступной ступени
+      (`ступень_обмена`): ничьи, затем неизмеренная на неизмеренную, затем тот
+      же баланс, и лишь потом — худший баланс;
+    * внутри ступени, если одна замена закрывает весь перебор, берётся та, что
+      отдаёт меньше всего (баланс, места; при равенстве — большая экономия);
+    * иначе — лучшая по «экономия на место потери», и круг повторяется; шаг
+      можно заменить повторно, ниже по своему списку.
 
     Кандидаты — только той же полосы и с полной ценой (`дешевле_в_полосе`
     правила те же). Возвращает {шаг: новый кандидат}; пусто — менять нечего.
@@ -7225,11 +7587,13 @@ def подобрать_под_потолок(
     текущие: dict[str, tuple[Operation, Candidate]] = {
         op.name: (op, к) for op, к in шаги if к is not None and к.cost is not None
     }
+    исходные = {шаг: к for шаг, (_, к) in текущие.items()}
     сумма = sum(к.cost.default.usd for _, к in текущие.values() if к.cost is not None)
     замены: dict[str, Candidate] = {}
     while сумма > потолок + 1e-9:
         перебор = сумма - потолок
-        варианты: list[tuple[float, int, int, str, Candidate]] = []
+        # (ступень, потеря баланса, места, экономия, индекс, шаг, кандидат)
+        варианты: list[tuple[int, int, int, float, int, str, Candidate]] = []
         for шаг, (op, к) in текущие.items():
             список = list(найдено.get(шаг, ()))
             if к not in список or к.cost is None:
@@ -7242,14 +7606,22 @@ def подобрать_под_потолок(
                 экономия = к.cost.default.usd - c.cost.default.usd
                 if экономия <= 1e-9:
                     continue
-                варианты.append((экономия, i - где, i, шаг, c))
+                # Отданное считается от ИСХОДНОГО выбора шага: две замены
+                # подряд не отмывают потерю баланса через промежуточную.
+                было = исходные[шаг]
+                варианты.append(
+                    (ступень_обмена(было, c), потеря_доводов(было, c), i - где, экономия, i, шаг, c)
+                )
         if not варианты:
             break
-        закрывают = [в for в in варианты if в[0] >= перебор - 1e-9]
+        нижняя = min(в[0] for в in варианты)
+        варианты = [в for в in варианты if в[0] == нижняя]
+        закрывают = [в for в in варианты if в[3] >= перебор - 1e-9]
         if закрывают:
-            экономия, _, _, шаг, c = min(закрывают, key=lambda в: (в[1], -в[0], в[2], в[3]))
+            выбран = min(закрывают, key=lambda в: (в[1], в[2], -в[3], в[4], в[5]))
         else:
-            экономия, _, _, шаг, c = max(варианты, key=lambda в: (в[0] / max(в[1], 1), -в[1], -в[2]))
+            выбран = max(варианты, key=lambda в: (-в[1], в[3] / max(в[2], 1), -в[2], -в[4]))
+        _, _, _, экономия, _, шаг, c = выбран
         op, _ = текущие[шаг]
         текущие[шаг] = (op, c)
         замены[шаг] = c
@@ -7754,6 +8126,29 @@ def _по_английски(текст: str) -> str:
 #: остаются на языке того, кто их записал. Порядок важен: длинные обороты
 #: раньше коротких, иначе «usd за шаг» съест «за».
 ФОРМЫ_ПО_АНГЛИЙСКИ: tuple[tuple[str, str], ...] = (
+    # СВОЙ GPU (2026-10-15, `studio/hardneed.py`): цена временем GPU.
+    (
+        r"с ней план стоит ([\d.]+) usd — выше потолка ролика ([\d.]+) usd",
+        r"with it the plan costs \1 usd — over the clip ceiling \2 usd",
+    ),
+    (r"цены нет, а потолок ролика ([\d.]+) usd назван", r"it has no price, and a clip ceiling of \1 usd is set"),
+    (
+        r"заказано самое дешёвое, а (\S+) в той же полосе дешевле",
+        r"the cheapest was asked, and \1 is cheaper in the same band",
+    ),
+    (r"через свой GPU — ", "via own GPU — "),
+    (r"свой GPU: цена — время GPU × ставка аренды; ", "own GPU: price = GPU time × rental rate; "),
+    (r"время GPU на клип не записано", "GPU time per clip not recorded"),
+    (r"ставка не записана", "rental rate not recorded"),
+    (r"\(GPU не назван\)", "(no GPU named)"),
+    (r"ОЦЕНКА: ", "ESTIMATE: "),
+    (r"GPU-с на клип ([\d.]+) с", r"GPU-s per \1 s clip"),
+    (r"GPU-с на прогон \(длина клипа в источнике не названа\)", "GPU-s per run (the source names no clip length)"),
+    (r"\(линейно — допущение\)", "(linear — an assumption)"),
+    (r"GPU-с × ", "GPU-s × "),
+    (r"usd/ч ÷ 3600", "usd/h ÷ 3600"),
+    (r"; время: ", "; time: "),
+    (r"; ставка: ", "; rate: "),
     (r"ffmpeg или монтажная программа \(не модель\)", "ffmpeg or an editing app (not a model)"),
     (r"0 usd \(не модель\)", "0 usd (not a model)"),
     (r"видео сводится с отдельными дорожками: ", "the video is mixed with separate tracks: "),
@@ -8029,6 +8424,36 @@ def _смета_словами(итог: dict, смета: dict, англ: bool)
     return "; ".join(части)
 
 
+def _требования_словами(итог: dict, англ: bool) -> str:
+    """Строка сводки о жёстких требованиях: что требовалось и сколько отсеяно."""
+    т = итог.get("hard") or {}
+    if not (т.get("self_host") or т.get("objective") == hn.OBJECTIVE_QUALITY):
+        return ""
+    части: list[str] = []
+    if т.get("self_host"):
+        gpu = f"{т.get('gpu') or ('GPU not named' if англ else 'GPU не назван')}"
+        память = f" {т['vram_gb']:g} GB" if т.get("vram_gb") else ""
+        части.append(
+            (f"own GPU ({gpu}{память}): open weights required, price = GPU time × rental rate (estimate)")
+            if англ
+            else f"свой GPU ({gpu}{память}): нужны открытые веса, цена — время GPU × ставка аренды (оценка)"
+        )
+    if т.get("objective") == hn.OBJECTIVE_QUALITY:
+        части.append(
+            ("quality over price: native frame required, price does not rank" if англ
+             else "качество важнее цены: нужен родной кадр, цена порядка не решает")
+            + (f" ({т['resolution']}p)" if т.get("resolution") else "")
+        )
+    отсеяно = [
+        f"{_имя_шага(ш.get('step'), англ)} {ш.get('hard_excluded_count')}"
+        for ш in итог.get("steps") or []
+        if ш.get("hard_excluded_count")
+    ]
+    if отсеяно:
+        части.append(("excluded: " if англ else "отсеяно: ") + ", ".join(отсеяно))
+    return ("CONSTRAINTS: " if англ else "ТРЕБОВАНИЯ: ") + "; ".join(части)
+
+
 def сводка(итог: dict) -> str:
     """КРАТКИЙ ПЛАН сверху ответа: шаги -> модель -> почему -> цена -> риски -> вопрос.
 
@@ -8160,10 +8585,21 @@ def сводка(итог: dict) -> str:
                             else "отодвинута лицензией (юрисдикция не названа): "
                         )
                         if "где работает заказчик" in str(вне.get("licence_risk") or "")
+                        and шаг.get("licence_alternative_wins") is not False
                         else (
-                            "held back by its licence (your territory is excluded): "
-                            if англ
-                            else "отодвинута лицензией (ваша территория исключена): "
+                            (
+                                "held back by its licence, and would not win anyway "
+                                f"({_форма_по_английски(шаг.get('licence_alternative_note'))}): "
+                                if англ
+                                else "отодвинута лицензией и всё равно не встала бы "
+                                f"({шаг.get('licence_alternative_note')}): "
+                            )
+                            if шаг.get("licence_alternative_wins") is False
+                            else (
+                                "held back by its licence (your territory is excluded): "
+                                if англ
+                                else "отодвинута лицензией (ваша территория исключена): "
+                            )
                         )
                     )
                     + f"{вне.get('model')} "
@@ -8240,6 +8676,9 @@ def сводка(итог: dict) -> str:
             ("RESOLUTION: " if англ else "КАДР: ") + _коротко(итог["resolution_carry"], 300)
         )
     строки.append(("PRICE: " if англ else "ЦЕНА: ") + _цена_словами(итог, англ))
+    строка_требований = _требования_словами(итог, англ)
+    if строка_требований:
+        строки.append(строка_требований)
     оптимум = (итог.get("pipeline_price") or {}).get("optimised") or {}
     if оптимум:
         строки.append(
@@ -8291,6 +8730,37 @@ def сводка(итог: dict) -> str:
     return "\n".join(строки)
 
 
+#: Сколько отсеянных жёсткими требованиями показывать на шаг с причиной.
+HARD_EXCLUDED_SHOWN = 5
+
+
+def replace_hard(
+    hard: "hn.Hard",
+    юрисдикции: tuple[str, ...] | None,
+    кадр: tuple[int, int] | None,
+    дешевле: bool,
+    страны: tuple[str, ...] = (),
+) -> "hn.Hard":
+    """Дописать в требования брифа то, что читают другие разборщики (Е1):
+    юрисдикцию (`pipeline.jurisdictions_in`), кадр (`кадр_из_брифа`) и
+    «самое дешёвое» (`CHEAPEST_CUES`). Своих разборщиков для них здесь нет."""
+    from dataclasses import replace as _replace
+
+    источники = dict(hard.sources)
+    поля: dict = {}
+    if юрисдикции:
+        поля["jurisdiction"] = юрисдикции
+        поля["countries"] = страны
+        источники["jurisdiction"] = "бриф"
+    if кадр:
+        поля["resolution"] = min(кадр)
+        источники["resolution"] = "бриф"
+    if дешевле and not hard.objective:
+        поля["objective"] = hn.OBJECTIVE_CHEAPEST
+        источники["objective"] = "бриф"
+    return _replace(hard, **поля, sources=tuple(sorted(источники.items())))
+
+
 def plan(
     brief: str,
     facts: Sequence[Fact] | None = None,
@@ -8302,8 +8772,13 @@ def plan(
     overrides: dict | None = None,
     index: FactIndex | None = None,
     full: bool = False,
+    spec: Mapping | None = None,
 ) -> dict:
     """План из брифа, тут же прогнанный через валидатор-2.
+
+    :param spec: структурированная спецификация заказа (`self_host` {gpu,
+        vram_gb}, `objective`, `jurisdiction`, `resolution`) — перекрывает то,
+        что прочитано из брифа (`studio/hardneed.py`, 2026-10-15).
 
     :param full: полный ответ — все строки доказательства, соседи с их
         положениями, пробы валидатора по классам. По умолчанию — КРАТКИЙ ответ
@@ -8597,11 +9072,31 @@ def plan(
     #: равно не бесплатна, и это видно по соседям.
     дешевле_всех: dict[str, float] = {}
     юрисдикции = pl.jurisdictions_in(brief) or None
+    # ЖЁСТКИЕ ТРЕБОВАНИЯ (2026-10-15): свой GPU, цель, юрисдикция и кадр —
+    # простыми значениями; spec перекрывает бриф.
+    жёсткие = hn.from_spec(
+        spec,
+        replace_hard(
+            hn.from_brief(brief),
+            юрисдикции,
+            кадр_из_брифа(brief),
+            дешевле_всего_заказано(brief),
+            tuple(sorted(pl.countries_in(brief))),
+        ),
+    )
+    if жёсткие.jurisdiction:
+        юрисдикции = жёсткие.jurisdiction
 
     def _кандидаты(op: Operation) -> list[Candidate]:
         if op.name == NATIVE_AUDIO_STEP and заменено_звуком:
-            return годные_со_звуком(
-                _найти(op), индекс, ARTEFACT_IMAGE in op.requires, ARTEFACT_AUDIO in op.requires
+            найдены = _найти(op)
+            # Отсеянные жёсткими требованиями остаются видны и после отбора
+            # моделей со звуком: тот возвращает простой список.
+            return Кандидаты(
+                годные_со_звуком(
+                    найдены, индекс, ARTEFACT_IMAGE in op.requires, ARTEFACT_AUDIO in op.requires
+                ),
+                getattr(найдены, "исключены", {}),
             )
         return _найти(op)
 
@@ -8622,6 +9117,7 @@ def plan(
             условия,
             юрисдикции,
             кадр_из_брифа(brief) or кадр,
+            жёсткие,
         )
 
     # Кандидаты шага считаются ОДИН раз на план: пересборка под бюджет
@@ -8632,6 +9128,7 @@ def plan(
     def _шаг(op: Operation, дописан: str = "") -> None:
         if op.name not in найдено_на_шаг:
             найдено_на_шаг[op.name] = _кандидаты(op)
+        отсеяны = getattr(найдено_на_шаг[op.name], "исключены", {})
         предложены = list(найдено_на_шаг[op.name])
         цены_кандидатов = [c.cost.cheapest.usd for c in предложены if c.cost is not None]
         if цены_кандидатов:
@@ -8710,6 +9207,13 @@ def plan(
                 "announced_count": sum(1 for c in предложены if c.life_state == LIFE_ANNOUNCED),
                 "foreign_count": sum(1 for c in предложены if c.foreign),
                 "licence_blocked_count": sum(1 for c in предложены if c.licence_blocked),
+                # ОТСЕЯНЫ ЖЁСТКИМИ ТРЕБОВАНИЯМИ (свой GPU, «качество»): не
+                # соседи, а отказы — счётом и первыми причинами.
+                "hard_excluded_count": len(отсеяны),
+                "hard_excluded": [
+                    {"model": м, "why": п} for м, п in list(отсеяны.items())[:HARD_EXCLUDED_SHOWN]
+                ],
+                "hard_note": лучший.hard_note if лучший is not None else "",
                 "why_not_next": (
                     why_not(лучший, предложены[1])
                     if лучший is not None and len(предложены) > 1
@@ -8780,7 +9284,7 @@ def plan(
         if бюджет.known and бюджет.amount is not None and WHOLE_CLIP in (бюджет.per or ())
         else None
     )
-    дешевле_просят = дешевле_всего_заказано(brief)
+    дешевле_просят = жёсткие.objective == hn.OBJECTIVE_CHEAPEST
     до = _сумма()
     обмены: list[dict] = []
     # ЗАКАЗАНО САМОЕ ДЕШЁВОЕ — каждый шаг к минимуму полосы. ТОЛЬКО ПОТОЛОК —
@@ -8865,16 +9369,48 @@ def plan(
 
     # ЮРИСДИКЦИЯ — ВОПРОС, А НЕ МОЛЧАНИЕ (G8): выбранная модель лицензирована
     # не везде, а где работает заказчик, бриф не говорит.
+    #
+    # ВОПРОС — ТОЛЬКО КОГДА ОТВЕТ МЕНЯЕТ ВЫБОР (2026-10-15, валидатор раунда 4).
+    # Отодвинутая лицензией модель спрашивалась и тогда, когда при ответе «не
+    # исключена» она всё равно не встала бы: дороже потолка ролика или не
+    # самая дешёвая при «самом дешёвом». Такой вопрос — работа заказчику без
+    # последствий; вместо него нота (`licence_alternative_wins`).
+    не_спрошено: list[str] = []
+    if юрисдикции is None:
+        по_шагу_выбор = {op.name: к for op, к in выбор}
+        for с in строки_шагов:
+            вне = с.get("licence_alternative")
+            if not вне:
+                continue
+            найдены_шага = найдено_на_шаг.get(с["step"], [])
+            кандидат_вне = next((c for c in найдены_шага if c.model == вне.get("model")), None)
+            почему = отодвинутая_не_выиграет(
+                по_шагу_выбор.get(с["step"]),
+                кандидат_вне,
+                найдены_шага,
+                _сумма(),
+                потолок_ролика,
+                дешевле_просят,
+            )
+            с["licence_alternative_wins"] = not почему
+            if почему:
+                с["licence_alternative_note"] = почему
+                не_спрошено.append(f"{с['step']}: {вне.get('model')} — {почему}")
     if вопрос is None and юрисдикции is None:
         с_территориями = [
             к.model for _, к in выбор if к is not None and "исключает территории" in к.licence_risk
         ] + [
             str((с.get("licence_alternative") or {}).get("model"))
             for с in строки_шагов
-            if с.get("licence_alternative")
+            if с.get("licence_alternative") and с.get("licence_alternative_wins")
         ]
         if с_территориями:
             вопрос = вопрос_о_юрисдикции(с_территориями)
+    if не_спрошено:
+        нота = (
+            f"{нота}; юрисдикцию не спрашиваем — отодвинутая лицензией модель не выиграла бы и при "
+            f"ответе «не исключена»: {'; '.join(не_спрошено)}"
+        )
     # УСЛОВНЫЙ ШАГ В ВЕРДИКТ БЮДЖЕТА НЕ ВХОДИТ (2026-10-15): он нужен, только
     # если выход окажется меньше заказа, и печатается рядом своей ценой.
     цена_пайплайна = цена_ролика(
@@ -9002,6 +9538,7 @@ def plan(
         )
     ответ = {
         "summary": "",
+        "hard": жёсткие.row(),
         "outcome": исход,
         "reason": причина,
         "checked": отчёт["checked"],
@@ -9156,6 +9693,17 @@ def сжать(ответ: dict) -> dict:
                 },
                 "cheaper_same_rank": _кратко_кандидат(ш.get("cheaper_same_rank"), соседи=True),
                 "licence_alternative": _кратко_кандидат(ш.get("licence_alternative"), соседи=True),
+                **{
+                    к: ш.get(к)
+                    for к in (
+                        "licence_alternative_wins",
+                        "licence_alternative_note",
+                        "hard_excluded_count",
+                        "hard_excluded",
+                        "hard_note",
+                    )
+                    if ш.get(к) or ш.get(к) is False
+                },
             }
         )
     цена = dict(ответ.get("pipeline_price") or {})
@@ -9184,6 +9732,7 @@ def сжать(ответ: dict) -> dict:
     бюджет["note"] = _коротко(бюджет.get("note"), 300)
     return {
         "summary": ответ.get("summary"),
+        "hard": ответ.get("hard"),
         "outcome": ответ.get("outcome"),
         "reason": ответ.get("reason"),
         "checked": ответ.get("checked"),

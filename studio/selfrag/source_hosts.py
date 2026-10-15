@@ -198,6 +198,10 @@ VENDOR_SOURCES: dict[str, tuple[str, ...]] = {
         "tongyi.aliyun.com",
     ),
     "elevenlabs": ("elevenlabs.io", "help.elevenlabs.io", "docs.elevenlabs.io"),
+    # GPU RENTAL, not a generation model (2026-10-15): `runpod-rtx-4090` is the
+    # rate a self-hosted step is priced at, and runpod.io's own pricing page is
+    # the vendor's page for that rate. Without the entry the rate fell to `blog`.
+    "runpod": ("runpod.io", "www.runpod.io", "docs.runpod.io"),
     # ---- added 2026-08-27 by the applicability harvest, 44 refusals ---------
     #
     # Two kinds of entry, and the difference matters.
