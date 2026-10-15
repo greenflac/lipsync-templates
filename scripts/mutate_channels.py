@@ -3898,8 +3898,8 @@ MUTANTS: list[tuple[str, str, str, str, str]] = [
     ),
     (
         "studio/planner.py",
-        "        c.condition_rank,\n        sign_rank(c),",
-        "        0,\n        sign_rank(c),",
+        "        c.condition_rank,\n        failure_rank(c),",
+        "        0,\n        failure_rank(c),",
         "плановщик: заявленное условие снова не решает порядок (w19)",
         "studio.mcp.tests.test_find_models",
     ),

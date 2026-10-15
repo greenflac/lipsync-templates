@@ -627,8 +627,14 @@ class Условия(unittest.TestCase):
             },
             {к: к for к in pn.CONDITION_WORDS},
         )
+        # Седьмой круг: между условием и знаком — «провал против объявленной
+        # хорошей новости» (`FAILURE_KEY_FIELD`).
         self.assertEqual(
             pn.KEY_FIELDS.index(pn.CONDITION_KEY_FIELD) + 1,
+            pn.KEY_FIELDS.index(pn.FAILURE_KEY_FIELD),
+        )
+        self.assertEqual(
+            pn.KEY_FIELDS.index(pn.CONDITION_KEY_FIELD) + 2,
             pn.KEY_FIELDS.index("знак измеренного: чисто / спорно / только плохое / молчание"),
         )
 

@@ -434,6 +434,11 @@ ROUTE_HOSTS: dict[str, str] = {
     "fal.run": "fal",
     "replicate.com": "replicate",
 }
+#: Атрибуты, где записано, ГДЕ вендор обслуживает запросы (`Endpoint.hosting`).
+HOSTING_ATTRIBUTES: frozenset[str] = frozenset(
+    {"serving_regions", "data_residency", "hosting_regions", "processing_regions", "data_location"}
+)
+
 #: Хосты страниц весов: маршрут «запустить у себя».
 WEIGHTS_HOSTS: tuple[str, ...] = ("huggingface.co", "github.com")
 ROUTE_SELF_HOST = "self-host"
@@ -479,7 +484,14 @@ class Endpoint:
     resolutions: tuple[str, ...] = ()
     native_audio: bool | None = None
     licence: str = ""
+    #: Территории, которые ЛИЦЕНЗИЯ исключает (`pipeline.licence_reservations`).
     territories: tuple[str, ...] = ()
+    #: Где вендор ОБСЛУЖИВАЕТ запросы (хостинг, регионы данных) — юрисдикции из
+    #: строк `HOSTING_ATTRIBUTES`; пусто — не записано. Седьмой круг
+    #: (валидатор v7): `spec.jurisdiction` судил только лицензию, а о том, где
+    #: модель запущена, молчал — без единой строки об этом.
+    hosting: tuple[str, ...] = ()
+    hosting_note: str = ""
     open_weights: str = ""
     vram_gb: float | None = None
 
@@ -948,6 +960,7 @@ def _собрать(facts: Sequence[Fact]) -> Registry:
             if прогон_семьи is not None:
                 прогон, основание = прогон_семьи, f"семья {написание[семья]}"
         территории, _ = pl.licence_reservations(rows)
+        хостинг = [f for f in rows if f.attribute in HOSTING_ATTRIBUTES]
         vram, _, оценка = hn.vram_need(rows)
         звук = [f for f in rows if f.attribute == "audio_output"]
         узел = Endpoint(
@@ -998,6 +1011,10 @@ def _собрать(facts: Sequence[Fact]) -> Registry:
             )[:200],
             territories=tuple(
                 sorted({j for f in территории for j in pl.jurisdictions_in(f.value)})
+            ),
+            hosting=tuple(sorted({j for f in хостинг for j in pl.jurisdictions_in(f.value)})),
+            hosting_note="; ".join(
+                f"{f.attribute} = «{str(f.value)[:80]}» ({f.source_url})" for f in хостинг[:2]
             ),
             open_weights=веса,
             vram_gb=None if оценка else vram,
