@@ -339,7 +339,14 @@ class ЖивыеБрифы(unittest.TestCase):
             видео["licence_alternative"]["licence_risk"],
         )
         self.assertEqual("юрисдикция", итог["question"]["axis"])
-        self.assertEqual((4.16, "годно"), (итог["pipeline_price"]["смета"]["usd"], итог["pipeline_price"]["outcome"]))
+        # ЧЕТВЁРТЫЙ КРУГ (2026-10-15): ролик 40 с из ключевых кадров — кадр на
+        # КАЖДЫЙ шот. У wan-3.0-i2v предел прогона не записан, шот принят 8 с
+        # (`brief_spec.ASSUMED_SHOT_S`, печатается допущением): 5 кадров и 5
+        # правок по референсу вместо одного — +0.14 и +0.29 usd к прежним 4.16.
+        self.assertEqual((4.59, "годно"), (итог["pipeline_price"]["смета"]["usd"], итог["pipeline_price"]["outcome"]))
+        self.assertEqual(
+            [5, 5, None, 5, None], [ш["shots"] for ш in итог["steps"]]
+        )
         self.assertNotIn("optimised", итог["pipeline_price"])
         self.assertEqual("latentsync", итог["steps"][4]["cheaper_same_rank"]["model"])
 

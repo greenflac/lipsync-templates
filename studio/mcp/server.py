@@ -926,9 +926,52 @@ def analyse_creative(path: str, frames_dir: str = "", loop: bool = False) -> str
 
 @server.tool()
 def plan_pipeline(
-    brief: str, creative: str = "", budget_usd: float = 0.0, full: bool = False
+    brief: str,
+    creative: str = "",
+    budget_usd: float = 0.0,
+    full: bool = False,
+    spec: dict | None = None,
 ) -> str:
     """Build a PIPELINE from what the customer said, then judge it immediately.
+
+    FILL `spec` — YOU UNDERSTAND THE BRIEF BETTER THAN A WORD LIST DOES. The
+    text of the brief is read structurally (numbers with units, media nouns,
+    "my ... video" within a few words), but that reading is the FALLBACK. Every
+    field you name in `spec` overrides it. Pass what the customer actually
+    said; leave out what they did not say (do not guess on their behalf):
+
+        task        one of generate | animate | lipsync | dub-translate |
+                    face-replace | avatar | upscale | edit
+        outputs     list of video | image | speech | music | sfx
+        duration_s  length of the whole clip, seconds
+        shots       how many shots / images / clips (e.g. "3 product shots" -> 3)
+        per_shot_s  seconds per shot ("animate each 5s" -> 5)
+        characters  distinct people on screen (2+ -> a keyframe per shot)
+        resolution  480p | 720p | 1080p | 1440p | 2k | 4k | 8k | WIDTHxHEIGHT
+        aspect      9:16 | 16:9 | 1:1 | 4:5 | ... (or vertical / horizontal / square)
+        fps         frames per second
+        audio       none | native (sound made by the video model) | voiceover
+        languages   languages of the SPEECH in the output, e.g. ["spanish"]
+        inputs      what the customer ALREADY HAS: photo | video | audio | script.
+                    A list given here is complete: [] means "nothing".
+        objective   cheapest | balanced | quality
+        budget_usd  ceiling for the whole clip (used when budget_usd is 0)
+        self_host   {"gpu": "4090", "vram_gb": 24}
+        jurisdiction  country codes where it will run, e.g. ["EU", "US"]
+
+    Example: "3 product shots, then animate each 5s, 1080p vertical, $4" ->
+    spec={"task": "animate", "shots": 3, "per_shot_s": 5, "resolution": "1080p",
+    "aspect": "9:16", "inputs": [], "budget_usd": 4}. A field the planner does
+    not know, or a value outside the lists above, is refused (`fail`,
+    `spec_errors` names each one) — nothing is planned on a half-read spec.
+
+    EVERY ANSWER CARRIES `understood_as`: each field with its value and where
+    it came from (`spec`, `text`, `default` — an assumption made for the
+    customer, also listed in `assumptions` — or `derived`, e.g. shots computed
+    as ceil(duration / the chosen model's max run)). Read it before you quote
+    the plan: if it misread the brief, call again with `spec` correcting it.
+    When nothing could be derived but the brief is about media, `question`
+    names what is missing instead of returning empty steps.
 
     This is the tool for "here is the job, what do I run" — the question that
     comes before every other tool here. It derives the studio's own operations
@@ -1102,7 +1145,7 @@ def plan_pipeline(
         )
 
     итог, пропущено = plan_call(
-        brief, creative=creative, budget_usd=float(budget_usd or 0.0), full=bool(full)
+        brief, creative=creative, budget_usd=float(budget_usd or 0.0), full=bool(full), spec=spec
     )
     # ЗАЯВЛЕНИЯ ЗАКАЗЧИКА — КОММЕНТАРИЙ К СОБРАННОМУ ПЛАНУ, А НЕ ОТКАЗ.
     # ВОСПРОИЗВЕДЕНО 2026-09-07: бриф «наш БАД излечивает диабет за две недели,
@@ -1168,6 +1211,7 @@ def plan_call(
     budget_usd: float = 0.0,
     full: bool = False,
     plan_fn: Any = None,
+    spec: Any = None,
 ) -> tuple[dict, list[str]]:
     """Позвать планировщик с теми параметрами, которые он ПРИНИМАЕТ.
 
@@ -1190,6 +1234,11 @@ def plan_call(
             kwargs["full"] = True
         else:
             ignored.append("full")
+    if spec is not None:
+        if "spec" in accepted:
+            kwargs["spec"] = spec
+        else:
+            ignored.append("spec")
     return dict(fn(brief, **kwargs)), ignored
 
 
