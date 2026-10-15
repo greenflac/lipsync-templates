@@ -478,5 +478,161 @@ class ApprovalIsNotSomethingTheAgentCanReach(unittest.TestCase):
             assert "approve" not in name, f"{name!r} looks like an approval door"
 
 
+def _vendor_fact(facts: Path, model: str, attribute: str, value: str = "5") -> None:
+    from studio.mcp import advice
+
+    advice.record(
+        model,
+        attribute,
+        value,
+        "https://huggingface.co/Wan-AI/Wan2.2-Animate-14B",
+        "vendor",
+        "2026-08-01",
+        read_directly=True,
+        path=facts,
+    )
+
+
+class AnsweredByBase(unittest.TestCase):
+    """G14, 2026-10-14: `mp-5617b65d91` (veo-3.1 max_resolution) stayed open
+    after the base had come to answer it at vendor tier."""
+
+    def setUp(self) -> None:
+        self._dir = tempfile.TemporaryDirectory()
+        self.addCleanup(self._dir.cleanup)
+        self.tmp = Path(self._dir.name)
+        self.ledger = self.tmp / "measurements.jsonl"
+        self.facts = self.tmp / "facts.jsonl"
+        self.facts.write_text("", encoding="utf-8")
+
+    def _file(self, attribute: str = "max_seconds") -> dict:
+        return proposal.propose(
+            "wan-animate-replace",
+            attribute,
+            path=self.ledger,
+            facts_path=self.facts,
+            **GOOD,  # type: ignore[arg-type]
+        )
+
+    def _rows(self) -> list[dict]:
+        return [json.loads(x) for x in self.ledger.read_text(encoding="utf-8").splitlines()]
+
+    def test_the_state_is_a_literal_and_on_the_ladder(self) -> None:
+        assert proposal.STATE_ANSWERED == "answered_by_base"
+        assert "answered_by_base" in proposal.STATES
+        assert "answered_by_base" not in proposal.OPEN_STATES
+
+    def test_an_answered_proposal_is_closed_by_APPENDING(self) -> None:
+        filed = self._file()
+        _vendor_fact(self.facts, "wan-animate-replace", "max_seconds")
+        out = proposal.close_answered(path=self.ledger, facts_path=self.facts)
+        assert out["outcome"] == PASS, out["note"]
+        assert out["closed"] == [filed["id"]]
+        rows = self._rows()
+        assert [r["state"] for r in rows] == ["proposed", "answered_by_base"], "append-only"
+        assert "already answers" in rows[1]["closed_because"]
+        assert proposal.proposals(path=self.ledger, facts_path=self.facts)["by_state"] == {
+            "answered_by_base": 1
+        }
+
+    def test_dry_run_writes_nothing(self) -> None:
+        self._file()
+        _vendor_fact(self.facts, "wan-animate-replace", "max_seconds")
+        before = self.ledger.read_text(encoding="utf-8")
+        out = proposal.close_answered(path=self.ledger, facts_path=self.facts, dry_run=True)
+        assert len(out["closed"]) == 1
+        assert self.ledger.read_text(encoding="utf-8") == before
+
+    def test_an_unanswered_proposal_stays_open(self) -> None:
+        """Negative control: a closer that closed everything would pass the test above."""
+        self._file()
+        out = proposal.close_answered(path=self.ledger, facts_path=self.facts)
+        assert out["closed"] == []
+        assert out["outcome"] == UNMEASURED
+        assert [r["state"] for r in self._rows()] == ["proposed"]
+
+    def test_an_APPROVED_proposal_is_named_but_not_overruled(self) -> None:
+        filed = self._file()
+        proposal.decide(str(filed["id"]), "approved", operator="owner", path=self.ledger)
+        _vendor_fact(self.facts, "wan-animate-replace", "max_seconds")
+        out = proposal.close_answered(path=self.ledger, facts_path=self.facts)
+        assert out["closed"] == []
+        assert [i["id"] for i in out["left_approved"]] == [filed["id"]]
+        assert self._rows()[-1]["state"] == "approved"
+
+    def test_the_listing_marks_it_without_writing(self) -> None:
+        filed = self._file()
+        _vendor_fact(self.facts, "wan-animate-replace", "max_seconds")
+        before = self.ledger.read_text(encoding="utf-8")
+        out = proposal.proposals(path=self.ledger, facts_path=self.facts)
+        assert out["answered_by_base"] == [filed["id"]]
+        assert "already answers" in out["proposals"][0]["answered_by_base"]
+        assert "close-answered" in out["note"]
+        assert self.ledger.read_text(encoding="utf-8") == before, "a listing is a read"
+
+
+def _blog_fact(facts: Path, model: str) -> None:
+    """Any recorded row makes the model KNOWN to the naming layer; blog tier
+    keeps it from settling anything (so the proposal is not refused)."""
+    from studio.mcp import advice
+
+    out = advice.record(
+        model,
+        "max_seconds",
+        "5",
+        f"https://example-blog.test/{model}",
+        "blog",
+        "2026-08-01",
+        read_directly=True,
+        path=facts,
+    )
+    assert out["outcome"] == PASS, out["note"]
+
+
+class FamilyNamesAreOneModel(unittest.TestCase):
+    """G14: `chatterbox` and `chatterbox-tts` are one model for the naming
+    layer (`FactStore.parent`), and the duplicate check did not join them."""
+
+    def setUp(self) -> None:
+        self._dir = tempfile.TemporaryDirectory()
+        self.addCleanup(self._dir.cleanup)
+        self.tmp = Path(self._dir.name)
+        self.ledger = self.tmp / "measurements.jsonl"
+        self.facts = self.tmp / "facts.jsonl"
+        self.facts.write_text("", encoding="utf-8")
+
+    def _file(self, model: str, test: str = GOOD["test"]) -> dict:  # type: ignore[assignment]
+        kwargs = dict(GOOD)
+        kwargs["test"] = test
+        return proposal.propose(
+            model,
+            "observed_behaviour",
+            path=self.ledger,
+            facts_path=self.facts,
+            **kwargs,  # type: ignore[arg-type]
+        )
+
+    def test_a_variant_and_its_family_are_one_ask(self) -> None:
+        # The naming layer only knows `chatterbox` as a family if the base does.
+        _blog_fact(self.facts, "chatterbox")
+        first = self._file("chatterbox-tts")
+        second = self._file("chatterbox", test=Filing.OTHER_TEST)
+        assert second["id"] == first["id"], second["note"]
+        assert second["duplicate_of_open"] is True
+
+    def test_without_the_naming_layer_knowing_the_family_they_stay_apart(self) -> None:
+        """Negative control: the join comes from `FactStore.parent`, not from a
+        prefix match done here."""
+        first = self._file("chatterbox-tts")
+        second = self._file("chatterbox", test=Filing.OTHER_TEST)
+        assert second["id"] != first["id"]
+
+    def test_unrelated_names_sharing_a_prefix_are_not_joined(self) -> None:
+        _blog_fact(self.facts, "chatterbox")
+        first = self._file("chatterbox-tts")
+        second = self._file("chatterboxer", test=Filing.OTHER_TEST)
+        assert second["id"] != first["id"]
+
+
 if __name__ == "__main__":
     unittest.main()

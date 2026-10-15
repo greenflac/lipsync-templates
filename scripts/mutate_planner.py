@@ -119,6 +119,10 @@ ROOT = Path(__file__).resolve().parents[1]
     # Полное производство ролика (2026-10-14): новые операции, профиль модели,
     # порядок по доказательству, язык брифа, цена ролика, краткий план.
     "studio.tests.test_full_production_plan",
+    # Находки независимого валидатора 2026-10-14 (G1–G11): таблица ставок,
+    # бюджет ролика, нативный звук и аватар, поколение, условия провала,
+    # территории лицензии, краткий ответ.
+    "studio.tests.test_validator_gaps",
 )
 
 MUTANTS = [
@@ -407,8 +411,8 @@ MUTANTS = [
     ),
     (
         "studio/planner.py",
-        "        длительность_стена,\n        цена,\n        sign_rank(c),",
-        "        длительность_стена,\n        sign_rank(c),\n        цена,",
+        "        длительность_стена,\n        цена,\n",
+        "        длительность_стена,\n",
         "by_evidence: цена перестаёт быть старшим ключом при названном потолке",
     ),
     (
@@ -550,7 +554,7 @@ MUTANTS = [
     ),
     (
         "studio/planner.py",
-        "    пошаговый = бюджет.known and bool(set(бюджет.per or DEFAULT_PER) & set(DEFAULT_PER))",
+        "    пошаговый = бюджет.known and bool(set(бюджет.per or DEFAULT_PER) & (set(DEFAULT_PER) | {PER_STEP}))",
         "    пошаговый = бюджет.known",
         "потолок за секунду снова уходит в бюджет ШАГА валидатору",
     ),
@@ -1296,7 +1300,7 @@ MUTANTS = [
     ),
     (
         "scripts/check_main_is_last.py",
-        "ПОТОЛОК = 34",
+        "ПОТОЛОК = 29",
         "ПОТОЛОК = 999",
         "main последним -> слабее: записанный долг перестаёт быть храповиком",
     ),
@@ -1586,6 +1590,182 @@ MUTANTS = [
         "            if артефакт_кадр and артефакт_кадр in производится and ДЛЯ_РОЛИКА.search(голова):",
         "            if False:",
         "вопрос: «кадры для ролика» снова спрашивают, снято ли видео",
+    ),
+
+    # --- находки валидатора 2026-10-14 (G1–G11) ------------------------------
+    (
+        "studio/planner.py",
+        "        and ролик_заказан(brief)\n        # «ключевые кадры",
+        "        and False\n        # «ключевые кадры",
+        "G1: заказанный ролик без шага с видео снова остаётся без генерации",
+    ),
+    (
+        "studio/planner.py",
+        '        and "дубляж" in имена\n        and ARTEFACT_VIDEO in есть',
+        '        and False\n        and ARTEFACT_VIDEO in есть',
+        "G1: дубляж готового видео снова без губ",
+    ),
+    (
+        "studio/planner.py",
+        "    if ролик_заказан and not делает_ролик:",
+        "    if False:",
+        "G1: цена ролика снова печатается, когда ни один шаг ролика не делает",
+    ),
+    (
+        "studio/planner.py",
+        "    if низ and any(_слово_есть(о, низ) for о in VIDEO_OBJECTS):\n        return выведены",
+        "    if False:\n        return выведены",
+        "G1: «upscale my video» снова апскейл картинки",
+    ),
+    (
+        "studio/pricing.py",
+        '    "fast",\n',
+        "",
+        "G2: тариф Fast перестаёт быть тарифом (сливается с умолчанием)",
+    ),
+    (
+        "studio/pricing.py",
+        "    return (3, max(r.resolutions))",
+        "    return None",
+        "G2: нет заказанного кадра — цена шага снова не считается вовсе",
+    ),
+    (
+        "studio/pricing.py",
+        "        if r.unit != \"usd\" or r.upfront or r.amount <= 0:",
+        "        if r.unit != \"usd\" or r.upfront:",
+        "G2: ноль снова цена",
+    ),
+    (
+        "studio/pricing.py",
+        "CHARS_PER_SECOND = 15.0",
+        "CHARS_PER_SECOND = 10.0",
+        "G2: знаков в секунде речи 15 -> 10",
+    ),
+    (
+        "studio/pricing.py",
+        "CHARS_PER_SECOND = 15.0",
+        "CHARS_PER_SECOND = 30.0",
+        "G2: знаков в секунде речи 15 -> 30",
+    ),
+    (
+        "studio/pipeline.py",
+        "            and цена.amount > 0\n",
+        "",
+        "G2: ноль снова сравним с бюджетом",
+    ),
+    (
+        "studio/planner.py",
+        "            за_что = (WHOLE_CLIP,)\n",
+        "            за_что = DEFAULT_PER\n",
+        "G7: бюджет без «за что» снова потолок прогона шага",
+    ),
+    (
+        "studio/planner.py",
+        "    if дёшево > потолок:\n        цена[\"outcome\"] = \"не годно\"",
+        "    if False:\n        цена[\"outcome\"] = \"не годно\"",
+        "G7: сумма шагов дороже бюджета ролика снова не превышение",
+    ),
+    (
+        "studio/planner.py",
+        '        найдены = [Candidate(**{**c.__dict__, "price_rank_off": True}) for c in найдены]',
+        "        pass",
+        "G7: при бюджете, в который не влез никто с ценой, снова выигрывает молчащий о цене",
+    ),
+    (
+        "studio/planner.py",
+        "        or math.isnan(budget_usd)\n",
+        "",
+        "G7: NaN снова проходит потолком",
+    ),
+    (
+        "studio/planner.py",
+        "    if нативный_звук_заказан(brief):\n        операции, дописаны, заменено_звуком",
+        "    if False:\n        операции, дописаны, заменено_звуком",
+        "G3: нативный звук, названный в брифе, снова только вариант Б",
+    ),
+    (
+        "studio/planner.py",
+        '    if not ({"оживление", "липсинк"} <= имена and ARTEFACT_IMAGE in есть):',
+        "    if True:",
+        "G3: говорящее фото снова оживление + липсинк, аватар не выбирается",
+    ),
+    (
+        "studio/planner.py",
+        '        if "видео" in нужно or (берёт and "изображение" not in берёт):\n            return True\n        return False',
+        "        return False",
+        "G3: аватар без снимка снова годен на шаг говорящего фото",
+    ),
+    (
+        "studio/planner.py",
+        "        int(bool(c.superseded)),\n",
+        "",
+        "G4: вытесненное поколение снова выигрывает числом строк корпуса",
+    ),
+    (
+        "studio/planner.py",
+        "        int(c.community),\n",
+        "",
+        "G4: модель сообщества снова наравне с продуктом",
+    ),
+    (
+        "studio/planner.py",
+        "GENERATION_GAP_MONTHS = 12",
+        "GENERATION_GAP_MONTHS = 6",
+        "G4: разрыв поколений 12 -> 6 месяцев",
+    ),
+    (
+        "studio/planner.py",
+        "GENERATION_GAP_MONTHS = 12",
+        "GENERATION_GAP_MONTHS = 24",
+        "G4: разрыв поколений 12 -> 24 месяца",
+    ),
+    (
+        "studio/planner.py",
+        "    if свой[:-1] == чужой[:-1]:",
+        "    if False:",
+        "G4: ничья снова выдаётся за выбор по алфавиту",
+    ),
+    (
+        "studio/pipeline.py",
+        "    return bool(свои & set(conditions))",
+        "    return True",
+        "G6: провал при условии, которого в брифе нет, снова валит план",
+    ),
+    (
+        "studio/pipeline.py",
+        "LONG_CLIP_SECONDS = 30.0",
+        "LONG_CLIP_SECONDS = 60.0",
+        "G6: длинный ролик 30 -> 60 с",
+    ),
+    (
+        "studio/pipeline.py",
+        "LONG_CLIP_SECONDS = 30.0",
+        "LONG_CLIP_SECONDS = 10.0",
+        "G6: длинный ролик 30 -> 10 с",
+    ),
+    (
+        "studio/pipeline.py",
+        "        if step.jurisdictions and set(step.jurisdictions) & set(исключены):",
+        "        if False:",
+        "G8: исключённая территория заказчика снова не запрет",
+    ),
+    (
+        "studio/pipeline.py",
+        "    if территории or порог:\n        исключены",
+        "    if False:\n        исключены",
+        "G8: территориальные исключения снова «запрета нет»",
+    ),
+    (
+        "studio/planner.py",
+        "COMPACT_EVIDENCE = 1",
+        "COMPACT_EVIDENCE = 3",
+        "G11: краткий ответ снова несёт простыню доказательств",
+    ),
+    (
+        "studio/planner.py",
+        "    if not full:\n        return сжать(ответ)",
+        "    if False:\n        return сжать(ответ)",
+        "G11: ответ по умолчанию снова полный (30–80 КБ)",
     ),
 
 ]

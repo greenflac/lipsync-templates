@@ -738,10 +738,6 @@ class TheCardAndTheBaseAreCompared(unittest.TestCase):
         assert "card_vs_base" in out
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class VerdictFollowsEvidence(unittest.TestCase):
     """Вердикт о ЗНАНИИ выносится по свидетельству, а не по реестру доступности.
 
@@ -903,6 +899,11 @@ class VerdictFollowsEvidence(unittest.TestCase):
             # роняет весь ответ, и ответ с уровня семьи назван своим словом.
             "answered_some_contested",
             "answered_by_family",
+            # 2026-10-14, валидатор G5/G9/G11: вариант без записей, другая
+            # версия линейки и не-имя — три новых положения дел, не опечатка.
+            "variant_not_recorded",
+            "version_not_recorded",
+            "name_too_long",
         }
         self.assertEqual(set(advice.REASONS), declared, "словарь причин закреплён литералом")
         for args in [(""), ("test-model",), ("nope-9000",), ("test-model", "max_seconds")]:
@@ -1481,3 +1482,7 @@ class СколькоСтраницЗаОтветом(unittest.TestCase):
         другого — это и был дефект."""
         о = advice.advise("minimax-h3-max")
         self.assertIn("recorded statement(s) across", о["note"])
+
+
+if __name__ == "__main__":
+    unittest.main()

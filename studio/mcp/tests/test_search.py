@@ -27,6 +27,15 @@ CREDS = {"GOOGLE_SEARCH_KEY": "test-key", "GOOGLE_CSE_ID": "test-cx"}
 GEMINI_CREDS = {"GEMINI_API_KEY": "test-gemini-key"}
 
 
+class _Clean(unittest.TestCase):
+    """Отказы аккаунтов помнятся в процессе (`NOT_SERVED_TTL_SECONDS`); каждый
+    тест начинает с пустой памяти, иначе 402 одного теста выключал бы Gemini
+    в следующем."""
+
+    def setUp(self) -> None:
+        search.forget_refusals()
+
+
 def _grounded(hosts: list[str], answer: str = "an answer") -> dict:
     return {
         "candidates": [
@@ -68,7 +77,7 @@ def _hit(link: str, host: str) -> dict:
 LIVE_SPELLING = "Gemini_API_KEY"
 
 
-class CredentialNames(unittest.TestCase):
+class CredentialNames(_Clean):
     """A lookup that guesses at a name will meet a name somebody else chose.
 
     Second occurrence of this shape in the package: `probe.py` looked for
@@ -128,7 +137,7 @@ class CredentialNames(unittest.TestCase):
                 assert (key, name) == ("", "")
 
 
-class Search(unittest.TestCase):
+class Search(_Clean):
     def test_the_endpoint_is_the_host_that_was_probed(self) -> None:
         assert ENDPOINT_HOST in search.ENDPOINT
 
@@ -323,7 +332,7 @@ class Search(unittest.TestCase):
         assert "num=10" in captured["url"], "the API's page size maximum is 10"
 
 
-class GeminiBackend(unittest.TestCase):
+class GeminiBackend(_Clean):
     """The whole-index route. Preferred, because the 50-domain cap is not."""
 
     def test_gemini_wins_when_both_are_configured(self) -> None:
@@ -530,7 +539,7 @@ SERPER_HIT = {
 }
 
 
-class BillingAndFallback(unittest.TestCase):
+class BillingAndFallback(_Clean):
     """2026-10-14, live: Gemini answered 402 (prepayment depleted) and the tool
     said `fail` + "create an API key" beside a working key, while SERPER_KEY
     sat unused. Literals below are the statuses and words that happened (T2)."""
@@ -551,12 +560,14 @@ class BillingAndFallback(unittest.TestCase):
         """T1: the body here carries no billing/quota word, so only the status
         set can make these `could not measure` — drop a code and it goes red."""
         for code in (402, 403, 429, 432, 433):
+            search.forget_refusals()
             with self.subTest(code=code):
                 error = _http_error("https://g", code, {"error": {"message": "x"}})
                 with mock.patch.dict("os.environ", GEMINI_CREDS, clear=True):
                     with mock.patch.object(search.urllib.request, "urlopen", side_effect=error):
                         out = search.search("q")
                 assert out["outcome"] == "could not measure", (code, out["note"])
+        search.forget_refusals()
         error = _http_error("https://g", 401, {"error": {"message": "x"}})
         with mock.patch.dict("os.environ", GEMINI_CREDS, clear=True):
             with mock.patch.object(search.urllib.request, "urlopen", side_effect=error):
@@ -625,7 +636,7 @@ class BillingAndFallback(unittest.TestCase):
         assert seen["body"]["q"] == "site:kling.ai q"
         assert "SECRET-serper-7" not in json.dumps(out)
 
-    def test_order_is_gemini_serper_cse_brave_tavily_exa(self) -> None:
+    def test_order_is_gemini_serper_cse_brave_tavily_exa_then_yandex_last(self) -> None:
         assert [name for name, _c, _r in search.BACKENDS] == [
             "gemini",
             "serper",
@@ -633,6 +644,7 @@ class BillingAndFallback(unittest.TestCase):
             "brave",
             "tavily",
             "exa",
+            "yandex",
         ]
 
     def test_every_backend_failing_gives_client_side_queries(self) -> None:
@@ -671,7 +683,7 @@ class BillingAndFallback(unittest.TestCase):
             assert name in out["note"]
 
 
-class OtherBackends(unittest.TestCase):
+class OtherBackends(_Clean):
     def _one(self, env: dict, payload: dict) -> tuple[dict, dict]:
         seen: dict = {}
 
@@ -729,7 +741,7 @@ class OtherBackends(unittest.TestCase):
         assert out["checked"] == 0
 
 
-class GeminiModelFromEnv(unittest.TestCase):
+class GeminiModelFromEnv(_Clean):
     def test_default_model_is_a_literal(self) -> None:
         with mock.patch.dict("os.environ", {}, clear=True):
             assert search.gemini_model() == "gemini-2.5-flash"
@@ -747,6 +759,222 @@ class GeminiModelFromEnv(unittest.TestCase):
                 with mock.patch.object(search, "_fetchable", return_value=True):
                     search.search("q")
         assert "/models/gemini-3-flash:generateContent" in seen["url"]
+
+
+class RefusalKeepsTheQuery(_Clean):
+    """G15, 2026-10-14: a refusal answer carried `"query": ""`, so a caller with
+    several searches in flight could not tell which one had failed."""
+
+    def test_a_billing_refusal_still_names_the_query(self) -> None:
+        error = _http_error("https://g", 402, {"error": {"message": "depleted"}})
+        with mock.patch.dict("os.environ", GEMINI_CREDS, clear=True):
+            with mock.patch.object(search.urllib.request, "urlopen", side_effect=error):
+                out = search.search("veo 3.1 max resolution", site="ai.google.dev")
+        assert out["query"] == "site:ai.google.dev veo 3.1 max resolution"
+
+    def test_unconfigured_still_names_the_query(self) -> None:
+        with mock.patch.dict("os.environ", {}, clear=True):
+            assert search.search("kling limits")["query"] == "kling limits"
+
+
+class AccountRefusalsAreRemembered(_Clean):
+    """G15, 2026-10-14: Gemini answered 402 on EVERY call — the server paid a
+    request and a timeout each time to learn the same thing."""
+
+    def _calls(self, routes: dict, n: int, env: dict, clock: list[float]) -> tuple[list, list]:
+        seen: list[str] = []
+        transport = _router(routes)
+
+        def _counting(request, *a, **k):  # type: ignore[no-untyped-def]
+            seen.append(request.full_url)
+            return transport(request, *a, **k)
+
+        outs = []
+        with mock.patch.dict("os.environ", env, clear=True):
+            with mock.patch.object(search.urllib.request, "urlopen", side_effect=_counting):
+                with mock.patch.object(search, "_now", side_effect=lambda: clock[0]):
+                    for _ in range(n):
+                        outs.append(search.search("q", check_fetchable=False))
+        return seen, outs
+
+    def test_a_402_is_asked_once_then_skipped_with_an_honest_note(self) -> None:
+        routes = {
+            "generativelanguage": _http_error("https://g", 402, {"error": {"message": "depleted"}}),
+            "google.serper.dev": SERPER_HIT,
+        }
+        clock = [1000.0]
+        seen, outs = self._calls(routes, 3, {**GEMINI_CREDS, **SERPER}, clock)
+        assert sum("generativelanguage" in u for u in seen) == 1, seen
+        assert outs[2]["backend"] == "serper"
+        skipped = outs[2]["attempts"][0]
+        assert skipped["backend"] == "gemini" and skipped.get("skipped") is True
+        assert "SKIPPED" in skipped["note"] and "BILLING" in skipped["note"]
+
+    def test_after_the_ttl_the_backend_is_asked_again(self) -> None:
+        routes = {
+            "generativelanguage": _http_error("https://g", 402, {"error": {"message": "depleted"}}),
+            "google.serper.dev": SERPER_HIT,
+        }
+        clock = [1000.0]
+        seen: list[str] = []
+        transport = _router(routes)
+
+        def _counting(request, *a, **k):  # type: ignore[no-untyped-def]
+            seen.append(request.full_url)
+            return transport(request, *a, **k)
+
+        with mock.patch.dict("os.environ", {**GEMINI_CREDS, **SERPER}, clear=True):
+            with mock.patch.object(search.urllib.request, "urlopen", side_effect=_counting):
+                with mock.patch.object(search, "_now", side_effect=lambda: clock[0]):
+                    search.search("q", check_fetchable=False)
+                    clock[0] = 1000.0 + 3599.0
+                    search.search("q", check_fetchable=False)
+                    assert sum("generativelanguage" in u for u in seen) == 1, "inside 1 h"
+                    clock[0] = 1000.0 + 3601.0
+                    search.search("q", check_fetchable=False)
+        assert sum("generativelanguage" in u for u in seen) == 2, "after 1 h it is asked again"
+
+    def test_the_ttl_is_one_hour_as_a_literal(self) -> None:
+        assert search.NOT_SERVED_TTL_SECONDS == 3600.0
+
+    def test_a_new_key_is_a_new_attempt(self) -> None:
+        routes = {
+            "generativelanguage": _http_error("https://g", 402, {"error": {"message": "depleted"}}),
+        }
+        clock = [5.0]
+        seen, _ = self._calls(routes, 1, {"GEMINI_API_KEY": "old"}, clock)
+        seen2, _ = self._calls(routes, 1, {"GEMINI_API_KEY": "new"}, clock)
+        assert len(seen) == 1 and len(seen2) == 1, "a different key must be asked"
+
+    def test_a_401_bad_key_is_NOT_remembered(self) -> None:
+        """Negative control: only billing and quota are cached; a key error is
+        the caller's to fix and must be re-asked at once."""
+        routes = {"generativelanguage": _http_error("https://g", 401, {"error": {"message": "x"}})}
+        clock = [5.0]
+        seen, _ = self._calls(routes, 2, GEMINI_CREDS, clock)
+        assert len(seen) == 2
+
+    def test_a_403_permission_is_NOT_remembered(self) -> None:
+        routes = {"generativelanguage": _http_error("https://g", 403, {"error": {"message": "x"}})}
+        clock = [5.0]
+        seen, _ = self._calls(routes, 2, GEMINI_CREDS, clock)
+        assert len(seen) == 2
+
+    def test_a_429_quota_IS_remembered(self) -> None:
+        routes = {"generativelanguage": _http_error("https://g", 429, {"error": {"message": "x"}})}
+        clock = [5.0]
+        seen, outs = self._calls(routes, 2, GEMINI_CREDS, clock)
+        assert len(seen) == 1
+        assert "QUOTA" in outs[1]["attempts"][0]["note"]
+        assert outs[1]["outcome"] == "could not measure"
+
+    def test_the_key_itself_is_not_kept(self) -> None:
+        routes = {"generativelanguage": _http_error("https://g", 402, {"error": {"message": "x"}})}
+        self._calls(routes, 1, {"GEMINI_API_KEY": "SECRET-123"}, [5.0])
+        assert "SECRET-123" not in repr(search._NOT_SERVED)
+
+
+YANDEX_ENV = {
+    "YANDEX_SEARCH_API_KEY": "SECRET-yandex-1",
+    "YANDEX_FOLDER_ID": "b1gfolder",
+    "STUDIO_SEARCH_ALLOW_YANDEX": "1",
+}
+
+# The classic Yandex XML shape. A FIXTURE, not a captured response: no live
+# call was made (the key is the owner's and the price is unverified).
+YANDEX_XML = """<?xml version="1.0" encoding="utf-8"?>
+<yandexsearch version="1.0"><response><results><grouping>
+<group><doc><url>https://docs.example.test/veo</url><domain>docs.example.test</domain>
+<title>Veo <hlword>3.1</hlword> limits</title><modtime>20260901T000000</modtime>
+<passages><passage>up to <hlword>4k</hlword> output</passage></passages></doc></group>
+<group><doc><url>https://blog.example.test/x</url><domain>blog.example.test</domain>
+<title>Other</title><headline>a headline</headline></doc></group>
+</grouping></results></response></yandexsearch>"""
+
+
+def _yandex_payload(xml: str) -> dict:
+    import base64
+
+    return {"rawData": base64.b64encode(xml.encode("utf-8")).decode("ascii")}
+
+
+class YandexBackend(_Clean):
+    """G15: Yandex as the LAST backend, opt-in only. All mocked: no live call."""
+
+    def _capture(self, env: dict, payload: dict | BaseException, query: str = "veo 3.1"):
+        seen: dict = {}
+
+        def _transport(request, timeout=None):  # type: ignore[no-untyped-def]
+            seen["url"] = request.full_url
+            seen["auth"] = request.get_header("Authorization")
+            seen["body"] = json.loads(request.data)
+            if isinstance(payload, BaseException):
+                raise payload
+            return _Response(payload)
+
+        with mock.patch.dict("os.environ", env, clear=True):
+            with mock.patch.object(search.urllib.request, "urlopen", side_effect=_transport):
+                out = search.search(query, check_fetchable=False)
+        return seen, out
+
+    def test_a_key_alone_is_not_consent(self) -> None:
+        env = {k: v for k, v in YANDEX_ENV.items() if k != "STUDIO_SEARCH_ALLOW_YANDEX"}
+        seen, out = self._capture(env, _yandex_payload(YANDEX_XML))
+        assert seen == {}, "without the opt-in nothing may be sent to Yandex"
+        assert out["outcome"] == "could not measure"
+
+    def test_opt_in_must_be_exactly_1(self) -> None:
+        seen, _ = self._capture({**YANDEX_ENV, "STUDIO_SEARCH_ALLOW_YANDEX": "yes"}, {})
+        assert seen == {}
+
+    def test_the_request_follows_the_vendor_proto(self) -> None:
+        seen, out = self._capture(YANDEX_ENV, _yandex_payload(YANDEX_XML))
+        assert seen["url"] == "https://searchapi.api.cloud.yandex.net/v2/web/search"
+        assert seen["auth"] == "Api-Key SECRET-yandex-1"
+        body = seen["body"]
+        assert body["query"]["searchType"] == "SEARCH_TYPE_COM"
+        assert body["query"]["queryText"] == "veo 3.1"
+        assert body["folderId"] == "b1gfolder"
+        assert body["responseFormat"] == "FORMAT_XML"
+        assert "SECRET-yandex-1" not in json.dumps(out)
+
+    def test_a_cyrillic_query_goes_to_the_russian_index(self) -> None:
+        seen, _ = self._capture(YANDEX_ENV, _yandex_payload(YANDEX_XML), query="длительность veo")
+        assert seen["body"]["query"]["searchType"] == "SEARCH_TYPE_RU"
+
+    def test_the_xml_is_parsed_into_rows(self) -> None:
+        _, out = self._capture(YANDEX_ENV, _yandex_payload(YANDEX_XML))
+        assert out["outcome"] == "pass", out["note"]
+        assert out["backend"] == "yandex"
+        first = out["results"][0]
+        assert first["url"] == "https://docs.example.test/veo"
+        assert first["host"] == "docs.example.test"
+        assert first["title"] == "Veo 3.1 limits"
+        assert first["snippet"] == "up to 4k output"
+        assert out["results"][1]["snippet"] == "a headline"
+
+    def test_a_yandex_error_element_is_could_not_measure(self) -> None:
+        xml = (
+            '<yandexsearch><response><error code="15">No results</error></response></yandexsearch>'
+        )
+        _, out = self._capture(YANDEX_ENV, _yandex_payload(xml))
+        assert out["outcome"] == "could not measure"
+        assert "error 15" in out["note"]
+
+    def test_yandex_is_asked_only_after_everything_else(self) -> None:
+        routes = {
+            "generativelanguage": _http_error("https://g", 402, {"error": {"message": "x"}}),
+            "searchapi.api.cloud.yandex.net": _yandex_payload(YANDEX_XML),
+        }
+        with mock.patch.dict("os.environ", {**GEMINI_CREDS, **YANDEX_ENV}, clear=True):
+            with mock.patch.object(search.urllib.request, "urlopen", side_effect=_router(routes)):
+                out = search.search("q", check_fetchable=False)
+        assert [a["backend"] for a in out["attempts"]] == ["gemini", "yandex"]
+        assert out["backend"] == "yandex"
+
+    def test_a_long_query_is_cut_to_the_proto_limit(self) -> None:
+        seen, _ = self._capture(YANDEX_ENV, _yandex_payload(YANDEX_XML), query="x" * 450)
+        assert len(seen["body"]["query"]["queryText"]) == 400
 
 
 if __name__ == "__main__":

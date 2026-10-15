@@ -232,7 +232,15 @@ class Analyse(unittest.TestCase):
     def test_an_instrument_that_could_not_run_is_named_not_skipped(self) -> None:
         """The reason this returns a list rather than a count: an answer with
         no violations and a silent instrument is not a clean creative."""
-        out = creative.analyse(_solid(self.tmp / "x.png", (10, 10, 10)))
+        # ИЗМЕНЕНО 2026-10-14 (G12): у приёмки появился запасной детектор
+        # (OpenCV YuNet), поэтому «прибор не смог» здесь воспроизводится
+        # отключением ОБОИХ детекторов, а не отсутствием insightface.
+        from unittest import mock
+
+        nothing = {"faces": None, "why": "no detector in this test"}
+        with mock.patch.object(creative, "faces_opencv", return_value=nothing):
+            with mock.patch("lipsync.fork_intake.read_faces", return_value=nothing):
+                out = creative.analyse(_solid(self.tmp / "x.png", (10, 10, 10)))
         names = [item["instrument"] for item in out["could_not_run"]]
         assert "intake" in names, "no face model here, and it must say so"
         assert out["unmeasured"] > 0
@@ -316,7 +324,13 @@ class FramesDirectory(unittest.TestCase):
         clip.write_bytes(b"not an image")
         frames = [_scene(self.tmp / f"f{n}.png", (20, 20, 20), n * 3) for n in range(5)]
         out = creative.analyse(clip, frames=[str(clip), *frames])
-        assert out["parts"]["look"]["outcome"] == "pass", out["parts"]["look"]["note"]
+        # ИЗМЕНЕНО 2026-10-14 (G12): вид ПОДАННЫХ КАДРОВ — свой блок
+        # `frames_look`; `look` — вид самого ролика, а этот «ролик» не
+        # декодируется, и `look` честно говорит, что не смог, вместо того
+        # чтобы выдавать вид чужих кадров за вид файла.
+        assert out["parts"]["frames_look"]["outcome"] == "pass", out["parts"]["frames_look"]
+        assert out["parts"]["look"]["outcome"] == "could not measure"
+        assert "clip.mp4" in out["parts"]["look"]["measured_on"]
         assert out["input"]["state"] == creative.INPUT_MEASURED
         assert "motion" in out["parts"]
 
@@ -378,10 +392,6 @@ class OneReasonOnce(unittest.TestCase):
         assert out["note"].startswith("face_found, face_size, one_person: ")
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class ВердиктПриНеотработавшемПриборе(unittest.TestCase):
     """Найдено чтением выдачи (П3, 2026-09-02).
 
@@ -438,3 +448,7 @@ class ВердиктПриНеотработавшемПриборе(unittest.Te
         out = creative._finish("x.png", {})
         self.assertEqual(out["outcome"], "could not measure")
         self.assertEqual(out["checked"], 0)
+
+
+if __name__ == "__main__":
+    unittest.main()
