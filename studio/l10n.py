@@ -646,6 +646,18 @@ EN: tuple[tuple[str, str], ...] = (
     (r"схема ('[^']*'): запрашиваются только http и https", r"scheme \1: only http and https are requested"),
     (r"в адресе нет хоста", "the address has no host"),
     (r"^пустая строка$", "an empty string"),
+    # --- вердикты потолка в смете (planner: цена ролика) — валидатор 5-го круга
+    (r" — ПОТОЛОК ([\d.]+) ПРЕВЫШЕН \(usd\): наименьшая известная стоимость ([\d.]+) против ([\d.]+) даже на самых дешёвых тарифах, это дороже в ([\d.]+) раза",
+     r" — CEILING \1 EXCEEDED (usd): the least known cost is \2 vs \3 even on the cheapest tiers, \4 times over"),
+    (r" — и это без шагов, у которых цены нет или она нижняя граница",
+     " — and that is without the steps that have no price or only a lower bound"),
+    (r" — ПОТОЛОК ([\d.]+) ПРЕВЫШЕН \(([^)]*)\): ([\d.]+) против ([\d.]+), это дороже в ([\d.]+) раза",
+     r" — CEILING \1 EXCEEDED (\2): \3 vs \4, \5 times over"),
+    (r" — в потолок ([\d.]+) влезает только нижний край неоднозначных ставок \(([\d.]+) usd\); по наибольшей ([\d.]+) usd — ПРЕВЫШЕН\. Не проверить",
+     r" — only the lower edge of the ambiguous rates fits the ceiling \1 (\2 usd); at the highest, \3 usd — EXCEEDED. Cannot be checked"),
+    (r" — ПОТОЛОК ([\d.]+): работа столько не стоит: самый дешёвый записанный кандидат шага (\S+) стоит ([\d.]+) (\w+)",
+     r" — CEILING \1: the work does not cost that little: the cheapest recorded candidate of step \2 costs \3 \4"),
+    (r"ПРЕВЫШЕН — наименьшая известная стоимость ([\d.]+) usd", r"over budget — the least known cost is \1 usd"),
     # --- смета дороже потолка (planner.дороже_потолка)
     (r"смета дороже потолка: наименьшая известная стоимость ([\d.]+) usd против потолка ([\d.]+) usd, в ([\d.]+) раза; ",
      r"the estimate is over the ceiling: the least known cost is \1 usd against a ceiling of \2 usd, \3 times over; "),

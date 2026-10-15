@@ -189,6 +189,8 @@ def неизвестные_виды(набор: list[dict[str, Any]]) -> list[st
     "stale_model_facts",
     "blocked_hosts",
     "measurement_proposals",
+    # Офлайновый и ничего не пишет: поиск по базе фактов (валидатор 5-го круга).
+    "find_models",
 )
 
 

@@ -91,7 +91,7 @@ from mcp.server.mcpserver import MCPServer
 from studio import clarify, knowledge, l10n, planner
 from studio.selfrag.facts import STALE_AFTER_DAYS  # noqa: E402
 from studio import ruwords
-from studio.mcp import advice, contract, creative, fetch, misses, probe, proposal, search
+from studio.mcp import advice, capability, contract, creative, fetch, misses, probe, proposal, search
 from lipsync.fork_identity import FAIL, PASS, UNMEASURED  # noqa: E402
 from studio.mcp import screen  # noqa: E402
 
@@ -315,7 +315,10 @@ server = MCPServer(
         "reported, not from a parameter list. Where the base is empty, record "
         "what you find with `record_model_fact` so the next answer is cheaper, "
         "and say plainly which half of the comparison rests on evidence nobody "
-        "has yet. "
+        "has yet. A question about a CAPABILITY ACROSS MODELS ('which lipsync "
+        "handles profile faces', 'best open TTS for Russian') starts with "
+        "`find_models`, not with candidates from memory: it searches the whole "
+        "base by function and names the gaps. "
         "(0) Two jobs follow. (1) Advise on what a generation model can and cannot do: call "
         "`model_advice` FIRST, before answering from memory, because model limits "
         "change monthly and this base records who said what and when. When it "
@@ -424,6 +427,7 @@ HOW_TO_PAGE_BY_TOOL: dict[str, str] = {
     ),
     "model_advice": "model_advice — offset=page.next_offset, or one attribute",
     "fetch_url": "fetch_url — call again with offset=next_offset (and/or a smaller max_chars)",
+    "find_models": "find_models — a smaller top, or narrower terms",
 }
 HOW_TO_PAGE = (
     "Ask for less or page: " + HOW_TO_PAGE_BY_TOOL["plan_pipeline"] + "; "
@@ -866,6 +870,56 @@ def model_advice(
     else:
         answer = advise_and_note(model, attribute, brief=False, lang=язык)
     return _json(l10n.localise_payload(page_full_advice(answer, offset), язык), tool="model_advice")
+
+
+@server.tool()
+def find_models(
+    need: str,
+    function: str,
+    terms: str = "",
+    require: str = "",
+    top: int = 8,
+    lang: str = "",
+) -> str:
+    """Which models CAN do something — searched across the whole fact base, ranked by evidence.
+
+    Use this INSTEAD OF GUESSING CANDIDATES whenever the question is about a
+    capability across models rather than about one named model: "which lipsync
+    handles profile faces", "which i2v keeps logos legible", "best open TTS for
+    Russian", "which upscaler keeps skin texture". `model_advice` answers about
+    ONE name; asked only about names you already remember, the base never
+    surfaces what it recorded about the others.
+
+    :param need: the question in the customer's words (also the source of
+        search terms when `terms` is empty).
+    :param function: one of lipsync | i2v | t2v | video | tts | image | upscale |
+        avatar | music — which models are in scope.
+    :param terms: comma-separated words to look for in the recorded rows
+        ("profile, side view", "logo, legible"). Short synonyms are added for
+        a few common ones. Leave empty to take them from `need`.
+    :param require: comma-separated hard requirements that must be RECORDED for
+        a model to be ranked at all: open (open weights) | russian | english |
+        spanish. Words not understood are named in `require_not_understood`.
+    :param top: how many ranked models to return (the total is always given).
+
+    Ranking is by EVIDENCE, not by quality: good news without bad news first,
+    then the best source tier, then the number of sources, then freshness.
+    Each ranked model carries its good and bad rows with tier, date and URL.
+    `gaps` counts and names the models of that function with NOTHING recorded
+    on the question — say so in your answer; a model with no row may be
+    better and simply unmeasured. Zero models with good news is `could not
+    measure`, never a verdict that none can. Findings about the whole class
+    come separately in `class_findings`. Before recommending any name from the
+    list, call `model_advice` on it (the Stop hook checks that).
+    """
+    явный = str(lang or "").strip().lower()
+    язык = явный if явный in ("en", "ru") else l10n.lang_of(need, terms, require)
+    try:
+        сколько = max(1, min(30, int(top or 8)))
+    except (TypeError, ValueError):
+        сколько = 8
+    ответ = capability.find(need, function, terms, require, сколько, lang=язык)
+    return _json(l10n.localise_payload(ответ, язык), tool="find_models")
 
 
 #: ПОТОЛОК ДЛИНЫ АТРИБУТА (и имени модели, если слой имён своего не назвал).

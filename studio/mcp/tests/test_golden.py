@@ -266,7 +266,7 @@ class ИнструментыПодПрисмотром(unittest.TestCase):
 
     def test_список_читается_из_самого_сервера(self) -> None:
         имена = g.инструменты_сервера()
-        self.assertEqual(15, len(имена), f"объявлений @server.tool() стало другое число: {имена}")
+        self.assertEqual(16, len(имена), f"объявлений @server.tool() стало другое число: {имена}")
         self.assertIn("plan_pipeline", имена)
 
     def test_сейчас_без_присмотра_никого(self) -> None:
