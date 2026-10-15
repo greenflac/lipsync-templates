@@ -88,7 +88,7 @@ from typing import Any
 
 from mcp.server.mcpserver import MCPServer
 
-from studio import knowledge, l10n, planner
+from studio import clarify, knowledge, l10n, planner
 from studio.selfrag.facts import STALE_AFTER_DAYS  # noqa: E402
 from studio import ruwords
 from studio.mcp import advice, contract, creative, fetch, misses, probe, proposal, search
@@ -1353,6 +1353,7 @@ def plan_pipeline(
     итог["checked"] = int(итог.get("checked") or 0) + просев["checked"]
     if просев["risks"]:
         итог["note"] = f"{итог.get('note', '')}. {screen.предупреждение(просев['risks'])}"
+    итог = вопрос_о_согласии(итог, просев.get("likeness") or {}, англ=язык == "en")
     if пропущено:
         итог["ignored_params"] = пропущено
         итог["note"] = (
@@ -1362,6 +1363,71 @@ def plan_pipeline(
     if full:
         итог = page_full_plan(json.loads(_dump(итог)), int(offset or 0))
     return _json(l10n.localise_payload(итог, язык), tool="plan_pipeline")
+
+
+#: Ось вопроса о согласии: образ или голос реального человека в заказе.
+ОСЬ_СОГЛАСИЕ = "согласие_на_образ"
+
+
+def вопрос_о_согласии(итог: dict, лик: Mapping[str, Any], англ: bool) -> dict:
+    """Реальный человек без названного согласия — ВОПРОС, а не нота (Р1).
+
+    НАЙДЕНО валидатором 5-го круга: план с чужим образом или голосом
+    («Make Taylor Swift sing…», «голосом Путина») собирался целиком, а слово о
+    правах стояло только в ноте. Нота — не исход: её читают последней.
+
+    Найденное нарушение старше вопроса (`fail` не трогается: вопрос
+    добавляется полем `consent_question`). Прежний вопрос плана не теряется:
+    он уходит в `also_question`.
+    """
+    люди = list(лик.get("people") or [])
+    if not люди or лик.get("consent_stated"):
+        return итог
+    что = "голос и образ" if лик.get("voice") else "образ"
+    what = "voice and likeness" if лик.get("voice") else "likeness"
+    кто = ", ".join(люди)
+    вопрос = clarify.Вопрос(
+        ось=ОСЬ_СОГЛАСИЕ,
+        текст=(
+            f"в заказе {что} реального человека ({кто}): есть ли у вас его письменное "
+            "согласие или права на это использование?"
+        ),
+        почему=(
+            "права на образ и голос принадлежат самому человеку; без согласия такой ролик "
+            "делать нельзя, а проверить его студия не может — может только спросить"
+        ),
+        варианты=("да, согласие/права есть", "нет — заменить на вымышленного персонажа или своего актёра"),
+        english=(
+            f"the order uses the {what} of a real person ({кто}): do you have their written "
+            "consent or the rights for this use?",
+            "a person's likeness and voice belong to them; without consent this clip must not be "
+            "made, and the studio cannot check consent — it can only ask",
+            ("yes, we have consent / the rights", "no — use a fictional character or our own actor"),
+        ),
+    )
+    строка = вопрос.row(англ)
+    out = dict(итог)
+    первая = f"QUESTION: {строка['text']}" if англ else f"ВОПРОС: {строка['text']}"
+    out["summary"] = f"{первая}\n{out.get('summary') or ''}".strip()
+    if out.get("outcome") == FAIL:
+        out["consent_question"] = строка
+        return out
+    if out.get("question"):
+        out["also_question"] = out["question"]
+    out["question"] = строка
+    out["outcome"] = UNMEASURED
+    out["reason"] = planner.REASON_NEED_ANSWER
+    out["что_дальше"] = (
+        f"answer the question first: {строка['text']}"
+        if англ
+        else f"сначала ответьте на вопрос: {строка['text']}"
+    )
+    out["note"] = (
+        f"{строка['text']} — the plan below is a draft until this is answered. {out.get('note', '')}"
+        if англ
+        else f"{строка['text']} — план ниже — черновик, пока нет ответа. {out.get('note', '')}"
+    ).strip()
+    return out
 
 
 def budget_refusal(budget_usd: Any) -> dict | None:
