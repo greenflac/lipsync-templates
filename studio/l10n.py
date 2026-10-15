@@ -320,6 +320,9 @@ EN: tuple[tuple[str, str], ...] = (
      r" and \1 more — the model does not run without \2, and this step has nowhere to take it from: "),
     (r" — модель без («Q») не запускается, а на этом шаге его взять неоткуда: ",
      r" — the model does not run without \1, and this step has nowhere to take it from: "),
+    # Та же нота, когда она стоит одна (поле `ban_note` альтернативы), без тире перед ней.
+    (r"^модель без («Q») не запускается, а на этом шаге его взять неоткуда: ",
+     r"the model does not run without \1, and this step has nowhere to take it from: "),
     (r"цена ЗАПИСАНА, но с потолком несравнима: (.+?) — единица не та, что у бюджета шага, и подставлять одно в"
      r" другое значило бы сравнить разное",
      r"price RECORDED but not comparable with the ceiling: \1 — not the unit of the step budget, and putting one"
