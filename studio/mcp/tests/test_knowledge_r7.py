@@ -82,7 +82,9 @@ def _на_фал(model: str, endpoint: str, category: str) -> Fact:
     _f("silent-t2v", "audio_output", "no audio: silent video only"),
     _f("plain-t2v", "positioning", "text-to-video drafts", "portal"),
     # --- интерполяция: частота и множитель ---------------------------------------------
-    _f("turbo-interpolate", "frame_rate", "target_fps 16 to 120 fps (schema maximum 120)", "portal"),
+    _f(
+        "turbo-interpolate", "frame_rate", "target_fps 16 to 120 fps (schema maximum 120)", "portal"
+    ),
     _f("mult-interpolate", "frame_multiplier", "up to 4x input fps (num_frames 1-4)", "portal"),
     _f("blank-interpolate", "positioning", "frame interpolation", "portal"),
     # --- i2v: память GPU и открытые веса ----------------------------------------------
@@ -132,18 +134,60 @@ def _верх(итог: dict, n: int = 3) -> list[str]:
         ["loud-t2v", "switch-t2v", "silent-t2v"],
     ),
     ("t2v that generates audio", "t2v", "", "", "pass", ["loud-t2v", "switch-t2v", "silent-t2v"]),
-    ("видео по тексту с нативным звуком", "t2v", "", "", "pass", ["loud-t2v", "switch-t2v", "silent-t2v"]),
+    (
+        "видео по тексту с нативным звуком",
+        "t2v",
+        "",
+        "",
+        "pass",
+        ["loud-t2v", "switch-t2v", "silent-t2v"],
+    ),
     ("video with synced audio", "t2v", "", "", "pass", ["loud-t2v", "switch-t2v", "silent-t2v"]),
     ("t2v со звуком", "t2v", "", "", "pass", ["loud-t2v", "switch-t2v", "silent-t2v"]),
     # 14-17: частота кадров
-    ("frame interpolation to 120fps", "frame-interpolate", "fps", "", "pass", ["turbo-interpolate", "mult-interpolate"]),
-    ("interpolate from 30 to 120 fps", "frame-interpolate", "", "", "pass", ["mult-interpolate", "turbo-interpolate"]),
-    ("interpolate from 24 to 120 fps", "frame-interpolate", "", "", "pass", ["turbo-interpolate", "mult-interpolate"]),
-    ("интерполяция кадров до 120 fps", "frame-interpolate", "", "", "pass", ["turbo-interpolate", "mult-interpolate"]),
+    (
+        "frame interpolation to 120fps",
+        "frame-interpolate",
+        "fps",
+        "",
+        "pass",
+        ["turbo-interpolate", "mult-interpolate"],
+    ),
+    (
+        "interpolate from 30 to 120 fps",
+        "frame-interpolate",
+        "",
+        "",
+        "pass",
+        ["mult-interpolate", "turbo-interpolate"],
+    ),
+    (
+        "interpolate from 24 to 120 fps",
+        "frame-interpolate",
+        "",
+        "",
+        "pass",
+        ["turbo-interpolate", "mult-interpolate"],
+    ),
+    (
+        "интерполяция кадров до 120 fps",
+        "frame-interpolate",
+        "",
+        "",
+        "pass",
+        ["turbo-interpolate", "mult-interpolate"],
+    ),
     # 18-21: память GPU
     ("which i2v runs on 12GB VRAM", "i2v", "vram, 12GB", "open", "pass", ["small-i2v"]),
     ("i2v for an RTX 3060", "i2v", "", "open", "pass", ["small-i2v"]),
-    ("какая i2v запускается на видеокарте 12 ГБ, открытые веса", "i2v", "", "", "pass", ["small-i2v"]),
+    (
+        "какая i2v запускается на видеокарте 12 ГБ, открытые веса",
+        "i2v",
+        "",
+        "",
+        "pass",
+        ["small-i2v"],
+    ),
     # Равные (вендор, одна дата) — по имени: mid раньше small.
     ("i2v on a 48GB card", "i2v", "vram", "open", "pass", ["mid-i2v", "small-i2v", "t5-i2v"]),
     # 22-25: удаление объекта
@@ -155,8 +199,22 @@ def _верх(итог: dict, n: int = 3) -> list[str]:
         "pass",
         ["acme-clean-plate", "acme-edit-video"],
     ),
-    ("remove an object from my video", "v2v-edit", "", "", "pass", ["acme-clean-plate", "acme-edit-video"]),
-    ("удаление объектов из видео", "v2v-edit", "", "", "pass", ["acme-clean-plate", "acme-edit-video"]),
+    (
+        "remove an object from my video",
+        "v2v-edit",
+        "",
+        "",
+        "pass",
+        ["acme-clean-plate", "acme-edit-video"],
+    ),
+    (
+        "удаление объектов из видео",
+        "v2v-edit",
+        "",
+        "",
+        "pass",
+        ["acme-clean-plate", "acme-edit-video"],
+    ),
     ("clean plate for a shot", "v2v-edit", "", "", "pass", ["acme-clean-plate", "acme-edit-video"]),
     # 26-27: честное «не смогли»
     ("Kazakh TTS", "tts", "", "kk, open", "could not measure", []),
@@ -206,7 +264,10 @@ class Языки(unittest.TestCase):
     def test_нет_hebrew_в_списке_языков_не_хорошая_новость(self) -> None:
         итог = _найти("voice cloning", "voice-clone", "", "he")
         строка = next(r for r in итог["ranked"] if r["model"] == "nohe-voice-clone")
-        self.assertEqual(("informational_only", "could not measure"), (строка["verdict"], строка["requirements"]["he"]["outcome"]))
+        self.assertEqual(
+            ("informational_only", "could not measure"),
+            (строка["verdict"], строка["requirements"]["he"]["outcome"]),
+        )
 
 
 class ЗнакПоЗначению(unittest.TestCase):
@@ -225,8 +286,16 @@ class ЗнакПоЗначению(unittest.TestCase):
         self.assertIn(">= 30 fps", м["informational"][0]["why"])
 
     def test_множитель_с_исходником_считается(self) -> None:
-        за = next(r for r in _найти("interpolate from 30 to 120 fps", "frame-interpolate")["ranked"] if r["model"] == "mult-interpolate")
-        против = next(r for r in _найти("interpolate from 24 to 120 fps", "frame-interpolate")["ranked"] if r["model"] == "mult-interpolate")
+        за = next(
+            r
+            for r in _найти("interpolate from 30 to 120 fps", "frame-interpolate")["ranked"]
+            if r["model"] == "mult-interpolate"
+        )
+        против = next(
+            r
+            for r in _найти("interpolate from 24 to 120 fps", "frame-interpolate")["ranked"]
+            if r["model"] == "mult-interpolate"
+        )
         self.assertEqual(("good_news_only", "bad_news_only"), (за["verdict"], против["verdict"]))
         self.assertEqual("x4 of 30 fps = 120 fps >= asked 120", за["good"][0]["why"])
 
@@ -236,7 +305,9 @@ class ЗнакПоЗначению(unittest.TestCase):
             ["big-i2v", "mid-i2v", "t5-i2v"],
             sorted(e["model"] for e in итог["gaps"]["excluded_examples"]),
         )
-        self.assertEqual(["unknown-i2v"], [e["model"] for e in итог["gaps"]["excluded_unknown_examples"]])
+        self.assertEqual(
+            ["unknown-i2v"], [e["model"] for e in итог["gaps"]["excluded_unknown_examples"]]
+        )
         # Лицензия подтверждена, но о памяти не записано ничего — пробел, а не довод.
         self.assertEqual(["nomem-i2v"], итог["gaps"]["examples"])
         self.assertEqual(["min_vram_gb"], [g["attribute"] for g in итог["ranked"][0]["good"]])
@@ -259,7 +330,9 @@ class ЗнакПоЗначению(unittest.TestCase):
     def test_правка_названная_идентификатором_каталог(self) -> None:
         итог = _найти("video object removal", "v2v-edit")
         верх = итог["ranked"][0]
-        self.assertEqual(("good_news_only", "catalog"), (верх["verdict"], верх["good"][0]["polarity"]))
+        self.assertEqual(
+            ("good_news_only", "catalog"), (верх["verdict"], верх["good"][0]["polarity"])
+        )
         второй = итог["ranked"][1]
         self.assertEqual("informational_only", второй["verdict"])
         self.assertEqual(["acme-extend-video"], итог["gaps"]["examples"])
@@ -293,7 +366,9 @@ class Ранжирование(unittest.TestCase):
         self.assertLess(pn.by_evidence(v2), pn.by_evidence(молчит))
 
     def test_похвала_с_провалом_не_чиста(self) -> None:
-        self.assertEqual(1, pn.failure_rank(self._c("x", applicability=2, against=1, declared_good=3)))
+        self.assertEqual(
+            1, pn.failure_rank(self._c("x", applicability=2, against=1, declared_good=3))
+        )
 
     def test_один_дубль_чище_кусков(self) -> None:
         self.assertEqual(0, pn.failure_rank(self._c("hedra", one_take=True)))
@@ -326,7 +401,9 @@ class Ранжирование(unittest.TestCase):
             self._c("quiet", runs=1),
         ]
         self.assertEqual([False, True, False], [c.one_take for c in pn.один_дубль(найдены, аватар)])
-        self.assertEqual([False, False, False], [c.one_take for c in pn.один_дубль(найдены, липсинк)])
+        self.assertEqual(
+            [False, False, False], [c.one_take for c in pn.один_дубль(найдены, липсинк)]
+        )
         без_кусков = [найдены[1], найдены[2]]
         self.assertEqual([False, False], [c.one_take for c in pn.один_дубль(без_кусков, аватар)])
 
@@ -342,11 +419,17 @@ class Ранжирование(unittest.TestCase):
 
 class Юрисдикция(unittest.TestCase):
     def test_хостинг_вне_юрисдикции_отсеивает_записанный(self) -> None:
-        us = ep.Endpoint(model="us-tts", key="us-tts", hosting=("US",), hosting_note="serving_regions = «USA»")
+        us = ep.Endpoint(
+            model="us-tts", key="us-tts", hosting=("US",), hosting_note="serving_regions = «USA»"
+        )
         eu_us = ep.Endpoint(model="eu-tts", key="eu-tts", hosting=("EU", "US"))
         молчит = ep.Endpoint(model="quiet-tts", key="quiet-tts")
         self.assertEqual(
-            ["хостинг/юрисдикция вендора по записи: US — ни одна не ваша (EU): serving_regions = «USA»", "", ""],
+            [
+                "хостинг/юрисдикция вендора по записи: US — ни одна не ваша (EU): serving_regions = «USA»",
+                "",
+                "",
+            ],
             [pn.хостинг_вне(e, ("EU",)) for e in (us, eu_us, молчит)],
         )
         self.assertEqual("", pn.хостинг_вне(us, None))
@@ -361,7 +444,12 @@ class Юрисдикция(unittest.TestCase):
         итог = pn.хостинг_плана(выбор, база, ("EU",))
         self.assertEqual(
             [
-                {"step": "озвучка", "model": "eleven-tts", "state": "recorded", "hosting": ["EU", "US"]},
+                {
+                    "step": "озвучка",
+                    "model": "eleven-tts",
+                    "state": "recorded",
+                    "hosting": ["EU", "US"],
+                },
                 {"step": "озвучка", "model": "quiet-tts", "state": pn.HOSTING_NOT_MEASURED},
             ],
             итог["steps"],
@@ -415,19 +503,27 @@ class ЖиваяБаза(unittest.TestCase):
         return capability.find(need, function, terms, require, top=30, facts=self.база)
 
     def test_f05_нативный_звук(self) -> None:
-        итог = self._найти("text-to-video with native audio and dialogue lipsync", "t2v", "native audio, dialogue")
-        self.assertEqual(("pass", "seedance-2.0-t2v"), (итог["outcome"], итог["ranked"][0]["model"]))
+        итог = self._найти(
+            "text-to-video with native audio and dialogue lipsync", "t2v", "native audio, dialogue"
+        )
+        self.assertEqual(
+            ("pass", "seedance-2.0-t2v"), (итог["outcome"], итог["ranked"][0]["model"])
+        )
         вео = next(r for r in итог["ranked"] if r["model"] == "veo-3.1-fast-t2v")
         self.assertEqual("good_news_only", вео["verdict"])
 
     def test_f09_120_кадров(self) -> None:
         итог = self._найти("frame interpolation to 120fps", "frame-interpolate", "fps")
-        self.assertEqual(("pass", "topaz-interpolate-video"), (итог["outcome"], итог["ranked"][0]["model"]))
+        self.assertEqual(
+            ("pass", "topaz-interpolate-video"), (итог["outcome"], итог["ranked"][0]["model"])
+        )
         rife = next(r for r in итог["ranked"] if r["model"] == "rife-video")
         self.assertIn(">= 30 fps", rife["informational"][0]["why"])
 
     def test_f16_удаление_объекта(self) -> None:
-        итог = self._найти("video object removal / inpainting", "v2v-edit", "object removal, inpainting")
+        итог = self._найти(
+            "video object removal / inpainting", "v2v-edit", "object removal, inpainting"
+        )
         self.assertEqual(
             ("pass", "ltx-2.3-quality-clean-plate", "catalog"),
             (итог["outcome"], итог["ranked"][0]["model"], итог["ranked"][0]["good"][0]["polarity"]),
@@ -451,7 +547,15 @@ class ЖиваяБаза(unittest.TestCase):
     def test_f07_f10_языки_поняты(self) -> None:
         kk = self._найти("Kazakh speech synthesis", "tts", "", "kk")
         he = self._найти("voice cloning that works in Hebrew", "voice-clone", "", "he")
-        self.assertEqual(([], ["kk"], [], ["he"]), (kk["require_not_understood"], kk["require"], he["require_not_understood"], he["require"]))
+        self.assertEqual(
+            ([], ["kk"], [], ["he"]),
+            (
+                kk["require_not_understood"],
+                kk["require"],
+                he["require_not_understood"],
+                he["require"],
+            ),
+        )
         self.assertEqual("eleven_v3", kk["ranked"][0]["model"])
         self.assertEqual("pass", kk["ranked"][0]["requirements"]["kk"]["outcome"])
 
@@ -481,7 +585,15 @@ class ЖиваяБаза(unittest.TestCase):
                 "outputs": ["video", "speech"],
                 "duration_s": 90,
                 "languages": ["pl", "tr"],
-                "people": [{"name": "the speaker", "real": True, "public_figure": False, "consent": "unknown", "claim": "none"}],
+                "people": [
+                    {
+                        "name": "the speaker",
+                        "real": True,
+                        "public_figure": False,
+                        "consent": "unknown",
+                        "claim": "none",
+                    }
+                ],
             },
         )
         шаг = next(ш for ш in итог["steps"] if ш["step"] == "липсинк")
@@ -502,7 +614,15 @@ class ЖиваяБаза(unittest.TestCase):
                 "resolution": "1080p",
                 "aspect": "16:9",
                 "languages": ["en", "de", "ja"],
-                "people": [{"name": "stock presenter", "real": True, "public_figure": False, "consent": "stated", "claim": "none"}],
+                "people": [
+                    {
+                        "name": "stock presenter",
+                        "real": True,
+                        "public_figure": False,
+                        "consent": "stated",
+                        "claim": "none",
+                    }
+                ],
             },
         )
         шаг = next(ш for ш in итог["steps"] if ш["step"] == "говорящий_аватар")
