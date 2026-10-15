@@ -919,6 +919,7 @@ def find_models(
     require: str = "",
     top: int = 8,
     lang: str = "",
+    conditions: str = "",
 ) -> str:
     """Which models CAN do something — searched across the whole fact base, ranked by evidence.
 
@@ -930,26 +931,42 @@ def find_models(
     surfaces what it recorded about the others.
 
     :param need: the question in the customer's words (also the source of
-        search terms when `terms` is empty).
-    :param function: one of lipsync | i2v | t2v | video | tts | image | upscale |
-        avatar | music — which models are in scope.
-    :param terms: comma-separated words to look for in the recorded rows
-        ("profile, side view", "logo, legible"). Short synonyms are added for
-        a few common ones. Leave empty to take them from `need`.
-    :param require: comma-separated hard requirements that must be RECORDED for
-        a model to be ranked at all: open (open weights) | russian | english |
-        spanish. Words not understood are named in `require_not_understood`.
+        search terms when `terms` is empty, and of the job when `function` is
+        broad or empty).
+    :param function: a job of the endpoint registry — t2v | i2v | r2v |
+        v2v-edit | lipsync | talking-avatar | face-swap | dub-translate | tts |
+        voice-clone | music | sfx | t2i | image-edit | bg-remove | upscale-image
+        | upscale-video | restore-colorize | frame-interpolate |
+        transcribe-diarize | captions | turntable-360 — or a word for one
+        ("faceswap", "background removal"). Broad words (video, image,
+        upscale, audio) are narrowed by the job the question names.
+    :param terms: comma-separated words of the question ("profile, side
+        view", "logo, legible", "fps"). Words are mapped to recorded
+        attribute families and shooting conditions (profile -> pose_range,
+        logo -> text rendering / VTR-Bench, hands); other words are matched
+        literally and count only as information. Leave empty to take them
+        from `need`.
+    :param require: comma-separated hard requirements: open (open weights) |
+        commercial (licence must permit commercial use) | a language (russian,
+        ru, spanish…). A model whose record VIOLATES one is dropped with the
+        reason; one where it is unrecorded is ranked after the confirmed ones.
+        Words not understood are named in `require_not_understood`.
     :param top: how many ranked models to return (the total is always given).
+    :param conditions: comma-separated shooting conditions ("profile face",
+        "logo legible", "hands"), added to those read from `need`.
 
-    Ranking is by EVIDENCE, not by quality: good news without bad news first,
-    then the best source tier, then the number of sources, then freshness.
-    Each ranked model carries its good and bad rows with tier, date and URL.
-    `gaps` counts and names the models of that function with NOTHING recorded
-    on the question — say so in your answer; a model with no row may be
-    better and simply unmeasured. Zero models with good news is `could not
-    measure`, never a verdict that none can. Findings about the whole class
-    come separately in `class_findings`. Before recommending any name from the
-    list, call `model_advice` on it (the Stop hook checks that).
+    Good news is only what was DECLARED good (the record's `contra=false`) or
+    a value read per attribute against your constraint (the language is in
+    the list, the duration limit covers the asked length, the licence permits
+    commercial use). A row with no declared polarity is "informational",
+    never good news; price rows are never evidence of capability. Ranking:
+    good news only, then informational only, then mixed, then bad news only;
+    within that, confirmed requirements, source tier, benchmark number,
+    sources, freshness. `gaps` names the models of that job with NOTHING
+    recorded on the question — say so in your answer. Zero models with good
+    news is `could not measure`, never a verdict that none can. Before
+    recommending any name from the list, call `model_advice` on it (the Stop
+    hook checks that).
     """
     явный = str(lang or "").strip().lower()
     язык = явный if явный in ("en", "ru") else l10n.lang_of(need, terms, require)
@@ -957,7 +974,15 @@ def find_models(
         сколько = max(1, min(30, int(top or 8)))
     except (TypeError, ValueError):
         сколько = 8
-    ответ = capability.find(need, function, terms, require, сколько, lang=язык)
+    ответ = capability.find(
+        need,
+        function,
+        terms,
+        require,
+        сколько,
+        lang=язык,
+        conditions=[т.strip() for т in str(conditions or "").split(",") if т.strip()],
+    )
     return _json(l10n.localise_payload(ответ, язык), tool="find_models")
 
 
