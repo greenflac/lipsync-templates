@@ -88,5 +88,53 @@ class ОтказНазываетПричину(unittest.TestCase):
         self.assertNotIn("ПОЧЕМУ ОТВЕРГНУТ", текст)
 
 
+class СработавшимСчитаетсяТолькоОтказ(unittest.TestCase):
+    """Сборка 2026-10-15, мутант «молчание базы печатается как причина отказа»
+    молчал: живые планы этого файла не дают пробы, которая сработала с
+    третьим исходом или с нотой, но без провала. Развилка `_сработавшие`
+    проверяется на собранном отчёте напрямую (Т5)."""
+
+    @staticmethod
+    def _итог(*пробы: dict) -> dict:
+        return {"validator": {"steps": [{"step": "липсинк", "probes": list(пробы)}]}}
+
+    def test_третий_исход_и_несработавшая_проба_не_причина(self) -> None:
+        итог = self._итог(
+            {"class": "цена", "fired": True, "outcome": "fail", "note": "дороже потолка"},
+            {
+                "class": "применимость",
+                "fired": True,
+                "outcome": "could not measure",
+                "note": "нет свидетельства",
+            },
+            {"class": "лицензия", "fired": False, "outcome": "pass", "note": "запрета нет"},
+            {"class": "устарел", "fired": True, "outcome": "fail", "note": ""},
+        )
+        self.assertEqual(
+            [{"class": "цена", "note": "дороже потолка"}], pn._сработавшие(итог, "липсинк")
+        )
+
+    def test_краткая_форма_несёт_только_сработавшие(self) -> None:
+        итог = {
+            "validator": {
+                "steps": [
+                    {
+                        "step": "липсинк",
+                        "fired": [
+                            {"class": "цена", "outcome": "fail", "note": "дороже"},
+                            {
+                                "class": "применимость",
+                                "outcome": "could not measure",
+                                "note": "нечем",
+                            },
+                        ],
+                    }
+                ]
+            }
+        }
+        self.assertEqual([{"class": "цена", "note": "дороже"}], pn._сработавшие(итог, "липсинк"))
+        self.assertEqual([], pn._сработавшие(итог, "озвучка"))
+
+
 if __name__ == "__main__":
     unittest.main()
