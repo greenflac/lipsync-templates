@@ -669,6 +669,9 @@ def _row(m: Marked) -> dict:
         "origin": m.origin,
         "source_url": m.fact.source_url,
         "why": m.why,
+        # Знак записавшего едет со строкой: без него `is_contra_row` судит по
+        # имени атрибута и опровержение провала читает как провал.
+        "contra": m.fact.contra,
     }
 
 

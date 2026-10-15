@@ -160,6 +160,31 @@ ALIASES: dict[str, str] = {
     # склеить пары и не тронуть соседей. Проверяется тестом с обеих сторон.
     "fluxdev": "flux1dev",
     "fluxkontextdev": "flux1kontextdev",
+    # Та же площадочная потеря версии у [pro]/[max]: fal `fal-ai/flux-pro/kontext`
+    # — «FLUX.1 Kontext [pro]» (заголовок схемы), BFL продаёт его под тем же
+    # именем (bfl.ai/pricing). В базе — `flux.1-kontext-pro`, `flux-1-kontext-max`.
+    "fluxkontextpro": "flux1kontextpro",
+    "fluxkontextmax": "flux1kontextmax",
+    # ЦЕЛЫЕ ИМЕНА, 2026-10-15 (пункт «имена» аудита). Это ALIASES, а не
+    # ПЕРЕПИСИ_НАЧАЛА, нарочно: перепись начала тронула бы и длинные имена —
+    # `heygen avatar 4` -> `…-image-to-video` сделал бы из
+    # `heygen-avatar4-digital-twin` чужое имя. Свидетельство каждой строки —
+    # в `SYNONYM_EVIDENCE` под звеньями спрошенного имени.
+    #
+    # Kling 3 Pro — режим `pro` той же Kling 3.0 (fal: `kling-video/v3/pro/…`,
+    # «Kling V3 (pro)»), а не отдельная модель; у базы режимы лежат вариантами
+    # `kling-3.0-pro-i2v/t2v`, корень — `kling-3.0`.
+    "kling3pro": "kling3",
+    # HeyGen Avatar 4 (Avatar IV): fal описывает `heygen/avatar4/image-to-video`
+    # как «Generate a video from a photo using HeyGen Avatar 4».
+    "heygenavatar4": "heygenavatar4i2v",
+    "heygenavatariv": "heygenavatar4i2v",
+    # Topaz Starlight — семейство моделей ЭНДПОИНТА `topaz/upscale/video/
+    # generative`: схема fal держит поле `model` с enum «Starlight Precise
+    # 2.6 / HQ / Mini / Sharp / Fast 2» и заголовок «Topaz Generative Video
+    # Upscale (Starlight)».
+    "topazstarlight": "topazupscalevideogenerative",
+    "starlight": "topazupscalevideogenerative",
 }
 
 #: ПЛОЩАДКА ВПЕРЕДИ ПУТИ — не часть имени модели (2026-10-14). `fal-ai/…`,
@@ -281,6 +306,13 @@ ALIASES: dict[str, str] = {
     # (`platform.minimax.io/docs/guides/video-generation`, model_id `MiniMax-H3`).
     (("hailuo", "3"), ("minimax", "h", "3")),
     (("minimax", "hailuo", "3"), ("minimax", "h", "3")),
+    # Hailuo 02 — модель MiniMax (`MiniMax-Hailuo-02` в API MiniMax; fal —
+    # `fal-ai/minimax/hailuo-02/…`, «MiniMax Hailuo-02»). Вендор впереди
+    # дописывается: в базе — `minimax-hailuo-02…`. Опечатка `hailou`
+    # (перестановка `uo`) встречается в запросах и сводится к тому же.
+    (("hailuo", "02"), ("minimax", "hailuo", "02")),
+    (("hailou", "02"), ("minimax", "hailuo", "02")),
+    (("minimax", "hailou"), ("minimax", "hailuo")),
     # sync. называет свои модели `lipsync-2`, `lipsync-2-pro`, `lipsync-1.9.0-beta`
     # (поле `model` API sync.so); fal держит их как `fal-ai/sync-lipsync/v2/pro`
     # и пишет «Sync Lipsync 2 Pro model» (строка `positioning` в базе). Только
@@ -324,6 +356,42 @@ SYNONYM_EVIDENCE: dict[tuple[str, ...], str] = {
         "`h3_max` («MiniMax H3 Max»); 768P/2K и 15 с — как у MiniMax-H3 на platform.minimax.io"
     ),
     ("minimax", "hailuo", "3"): "то же, что `hailuo3`: Hailuo 3 = MiniMax H3",
+    ("hailuo", "02"): (
+        "MiniMax API model `MiniMax-Hailuo-02` (platform.minimax.io/docs/guides/video-generation); "
+        "fal `fal-ai/minimax/hailuo-02/...` «MiniMax Hailuo-02»"
+    ),
+    ("hailou", "02"): "опечатка `hailou` = `hailuo`: MiniMax `MiniMax-Hailuo-02`",
+    ("minimax", "hailou"): "опечатка `hailou` = `hailuo` (MiniMax пишет «Hailuo»)",
+    # Целые имена из `ALIASES` (ключ — звенья спрошенного имени):
+    ("kling", "3", "pro"): (
+        "fal `fal-ai/kling-video/v3/pro/image-to-video` «Kling V3 (pro)»: режим pro "
+        "той же Kling 3.0 (fal.ai/api/openapi/queue/openapi.json?endpoint_id=fal-ai/kling-video/v3/pro/image-to-video)"
+    ),
+    ("heygen", "avatar", "4"): (
+        "fal `fal-ai/heygen/avatar4/image-to-video`: «Generate a video from a photo using "
+        "HeyGen Avatar 4» (fal.ai/api/openapi/queue/openapi.json?endpoint_id=fal-ai/heygen/avatar4/image-to-video)"
+    ),
+    (
+        "heygen",
+        "avatar",
+        "iv",
+    ): "HeyGen Avatar IV = Avatar 4; fal `fal-ai/heygen/avatar4/image-to-video`",
+    ("topaz", "starlight"): (
+        "fal `topaz/upscale/video/generative`: «Topaz Generative Video Upscale (Starlight)», "
+        "поле model: Starlight Precise 2.6/HQ/Mini/Sharp/Fast 2 "
+        "(fal.ai/api/openapi/queue/openapi.json?endpoint_id=topaz/upscale/video/generative)"
+    ),
+    ("starlight",): "Topaz Starlight — модели эндпоинта fal `topaz/upscale/video/generative`",
+    (
+        "flux",
+        "kontext",
+        "pro",
+    ): "fal `fal-ai/flux-pro/kontext` = «FLUX.1 Kontext [pro]»; BFL (bfl.ai/pricing) то же имя",
+    (
+        "flux",
+        "kontext",
+        "max",
+    ): "BFL «FLUX.1 Kontext [max]» (bfl.ai/pricing); в базе `flux-1-kontext-max`",
     (
         "lipsync",
         "2",
@@ -392,6 +460,9 @@ def synonym_evidence(name: str) -> str:
     видеть, на чём оно стоит (Е2).
     """
     сырые = tokens(name, _без_переписи=True)
+    # Целое имя из `ALIASES` (`kling3 pro`) — свидетельство под его звеньями.
+    if tuple(сырые) in SYNONYM_EVIDENCE and fold_tokens(сырые) != "".join(сырые):
+        return SYNONYM_EVIDENCE[tuple(сырые)]
     было = _какая_перепись(tuple(сырые))
     return SYNONYM_EVIDENCE.get(было, "") if было else ""
 

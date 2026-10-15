@@ -366,11 +366,14 @@ class G14_ВозможноУстарело(База):
         self.assertEqual(advice.advise("m-1", path=self.путь)["possibly_stale"], [])
 
     def test_факт_видеомодели_помечается(self) -> None:
+        """Пункт 15 (2026-10-15): у видеомодели помечается факт с коротким окном
+        (30 дней), а лицензия в 60 дней — ещё свежая (окно 180)."""
         self.база(
             строка("m-1", "license", "MIT", "https://vendor.example/a", "vendor", 60),
+            строка("m-1", "failure_mode", "лица плывут", "https://vendor.example/c", "vendor", 31),
             строка("m-1", "max_seconds", "10", "https://vendor.example/b", "vendor", 1),
         )
-        self.assertEqual(advice.advise("m-1", path=self.путь)["possibly_stale"], ["license"])
+        self.assertEqual(advice.advise("m-1", path=self.путь)["possibly_stale"], ["failure_mode"])
 
 
 class G11_Размер(База):

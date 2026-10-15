@@ -25,7 +25,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import date
-from typing import Mapping
+from typing import Mapping, Sequence
 
 from lipsync.fork_identity import FAIL, PASS, UNMEASURED
 
@@ -440,7 +440,52 @@ def card_for(name: str) -> ModelCard | None:
     return None
 
 
-def availability(name: str, *, today: date | None = None) -> dict:
+def with_route_deadlines(
+    answer: dict, rows: Sequence[tuple[str, str]], *, today: date | None = None
+) -> dict:
+    """Fold the fact base's `deprecation_date_via_<route>` rows into an answer.
+
+    WHY (audit item 12, 2026-10-15). This registry hand-checks seven cards; the
+    fact base carries route deadlines for a dozen more models that nobody read
+    — on 2026-10-15 `nano-banana-pro` had been shut on the Gemini API since
+    2026-06-25 and `veo-3.1-lite` closes there on 2026-10-22, and availability
+    said nothing about either. The rule of combining is
+    `studio.lifecycle.по_маршрутам`'s, not a second one here: `fail` only when
+    EVERY recorded route has passed its date; while any route is open the
+    answer keeps its outcome and the note names each route with its date.
+    """
+    from studio import lifecycle  # local: lifecycle is a sibling package
+
+    свод = lifecycle.по_маршрутам(list(rows), сегодня=today)
+    if свод.outcome == lifecycle.ГОДНО:
+        return answer
+    итог = dict(answer)
+    итог["routes"] = свод.as_dict()
+    if свод.outcome == lifecycle.НЕ_ГОДНО:
+        итог.update(
+            outcome=FAIL,
+            checked=max(1, int(итог.get("checked") or 0)),
+            violations=max(1, int(итог.get("violations") or 0)),
+            unmeasured=0,
+        )
+        итог["note"] = f"{свод.note}; {итог.get('note', '')}".strip("; ")
+        return итог
+    итог["note"] = f"{свод.note}; {итог.get('note', '')}".strip("; ")
+    return итог
+
+
+def availability(
+    name: str, *, today: date | None = None, route_rows: Sequence[tuple[str, str]] = ()
+) -> dict:
+    """Availability with the fact base's per-route deadlines folded in.
+
+    `route_rows` are (attribute, value) pairs about this model from the fact
+    base; see `with_route_deadlines`. Without them, the card alone answers.
+    """
+    return with_route_deadlines(_card_availability(name, today=today), route_rows, today=today)
+
+
+def _card_availability(name: str, *, today: date | None = None) -> dict:
     """Say whether this model can be called today, and how stale the card is.
 
     Three outcomes:

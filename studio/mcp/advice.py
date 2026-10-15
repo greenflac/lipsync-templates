@@ -733,20 +733,18 @@ def _advise(model: str, attribute: str = "", *, path: Path | None = None) -> dic
     #
     # Правила разбора и их негативный контроль — `studio/lifecycle.py`.
     свои_написания = set(store.spellings(имя_в_базе))
+    # По ВСЕМ написаниям имени: `imagen-4` и `imagen-4.0` — одна модель в
+    # двух карманах, и снятие записано у обоих по-разному.
+    свои_строки = [f for f in store.facts if f.model.lower() in свои_написания]
     lifecycle = [
-        {
-            "attribute": fact.attribute,
-            "value": fact.value,
-            "source_url": fact.source_url,
-            "tier": fact.tier,
-            **_lifecycle.разобрать(str(fact.value), fact.attribute).as_dict(),
-        }
-        # По ВСЕМ написаниям имени: `imagen-4` и `imagen-4.0` — одна модель в
-        # двух карманах, и снятие записано у обоих по-разному.
-        for fact in store.facts
-        if fact.model.lower() in свои_написания
-        and _lifecycle.разобрать(str(fact.value), fact.attribute).outcome != _lifecycle.ГОДНО
+        запись for запись in (_строка_службы(f) for f in свои_строки) if запись is not None
     ]
+    # СРОКИ ПО МАРШРУТАМ (пункт 12, 2026-10-15): строки
+    # `deprecation_date_via_<маршрут>` сводятся одним правилом с планировщиком
+    # (`lifecycle.по_маршрутам`) и вкладываются в ось доступности реестра.
+    маршрутные = [(f.attribute, str(f.value)) for f in свои_строки]
+    по_маршрутам = _lifecycle.по_маршрутам(маршрутные)
+    live = registry.with_route_deadlines(live, маршрутные)
 
     failures = [
         {
@@ -757,6 +755,10 @@ def _advise(model: str, attribute: str = "", *, path: Path | None = None) -> dic
             "stated_on": fact.stated_on,
         }
         for fact in store.failure_modes(имя_в_базе)
+        # ОПРОВЕРЖЕНИЕ ПРОВАЛА — НЕ ПРОВАЛ (пункт 11, 2026-10-15): строка
+        # `failure_mode` с явным `contra=False` («ОПРОВЕРГНУТО: minimax-h3
+        # моргает») стояла в списке провалов. Знак записавшего старше имени.
+        if getattr(fact, "contra", None) is not False
     ]
 
     # Findings about the CLASS, in their own list and never folded into the
@@ -839,7 +841,9 @@ def _advise(model: str, attribute: str = "", *, path: Path | None = None) -> dic
         "possibly_stale": устарело,
         "possibly_stale_note": (
             f"{len(устарело)} attribute(s) are prices or facts about a video model whose "
-            f"newest source is older than {POSSIBLY_STALE_DAYS} days: {', '.join(устарело[:8])}"
+            f"newest source is older than its freshness window ({POSSIBLY_STALE_DAYS} days "
+            f"for prices and most facts, {DURABLE_STALE_DAYS} for licence, architecture "
+            f"and maximum specs): {', '.join(устарело[:8])}"
             f"{', …' if len(устарело) > 8 else ''}. Possibly stale — re-check before quoting."
             if устарело
             else ""
@@ -1033,15 +1037,21 @@ def _advise(model: str, attribute: str = "", *, path: Path | None = None) -> dic
     # СНЯТИЕ НАЗЫВАЕТСЯ В НОТЕ, А НЕ ТОЛЬКО ПОЛЕМ. Поле, которого никто не
     # читает, — тот же дефект, что честная деталь при неверном заголовке:
     # именно за него сегодня заведён `scripts/check_headline.py`.
-    снято = [с for с in lifecycle if с["outcome"] == _lifecycle.НЕ_ГОДНО]
-    впереди = [с for с in lifecycle if с["outcome"] == _lifecycle.НЕ_СМОГЛИ]
+    # Маршрутная строка о модели целиком не говорит: она судится сводкой.
+    целиком = [с for с in lifecycle if not с.get("route")]
+    снято = [с for с in целиком if с["outcome"] == _lifecycle.НЕ_ГОДНО]
+    впереди = [с for с in целиком if с["outcome"] == _lifecycle.НЕ_СМОГЛИ]
     жизнь = ""
     if снято:
         когда = снято[0]["when"] or "без даты"
         жизнь = f" СНЯТА С ОБСЛУЖИВАНИЯ ({когда}), по записи базы: {снято[0]['attribute']}."
+    elif по_маршрутам.outcome == _lifecycle.НЕ_ГОДНО:
+        жизнь = f" СНЯТА С ОБСЛУЖИВАНИЯ НА ВСЕХ ЗАПИСАННЫХ МАРШРУТАХ: {по_маршрутам.note}."
     elif впереди:
         когда = впереди[0]["when"] or "срок не назван"
         жизнь = f" ОБЪЯВЛЕНО СНЯТИЕ ({когда}), по записи базы: {впереди[0]['attribute']}."
+    if по_маршрутам.outcome == _lifecycle.НЕ_СМОГЛИ:
+        жизнь += f" ПО МАРШРУТАМ: {по_маршрутам.note}."
 
     axis = (
         жизнь + f" Availability is a SEPARATE axis, and it says {live['outcome']!r}: {live['note']}"
@@ -1167,6 +1177,49 @@ def _advise(model: str, attribute: str = "", *, path: Path | None = None) -> dic
 #: стороны: строка 30 дней — свежая, 31 — помечена.
 POSSIBLY_STALE_DAYS = 30
 
+#: ОКНО СВЕЖЕСТИ — ПО АТРИБУТУ, А НЕ ОДНО НА ВСЁ (пункт 15, 2026-10-15).
+#: Один порог 30 дней помечал «возможно устарело» лицензию, архитектуру и
+#: fps через месяц после чтения — то есть почти всю базу, и пометка перестала
+#: что-либо отличать. Помесячно меняются ЦЕНЫ (и тарифные ступени); лицензия,
+#: архитектура, предельные характеристики выпуска (длительность, разрешение,
+#: частота кадров, соотношения сторон) меняются с новой версией модели, а
+#: новая версия — это новое имя в базе. Им окно 180 дней. Ключ — семья
+#: атрибута из `attrfamily` (Е1); прочие семьи — общий `POSSIBLY_STALE_DAYS`.
+DURABLE_STALE_DAYS = 180
+STALE_DAYS_BY_FAMILY: dict[str, int] = {
+    "price": POSSIBLY_STALE_DAYS,
+    "license": DURABLE_STALE_DAYS,
+    "architecture": DURABLE_STALE_DAYS,
+    "max_seconds": DURABLE_STALE_DAYS,
+    "duration_floor": DURABLE_STALE_DAYS,
+    "resolution": DURABLE_STALE_DAYS,
+    "image_size": DURABLE_STALE_DAYS,
+    "frame_rate": DURABLE_STALE_DAYS,
+    "aspect_ratio": DURABLE_STALE_DAYS,
+    "text_limit": DURABLE_STALE_DAYS,
+    "model_identity": DURABLE_STALE_DAYS,
+}
+
+#: Имена, которых нет ни в одной семье `attrfamily`, но которые по смыслу —
+#: характеристики выпуска (`fps` не входит в `frame_rate`, `max_resolution`
+#: читается семьёй не всегда). Префикс `max_`/`min_` — предельная
+#: характеристика; цена в таких именах ловится семьёй `price` раньше.
+_ДОЛГИЕ_ИМЕНА = re.compile(
+    r"^(fps|max_\w+|min_\w+|license\w*|licence\w*|architecture\w*|open_weights\w*|"
+    r"parameters?|param_count|model_size)$",
+    re.I,
+)
+
+
+def окно_свежести(attribute: str) -> int:
+    """Сколько дней строка об этом атрибуте считается свежей."""
+    семья = attrfamily.семья_имени(attribute)
+    if семья in STALE_DAYS_BY_FAMILY:
+        return STALE_DAYS_BY_FAMILY[семья]
+    if _ДОЛГИЕ_ИМЕНА.match(str(attribute or "").strip()):
+        return DURABLE_STALE_DAYS
+    return POSSIBLY_STALE_DAYS
+
 #: Атрибуты, по которым модель — ВИДЕОмодель, если карточки реестра нет.
 _ВИДЕО_АТРИБУТЫ: frozenset[str] = frozenset(
     {"max_seconds", "min_seconds", "fps", "duration_enum", "max_duration_seconds"}
@@ -1207,8 +1260,10 @@ def _пометить_свежесть(claims: dict, видео: bool) -> list[s
         if not возрасты:
             continue
         свежайший = min(возрасты)
+        окно = окно_свежести(атрибут)
         разбор["newest_age_days"] = свежайший
-        разбор["possibly_stale"] = свежайший > POSSIBLY_STALE_DAYS
+        разбор["stale_after_days"] = окно
+        разбор["possibly_stale"] = свежайший > окно
         if разбор["possibly_stale"]:
             помечено.append(str(ключ))
     return помечено
@@ -1269,6 +1324,30 @@ def _сверить_с_карточкой(
             (f"реестр знает {name!r} как псевдоним {card_id!r}; факты взяты под {card_id!r}."),
         )
     return name, live, ""
+
+
+def _строка_службы(fact: Fact) -> dict | None:
+    """Строка базы о конце службы, с маршрутом, если он назван; иначе `None`.
+
+    Маршрутная строка (`deprecation_date_via_gemini`) разбирается по своему
+    сроку и несёт `route`: печатать её надо, а судить модель по ней одной —
+    нельзя (это делает сводка `lifecycle.по_маршрутам`).
+    """
+    куда = _lifecycle.маршрут(fact.attribute)
+    if куда:
+        снятие = _lifecycle.срок_атрибутом(str(fact.value), fact.attribute)
+    else:
+        снятие = _lifecycle.разобрать(str(fact.value), fact.attribute)
+    if снятие is None or снятие.outcome == _lifecycle.ГОДНО:
+        return None
+    return {
+        "attribute": fact.attribute,
+        "value": fact.value,
+        "source_url": fact.source_url,
+        "tier": fact.tier,
+        **({"route": куда} if куда else {}),
+        **снятие.as_dict(),
+    }
 
 
 def _доступность_по_базе(нота_реестра: str, lifecycle: list[dict], known_here: bool) -> str:

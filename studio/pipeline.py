@@ -970,6 +970,19 @@ def probe_stale(step: Step, свои: Sequence[Fact], today: date) -> Probe:
     #
     # `planner.life_stance` спрашивал `lifecycle` уже давно; валидатор искал
     # подстроку сам. Два судьи об одном вопросе — и решал худший.
+    #
+    # СРОКИ ПО МАРШРУТАМ (2026-10-15): строки `deprecation_date_via_<маршрут>`
+    # судятся сводкой тем же правилом, что у `planner.life_stance`: отказ —
+    # только когда закрыт каждый записанный маршрут.
+    маршруты = lifecycle.по_маршрутам([(f.attribute, f.value) for f in свои], сегодня=today)
+    if маршруты.outcome == lifecycle.НЕ_ГОДНО:
+        return Probe(
+            CLASS_STALE,
+            True,
+            True,
+            CLASS_OUTCOME[CLASS_STALE],
+            f"модель объявлена снятой ({маршруты.note})",
+        )
     for f in свои:
         снятие = lifecycle.разобрать(f.value, f.attribute, сегодня=today)
         if снятие.outcome == lifecycle.НЕ_ГОДНО:

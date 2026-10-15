@@ -431,8 +431,8 @@ MUTANTS: list[tuple[str, str, str, str, str]] = [
     ),
     (
         "scripts/check_tests_gated.py",
-        '            if any(часть in {".claude", "__pycache__", "node_modules"} for часть in путь.parts):',
-        "            if False:",
+        '                for часть in путь.relative_to(корень).parts',
+        "                for часть in ()",
         "достижимость: чужая рабочая копия считается нашими тестами (Ц2)",
         "studio.mcp.tests.test_tests_gated",
     ),

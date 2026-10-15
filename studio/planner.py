@@ -2098,6 +2098,12 @@ class Evidence:
     #: то же утверждение не может быть одновременно основанием выбора и
     #: причиной отказа.
     forbids: str = ""
+    #: Знак, ОБЪЯВЛЕННЫЙ записавшим (`Fact.contra`): `False` — строка о
+    #: провале, которая провал ОПРОВЕРГАЕТ («ОПРОВЕРГНУТО: minimax-h3
+    #: моргает»). Без этого поля словарь доказательства терял знак, и
+    #: `худшая_новость` по имени `failure_mode` зачитывала опровержение
+    #: заказчику как «измеренный провал» (пункт 11, 2026-10-15).
+    contra: bool | None = None
 
 
 @dataclass(frozen=True)
@@ -3503,6 +3509,7 @@ def evidence_for(
                 source_url=m.fact.source_url,
                 matched=tuple(matched.get(id(m.fact), ())),
                 forbids=bans_in(m.fact, requires),
+                contra=getattr(m.fact, "contra", None),
             )
         )
     return строки, применимость, способность, не_смогли, против
@@ -4016,11 +4023,23 @@ def life_stance(facts: Sequence[Fact], today: date | None = None) -> tuple[str, 
                 f"{снятие.note}: {f.attribute}={f.value[:80]} "
                 f"[{f.tier}, {f.stated_on or 'даты нет'}] ({f.source_url})"
             )
+    # СРОКИ ПО МАРШРУТАМ (`deprecation_date_via_<маршрут>`) сводятся вместе,
+    # а не по одной строке: модель снята, только если закрыт КАЖДЫЙ записанный
+    # маршрут, иначе — предупреждение с каждым маршрутом и его сроком
+    # (`studio/lifecycle.py::по_маршрутам`).
+    маршруты = life.по_маршрутам([(f.attribute, f.value) for f in facts], сегодня=сегодня)
+    if маршруты.outcome == life.НЕ_ГОДНО:
+        return LIFE_RETIRED, маршруты.note
     if объявлено:
         f, снятие = объявлено[0]
         return LIFE_ANNOUNCED, (
             f"{снятие.note}: {f.attribute}={f.value[:80]} ({f.source_url}); "
             "модель ещё отвечает — это предупреждение, а не отказ"
+            + (f"; {маршруты.note}" if маршруты.outcome == life.НЕ_СМОГЛИ else "")
+        )
+    if маршруты.outcome == life.НЕ_СМОГЛИ:
+        return LIFE_ANNOUNCED, (
+            f"{маршруты.note}; модель ещё отвечает — это предупреждение, а не отказ"
         )
     return LIFE_LIVE, f"признаков снятия нет ни в одной из {len(facts)} строк"
 
@@ -7947,6 +7966,7 @@ def _кратко_кандидат(c: dict | None, соседи: bool = False) -
                 "tier": e.get("tier"),
                 "kind": e.get("kind"),
                 "source_url": e.get("source_url"),
+                **({"contra": e["contra"]} if e.get("contra") is not None else {}),
             }
             for e in (c.get("evidence") or [])[:COMPACT_EVIDENCE]
         ]
@@ -8169,6 +8189,7 @@ def _candidate_row(c: Candidate | None) -> dict | None:
                 "source_url": e.source_url,
                 "matched": list(e.matched),
                 "forbids": e.forbids,
+                "contra": e.contra,
             }
             for e in c.evidence
         ],
