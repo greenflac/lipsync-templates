@@ -333,6 +333,12 @@ class ФормаSpec(unittest.TestCase):
         spec, _ = bs.parse_spec({"self_host": {"gpu": "RTX 4090", "vram_gb": 24}})
         self.assertEqual(24.0, spec.self_host["vram_gb"])
 
+    def test_action_camera_resolution_of_an_input(self) -> None:
+        spec, ошибки = bs.parse_spec({"inputs": [{"kind": "video", "owned": True, "resolution": "2.7K"}]})
+        self.assertEqual([], ошибки)
+        self.assertEqual("2.7k", bs.resolution_label("shaky 2.7K drone footage"))
+        self.assertEqual("2k", bs.resolution_label("2K master"))
+
     def test_task_chain(self) -> None:
         spec, ошибки = bs.parse_spec({"task": ["video-edit", "upscale"]})
         self.assertEqual([], ошибки)
