@@ -30,6 +30,14 @@ from studio import planner as pn
 from studio.factindex import FactIndex
 from studio.selfrag.facts import Fact
 
+
+def _полный_план(*args, **kwargs):
+    """ПОЛНЫЙ ответ плана (G11, 2026-10-14): этот набор проверяет доказательства,
+    положения соседей и пробы валидатора — их краткий ответ по умолчанию не несёт."""
+    kwargs.setdefault("full", True)
+    return pn.plan(*args, **kwargs)
+
+
 СЕГОДНЯ = date(2026, 10, 14)
 
 
@@ -98,14 +106,27 @@ class ОперацииПолногоПроизводства(unittest.TestCase):
     def test_портретный_формат_не_снимок(self) -> None:
         self.assertNotIn("оживление", имена(pn.derive("вертикальный портретный ролик, говорящая голова")))
 
-    def test_оживить_и_озвучить_соединяет_липсинк(self) -> None:
+    def test_оживить_и_озвучить_это_говорящий_аватар(self) -> None:
+        # 2026-10-14 (G3): снимок принесён и должен заговорить — одна модель
+        # «снимок + голос -> говорящее видео» вместо оживления и липсинка.
         self.assertEqual(
             (
-                ["озвучка", "оживление", "липсинк"],
-                {"липсинк": "голос и оживлённое лицо в брифе не соединены — губы двигает липсинк"},
+                ["озвучка", "говорящий_аватар"],
+                {
+                    "говорящий_аватар": "снимок принесён, и он должен заговорить: одна модель "
+                    "«снимок + голос -> говорящее видео» вместо оживления и липсинка"
+                },
             ),
             замкнуто("оживить фото и озвучить по-английски"),
         )
+
+    def test_сгенерированный_кадр_аватаром_не_становится(self) -> None:
+        # Негативный контроль: кадр, который план делает сам, идёт в сцену —
+        # там оживление + липсинк, а не аватар.
+        операции, _ = pn.замкнуть(
+            [оп("генерация_изображения"), оп("оживление"), оп("липсинк")], frozenset(), "x"
+        )
+        self.assertNotIn("говорящий_аватар", имена(операции))
 
     def test_голос_за_кадром_липсинка_не_требует(self) -> None:
         self.assertEqual(
@@ -327,7 +348,7 @@ class СчётчикЦены(unittest.TestCase):
         self.assertTrue(pn.вытеснен_ценой(дешёвый, [дешёвый, проверенный], есть))
 
     def test_в_ноте_оба_счётчика(self) -> None:
-        итог = pn.plan("сделай липсинк", facts=[факт("x-lipsync", "license", "apache-2.0")], today=СЕГОДНЯ)
+        итог = _полный_план("сделай липсинк", facts=[факт("x-lipsync", "license", "apache-2.0")], today=СЕГОДНЯ)
         self.assertIn("проверенный не выбран 0", итог["note"])
         self.assertIn("проверенный вытеснен ценой 0", итог["note"])
 
@@ -434,7 +455,7 @@ class АпскейлСборкаВариант(unittest.TestCase):
             факт("acme-lipsync", "observed_behaviour", "lipsync держит губы", "operator"),
             факт("acme-tts", "architecture", "text-to-speech, tts", "vendor"),
         ]
-        итог = pn.plan("нужен говорящий персонаж", facts=факты, today=СЕГОДНЯ)
+        итог = _полный_план("нужен говорящий персонаж", facts=факты, today=СЕГОДНЯ)
         вариант = итог["native_audio_variant"]
         self.assertEqual("acme-video-9", вариант["chosen"]["model"])
         self.assertEqual(["озвучка", "генерация_видео", "липсинк"], вариант["replaces"])
@@ -447,7 +468,7 @@ class АпскейлСборкаВариант(unittest.TestCase):
             факт("acme-avatar-studio", "positioning", "talking avatar video from a script"),
             факт("acme-avatar-studio", "observed_behaviour", "аватар держит лицо весь ролик", "operator"),
         ]
-        вариант = pn.plan("нужен говорящий персонаж", facts=факты, today=СЕГОДНЯ)["native_audio_variant"]
+        вариант = _полный_план("нужен говорящий персонаж", facts=факты, today=СЕГОДНЯ)["native_audio_variant"]
         self.assertEqual("acme-video-9", вариант["chosen"]["model"])
         self.assertEqual(["acme-avatar-studio"], [a["model"] for a in вариант["alternatives"]])
 
@@ -456,7 +477,7 @@ class АпскейлСборкаВариант(unittest.TestCase):
             факт("acme-lipsync", "observed_behaviour", "lipsync держит губы", "operator"),
             факт("acme-t2v", "observed_behaviour", "text-to-video: кадр держится", "operator"),
         ]
-        вариант = pn.plan("нужен говорящий персонаж", facts=факты, today=СЕГОДНЯ)["native_audio_variant"]
+        вариант = _полный_план("нужен говорящий персонаж", facts=факты, today=СЕГОДНЯ)["native_audio_variant"]
         self.assertIsNone(вариант["chosen"])
         self.assertIn("нет ни одной видеомодели с записью о нативном звуке", вариант["note"])
 
@@ -468,7 +489,7 @@ class КраткийПлан(unittest.TestCase):
         факты = list(ПРОФИЛЬНЫЙ) + [
             факт("acme-lipsync", "observed_behaviour", "lipsync держит губы", "operator"),
         ]
-        итог = pn.plan("нужен говорящий персонаж, музыка", facts=факты, today=СЕГОДНЯ)
+        итог = _полный_план("нужен говорящий персонаж, музыка", facts=факты, today=СЕГОДНЯ)
         self.assertEqual("summary", next(iter(итог)))
         сводка = итог["summary"]
         self.assertTrue(сводка.startswith("КРАТКО: шагов "))
@@ -479,15 +500,15 @@ class КраткийПлан(unittest.TestCase):
         self.assertTrue(pn.render(итог).startswith("КРАТКО: шагов "))
 
     def test_английский_бриф_английская_сводка(self) -> None:
-        итог = pn.plan("make a talking head video", facts=list(ПРОФИЛЬНЫЙ), today=СЕГОДНЯ)
+        итог = _полный_план("make a talking head video", facts=list(ПРОФИЛЬНЫЙ), today=СЕГОДНЯ)
         self.assertTrue(итог["summary"].startswith("PLAN IN SHORT: "))
         self.assertIn("PRICE: ", итог["summary"])
         self.assertIn("added by plan: no step makes audio and you did not bring it", итог["summary"])
         self.assertNotIn("применимость", итог["summary"])
 
     def test_кадры_для_ролика_не_спрашивают_про_видео(self) -> None:
-        self.assertIsNone(pn.plan("ключевые кадры фотореалистичные для MMA ролика", facts=[], today=СЕГОДНЯ)["question"])
-        вопрос = pn.plan("рекламный ролик с ключевыми кадрами", facts=[], today=СЕГОДНЯ)["question"]
+        self.assertIsNone(_полный_план("ключевые кадры фотореалистичные для MMA ролика", facts=[], today=СЕГОДНЯ)["question"])
+        вопрос = _полный_план("рекламный ролик с ключевыми кадрами", facts=[], today=СЕГОДНЯ)["question"]
         self.assertEqual("есть_ли_исходное_видео", вопрос["axis"])
 
 

@@ -95,14 +95,14 @@ class ВердиктШагаНеВрётПроБриф(unittest.TestCase):
         return ""
 
     def test_неразобранное_называется_неразобранным(self):
-        self.assertEqual(dur.DUR_ASK_UNPARSED, self._состояние(f"{БРИФ}, полторы минуты", "оживл"))
+        self.assertEqual(dur.DUR_ASK_UNPARSED, self._состояние(f"{БРИФ}, полторы минуты", "аватар"))
 
     def test_молчание_называется_молчанием(self):
         """Негативный контроль (И5) к предыдущему."""
-        self.assertEqual(dur.DUR_NOT_ASKED, self._состояние(БРИФ, "оживл"))
+        self.assertEqual(dur.DUR_NOT_ASKED, self._состояние(БРИФ, "аватар"))
 
     def test_разобранное_сравнивается(self):
-        self.assertEqual(dur.DUR_IN, self._состояние(f"{БРИФ}, 15 секунд", "оживл"))
+        self.assertEqual(dur.DUR_IN, self._состояние(f"{БРИФ}, 15 секунд", "аватар"))
 
     def test_ранг_неразобранного_такой_же_как_у_молчания(self):
         """Иначе отбор наказывал бы за ЧУЖУЮ аккуратность: модель с записанным

@@ -149,6 +149,7 @@ __all__ = [
     "FactStore",
     "claims",
     "load_facts",
+    "recommended",
 ]
 
 TIER_VENDOR = "vendor"
@@ -424,6 +425,91 @@ def _same_answer(values: Sequence[str]) -> bool:
 
 DEFAULT_FACTS_PATH = Path(__file__).resolve().parents[1] / "knowledge" / "model_facts.jsonl"
 
+#: Значение, которое не величина, а отчёт о НЕУДАВШЕМСЯ замере или опровержении
+#: (`НЕ СМОГЛИ: на счёте Kling нет средств …` у `kling-3.0.max_seconds`). Оно
+#: стоит в споре как сторона, но рекомендовать его нельзя: это не ответ.
+_НЕ_ВЕЛИЧИНА = re.compile(r"^\s*(не смогли|не измерено|опровергнуто|could not|unable to)", re.I)
+
+#: Площадки-перепродавцы: значение с них — предел СВОЕГО эндпоинта, не модели.
+#: Определяется по ступени `portal` (её ставит `source_hosts` по адресу), а
+#: это — только имена для ноты.
+_ЧЕЙ_ХОСТ = re.compile(r"^(?:https?://)?([^/]+)")
+
+
+def _хост(url: str) -> str:
+    найдено = _ЧЕЙ_ХОСТ.match(str(url or ""))
+    return найдено.group(1) if найдено else ""
+
+
+def recommended(found: Sequence["Fact"]) -> dict:
+    """Какое значение брать, если брать надо сейчас, — и почему. Пусто — нечего.
+
+    Валидатор G14 (2026-10-14): при споре источников ответ давал все стороны
+    и ни одной рекомендации, и потребитель (планировщик) выбирал сам — чаще
+    всего первое по алфавиту. Правило здесь ОДНО и названо в ответе:
+
+    1. самая сильная ступень лестницы `TIERS` (vendor > probe > operator >
+       paper > benchmark > portal > blog);
+    2. внутри ступени — самая свежая дата источника;
+    3. отчёты о неудавшемся замере (`НЕ СМОГЛИ …`) не рекомендуются никогда.
+
+    Остальные значения едут в `others`, каждое с причиной, почему оно не
+    выбрано: ниже по лестнице, старше на той же ступени или ПРЕДЕЛ ЭНДПОИНТА
+    площадки (`portal`) — последнее не спор с моделью, а другая область
+    (kling-3.0.max_seconds: вендор 15 против «5/10» эндпоинта площадки).
+
+    Заголовок спора остаётся `fail` (Р1): совет не превращает спор в ответ.
+    """
+    годные = [f for f in found if not _НЕ_ВЕЛИЧИНА.match(str(f.value or ""))]
+    if not годные:
+        return {}
+    лучший = min(
+        годные,
+        key=lambda f: (_tier_rank(f.tier), tuple(-ord(c) for c in str(f.stated_on or ""))),
+    )
+    той_же = {f.value for f in годные if f.tier == лучший.tier}
+    правило = (
+        f"highest tier present ({лучший.tier})"
+        if len(той_же) == 1
+        else f"highest tier present ({лучший.tier}) disagrees with itself; newest statement taken"
+    )
+    others: list[dict] = []
+    видено: set[str] = {лучший.value}
+    for f in sorted(годные, key=lambda f: (_tier_rank(f.tier), str(f.stated_on or ""))):
+        if f.value in видено or _same_answer([f.value, лучший.value]):
+            continue
+        видено.add(f.value)
+        if f.tier == TIER_PORTAL:
+            почему = (
+                f"endpoint scope: {_хост(f.source_url)} reports the limit of ITS endpoint, "
+                "not of the model"
+            )
+        elif f.tier == лучший.tier:
+            почему = (
+                f"same tier, older statement ({f.stated_on or 'no date'} vs "
+                f"{лучший.stated_on or 'no date'}) — may describe an earlier version or "
+                "another endpoint"
+            )
+        else:
+            почему = f"lower tier ({f.tier})"
+        others.append(
+            {
+                "value": f.value,
+                "tier": f.tier,
+                "stated_on": f.stated_on,
+                "source_url": f.source_url,
+                "why_not": почему,
+            }
+        )
+    return {
+        "value": лучший.value,
+        "tier": лучший.tier,
+        "stated_on": лучший.stated_on,
+        "source_url": лучший.source_url,
+        "rule": правило,
+        "others": others,
+    }
+
 
 @dataclass(frozen=True)
 class Fact:
@@ -603,6 +689,33 @@ def _rows(path: Path) -> list[tuple[Fact, bool]]:
     return facts
 
 
+#: Хосты, где лежит то, что СДЕЛАЛИ ЛЮДИ из модели вендора: дообучения,
+#: слияния, workflow. Вендор тоже держит веса на HF, но его организация даёт
+#: строке ступень `vendor` (`source_hosts`), и до шага 3 `variant_role` такая
+#: строка не доходит.
+COMMUNITY_HOSTS: tuple[str, ...] = (
+    "civitai.com",
+    "huggingface.co",
+    "github.com",
+    "raw.githubusercontent.com",
+)
+
+
+def _общинный_адрес(url: str) -> bool:
+    """Адрес — общинная страница: Civitai или HF/GitHub С ОРГАНИЗАЦИЕЙ в пути.
+
+    `huggingface.co/api/models?...` — листинг, а не страница организации: по
+    нему не скажешь, чьи веса (И5, `qwen-image-edit`).
+    """
+    хост = _хост(url).lower()
+    if хост == "civitai.com" or хост.endswith(".civitai.com"):
+        return True
+    if хост not in COMMUNITY_HOSTS:
+        return False
+    путь = str(url or "").split("://", 1)[-1].split("/")[1:]
+    return bool(путь) and путь[0] not in ("", "api", "datasets", "spaces", "docs")
+
+
 class FactStore:
     """Every claim anybody has made, indexed by (model, attribute)."""
 
@@ -672,6 +785,41 @@ class FactStore:
             ключ = next((k for k, v in self._spellings.items() if member in v), fold(member))
             out.setdefault(ключ, list(self._spellings.get(ключ, [member])))
         return [names for _k, names in sorted(out.items())]
+
+    def variant_role(self, model: str) -> str:
+        """Роль имени в семье: `vendor_variant`, `community` или `addon`.
+
+        Валидатор G10 (2026-10-14): в семье `ltx-2.3` стоял Civitai-workflow
+        «for RTX 3060 with 12 GB VRAM», в семье `flux-2` — `…-uncensored-text-
+        encoder` и чужое дообучение `flux2-klein-9b-true-v3`, а их строки шли в
+        ответ о семье наравне с вендорскими.
+
+        Порядок решений:
+
+        1. слова имени (`modelnames.name_role`): общинное слово -> community;
+           все строки с Civitai -> community; надстроечное слово -> addon;
+        2. источники: хоть одна строка со ступени выше площадки (vendor,
+           probe, operator, paper, benchmark) -> vendor_variant;
+        3. все источники — Civitai или ЧУЖАЯ организация HF/GitHub (адрес
+           с организацией в пути, ступень не выше portal) -> community;
+        4. иначе (эндпоинт площадки, `fal.ai/...`) -> vendor_variant.
+        """
+        свои = set(self.spellings(model)) or {str(model or "").lower()}
+        строки = [f for (m, _a), facts in self._index.items() if m in свои for f in facts]
+        по_словам = modelnames.name_role("", model)
+        if по_словам == modelnames.ROLE_COMMUNITY:
+            return по_словам
+        # Civitai — всегда общинное, какими бы словами ни звалось
+        # (`ltx-2-3-enhancers`: слово надстроечное, страница — Civitai).
+        if строки and all("civitai.com" in _хост(f.source_url).lower() for f in строки):
+            return modelnames.ROLE_COMMUNITY
+        if по_словам:
+            return по_словам
+        if any(_tier_rank(f.tier) < _tier_rank(TIER_PORTAL) for f in строки):
+            return modelnames.ROLE_VENDOR_VARIANT
+        if строки and all(_общинный_адрес(f.source_url) for f in строки):
+            return modelnames.ROLE_COMMUNITY
+        return modelnames.ROLE_VENDOR_VARIANT
 
     def parent(self, model: str) -> list[str]:
         """Написания семьи, вариантом которой является эта модель; пусто — нет."""
@@ -763,6 +911,7 @@ class FactStore:
             if по_области is not None:
                 return по_области
             summary = "; ".join(f"{r['value']!r} ({r['best_tier']})" for r in rows)
+            совет = recommended(found)
             return {
                 "outcome": FAIL,
                 "checked": len(found),
@@ -772,9 +921,19 @@ class FactStore:
                     f"sources disagree on {model}.{attribute}: {summary}. "
                     "Reported as contested rather than resolved: picking one would "
                     "invent a confidence nobody published."
+                    + (
+                        f" RECOMMENDED (by the tier ladder, not a vote): "
+                        f"{совет['value']!r} ({совет['tier']}, {совет['stated_on'] or 'no date'})"
+                        f" — {совет['rule']}; the others are context in `recommended.others`."
+                        if совет
+                        else ""
+                    )
                 ),
                 "claims": rows,
                 "values": sorted(by_value),
+                # ЗАГОЛОВОК ОСТАЁТСЯ `fail` (Р1): совет — не разрешение спора,
+                # а то, что брать, если брать надо сейчас, с правилом выбора.
+                "recommended": совет,
             }
 
         best = min((r["best_tier"] for r in rows), key=lambda t: _tier_rank(str(t)))

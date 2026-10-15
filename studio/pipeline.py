@@ -352,6 +352,15 @@ class Step:
     #: английского брифа отвергался строками о ХИНДИ и ТЕЛУГУ — замер честный,
     #: но про другой язык (см. `in_scope`).
     languages: tuple[str, ...] = ()
+    #: УСЛОВИЯ, названные в брифе (`conditions_of_brief`): текст в кадре, руки,
+    #: несколько людей, длинный ролик... None — бриф не подан, отбора нет.
+    #: Заведено 2026-10-14 (G6): провал «текст ломается на редких иероглифах»
+    #: валил план «ключевой кадр MMA без людей», где текста нет вовсе.
+    conditions: tuple[str, ...] | None = None
+    #: Юрисдикции заказчика, названные в брифе (`jurisdictions_in`). None — не
+    #: названы: лицензия с территориальными исключениями тогда «не смогли», а
+    #: не «запрета нет» (G8).
+    jurisdictions: tuple[str, ...] | None = None
 
 
 @dataclass(frozen=True)
@@ -511,6 +520,105 @@ def split_by_scope(facts: Sequence[Fact], languages: Sequence[str]) -> tuple[lis
     return свои, вне
 
 
+# --------------------------------------------------------------------------
+# УСЛОВИЯ ПРОВАЛА (заведено 2026-10-14, G6)
+#
+# Строка о провале часто говорит, ПРИ ЧЁМ модель ломается: на тексте в кадре, на
+# руках, на нескольких людях, на длинном ролике. Если бриф этого условия не
+# называет, провал к заказу не относится — он печатается оговоркой, но
+# вердикта не решает. Строка, не назвавшая ни одного известного условия,
+# судит всех, как раньше: молчание об условии не делает замер узким.
+# --------------------------------------------------------------------------
+
+#: Условие -> (как его называет строка базы, как его называет бриф).
+#: КОНСТАНТА-РЕШЕНИЕ, список закрытый: незнакомое условие строку не сужает.
+CONDITION_THEMES: dict[str, tuple[str, str]] = {
+    "текст в кадре": (
+        r"(?:text|glyph|letter|font|word|character)s?\b[^.]{0,40}(?:render|accura|legib|spell|garbl)"
+        r"|(?:render|legib|spell|garbl)\w*[^.]{0,40}\b(?:text|glyph|letter|word|character)s?\b"
+        r"|typograph|lettering|\bglyphs?\b|signage|on-screen text|chinese text|word accuracy|"
+        r"\bhanzi\b|\bkanji\b|иероглиф|надпис|шрифт",
+        r"текст|надпис|шрифт|логотип|слоган|титр|заголов|\btext\b|typograph|logo|lettering|"
+        r"caption|subtitle|headline|title|signage|вывеск",
+    ),
+    "руки": (r"\bhands?\b|fingers?|кисти рук|пальц", r"\bрук|пальц|\bhands?\b|finger|жест|gesture"),
+    "несколько людей": (
+        r"multi(?:ple)?[- ]?(?:person|people|subject|character|speaker|talker)|crowd|"
+        r"two (?:people|characters|speakers|subjects)|several (?:people|characters)|multi-?character",
+        r"комментатор|ведущие|диалог|интервью|толп|двое|несколько (?:людей|человек|персонаж|спикер)|"
+        r"crowd|dialog|conversation|interview|two (?:people|hosts|speakers|characters)|"
+        r"(?:several|multiple) (?:people|speakers|characters)",
+    ),
+    "длинный ролик": (
+        r"long (?:videos?|clips?|durations?|takes?)|longer (?:videos?|clips?)|stitched|"
+        r"(?:beyond|longer than|over|past) (?:[2-9]\d|\d{3,}) ?(?:s|sec|seconds)\b|minutes? long",
+        r"длинн|\blong\b|минут|minute|час|hour",
+    ),
+    "быстрое движение": (
+        r"fast[- ](?:motion|moving)|rapid motion|high[- ]motion|action scenes?|motion blur|"
+        r"complex motion|large motion",
+        r"динамич|быстр|экшн|\baction\b|\bfast\b|драк|бой|fight|спорт|sport|\bmma\b|танц|danc",
+    ),
+    "стилизация": (r"\banime\b|cartoon|stylized|illustrat", r"аниме|мульт|cartoon|anime|стилиз|illustrat|рисован"),
+    "поворот головы": (
+        r"profile view|side view|head turns?|occlu|extreme (?:pose|angle)",
+        r"профил|поворот голов|side view|profile|в пол-оборота",
+    ),
+    "темнота": (r"low[- ]light|dark scenes?|\bnight\b", r"ноч|темн|night|\bdark\b|low light"),
+    "пение": (r"\bsing(?:ing|er)?\b|\bsongs?\b|vocals?", r"\bпе(?:ть|ние|сн|вц)|sing|song|вокал|клип на песню"),
+    "сверхвысокое разрешение": (r"\b4k\b|2160p|\b8k\b|ultra[- ]high resolution", r"4k|4к|2160|8k|8к"),
+}
+
+#: Ролик длиннее этого числа секунд — «длинный ролик», даже если слово
+#: «длинный» не сказано. КОНСТАНТА-РЕШЕНИЕ, ВЫБРАНО 30: столько держит один
+#: прогон лучших генераторов 2026 года без склейки.
+LONG_CLIP_SECONDS = 30.0
+
+#: Что печатается о строках, отброшенных как написанные про другие условия.
+OUT_OF_CONDITIONS_NOTE = "вне условий брифа отброшено"
+
+
+def themes_in(text: str) -> frozenset[str]:
+    """Условия, которые строка базы НАЗЫВАЕТ."""
+    низ = _norm(str(text or ""))
+    return frozenset(т for т, (строка, _) in CONDITION_THEMES.items() if re.search(строка, низ, re.I))
+
+
+def conditions_of_brief(brief: str, seconds: float | None = None) -> tuple[str, ...]:
+    """Условия, которые называет БРИФ (и длинный ролик — по длительности)."""
+    низ = _norm(str(brief or ""))
+    названо = {т for т, (_, бриф) in CONDITION_THEMES.items() if re.search(бриф, низ, re.I)}
+    if seconds is not None and seconds > LONG_CLIP_SECONDS:
+        названо.add("длинный ролик")
+    return tuple(sorted(названо))
+
+
+def in_conditions(fact: Fact, conditions: Sequence[str] | None) -> bool:
+    """Судит ли строка О ПРОВАЛЕ этот бриф. Похвалы и общие строки судят всегда.
+
+    * бриф не подан (`None`) — судит (отбора нет);
+    * строка не плохая новость — судит (условия сужают только провалы);
+    * строка не называет известного условия — судит (она общая);
+    * называет, и НИ ОДНО не названо брифом — НЕ судит: это провал при другом.
+    """
+    if conditions is None or not fa.is_contra(fact):
+        return True
+    свои = themes_in(f"{fact.attribute} {fact.value}")
+    if not свои:
+        return True
+    return bool(свои & set(conditions))
+
+
+def split_by_conditions(
+    facts: Sequence[Fact], conditions: Sequence[str] | None
+) -> tuple[list[Fact], list[Fact]]:
+    """Строки, которые судят шаг, и провалы при условиях, которых в брифе нет."""
+    return (
+        [f for f in facts if in_conditions(f, conditions)],
+        [f for f in facts if not in_conditions(f, conditions)],
+    )
+
+
 def facts_for(model: str, facts: Iterable[Fact]) -> list[Fact]:
     """Все утверждения об одной модели, во ВСЕХ её написаниях.
 
@@ -588,7 +696,15 @@ def probe_applicability(step: Step, свои: Sequence[Fact], overrides: dict | 
     что её нет там, а второй такой развилки в репозитории не заводится.
     """
     свои, вне = split_by_scope(свои, step.languages)
+    свои, мимо_условий = split_by_conditions(свои, step.conditions)
     вердикт = fa.step_verdict(step.name, step.requirement, fa.mark_all(свои, overrides))
+    if мимо_условий:
+        вердикт = dict(вердикт)
+        темы = sorted({т for f in мимо_условий for т in themes_in(f"{f.attribute} {f.value}")})
+        вердикт["note"] = (
+            f"{вердикт['note']}; {OUT_OF_CONDITIONS_NOTE}: {len(мимо_условий)} строк(и) о провале при "
+            f"условиях, которых в брифе нет ({', '.join(темы)})"
+        )
     if вне:
         вердикт = dict(вердикт)
         вердикт["note"] = (
@@ -649,9 +765,93 @@ def probe_licence(step: Step, свои: Sequence[Fact]) -> Probe:
             f"лицензия {step.model} содержит «{маркер}», а применение заявлено как "
             f"{step.use} ({f.source_url})",
         )
+    # ТЕРРИТОРИИ И ПОРОГ ВЫРУЧКИ — НЕ «ЗАПРЕТА НЕТ» (2026-10-14, G8). План
+    # печатал «лицензия прочитана: запрета нет» у модели, чья лицензия
+    # исключает ЕС, Великобританию, Корею и США и ставит порог выручки. Это
+    # запрет при условии, которое знает только заказчик: где он и сколько
+    # зарабатывает. Названа его юрисдикция и она исключена — «не годно»;
+    # не названа — «не смогли», с вопросом.
+    территории, порог = licence_reservations(свои)
+    if территории or порог:
+        исключены = sorted({к for f in территории for к in jurisdictions_in(f.value)})
+        if step.jurisdictions and set(step.jurisdictions) & set(исключены):
+            return Probe(
+                CLASS_LICENCE,
+                True,
+                True,
+                CLASS_OUTCOME[CLASS_LICENCE],
+                f"лицензия {step.model} исключает территорию заказчика "
+                f"({', '.join(sorted(set(step.jurisdictions) & set(исключены)))}): "
+                f"{территории[0].value[:80]} ({территории[0].source_url})",
+            )
+        оговорки = []
+        if территории:
+            оговорки.append(f"исключены территории: {', '.join(исключены) or территории[0].value[:60]}")
+        if порог:
+            оговорки.append(f"порог выручки: {порог[0].value[:60]}")
+        if step.jurisdictions and not порог:
+            return Probe(
+                CLASS_LICENCE,
+                True,
+                False,
+                PASS,
+                f"лицензия {step.model}: {'; '.join(оговорки)} — юрисдикция заказчика "
+                f"({', '.join(step.jurisdictions)}) не исключена",
+            )
+        return Probe(
+            CLASS_LICENCE,
+            True,
+            True,
+            UNMEASURED,
+            f"лицензия {step.model} с оговорками: {'; '.join(оговорки)}. Где работает заказчик и "
+            f"какая у него выручка — неизвестно, проверить не смогли "
+            f"({(территории or порог)[0].source_url})",
+        )
     return Probe(
         CLASS_LICENCE, True, False, PASS, f"лицензий прочитано: {len(строки)}, запрета нет"
     )
+
+
+#: Юрисдикция -> как её называют бриф и строка лицензии. КОНСТАНТА-РЕШЕНИЕ,
+#: список закрытый (G8): незнакомая страна не распознаётся, и тогда исход
+#: «не смогли», а не «разрешено».
+JURISDICTIONS: dict[str, str] = {
+    "EU": r"\beu\b|european union|\beurope|евросоюз|\bес\b|европ|германи|франци|испани|итали|нидерланд|польш",
+    "UK": r"\buk\b|united kingdom|britain|англи(?:я|и)\b|великобритан|лондон",
+    "US": r"\busa?\b|united states|америк|\bсша\b|штат",
+    "KR": r"south korea|\bkorea|коре",
+    "CN": r"\bchina\b|\bprc\b|китай|\bкнр\b",
+    "RU": r"\brussia|росси|\bрф\b",
+    "JP": r"\bjapan|япони",
+    "IN": r"\bindia\b|инди(?:я|и)\b",
+}
+
+#: Строки лицензии, которые СУЖАЮТ её не по применению, а по месту и деньгам.
+TERRITORY_MARKERS: tuple[str, ...] = ("territor", "region", "jurisdic", "территор")
+REVENUE_MARKERS: tuple[str, ...] = ("revenue", "выручк", "monthly active", "mau")
+
+
+def jurisdictions_in(text: str) -> tuple[str, ...]:
+    """Юрисдикции, названные в тексте (брифе или строке лицензии)."""
+    низ = _norm(str(text or ""))
+    return tuple(sorted(к for к, r in JURISDICTIONS.items() if re.search(r, низ, re.I)))
+
+
+def licence_reservations(свои: Sequence[Fact]) -> tuple[list[Fact], list[Fact]]:
+    """Строки лицензии о ТЕРРИТОРИЯХ и о ПОРОГЕ ВЫРУЧКИ — порознь."""
+    территории = [
+        f
+        for f in свои
+        if _has_marker(f.attribute, LICENCE_MARKERS + ("territor",))
+        and (_has_marker(f.attribute, TERRITORY_MARKERS) or re.search(r"exclud\w*\s+territor", f.value, re.I))
+    ]
+    порог = [
+        f
+        for f in свои
+        if _has_marker(f.attribute, REVENUE_MARKERS)
+        or (_has_marker(f.attribute, LICENCE_MARKERS) and _has_marker(f.value, REVENUE_MARKERS))
+    ]
+    return территории, порог
 
 
 def comparable_prices(
@@ -677,6 +877,10 @@ def comparable_prices(
         годна = (
             цена.outcome == "годно"
             and цена.amount is not None
+            # НОЛЬ — НЕ ЦЕНА (2026-10-14): «$0 via runwayml» из сводки
+            # агрегатора делал модель «в бюджете» при любом потолке. Бесплатным
+            # здесь не считается ничего — ноль идёт в несравнимые.
+            and цена.amount > 0
             and цена.unit == BUDGET_UNIT
             and цена.per in pricing.PER
             and цена.per not in PER_NOT_PER_RUN

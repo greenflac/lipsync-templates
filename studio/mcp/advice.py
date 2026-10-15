@@ -117,6 +117,19 @@ REASON_ANSWERED_SOME_CONTESTED = "answered_some_contested"
 #: `veo-3.1-lite`) или её вариантов (`seedvr2-7b` для `seedvr2`). Каждое
 #: утверждение помечено, о каком имени оно (`about`, `scope`).
 REASON_ANSWERED_BY_FAMILY = "answered_by_family"
+#: Имени в базе нет, но оно — известная семья плюс слово-ступень линейки
+#: (`veo-3.1-fast`: семья `veo-3.1` + `fast`). Валидатор G5/G9, 2026-10-14:
+#: такой вопрос получал `name_maybe_mistyped`, то есть «вы опечатались», хотя
+#: спросили о настоящем варианте, о котором просто не записано ничего. Исход
+#: `could not measure`: утверждения семьи едут КОНТЕКСТОМ, с пометкой.
+REASON_VARIANT_NOT_RECORDED = "variant_not_recorded"
+#: Имени в базе нет, но есть ДРУГИЕ ВЕРСИИ той же линейки (`seedream-4.5` при
+#: `seedream-4.0`). Другая версия — не та же модель (И5): соседи едут списком
+#: `other_versions`, а не подсказкой «спросите этим именем».
+REASON_VERSION_NOT_RECORDED = "version_not_recorded"
+#: Имя длиннее `modelnames.MAX_NAME_LENGTH` — это не имя модели (G11): ответ
+#: не эхает его и ничего не ищет. Исход `fail`, как у `stale(days=-5)`.
+REASON_NAME_TOO_LONG = "name_too_long"
 
 #: Весь словарь причин. Список — не украшение: он делает состав причин
 #: проверяемым тестом, а не памятью читающего.
@@ -132,6 +145,9 @@ REASONS: tuple[str, ...] = (
     REASON_ANSWERED,
     REASON_ANSWERED_SOME_CONTESTED,
     REASON_ANSWERED_BY_FAMILY,
+    REASON_VARIANT_NOT_RECORDED,
+    REASON_VERSION_NOT_RECORDED,
+    REASON_NAME_TOO_LONG,
 )
 
 
@@ -647,6 +663,25 @@ def _advise(model: str, attribute: str = "", *, path: Path | None = None) -> dic
             "contested": [],
         }
 
+    if len(name) > modelnames.MAX_NAME_LENGTH:
+        return {
+            "outcome": FAIL,
+            "checked": 0,
+            "violations": 1,
+            "unmeasured": 0,
+            "reason": REASON_NAME_TOO_LONG,
+            "note": (
+                f"a model name of {len(name)} characters is not a model name (limit "
+                f"{modelnames.MAX_NAME_LENGTH}); nothing was looked up. Starts with "
+                f"{name[:40]!r}."
+            ),
+            "availability": None,
+            "claims": {},
+            "failure_modes": [],
+            "class_findings": [],
+            "contested": [],
+        }
+
     store = store_for(path)
     live = registry.availability(name)
     # Разрешение имени — одно на весь проект (`studio/selfrag/modelnames.py`),
@@ -793,9 +828,22 @@ def _advise(model: str, attribute: str = "", *, path: Path | None = None) -> dic
         "strongest tier first. These were said about the field or about a vendor's "
         "line, NOT measured on this model."
     )
+    # ВОЗМОЖНО УСТАРЕЛО (валидатор G14): цены и факты о видеомоделях
+    # меняются помесячно, и строка двухмесячной давности — не та же правда,
+    # что вчерашняя. Пометка, а не вердикт: исход не меняется (Р1).
+    видео = _это_видео(store, имя_в_базе, live.get("card"))
+    устарело = _пометить_свежесть(claims, видео) + _пометить_свежесть(семья_ответа, видео)
     # Что едет в КАЖДЫЙ ответ ниже, одним словарём (Е1): раньше эти ключи
     # повторялись в шести ветках, и новый ключ терялся в половине из них.
     общее = {
+        "possibly_stale": устарело,
+        "possibly_stale_note": (
+            f"{len(устарело)} attribute(s) are prices or facts about a video model whose "
+            f"newest source is older than {POSSIBLY_STALE_DAYS} days: {', '.join(устарело[:8])}"
+            f"{', …' if len(устарело) > 8 else ''}. Possibly stale — re-check before quoting."
+            if устарело
+            else ""
+        ),
         "availability": live,
         "failure_modes": failures,
         "class_findings": class_findings,
@@ -850,6 +898,30 @@ def _advise(model: str, attribute: str = "", *, path: Path | None = None) -> dic
                     "own_claims": {},
                     "contested": [],
                 }
+        # ВАРИАНТ БЕЗ ЗАПИСЕЙ И ДРУГАЯ ВЕРСИЯ — НЕ ОПЕЧАТКА (валидатор G5/G9).
+        неописанный = _неописанный_вариант(store, name, attribute)
+        if неописанный is not None:
+            return {**общее, **неописанный}
+        версии = modelnames.lineage(name, store.models())
+        if версии:
+            return {
+                **общее,
+                "outcome": UNMEASURED,
+                "checked": 0,
+                "violations": 0,
+                "unmeasured": 1,
+                "reason": REASON_VERSION_NOT_RECORDED,
+                "note": (
+                    f"{name!r} is not recorded in the fact base under any spelling. The base "
+                    f"holds OTHER VERSIONS of the same line ({', '.join(версии)}); a different "
+                    "version is a different model, so none of their claims is an answer "
+                    f"about {name!r}. Search the web and call `record_model_fact` to put it there."
+                ),
+                "near": [],
+                "other_versions": версии,
+                "claims": {},
+                "contested": [],
+            }
         # Два РАЗНЫХ положения дел, и до 2026-09-02 они печатались одинаково:
         # база не знает такого имени вовсе — и база знает соседнее имя, то
         # есть спрашивавший, вероятнее всего, опечатался. Первое лечится
@@ -983,10 +1055,27 @@ def _advise(model: str, attribute: str = "", *, path: Path | None = None) -> dic
         if семья_ответа:
             ответ_семьи = _ответ_семьи(name, attribute, семья_ответа, роль.get("role", ""))
             if ответ_семьи is not None:
+                # Кусок строки семьи о СВОЕЙ ступени (`veo-3.1-lite` ->
+                # «Lite $0.05/s …»), если вариант отличается словом-ступенью.
+                срезы = (
+                    _срезы_ступени(семья_ответа, _слова_ступени(имя_в_базе, роль))
+                    if роль.get("role") == "variant"
+                    else {}
+                )
                 return {
                     **общее,
                     **ответ_семьи,
-                    "note": ответ_семьи["note"] + авто + axis,
+                    "variant_slices": срезы,
+                    "note": ответ_семьи["note"]
+                    + (
+                        " Срез строки семьи о ступени варианта: "
+                        + "; ".join(f"{k} -> {v['value']!r}" for k, v in срезы.items())
+                        + " (ВЫВЕДЕНО из строки семьи, не измерено)."
+                        if срезы
+                        else ""
+                    )
+                    + авто
+                    + axis,
                     "claims": семья_ответа,
                     "own_claims": claims,
                     "contested": [],
@@ -1070,6 +1159,61 @@ def _advise(model: str, attribute: str = "", *, path: Path | None = None) -> dic
     }
 
 
+#: ВОЗРАСТ, ПОСЛЕ КОТОРОГО ЦЕНА ИЛИ ФАКТ О ВИДЕОМОДЕЛИ ПОМЕЧАЕТСЯ «ВОЗМОЖНО
+#: УСТАРЕЛО» (валидатор G14, 2026-10-14). ВЫБРАНО 30: видеоплощадки меняли
+#: цены и пределы помесячно весь 2026 год (veo-3.1 Lite/Fast, kling-3.0
+#: turbo). Общий порог базы `STALE_AFTER_DAYS` (90) остаётся для остального:
+#: этот — только пометка, исход ответа он не меняет. Сторожится мутацией в обе
+#: стороны: строка 30 дней — свежая, 31 — помечена.
+POSSIBLY_STALE_DAYS = 30
+
+#: Атрибуты, по которым модель — ВИДЕОмодель, если карточки реестра нет.
+_ВИДЕО_АТРИБУТЫ: frozenset[str] = frozenset(
+    {"max_seconds", "min_seconds", "fps", "duration_enum", "max_duration_seconds"}
+)
+
+
+def _это_видео(store: FactStore, имя: str, card: object) -> bool:
+    """Видеомодель? Карточка реестра, затем записанные выходы, затем атрибуты."""
+    if str(getattr(card, "media", "") or "").lower() == "video":
+        return True
+    атрибуты = set(store.attributes(имя))
+    for выход in ("produces_outputs", "output_modality", "outputs", "modality"):
+        if выход in атрибуты:
+            значения = " ".join(str(v) for v in store.claims(имя, выход).get("values") or [])
+            if re.search(r"video|видео", значения, re.I):
+                return True
+    return bool(атрибуты & _ВИДЕО_АТРИБУТЫ)
+
+
+def _пометить_свежесть(claims: dict, видео: bool) -> list[str]:
+    """Пометить разборы `possibly_stale`; вернуть помеченные ключи.
+
+    Цена — всегда (семья `price` из `attrfamily`), остальное — у видеомодели.
+    Мерило — САМЫЙ СВЕЖИЙ источник разбора: одна свежая строка снимает
+    пометку, потому что кто-то это недавно подтвердил.
+    """
+    помечено: list[str] = []
+    for ключ, разбор in claims.items():
+        атрибут = str(ключ).split("@", 1)[0]
+        if not (видео or attrfamily.семья_имени(атрибут) == "price"):
+            continue
+        возрасты = [
+            и.get("age_days")
+            for строка in (разбор.get("claims") or [])
+            for и in (строка.get("sources") or [])
+            if isinstance(и.get("age_days"), int)
+        ]
+        if not возрасты:
+            continue
+        свежайший = min(возрасты)
+        разбор["newest_age_days"] = свежайший
+        разбор["possibly_stale"] = свежайший > POSSIBLY_STALE_DAYS
+        if разбор["possibly_stale"]:
+            помечено.append(str(ключ))
+    return помечено
+
+
 #: Сколько записанных атрибутов назвать в ноте, когда спрошенного нет. ВЫБРАНО:
 #: у хорошо изученных моделей их 20–40, а нота — строка, которую читают.
 ПЕРЕЧЕНЬ_АТРИБУТОВ = 20
@@ -1142,6 +1286,95 @@ def _доступность_по_базе(нота_реестра: str, lifecycl
     return f"{нота_реестра} Из базы фактов: {вывод}."
 
 
+def _срезы_ступени(семья_ответа: dict, слова: tuple[str, ...] | list[str]) -> dict:
+    """Куски строк семьи о ступени варианта (`Fast $0.10/s …`), с пометкой.
+
+    Валидатор G5: строка семьи о трёх ступенях на вопрос об одной заставляет
+    читающего искать свою — и сравнение по первому числу берёт чужую. Кусок
+    — ДОСЛОВНЫЙ (`attrfamily.variant_slice`), и помечен: выведен из строки
+    семьи, а не измерен на варианте.
+    """
+    out: dict = {}
+    for ключ, разбор in семья_ответа.items():
+        for строка in разбор.get("claims") or []:
+            кусок = attrfamily.variant_slice(str(строка.get("value") or ""), слова)
+            if not кусок:
+                continue
+            источник = (строка.get("sources") or [{}])[0]
+            out[ключ] = {
+                "value": кусок,
+                "derived_from": строка.get("value"),
+                "about": разбор.get("about"),
+                "tier": строка.get("best_tier"),
+                "source_url": источник.get("url"),
+                "stated_on": источник.get("stated_on"),
+                "derivation": (
+                    "DERIVED: the slice of the FAMILY row that names this tier "
+                    f"({', '.join(слова)}); not a measurement of the variant"
+                ),
+            }
+            break
+    return out
+
+
+def _неописанный_вариант(store: FactStore, name: str, attribute: str) -> dict | None:
+    """Ответ о варианте, которого в базе нет, при известной семье; иначе None.
+
+    `veo-3.1-fast` (и `Veo3.1 Fast`, и `veo-3.1-fast-generate-preview`):
+    семья `veo-3.1`, лишнее звено `fast` из `modelnames.TIER_WORDS`. Исход
+    `could not measure` — о самом варианте не записано ничего (Р1); семья и
+    куски её строк о ступени едут контекстом, каждое помечено.
+    """
+    семья, лишнее = modelnames.unrecorded_variant(name, store.models())
+    if not семья:
+        return None
+    главное = store.canonical(семья[0]) or семья[0]
+    семья = [главное] + [n for n in семья if n != главное]
+    роль = {
+        "role": "unrecorded_variant",
+        "name": name,
+        "family_name": семья[0],
+        "family_spellings": семья,
+        "variant_words": list(лишнее),
+        "role_in_family": modelnames.ROLE_VENDOR_VARIANT,
+    }
+    семья_ответа = _утверждения(store, [семья[0]], attribute, "family")
+    срезы = _срезы_ступени(семья_ответа, [с for с in лишнее if с not in _РЕЖИМЫ])
+    return {
+        "outcome": UNMEASURED,
+        "checked": 0,
+        "violations": 0,
+        "unmeasured": 1,
+        "reason": REASON_VARIANT_NOT_RECORDED,
+        "note": (
+            f"{name!r} is not recorded, but it reads as the {' '.join(лишнее)!r} variant of "
+            f"{семья[0]!r}, which the base does know. Nothing was measured on {name!r} itself; "
+            f"the family's claims ({len(семья_ответа)}) ride along in family_claims, each "
+            "marked scope=family, and are NOT measurements of the variant."
+            + (
+                " Slices of family rows that name this tier: "
+                + "; ".join(f"{k} -> {v['value']!r}" for k, v in срезы.items())
+                + " (DERIVED from the family row, not measured)."
+                if срезы
+                else ""
+            )
+            + " Search the web and call `record_model_fact` to record the variant itself."
+        ),
+        "near": [],
+        "family": роль,
+        "family_claims": семья_ответа,
+        "variant_slices": срезы,
+        "claims": {},
+        "contested": [],
+    }
+
+
+#: Звенья режима (`i2v`), а не ступени: куска строки о них не ищут — строка
+#: цены семьи режимы не перечисляет, а слово `i2v` в начале куска значило бы
+#: другое.
+_РЕЖИМЫ: frozenset[str] = frozenset({"i2v", "t2v", "t2i", "s2v", "r2v", "edit"})
+
+
 def _семья(store: FactStore, имя: str, attribute: str, known_here: bool) -> tuple[dict, dict]:
     """Роль имени в семье и утверждения семьи, каждое помечено, о ком оно.
 
@@ -1155,8 +1388,17 @@ def _семья(store: FactStore, имя: str, attribute: str, known_here: bool)
     РАЗНЫЕ ВЕРСИИ НЕ СЕМЬЯ (И5): `veo-3` и `veo-3.1` друг другу не варианты —
     см. `modelnames.family`.
     """
-    варианты = store.family(имя)
-    if варианты:
+    все = store.family(имя)
+    # РОЛЬ В СЕМЬЕ (валидатор G10): за семью отвечают только варианты вендора.
+    # Общинные работы и надстройки называются отдельными списками и в
+    # `family_claims` не идут — их строки о других весах или другой задаче.
+    роли = {names[0]: store.variant_role(names[0]) for names in все}
+    варианты = [names for names in все if роли[names[0]] == modelnames.ROLE_VENDOR_VARIANT]
+    чужие = {
+        "community": [n for n, r in роли.items() if r == modelnames.ROLE_COMMUNITY],
+        "addons": [n for n, r in роли.items() if r == modelnames.ROLE_ADDON],
+    }
+    if варианты or any(чужие.values()):
         показано = варианты[:ВАРИАНТОВ_ПОКАЗАНО]
         роль = {
             "role": "family",
@@ -1164,19 +1406,40 @@ def _семья(store: FactStore, имя: str, attribute: str, known_here: bool)
             "variants": [names[0] for names in варианты],
             "variants_total": len(варианты),
             "variants_shown": len(показано),
+            **чужие,
+            "variant_roles": роли,
         }
         return роль, _утверждения(store, [names[0] for names in показано], attribute, "variant")
     if known_here:
         родитель = store.parent(имя)
         if родитель:
+            своя_роль = store.variant_role(имя)
+            # Имя семьи — каноническое написание группы, а не первое по
+            # алфавиту: иначе `minimax-h3-…` называл семьёй `hailuo3`.
+            родитель = [store.canonical(родитель[0]) or родитель[0]] + [
+                n for n in родитель if n != (store.canonical(родитель[0]) or родитель[0])
+            ]
             роль = {
                 "role": "variant",
                 "name": имя,
                 "family_name": родитель[0],
                 "family_spellings": родитель,
+                "role_in_family": своя_роль,
             }
+            if своя_роль != modelnames.ROLE_VENDOR_VARIANT:
+                # Общинная работа или надстройка: семья за неё НЕ отвечает, и
+                # она за семью тоже. Родство названо, утверждений семьи нет.
+                return роль, {}
             return роль, _утверждения(store, [родитель[0]], attribute, "family")
     return {}, {}
+
+
+def _слова_ступени(имя: str, роль: dict) -> list[str]:
+    """Слова-ступени, которыми вариант отличается от семьи (`lite`)."""
+    семья = modelnames.tokens(str(роль.get("family_name") or ""))
+    свои = modelnames.tokens(имя)
+    хвост = свои[len(семья) :] if свои[: len(семья)] == семья else свои
+    return [з for з in хвост if з in modelnames.TIER_WORDS and з not in _РЕЖИМЫ]
 
 
 def _утверждения(store: FactStore, о_ком: list[str], attribute: str, scope: str) -> dict:
@@ -1775,12 +2038,6 @@ def withdraw(
 PUBLISHED_TIERS: frozenset[str] = frozenset({TIER_PAPER, TIER_BENCHMARK})
 
 
-#: Сколько источников назвать поимённо в краткой выдаче. ВЫБРАНО 1: у краткой
-#: формы одна работа — дать СРАВНИМЫЕ величины по кандидатам, а разбор
-#: источников делается по полной выдаче того кандидата, который прошёл отбор.
-КРАТКО_ИСТОЧНИКОВ = 1
-
-
 def nota_bez_dostupnosti(нота: str, полная: str, доступность: dict) -> str:
     """Главная нота без ПОВТОРА ноты доступности, но с её вердиктом.
 
@@ -1796,24 +2053,50 @@ def nota_bez_dostupnosti(нота: str, полная: str, доступност�
     return нота.replace(полная, "см. поле availability.").strip()
 
 
+#: ПОТОЛОК КРАТКОЙ ФОРМЫ в байтах UTF-8 — так, как её печатает сервер
+#: (`json.dumps(..., indent=2, ensure_ascii=False)`). Валидатор G11,
+#: 2026-10-14: краткий ответ по `minimax-h3` был 26.6 КБ — уже не «пятая часть
+#: полной», а целая полная пятилетней давности. ВЫБРАНО 6 КБ: пять кандидатов
+#: в сравнении — 30 КБ, около 8 тысяч токенов. Сверх потолка режутся строки
+#: НИЗШЕГО приоритета, и счёт срезанного печатается (Р2).
+BRIEF_MAX_BYTES = 6144
+
+#: Длина одного значения в краткой форме. Спорные значения не режутся НИКОГДА:
+#: спор — то, ради чего инструмент, и усечённая сторона спора — уже не сторона.
+КРАТКО_ЗНАЧЕНИЕ = 160
+#: Сколько значений показать у неспорного атрибута (их счёт печатается).
+КРАТКО_ЗНАЧЕНИЙ = 3
+#: Сколько отказов показать в краткой форме (счёт печатается).
+КРАТКО_ОТКАЗОВ = 3
+
+
+def _коротко(текст: object, n: int = КРАТКО_ЗНАЧЕНИЕ) -> str:
+    строка = str(текст if текст is not None else "")
+    return строка if len(строка) <= n else строка[: n - 1] + "…"
+
+
+def размер(ответ: object) -> int:
+    """Байты ответа так, как его печатает сервер."""
+    return len(json.dumps(ответ, ensure_ascii=False, indent=2, default=str).encode("utf-8"))
+
+
 def brief(model: str, attribute: str = "", *, path: Path | None = None) -> dict:
     """Та же выдача, но в размере, который не съедает ответ пользователю.
 
-    ЗАЧЕМ. ИЗМЕРЕНО 2026-09-02: полный ответ по `minimax-h3` — 23 751 символ,
-    около 10 тысяч токенов, и почти весь объём в двух местах: `claims` 17 214
-    и `class_findings` 4 394. Инструкция сервера велит спросить базу о КАЖДОМ
-    кандидате перед сравнением — это правильное правило, но пять кандидатов
-    стоят 30–50 тысяч токенов, и на сам ответ места остаётся мало.
+    ЗАЧЕМ. ИЗМЕРЕНО 2026-09-02: полный ответ по `minimax-h3` — 23 751 символ.
+    Инструкция сервера велит спросить базу о КАЖДОМ кандидате перед
+    сравнением, и пять кандидатов стоят больше, чем сам ответ.
 
-    Краткая форма — ВИД на полную, а не второй ответ (Е1): она строится из неё
-    же, поэтому разойтись они не могут. Выбрасывается только то, что нужно для
-    РАЗБОРА одного кандидата, и остаётся то, что нужно для СРАВНЕНИЯ многих:
-    исход, причина, значения, лучшая ступень, спорность, свежесть и число
-    источников.
+    ПОТОЛОК (валидатор G11, 2026-10-14): краткая форма сама доросла до 26 КБ.
+    Теперь она не больше `BRIEF_MAX_BYTES`: по атрибуту — одно главное
+    значение (или все стороны спора и `recommended`), ступень, свежесть, число
+    источников; `family_claims` — сводкой по вариантам; что не влезло —
+    счётом и списком имён в `omitted`, и как получить больше — в `full_answer`.
 
-    Что НЕ выбрасывается ни при каких условиях: третий исход и его причина,
-    отметка о споре источников и колонка применимости. Ради экономии нельзя
-    терять ровно то, чем этот инструмент отличается от памяти модели.
+    Краткая форма — ВИД на полную (Е1): она строится из неё же, поэтому
+    разойтись они не могут. Что НЕ выбрасывается ни при каких условиях: исход
+    и его причина, отметка о споре источников (`contested` целиком) и ось
+    доступности.
     """
     полный = advise(model, attribute, path=path)
     кратко: dict = {
@@ -1825,53 +2108,134 @@ def brief(model: str, attribute: str = "", *, path: Path | None = None) -> dict:
             "unmeasured",
             "reason",
             "note",
-            # Разворот спрошенного слова едет и в краткую форму: именно она
-            # стоит по умолчанию у `model_advice`, и потерять в ней «спросили
-            # price, ответили price_per_minute» значит вернуть дефект туда,
-            # где его читают чаще всего.
             "asked_as",
-            # Снятие едет и в краткую форму: она стоит по умолчанию, и потерять
-            # в ней «модель уже отключена» значит вернуть дефект туда, где его
-            # читают чаще всего.
             "lifecycle",
+            "possibly_stale_note",
+            "other_versions",
+            "near",
         )
-        if ключ in полный
+        if полный.get(ключ) not in (None, "", [])
     }
     доступность = полный.get("availability") or {}
     кратко["availability"] = {
         "outcome": доступность.get("outcome"),
-        "note": доступность.get("note"),
+        "note": _коротко(доступность.get("note"), 300),
     }
-    # НОТА ДОСТУПНОСТИ НЕ ПЕЧАТАЕТСЯ ДВАЖДЫ. Полный ответ дописывает её в
-    # главную ноту нарочно — доступность отдельная ось и обязана называться
-    # там, где читают. В КРАТКОЙ форме та же строка едет рядом, в поле
-    # `availability`, и повторять её значит тратить ровно то, ради чего
-    # краткая форма заведена.
-    #
-    # ИЗМЕРЕНО 2026-09-02 на сравнении пяти кандидатов по цене: 11181 символ,
-    # из них 1168 (10%) — эта нота во второй раз. Вердикт при этом остаётся в
-    # главной ноте: выбросить его значило бы спрятать вторую ось.
     нота = str(кратко.get("note") or "")
     полная_нота_доступности = str(доступность.get("note") or "")
     if полная_нота_доступности and полная_нота_доступности in нота:
-        кратко["note"] = nota_bez_dostupnosti(нота, полная_нота_доступности, доступность)
+        нота = nota_bez_dostupnosti(нота, полная_нота_доступности, доступность)
+    кратко["note"] = _коротко(нота, 1500)
     кратко["claims"] = _сжать_утверждения(полный.get("claims") or {})
-    # Семья едет и в краткую форму (аудит ae94057): ответ «из утверждений
-    # семьи» без самих утверждений — это заголовок без содержания.
-    кратко["family"] = полный.get("family") or {}
-    кратко["family_claims"] = _сжать_утверждения(полный.get("family_claims") or {})
-    кратко["resolved_as"] = полный.get("resolved_as")
-    кратко["failure_modes"] = [
+    семья = dict(полный.get("family") or {})
+    семья.pop("variant_roles", None)
+    кратко["family"] = семья
+    семейные = полный.get("family_claims") or {}
+    кратко["family_claims"] = _сжать_утверждения(семейные)
+    кратко["family_claims_summary"] = _сводка_семьи(семейные)
+    if полный.get("variant_slices"):
+        кратко["variant_slices"] = {
+            k: {
+                "value": v.get("value"),
+                "tier": v.get("tier"),
+                "derivation": "DERIVED, not measured",
+            }
+            for k, v in полный["variant_slices"].items()
+        }
+    resolved = dict(полный.get("resolved_as") or {})
+    if resolved:
+        resolved["note"] = _коротко(resolved.get("note"), 200)
+        resolved["spellings"] = list(resolved.get("spellings") or [])[:8]
+        кратко["resolved_as"] = resolved
+    отказы = [
         строка.get("value") if isinstance(строка, dict) else строка
         for строка in (полный.get("failure_modes") or [])
     ]
+    кратко["failure_modes"] = [_коротко(о, 120) for о in отказы[:КРАТКО_ОТКАЗОВ]]
+    кратко["failure_modes_total"] = len(отказы)
     кратко["contested"] = полный.get("contested")
+    # Список помеченных атрибутов — в полной форме; здесь счёт, а пометка
+    # стоит у каждого показанного атрибута (`possibly_stale: true`).
+    кратко["possibly_stale_total"] = len(полный.get("possibly_stale") or [])
     кратко["class_findings_total"] = полный.get("class_findings_total")
-    кратко["class_findings_note"] = полный.get("class_findings_note")
     кратко["full_answer"] = (
         "это КРАТКАЯ форма: разбор источников, ноты и находки о классе лежат в "
-        "полной выдаче — позовите тот же инструмент с `full=True`"
+        "полной выдаче — позовите тот же инструмент с `full=True` (или с "
+        "`attribute=<имя>`, чтобы получить один атрибут целиком)"
     )
+    return _в_потолок(кратко, полный, attribute)
+
+
+def _сводка_семьи(семейные: dict) -> dict:
+    """Счёт утверждений семьи по имени, о котором они: вариант -> атрибутов."""
+    сводка: dict[str, int] = {}
+    for разбор in семейные.values():
+        about = str(разбор.get("about") or "")
+        сводка[about] = сводка.get(about, 0) + 1
+    return dict(sorted(сводка.items()))
+
+
+def _приоритет(ключ: str, разбор: dict, спрошено: str) -> tuple:
+    """Что резать последним: спорное, спрошенное, сильная ступень, свежее."""
+    атрибут = str(ключ).split("@", 1)[0]
+    return (
+        0 if разбор.get("outcome") == FAIL else 1,
+        0 if спрошено and attrfamily.семья_имени(атрибут) == attrfamily.семья(спрошено) else 1,
+        TIERS.index(разбор.get("best_tier")) if разбор.get("best_tier") in TIERS else len(TIERS),
+        str(ключ),
+    )
+
+
+#: Байт под поле `size_bytes` в отступе сервера: `,\n  "size_bytes": 6144`.
+_МЕСТО_ПОД_РАЗМЕР = 24
+
+
+def _в_потолок(кратко: dict, полный: dict, attribute: str) -> dict:
+    """Срезать строки низшего приоритета, пока ответ больше `BRIEF_MAX_BYTES`.
+
+    Порядок среза: сначала утверждения семьи (контекст), потом свои — от
+    слабой ступени к сильной; спорные свои — никогда. Срезанное считается и
+    называется в `omitted` (Р2): молчаливая обрезка читается как «это всё».
+    Размер меряется ВМЕСТЕ с `omitted` — счёт срезанного тоже занимает место.
+    """
+    очередь: list[tuple[str, str]] = []
+    for раздел in ("family_claims", "claims"):
+        утверждения: dict = кратко[раздел]
+        for ключ in sorted(
+            утверждения,
+            key=lambda k: _приоритет(k, утверждения[k], attribute),
+            reverse=True,
+        ):
+            if not (раздел == "claims" and утверждения[ключ].get("outcome") == FAIL):
+                очередь.append((раздел, ключ))
+    срезано: dict[str, list[str]] = {"claims": [], "family_claims": []}
+
+    def пометить() -> None:
+        if not any(срезано.values()):
+            return
+        кратко["omitted"] = {
+            "claims": len(срезано["claims"]),
+            "family_claims": len(срезано["family_claims"]),
+            "claims_names": sorted(срезано["claims"])[:20],
+            "how_to_get_more": (
+                "full=True for everything, or attribute=<name> for one attribute in full"
+            ),
+        }
+        # Счёт целиком остаётся: срезан ВИД, не знание.
+        кратко["claims_total"] = len(полный.get("claims") or {})
+        кратко["family_claims_total"] = len(полный.get("family_claims") or {})
+
+    for раздел, ключ in очередь:
+        # `size_bytes` (до 4 цифр и ключ) печатается следом — место под него.
+        if размер(кратко) + _МЕСТО_ПОД_РАЗМЕР <= BRIEF_MAX_BYTES:
+            break
+        del кратко[раздел][ключ]
+        срезано[раздел].append(ключ)
+        пометить()
+    # Размер — вместе с собственным полем: число меряет то, что напечатают.
+    кратко["size_bytes"] = 0
+    for _ in range(3):
+        кратко["size_bytes"] = размер(кратко)
     return кратко
 
 
@@ -1883,29 +2247,46 @@ STALE_TOP = 15
 
 
 def _сжать_утверждения(утверждения: dict) -> dict:
-    """Утверждения в краткой форме: сравнимые величины без разбора источников."""
+    """Утверждения в краткой форме: сравнимые величины без разбора источников.
+
+    Неспорный атрибут: главное значение (`value`, усечённое), до
+    `КРАТКО_ЗНАЧЕНИЙ` значений и их счёт. Спорный: ВСЕ значения дословно и
+    `recommended` — что брать по лестнице ступеней, с правилом.
+    """
     сжатые: dict = {}
     for атрибут, разбор in утверждения.items():
-        источники = [
-            и for строка in (разбор.get("claims") or []) for и in (строка.get("sources") or [])
-        ]
-        сжатые[атрибут] = {
+        строки = разбор.get("claims") or []
+        источники = [и for строка in строки for и in (строка.get("sources") or [])]
+        значения = list(разбор.get("values") or [строка.get("value") for строка in строки])
+        спорно = разбор.get("outcome") == FAIL
+        сжатое: dict = {
             "outcome": разбор.get("outcome"),
-            "values": разбор.get("values")
-            or [строка.get("value") for строка in (разбор.get("claims") or [])],
+            "values": значения if спорно else [_коротко(v) for v in значения[:КРАТКО_ЗНАЧЕНИЙ]],
             "best_tier": min(
-                (строка.get("best_tier", "") for строка in (разбор.get("claims") or [])),
+                (строка.get("best_tier", "") for строка in строки),
                 key=lambda t: TIERS.index(t) if t in TIERS else len(TIERS),
                 default="",
             ),
-            "sources": len(источники),
+            "sources": len({str(и.get("url") or "") for и in источники}),
             "newest": max((str(и.get("stated_on") or "") for и in источники), default=""),
-            "read_first_hand": any(и.get("read_directly") for и in источники),
-            "example_url": ([и.get("url") for и in источники] or [""])[:КРАТКО_ИСТОЧНИКОВ],
         }
-        for ключ in ("about", "scope", "scoped_elsewhere"):
+        if len(значения) > КРАТКО_ЗНАЧЕНИЙ and not спорно:
+            сжатое["values_total"] = len(значения)
+        совет = разбор.get("recommended") or {}
+        if совет:
+            сжатое["recommended"] = {
+                "value": совет.get("value"),
+                "tier": совет.get("tier"),
+                "rule": совет.get("rule"),
+            }
+        if разбор.get("possibly_stale"):
+            сжатое["possibly_stale"] = True
+        for ключ in ("about", "scope"):
             if ключ in разбор:
-                сжатые[атрибут][ключ] = разбор[ключ]
+                сжатое[ключ] = разбор[ключ]
+        if разбор.get("scoped_elsewhere"):
+            сжатое["scoped_elsewhere"] = len(разбор["scoped_elsewhere"])
+        сжатые[атрибут] = сжатое
     return сжатые
 
 
@@ -1915,7 +2296,8 @@ def stale(
     path: Path | None = None,
     model: str = "",
     full: bool = False,
-    top: int = STALE_TOP,
+    top: int | None = None,
+    offset: int = 0,
 ) -> dict:
     """Which claims are old enough to need a fresh look on the web.
 
@@ -1927,8 +2309,13 @@ def stale(
         тихая подмена: `days=-5` раньше объявлял протухшей ВСЮ базу.
     :param model: только эта модель (все её написания, `modelnames`).
         Неизвестное имя — третий исход с подсказкой, а не пустая «всё свежо».
-    :param full: все строки. По умолчанию — КРАТКАЯ форма: счёт по каждому
+    :param full: все поля строк. По умолчанию — КРАТКАЯ форма: счёт по каждому
         списку, счёт по моделям и первые `top` строк каждого списка.
+    :param top: строк на список: по умолчанию `STALE_TOP` в краткой форме и
+        `STALE_FULL_PAGE` в полной.
+    :param offset: с какой строки каждого списка начинать (страница). Полная
+        форма ТОЖЕ постранична (валидатор G11: `days=0, full=True` — 762 КБ):
+        следующая страница названа в `next_offset`.
     """
     if isinstance(days, bool) or not isinstance(days, int) or days < 0:
         return {
@@ -1943,7 +2330,9 @@ def stale(
             "blocked_source": [],
         }
     if isinstance(top, bool) or not isinstance(top, int) or top < 1:
-        top = STALE_TOP
+        top = STALE_FULL_PAGE if full else STALE_TOP
+    if isinstance(offset, bool) or not isinstance(offset, int) or offset < 0:
+        offset = 0
     target = path or DEFAULT_FACTS_PATH
     facts = load_facts(target)
     имя = str(model or "").strip()
@@ -1971,12 +2360,40 @@ def stale(
     итог = _stale_rows(facts, days)
     if имя:
         итог["model"] = имя
-    return итог if full else _stale_brief(итог, top)
+    return _stale_page(итог, top, offset) if full else _stale_brief(итог, top, offset)
 
 
-def _stale_brief(итог: dict, top: int) -> dict:
-    """Краткая форма: счёт целиком, строки — первые `top` каждого списка (Р2)."""
-    списки = ("stale", "undated", "published_and_old", "blocked_source")
+#: Строк на список в ПОЛНОЙ форме `stale`, если `top` не задан. ВЫБРАНО 100:
+#: строка полной формы — около 250 байт, четыре списка по сто — около 100 КБ,
+#: против 762 КБ всей очереди одним ответом (валидатор G11).
+STALE_FULL_PAGE = 100
+
+_STALE_LISTS = ("stale", "undated", "published_and_old", "blocked_source")
+
+
+def _stale_page(итог: dict, top: int, offset: int) -> dict:
+    """Полная форма постранично: строки целиком, но не больше `top` на список."""
+    счёт = {ключ: len(итог.get(ключ) or []) for ключ in _STALE_LISTS}
+    if offset == 0 and all(n <= top for n in счёт.values()):
+        return итог
+    страница = dict(итог)
+    for ключ in _STALE_LISTS:
+        страница[ключ] = list(итог.get(ключ) or [])[offset : offset + top]
+    страница["counts"] = счёт
+    страница["offset"] = offset
+    дальше = offset + top
+    страница["next_offset"] = дальше if any(n > дальше for n in счёт.values()) else None
+    страница["truncated"] = True
+    страница["full_answer"] = (
+        f"ПОЛНАЯ форма постранично: строки {offset}–{дальше - 1} каждого списка, полный "
+        "счёт — в `counts`; следующая страница — offset=next_offset."
+    )
+    return страница
+
+
+def _stale_brief(итог: dict, top: int, offset: int = 0) -> dict:
+    """Краткая форма: счёт целиком, строки — `top` каждого списка с `offset` (Р2)."""
+    списки = _STALE_LISTS
     кратко = dict(итог)
     счёт = {ключ: len(итог.get(ключ) or []) for ключ in списки}
     по_моделям: dict[str, int] = {}
@@ -1984,11 +2401,16 @@ def _stale_brief(итог: dict, top: int) -> dict:
         for row in итог.get(ключ) or []:
             по_моделям[str(row["model"])] = по_моделям.get(str(row["model"]), 0) + 1
     for ключ in списки:
-        кратко[ключ] = list(итог.get(ключ) or [])[:top]
+        кратко[ключ] = list(итог.get(ключ) or [])[offset : offset + top]
     кратко["counts"] = счёт
     кратко["by_model"] = dict(sorted(по_моделям.items(), key=lambda kv: (-kv[1], kv[0]))[:top])
     кратко["models_with_work"] = len(по_моделям)
-    обрезано = any(счёт[ключ] > top for ключ in списки)
+    обрезано = offset > 0 or any(счёт[ключ] > offset + top for ключ in списки)
+    if обрезано:
+        кратко["offset"] = offset
+        кратко["next_offset"] = (
+            offset + top if any(счёт[ключ] > offset + top for ключ in списки) else None
+        )
     кратко["truncated"] = обрезано
     if обрезано:
         кратко["full_answer"] = (

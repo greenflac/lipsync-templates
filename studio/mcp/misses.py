@@ -56,7 +56,7 @@ from datetime import date
 from pathlib import Path
 from typing import Any, Iterable
 
-from studio.selfrag.modelnames import fold
+from studio.selfrag.modelnames import MAX_NAME_LENGTH, fold
 
 from lipsync.fork_identity import FAIL, PASS, UNMEASURED
 
@@ -190,6 +190,12 @@ def problems(row: dict[str, Any]) -> list[str]:
     for field in REQUIRED:
         if not str(row.get(field) or "").strip():
             found.append(f"{field}: обязательное поле пустое или отсутствует")
+    # Имя длиннее любого имени модели — не вопрос о модели, а мусор на входе
+    # (валидатор G11: `model_advice('a'*5000)`). В журнал, который считает
+    # покрытие, он не ложится: иначе один такой вызов — пять килобайт и
+    # «модель», о которой спрашивали.
+    if len(str(row.get("model") or "")) > MAX_NAME_LENGTH:
+        found.append(f"model: длиннее {MAX_NAME_LENGTH} знаков — не имя модели")
     outcome = str(row.get("outcome") or "")
     if outcome and outcome not in OUTCOMES:
         found.append(f"outcome: {outcome!r} не из {OUTCOMES}")

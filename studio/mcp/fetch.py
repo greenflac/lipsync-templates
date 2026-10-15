@@ -64,6 +64,7 @@ import html.parser
 import http.client
 import ipaddress
 import json
+import os
 import re
 import socket
 import urllib.error
@@ -85,6 +86,9 @@ __all__ = [
     "последние_состояния",
     "закрыт_политикой",
     "DENIED_PATH",
+    "DENIED_PATH_ENV",
+    "NO_JOURNAL_ENV",
+    "denied_path",
     "MEASURED_ON",
 ]
 
@@ -98,6 +102,38 @@ TIMEOUT_SECONDS = 25
 
 #: Where refusals accumulate, so the allowlist request writes itself.
 DENIED_PATH = Path(__file__).resolve().parents[1] / "knowledge" / "denied_hosts.jsonl"
+#: The value `DENIED_PATH` had at import. A test that patches `DENIED_PATH`
+#: has named a file on purpose, and that intent beats the environment below.
+_DEFAULT_DENIED_PATH = DENIED_PATH
+
+#: ЖУРНАЛ ОТКАЗОВ — ДРУГОЙ ФАЙЛ ИЛИ НИКАКОГО. НАЙДЕНО валидатором 2026-10-14
+#: (G13): `search_web` и `fetch_url` — инструменты ЧТЕНИЯ, а дописывали в
+#: отслеживаемый git-ом `denied_hosts.jsonl` даже при `STUDIO_NO_JOURNAL=1`,
+#: которым остальной пакет (`misses.journal_path`) уже выключал свои журналы.
+#: Одно и то же слово среды значило «не пишите» для одного журнала и ничего —
+#: для другого. Теперь:
+#:   STUDIO_DENIED_PATH=<файл>  — писать и читать отказы там;
+#:   STUDIO_NO_JOURNAL=1        — побочные записи (`note_denial`, `note_open`)
+#:                                не делаются вовсе; чтение идёт как обычно.
+#: Без обеих переменных — прежнее поведение, сессии владельца не меняются.
+DENIED_PATH_ENV = "STUDIO_DENIED_PATH"
+NO_JOURNAL_ENV = "STUDIO_NO_JOURNAL"
+
+
+def denied_path(*, writing: bool = False, environ: Any = None) -> Path | None:
+    """Где лежит журнал отказов. None — только для записи, когда она выключена.
+
+    Развилка вынесена в одно место (Е1): все пять читателей и писателей
+    журнала в этом модуле спрашивают путь здесь.
+    """
+    среда = os.environ if environ is None else environ
+    if DENIED_PATH is not _DEFAULT_DENIED_PATH:
+        return DENIED_PATH
+    if writing and str(среда.get(NO_JOURNAL_ENV, "") or "").strip() not in ("", "0"):
+        return None
+    другой = str(среда.get(DENIED_PATH_ENV, "") or "").strip()
+    return Path(другой).expanduser() if другой else DENIED_PATH
+
 
 #: The proxy's signature for an organisation policy denial, as observed:
 #: `URLError(<urlopen error Tunnel connection failed: 403 Forbidden>)`.
@@ -183,7 +219,29 @@ def имя_хоста_годно(host: str) -> bool:
     метки = ascii_имя.split(".")
     if len(метки) < 2:
         return False
+    # ЦИФРОВАЯ ВЕРХНЯЯ МЕТКА — ЭТО НЕ ИМЯ, А НЕГОДНЫЙ IP. НАЙДЕНО валидатором
+    # 2026-10-14 (G13): `reachable_hosts('999.999.999.999')` проходил как имя
+    # хоста (каждая метка — цифры, а цифры метке разрешены) и уезжал в журнал
+    # отказов. Верхняя метка из одних цифр не бывает доменом (RFC 3696 §2), а
+    # годный IP-литерал уже принят выше — значит, это IP с ошибкой.
+    if метки[-1].isdigit():
+        return False
     return all(_МЕТКА.match(м) for м in метки)
+
+
+def негодный_ip(host: str) -> bool:
+    """Похоже на IP-литерал, но адресом не является (`999.999.999.999`, `1.2.3`)."""
+    имя = str(host or "").strip().lower().strip("[]").rstrip(".")
+    if not имя:
+        return False
+    try:
+        ipaddress.ip_address(имя)
+        return False
+    except ValueError:
+        pass
+    if ":" in имя:
+        return bool(re.fullmatch(r"[0-9a-f:.%]+", имя))
+    return bool(re.fullmatch(r"[0-9.]+", имя)) and "." in имя
 
 
 def _host(url: str) -> str:
@@ -224,6 +282,8 @@ def нормализовать_хост(text: str) -> tuple[str, str]:
         return "", f"{raw!r}: схема {parts.scheme!r}, а пробуются только http и https"
     host = _host(кандидат)
     if not host:
+        if негодный_ip(parts.hostname or ""):
+            return "", f"{raw!r} похоже на IP-адрес, но адресом не является (invalid IP literal)"
         return "", f"{raw!r} не похоже на имя хоста"
     return host, ""
 
@@ -559,7 +619,12 @@ def note_denial(url: str, reason: str, why_wanted: str = "", *, incidental: bool
         "state": STATE_REFUSED,
         "first_seen": date.today().isoformat(),
     }
-    DENIED_PATH.parent.mkdir(parents=True, exist_ok=True)
+    журнал = denied_path(writing=True)
+    if журнал is None:
+        # Запись выключена (`STUDIO_NO_JOURNAL`): отказ НЕ теряется для
+        # вызывающего — он в ответе, — но в файл не идёт.
+        return {"recorded": False, "host": host, "journal": "off"}
+    журнал.parent.mkdir(parents=True, exist_ok=True)
     # This file is append-only history, and three things make a new row worth
     # appending:
     #
@@ -607,7 +672,7 @@ def note_denial(url: str, reason: str, why_wanted: str = "", *, incidental: bool
     promoted = not fresh and known[host] and not incidental
     restated = not fresh and not incidental and why_wanted.strip() != latest_reason.strip()
     if fresh or promoted or restated:
-        with DENIED_PATH.open("a", encoding="utf-8") as handle:
+        with журнал.open("a", encoding="utf-8") as handle:
             handle.write(json.dumps(row, ensure_ascii=False) + "\n")
     return {"recorded": fresh or promoted or restated, "host": host}
 
@@ -646,7 +711,7 @@ def последние_состояния(denied: Path | None = None) -> dict[st
     (274 хоста против 210 закрытых, ИЗМЕРЕНО 2026-09-06), и однажды это уже
     стоило независимой проверке ошибки в 983 раза.
     """
-    путь = DENIED_PATH if denied is None else denied
+    путь = (denied_path() or DENIED_PATH) if denied is None else denied
     try:
         текст = путь.read_text(encoding="utf-8")
     except OSError:
@@ -710,8 +775,11 @@ def note_open(url: str) -> dict:
     # 2026-08-27, the day `unwanted` was added, by the test that expected it.
     if latest == "" or latest == STATE_OPEN:
         return {"recorded": False, "host": host}
-    DENIED_PATH.parent.mkdir(parents=True, exist_ok=True)
-    with DENIED_PATH.open("a", encoding="utf-8") as handle:
+    журнал = denied_path(writing=True)
+    if журнал is None:
+        return {"recorded": False, "host": host, "journal": "off"}
+    журнал.parent.mkdir(parents=True, exist_ok=True)
+    with журнал.open("a", encoding="utf-8") as handle:
         handle.write(
             json.dumps(
                 {
@@ -772,8 +840,11 @@ def note_unwanted(host: str, reason: str) -> dict:
             "note": f"{name} was already withdrawn from the ask",
             "host": name,
         }
-    DENIED_PATH.parent.mkdir(parents=True, exist_ok=True)
-    with DENIED_PATH.open("a", encoding="utf-8") as handle:
+    # Явное действие оператора, а не побочный эффект чтения: пишется и при
+    # `STUDIO_NO_JOURNAL`, но в тот файл, который назван средой.
+    журнал = denied_path() or DENIED_PATH
+    журнал.parent.mkdir(parents=True, exist_ok=True)
+    with журнал.open("a", encoding="utf-8") as handle:
         handle.write(
             json.dumps(
                 {
@@ -797,10 +868,11 @@ def note_unwanted(host: str, reason: str) -> dict:
 
 
 def _read_denied() -> list[dict]:
-    if not DENIED_PATH.is_file():
+    журнал = denied_path() or DENIED_PATH
+    if not журнал.is_file():
         return []
     rows: list[dict] = []
-    for line in DENIED_PATH.read_text(encoding="utf-8").splitlines():
+    for line in журнал.read_text(encoding="utf-8").splitlines():
         line = line.strip()
         if not line or line.startswith("//"):
             continue
@@ -955,7 +1027,15 @@ def fetch(
             return _ssrf_refusal(target, отказ_ssrf)
         reason = str(getattr(error, "reason", error))
         if _DENIAL.search(reason):
-            note_denial(target, reason, why_wanted, incidental=incidental)
+            записано = note_denial(target, reason, why_wanted, incidental=incidental)
+            # Нота не обещает записи, которой не было: при `STUDIO_NO_JOURNAL`
+            # журнал выключен, и «Recorded» было бы неправдой.
+            if записано.get("journal") == "off":
+                хвост = (
+                    f"NOT recorded: the denial journal is off in this process ({NO_JOURNAL_ENV})."
+                )
+            else:
+                хвост = "Recorded — run `wanted()` for the list to ask them for."
             return {
                 "outcome": UNMEASURED,
                 "checked": 0,
@@ -964,8 +1044,7 @@ def fetch(
                 "note": (
                     f"{host} is refused by this organisation's egress policy "
                     f"({reason}). Not retried and not routed around: that is the "
-                    "policy owner's decision. Recorded — run `wanted()` for the "
-                    "list to ask them for."
+                    f"policy owner's decision. {хвост}"
                 ),
                 "host": host,
                 "status": None,

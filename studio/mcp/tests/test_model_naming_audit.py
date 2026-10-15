@@ -164,11 +164,18 @@ class П3_Семьи(База):
         )
 
     def test_незнакомый_вариант_не_получает_ответ_семьи(self) -> None:
-        """И5: имени нет в базе — ответ семьи ему не приписывается."""
+        """И5: имени нет в базе — ответ семьи ему не приписывается.
+
+        ПЕРЕСМОТРЕНО 2026-10-14 (валидатор G5/G9): исход по-прежнему `could not
+        measure` и собственных утверждений нет, но семья названа и её строки
+        едут КОНТЕКСТОМ с пометкой scope=family — вместо «вы опечатались»."""
         got = advice.advise("veo-3.1-ultra", "price", path=self.семья())
         self.assertEqual(got["outcome"], "could not measure")
-        self.assertEqual(got["family"], {})
-        self.assertEqual(got["family_claims"], {})
+        self.assertEqual(got["reason"], "variant_not_recorded")
+        self.assertEqual(got["claims"], {})
+        self.assertEqual(got["family"]["role"], "unrecorded_variant")
+        self.assertEqual(got["family"]["family_name"], "veo-3.1")
+        self.assertEqual(got["family_claims"]["price_per_second@veo-3.1"]["scope"], "family")
 
     def test_семья_без_своих_строк_отвечает_вариантами(self) -> None:
         self.база(

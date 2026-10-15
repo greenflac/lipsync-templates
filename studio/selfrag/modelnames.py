@@ -49,7 +49,16 @@ from dataclasses import dataclass, field
 from lipsync.fork_identity import PASS, UNMEASURED
 
 __all__ = [
+    "MAX_NAME_LENGTH",
     "MIN_SHARED_PREFIX",
+    "ROLE_ADDON",
+    "ROLE_COMMUNITY",
+    "ROLE_VENDOR_VARIANT",
+    "SYNONYM_EVIDENCE",
+    "lineage",
+    "name_role",
+    "synonym_evidence",
+    "unrecorded_variant",
     "NOT_IN_BASE",
     "NO_NAME_ASKED",
     "RESOLVED",
@@ -182,6 +191,8 @@ ALIASES: dict[str, str] = {
         "wan-ai",
         "alibaba",
         "tencent",
+        "luma",
+        "lumaai",
     }
 )
 
@@ -204,6 +215,11 @@ ALIASES: dict[str, str] = {
         "kuaishou",
         "tencent",
         "elevenlabs",
+        # Luma пишет свои модели `Ray2`, `Ray3`; площадки — `luma-ray-…`
+        # (`luma-ray-3.2-i2v`, `luma-ray-2-t2v` в базе). Срез — только против
+        # списка известных (см. выше), поэтому `ray3` ничего чужого не склеит.
+        "luma",
+        "lumaai",
     }
 )
 
@@ -257,11 +273,67 @@ ALIASES: dict[str, str] = {
     (("gemini", "image", "3", "pro"), ("nano", "banana", "pro")),
     # HappyHorse пишут и слитно, и через дефис; в базе — `happyhorse_1_0`.
     (("happy", "horse"), ("happyhorse",)),
+    # MiniMax H3 = Hailuo 3 (валидатор G9, 2026-10-14). Свидетельство вендорскими
+    # строками: схема Runway `docs.dev.runwayml.com/openapi.json` держит модель
+    # `hailuo3` («Hailuo 3.0 supports 768p and 2k») рядом с `h3_max` («MiniMax
+    # H3 Max supports 480p and 768p») — одна линейка; набор разрешений `768P / 2K`
+    # и предел 15 с совпадают со страницей самого MiniMax
+    # (`platform.minimax.io/docs/guides/video-generation`, model_id `MiniMax-H3`).
+    (("hailuo", "3"), ("minimax", "h", "3")),
+    (("minimax", "hailuo", "3"), ("minimax", "h", "3")),
+    # sync. называет свои модели `lipsync-2`, `lipsync-2-pro`, `lipsync-1.9.0-beta`
+    # (поле `model` API sync.so); fal держит их как `fal-ai/sync-lipsync/v2/pro`
+    # и пишет «Sync Lipsync 2 Pro model» (строка `positioning` в базе). Только
+    # с номером версии: голое `lipsync` — слово, а не модель (И5).
+    (("lipsync", "2"), ("sync", "lipsync", "2")),
+    (("lipsync", "1.9"), ("sync", "lipsync", "1.9")),
+    # ElevenLabs называет продукт «Eleven Music» (elevenlabs.io/music), fal —
+    # `fal-ai/elevenlabs/music`; в базе — `elevenlabs-music`.
+    (("elevenlabs", "music"), ("eleven", "music")),
     # `h3-max` -> `minimax-h3-max` НАРОЧНО НЕ ПЕРЕПИСЬ. Голден-задача g15
     # (решение владельца): «двигаться подсказкой можно, фактом — нет». Имя
     # находится выводом по единственному соседу (`HOW_NEIGHBOUR`), и ответ
     # по нему идёт с исходом `could not measure`, а не `pass`.
 )
+
+#: СВИДЕТЕЛЬСТВО К КАЖДОЙ ПЕРЕПИСИ, коротко и машиночитаемо (валидатор G9): оно
+#: едет в ответ (`Resolution.evidence`), когда имя разрешилось через перепись, —
+#: спросивший видит, ПОЧЕМУ `hailuo3` отвечается фактами о `minimax-h3`.
+#: Ключ — левая часть переписи. Перепись без строки здесь — красный тест.
+SYNONYM_EVIDENCE: dict[tuple[str, ...], str] = {
+    ("kling", "video"): "fal: каталог `fal-ai/kling-video/v3/...` = Kling 3.0",
+    (
+        "elevenlabs",
+        "tts",
+        "eleven",
+    ): "ElevenLabs API id `eleven_v3`; fal `elevenlabs/tts/eleven-v3`",
+    ("elevenlabs", "eleven"): "ElevenLabs API id `eleven_v3`",
+    ("elevenlabs", "tts", "multilingual"): "ElevenLabs API id `eleven_multilingual_v2`",
+    ("elevenlabs", "multilingual"): "ElevenLabs API id `eleven_multilingual_v2`",
+    ("elevenlabs", "turbo"): "ElevenLabs API id `eleven_turbo_v2_5`",
+    ("elevenlabs", "flash"): "ElevenLabs API id `eleven_flash_v2_5`",
+    ("elevenlabs", "3"): "ElevenLabs «Eleven v3» = API id `eleven_v3`",
+    ("ltx", "2", "3"): "Lightricks пишет «LTX-2.3», HF-слаги — `ltx-2-3`",
+    ("gemini", "3.1", "flash", "image"): "Google: Nano Banana 2 = Gemini 3.1 Flash Image",
+    ("gemini", "image", "3.1", "flash"): "Runway `gemini_image3.1_flash` = Nano Banana 2",
+    ("gemini", "3", "pro", "image"): "fal: nano-banana-pro.underlying_model = Gemini 3 Pro Image",
+    ("gemini", "image", "3", "pro"): "Runway `gemini_image3_pro` = Nano Banana Pro",
+    ("happy", "horse"): "HappyHorse пишут слитно и через дефис; в базе `happyhorse_1_0`",
+    ("hailuo", "3"): (
+        "Runway openapi: `hailuo3` («Hailuo 3.0 supports 768p and 2k») в одной линейке с "
+        "`h3_max` («MiniMax H3 Max»); 768P/2K и 15 с — как у MiniMax-H3 на platform.minimax.io"
+    ),
+    ("minimax", "hailuo", "3"): "то же, что `hailuo3`: Hailuo 3 = MiniMax H3",
+    (
+        "lipsync",
+        "2",
+    ): "sync.so API: model `lipsync-2` / `lipsync-2-pro`; fal `sync-lipsync/v2(/pro)`",
+    ("lipsync", "1.9"): "sync.so API: model `lipsync-1.9.0-beta`; fal `sync-lipsync` 1.9",
+    (
+        "elevenlabs",
+        "music",
+    ): "ElevenLabs «Eleven Music» (elevenlabs.io/music); fal `elevenlabs/music`",
+}
 
 #: КУРИРУЕМЫЕ ХВОСТЫ, НЕ МЕНЯЮЩИЕ МОДЕЛИ. Vertex называет GA-версию модели
 #: `<имя>-generate-001` (`veo-3.1-generate-001`, `imagen-4.0-generate-001` —
@@ -304,8 +376,28 @@ def _заменить(звенья_: list[str], было: tuple[str, ...], ст�
     return out
 
 
+def _какая_перепись(звенья_: tuple[str, ...]) -> tuple[str, ...]:
+    """Левая часть первой сработавшей переписи начала; пусто — ни одна."""
+    for было, _стало in ПЕРЕПИСИ_НАЧАЛА:
+        if звенья_[: len(было)] == было:
+            return было
+    return ()
+
+
+def synonym_evidence(name: str) -> str:
+    """Свидетельство курируемой переписи, через которую прошло имя; пусто — нет.
+
+    `hailuo3` -> строка о схеме Runway. Печатается в ответе рядом с
+    разрешением: перепись — решение об идентичности, и спросивший обязан
+    видеть, на чём оно стоит (Е2).
+    """
+    сырые = tokens(name, _без_переписи=True)
+    было = _какая_перепись(tuple(сырые))
+    return SYNONYM_EVIDENCE.get(было, "") if было else ""
+
+
 @lru_cache(maxsize=16384)
-def tokens(name: str) -> tuple[str, ...]:
+def tokens(name: str, _без_переписи: bool = False) -> tuple[str, ...]:
     """Имя -> звенья: `veo3.1-image-to-video` -> (`veo`, `3.1`, `i2v`).
 
     Звенья — то, по чему решается СЕМЬЯ (`family`, `parent`): `veo-3` и
@@ -334,10 +426,12 @@ def tokens(name: str) -> tuple[str, ...]:
             звенья_.append(ч)
     for было, стало in СИНОНИМЫ_ЗВЕНЬЕВ:
         звенья_ = _заменить(звенья_, было, стало)
-    for было, стало in ПЕРЕПИСИ_НАЧАЛА:
-        if tuple(звенья_[: len(было)]) == было:
-            звенья_ = list(стало) + звенья_[len(было) :]
-            break
+    if _без_переписи:
+        return tuple(звенья_)
+    было_ = _какая_перепись(tuple(звенья_))
+    if было_:
+        стало = dict(ПЕРЕПИСИ_НАЧАЛА)[было_]
+        звенья_ = list(стало) + звенья_[len(было_) :]
     for хвост in ХВОСТЫ_ВЫПУСКА:
         if len(звенья_) > len(хвост) and tuple(звенья_[-len(хвост) :]) == хвост:
             звенья_ = звенья_[: -len(хвост)]
@@ -624,6 +718,9 @@ class Resolution:
     #: одной из сторон), `only_version` (единственный сосед — версия). Пусто —
     #: не разрешилось.
     how: str = ""
+    #: Свидетельство курируемой переписи, через которую прошло спрошенное имя
+    #: или одно из найденных написаний (`SYNONYM_EVIDENCE`); пусто — без неё.
+    evidence: str = ""
 
 
 def _единственный_сосед(
@@ -711,6 +808,7 @@ def resolve(
     # (см. шапку модуля), а объявить победителя без свидетельства значит
     # заморозить случайный выбор в ответе.
     canonical = asked if asked in names else names[0]
+    свидетельство = next((e for e in (synonym_evidence(n) for n in (asked, *names)) if e), "")
     как = {
         HOW_EXACT: "",
         HOW_VENDOR: " (разрешено по вендору впереди спрошенного имени)",
@@ -726,8 +824,10 @@ def resolve(
         checked=len(names),
         spellings_seen=len(every),
         how=how,
+        evidence=свидетельство,
         note=(
             f"{asked!r} разрешено в {canonical!r}{как}"
+            + (f" [тождество по курируемой таблице: {свидетельство}]" if свидетельство else "")
             + (
                 f"; та же модель записана и как {', '.join(n for n in names if n != canonical)}"
                 if len(names) > 1
@@ -762,3 +862,156 @@ def from_portal_id(identifier: str) -> str:
     if куски and куски[0] in ("fal-ai", "fal"):
         куски = куски[1:]
     return "-".join(к for к in куски if к)
+
+
+#: ДЛИНА ИМЕНИ, ПОСЛЕ КОТОРОЙ ЭТО НЕ ИМЯ (валидатор G11, 2026-10-14).
+#: `model_advice('a'*5000)` возвращал 26 КБ: имя эхом стояло в ноте, в
+#: `resolved_as` и в подсказках. ВЫБРАНО 120: самое длинное имя живой базы —
+#: 66 знаков (`ltx-2-3-all-in-one-workflow-for-rtx-3060-with-12-gb-vram-32-gb-ram`),
+#: самый длинный путь площадки с вендором (`fal-ai/bytedance/seedance/v1/pro/
+#: image-to-video`) — 48. Сторожится мутацией в обе стороны: 66 знаков
+#: проходят, 121 — нет.
+MAX_NAME_LENGTH = 120
+
+#: РОЛЬ ИМЕНИ В СЕМЬЕ (валидатор G10). Вариант вендора отвечает за семью и
+#: семья за него; общинное (дообучение, слияние, «uncensored», workflow,
+#: LoRA с Civitai/HF) и надстройка (ControlNet, апскейлер, энкодер, VAE) — нет:
+#: это ДРУГИЕ веса или другая задача, и их строки не говорят о семье.
+ROLE_VENDOR_VARIANT = "vendor_variant"
+ROLE_COMMUNITY = "community"
+ROLE_ADDON = "addon"
+
+#: Слова, по которым имя — общинная работа, а не вариант вендора. Звеньями,
+#: не подстрокой (И5: `merge` внутри чужого слова не считается).
+COMMUNITY_WORDS: frozenset[str] = frozenset(
+    {
+        "workflow",
+        "workflows",
+        "lora",
+        "loras",
+        "merge",
+        "merged",
+        "uncensored",
+        "nsfw",
+        "finetune",
+        "finetuned",
+        "abliterated",
+        "aio",
+        "gguf",
+        "custom",
+        "hybrid",
+        "fusionx",
+    }
+)
+#: Слова, по которым имя — надстройка над семьёй, а не её вариант.
+ADDON_WORDS: frozenset[str] = frozenset(
+    {
+        "controlnet",
+        "upscaler",
+        "upscale",
+        "encoder",
+        "decoder",
+        "vae",
+        "enhancer",
+        "enhancers",
+        "adapter",
+    }
+)
+
+#: Слова-ступени линейки вендора: `veo-3.1-fast`, `seedance-2.0-fast`,
+#: `minimax-speech-02-hd`. Имя, которого в базе нет, но которое — семья плюс
+#: ТОЛЬКО такие звенья, правдоподобно вариант, и ответ о нём — «семья есть,
+#: о варианте не записано», а не «опечатка» (валидатор G5/G9). Звено вне
+#: списка (`veo-3.1-banana`) — не вариант, а незнакомое имя (И5).
+TIER_WORDS: frozenset[str] = frozenset(
+    {
+        "fast",
+        "lite",
+        "pro",
+        "turbo",
+        "hd",
+        "max",
+        "standard",
+        "std",
+        "flash",
+        "ultra",
+        "mini",
+        "plus",
+        "preview",
+        "i2v",
+        "t2v",
+        "t2i",
+        "s2v",
+        "r2v",
+        "edit",
+    }
+)
+
+
+def name_role(family_name: str, name: str) -> str:
+    """Роль имени в семье ПО СЛОВАМ имени; пусто — по словам не решается.
+
+    Общинное слово сильнее надстроечного: `flux2-klein-9b-uncensored-text-encoder`
+    — общинная работа, хоть и энкодер. Решение по ИСТОЧНИКАМ (Civitai, чужая
+    организация HF) — в `FactStore.variant_role`: здесь сети и строк нет.
+    """
+    del family_name  # звенья семьи в словах-ролях не встречаются
+    звенья_ = set(tokens(name))
+    if звенья_ & COMMUNITY_WORDS:
+        return ROLE_COMMUNITY
+    if звенья_ & ADDON_WORDS:
+        return ROLE_ADDON
+    return ""
+
+
+def unrecorded_variant(name: str, known: Iterable[str]) -> tuple[list[str], tuple[str, ...]]:
+    """(написания семьи, лишние звенья) для имени, которого в базе НЕТ.
+
+    `veo-3.1-fast` -> (['veo-3.1', …], ('fast',)). Пусто, если семьи нет или
+    лишние звенья не все из `TIER_WORDS` (тогда это не вариант, а незнакомое
+    имя). Вывод, а не тождество: ответ по нему — `could not measure`.
+    """
+    семья = parent(name, known)
+    if not семья:
+        return [], ()
+    ключ = fold(семья[0])
+    for звенья_ in (tokens(name), _без_вендора(tokens(name))):
+        for k in range(len(звенья_) - 1, 0, -1):
+            if fold_tokens(звенья_[:k]) == ключ or _стержень_звеньев(звенья_[:k]) == ключ:
+                лишнее = tuple(звенья_[k:])
+                if лишнее and all(з in TIER_WORDS for з in лишнее):
+                    return list(семья), лишнее
+                return [], ()
+    return [], ()
+
+
+def _стержень_звеньев(звенья_: Sequence[str]) -> str:
+    без = _без_вендора(звенья_)
+    return fold_tokens(без) if без != tuple(звенья_) else ""
+
+
+def lineage(name: str, known: Iterable[str], *, limit: int = 8) -> list[str]:
+    """ДРУГИЕ ВЕРСИИ той же линейки: `seedream-4.5` -> `seedream-4.0`, …
+
+    Линейка — звенья имени до первого голого номера версии (после вендора):
+    `minimax-speech-2.6-hd` -> (`speech`). Другая версия — НЕ та же модель
+    (И5): эти имена идут ответом отдельным списком с пометкой «другая
+    версия», а не подсказкой «вы, вероятно, опечатались».
+    """
+    звенья_ = _без_вендора(tokens(name))
+    i = next((k for k, з in enumerate(звенья_) if _ГОЛАЯ_ВЕРСИЯ.fullmatch(з)), -1)
+    if i < 1:
+        return []
+    линия = tuple(звенья_[:i])
+    своя_версия = звенья_[i]
+    out: list[str] = []
+    for candidate in sorted(set(known)):
+        чужие = _без_вендора(tokens(candidate))
+        if (
+            len(чужие) > i
+            and tuple(чужие[:i]) == линия
+            and _ГОЛАЯ_ВЕРСИЯ.fullmatch(чужие[i])
+            and чужие[i] != своя_версия
+        ):
+            out.append(candidate)
+    return out[:limit]

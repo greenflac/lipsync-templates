@@ -6,6 +6,7 @@
     python scripts/measurement.py show mp-1234abcd
     python scripts/measurement.py approve mp-1234abcd --by karxism
     python scripts/measurement.py decline mp-1234abcd --by karxism --note "too dear"
+    python scripts/measurement.py close-answered [--dry-run]  # the base now knows
     python scripts/measurement.py record  mp-1234abcd \\
         --value "0.19 cosine drift" --url https://... --on 2026-08-27 \\
         --evidence "frame 1 to frame 144 ArcFace cosine 0.19" --cost 0.42
@@ -76,6 +77,9 @@ def main(argv: list[str]) -> int:
         )
         decision.add_argument("--note", default="")
 
+    closing = sub.add_parser("close-answered")
+    closing.add_argument("--dry-run", action="store_true")
+
     result = sub.add_parser("record")
     result.add_argument("id")
     result.add_argument("--value", required=True)
@@ -92,6 +96,11 @@ def main(argv: list[str]) -> int:
             _print(row)
         print(f"\n{out['note']}")
         # An empty ledger is not a failed listing; it is a listing of nothing.
+        return 0
+
+    if args.command == "close-answered":
+        out = proposal.close_answered(dry_run=args.dry_run)
+        print(f"{out['outcome']}: {out['note']}")
         return 0
 
     if args.command == "show":

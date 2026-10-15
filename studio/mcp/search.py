@@ -78,7 +78,11 @@ So the 2026-08-27 line above that lists `google.serper.dev` as closed is no
 longer true; the policy changed under it. Backends now run in this order,
 each only when its key is set, and the next is tried when one cannot answer:
 
-    gemini → serper → programmable-search → brave → tavily → exa
+    gemini → serper → programmable-search → brave → tavily → exa → yandex
+
+(yandex added 2026-10-14, opt-in only — see `YANDEX_ENDPOINT`.) A billing or
+quota refusal is remembered in the process for `NOT_SERVED_TTL_SECONDS`, and
+the backend is skipped — said so in `attempts` — instead of being asked again.
 
 Quota, billing and permission refusals (402, 429, 403, Tavily's 432/433, and
 "not enough credits" in any body) are `could not measure` with the real
@@ -91,16 +95,22 @@ monopoly; refusing to help because our own backends are down would be.
 
 from __future__ import annotations
 
+import base64
+import hashlib
 import json
+import os
+import re
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
+import xml.etree.ElementTree as ET
 from typing import Any, Callable
 
 from lipsync.fork_identity import FAIL, PASS, UNMEASURED
 
 from studio.mcp import credentials
-from studio.mcp.fetch import TIMEOUT_SECONDS, _DENIAL, note_denial
+from studio.mcp.fetch import NO_JOURNAL_ENV, TIMEOUT_SECONDS, _DENIAL, note_denial
 
 __all__ = [
     "search",
@@ -119,6 +129,12 @@ __all__ = [
     "BRAVE_KEY_ENV",
     "TAVILY_KEY_ENV",
     "EXA_KEY_ENV",
+    "YANDEX_ENDPOINT",
+    "YANDEX_KEY_ENV",
+    "YANDEX_FOLDER_ENV",
+    "YANDEX_OPT_IN_ENV",
+    "NOT_SERVED_TTL_SECONDS",
+    "forget_refusals",
     "SETUP",
     "client_side",
     "gemini_model",
@@ -139,6 +155,29 @@ SERPER_ENDPOINT = "https://google.serper.dev/search"
 BRAVE_ENDPOINT = "https://api.search.brave.com/res/v1/web/search"
 TAVILY_ENDPOINT = "https://api.tavily.com/search"
 EXA_ENDPOINT = "https://api.exa.ai/search"
+
+#: Yandex Search API v2, synchronous web search. MEASURED open from the
+#: development sandbox 2026-08-27 (an unauthenticated POST answered 400
+#: "query.search_type: Field is required", i.e. a schema hint, not a tunnel
+#: refusal). The request shape below is READ from the vendor's own API
+#: definition, 2026-10-14: `yandex/cloud/searchapi/v2/search_service.proto`
+#: and `search_query.proto` in github.com/yandex-cloud/cloudapi (fetched
+#: through raw.githubusercontent.com) — `WebSearchService.Search` is
+#: `POST /v2/web/search`, body `WebSearchRequest{query: SearchQuery{
+#: search_type (required), query_text (<=400, required), page}, group_spec,
+#: max_passages (1-5), l10n, folder_id, response_format}`, answer
+#: `WebSearchResponse{raw_data: bytes}` — XML by default. The proto's JSON
+#: mapping is camelCase and `bytes` travel as base64. NEVER CALLED LIVE: the
+#: key belongs to the owner's Yandex Direct work and the price per request is
+#: unverified, so the backend is LAST in the chain and OFF unless
+#: `STUDIO_SEARCH_ALLOW_YANDEX=1`.
+YANDEX_ENDPOINT = "https://searchapi.api.cloud.yandex.net/v2/web/search"
+YANDEX_KEY_ENV: tuple[str, ...] = ("YANDEX_SEARCH_API_KEY",)
+YANDEX_FOLDER_ENV: tuple[str, ...] = ("YANDEX_FOLDER_ID",)
+#: Opt-in, not opt-out: a key being present is NOT consent to spend it.
+YANDEX_OPT_IN_ENV = "STUDIO_SEARCH_ALLOW_YANDEX"
+#: The proto's own limit on `query_text` (`(length) = "<=400"`).
+YANDEX_QUERY_MAX = 400
 
 #: CHOSEN: the cheapest current Gemini that carries the search tool. Only the
 #: DEFAULT: `GEMINI_SEARCH_MODEL` overrides it, because a model name is exactly
@@ -191,6 +230,32 @@ _NOT_SERVED_WORDS = (
     "depleted",
 )
 
+#: КАК ДОЛГО ПОМНИТЬ ОТКАЗ АККАУНТА. НАЙДЕНО валидатором 2026-10-14 (G15):
+#: Gemini отвечал 402 на КАЖДЫЙ вызов — сервер каждый раз платил запросом и
+#: временем, чтобы узнать то же самое. Отказ по оплате или квоте не проходит
+#: за секунды. ВЫБРАНО: один час — квота у этих API считается в окнах от
+#: минуты до суток, а пополнение счёта делает человек; час не держит здоровый
+#: бэкенд выключенным надолго и не стучится в мёртвый на каждом вызове.
+#: Помнится в ПРОЦЕССЕ (не на диске) и по отпечатку ключа: новый ключ —
+#: новая попытка.
+NOT_SERVED_TTL_SECONDS = 3600.0
+
+#: Отказы, которые помнятся: оплата и квота. Права (`permission`) — нет:
+#: включить API для ключа можно за минуту, и ждать час после этого незачем.
+CACHED_REFUSALS: frozenset[str] = frozenset({"billing", "quota"})
+
+#: (бэкенд, отпечаток ключа) -> (до какого момента, вид отказа, его нота).
+_NOT_SERVED: dict[tuple[str, str], tuple[float, str, str]] = {}
+
+#: Часы — отдельным именем, чтобы тест мог их подменить.
+_now = time.monotonic
+
+
+def forget_refusals() -> None:
+    """Забыть все запомненные отказы аккаунтов (тесты; новая сессия владельца)."""
+    _NOT_SERVED.clear()
+
+
 SETUP = (
     "Ways to turn search on, tried in this order; one is enough.\n"
     "\n"
@@ -215,7 +280,11 @@ SETUP = (
     "\n"
     "D. BRAVE (BRAVE_SEARCH_API_KEY), TAVILY (TAVILY_API_KEY), EXA (EXA_API_KEY).\n"
     "   Their hosts were REFUSED by this sandbox's egress policy on 2026-10-14;\n"
-    "   elsewhere they work as further fallbacks."
+    "   elsewhere they work as further fallbacks.\n"
+    "\n"
+    "E. YANDEX SEARCH API — LAST, and OFF unless STUDIO_SEARCH_ALLOW_YANDEX=1.\n"
+    "   Needs YANDEX_SEARCH_API_KEY and YANDEX_FOLDER_ID. Price per request\n"
+    "   unverified; the key may belong to other paid work — opt in knowingly."
 )
 
 
@@ -290,6 +359,7 @@ def _http_failure(backend: str, code: int, message: str, key_from: str, setup_hi
     """
     words = str(message or "").lower()
     if code in NOT_SERVED_STATUSES or any(w in words for w in _NOT_SERVED_WORDS):
+        refusal = "permission"
         if code == 402 or any(
             w in words
             for w in (
@@ -303,21 +373,25 @@ def _http_failure(backend: str, code: int, message: str, key_from: str, setup_hi
             )
         ):
             kind = "BILLING: the account behind this key has no credit or prepayment left"
+            refusal = "billing"
         elif code in (429, 432, 433) or any(
             w in words for w in ("quota", "rate limit", "exceeded")
         ):
             kind = "QUOTA: the account's rate or plan limit is spent for now"
+            refusal = "quota"
         else:
             kind = (
                 "PERMISSION: the key was refused for this API — not enabled for it, "
                 "restricted by referrer/IP, or the project's quota is off"
             )
-        return _empty(
+        out = _empty(
             UNMEASURED,
             f"{backend} answered {code}: {message}. {kind}. The key (from {key_from}) "
             "EXISTS — creating another one will not help; top up, wait for the "
             "quota window, or enable the API for this key. Nothing was searched.",
         )
+        out["refusal"] = refusal
+        return out
     if 500 <= code < 600:
         return _empty(
             UNMEASURED,
@@ -358,11 +432,16 @@ def _call(
             # ТЕКСТ ЗАПРОСА СЮДА НЕ ПОПАДАЕТ. Его печатает заказчик, а строка
             # уезжает в отслеживаемый git-ом файл. Для заявки на открытие ХОСТА
             # запрос ничего не добавляет: специфичность даёт сам адрес.
-            note_denial(endpoint, reason, f"web search backend {backend} refused")
+            записано = note_denial(endpoint, reason, f"web search backend {backend} refused")
             return None, _empty(
                 UNMEASURED,
                 f"the {backend} endpoint is refused by this organisation's egress "
-                f"policy ({reason}). Recorded for the allowlist request.",
+                f"policy ({reason}). "
+                + (
+                    f"NOT recorded: the denial journal is off ({NO_JOURNAL_ENV})."
+                    if записано.get("journal") == "off"
+                    else "Recorded for the allowlist request."
+                ),
             )
         return None, _empty(UNMEASURED, f"the {backend} endpoint could not be reached: {reason}")
     except Exception as error:  # noqa: BLE001 - a search must not take the chat down
@@ -654,6 +733,101 @@ def _exa(text: str, site: str, count: int) -> dict:
     return _listing("exa", f"site:{site} {text}" if site else text, rows)
 
 
+#: Кириллица в запросе -> русский индекс; иначе международный. Это выбор
+#: ИНДЕКСА (yandex.ru против yandex.com), а не языка ответа.
+_КИРИЛЛИЦА = re.compile(r"[а-яё]", re.I)
+
+
+def _yandex_xml(raw: str, count: int) -> tuple[list[dict], str]:
+    """(строки результатов, текст ошибки Яндекса) из XML-ответа Search API.
+
+    Форма — классический Yandex XML: `yandexsearch/response/results/grouping/
+    group/doc/{url,domain,title,headline,passages/passage}`, ошибка —
+    `response/error[@code]`. ПРОВЕРЕНО ТОЛЬКО НА ФИКСТУРЕ: живого ответа не было.
+    """
+    try:
+        root = ET.fromstring(raw)
+    except ET.ParseError as error:
+        return [], f"the answer is not XML: {error}"
+    err = root.find(".//response/error")
+    if err is not None:
+        return [], f"error {err.get('code', '?')}: {' '.join(''.join(err.itertext()).split())}"
+    rows: list[dict] = []
+    for doc in root.iter("doc"):
+        url = (doc.findtext("url") or "").strip()
+        if not url:
+            continue
+        title_node = doc.find("title")
+        title = " ".join("".join(title_node.itertext()).split()) if title_node is not None else ""
+        passages = [" ".join("".join(p.itertext()).split()) for p in doc.iter("passage")]
+        headline = doc.find("headline")
+        snippet = " ".join(passages) or (
+            " ".join("".join(headline.itertext()).split()) if headline is not None else ""
+        )
+        row = _row(title, url, snippet, (doc.findtext("modtime") or "").strip())
+        domain = (doc.findtext("domain") or "").strip().lower()
+        row["host"] = row["host"] or domain
+        rows.append(row)
+        if len(rows) >= count:
+            break
+    return rows, ""
+
+
+def _yandex(text: str, site: str, count: int) -> dict:
+    key, key_from = _first_env(YANDEX_KEY_ENV)
+    folder, folder_from = _first_env(YANDEX_FOLDER_ENV)
+    query = f"site:{site} {text}" if site else text
+    clipped = query[:YANDEX_QUERY_MAX]
+    russian = bool(_КИРИЛЛИЦА.search(clipped))
+    body = {
+        "query": {
+            "searchType": "SEARCH_TYPE_RU" if russian else "SEARCH_TYPE_COM",
+            "queryText": clipped,
+            "page": 0,
+        },
+        "groupSpec": {
+            "groupMode": "GROUP_MODE_FLAT",
+            "groupsOnPage": max(1, min(count, MAX_RESULTS_OTHER)),
+            "docsInGroup": 1,
+        },
+        "maxPassages": 2,
+        "l10n": "LOCALIZATION_RU" if russian else "LOCALIZATION_EN",
+        "folderId": folder,
+        "responseFormat": "FORMAT_XML",
+    }
+    request = urllib.request.Request(
+        YANDEX_ENDPOINT,
+        data=json.dumps(body, ensure_ascii=False).encode("utf-8"),
+        method="POST",
+        headers={"Content-Type": "application/json", "Authorization": f"Api-Key {key}"},
+    )
+    payload, failed = _call(
+        "yandex", request, endpoint=YANDEX_ENDPOINT, key_from=f"{key_from} and {folder_from}"
+    )
+    if failed is not None:
+        return failed
+    data = payload.get("rawData") if isinstance(payload, dict) else None
+    if not data:
+        return _empty(UNMEASURED, "yandex answered without `rawData`; nothing to read")
+    try:
+        raw = base64.b64decode(str(data)).decode("utf-8", "replace")
+    except (ValueError, TypeError) as error:
+        return _empty(UNMEASURED, f"yandex `rawData` is not base64: {error}")
+    rows, error_text = _yandex_xml(raw, count)
+    if error_text:
+        return _empty(UNMEASURED, f"yandex answered, but with {error_text}. Nothing was searched.")
+    out = _listing("yandex", clipped, rows)
+    if len(query) > YANDEX_QUERY_MAX and out["outcome"] == PASS:
+        out["note"] += f" The query was cut to Yandex's {YANDEX_QUERY_MAX}-character limit."
+    return out
+
+
+def _yandex_allowed() -> bool:
+    if str(os.environ.get(YANDEX_OPT_IN_ENV, "") or "").strip() != "1":
+        return False
+    return bool(_first_env(YANDEX_KEY_ENV)[0] and _first_env(YANDEX_FOLDER_ENV)[0])
+
+
 def _configured_cse() -> bool:
     return bool(_first_env(KEY_ENV)[0] and _first_env(CSE_ENV)[0])
 
@@ -669,7 +843,40 @@ BACKENDS: tuple[tuple[str, Callable[[], bool], Callable[[str, str, int], dict]],
     ("brave", lambda: bool(_first_env(BRAVE_KEY_ENV)[0]), _brave),
     ("tavily", lambda: bool(_first_env(TAVILY_KEY_ENV)[0]), _tavily),
     ("exa", lambda: bool(_first_env(EXA_KEY_ENV)[0]), _exa),
+    # ПОСЛЕДНИМ и только по явному согласию: см. `YANDEX_ENDPOINT`.
+    ("yandex", _yandex_allowed, _yandex),
 )
+
+#: Чьим ключом платит каждый бэкенд — для отпечатка в памяти отказов.
+_KEY_ENVS: dict[str, tuple[str, ...]] = {
+    "gemini": GEMINI_KEY_ENV,
+    "serper": SERPER_KEY_ENV,
+    "programmable-search": KEY_ENV,
+    "brave": BRAVE_KEY_ENV,
+    "tavily": TAVILY_KEY_ENV,
+    "exa": EXA_KEY_ENV,
+    "yandex": YANDEX_KEY_ENV,
+}
+
+
+def _fingerprint(backend: str) -> str:
+    """Отпечаток ключа бэкенда: сам ключ в памяти отказов не хранится."""
+    key, _ = _first_env(_KEY_ENVS.get(backend, ()))
+    return hashlib.sha256(key.encode("utf-8")).hexdigest()[:12] if key else ""
+
+
+def _remembered_refusal(backend: str) -> tuple[str, str, float] | None:
+    """(вид, нота, секунд до повтора), если аккаунт этого бэкенда отказал недавно."""
+    ключ = (backend, _fingerprint(backend))
+    hit = _NOT_SERVED.get(ключ)
+    if hit is None:
+        return None
+    until, kind, note = hit
+    left = until - _now()
+    if left <= 0:
+        _NOT_SERVED.pop(ключ, None)
+        return None
+    return kind, note, left
 
 
 def client_side(text: str, site: str = "") -> dict:
@@ -703,7 +910,8 @@ def search(query: str, *, count: int = 8, site: str = "", check_fetchable: bool 
     """Search the web and say, per result, whether the page can also be read.
 
     Backends are tried in `BACKENDS` order — Gemini, Serper, Programmable
-    Search, Brave, Tavily, Exa — each only when its key is set, and the next is
+    Search, Brave, Tavily, Exa, and Yandex only with `STUDIO_SEARCH_ALLOW_YANDEX=1`
+    — each only when its key is set, and the next is
     tried when one cannot answer (billing, quota, permission, policy refusal,
     no sources, an invalid key). `attempts` lists every backend that was asked
     and what it said; `backend` names the one that answered.
@@ -727,6 +935,10 @@ def search(query: str, *, count: int = 8, site: str = "", check_fetchable: bool 
     text = str(query or "").strip()
     if not text:
         return _empty(UNMEASURED, "no query was given, so nothing was searched")
+    # ЗАПРОС ВОЗВРАЩАЕТСЯ И В ОТКАЗЕ. НАЙДЕНО валидатором 2026-10-14 (G15):
+    # ответ без источников нёс `"query": ""` — вызывающий, у которого в
+    # контексте несколько поисков, не мог сказать, какой из них не удался.
+    asked = f"site:{site} {text}" if site else text
     try:
         wanted = max(1, int(count))
     except (TypeError, ValueError):
@@ -752,13 +964,36 @@ def search(query: str, *, count: int = 8, site: str = "", check_fetchable: bool 
         )
         out["attempts"] = []
         out["client_side"] = client_side(text, site)
+        out["query"] = asked
         return out
 
     attempts: list[dict] = []
     first: dict | None = None
     for name, run in ready:
+        remembered = _remembered_refusal(name)
+        if remembered is not None:
+            kind, why, left = remembered
+            skipped = _empty(
+                UNMEASURED,
+                f"SKIPPED, not asked again: {name} refused this account for "
+                f"{kind.upper()} within the last {NOT_SERVED_TTL_SECONDS / 60:.0f} min "
+                f"(retry in {left / 60:.0f} min, or with another key). "
+                f"What it said then: {why[:240]}",
+            )
+            attempts.append(
+                {"backend": name, "outcome": UNMEASURED, "note": skipped["note"], "skipped": True}
+            )
+            if first is None:
+                first = skipped
+            continue
         out = run(text, site, wanted)
         attempts.append({"backend": name, "outcome": out["outcome"], "note": out["note"]})
+        if out.get("refusal") in CACHED_REFUSALS:
+            _NOT_SERVED[(name, _fingerprint(name))] = (
+                _now() + NOT_SERVED_TTL_SECONDS,
+                str(out["refusal"]),
+                str(out["note"]),
+            )
         if out["outcome"] == PASS:
             if check_fetchable and out.get("results"):
                 seen: dict[str, bool | None] = {}
@@ -801,6 +1036,8 @@ def search(query: str, *, count: int = 8, site: str = "", check_fetchable: bool 
     )
     final["attempts"] = attempts
     final["client_side"] = client_side(text, site)
+    final["query"] = asked
+    final.pop("refusal", None)
     return final
 
 

@@ -56,10 +56,13 @@ The engine's modules are imported, never reimplemented, and never edited:
 
 from __future__ import annotations
 
+import hashlib
+import os
+import re
 import subprocess
 import tempfile
 from pathlib import Path
-from typing import Sequence
+from typing import Any, Sequence
 
 from lipsync.fork_identity import FAIL, PASS, UNMEASURED
 
@@ -78,7 +81,10 @@ __all__ = [
     "NAMED_COLOURS",
     "SATURATED_CHROMA",
     "analyse",
+    "audio_levels",
+    "faces_opencv",
     "frames_in",
+    "media_info",
     "input_state",
     "IMAGE_SUFFIXES",
     "look",
@@ -612,8 +618,9 @@ def intake_of(path: str | Path) -> dict:
         from lipsync.fork_intake import photo_intake
     except ImportError as error:
         return {**_house(UNMEASURED, 0, 0, 1, f"nothing to measure with: {error}"), "axes": {}}
+    used: dict = {}
     try:
-        report = photo_intake(str(path))
+        report = photo_intake(str(path), faces_prober=_faces_with_fallback(used))
     except Exception as error:  # noqa: BLE001
         return {
             **_house(UNMEASURED, 0, 0, 1, f"the engine's intake could not run: {error}"),
@@ -635,9 +642,16 @@ def intake_of(path: str | Path) -> dict:
             int(report.get("checked", 0) or 0),
             int(report.get("violations", 0) or 0),
             int(report.get("unmeasured", 0) or 0),
-            reasons or "every intake axis passed",
+            (
+                f"[face detector: {used['detector']}] "
+                if used.get("detector") == DETECTOR_YUNET
+                else ""
+            )
+            + (reasons or "every intake axis passed"),
         ),
         "axes": axes,
+        "detector": used.get("detector", ""),
+        **({"primary_why": used["primary_why"]} if used.get("primary_why") else {}),
     }
 
 
@@ -758,6 +772,385 @@ def _video_seconds(exe: str, path: str | Path) -> float | None:
     return None
 
 
+# ---------------------------------------------------------------------------
+# КОНТЕЙНЕР И ЗВУК. НАЙДЕНО валидатором 2026-10-14 (G12): разбор ролика мерил
+# только картинку, а липсинку прежде всего нужно другое — длительность, кадровая
+# частота, разрешение, кодек, ЕСТЬ ЛИ ЗВУКОВАЯ ДОРОЖКА, её частота, громкость и
+# сколько в ней тишины. Ничего из этого не было в ответе.
+# ---------------------------------------------------------------------------
+
+#: ВЫБРАНО: порог тишины для `silencedetect`, dBFS. -50 — ниже бытового шума
+#: комнаты в записи с телефона и выше цифровой тишины; речь на таком уровне не
+#: звучит. Не измерено на нашем материале — константа выбора (И4).
+SILENCE_NOISE_DB = -50
+#: ВЫБРАНО: тишина короче этого не считается — паузы между словами (0.1-0.25 с)
+#: не должны делать речь «тихой».
+SILENCE_MIN_SECONDS = 0.3
+
+#: Числа из сводки `ebur128` и строк `silencedetect` (формат ffmpeg 7.0.2,
+#: ИЗМЕРЕН 2026-10-14 на синтетическом ролике: `I:  -22.2 LUFS`,
+#: `silence_end: 3.008 | silence_duration: 1.507271`).
+_LUFS = re.compile(r"Integrated loudness:\s*\n\s*I:\s*(-?[\d.]+|-inf)\s*LUFS")
+_SILENCE_START = re.compile(r"silence_start:\s*(-?[\d.]+)")
+_SILENCE_DURATION = re.compile(r"silence_duration:\s*([\d.]+)")
+
+
+def _ffmpeg() -> tuple[str, str]:
+    """(путь к ffmpeg, "") или ("", почему его нет)."""
+    try:
+        import imageio_ffmpeg
+
+        return imageio_ffmpeg.get_ffmpeg_exe(), ""
+    except Exception as exc:  # noqa: BLE001 - отсутствие пакета это измерение
+        return "", f"imageio-ffmpeg недоступен ({type(exc).__name__})"
+
+
+def _probe_av(path: Path) -> dict | None:
+    """Метаданные контейнера через PyAV; None — PyAV нет или файл не открылся."""
+    try:
+        import av
+    except Exception:  # noqa: BLE001
+        return None
+    try:
+        with av.open(str(path)) as box:
+            # `Any`: заглушки PyAV типизируют `codec_context` общим классом без
+            # `width`/`sample_rate`, которые у видео- и аудиопотока есть.
+            video: Any = next((st for st in box.streams if st.type == "video"), None)
+            audio: Any = next((st for st in box.streams if st.type == "audio"), None)
+            seconds = float(box.duration) / 1_000_000 if box.duration else None
+            if seconds is None and video is not None and video.duration and video.time_base:
+                seconds = float(video.duration * video.time_base)
+            rate = video.average_rate if video is not None else None
+            return {
+                "duration_s": round(seconds, 3) if seconds else None,
+                "fps": round(float(rate), 3) if rate else None,
+                "width": int(video.codec_context.width) if video is not None else None,
+                "height": int(video.codec_context.height) if video is not None else None,
+                "video_codec": str(video.codec_context.name) if video is not None else None,
+                "has_audio": audio is not None,
+                "audio_codec": str(audio.codec_context.name) if audio is not None else None,
+                "sample_rate": int(audio.codec_context.sample_rate) if audio is not None else None,
+                "channels": int(audio.codec_context.channels) if audio is not None else None,
+                "read_by": f"PyAV {av.__version__}",
+            }
+    except Exception:  # noqa: BLE001 - не открылось PyAV — попробует ffmpeg
+        return None
+
+
+def _probe_ffmpeg(exe: str, path: Path) -> dict | None:
+    """Те же поля из вывода `ffmpeg -i` — когда PyAV нет. None — ffmpeg не прочёл."""
+    done = subprocess.run(
+        [exe, "-hide_banner", "-i", str(path)], capture_output=True, text=True, check=False
+    )
+    text = done.stderr or ""
+    seconds = _video_seconds(exe, path)
+    video = re.search(r"Stream #\S+.*?Video: (\w+)[^\n]*?, (\d{2,5})x(\d{2,5})[^\n]*", text)
+    if video is None and seconds is None:
+        return None
+    fps = re.search(r"([\d.]+) fps", video.group(0)) if video else None
+    audio = re.search(r"Stream #\S+.*?Audio: (\w+)[^\n]*?, (\d+) Hz, ([^,\n]+)", text)
+    return {
+        "duration_s": round(seconds, 3) if seconds else None,
+        "fps": float(fps.group(1)) if fps else None,
+        "width": int(video.group(2)) if video else None,
+        "height": int(video.group(3)) if video else None,
+        "video_codec": video.group(1) if video else None,
+        "has_audio": audio is not None,
+        "audio_codec": audio.group(1) if audio else None,
+        "sample_rate": int(audio.group(2)) if audio else None,
+        "channels": {"mono": 1, "stereo": 2}.get(audio.group(3).strip()) if audio else None,
+        "read_by": "ffmpeg -i",
+    }
+
+
+def media_info(path: str | Path) -> dict:
+    """Контейнер ролика: длительность, fps, разрешение, кодек, звук. Три исхода.
+
+    PyAV — первым (поля читаются из демультиплексора, а не из текста), `ffmpeg
+    -i` — запасным. Нарушений здесь не бывает: это сведения, а не планка;
+    `checked` — сколько полей прочитано.
+    """
+    target = Path(str(path)).expanduser()
+    info = _probe_av(target)
+    if info is None:
+        exe, why = _ffmpeg()
+        info = _probe_ffmpeg(exe, target) if exe else None
+        if info is None:
+            return {
+                **_house(
+                    UNMEASURED,
+                    0,
+                    0,
+                    1,
+                    f"контейнер не прочитан ни PyAV, ни ffmpeg{': ' + why if why else ''}",
+                ),
+                "container": {},
+            }
+    известно = sum(1 for k, v in info.items() if k != "read_by" and v is not None)
+    return {
+        **_house(
+            PASS if известно else UNMEASURED,
+            известно,
+            0,
+            0 if известно else 1,
+            (
+                f"{info.get('duration_s')} s, {info.get('fps')} fps, "
+                f"{info.get('width')}x{info.get('height')} {info.get('video_codec')}; "
+                + (
+                    f"audio {info.get('audio_codec')} {info.get('sample_rate')} Hz, "
+                    f"{info.get('channels')} ch"
+                    if info.get("has_audio")
+                    else "NO audio track"
+                )
+                + f" (read by {info.get('read_by')})"
+            ),
+        ),
+        "container": info,
+    }
+
+
+def audio_levels(path: str | Path, *, duration_s: float | None = None) -> dict:
+    """Громкость (EBU R128, интегральная, LUFS) и доля тишины звуковой дорожки.
+
+    Один проход ffmpeg: `ebur128` и `silencedetect` в одной цепочке фильтров.
+    Дорожки нет — это ИЗМЕРЕНИЕ (`has_audio: false`), а не «не смогли»: для
+    ролика-драйвера без звука липсинк берёт звук отдельно, и это нормально.
+    """
+    exe, why = _ffmpeg()
+    if not exe:
+        return {**_house(UNMEASURED, 0, 0, 1, why), "loudness_lufs": None, "silence_ratio": None}
+    done = subprocess.run(
+        [
+            exe,
+            "-hide_banner",
+            "-nostats",
+            "-i",
+            str(path),
+            "-map",
+            "0:a:0",
+            "-af",
+            "ebur128=framelog=verbose,"
+            f"silencedetect=noise={SILENCE_NOISE_DB}dB:d={SILENCE_MIN_SECONDS}",
+            "-f",
+            "null",
+            "-",
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    text = done.stderr or ""
+    if done.returncode != 0 and "matches no streams" in text:
+        return {
+            **_house(PASS, 1, 0, 0, "no audio track: loudness and silence do not apply"),
+            "has_audio": False,
+            "loudness_lufs": None,
+            "silence_ratio": None,
+        }
+    lufs_match = _LUFS.search(text)
+    if lufs_match is None:
+        return {
+            **_house(
+                UNMEASURED,
+                0,
+                0,
+                1,
+                f"ffmpeg did not report loudness: {text.strip().splitlines()[-1:] or ['']}"[:240],
+            ),
+            "has_audio": None,
+            "loudness_lufs": None,
+            "silence_ratio": None,
+        }
+    lufs = None if lufs_match.group(1) == "-inf" else float(lufs_match.group(1))
+    seconds = duration_s or _video_seconds(exe, path)
+    тишина = sum(float(d) for d in _SILENCE_DURATION.findall(text))
+    starts = [float(x) for x in _SILENCE_START.findall(text)]
+    # Тишина, начавшаяся и не кончившаяся до конца файла, `silence_duration`
+    # не печатает: досчитывается до конца по длительности.
+    if seconds and len(starts) > len(_SILENCE_DURATION.findall(text)):
+        тишина += max(0.0, float(seconds) - starts[-1])
+    ratio = round(min(1.0, тишина / float(seconds)), 3) if seconds else None
+    measured = 1 + (1 if ratio is not None else 0)
+    return {
+        **_house(
+            PASS,
+            measured,
+            0,
+            0 if ratio is not None else 1,
+            (
+                f"integrated loudness {lufs if lufs is not None else '-inf'} LUFS (EBU R128); "
+                + (
+                    f"silence {ratio:.0%} of {seconds:.1f} s "
+                    f"(below {SILENCE_NOISE_DB} dBFS for {SILENCE_MIN_SECONDS}+ s)"
+                    if ratio is not None
+                    else "silence ratio unknown: the duration could not be read"
+                )
+            ),
+        ),
+        "has_audio": True,
+        "loudness_lufs": lufs,
+        "silence_ratio": ratio,
+        "silence_seconds": round(тишина, 3),
+    }
+
+
+# ---------------------------------------------------------------------------
+# ЛИЦО БЕЗ INSIGHTFACE. НАЙДЕНО валидатором 2026-10-14 (G12): без пакета
+# `insightface` приёмка лица (нашлось ли, какого размера, один ли человек) не
+# работала вовсе, и ВЕСЬ разбор отвечал `could not measure` — на машине, где
+# OpenCV стоит. ИЗМЕРЕНО 2026-10-14: opencv-python-headless 5.0.0 не несёт
+# каскадов Хаара (`cv2.data.haarcascades` пуст, `cv2.CascadeClassifier` в 5.x
+# нет), а `cv2.FaceDetectorYN` (DNN) есть. Модель YuNet положена в репозиторий
+# (232 КБ, MIT, источник и sha256 — `studio/mcp/models/NOTICE`): скачивать её
+# на лету значило бы идти в сеть из инструмента чтения.
+# ---------------------------------------------------------------------------
+
+#: Модель YuNet; `STUDIO_FACE_MODEL` подставляет другой файл.
+FACE_MODEL_PATH = Path(__file__).resolve().parent / "models" / "face_detection_yunet_2023mar.onnx"
+FACE_MODEL_ENV = "STUDIO_FACE_MODEL"
+#: sha256 положенной модели (`NOTICE`). Подменённый файл не грузится молча.
+FACE_MODEL_SHA256 = "8f2383e4dd3cfbb4553ea8718107fc0423210dc964f9f4280604804ed2552fa4"
+#: ВЗЯТО у вендора: `--conf_threshold default=0.9` в `demo.py` OpenCV Model Zoo
+#: (models/face_detection_yunet, прочитано 2026-10-14); `nms` 0.3 — оттуда же.
+FACE_SCORE_MIN = 0.9
+FACE_NMS = 0.3
+#: README модели: «detect faces of pixels between around 10x10 to 300x300».
+#: Поэтому кадр уменьшается до этой стороны, а размер лица пересчитывается
+#: обратно в пиксели ИСХОДНОГО кадра — иначе крупное лицо в 4K не найдётся.
+FACE_INPUT_SIDE = 640
+
+#: Чем мерили лицо: имя прибора кладётся в ответ рядом с осями.
+DETECTOR_INSIGHTFACE = "insightface (the engine's own)"
+DETECTOR_YUNET = "opencv-yunet (fallback: insightface is absent)"
+
+
+def _face_model() -> tuple[Path | None, str]:
+    """(путь к модели, "") или (None, почему её нет / почему она не та)."""
+    другой = str(os.environ.get(FACE_MODEL_ENV, "") or "").strip()
+    target = Path(другой).expanduser() if другой else FACE_MODEL_PATH
+    if not target.is_file():
+        return None, f"no face model at {target}"
+    if not другой:
+        got = hashlib.sha256(target.read_bytes()).hexdigest()
+        if got != FACE_MODEL_SHA256:
+            return (
+                None,
+                f"{target.name} sha256 {got[:12]}… is not the pinned {FACE_MODEL_SHA256[:12]}…",
+            )
+    return target, ""
+
+
+def faces_opencv(path: str | Path) -> dict:
+    """Все лица кадра через OpenCV YuNet — в форме `fork_intake.read_faces`.
+
+    `{"faces": [{"face_px", "det_score"}, …] крупнейшее первым, "why": ""}` или
+    `{"faces": None, "why": причина}`. `face_px` — меньшая сторона рамки, как у
+    приёмки движка, в пикселях исходного кадра. ЧЕСТНО: рамки YuNet и
+    insightface не совпадают в точности, и планка `MIN_FACE_PX` движка
+    откалибрована на insightface — поэтому в ответе всегда назван прибор.
+    """
+    model, why = _face_model()
+    if model is None:
+        return {"faces": None, "why": why}
+    try:
+        import cv2
+        import numpy as np
+        from PIL import Image
+    except Exception as exc:  # noqa: BLE001
+        return {"faces": None, "why": f"{type(exc).__name__}: {exc}"}
+    try:
+        # OpenCV 5 предупреждает о бэкенде на каждом создании детектора; это
+        # шум в выводе инструмента, а не сведения о кадре.
+        cv2.utils.logging.setLogLevel(cv2.utils.logging.LOG_LEVEL_ERROR)
+    except Exception:  # noqa: BLE001 - нет такого API — останется шум, не ошибка
+        pass
+    if not hasattr(cv2, "FaceDetectorYN"):
+        return {"faces": None, "why": f"cv2 {cv2.__version__} has no FaceDetectorYN"}
+    try:
+        with Image.open(str(path)) as handle:
+            rgb = handle.convert("RGB")
+        scale = min(1.0, FACE_INPUT_SIDE / max(rgb.size))
+        if scale < 1.0:
+            rgb = rgb.resize(
+                (max(1, round(rgb.size[0] * scale)), max(1, round(rgb.size[1] * scale))),
+                Image.Resampling.BILINEAR,
+            )
+        bgr = np.ascontiguousarray(np.asarray(rgb)[:, :, ::-1])
+        detector = cv2.FaceDetectorYN.create(
+            str(model), "", (bgr.shape[1], bgr.shape[0]), FACE_SCORE_MIN, FACE_NMS
+        )
+        _, found = detector.detect(bgr)
+    except Exception as exc:  # noqa: BLE001 - не смогли — это ответ, не падение
+        return {"faces": None, "why": f"{type(exc).__name__}: {str(exc)[:200]}"}
+    faces = [
+        {
+            "face_px": round(min(float(row[2]), float(row[3])) / scale),
+            "det_score": round(float(row[-1]), 3),
+        }
+        for row in (found if found is not None else [])
+    ]
+    faces.sort(key=lambda d: d["face_px"], reverse=True)
+    return {"faces": faces, "why": ""}
+
+
+def _faces_with_fallback(used: dict) -> Any:
+    """Пробник лиц для `photo_intake`: движок, а без insightface — YuNet.
+
+    `used` заполняется тем, какой прибор отработал и почему не первый.
+    """
+
+    def probe(photo: str) -> dict:
+        try:
+            from lipsync.fork_intake import read_faces
+
+            first = read_faces(photo)
+        except Exception as exc:  # noqa: BLE001
+            first = {"faces": None, "why": f"{type(exc).__name__}: {exc}"}
+        if first.get("faces") is not None and not first.get("why"):
+            used["detector"] = DETECTOR_INSIGHTFACE
+            return first
+        second = faces_opencv(photo)
+        if second.get("faces") is not None:
+            used["detector"] = DETECTOR_YUNET
+            used["primary_why"] = str(first.get("why") or "")
+            return second
+        used["detector"] = ""
+        return {
+            "faces": None,
+            "why": f"{first.get('why') or 'insightface silent'}; fallback: {second.get('why')}",
+        }
+
+    return probe
+
+
+def _middle_frame(path: Path, into: Path) -> Path | None:
+    """Один кадр из середины ролика — для внешнего вида и лица самого ролика."""
+    exe, _ = _ffmpeg()
+    if not exe:
+        return None
+    seconds = _video_seconds(exe, path) or 0.0
+    into.mkdir(parents=True, exist_ok=True)
+    out = into / "middle.png"
+    subprocess.run(
+        [
+            exe,
+            "-y",
+            "-loglevel",
+            "error",
+            "-ss",
+            f"{seconds / 2:.3f}",
+            "-i",
+            str(path),
+            "-frames:v",
+            "1",
+            str(out),
+        ],
+        capture_output=True,
+        check=False,
+    )
+    return out if out.is_file() else None
+
+
 def analyse(path: str | Path, *, frames: Sequence[str] | None = None, loop: bool = False) -> dict:
     """Everything measurable about one creative, and everything that was not.
 
@@ -808,51 +1201,76 @@ def analyse(path: str | Path, *, frames: Sequence[str] | None = None, loop: bool
             "could_not_run": [{"instrument": "input", "why": gone}],
         }
 
-    still = Path(path)
+    source = Path(path).expanduser()
+    is_video = source.suffix.lower() in VIDEO_SUFFIXES
     # КАДР — ЭТО КАРТИНКА, И НЕ САМ РОЛИК. Найдено 2026-10-14: ролик, лежащий
     # в каталоге кадров, и не-картинки уезжали в приборы движения.
+    handed: list[str] = []
     if frames:
-        сам = still.expanduser().resolve()
-        frames = [
+        сам = source.resolve()
+        handed = [
             str(f)
             for f in frames
             if Path(f).suffix.lower() in IMAGE_SUFFIXES
             and not Path(f).name.startswith(".")
             and Path(f).expanduser().resolve() != сам
         ]
-        # Ролик + свои кадры: внешний вид меряется на СРЕДНЕМ кадре, а не на
-        # самом ролике — ролик как картинку не открыть (и до 2026-10-14 из-за
-        # этого весь разбор отвечал «файл есть, но открыть нечем»).
-        if frames and still.suffix.lower() in VIDEO_SUFFIXES:
-            still = Path(frames[len(frames) // 2])
-    decoded: dict | None = None
-    temp: tempfile.TemporaryDirectory | None = None
-    # `not frames`, а не `frames is None`: ПУСТОЙ список — это «кадров не
-    # подали», и принимать его за «кадры поданы» значило бы молча отменить
-    # раскадровку ролика и потом отчитаться о ней как о клипе в ноль кадров.
-    if not frames and still.suffix.lower() in VIDEO_SUFFIXES:
-        temp = tempfile.TemporaryDirectory()
-        decoded = frames_from_video(still, Path(temp.name))
-        got = list(decoded.get("frames") or [])
-        if got:
-            frames = got
-            # Середина, а не первый кадр: первый у ролика часто титульный или
-            # ещё не разогнавшийся, и мерить по нему текстуру значит мерить не то.
-            still = Path(got[len(got) // 2])
-
+    temp = tempfile.TemporaryDirectory()
     try:
-        parts = {
-            "look": look(still),
-            "intake": intake_of(still),
-        }
-        if frames:
-            parts["motion"] = motion_of(frames, loop=loop)
+        parts: dict[str, dict] = {}
+        decoded: dict | None = None
+        sequence: list[str] = list(handed)
+        still: Path = source
+        measured_on = str(source)
+        if is_video:
+            # Контейнер и звук — то, что липсинку нужно раньше картинки (G12).
+            # Дешёвое раньше дорогого (П2): заголовок контейнера — миллисекунды,
+            # громкость — один проход по звуку.
+            parts["container"] = media_info(source)
+            info = parts["container"].get("container") or {}
+            if info.get("has_audio") is False:
+                parts["audio"] = {
+                    **_house(PASS, 1, 0, 0, "no audio track: loudness and silence do not apply"),
+                    "has_audio": False,
+                    "loudness_lufs": None,
+                    "silence_ratio": None,
+                }
+            else:
+                parts["audio"] = audio_levels(source, duration_s=info.get("duration_s"))
+            if handed:
+                # ВНЕШНИЙ ВИД РОЛИКА И ВНЕШНИЙ ВИД ПОДАННЫХ КАДРОВ — ДВА БЛОКА
+                # (G12). До 2026-10-14 `look` мерился на кадре из `frames_dir`,
+                # а `input.path` указывал на ролик: ответ выдавал вид чужих
+                # кадров за вид поданного файла. Один кадр из середины ролика —
+                # один `-ss` у ffmpeg, а не вторая раскадровка.
+                middle = _middle_frame(source, Path(temp.name))
+                if middle is not None:
+                    still = middle
+                    measured_on = f"{source} (middle frame)"
+            else:
+                decoded = frames_from_video(source, Path(temp.name) / "frames")
+                got = list(decoded.get("frames") or [])
+                if got:
+                    sequence = got
+                    # Середина, а не первый кадр: первый у ролика часто титульный
+                    # или ещё не разогнавшийся, и мерить по нему — мерить не то.
+                    still = Path(got[len(got) // 2])
+                    measured_on = f"{source} (middle of {len(got)} decoded frames)"
+
+        # `look` — ВСЕГДА вид ПОДАННОГО файла (его читают планировщик и
+        # `scripts/creative_fit.py` ради разрешения кадра).
+        parts["look"] = {**look(still), "measured_on": measured_on}
+        if handed:
+            кадр = handed[len(handed) // 2]
+            parts["frames_look"] = {**look(кадр), "measured_on": f"{кадр} (middle handed frame)"}
+        parts["intake"] = intake_of(still)
+        if sequence:
+            parts["motion"] = motion_of(sequence, loop=loop)
         if decoded is not None and str(decoded.get("outcome")) == UNMEASURED:
             parts["video_decode"] = decoded
         return _finish(path, parts)
     finally:
-        if temp is not None:
-            temp.cleanup()
+        temp.cleanup()
 
 
 def _finish(path: str | Path, parts: dict) -> dict:

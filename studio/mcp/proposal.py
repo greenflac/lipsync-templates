@@ -76,7 +76,10 @@ __all__ = [
     "STATE_APPROVED",
     "STATE_DECLINED",
     "STATE_RECORDED",
+    "STATE_ANSWERED",
     "DEFAULT_LEDGER_PATH",
+    "answered_by_base",
+    "close_answered",
 ]
 
 DEFAULT_LEDGER_PATH = (
@@ -87,14 +90,22 @@ STATE_PROPOSED = "proposed"
 STATE_APPROVED = "approved"
 STATE_DECLINED = "declined"
 STATE_RECORDED = "recorded"
+#: Закрыта, потому что база ТЕПЕРЬ отвечает на вопрос заявки без оплаты.
+#: НАЙДЕНО валидатором 2026-10-14 (G14): `mp-5617b65d91` (veo-3.1
+#: max_resolution) висела открытой, хотя база уже отвечала на уровне vendor —
+#: оператор видел просьбу заплатить за то, что известно. Пятое состояние, а не
+#: `declined`: никто не отказывал, вопрос закрылся сам, и это разные события.
+#: Строка ДОПИСЫВАЕТСЯ (журнал append-only); прежние строки не трогаются.
+STATE_ANSWERED = "answered_by_base"
 
 #: The whole ladder a proposal can walk. Kept as a tuple so a typo in a
-#: decision is refused rather than creating a fourth state nobody reads.
+#: decision is refused rather than creating a state nobody reads.
 STATES: tuple[str, ...] = (
     STATE_PROPOSED,
     STATE_APPROVED,
     STATE_DECLINED,
     STATE_RECORDED,
+    STATE_ANSWERED,
 )
 
 #: The decisions the operator may hand down. `recorded` is not among them —
@@ -241,14 +252,47 @@ def _append(path: Path, row: dict) -> None:
 OPEN_STATES: tuple[str, ...] = (STATE_PROPOSED, STATE_APPROVED)
 
 
-def _open_twin(latest: dict[str, dict], model: str, attribute: str) -> dict | None:
-    """Открытая заявка на ту же модель (по `modelnames.fold`) и тот же атрибут."""
-    want_model = fold(model)
+def _family_of(name: str, store: object | None) -> set[str]:
+    """Свёртки имён, с которыми `name` — ОДНА модель для слоя имён.
+
+    Сама свёртка плюс семья, вариантом которой имя является (`FactStore.parent`:
+    `chatterbox-tts` -> `chatterbox`). Слой имён — чужой модуль: его зовут, а не
+    правят, и при его отсутствии (старый склад без `parent`) остаётся одна
+    свёртка — то есть прежнее поведение, а не исключение.
+    """
+    свои = {fold(name)}
+    parent = getattr(store, "parent", None)
+    if callable(parent):
+        try:
+            свои |= {fold(str(n)) for n in (parent(name) or [])}
+        except Exception:  # noqa: BLE001 - слой имён не должен ронять заявку
+            pass
+    return свои
+
+
+def _same_model(a: str, b: str, store: object | None) -> bool:
+    """Одна ли это модель: по свёртке ИЛИ потому что одно — вариант другого.
+
+    НАЙДЕНО валидатором 2026-10-14 (G14): `chatterbox` и `chatterbox-tts` —
+    одно и то же для слоя имён (`variant-of`), а дубль заявок их не склеивал.
+    ЦЕНА, СКАЗАННАЯ ВСЛУХ: `veo-3.1-lite` для слоя имён тоже вариант `veo-3.1`,
+    и его открытая заявка теперь будет названа дублем заявки семьи. Нота
+    дубля это говорит и велит сказать оператору, если вариант меряет другое.
+    """
+    if fold(a) == fold(b):
+        return True
+    return bool(_family_of(a, store) & _family_of(b, store))
+
+
+def _open_twin(
+    latest: dict[str, dict], model: str, attribute: str, store: object | None = None
+) -> dict | None:
+    """Открытая заявка на ту же модель (свёртка или семья) и тот же атрибут."""
     want_attr = " ".join(str(attribute or "").split()).casefold()
     for row in sorted(latest.values(), key=lambda r: str(r.get("filed_on", ""))):
         if str(row.get("state")) not in OPEN_STATES:
             continue
-        if fold(str(row.get("model", ""))) != want_model:
+        if not _same_model(str(row.get("model", "")), model, store):
             continue
         if " ".join(str(row.get("attribute", "")).split()).casefold() != want_attr:
             continue
@@ -381,7 +425,11 @@ def propose(
     # модель (по свёртке имени) и тот же атрибут — это та же заявка.
     twin = False
     if standing is None:
-        standing = _open_twin(latest, fields["model"], fields["attribute"])
+        try:
+            store = advice.store_for(facts_path)
+        except Exception:  # noqa: BLE001 - без склада дубль ищется по свёртке
+            store = None
+        standing = _open_twin(latest, fields["model"], fields["attribute"], store)
         if standing is not None:
             identity = str(standing["id"])
             twin = True
@@ -652,7 +700,74 @@ def record_result(
     }
 
 
-def proposals(*, state: str = "", path: Path | None = None) -> dict:
+def answered_by_base(*, path: Path | None = None, facts_path: Path | None = None) -> list[dict]:
+    """Открытые заявки, на вопрос которых база УЖЕ отвечает. Только чтение.
+
+    «Отвечает» — тот же критерий, что не даёт подать такую заявку (`propose`):
+    источники согласны, ни один не устарел, лучший выше blog. Один критерий на
+    вход и на выход (Е1): иначе заявку, которую нельзя подать, можно было бы
+    держать открытой вечно.
+    """
+    ledger = path or DEFAULT_LEDGER_PATH
+    out: list[dict] = []
+    for row in sorted(_latest(ledger).values(), key=lambda r: str(r.get("id", ""))):
+        if str(row.get("state")) not in OPEN_STATES:
+            continue
+        why = _already_known(str(row.get("model", "")), str(row.get("attribute", "")), facts_path)
+        if why:
+            out.append({"id": str(row["id"]), "state": str(row.get("state")), "why": why})
+    return out
+
+
+def close_answered(
+    *, path: Path | None = None, facts_path: Path | None = None, dry_run: bool = False
+) -> dict:
+    """Закрыть ПРЕДЛОЖЕННЫЕ заявки, на которые база уже отвечает. Дописыванием.
+
+    Закрываются только `proposed`. `approved` — решение человека, и машина его
+    не отменяет: такие заявки перечислены в `left_approved`, чтобы оператор
+    решил сам. Ничего не удаляется: пишется новая строка с состоянием
+    `answered_by_base` и причиной.
+    """
+    ledger = path or DEFAULT_LEDGER_PATH
+    latest = _latest(ledger)
+    closed: list[str] = []
+    left: list[dict] = []
+    for item in answered_by_base(path=ledger, facts_path=facts_path):
+        if item["state"] != STATE_PROPOSED:
+            left.append(item)
+            continue
+        if not dry_run:
+            row = dict(latest[item["id"]])
+            row["state"] = STATE_ANSWERED
+            row["closed_on"] = date.today().isoformat()
+            row["closed_because"] = item["why"]
+            _append(ledger, row)
+        closed.append(item["id"])
+    return {
+        "outcome": PASS if closed or left else UNMEASURED,
+        "checked": len(closed) + len(left),
+        "violations": 0,
+        "unmeasured": 0 if closed or left else 1,
+        "closed": closed,
+        "left_approved": left,
+        "dry_run": bool(dry_run),
+        "note": (
+            f"{'would close' if dry_run else 'closed'} {len(closed)} proposal(s) the base now "
+            f"answers: {', '.join(closed) or 'none'}"
+            + (
+                f"; {len(left)} APPROVED proposal(s) are answered too and were left for the "
+                f"operator: {', '.join(i['id'] for i in left)}"
+                if left
+                else ""
+            )
+            if closed or left
+            else "no open proposal is answered by the base today"
+        ),
+    }
+
+
+def proposals(*, state: str = "", path: Path | None = None, facts_path: Path | None = None) -> dict:
     """What is filed, and what is waiting on a person.
 
     `pass` when something stands, `could not measure` when the ledger is empty
@@ -686,6 +801,20 @@ def proposals(*, state: str = "", path: Path | None = None) -> dict:
             "note": f"no measurement proposals have ever been filed ({ledger})",
         }
     waiting = counts.get(STATE_PROPOSED, 0)
+    # ОТКРЫТАЯ ЗАЯВКА, НА КОТОРУЮ БАЗА УЖЕ ОТВЕЧАЕТ, ПОМЕЧАЕТСЯ В ЛИСТИНГЕ.
+    # Листинг — чтение, поэтому он НЕ закрывает (это делает
+    # `scripts/measurement.py close-answered`), но и не молчит: оператор,
+    # читающий список перед оплатой, видит, что платить незачем.
+    отвечено = {
+        item["id"]: item["why"] for item in answered_by_base(path=ledger, facts_path=facts_path)
+    }
+    if отвечено:
+        shown = [
+            {**row, "answered_by_base": отвечено[str(row.get("id"))]}
+            if str(row.get("id")) in отвечено
+            else row
+            for row in shown
+        ]
     # НОТА ГОВОРИТ О ТОМ, ЧТО ПОКАЗАНО. До 2026-10-14 она была одной и той же
     # при любом фильтре — «13 proposal(s)» над списком из трёх, — и читатель
     # не мог понять, отфильтровано ли вообще.
@@ -702,8 +831,16 @@ def proposals(*, state: str = "", path: Path | None = None) -> dict:
         "proposals": shown,
         "state_filter": wanted,
         "by_state": counts,
+        "answered_by_base": sorted(отвечено),
         "note": (
             f"{shown_part}; {waiting} waiting on the operator; "
             f"${sum(float(r.get('actual_cost_usd') or 0.0) for r in rows):.2f} spent so far"
+            + (
+                f"; {len(отвечено)} OPEN proposal(s) are already answered by the base "
+                f"({', '.join(sorted(отвечено))}) — do not pay for them; close with "
+                "`python scripts/measurement.py close-answered`"
+                if отвечено
+                else ""
+            )
         ),
     }
