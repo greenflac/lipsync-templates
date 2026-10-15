@@ -4152,14 +4152,39 @@ class Стоимость:
     default: pricing.Option
     cheapest: pricing.Option
     source: str
+    #: Маршрут (кто продаёт прогон), по которому посчитано `default`: `fal`,
+    #: `elevenlabs`, … Пусто — не выведен.
+    route: str = ""
+    #: Цена ТОГО ЖЕ тарифа по ДРУГИМ маршрутам: (маршрут, вариант).
+    other_routes: tuple[tuple[str, pricing.Option], ...] = ()
+    #: Расхождения источников внутри одного маршрута — словами, по одному.
+    contradictions: tuple[str, ...] = ()
 
     def словами(self) -> str:
         дешевле = [o for o in self.options if o.usd < self.default.usd]
-        return f"{self.default.usd:.2f} usd за шаг: {self.default.formula}" + (
-            "; дешевле: "
-            + ", ".join(f"{(o.tier or 'base').capitalize()} {o.usd:.2f}" for o in дешевле)
-            if дешевле
-            else ""
+        return (
+            # «usd за шаг:» — литерал, который сторожит золотой набор (g63):
+            # маршрут идёт ПОСЛЕ двоеточия, а не разрывает его.
+            f"{self.default.usd:.2f} usd за шаг: "
+            + (f"через {self.route} — " if self.route else "")
+            + self.default.formula
+            + (
+                "; дешевле: "
+                + ", ".join(f"{(o.tier or 'base').capitalize()} {o.usd:.2f}" for o in дешевле)
+                if дешевле
+                else ""
+            )
+            + (
+                "; другие маршруты: "
+                + ", ".join(f"{м} {o.usd:.4g} usd" for м, o in self.other_routes)
+                if self.other_routes
+                else ""
+            )
+            + (
+                "; ИСТОЧНИКИ РАСХОДЯТСЯ: " + "; ".join(self.contradictions)
+                if self.contradictions
+                else ""
+            )
         )
 
 
@@ -4193,51 +4218,175 @@ def нужда_шага(
     )
 
 
+#: Хост источника -> маршрут (кто продаёт прогон). Заведено 2026-10-15 по
+#: независимому валидатору: до этого перепродавцы делили одну ступень `portal`
+#: и внутри ступени побеждала ДОРОЖЕ (eleven_v3: $0.18/1k из сводки LiteLLM
+#: против $0.10 у fal и $0.08 у самого вендора). Неизвестный хост — маршрут по
+#: имени домена второго уровня, а не «без маршрута».
+МАРШРУТ_ХОСТА: dict[str, str] = {
+    "fal.ai": "fal",
+    "fal.run": "fal",
+    "runwayml.com": "runway",
+    "elevenlabs.io": "elevenlabs",
+    "ai.google.dev": "google",
+    "openai.com": "openai",
+    "minimax.io": "minimax",
+    "aliyun.com": "aliyun",
+    "x.ai": "xai",
+    "bfl.ai": "bfl",
+    "replicate.com": "replicate",
+}
+
+#: Хвост `_via_<провайдер>` у строк сводки LiteLLM -> маршрут. Свой словарь,
+#: потому что LiteLLM пишет провайдера своим ключом (`fal_ai`, `runwayml`).
+МАРШРУТ_VIA: dict[str, str] = {
+    "fal_ai": "fal",
+    "runwayml": "runway",
+    "black_forest_labs": "bfl",
+    "gemini": "google",
+    "dashscope": "aliyun",
+}
+
+#: Кто сказал цену, когда строка — из сводки цен, а не со страницы маршрута:
+#: сводка ПЕРЕСКАЗЫВАЕТ маршрут, а не продаёт его.
+СВОДКА_ЦЕН = "LiteLLM"
+
+#: Насколько должны разойтись две цены одного маршрута, чтобы это было
+#: расхождением, а не округлением. КОНСТАНТА-РЕШЕНИЕ, ВЫБРАНО 2%: округление
+#: дешёвых ставок до цента даёт до 1%.
+РАСХОЖДЕНИЕ = 0.02
+
+
+def маршрут(f: Fact) -> tuple[str, str]:
+    """(маршрут, кто это сказал). Маршрут — кто продаёт прогон; сказал — ступень или сводка."""
+    from urllib.parse import urlparse
+
+    м = re.search(r"_via_([a-z0-9_]+)$", f.attribute)
+    if м:
+        via = м.group(1)
+        return МАРШРУТ_VIA.get(via, via.replace("_", "-")), СВОДКА_ЦЕН
+    хост = (urlparse(f.source_url or "").hostname or "").lower()
+    for ключ, имя in МАРШРУТ_ХОСТА.items():
+        if хост == ключ or хост.endswith("." + ключ):
+            return имя, f.tier or "?"
+    части = [ч for ч in хост.split(".") if ч]
+    return (части[-2] if len(части) >= 2 else хост), f.tier or "?"
+
+
+def _ступень_строки(f: Fact) -> int:
+    return TIERS.index(f.tier) if f.tier in TIERS else len(TIERS)
+
+
 def стоимость(facts: Sequence[Fact], need: pricing.Need | None) -> "Стоимость | None":
     """Сколько стоит шаг по ВСЕМ ценовым строкам модели. None — посчитать нечем.
 
     Строки разбирает `pricing.rates` (таблица тариф × разрешение × «за что»),
-    считает `pricing.estimate`. Здесь только предел прогона модели (ролик
-    длиннее режется на клипы) и выбор тарифа по умолчанию.
+    считает `pricing.estimate`. Здесь — предел прогона модели (ролик длиннее
+    режется на клипы), МАРШРУТ (кто продаёт прогон) и выбор тарифа по умолчанию.
+
+    ЦЕНА СЧИТАЕТСЯ ПО МАРШРУТУ (2026-10-15, независимый валидатор). Раньше все
+    строки модели ложились в одну кучу по ступени источника, перепродавцы
+    делили ступень `portal`, и внутри ступени молча побеждала ДОРОЖЕ. Теперь:
+
+    1. у каждой строки свой маршрут (`маршрут`): fal, elevenlabs, runway…;
+    2. внутри маршрута верится сильнейшей ступени источника; разные числа о
+       ТОМ ЖЕ тарифе маршрута — РАСХОЖДЕНИЕ, оно печатается словами (кто что
+       сказал), а в смету из равных по ступени идёт дороже — но уже не молча;
+    3. маршрут по умолчанию — ПРЯМОЙ: тот, о котором есть строка ступени
+       `vendor` (страница самого вендора); нет такого — сильнейший по ступени,
+       при равенстве — первый в порядке строк. Остальные маршруты печатаются
+       рядом, чтобы выбор был виден.
     """
     if need is None:
         return None
     имена = af.expand(DURATION_ASKED, sorted({f.attribute for f in facts}))
     предел = dur.предел_из_строк([(f.attribute, f.value) for f in facts if f.attribute in имена])
     need = pricing.Need(**{**need.__dict__, "max_run_seconds": предел.секунды})
-    варианты: list[tuple[int, pricing.Option]] = []
-    откуда = ""
-    # СИЛЬНЕЙШИЙ ИСТОЧНИК ПЕРВЫМ: цена со страницы вендора старше пересказа
-    # агрегатора (`price_per_character_usd_via_*` из сводки LiteLLM, ступень
-    # blog), и при расхождении верится ей.
-    по_ступени = sorted(
-        price_facts(facts),
-        key=lambda f: TIERS.index(f.tier) if f.tier in TIERS else len(TIERS),
-    )
-    for f in по_ступени:
+
+    # маршрут -> тариф -> [(ступень, вариант, кто сказал, строка)]
+    по_маршруту: dict[str, dict[str, list[tuple[int, pricing.Option, str, Fact]]]] = {}
+    for f in sorted(price_facts(facts), key=_ступень_строки):
         найдено = pricing.estimate(pricing.rates(f.value, f.attribute), need)
-        if найдено and not откуда:
-            откуда = f"{f.attribute} = {f.value[:90]} ({f.source_url})"
-        ступень = TIERS.index(f.tier) if f.tier in TIERS else len(TIERS)
-        варианты.extend((ступень, o) for o in найдено)
-    if not варианты:
+        if not найдено:
+            continue
+        имя, сказал = маршрут(f)
+        for o in найдено:
+            по_маршруту.setdefault(имя, {}).setdefault(o.tier, []).append(
+                (_ступень_строки(f), o, сказал, f)
+            )
+    if not по_маршруту:
         return None
-    # Один тариф — одна строка: из записей СИЛЬНЕЙШЕЙ ступени о нём берётся
-    # ДОРОЖЕ (нижней границе тут не место — это смета, а не реклама).
-    по_тарифу: dict[str, pricing.Option] = {}
-    лучшая: dict[str, int] = {}
-    for ступень, o in варианты:
-        if (
-            o.tier not in по_тарифу
-            or ступень < лучшая[o.tier]
-            or (ступень == лучшая[o.tier] and o.usd > по_тарифу[o.tier].usd)
-        ):
-            по_тарифу[o.tier] = o
-            лучшая[o.tier] = ступень
-    порядок = list(dict.fromkeys(o.tier for _, o in варианты))
-    тарифы = [по_тарифу[т] for т in порядок]
-    умолчание = по_тарифу.get("") or по_тарифу.get("standard") or тарифы[0]
-    return Стоимость(tuple(тарифы), умолчание, min(тарифы, key=lambda o: o.usd), откуда)
+
+    расхождения: list[str] = []
+    итог_маршрута: dict[str, tuple[int, list[pricing.Option], Fact]] = {}
+    for имя, тарифы in по_маршруту.items():
+        выбранные: list[pricing.Option] = []
+        откуда: Fact | None = None
+        for тариф, записи in тарифы.items():
+            сильнейшая = min(з[0] for з in записи)
+            свои = [з for з in записи if з[0] == сильнейшая]
+            главная = max(свои, key=lambda з: з[1].usd)
+            выбранные.append(главная[1])
+            откуда = откуда or главная[3]
+            суммы = sorted({round(з[1].usd, 6) for з in записи})
+            if len(суммы) > 1 and суммы[-1] - суммы[0] > РАСХОЖДЕНИЕ * суммы[-1]:
+                голоса: list[str] = []
+                for _, o, сказал, f in sorted(записи, key=lambda з: (з[0], -з[1].usd)):
+                    голос = f"{o.usd:.4g} usd ({сказал}: {f.attribute} = {f.value[:60]})"
+                    if голос not in голоса:
+                        голоса.append(голос)
+                ступень = TIERS[сильнейшая] if сильнейшая < len(TIERS) else "?"
+                равные = len({round(з[1].usd, 6) for з in свои}) > 1
+                расхождения.append(
+                    f"{имя}{' ' + тариф.capitalize() if тариф else ''}: "
+                    + " против ".join(голоса)
+                    + f" — в смету взято {главная[1].usd:.4g} usd (ступень {ступень}"
+                    + (", из равных по ступени — дороже)" if равные else ")")
+                )
+        assert откуда is not None  # у маршрута есть хотя бы одна запись
+        лучшая = min(з[0] for записи in тарифы.values() for з in записи)
+        итог_маршрута[имя] = (лучшая, выбранные, откуда)
+
+    порядок = list(по_маршруту)
+    прямые = [
+        имя
+        for имя, тарифы in по_маршруту.items()
+        if any(з[2] == "vendor" for записи in тарифы.values() for з in записи)
+    ]
+    # Без прямого: маршрут, о котором говорит его СОБСТВЕННАЯ страница, сильнее
+    # маршрута, известного только по пересказу сводки цен.
+    только_сводка = {
+        имя: all(з[2] == СВОДКА_ЦЕН for записи in тарифы.values() for з in записи)
+        for имя, тарифы in по_маршруту.items()
+    }
+    выбран = (
+        прямые[0]
+        if прямые
+        else min(
+            порядок,
+            key=lambda м: (только_сводка[м], итог_маршрута[м][0], порядок.index(м)),
+        )
+    )
+    _, варианты, строка = итог_маршрута[выбран]
+    по_тарифу = {o.tier: o for o in варианты}
+    умолчание = по_тарифу.get("") or по_тарифу.get("standard") or варианты[0]
+    другие: list[tuple[str, pricing.Option]] = []
+    for имя in порядок:
+        if имя == выбран:
+            continue
+        свои_варианты = итог_маршрута[имя][1]
+        другие.append(
+            (имя, next((o for o in свои_варианты if o.tier == умолчание.tier), свои_варианты[0]))
+        )
+    return Стоимость(
+        tuple(варианты),
+        умолчание,
+        min(варианты, key=lambda o: o.usd),
+        f"{строка.attribute} = {строка.value[:90]} ({строка.source_url})",
+        route=выбран,
+        other_routes=tuple(другие),
+        contradictions=tuple(расхождения),
+    )
 
 
 def price_stance(
@@ -4697,17 +4846,25 @@ def смета_ролика(
                 "step": оп.name,
                 "model": к.model,
                 "usd": _ст(к).default.usd,
+                "route": _ст(к).route,
                 "formula": _ст(к).default.formula,
                 "options": [
                     {"tier": o.tier or "base", "resolution": o.resolution, "usd": o.usd}
                     for o in _ст(к).options
                 ],
+                "other_routes": [{"route": м, "usd": o.usd} for м, o in _ст(к).other_routes],
+                "contradictions": list(_ст(к).contradictions),
             }
             for оп, к in с_ценой
         ],
         "steps_without_cost": без,
     }
-    расклад = "; ".join(f"{оп.name} {к.model}: {_ст(к).default.formula}" for оп, к in с_ценой)
+    расклад = "; ".join(
+        f"{оп.name} {к.model}"
+        + (f" через {_ст(к).route}" if _ст(к).route else "")
+        + f": {_ст(к).default.formula}"
+        for оп, к in с_ценой
+    )
     # Плана без видео ролик не касается: «цена ролика» за ключевые кадры —
     # неправда в заголовке (G1/G11). Тогда это цена ПЛАНА.
     полная, частичная = (
