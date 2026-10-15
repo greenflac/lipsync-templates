@@ -432,6 +432,33 @@ for _семья, _хосты in ОТКРЫЛИСЬ_2026_09_02.items():
     # Lightricks: собственные сайт и документация LTX, рядом с их HF-организацией.
     "ltx": ("ltx.io", "docs.ltx.video"),
     "lightricks-ltx": ("huggingface.co/Lightricks/", "ltx.io", "docs.ltx.video"),
+    # Alibaba Cloud Model Studio, МЕЖДУНАРОДНАЯ документация: та же Model Studio,
+    # что `help.aliyun.com/zh/model-studio/`, но с ценами в USD по регионам
+    # (wan3.0-video, wan3.0-video-prime). Прочитано 2026-10-15 (200). Хост — со
+    # ПУТЁМ, по той же причине, что у `help.aliyun.com`: под ним вся
+    # документация Alibaba Cloud, а не только страницы Wan.
+    # `host_of` снимает `www.`, поэтому ключ — без него.
+    "wan": ("alibabacloud.com/help/en/model-studio/",),
+    # РАУНД 5 (2026-10-15): открытые модели речи, фона, интерполяции и
+    # колоризации, заведённые по вопросам валидатора. Вендор каждой — автор
+    # весов, и его страницы — ЕГО организация на GitHub/Hugging Face, поэтому
+    # хосты только С ПУТЁМ организации (оба хоста общие у тысяч авторов).
+    # `huggingface.co/api/models/<org>/` — метаданные той же карточки (лицензия,
+    # языки), отдаваемые JSON-ом; прочитаны 2026-10-15, 200.
+    "silero": ("raw.githubusercontent.com/snakers4/", "github.com/snakers4/"),
+    "f5-tts-russian": ("huggingface.co/Misha24-10/",),
+    "openaudio": ("huggingface.co/fishaudio/", "huggingface.co/api/models/fishaudio/"),
+    "fun-cosyvoice": ("huggingface.co/FunAudioLLM/", "huggingface.co/api/models/FunAudioLLM/"),
+    "pyannote": ("huggingface.co/pyannote/", "huggingface.co/api/models/pyannote/"),
+    "whisper": ("huggingface.co/openai/", "huggingface.co/api/models/openai/"),
+    "birefnet": ("huggingface.co/ZhengPeng7/", "huggingface.co/api/models/ZhengPeng7/"),
+    "bria": ("huggingface.co/briaai/", "huggingface.co/api/models/briaai/"),
+    "rife": ("raw.githubusercontent.com/hzwer/", "github.com/hzwer/"),
+    "film": (
+        "raw.githubusercontent.com/google-research/frame-interpolation/",
+        "github.com/google-research/frame-interpolation/",
+    ),
+    "deoldify": ("raw.githubusercontent.com/jantic/", "github.com/jantic/"),
 }
 
 #: Написание имени -> объявленное семейство, когда написание сворачивается в
