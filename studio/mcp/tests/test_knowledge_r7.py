@@ -185,6 +185,17 @@ class Языки(unittest.TestCase):
             ],
         )
 
+    def test_гигабайты_вне_слов_о_памяти_не_память(self) -> None:
+        self.assertEqual(
+            [None, 12.0, 12.0, 24.0],
+            [
+                capability._память("upload a 5GB video and remove the background"),
+                capability._память("runs on 12GB"),
+                capability._память("12gb", требование=True),
+                capability._память("on one RTX 4090"),
+            ],
+        )
+
     def test_исключительный_список_отсеивает_kk(self) -> None:
         итог = _найти("Kazakh TTS", "tts", "", "kk")
         self.assertEqual(
@@ -230,6 +241,15 @@ class ЗнакПоЗначению(unittest.TestCase):
         self.assertEqual(["nomem-i2v"], итог["gaps"]["examples"])
         self.assertEqual(["min_vram_gb"], [g["attribute"] for g in итог["ranked"][0]["good"]])
         self.assertEqual(["open", "vram<=12GB"], итог["require"])
+
+    def test_оценка_снизу_не_влезает_а_не_измерено(self) -> None:
+        итог = _найти("i2v on a 48GB card", "i2v", "vram", "open")
+        большая = next(r for r in итог["ranked"] if r["model"] == "big-i2v")
+        self.assertEqual(
+            ("informational_only", "could not measure"),
+            (большая["verdict"], большая["requirements"]["vram<=48GB"]["outcome"]),
+        )
+        self.assertIn("lower bound", большая["requirements"]["vram<=48GB"]["why"])
 
     def test_t5_не_пять_гигабайт(self) -> None:
         from studio import hardneed as hn
