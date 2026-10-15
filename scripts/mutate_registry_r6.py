@@ -105,6 +105,10 @@ MUTANTS: tuple[tuple[str, str, str, str], ...] = (
     (DU, "НЕ_СЕКУНДЫ.sub(\" \", КОДЕК_ИЛИ_ВЕРСИЯ.sub(\" \", текст))", "НЕ_СЕКУНДЫ.sub(\" \", текст)", "H.264 — 264 секунды"),
     (DU, "av1|mp[34]|m4a|", "av1|", "MP4 — 4 секунды"),
     (EP, "        r\"|audio-driven\",", "        r\"\",", "audio-driven не аватар"),
+    (EP, "|talking-?heads?|talking-?videos?|", "|talking-?heads?|", "«talking video» не аватар"),
+    (EP, "|lipsync|latentsync\", (LIPSYNC,)),", "|lipsync\", (LIPSYNC,)),", "latentsync не липсинк"),
+    (EP, '    (r"^price_per_1000_chars(?:_usd)?(?:_via_|$)", (TTS,)),', "", "цена за знаки не канал речи"),
+    (EP, '    (r"^price_per_1000_chars(?:_usd)?(?:_via_|$)", (TTS,)),', '    (r"^price_per_1000_chars(?:_usd)?(?:_via_|$)", (TTS, MUSIC)),', "цена за знаки — ещё и музыка"),
 )
 
 

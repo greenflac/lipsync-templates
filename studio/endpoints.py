@@ -155,13 +155,15 @@ EVIDENCE_CURATED = "curated"
 #: (`dub` + `lipsync`). Апскейл раскладывается на картинку и видео отдельно
 #: (`_апскейл`), потому что звено «upscale» одно на оба.
 JOB_RULES: tuple[tuple[str, tuple[str, ...]], ...] = (
-    (r"lip-?sync(?:ing)?|lipsync", (LIPSYNC,)),
+    # `latentsync` (ByteDance LatentSync, «audio-conditioned latent diffusion
+    # for lip sync») — работа срослась с именем, как `i2vgen`.
+    (r"lip-?sync(?:ing)?|lipsync|latentsync", (LIPSYNC,)),
     # «The avatar lip-syncs to the provided audio» — глагол в описании площадки.
     (r"lip-?syncs", (LIPSYNC,)),
     # `avatar4`, `avatar3-digital-twin` (HeyGen на fal): номер поколения
     # прилип к звену — шестой круг, `heygen-avatar4-image-to-video` читался i2v.
     (
-        r"(?:ai-)?avatars?\d*|talking-?heads?|audio-to-video|a2v|s2v|speech-to-video|digital-twin"
+        r"(?:ai-)?avatars?\d*|talking-?heads?|talking-?videos?|audio-to-video|a2v|s2v|speech-to-video|digital-twin"
         # «audio-driven talking/singing video from a start frame» (`hedra-
         # character-3`, страница вендора) — снимок + звук -> говорящее видео.
         r"|audio-driven",
@@ -242,6 +244,9 @@ PIPELINE_FUNCTIONS: dict[str, tuple[str, ...]] = {
 EVIDENCE_PRICE_UNIT = "price-unit"
 PRICE_UNIT_FUNCTIONS: tuple[tuple[str, tuple[str, ...]], ...] = (
     (r"^price_per_image(?:_usd)?(?:_via_|$)", (T2I,)),
+    # «за 1000 знаков» — продаётся синтез речи из текста (`eleven_v4`,
+    # `yandex-speechkit`): знаки на входе, звук на выходе.
+    (r"^price_per_1000_chars(?:_usd)?(?:_via_|$)", (TTS,)),
 )
 
 #: Описательные атрибуты, чьи значения — слова вендора или площадки о том, ЧТО

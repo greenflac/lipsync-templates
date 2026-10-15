@@ -111,6 +111,10 @@ class Подпись(unittest.TestCase):
             ("flux.2-klein-base-4b", ("image-edit",)),
             ("i2vgen-xl", ("i2v",)),
             ("hedra-character-3", ("talking-avatar",)),
+            # «turns any image into a talking video» — позиционирование VEED на fal.
+            ("veed-fabric-1.0", ("talking-avatar",)),
+            ("latentsync-1.6", ("lipsync",)),
+            ("eleven_v4", ("tts",)),
         ):
             with self.subTest(имя=имя):
                 узел = реестр.get(имя)
@@ -134,6 +138,8 @@ class Подпись(unittest.TestCase):
     def test_единица_цены_в_имени_атрибута(self) -> None:
         строки = [факт("acme-img", "price_per_image_usd_via_acme", "$0.04", "https://example.invalid/p")]
         self.assertEqual((("t2i",), "price-unit"), ep.classify("acme-img", строки)[:2])
+        знаки = [факт("acme-voice", "price_per_1000_chars", "$0.10", "https://example.invalid/p")]
+        self.assertEqual((("tts",), "price-unit"), ep.classify("acme-voice", знаки)[:2])
 
 
 # --------------------------------------------------------------------------
