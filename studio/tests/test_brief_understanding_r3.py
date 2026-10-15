@@ -105,21 +105,21 @@ class Находка5СколькоКадров(unittest.TestCase):
         )
         шаг = итог["steps"][0]
         self.assertEqual("б-text-to-image", шаг["chosen"]["model"])
-        self.assertEqual("0.60 usd за шаг: 6 кадр(ов) × 0.1 usd = 0.60 usd", шаг["chosen"]["price"])
+        self.assertEqual("0.60 usd за шаг: через example — 6 кадр(ов) × 0.1 usd = 0.60 usd", шаг["chosen"]["price"])
         self.assertEqual(
-            ["а-text-to-image:6.00 usd за шаг: 6 прогон(ов) × 1 usd (прогон = 1 кадр) = 6.00 usd"],
+            ["а-text-to-image:6.00 usd за шаг: через example — 6 прогон(ов) × 1 usd (прогон = 1 кадр) = 6.00 usd"],
             [f"{а['model']}:{а['price']}" for а in шаг["alternatives"]],
         )
-        self.assertIn("price: 0.60 usd per step: 6 image(s) × 0.1 usd = 0.60 usd", итог["summary"])
+        self.assertIn("price: 0.60 usd per step: via example — 6 image(s) × 0.1 usd = 0.60 usd", итог["summary"])
 
     def test_план_шести_кадров_русский(self) -> None:
         итог = pn.plan(
             "6 ключевых кадров для раскадровки, бюджет 1 доллар", КАРТИНКИ, today=СЕГОДНЯ
         )
         self.assertEqual(
-            "0.60 usd за шаг: 6 кадр(ов) × 0.1 usd = 0.60 usd", итог["steps"][0]["chosen"]["price"]
+            "0.60 usd за шаг: через example — 6 кадр(ов) × 0.1 usd = 0.60 usd", итог["steps"][0]["chosen"]["price"]
         )
-        self.assertIn("цена: 0.60 usd за шаг: 6 кадр(ов) × 0.1 usd = 0.60 usd", итог["summary"])
+        self.assertIn("цена: 0.60 usd за шаг: через example — 6 кадр(ов) × 0.1 usd = 0.60 usd", итог["summary"])
 
 
 class Находка6МузыкаДляРолика(unittest.TestCase):
@@ -356,13 +356,13 @@ class Находка14СоседиИЯзык(unittest.TestCase):
     def test_английский_план_без_русских_форм(self) -> None:
         итог = pn.plan("TTS voiceover, 30 seconds English, budget $1", ЗВУК, today=СЕГОДНЯ)
         self.assertIn(
-            "price: 0.04 usd per step: ≈450 chars × 0.1 usd per 1000 chars", итог["summary"]
+            "price: 0.04 usd per step: via example — ≈450 chars × 0.1 usd per 1000 chars", итог["summary"]
         )
-        for русское in ("за шаг", "знаков", "за 1000_chars"):
+        for русское in ("за шаг", "знаков", "за 1000_chars", "через "):
             self.assertNotIn(русское, итог["summary"])
         # Русский бриф — русские формы, без перевода.
         итог = pn.plan("озвучка диктором 30 секунд, бюджет 1 доллар", ЗВУК, today=СЕГОДНЯ)
-        self.assertIn("цена: 0.04 usd за шаг: ≈450 знаков × 0.1 usd за 1000_chars", итог["summary"])
+        self.assertIn("цена: 0.04 usd за шаг: через example — ≈450 знаков × 0.1 usd за 1000_chars", итог["summary"])
 
 
 if __name__ == "__main__":

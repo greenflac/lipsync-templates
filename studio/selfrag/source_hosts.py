@@ -95,6 +95,11 @@ VENDOR_SOURCES: dict[str, tuple[str, ...]] = {
     # RunDiffusion, digiplay, stablediffusionapi, Comfy-Org, diffusers и ещё
     # сотня таких) СЮДА НЕ ПОПАДАЮТ — их карточка про чужую модель, и `portal`
     # для неё верен. Из 137 разобранных аккаунтов признаны вендорскими 22.
+    # SeedVR2 — аккаунт `ByteDance-Seed` и опубликовал веса (3B, 7B), и
+    # назван именем разработчика (2026-10-15, интеграция): без записи голое
+    # `seedvr2` отвечало «опечатка», потому что оба варианта читались
+    # общинными (организация HF в пути при ступени portal).
+    "seedvr": ("huggingface.co/ByteDance-Seed/",),
     "kokoro": ("huggingface.co/hexgrad/",),
     "xtts": ("huggingface.co/coqui/", "coqui.ai"),
     "f5-tts": ("huggingface.co/SWivid/",),

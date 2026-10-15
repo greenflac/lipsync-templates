@@ -197,6 +197,111 @@ class ПолосаБюджета(unittest.TestCase):
         self.assertFalse(pn.дешевле_всего_заказано("lipsync 30 s, budget $3"))
 
 
+class МеньшеВсегоЗамен(unittest.TestCase):
+    """Потолок превышен — меняется НАИМЕНЬШЕЕ, а не всё (интеграция 2026-10-15).
+
+    Перебор закрывает одна замена — берётся та, что теряет меньше мест в
+    порядке доводов; не закрывает ни одна — жадно по «экономия на место».
+    """
+
+    def _шаги(self):
+        в = оп("генерация_видео")
+        л = оп("липсинк")
+        видео = [
+            кандидат(model="в1", cost=цена(2.0)),
+            кандидат(model="в2", cost=цена(1.0)),
+            кандидат(model="в3", cost=цена(0.5)),
+        ]
+        липсинк = [
+            кандидат(model="л1", cost=цена(1.5)),
+            кандидат(model="л2", cost=цена(1.4)),
+            кандидат(model="л3", cost=цена(0.2)),
+        ]
+        return [(в, видео[0]), (л, липсинк[0])], {в.name: видео, л.name: липсинк}
+
+    def test_одна_замена_с_меньшей_потерей(self) -> None:
+        шаги, найдено = self._шаги()
+        # Сумма 3.5, потолок 2.6: перебор 0.9 закрывают в1->в2 (1 место),
+        # в1->в3 (2 места) и л1->л3 (2 места). Берётся ближняя.
+        замены = pn.подобрать_под_потолок(шаги, найдено, 2.6)
+        self.assertEqual({"генерация_видео": "в2"}, {ш: c.model for ш, c in замены.items()})
+
+    def test_одной_мало_жадно_по_экономии_на_место(self) -> None:
+        шаги, найдено = self._шаги()
+        # Потолок 1.0: нужно отдать 2.5. Каждый шаг доходит до самого дешёвого.
+        замены = pn.подобрать_под_потолок(шаги, найдено, 1.0)
+        self.assertEqual(
+            {"генерация_видео": "в3", "липсинк": "л3"}, {ш: c.model for ш, c in замены.items()}
+        )
+
+    def test_одной_заменой_а_не_двумя(self) -> None:
+        """Лучшая «экономия на место» (в1->в2, 0.5 за место) перебор 0.9 не
+        закрывает и потянула бы вторую замену; л1->л4 закрывает его одна."""
+        в = оп("генерация_видео")
+        л = оп("липсинк")
+        видео = [кандидат(model="в1", cost=цена(2.0)), кандидат(model="в2", cost=цена(1.5))]
+        липсинк = [
+            кандидат(model="л1", cost=цена(1.5)),
+            кандидат(model="л2", cost=цена(1.45)),
+            кандидат(model="л3", cost=цена(1.4)),
+            кандидат(model="л4", cost=цена(0.55)),
+        ]
+        замены = pn.подобрать_под_потолок(
+            [(в, видео[0]), (л, липсинк[0])], {в.name: видео, л.name: липсинк}, 2.6
+        )
+        self.assertEqual({"липсинк": "л4"}, {ш: c.model for ш, c in замены.items()})
+
+    def test_в_потолке_менять_нечего(self) -> None:
+        шаги, найдено = self._шаги()
+        self.assertEqual({}, pn.подобрать_под_потолок(шаги, найдено, 3.5))
+
+    def test_другая_полоса_не_берётся(self) -> None:
+        л = оп("липсинк")
+        измерен = кандидат(model="измерен", applicability=2, cost=цена(1.5))
+        немой = кандидат(model="немой", cost=цена(0.2))
+        self.assertEqual({}, pn.подобрать_под_потолок([(л, измерен)], {л.name: [измерен, немой]}, 1.0))
+
+
+class ЛицензияСемьиВарианту(unittest.TestCase):
+    """Вариант без своей лицензии наследует ОСТОРОЖНОСТЬ семьи, а не факт."""
+
+    ФАКТЫ = [
+        факт("fam-h3", "license_excluded_territories", "EU, UK, South Korea, USA", "https://huggingface.co/x/LICENSE"),
+        факт("fam-h3", "produces_outputs", "видео"),
+        факт("fam-h3", "accepts_inputs", "текст"),
+        факт("fam-h3-max-t2v", "produces_outputs", "видео"),
+        факт("fam-h3-max-t2v", "accepts_inputs", "текст"),
+        факт("fam-h3-max-t2v", "requires_inputs", "текст"),
+    ]
+
+    def _варианты(self, юрисдикции=None, факты=None):
+        from studio.factindex import FactIndex
+
+        найдены = pn.candidates_for(оп("генерация_видео"), FactIndex(facts=факты or self.ФАКТЫ), юрисдикции=юрисдикции)
+        return {c.model: c for c in найдены}
+
+    def test_вариант_отодвинут_и_сказано_честно(self) -> None:
+        вариант = self._варианты()["fam-h3-max-t2v"]
+        self.assertTrue(вариант.territory_unasked)
+        self.assertEqual(
+            "лицензия СЕМЬИ fam-h3 исключает территории EU, KR, UK, US — где работает заказчик?; "
+            "лицензия для варианта fam-h3-max-t2v в базе НЕ записана — перенесена осторожность "
+            "семьи, а не факт (https://huggingface.co/x/LICENSE)",
+            вариант.licence_risk,
+        )
+        self.assertFalse(вариант.licence_blocked)
+
+    def test_названная_исключённая_юрисдикция_держит_вариант_позади(self) -> None:
+        self.assertTrue(self._варианты(("US",))["fam-h3-max-t2v"].territory_unasked)
+        self.assertFalse(self._варианты(("BR",))["fam-h3-max-t2v"].territory_unasked)
+
+    def test_своя_лицензия_варианта_переноса_нет(self) -> None:
+        факты = self.ФАКТЫ + [факт("fam-h3-max-t2v", "license", "Apache-2.0")]
+        вариант = self._варианты(факты=факты)["fam-h3-max-t2v"]
+        self.assertFalse(вариант.territory_unasked)
+        self.assertNotIn("СЕМЬИ", вариант.licence_risk)
+
+
 class ЖивыеБрифы(unittest.TestCase):
     """Три брифа проверки — на живой базе, ответ целиком литералами."""
 
@@ -206,31 +311,68 @@ class ЖивыеБрифы(unittest.TestCase):
             "English VO with lipsync, budget $15",
             full=True,
         )
+        # С интеграцией третьего круга (2026-10-15) «consistent fighters» —
+        # кадры по референсу: кадр -> правка по референсу -> оживление.
+        # Сверхразрешение (`drct-super-resolution`) правкой по референсу не
+        # считается (чужая работа).
         self.assertEqual(
-            [("озвучка", "eleven_v3"), ("генерация_видео", "wan-3.0-prime-t2v"), ("липсинк", "sync-lipsync")],
+            [
+                ("генерация_изображения", "gpt-image-2.5-flare"),
+                ("редактирование_изображения", "flux-3-edit"),
+                ("озвучка", "eleven_v3"),
+                ("оживление", "wan-3.0-i2v"),
+                ("липсинк", "sync-lipsync"),
+            ],
             [(ш["step"], ш["chosen"]["model"]) for ш in итог["steps"]],
         )
-        self.assertEqual(
-            "кадр 1080x1920 пронесён от шага генерация_видео (wan-3.0-prime-t2v: тариф шага "
-            "посчитан в 1080p) через липсинк (sync-lipsync): о разрешении их выхода база "
-            "молчит, и принято, что проход кадр сохраняет — допущение, не замер",
-            итог["resolution_carry"],
+        self.assertTrue(итог["resolution_carry"].startswith("кадр 1080x1920 пронесён от шага оживление (wan-3.0-i2v:"))
+        self.assertTrue(
+            итог["resolution_carry"].endswith(
+                "через липсинк (sync-lipsync): о разрешении их выхода база "
+                "молчит, и принято, что проход кадр сохраняет — допущение, не замер"
+            )
         )
-        видео = итог["steps"][1]
+        видео = итог["steps"][3]
         self.assertEqual("minimax-h3", видео["licence_alternative"]["model"])
         self.assertIn(
             "условия API-площадки — другой документ: в базе НЕ записаны",
             видео["licence_alternative"]["licence_risk"],
         )
         self.assertEqual("юрисдикция", итог["question"]["axis"])
-        self.assertEqual((13.31, "годно"), (итог["pipeline_price"]["смета"]["usd"], итог["pipeline_price"]["outcome"]))
+        self.assertEqual((4.16, "годно"), (итог["pipeline_price"]["смета"]["usd"], итог["pipeline_price"]["outcome"]))
         self.assertNotIn("optimised", итог["pipeline_price"])
-        self.assertEqual("latentsync", итог["steps"][2]["cheaper_same_rank"]["model"])
+        self.assertEqual("latentsync", итог["steps"][4]["cheaper_same_rank"]["model"])
 
     def test_липсинк_3_доллара(self) -> None:
         итог = pn.plan("lipsync 30 s, budget $3")
         # Провал НАСТОЯЩЕГО шага (липсинк) старше открытого вопроса о видео.
         self.assertEqual(("fail", "валидатор_отверг"), (итог["outcome"], итог["reason"]))
+        оптимум = итог["pipeline_price"]["optimised"]
+        # ПОТОЛОК — НЕ «САМОЕ ДЕШЁВОЕ» (2026-10-15): перебор 0.58 usd закрывает
+        # одна замена липсинка; озвучка и видео остаются прежними.
+        # eleven_v3 теперь по маршруту вендора: ≈450 знаков × 0.08 usd / 1000.
+        self.assertEqual(
+            [("липсинк", "sync-lipsync", "latentsync")],
+            [(о["step"], о["from"], о["to"]) for о in оптимум["swaps"]],
+        )
+        self.assertEqual(
+            [("озвучка", "eleven_v3"), ("генерация_видео", "wan-3.0-prime-t2v"), ("липсинк", "latentsync")],
+            [(ш["step"], ш["chosen"]["model"]) for ш in итог["steps"]],
+        )
+        self.assertEqual((3.576, 2.276), (оптимум["before_usd"], оптимум["after_usd"]))
+        self.assertEqual("total 3.58 usd is over the clip ceiling 3 usd", оптимум["why_en"])
+        self.assertEqual("годно", итог["pipeline_price"]["outcome"])
+        self.assertIn(
+            "re-selected for the budget: sync-lipsync 1.50 -> latentsync 0.20 usd; traded off: "
+            "sync-lipsync: измерено, но есть плохая новость, строк применимости 3 (за 2, против 1) "
+            "-> latentsync: измерено, но есть плохая новость, строк применимости 4 (за 1, против 3)",
+            итог["summary"],
+        )
+        self.assertIn("BUDGET OPTIMISED (total 3.58 usd is over the clip ceiling 3 usd): 3.58 -> 2.28 usd", итог["summary"])
+
+    def test_липсинк_заказано_самое_дешёвое_меняет_всё(self) -> None:
+        """Обратное направление: «cheapest» — каждый шаг к минимуму своей полосы."""
+        итог = pn.plan("lipsync 30 s, budget $3, cheapest")
         оптимум = итог["pipeline_price"]["optimised"]
         self.assertEqual(
             [
@@ -240,16 +382,7 @@ class ЖивыеБрифы(unittest.TestCase):
             ],
             [(о["step"], о["from"], о["to"]) for о in оптимум["swaps"]],
         )
-        self.assertEqual((3.621, 0.8112), (оптимум["before_usd"], оптимум["after_usd"]))
-        self.assertEqual("total 3.62 usd is over the clip ceiling 3 usd", оптимум["why_en"])
-        self.assertEqual("годно", итог["pipeline_price"]["outcome"])
-        self.assertIn(
-            "re-selected for the budget: sync-lipsync 1.50 -> latentsync 0.20 usd; traded off: "
-            "sync-lipsync: измерено, но есть плохая новость, строк применимости 3 (за 2, против 1) "
-            "-> latentsync: измерено, но есть плохая новость, строк применимости 4 (за 1, против 3)",
-            итог["summary"],
-        )
-        self.assertIn("BUDGET OPTIMISED (total 3.62 usd is over the clip ceiling 3 usd): 3.62 -> 0.81 usd", итог["summary"])
+        self.assertEqual((3.576, 0.8112), (оптимум["before_usd"], оптимум["after_usd"]))
 
     def test_нативный_звук_1080p_самое_дешёвое(self) -> None:
         итог = pn.plan("8 second 1080p video with native audio, cheapest")
@@ -277,8 +410,11 @@ class ЖивыеБрифы(unittest.TestCase):
             [(ш["step"], ш.get("conditional")) for ш in итог["steps"]],
         )
         self.assertEqual("годно", итог["pipeline_price"]["outcome"])
+        # Цена ролика — только шесть кадров (6 × 0.03612); условный апскейл 0.48 — рядом.
+        self.assertEqual(0.22, итог["pipeline_price"]["смета"]["usd"])
         self.assertEqual(
-            [("апскейл_изображения", "topaz-upscale-image-transparent", 0.08)],
+            # Шесть кадров — шесть прогонов апскейла (2026-10-15): 6 × 0.08.
+            [("апскейл_изображения", "topaz-upscale-image-transparent", 0.48)],
             [(у["step"], у["model"], у["usd"]) for у in итог["pipeline_price"]["conditional_steps"]],
         )
 

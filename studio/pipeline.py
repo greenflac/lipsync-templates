@@ -1019,8 +1019,21 @@ def probe_stale(step: Step, свои: Sequence[Fact], today: date) -> Probe:
                 CLASS_OUTCOME[CLASS_STALE],
                 f"модель объявлена снятой ({снятие.note}, {f.source_url})",
             )
+    # ЧАСТЬ МАРШРУТОВ ЗАКРЫТА (2026-10-15): модель не снята, но вызов через
+    # закрытый маршрут ответит 404. Это не отказ и не молчание — третий исход,
+    # и нота называет каждый маршрут со сроком. Старость базы (отказ) старше.
+    часть_закрыта = маршруты.outcome == lifecycle.НЕ_СМОГЛИ and bool(маршруты.прошло)
+    предупреждение = Probe(
+        CLASS_STALE,
+        True,
+        True,
+        UNMEASURED,
+        f"часть маршрутов закрыта, модель работает не везде ({маршруты.note})",
+    )
     возрасты = [d for d in (_age_days(f, today) for f in свои) if d is not None]
     if not возрасты:
+        if часть_закрыта:
+            return предупреждение
         return Probe(
             CLASS_STALE,
             True,
@@ -1037,6 +1050,8 @@ def probe_stale(step: Step, свои: Sequence[Fact], today: date) -> Probe:
             CLASS_OUTCOME[CLASS_STALE],
             f"самому свежему утверждению о модели {свежайшее} дней при пороге {STALE_AFTER_DAYS}",
         )
+    if часть_закрыта:
+        return предупреждение
     return Probe(
         CLASS_STALE,
         True,

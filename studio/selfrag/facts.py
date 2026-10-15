@@ -817,6 +817,15 @@ class FactStore:
             return по_словам
         if any(_tier_rank(f.tier) < _tier_rank(TIER_PORTAL) for f in строки):
             return modelnames.ROLE_VENDOR_VARIANT
+        # СТРАНИЦА САМОГО ВЕНДОРА при записанной ступени portal (2026-10-15):
+        # строка `seedvr2-3b` с `huggingface.co/ByteDance-Seed/…` легла portal
+        # до того, как аккаунт объявили вендорским, — ступень в строке старая,
+        # а чьи веса, решает таблица `source_hosts.VENDOR_SOURCES`.
+        from studio.selfrag import source_hosts
+
+        свои_адреса = source_hosts.vendor_sources_for(model)
+        if any(source_hosts._matches(f.source_url, e) for f in строки for e in свои_адреса):
+            return modelnames.ROLE_VENDOR_VARIANT
         if строки and all(_общинный_адрес(f.source_url) for f in строки):
             return modelnames.ROLE_COMMUNITY
         return modelnames.ROLE_VENDOR_VARIANT

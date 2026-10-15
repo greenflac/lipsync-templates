@@ -144,5 +144,37 @@ class СнятиеРешаетРазбор(unittest.TestCase):
         )
 
 
+class ЧастьМаршрутовЗакрыта(unittest.TestCase):
+    """Один маршрут закрыт, другой открыт: модель не снята, но молчать нельзя.
+
+    До 2026-10-15 сводка `по_маршрутам` возвращала «не смогли» с нотой о
+    закрытом маршруте, а проба шла дальше к свежести и печатала «годно».
+    """
+
+    СТРОКИ = [
+        _факт("deprecation_date_via_gemini", "2026-08-01"),
+        _факт("deprecation_date_via_vertex", "2027-01-01"),
+    ]
+
+    def test_предупреждение_называет_закрытый_маршрут(self) -> None:
+        проба = pl.probe_stale(_шаг(), self.СТРОКИ, СЕГОДНЯ)
+        self.assertEqual(проба.outcome, НЕ_СМОГЛИ)
+        self.assertIn("gemini: закрыт с 2026-08-01", проба.note)
+        self.assertIn("vertex", проба.note)
+
+    def test_все_маршруты_открыты_не_предупреждение_о_закрытии(self) -> None:
+        """Негативный контроль: срок впереди на каждом маршруте — проба о закрытии молчит."""
+        проба = pl.probe_stale(_шаг(), [_факт("deprecation_date_via_vertex", "2027-01-01")], СЕГОДНЯ)
+        self.assertNotIn("часть маршрутов закрыта", проба.note)
+
+    def test_все_маршруты_закрыты_это_отказ(self) -> None:
+        проба = pl.probe_stale(
+            _шаг(),
+            [_факт("deprecation_date_via_gemini", "2026-08-01"), _факт("deprecation_date_via_vertex", "2026-08-02")],
+            СЕГОДНЯ,
+        )
+        self.assertEqual(проба.outcome, СНЯТА)
+
+
 if __name__ == "__main__":
     unittest.main()

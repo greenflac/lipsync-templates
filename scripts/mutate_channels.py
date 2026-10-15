@@ -1942,6 +1942,22 @@ MUTANTS: list[tuple[str, str, str, str, str]] = [
         "ответ: молчание базы печатается как причина отказа",
         "studio.tests.test_render_says_why",
     ),
+    # ИНТЕГРАЦИЯ 2026-10-15: часть маршрутов закрыта — предупреждение;
+    # вендорская организация HF решает роль варианта при ступени portal.
+    (
+        "studio/pipeline.py",
+        "    часть_закрыта = маршруты.outcome == lifecycle.НЕ_СМОГЛИ and bool(маршруты.прошло)",
+        "    часть_закрыта = False",
+        "проба: закрытый маршрут снова молчит, пока другой открыт",
+        "studio.tests.test_stale_asks_lifecycle",
+    ),
+    (
+        "studio/selfrag/facts.py",
+        "        if any(source_hosts._matches(f.source_url, e) for f in строки for e in свои_адреса):",
+        "        if False:",
+        "семья: веса вендора на HF снова читаются общинными",
+        "studio.mcp.tests.test_model_naming_audit",
+    ),
     (
         "studio/planner.py",
         '            f", из них {self.against} о том, где ломается"',

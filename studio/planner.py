@@ -1479,6 +1479,11 @@ IMAGE_EDIT_ATTRIBUTES: tuple[str, ...] = (
     r"lip-?sync",
     r"avatar",
     r"upscal",
+    # Сверхразрешение — тот же апскейл другим словом (2026-10-15, интеграция):
+    # `drct-super-resolution` вставал моделью «кадров по референсу» на брифе
+    # «two consistent realistic fighters» — увеличить кадр не значит сделать
+    # того же бойца в другой сцене.
+    r"super-?resolution",
     r"live-portrait",
     r"headshot",
     r"portrait-enhance",
@@ -5442,7 +5447,13 @@ def _поле(c: Candidate, i: int) -> str:
         c.fit_state or "не считалось",
         c.dur_state or "не считалось",
         c.price_state or "не считалось",
-        "исключает территории, юрисдикция не названа" if c.territory_unasked else "нет",
+        (
+            FAMILY_LICENCE_LABEL
+            if c.licence_risk.startswith(FAMILY_LICENCE_PREFIX)
+            else "исключает территории, юрисдикция не названа"
+        )
+        if c.territory_unasked
+        else "нет",
         "по записи ниже заказанного кадра" if c.below_frame else "не ниже по записи",
         "сообщество" if c.community else "продукт",
         f"вытеснена: {c.superseded}" if c.superseded else "текущее поколение",
@@ -5679,6 +5690,7 @@ def candidates_for(
     по_имени: dict[str, list[Fact]] = {}
     for f in index.facts:
         по_имени.setdefault(fold(f.model), []).append(f)
+    известные = sorted({f.model for f in index.facts})
 
     # ВТОРОЙ КАНАЛ ПОИСКА: по объявленной форме, а не по словам (см.
     # `declared_shape_hits`). Дополняет якорный, а не заменяет его: модель,
@@ -5753,6 +5765,7 @@ def candidates_for(
         лицензия = pl.probe_licence(
             pl.Step(name=op.name, model=имя, requirement="", use=use, jurisdictions=юрисдикции), все
         )
+        семья, территории_семьи = семья_с_территориями(имя, все, по_имени, известные)
         найдены.append(
             Candidate(
                 model=имя,
@@ -5783,9 +5796,24 @@ def candidates_for(
                 licence_blocked=лицензия.fired and лицензия.outcome == FAIL,
                 dur_wall=not op.клипами,
                 licence_note=лицензия.note if лицензия.fired else "",
-                licence_risk=риск_лицензии(все, юрисдикции),
-                territory_unasked=юрисдикции is None
-                and bool(pl.licence_reservations(все)[0]),
+                licence_risk=риск_лицензии(все, юрисдикции)
+                or (риск_лицензии_семьи(имя, семья, территории_семьи, юрисдикции) if семья else ""),
+                # Вариант без своей лицензии при семье с исключениями
+                # отодвигается и при НАЗВАННОЙ исключённой юрисдикции: стеной
+                # (`licence_blocked`) его делать нечем — запись не о нём.
+                territory_unasked=(
+                    юрисдикции is None and bool(pl.licence_reservations(все)[0])
+                )
+                or (
+                    bool(семья)
+                    and (
+                        юрисдикции is None
+                        or bool(
+                            set(юрисдикции)
+                            & {к for f in территории_семьи for к in pl.jurisdictions_in(f.value)}
+                        )
+                    )
+                ),
                 below_frame=ниже_кадра(op, все, сколько, brief_frame),
                 outside_brief=tuple(
                     f"«{_коротко(f.value, 90)}» — при условии: "
@@ -6049,6 +6077,66 @@ def риск_лицензии(свои: Sequence[Fact], юрисдикции: tu
             )
         )
     return "; ".join(части)
+
+
+#: Сколько ступеней семьи вверх искать записанную лицензию варианта:
+#: `minimax-h3-max-t2v` -> `minimax-h3-max` -> `minimax-h3`. КОНСТАНТА-РЕШЕНИЕ.
+FAMILY_LICENCE_DEPTH = 3
+#: Начало ноты переноса и подпись поля ключа для варианта без своей лицензии.
+FAMILY_LICENCE_PREFIX = "лицензия СЕМЬИ"
+FAMILY_LICENCE_LABEL = "лицензия семьи исключает территории, у варианта не записана"
+
+
+def семья_с_территориями(
+    имя: str, свои: Sequence[Fact], по_имени: Mapping[str, Sequence[Fact]], известные: Sequence[str]
+) -> tuple[str, list[Fact]]:
+    """(семья, её строки о территориях), если у ВАРИАНТА лицензия не записана,
+    а у его семьи записана лицензия с территориальными исключениями.
+
+    НАЙДЕНО 2026-10-15 (интеграция): `minimax-h3` с лицензией, исключающей
+    EU/UK/KR/US, отодвигался до ответа о юрисдикции, а `minimax-h3-max-t2v`
+    без единой строки о лицензии вставал первым — молчание базы читалось как
+    «исключений нет». Перенос — ОСТОРОЖНОСТЬ, а не факт: лицензия варианта
+    могла быть другой, и нота говорит ровно это. Своя строка о лицензии у
+    варианта есть — переноса нет. Пусто — переносить нечего.
+    """
+    from studio.selfrag import modelnames
+
+    if any(pl._has_marker(f.attribute, pl.LICENCE_MARKERS) for f in свои):
+        return "", []
+    текущее = имя
+    for _ in range(FAMILY_LICENCE_DEPTH):
+        семьи = modelnames.parent(текущее, известные)
+        if not семьи:
+            return "", []
+        строки = [f for с in семьи for f in по_имени.get(fold(с), [])]
+        территории, _ = pl.licence_reservations(строки)
+        if территории:
+            return семьи[0], территории
+        if any(pl._has_marker(f.attribute, pl.LICENCE_MARKERS) for f in строки):
+            return "", []
+        текущее = семьи[0]
+    return "", []
+
+
+def риск_лицензии_семьи(
+    имя: str, семья: str, территории: Sequence[Fact], юрисдикции: tuple[str, ...] | None
+) -> str:
+    """Нота переноса: что исключает лицензия СЕМЬИ и что о варианте не записано."""
+    исключены = sorted({к for f in территории for к in pl.jurisdictions_in(f.value)})
+    список = ", ".join(исключены) or _коротко(территории[0].value, 60)
+    оговорка = (
+        f"лицензия для варианта {имя} в базе НЕ записана — перенесена осторожность "
+        f"семьи, а не факт ({территории[0].source_url})"
+    )
+    if юрисдикции and set(юрисдикции) & set(исключены):
+        return (
+            f"{FAMILY_LICENCE_PREFIX} {семья} исключает вашу территорию "
+            f"({', '.join(sorted(set(юрисдикции) & set(исключены)))}); {оговорка}"
+        )
+    if юрисдикции:
+        return f"{FAMILY_LICENCE_PREFIX} {семья} исключает {список}; ваша ({', '.join(юрисдикции)}) не исключена; {оговорка}"
+    return f"{FAMILY_LICENCE_PREFIX} {семья} исключает территории {список} — где работает заказчик?; {оговорка}"
 
 
 #: Атрибуты УСЛОВИЙ API-площадки (terms of service), в отличие от лицензии весов.
@@ -7112,6 +7200,63 @@ def дешевле_в_полосе(
     return лучший
 
 
+def подобрать_под_потолок(
+    шаги: Sequence[tuple[Operation, Candidate | None]],
+    найдено: Mapping[str, Sequence[Candidate]],
+    потолок: float,
+) -> dict[str, Candidate]:
+    """Какие шаги заменить, чтобы сумма влезла в потолок: МЕНЬШЕ ВСЕГО отдав.
+
+    ПРАВИЛО (2026-10-15, интеграция): потолок превышен — это не «заказано самое
+    дешёвое». Менять КАЖДЫЙ шаг на самый дешёвый в полосе значило отдавать
+    порядок там, где хватило бы одной замены. Жадно, по шагу за раз:
+
+    * потеря ранга замены — на сколько мест она ниже нынешнего выбора шага в
+      его списке кандидатов (список уже отсортирован по доводам);
+    * если одна замена закрывает весь перебор, берётся та, что теряет МЕНЬШЕ
+      всего мест (при равенстве — с большей экономией): меньше замен, меньше
+      отдано;
+    * иначе берётся лучшая по «экономия на место потери», и круг повторяется;
+      шаг можно заменить повторно, ниже по своему списку.
+
+    Кандидаты — только той же полосы и с полной ценой (`дешевле_в_полосе`
+    правила те же). Возвращает {шаг: новый кандидат}; пусто — менять нечего.
+    """
+    текущие: dict[str, tuple[Operation, Candidate]] = {
+        op.name: (op, к) for op, к in шаги if к is not None and к.cost is not None
+    }
+    сумма = sum(к.cost.default.usd for _, к in текущие.values() if к.cost is not None)
+    замены: dict[str, Candidate] = {}
+    while сумма > потолок + 1e-9:
+        перебор = сумма - потолок
+        варианты: list[tuple[float, int, int, str, Candidate]] = []
+        for шаг, (op, к) in текущие.items():
+            список = list(найдено.get(шаг, ()))
+            if к not in список or к.cost is None:
+                continue
+            где = список.index(к)
+            своя = полоса(к)
+            for i, c in enumerate(список):
+                if c is к or not цена_полная(c, op) or полоса(c) != своя or c.cost is None:
+                    continue
+                экономия = к.cost.default.usd - c.cost.default.usd
+                if экономия <= 1e-9:
+                    continue
+                варианты.append((экономия, i - где, i, шаг, c))
+        if not варианты:
+            break
+        закрывают = [в for в in варианты if в[0] >= перебор - 1e-9]
+        if закрывают:
+            экономия, _, _, шаг, c = min(закрывают, key=lambda в: (в[1], -в[0], в[2], в[3]))
+        else:
+            экономия, _, _, шаг, c = max(варианты, key=lambda в: (в[0] / max(в[1], 1), -в[1], -в[2]))
+        op, _ = текущие[шаг]
+        текущие[шаг] = (op, c)
+        замены[шаг] = c
+        сумма -= экономия
+    return замены
+
+
 def обмен(шаг: str, был: Candidate, стал: Candidate, англ: bool = False) -> dict:
     """Строка обмена: что взято вместо чего, сколько сэкономлено и что отдано."""
     assert был.cost is not None and стал.cost is not None
@@ -7527,6 +7672,11 @@ def _вариант_строка(
 #: Сколько знаков записи о провале цитируется в кратком плане.
 SUMMARY_QUOTE = 110
 
+#: Сколько знаков цены шага в кратком плане. Было 60; маршрут перед формулой
+#: («через elevenlabs — », 2026-10-15) съедал единицу счёта («за 1000_chars»),
+#: и строка цены переставала говорить, ЗА ЧТО платят. КОНСТАНТА-РЕШЕНИЕ.
+SUMMARY_PRICE = 80
+
 
 def _коротко(текст: object, n: int = SUMMARY_QUOTE) -> str:
     t = " ".join(str(текст or "").split())
@@ -7618,6 +7768,13 @@ def _по_английски(текст: str) -> str:
         r"nothing is recorded about \2 speaking the brief's language (\1) — "
         r"test it with a trial run before ordering",
     ),
+    (r"лицензия СЕМЬИ (\S+) исключает вашу территорию", r"the licence of the FAMILY \1 EXCLUDES your territory"),
+    (r"лицензия СЕМЬИ (\S+) исключает территории ", r"the licence of the FAMILY \1 excludes territories "),
+    (r"лицензия СЕМЬИ (\S+) исключает ", r"the licence of the FAMILY \1 excludes "),
+    (
+        r"лицензия для варианта (\S+) в базе НЕ записана — перенесена осторожность семьи, а не факт",
+        r"no licence is recorded for the variant \1 — the family's caution is carried over, not a fact",
+    ),
     (r"лицензия ИСКЛЮЧАЕТ вашу территорию", "the licence EXCLUDES your territory"),
     (r"лицензия исключает территории ", "the licence excludes territories "),
     (r"лицензия исключает ", "the licence excludes "),
@@ -7631,11 +7788,29 @@ def _по_английски(текст: str) -> str:
         "the licence recorded is for the WEIGHTS (self-hosting); through an API platform its own "
         "terms apply — read them separately",
     ),
+    (
+        r"это лицензия ВЕСОВ \(самостоятельный запуск\); условия API-площадки — другой документ: "
+        r"в базе НЕ записаны — переносятся ли на API исключения весов, неизвестно",
+        "this is the WEIGHTS licence (self-hosting); the API platform's terms are another document: "
+        "NOT recorded in the base — whether the weights' exclusions carry over to the API is unknown",
+    ),
+    (
+        r"это лицензия ВЕСОВ \(самостоятельный запуск\); условия API-площадки — другой документ: ",
+        "this is the WEIGHTS licence (self-hosting); the API platform's terms are another document: ",
+    ),
     (r" — при условии: ", " — when: "),
     (r"текст в кадре", "text in frame"),
     (r"USD в год", "USD a year"),
     (r"usd за шаг: ", "usd per step: "),
     (r"; дешевле: ", "; cheaper: "),
+    # Маршрут и расхождения источников (2026-10-15, интеграция цен и брифа).
+    (r"через (\S+) — ", r"via \1 — "),
+    (r"; другие маршруты: ", "; other routes: "),
+    (r"ИСТОЧНИКИ РАСХОДЯТСЯ: ", "SOURCES DISAGREE: "),
+    (r"\) против ", ") vs "),
+    (r" — в смету взято ", " — the estimate takes "),
+    (r"\(ступень (\w+), из равных по ступени — дороже\)", r"(\1 tier; of equal tiers, the dearer)"),
+    (r"\(ступень (\w+)\)", r"(\1 tier)"),
     (
         r"usd за прогон \(сколько секунд даёт прогон — не записано\)",
         "usd per run (seconds per run not recorded)",
@@ -7920,7 +8095,7 @@ def сводка(итог: dict) -> str:
             цена_шага = выбран.get("price")
             хвост.append(
                 ("price: " if англ else "цена: ")
-                + _коротко(_форма_по_английски(цена_шага) if англ else цена_шага, 60)
+                + _коротко(_форма_по_английски(цена_шага) if англ else цена_шага, SUMMARY_PRICE)
             )
             риск = _риск_шага(итог, шаг, англ)
             if риск:
@@ -7979,18 +8154,31 @@ def сводка(итог: dict) -> str:
             if вне:
                 хвост.append(
                     (
-                        "held back by its licence (jurisdiction not named): "
-                        if англ
-                        else "отодвинута лицензией (юрисдикция не названа): "
+                        (
+                            "held back by its licence (jurisdiction not named): "
+                            if англ
+                            else "отодвинута лицензией (юрисдикция не названа): "
+                        )
+                        if "где работает заказчик" in str(вне.get("licence_risk") or "")
+                        else (
+                            "held back by its licence (your territory is excluded): "
+                            if англ
+                            else "отодвинута лицензией (ваша территория исключена): "
+                        )
                     )
-                    + f"{вне.get('model')} ({_коротко(вне.get('price'), 48)}) — "
-                    + _коротко(вне.get("licence_risk"), 260)
+                    + f"{вне.get('model')} "
+                    + f"({_коротко(_форма_по_английски(вне.get('price')) if англ else вне.get('price'), 48)}) — "
+                    + _коротко(
+                        _форма_по_английски(вне.get("licence_risk")) if англ else вне.get("licence_risk"),
+                        260,
+                    )
                 )
             дешевле_шага = шаг.get("cheaper_same_rank") or {}
             if дешевле_шага and not обмен_шага:
                 хвост.append(
                     ("cheaper at the same evidence rank: " if англ else "дешевле при тех же доводах: ")
-                    + f"{дешевле_шага.get('model')} ({_коротко(дешевле_шага.get('price'), 60)})"
+                    + f"{дешевле_шага.get('model')} "
+                    + f"({_коротко(_форма_по_английски(дешевле_шага.get('price')) if англ else дешевле_шага.get('price'), SUMMARY_PRICE)})"
                 )
         строки.append(f" {i}. {имя} -> {модель}" + ("".join(f"\n      {х}" for х in хвост)))
     сборка = итог.get("assembly")
@@ -8595,18 +8783,29 @@ def plan(
     дешевле_просят = дешевле_всего_заказано(brief)
     до = _сумма()
     обмены: list[dict] = []
-    if (потолок_ролика is not None and до > потолок_ролика) or дешевле_просят:
+    # ЗАКАЗАНО САМОЕ ДЕШЁВОЕ — каждый шаг к минимуму полосы. ТОЛЬКО ПОТОЛОК —
+    # меньше всего замен и потерь ранга (`подобрать_под_потолок`, 2026-10-15).
+    if дешевле_просят:
         for op, к in list(выбор):
+            if op.name in условные:
+                continue
             замена = дешевле_в_полосе(к, найдено_на_шаг.get(op.name, []), op)
             if к is not None and замена is not None:
                 принудительно[op.name] = замена.model
                 обмены.append(обмен(op.name, к, замена))
-        if обмены:
-            _собрать()
-            по_шагу = {о["step"]: о for о in обмены}
-            for строка in строки_шагов:
-                if строка["step"] in по_шагу:
-                    строка["budget_swap"] = по_шагу[строка["step"]]
+    elif потолок_ролика is not None and до > потолок_ролика:
+        безусловные = [(op, к) for op, к in выбор if op.name not in условные]
+        подобраны = подобрать_под_потолок(безусловные, найдено_на_шаг, потолок_ролика)
+        for op, к in list(выбор):
+            if к is not None and op.name in подобраны:
+                принудительно[op.name] = подобраны[op.name].model
+                обмены.append(обмен(op.name, к, подобраны[op.name]))
+    if обмены:
+        _собрать()
+        по_шагу = {о["step"]: о for о in обмены}
+        for строка in строки_шагов:
+            if строка["step"] in по_шагу:
+                строка["budget_swap"] = по_шагу[строка["step"]]
 
     # ВАЛИДАТОРУ ПОТОЛОК ШАГА — только когда он назван на шаг или на прогон
     # (2026-10-14, G7). Бюджет ролика — это сумма, и судит её `смета_ролика`.

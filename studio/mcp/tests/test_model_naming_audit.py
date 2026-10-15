@@ -198,6 +198,34 @@ class П3_Семьи(База):
         self.assertEqual(sorted(got["family_claims"]), ["license@seedvr2-3b", "license@seedvr2-7b"])
         self.assertNotIn("seed_audio", got["near"])
 
+    def test_семья_на_живых_ступенях_portal_не_опечатка(self) -> None:
+        """Как в живой базе 2026-10-15: строки весов `ByteDance-Seed` лежат
+        ступенью portal, рядом — общинная сборка и эндпоинты площадки. Голое
+        `seedvr2` отвечало `name_maybe_mistyped` с пустым списком вариантов."""
+        self.база(
+            строка("seedvr2-3b", "license", "apache-2.0", "https://huggingface.co/ByteDance-Seed/SeedVR2-3B", "portal"),
+            строка("seedvr2-7b", "license", "apache-2.0", "https://huggingface.co/ByteDance-Seed/SeedVR2-7B", "portal"),
+            строка("seedvr2_comfyui", "license", "apache-2.0", "https://huggingface.co/numz/SeedVR2_comfyUI", "portal"),
+            строка(
+                "seedvr2-upscale-video", "price", "$0.001 per megapixel", "https://fal.ai/models/fal-ai/seedvr/upscale/video", "portal"
+            ),
+        )
+        got = advice.advise("seedvr2", path=self.путь)
+        self.assertEqual(got["reason"], "answered_by_family")
+        self.assertEqual(got["family"]["variants"], ["seedvr2-3b", "seedvr2-7b"])
+        self.assertEqual(got["family"]["community"], ["seedvr2_comfyui"])
+        self.assertEqual(got["family"]["addons"], ["seedvr2-upscale-video"])
+        self.assertEqual(sorted(got["family_claims"]), ["license@seedvr2-3b", "license@seedvr2-7b"])
+
+    def test_чужая_организация_HF_по_прежнему_общинная(self) -> None:
+        """Негативный контроль: перезаливщик под тем же именем — не вендор."""
+        self.база(
+            строка("seedvr2-3b", "license", "apache-2.0", "https://huggingface.co/someone/SeedVR2-3B", "portal"),
+        )
+        got = advice.advise("seedvr2", path=self.путь)
+        self.assertEqual(got["family"]["variants"], [])
+        self.assertEqual(got["family"]["community"], ["seedvr2-3b"])
+
 
 class П4_РеестрИБаза(База):
     def test_псевдоним_реестра_доходит_до_базы(self) -> None:

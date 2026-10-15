@@ -88,5 +88,40 @@ class ОтказНазываетПричину(unittest.TestCase):
         self.assertNotIn("ПОЧЕМУ ОТВЕРГНУТ", текст)
 
 
+class ПричинаТолькоИзСработавших(unittest.TestCase):
+    """Молчание базы — не причина отказа (мутант «молчание базы печатается как
+    причина отказа» выжил на гейте 2026-10-15: условие отбора не сторожил никто).
+
+    Проба с исходом «не смогли» и проба, которая прошла, несут ноты, но
+    отказом не являются; печатать их причиной — выдать незнание за нарушение.
+    """
+
+    ИТОГ = {
+        "validator": {
+            "steps": [
+                {
+                    "step": "липсинк",
+                    "probes": [
+                        {"class": "лицензия", "fired": True, "outcome": pn.FAIL, "note": "NC-лицензия"},
+                        {"class": "вход", "fired": False, "outcome": pn.UNMEASURED, "note": "база молчит о входе"},
+                        {"class": "выход", "fired": True, "outcome": pn.UNMEASURED, "note": "нечем судить"},
+                        {"class": "цена", "fired": False, "outcome": pn.PASS, "note": "цена есть"},
+                        {"class": "кадр", "fired": True, "outcome": pn.FAIL, "note": ""},
+                    ],
+                }
+            ]
+        }
+    }
+
+    def test_печатается_только_сработавший_отказ(self) -> None:
+        self.assertEqual(
+            pn._сработавшие(self.ИТОГ, "липсинк"),
+            [{"class": "лицензия", "note": "NC-лицензия"}],
+        )
+
+    def test_чужой_шаг_пуст(self) -> None:
+        self.assertEqual(pn._сработавшие(self.ИТОГ, "озвучка"), [])
+
+
 if __name__ == "__main__":
     unittest.main()
