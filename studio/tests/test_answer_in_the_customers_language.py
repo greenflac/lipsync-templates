@@ -358,6 +358,16 @@ class ЧужаяЗаписьНеПерваяФраза(unittest.TestCase):
         """Негативный контроль (И5): оговорка приписывается не всем подряд."""
         self.assertNotIn("в вашем брифе не названы", self._совет(self.СВОЙ))
 
+    def test_по_английски_запись_тоже_приведена_ниже_работы(self) -> None:
+        """Сборка 2026-10-15, мутант «на английском её просто выбрасывают»
+        молчал: английская ветка совета не проверялась ни одним брифом. Та же
+        перестановка, что по-русски: сначала работа, ниже — запись дословно."""
+        совет = self._совет("coffee shop ad in Kazan, need a talking head, 30 seconds")
+        self.assertIn("you can:", совет)
+        self.assertIn("We are saying this because the chosen model", совет)
+        self.assertLess(совет.index("you can:"), совет.index("measured failure"))
+        self.assertRegex(совет, r"has a measured failure on record: «[^»]{10,}")
+
 
 if __name__ == "__main__":
     unittest.main()
