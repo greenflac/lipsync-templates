@@ -207,7 +207,9 @@ class ЖивойСвойGpu(unittest.TestCase):
     def test_не_kling_а_модель_с_весами_в_24_гб(self) -> None:
         шаг = self.итог["steps"][0]
         self.assertEqual(
-            ("генерация_видео", "wan-2.2-ti2v-5b"), (шаг["step"], шаг["chosen"]["model"])
+            # Пятый круг: те же веса в формате diffusers — эндпоинт работы t2v из
+            # реестра; узел `wan-2.2-ti2v-5b` записан с кадром ниже 1080p.
+            ("генерация_видео", "wan2.2-ti2v-5b-diffusers"), (шаг["step"], шаг["chosen"]["model"])
         )
         отсеяны = {о["model"] for о in шаг["hard_excluded"]}
         self.assertNotIn("kling-3.0", {a["model"] for a in шаг["alternatives"]})
@@ -220,7 +222,10 @@ class ЖивойСвойGpu(unittest.TestCase):
             pn.FactIndex(),
             hard=hn.from_brief("self-host on one RTX 4090"),
         )
-        self.assertIn("о весах не записано", найдены.исключены["kling-3.0"])
+        # Пятый круг: узел семьи `kling-3.0` не кандидат вовсе (реестр: своей
+        # цены и идентификатора площадки нет) — за веса отсеиваются её тарифы.
+        self.assertNotIn("kling-3.0", [c.model for c in найдены])
+        self.assertIn("о весах не записано", найдены.исключены["kling-3.0-standard-t2v"])
         self.assertIn("нужно 33 ГБ", найдены.исключены["minimax-h3"])
         self.assertIn("нужно 80 ГБ", найдены.исключены["wan-2.2-t2v-a14b"])
         self.assertIn("весов нет: только API", найдены.исключены["wan-3.0-t2v"])
@@ -234,14 +239,16 @@ class ЖивойСвойGpu(unittest.TestCase):
 
     def test_апскейл_тоже_на_своём_gpu(self) -> None:
         self.assertEqual(
-            [("генерация_видео", "wan-2.2-ti2v-5b"), ("апскейл", "seedvr2-3b")],
+            [("генерация_видео", "wan2.2-ti2v-5b-diffusers"), ("апскейл", "seedvr2-3b")],
             [(ш["step"], ш["chosen"]["model"]) for ш in self.итог["steps"]],
         )
 
     def test_негативный_контроль_без_своего_gpu_kling_не_отсеяна(self) -> None:
         итог = pn.plan("generate a video from scratch, 1080p 5s clips", full=True)
         self.assertEqual(0, итог["steps"][0]["hard_excluded_count"])
-        self.assertEqual("kling-3.0", итог["steps"][0]["chosen"]["model"])
+        # Пятый круг: узел семьи `kling-3.0` не заказывается; его тарифы делят
+        # доводы семьи, и ничью решает цена — стандартный, а не 4K.
+        self.assertEqual("kling-3.0-standard-t2v", итог["steps"][0]["chosen"]["model"])
 
 
 # --------------------------------------------------------------------------

@@ -68,9 +68,7 @@ class СквозныеБрифы(unittest.TestCase):
 
     def test_4k_качество_родная_4k_модель(self) -> None:
         итог = pn.plan("4K 24fps cinematic 6s, no audio, quality over price", full=True)
-        self.assertEqual(
-            ("quality", 2160), (итог["hard"]["objective"], итог["hard"]["resolution"])
-        )
+        self.assertEqual(("quality", 2160), (итог["hard"]["objective"], итог["hard"]["resolution"]))
         модель = _модели(итог)["генерация_видео"]
         self.assertIn("4k", модель or "")
         self.assertIn("the frame asked is native", итог["steps"][0]["hard_note"])
@@ -89,7 +87,11 @@ class СквозныеБрифы(unittest.TestCase):
         )
         шаг = итог["steps"][0]
         self.assertEqual("генерация_видео", шаг["step"])
-        self.assertEqual("wan-2.2-ti2v-5b", шаг["chosen"]["model"])
+        # Пятый круг: реестр добавил эндпоинт работы t2v, которого слова не
+        # находили, — те же веса Wan2.2-TI2V-5B в формате diffusers. Узел
+        # `wan-2.2-ti2v-5b` записан с родным кадром НИЖЕ 1080p и стоит соседом.
+        self.assertEqual("wan2.2-ti2v-5b-diffusers", шаг["chosen"]["model"])
+        self.assertIn("wan-2.2-ti2v-5b", [а["model"] for а in шаг["alternatives"]])
         self.assertIn("weights open", шаг["hard_note"])
         self.assertIn("fits the GPU memory", шаг["hard_note"])
         self.assertGreater(шаг["hard_excluded_count"], 0)
@@ -112,14 +114,30 @@ class СквозныеБрифы(unittest.TestCase):
         self._свой_gpu(итог, "spec")
 
     def test_своё_видео_без_кадра_цена_по_стандарту(self) -> None:
-        итог = pn.plan("replace the face in my 20s video with my character", full=True)
-        цена = итог["steps"][0]["chosen"]["price"]
-        self.assertIn("[1080p]", цена)
+        # Пятый круг: кандидаты замены — только эндпоинты работы face-swap
+        # (прежде выбиралась r2v-генерация `seedance-2.5-r2v`). На живой базе
+        # первым встаёт `bfs-best-face-swap` БЕЗ цены, и допущения кадра для
+        # цены тогда нет; оно проверяется на базе, где из эндпоинтов face-swap
+        # остался продаваемый с тарифом по кадру, а снимок для лица принесён.
+        без = {"bfs-best-face-swap", "inswapper_128", "wan-animate-replace"}
+        факты = [f for f in pn.FactIndex().facts if f.model not in без]
+        spec = {"task": "face-replace", "inputs": ["video", "photo"], "duration_s": 20}
+        итог = pn.plan(
+            "replace the face in my 20s video with my character", facts=факты, spec=spec, full=True
+        )
+        выбран = итог["steps"][0]["chosen"]
+        self.assertEqual("wan-2.2-14b-animate-replace", выбран["model"])
+        self.assertIn("[720p below the ordered 1080p", выбран["price"])
         self.assertTrue(
             any("1080p assumed for pricing" in д for д in итог["understood_as"]["assumptions"])
         )
         # Негативный контроль: названный кадр — без допущения.
-        итог = pn.plan("replace the face in my 20s 720p video with my character", full=True)
+        итог = pn.plan(
+            "replace the face in my 20s 720p video with my character",
+            facts=факты,
+            spec=spec,
+            full=True,
+        )
         self.assertFalse(
             any("assumed for pricing" in д for д in итог["understood_as"]["assumptions"])
         )

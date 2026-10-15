@@ -72,6 +72,17 @@ EN_PLANS: list[tuple[str, dict]] = [
     ("a 5s clip", {"spec": {"task": "generate", "durations": 5}}),
     ("3 product stills, animate each for 5 s, budget $4", {"full": True}),
     ("replace the face in my 20s video with my character", {"full": True}),
+    # Пятый круг: тарифы `kling-3.0` делят доводы семьи, и у стандартного кадр
+    # не записан — «кадр пронесён» печатает план, где выбран родной 4K.
+    ("4K 9:16 20s ad from scratch with English VO and lipsync, quality over price", {}),
+    # Пятый круг: работы, которые маршрут знает по `spec.task` (реестр эндпоинтов).
+    ("Restore and colorize my old 2-minute family film", {"spec": {"task": "restore", "outputs": ["video"], "duration_s": 120, "inputs": ["video"]}, "full": True}),
+    ("Smooth my 10s clip to 60fps", {"spec": {"task": "interpolate", "outputs": ["video"], "duration_s": 10, "inputs": ["video"]}}),
+    ("Cut out the background of 20 product photos", {"spec": {"task": "remove-background", "outputs": ["image"], "shots": 20, "inputs": ["photo"]}}),
+    ("Remove the background behind me in my 15s video", {"spec": {"task": "remove-background", "outputs": ["video"], "duration_s": 15, "inputs": ["video"]}}),
+    ("Transcribe our 10-minute podcast with speaker labels", {"spec": {"task": "transcribe", "outputs": ["text"], "duration_s": 600, "inputs": ["audio"]}}),
+    ("Clone my voice from my sample and read 5 minutes of my script", {"spec": {"task": "voice-clone", "outputs": ["speech"], "duration_s": 300, "inputs": ["audio", "script"]}}),
+    ("A 360 turntable of my sneaker photo, 6 seconds", {"spec": {"task": "turntable", "outputs": ["video"], "duration_s": 6, "inputs": ["photo"]}, "full": True}),
 ]
 
 #: То же по-русски: русский ответ не должен нести английских шаблонов.

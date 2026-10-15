@@ -231,6 +231,7 @@ from lipsync.fork_identity import FAIL, PASS, UNMEASURED
 from studio import brief_spec as bs
 from studio import clarify
 from studio import duration as dur
+from studio import endpoints as ep
 from studio import l10n
 from studio import factaxis as fa
 from studio import hardneed as hn
@@ -422,6 +423,12 @@ ARTEFACT_MUSIC = "музыка"
 ARTEFACT_UPSCALED = "видео_апскейл"
 ARTEFACT_UPSCALED_IMAGE = "изображение_апскейл"
 ARTEFACT_FINAL = "готовый_ролик"
+#: Артефакты работ пятого круга (реестр эндпоинтов, `studio/endpoints.py`).
+ARTEFACT_RESTORED = "видео_реставрация"
+ARTEFACT_SMOOTH = "видео_интерполяция"
+ARTEFACT_CUTOUT = "изображение_без_фона"
+ARTEFACT_VIDEO_CUTOUT = "видео_без_фона"
+ARTEFACT_TRANSCRIPT = "расшифровка_текст"
 
 #: `селфи` УБРАНО из входов, которые есть всегда (2026-10-14): лицо клиента
 #: приходит, только если заказчик его принёс, и это читает `inputs_of`.
@@ -990,6 +997,13 @@ OUTPUT_KINDS: dict[str, str] = {
     ARTEFACT_MUSIC: "аудио",
     ARTEFACT_UPSCALED: "видео",
     ARTEFACT_UPSCALED_IMAGE: "изображение",
+    ARTEFACT_RESTORED: "видео",
+    ARTEFACT_SMOOTH: "видео",
+    ARTEFACT_CUTOUT: "изображение",
+    ARTEFACT_VIDEO_CUTOUT: "видео",
+    # Расшифровку схемы площадок видом носителя не называют («текст» — вход,
+    # а не выход): вид назван, чтобы `output_stance` честно сказал «не записано».
+    ARTEFACT_TRANSCRIPT: "текст",
 }
 
 #: ТРИ положения кандидата по ВЫХОДУ. Третье — самое частое: выход записан у 44
@@ -2112,7 +2126,109 @@ OPERATIONS: tuple[Operation, ...] = (
         чужие=(r"video",),
         якорь_нужен_профиль=True,
     ),
+    # --- РАБОТЫ ПЯТОГО КРУГА (2026-10-15, реестр эндпоинтов) ------------------
+    # Подсказок у них НЕТ нарочно: они не выводятся из слов брифа, их называет
+    # спецификация (`brief_spec.route` по `spec.task`), а кандидатов даёт
+    # реестр по работе (`ФУНКЦИЯ_ОПЕРАЦИИ`), а не якорь по тексту строк.
+    Operation(
+        name="реставрация",
+        cues=(),
+        anchors=("colorization", "restoration"),
+        requires=(ARTEFACT_VIDEO,),
+        produces=(ARTEFACT_RESTORED,),
+        requirement="старое видео восстановлено (шум, царапины) и раскрашено без мерцания цвета",
+    ),
+    Operation(
+        name="интерполяция_кадров",
+        cues=(),
+        anchors=("interpolation",),
+        requires=(ARTEFACT_VIDEO,),
+        produces=(ARTEFACT_SMOOTH,),
+        requirement="промежуточные кадры без двоения и дрожи на быстром движении",
+    ),
+    Operation(
+        name="удаление_фона",
+        cues=(),
+        anchors=("background-removal",),
+        requires=(ARTEFACT_IMAGE,),
+        produces=(ARTEFACT_CUTOUT,),
+        requirement="фон снят чисто по контуру (волосы, стекло), на выходе прозрачность",
+    ),
+    Operation(
+        name="удаление_фона_видео",
+        cues=(),
+        anchors=("background-removal",),
+        requires=(ARTEFACT_VIDEO,),
+        produces=(ARTEFACT_VIDEO_CUTOUT,),
+        requirement="фон снят по контуру в каждом кадре, без мерцания края",
+    ),
+    Operation(
+        name="расшифровка",
+        cues=(),
+        anchors=("transcription", "diarization", "speech-to-text"),
+        # Запись заказчика — его материал, как у дубляжа: дорожку из видео
+        # достаёт ffmpeg, и шаг не требует, чтобы её кто-то «произвёл».
+        requires=(ARTEFACT_REFERENCE,),
+        produces=(ARTEFACT_TRANSCRIPT,),
+        requirement="текст со словами и метками говорящих, тайминги для субтитров",
+    ),
+    Operation(
+        name="клонирование_голоса",
+        cues=(),
+        anchors=("voice-clone", "voice-cloning"),
+        # Образец голоса — материал заказчика (`референс`), согласие — его же.
+        requires=(ARTEFACT_REFERENCE,),
+        produces=(ARTEFACT_AUDIO,),
+        requirement="текст прочитан голосом образца: тембр, акцент и темп как в образце",
+    ),
+    Operation(
+        name="оборот_360",
+        cues=(),
+        anchors=("turntable", "orbit", "360"),
+        requires=(ARTEFACT_IMAGE,),
+        produces=(ARTEFACT_VIDEO,),
+        requirement="предмет поворачивается на 360° без искажения формы, петля без шва",
+        клипами=True,
+    ),
 )
+
+#: ШАГ -> РАБОТА РЕЕСТРА (`studio/endpoints.py`). КОНСТАНТА-РЕШЕНИЕ пятого
+#: круга: кандидаты шага — заказываемые эндпоинты, у которых эта работа
+#: записана свидетельством. Шаг, которого здесь нет, реестром не судится.
+ФУНКЦИЯ_ОПЕРАЦИИ: dict[str, str] = {
+    "генерация_изображения": ep.T2I,
+    "редактирование_изображения": ep.IMAGE_EDIT,
+    "озвучка": ep.TTS,
+    "дубляж": ep.DUB,
+    "оживление": ep.I2V,
+    "говорящий_аватар": ep.AVATAR,
+    "генерация_видео": ep.T2V,
+    "замена_персонажа": ep.FACE_SWAP,
+    "звук_фон": ep.SFX,
+    "музыка": ep.MUSIC,
+    "липсинк": ep.LIPSYNC,
+    "апскейл": ep.UPSCALE_VIDEO,
+    "апскейл_изображения": ep.UPSCALE_IMAGE,
+    "реставрация": ep.RESTORE,
+    "интерполяция_кадров": ep.INTERPOLATE,
+    "удаление_фона": ep.BG_REMOVE,
+    "удаление_фона_видео": ep.BG_REMOVE,
+    "расшифровка": ep.TRANSCRIBE,
+    "клонирование_голоса": ep.VOICE_CLONE,
+    "оборот_360": ep.TURNTABLE,
+}
+
+#: Работа, которой шаг делается, когда в реестре нет НИ ОДНОГО заказываемого
+#: эндпоинта его собственной работы, — и почему это честная замена, словами.
+#: Оборот 360° без эндпоинта «turntable» делается оживлением снимка с
+#: облётом камеры: та же работа i2v, только промпт о движении камеры.
+ЗАПАСНАЯ_РАБОТА: dict[str, tuple[str, str]] = {
+    "оборот_360": (
+        ep.I2V,
+        "no orderable endpoint records a turntable function — the photo is animated "
+        "image-to-video with an orbiting camera move instead",
+    ),
+}
 
 #: Шаг СБОРКИ: монтаж клипов, музыки и звука в один ролик. НЕ модель — это
 #: ffmpeg или монтажная программа, и цена у него нулевая. В `OPERATIONS` не
@@ -2305,6 +2421,16 @@ class Candidate:
     hard_rank: tuple = ()
     #: Чем требования заказчика подтверждены или нет — словами (веса, VRAM, кадр).
     hard_note: str = ""
+    #: Реестр эндпоинтов (`studio/endpoints.py`) НЕ установил, какую работу
+    #: модель делает: свидетельства нет ни в идентификаторе, ни в каталоге, ни
+    #: в схеме. Кандидат найден старыми каналами (якорь, профиль) и стоит ПОСЛЕ
+    #: тех, чья работа установлена (2026-10-15, пятый круг).
+    unclassified: bool = False
+    #: Заказано САМОЕ ДЕШЁВОЕ: кандидат без полной цены встаёт после всех с
+    #: ценой — «самое дешёвое» нельзя доказать моделью, чья цена неизвестна.
+    unpriced_last: bool = False
+    #: Чем реестр подтвердил работу кандидата (канал и свидетельство) — словами.
+    registry_note: str = ""
 
     @property
     def measured(self) -> bool:
@@ -4478,7 +4604,9 @@ def предел_прогона(facts: Sequence[Fact]) -> float | None:
     return dur.предел_из_строк([(f.attribute, f.value) for f in facts if f.attribute in имена]).секунды
 
 
-def стоимость(facts: Sequence[Fact], need: pricing.Need | None) -> "Стоимость | None":
+def стоимость(
+    facts: Sequence[Fact], need: pricing.Need | None, запасной: tuple[float, str] | None = None
+) -> "Стоимость | None":
     """Сколько стоит шаг по ВСЕМ ценовым строкам модели. None — посчитать нечем.
 
     Строки разбирает `pricing.rates` (таблица тариф × разрешение × «за что»),
@@ -4500,7 +4628,16 @@ def стоимость(facts: Sequence[Fact], need: pricing.Need | None) -> "С�
     """
     if need is None:
         return None
-    need = pricing.Need(**{**need.__dict__, "max_run_seconds": предел_прогона(facts)})
+    свой = предел_прогона(facts)
+    # ПРОГОН СЧИТАЕТСЯ И БЕЗ СВОЕЙ ЗАПИСИ (пятый круг): длина прогона семьи или
+    # осторожное допущение (`запасной_прогон`), и основание печатается в расчёте.
+    need = pricing.Need(
+        **{
+            **need.__dict__,
+            "max_run_seconds": свой if свой is not None else (запасной[0] if запасной else None),
+            "run_basis": "" if свой is not None or not запасной else запасной[1],
+        }
+    )
 
     # маршрут -> тариф -> [(ступень, вариант, кто сказал, строка)]
     по_маршруту: dict[str, dict[str, list[tuple[int, pricing.Option, str, Fact]]]] = {}
@@ -5417,6 +5554,24 @@ def sign_rank(c: "Candidate") -> int:
     return SIGN_MIXED if c.in_favour else SIGN_AGAINST
 
 
+#: Ступени поля «делает ли модель эту работу» (пятый круг): установленная
+#: реестром работа — 0, не установленная — 1, чужая — 2. КОНСТАНТЫ-РЕШЕНИЯ:
+#: неустановленная выше чужой (о ней не сказано, что она делает другое) и ниже
+#: установленной (о ней не сказано, что она делает это).
+UNCLASSIFIED_RANK = 1
+FOREIGN_RANK = 2
+
+
+def цена_есть(c: Candidate) -> bool:
+    """Есть ли у кандидата ЦЕНА ШАГА целиком: посчитана, больше нуля, не нижняя граница."""
+    return (
+        c.cost is not None
+        and c.cost.default.usd > 0
+        and not c.cost.default.lower_bound
+        and not c.cost.default.conditional
+    )
+
+
 def by_evidence(c: Candidate) -> tuple:
     """Ключ порядка кандидатов, вынесенный из сортировки (Т5).
 
@@ -5477,13 +5632,20 @@ def by_evidence(c: Candidate) -> tuple:
     # из 19 кандидатов с записанным пределом работу сделают ДВА.
     длительность = dur.DUR_ORDER.get(c.dur_state, 0)
     цена = 0 if c.price_rank_off else PRICE_ORDER.get(c.price_state, 0)
+    if c.unpriced_last and not цена_есть(c):
+        # ЗАКАЗАНО САМОЕ ДЕШЁВОЕ, А ЦЕНЫ НЕТ (2026-10-15, пятый круг): такой
+        # кандидат не может быть ответом на «самое дешёвое» — его место после
+        # всех с ценой, как у «цена не записана» при названном потолке.
+        цена = max(цена, PRICE_ORDER[PRICE_ABSENT])
     return (
         стена,
         # ЧУЖАЯ РАБОТА — сразу после стены (2026-10-14): аватар-продукт с
         # измеренной применимостью не должен обгонять генератор видео на шаге
         # генерации видео, а генератор с подходящей ценой — апскейлер на шаге
         # апскейла. Модель, которая делает другое, хуже любой дорогой.
-        int(c.foreign),
+        # Работа, НЕ УСТАНОВЛЕННАЯ реестром (`unclassified`), — ступень между
+        # «эта работа» и «чужая» (пятый круг): не довод против, но и не довод за.
+        FOREIGN_RANK if c.foreign else UNCLASSIFIED_RANK if c.unclassified else 0,
         кадр_стена,
         длительность_стена,
         цена,
@@ -5564,8 +5726,8 @@ def why_not(chosen: Candidate, neighbour: Candidate) -> str:
         # сказать заказчику, что выбор сделан, когда он не сделан.
         return (
             f"НИЧЬЯ: {chosen.model} и {neighbour.model} равны по всем полям отбора — "
-            "данные между ними не выбирают; первым стоит по имени, только чтобы порядок "
-            "был воспроизводим. Смотрите обоих"
+            "данные между ними не выбирают; первым стоит дешевле (при равной цене — по имени), "
+            "а не лучше. Смотрите обоих"
         )
     for i, (а, б) in enumerate(zip(свой, чужой)):
         if а != б:
@@ -5588,7 +5750,11 @@ def _поле(c: Candidate, i: int) -> str:
     значения = (
         f"{c.ban_state or '—'} / {c.life_state or '—'} / {c.out_state or '—'}"
         + (" / лицензия запрещает" if c.licence_blocked else ""),
-        "другую работу" if c.foreign else "эту работу",
+        "другую работу"
+        if c.foreign
+        else "работа не установлена реестром"
+        if c.unclassified
+        else "эту работу",
         c.fit_state or "не считалось",
         c.dur_state or "не считалось",
         c.price_state or "не считалось",
@@ -5780,9 +5946,17 @@ class Кандидаты(list):
     печатается счётом и причинами (`hard_excluded`).
     """
 
-    def __init__(self, items: Iterable[Candidate] = (), исключены: Mapping[str, str] | None = None):
+    def __init__(
+        self,
+        items: Iterable[Candidate] = (),
+        исключены: Mapping[str, str] | None = None,
+        реестр: Mapping[str, Any] | None = None,
+    ):
         super().__init__(items)
         self.исключены: dict[str, str] = dict(исключены or {})
+        #: Что сделал реестр эндпоинтов на этом шаге (`реестр_шага`): работа,
+        #: запасная работа, кого не пустил и почему.
+        self.реестр: dict[str, Any] = dict(реестр or {})
 
 
 @dataclass(frozen=True)
@@ -6000,6 +6174,127 @@ def доводы_семьи(найдены: Sequence[Candidate], известн�
     return итог
 
 
+#: Метка строки, найденной РЕЕСТРОМ (работа записана свидетельством), а не
+#: словом операции. Печатается у строки доказательства, как метки каналов выше.
+REGISTRY_MATCH_LABEL = "реестр эндпоинтов"
+#: Метка строки применимости, одолженной у СЕМЬИ (узел семьи не заказывается).
+FAMILY_LENT_LABEL = "применимость семьи"
+#: Какие строки кандидата, добавленного реестром, печатаются его опорой: то,
+#: чем установлена его работа (каталог, схема), а не всё, что о нём записано.
+REGISTRY_ROW_ATTRIBUTES: frozenset[str] = frozenset(
+    {"availability", "requires_inputs", "accepts_inputs", "produces_outputs", "positioning"}
+)
+
+#: Длина ОДНОГО прогона видео, когда её не записали ни модель, ни её семья.
+#: КОНСТАНТА-РЕШЕНИЕ (пятый круг), ВЫБРАНО 5 с — короткий конец того, что
+#: продают генераторы (Kling, Hailuo, Wan: 5–6 с за прогон). Допущение
+#: ОСТОРОЖНОЕ: короче прогон — больше прогонов — дороже смета; и оно
+#: печатается в расчёте цены, а не подставляется молча. До пятого круга цена
+#: «за прогон» без длины прогона считалась ОДИН раз на любой ролик: $0.49 за
+#: 600 с.
+RUN_DEFAULT_S = 5.0
+RUN_DEFAULT_NOTE = "длина прогона не записана ни у модели, ни у семьи — допущено {s:g} с (осторожно: больше прогонов)"
+
+
+def работы_шага(op: Operation, реестр: "ep.Registry") -> tuple[tuple[str, ...], str]:
+    """Какие работы реестра закрывают шаг, и нота, если взята запасная. Пусто — реестр шаг не судит."""
+    if op.name == NATIVE_AUDIO_STEP:
+        # Видео со звуком делает видеомодель своего режима ИЛИ аватар-продукт
+        # (`годные_со_звуком` различает их родом); с дорожкой заказчика —
+        # модель, ведомая звуком.
+        if ARTEFACT_AUDIO in op.requires:
+            return (ep.AVATAR, ep.LIPSYNC, ep.I2V), ""
+        return ((ep.I2V if ARTEFACT_IMAGE in op.requires else ep.T2V), ep.AVATAR), ""
+    работа = ФУНКЦИЯ_ОПЕРАЦИИ.get(op.name, "")
+    if not работа:
+        return (), ""
+    if not реестр.orderable_for(работа) and op.name in ЗАПАСНАЯ_РАБОТА:
+        запасная, почему = ЗАПАСНАЯ_РАБОТА[op.name]
+        return (запасная,), почему
+    return (работа,), ""
+
+
+def одалживает_семья(
+    семья: "ep.Endpoint | None", работы: Sequence[str], hard: "hn.Hard | None" = None
+) -> bool:
+    """Одалживает ли узел семьи варианту свои строки применимости на этом шаге.
+
+    Только узел, который сам НЕ заказывается (иначе он — сосед со своими
+    доводами, а не семья), и только о ТОЙ ЖЕ работе: строки `hunyuan-video`
+    (t2v) ничего не говорят о `hunyuanvideo-avatar` на шаге аватара. Узел без
+    установленной работы (`kling-3.0`) — семья целиком, его строки о ней.
+    """
+    if семья is None or семья.orderable:
+        return False
+    # На СВОЁМ GPU узел семьи с открытыми весами — сам кандидат (`candidates_for`),
+    # и его строки — его доводы, а не заём варианта.
+    if hard is not None and hard.self_host and семья.self_hostable:
+        return False
+    # Строки семьи — о её ГЕНЕРАТОРЕ (t2v, i2v, кадры): `wan-2.2` измерена как
+    # видеомодель, и её строки не говорят о `wan-v2.2-14b-speech-to-video`.
+    if not set(работы) & ep.FAMILY_MODES:
+        return False
+    return not семья.functions or bool(set(семья.functions) & set(работы))
+
+
+def запасной_прогон(
+    op: Operation, узел: "ep.Endpoint | None", все: Sequence[Fact]
+) -> tuple[float, str] | None:
+    """Длина прогона для ЦЕНЫ, когда своей записи нет: семьи или допущение. None — своя есть или шаг не видео."""
+    if not {OUTPUT_KINDS.get(а) for а in op.produces} & {"видео"}:
+        return None
+    if предел_прогона(все) is not None:
+        return None
+    if узел is not None and узел.run_s is not None:
+        return узел.run_s, f"длина прогона — {узел.run_basis}: {узел.run_s:g} с"
+    return RUN_DEFAULT_S, RUN_DEFAULT_NOTE.format(s=RUN_DEFAULT_S)
+
+
+#: Шаги, кандидатов которых даёт ТОЛЬКО реестр: работы пятого круга, у которых
+#: нет ни подсказок, ни профиля, а якоря ловят чужое (`interpolation` в строке
+#: о говорящей голове). Модель старых каналов без установленной работы на них
+#: не кандидат, даже если реестр не знает ни одного эндпоинта работы.
+ТОЛЬКО_РЕЕСТР: frozenset[str] = frozenset(
+    {
+        "реставрация",
+        "интерполяция_кадров",
+        "удаление_фона",
+        "удаление_фона_видео",
+        "расшифровка",
+        "клонирование_голоса",
+        "оборот_360",
+    }
+)
+REGISTRY_UNCLASSIFIED_NOTE = "реестр: работа модели не установлена, а эндпоинты этой работы известны"
+
+#: Сколько отсеянных реестром моделей печатается примером на шаг.
+REGISTRY_SHOWN = 3
+
+
+def реестр_шага(
+    работы: Sequence[str],
+    запасная_нота: str,
+    не_заказываются: Mapping[str, str],
+    чужая: Mapping[str, str],
+    неустановленных: int,
+    отсеяны_без_работы: Mapping[str, str] | None = None,
+) -> dict[str, Any]:
+    """Что реестр сделал на шаге — счётом и первыми примерами (для строки шага)."""
+    if not работы:
+        return {}
+    return {
+        "function": list(работы),
+        "fallback": запасная_нота,
+        "not_orderable_count": len(не_заказываются),
+        "not_orderable": [{"model": м, "why": п} for м, п in list(не_заказываются.items())[:REGISTRY_SHOWN]],
+        "other_job_count": len(чужая),
+        "other_job": [{"model": м, "why": п} for м, п in list(чужая.items())[:REGISTRY_SHOWN]],
+        "unclassified_count": неустановленных,
+        "unclassified_dropped_count": len(отсеяны_без_работы or {}),
+        "unclassified_dropped": list(отсеяны_без_работы or {})[:REGISTRY_SHOWN],
+    }
+
+
 def candidates_for(
     op: Operation,
     index: FactIndex,
@@ -6105,6 +6400,69 @@ def candidates_for(
         for f in форма:
             слова[id(f)] = (f"{PROFILE_MATCH_LABEL}: {чем}",)
 
+    # РЕЕСТР ЭНДПОИНТОВ (2026-10-15, пятый круг, `studio/endpoints.py`).
+    # Кандидат шага — ЗАКАЗЫВАЕМЫЙ эндпоинт, у которого РАБОТА шага записана
+    # свидетельством. Каналы выше находят модели словами; реестр решает,
+    # годятся ли они: узел семьи без своего маршрута не заказывается, модель
+    # с установленной другой работой (видеомодель на липсинке, TTS на шумах)
+    # отсеивается, а заказываемые эндпоинты этой работы, которых слова не
+    # нашли, добавляются.
+    реестр = ep.build(index.facts)
+    работы, запасная_нота = работы_шага(op, реестр)
+    не_заказываются: dict[str, str] = {}
+    чужая_по_реестру: dict[str, str] = {}
+    неустановленные: set[str] = set()
+    неустановленные_отсеяны: dict[str, str] = {}
+    # СТРОГО, когда реестр знает хоть один заказываемый эндпоинт работы шага,
+    # или шаг заведён только для реестра (`ТОЛЬКО_РЕЕСТР`). Иначе (база, где
+    # работу не установил никто, — тестовая или новая) модели старых каналов
+    # остаются кандидатами, но после установленных (`UNCLASSIFIED_RANK`).
+    строгий = bool(работы) and (
+        op.name in ТОЛЬКО_РЕЕСТР or any(реестр.orderable_for(р) for р in работы)
+    )
+    if работы:
+        for ключ in list(по_модели):
+            узел = реестр.by_key.get(ключ)
+            if узел is None:
+                continue
+            if not узел.orderable and not (hard is not None and hard.self_host and узел.self_hostable):
+                # Узел семьи не купить через API; на СВОЁМ GPU веса семьи —
+                # маршрут (`wan-2.2-ti2v-5b`: варианты есть, цены нет, веса открыты).
+                не_заказываются[написание[ключ]] = узел.why_not_orderable
+                del по_модели[ключ]
+            elif узел.functions and not set(узел.functions) & set(работы):
+                чужая_по_реестру[написание[ключ]] = (
+                    f"реестр: делает {', '.join(узел.functions)} ({узел.evidence}), "
+                    f"а шагу нужна {' / '.join(работы)}"
+                )
+                del по_модели[ключ]
+            elif not узел.functions:
+                if строгий:
+                    # Реестр ЗНАЕТ эндпоинты этой работы — модель, о чьей работе
+                    # свидетельства нет, кандидатом не становится: `sdxl-lightning`
+                    # (зацепилась словом `replace`) выбиралась на замене лица,
+                    # `sadtalker-reference` — на интерполяции кадров.
+                    неустановленные_отсеяны[написание[ключ]] = REGISTRY_UNCLASSIFIED_NOTE
+                    del по_модели[ключ]
+                else:
+                    неустановленные.add(ключ)
+        for узел in [
+            у
+            for р in работы
+            for у in реестр.by_function.get(р, [])
+            if у.orderable or (hard is not None and hard.self_host and у.self_hostable)
+        ]:
+            if узел.key in по_модели or not _is_model(узел.model):
+                continue
+            строки_узла = по_имени.get(узел.key, [])
+            опорные = [f for f in строки_узла if f.attribute in REGISTRY_ROW_ATTRIBUTES] or строки_узла[:1]
+            по_модели[узел.key] = list(опорные)
+            написание.setdefault(узел.key, узел.model)
+            for f in опорные:
+                слова[id(f)] = (
+                    f"{REGISTRY_MATCH_LABEL}: {'/'.join(set(работы) & set(узел.functions))} ({узел.evidence})",
+                )
+
     wanted = wanted if wanted is not None else dur.Запрос(None, "длительность не спрашивали")
     найдены: list[Candidate] = []
     исключены: dict[str, str] = {}
@@ -6125,6 +6483,17 @@ def candidates_for(
             for f in все_свои
             if id(f) not in {id(x) for x in свои} and fa.mark(f, overrides).kind in fa.APPLICABILITY
         ]
+        узел = реестр.by_key.get(ключ)
+        if узел is not None and одалживает_семья(реестр.get(узел.family), работы, hard) and not any(
+            fa.mark(f, overrides).kind in fa.APPLICABILITY for f in свои_плюс
+        ):
+            # СЕМЬЯ ОДАЛЖИВАЕТ ПРИМЕНИМОСТЬ, НО НЕ ЦЕНУ (пятый круг): строки
+            # наблюдений о `kling-3.0` — о той же модели, что и её тариф
+            # `kling-3.0-standard-t2v`; сам узел семьи заказать нельзя.
+            for f in по_имени.get(fold(узел.family), []):
+                if pl.in_scope(f, languages) and fa.mark(f, overrides).kind in fa.APPLICABILITY:
+                    свои_плюс.append(f)
+                    слова[id(f)] = (f"{FAMILY_LENT_LABEL} {узел.family}",)
         # ПРОВАЛ ПРИ ЧУЖОМ УСЛОВИИ — НЕ ДОВОД ПРОТИВ (2026-10-14, G6): тот же
         # отбор, что у валидатора (`pipeline.in_conditions`), чтобы порядок и
         # вердикт не разошлись.
@@ -6145,7 +6514,7 @@ def candidates_for(
         )
         свёрнутое = имя.lower()
         все = по_имени.get(fold(имя), [])
-        сколько = стоимость(все, need)
+        сколько = стоимость(все, need, запасной_прогон(op, узел, все))
         жёсткое = требования_заказчика(op, имя, все, сколько, hard, по_имени, известные, need, brief_frame)
         if жёсткое.исключить:
             исключены[имя] = жёсткое.исключить
@@ -6221,6 +6590,14 @@ def candidates_for(
                     )
                 ),
                 below_frame=ниже_кадра(op, все, сколько, brief_frame),
+                unclassified=ключ in неустановленные,
+                unpriced_last=hard is not None and hard.objective == hn.OBJECTIVE_CHEAPEST,
+                registry_note=(
+                    f"{'/'.join(ф for ф in узел.functions if ф in работы)}: {узел.evidence} — "
+                    f"{_коротко(узел.evidence_note, 120)}"
+                    if узел is not None and set(работы) & set(узел.functions)
+                    else ""
+                ),
                 outside_brief=tuple(
                     f"«{_коротко(f.value, 90)}» — при условии: "
                     + ", ".join(sorted(pl.themes_in(f"{f.attribute} {f.value}")))
@@ -6249,8 +6626,32 @@ def candidates_for(
         # «КАЧЕСТВО ВАЖНЕЕ ЦЕНЫ» — цена порядка не решает (2026-10-15): потолок,
         # если назван, по-прежнему судит смета ролика, но выбор — по доводам.
         найдены = [Candidate(**{**c.__dict__, "price_rank_off": True}) for c in найдены]
-    найдены.sort(key=by_evidence)
-    return Кандидаты(найдены, исключены)
+    # НИЧЬЯ РЕШАЕТСЯ ЦЕНОЙ, А НЕ АЛФАВИТОМ (пятый круг). Варианты одной семьи
+    # делят её доводы (`одалживает_семья`) и равны по всем полям ключа; первым
+    # по имени вставал самый дорогой тариф (`kling-3.0-4k-t2v` раньше
+    # `kling-3.0-standard-t2v`). Внутри ничьей первым — тот, чья полная цена
+    # меньше; без цены — после. Ключ отбора (`by_evidence`) при этом прежний,
+    # и ничья печатается ничьей (`ничья`, `why_not`).
+    найдены.sort(
+        key=lambda c: (
+            by_evidence(c)[:-1],
+            0 if цена_есть(c) else 1,
+            c.cost.default.usd if цена_есть(c) and c.cost is not None else 0.0,
+            c.model,
+        )
+    )
+    return Кандидаты(
+        найдены,
+        исключены,
+        реестр_шага(
+            работы,
+            запасная_нота,
+            не_заказываются,
+            чужая_по_реестру,
+            len(неустановленные),
+            неустановленные_отсеяны,
+        ),
+    )
 
 
 #: Сколько месяцев между датами выпуска делают модель «прошлым поколением».
@@ -6980,6 +7381,13 @@ def _есть_кириллица(текст: str) -> bool:
     "музыка": "music",
     "апскейл": "video upscale",
     "апскейл_изображения": "image upscale",
+    "реставрация": "restore / colorize video",
+    "интерполяция_кадров": "frame interpolation",
+    "удаление_фона": "background removal (image)",
+    "удаление_фона_видео": "background removal (video)",
+    "расшифровка": "transcription with speaker labels",
+    "клонирование_голоса": "voice clone + narration",
+    "оборот_360": "360° turntable",
     AVATAR_STEP: "talking avatar (photo + voice)",
     NATIVE_AUDIO_STEP: "video with native audio",
     ASSEMBLY_STEP: "edit / assembly",
@@ -7000,6 +7408,13 @@ def _есть_кириллица(текст: str) -> bool:
     "музыка": "музыка",
     "апскейл": "апскейл видео",
     "апскейл_изображения": "апскейл кадров",
+    "реставрация": "реставрация / раскраска видео",
+    "интерполяция_кадров": "интерполяция кадров",
+    "удаление_фона": "удаление фона (кадр)",
+    "удаление_фона_видео": "удаление фона (видео)",
+    "расшифровка": "расшифровка с метками говорящих",
+    "клонирование_голоса": "клон голоса + начитка",
+    "оборот_360": "оборот 360°",
     AVATAR_STEP: "говорящий аватар (снимок + голос)",
     NATIVE_AUDIO_STEP: "видео с нативным звуком",
     ASSEMBLY_STEP: "монтаж / сборка",
@@ -7417,6 +7832,11 @@ def свести_исход(без_кандидата: int, отчёт: dict, ш
         ARTEFACT_MUSIC,
         ARTEFACT_UPSCALED,
         ARTEFACT_UPSCALED_IMAGE,
+        ARTEFACT_RESTORED,
+        ARTEFACT_SMOOTH,
+        ARTEFACT_CUTOUT,
+        ARTEFACT_VIDEO_CUTOUT,
+        ARTEFACT_TRANSCRIPT,
     }
 )
 
@@ -8109,7 +8529,11 @@ def годные_со_звуком(
         key=lambda c: (
             by_evidence(c)[:CONSTRAINT_KEYS],
             c.kind_rank,
-            by_evidence(c)[CONSTRAINT_KEYS:],
+            by_evidence(c)[CONSTRAINT_KEYS:-1],
+            # Ничья — ценой, как в `candidates_for` (пятый круг).
+            0 if цена_есть(c) else 1,
+            c.cost.default.usd if цена_есть(c) and c.cost is not None else 0.0,
+            c.model,
         )
     )
     return годные
@@ -8876,13 +9300,23 @@ def сводка(итог: dict) -> str:
         строки.append(строка_требований)
     оптимум = (итог.get("pipeline_price") or {}).get("optimised") or {}
     if оптимум:
+        без_цены = list(оптимум.get("unpriced_steps") or [])
+        хвост_без_цены = (
+            (
+                f" (+ NO PRICE for: {', '.join(_имя_шага(ш, True) for ш in без_цены)})"
+                if англ
+                else f" (+ НЕТ ЦЕНЫ: {', '.join(_имя_шага(ш, False) for ш in без_цены)})"
+            )
+            if без_цены
+            else ""
+        )
         строки.append(
             (
                 f"BUDGET OPTIMISED ({оптимум.get('why_en')}): "
-                f"{float(оптимум['before_usd']):.2f} -> {float(оптимум['after_usd']):.2f} usd; "
+                f"{float(оптимум['before_usd']):.2f} -> {float(оптимум['after_usd']):.2f} usd{хвост_без_цены}; "
                 if англ
                 else f"БЮДЖЕТ ОПТИМИЗИРОВАН ({оптимум.get('why')}): "
-                f"{float(оптимум['before_usd']):.2f} -> {float(оптимум['after_usd']):.2f} usd; "
+                f"{float(оптимум['before_usd']):.2f} -> {float(оптимум['after_usd']):.2f} usd{хвост_без_цены}; "
             )
             + _коротко(оптимум.get("note_en" if англ else "note"), 400)
         )
@@ -9671,6 +10105,9 @@ def plan(
                 "licence_blocked_count": sum(1 for c in предложены if c.licence_blocked),
                 # ОТСЕЯНЫ ЖЁСТКИМИ ТРЕБОВАНИЯМИ (свой GPU, «качество»): не
                 # соседи, а отказы — счётом и первыми причинами.
+                # РЕЕСТР ЭНДПОИНТОВ (пятый круг): работа шага, запасная работа,
+                # кого реестр не пустил (узел семьи, другая работа) — счётом.
+                "registry": getattr(найдено_на_шаг[op.name], "реестр", {}),
                 "hard_excluded_count": len(отсеяны),
                 "hard_excluded": [
                     {"model": м, "why": п} for м, п in list(отсеяны.items())[:HARD_EXCLUDED_SHOWN]
@@ -9932,6 +10369,13 @@ def plan(
             ),
             "before_usd": round(до, 4),
             "after_usd": после,
+            # ШАГИ БЕЗ ЦЕНЫ В СУММУ НЕ ВОШЛИ (пятый круг): «0.00 -> 0.00» на
+            # плане, где у выбранного цены нет, читалось как «бесплатно».
+            "unpriced_steps": [
+                op.name
+                for op, к in выбор
+                if op.name not in условные and (к is None or к.cost is None)
+            ],
             "swaps": обмены,
             "note": (
                 "перевыбрано внутри полосы доводов (всё старше счёта строк — то же, кроме цены): "
@@ -10356,6 +10800,7 @@ def _candidate_row(c: Candidate | None) -> dict | None:
         "unresolved": c.unresolved,
         "price": c.price,
         "price_flags": флаги_цены(c),
+        "registry": c.registry_note or ("job not established by the endpoint registry" if c.unclassified else ""),
         "licence_risk": c.licence_risk,
         "superseded": c.superseded,
         "community": c.community,

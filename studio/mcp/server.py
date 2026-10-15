@@ -966,8 +966,12 @@ def plan_pipeline(
     said; leave out what they did not say (do not guess on their behalf):
 
         task        one of generate | animate | lipsync | dub-translate |
-                    face-replace | avatar | upscale | edit
-        outputs     list of video | image | speech | music | sfx
+                    face-replace | avatar | upscale | edit | restore |
+                    remove-background | interpolate | transcribe |
+                    voice-clone | turntable | captions (the last seven work on
+                    material you bring; candidates come from the endpoint
+                    registry by job, not from words in the brief)
+        outputs     list of video | image | speech | music | sfx | text
         duration_s  length of the whole clip, seconds
         shots       how many shots / images / clips (e.g. "3 product shots" -> 3)
         per_shot_s  seconds per shot ("animate each 5s" -> 5)

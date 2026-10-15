@@ -302,7 +302,10 @@ class Находка14СоседиИЯзык(unittest.TestCase):
                 ["к-tts", "л-tts"],
                 [шаг["chosen"]["model"]] + [а["model"] for а in шаг["alternatives"]],
             )
-            self.assertEqual(2, шаг["foreign_count"])
+            # Пятый круг: `н-text-to-audio` — работа не установлена реестром, а
+            # эндпоинты TTS в базе известны: не кандидат вовсе, а не «чужой».
+            self.assertEqual(1, шаг["foreign_count"])
+            self.assertEqual(["н-text-to-audio"], шаг["registry"]["unclassified_dropped"])
 
     def test_чужой_не_занимает_место_соседа(self) -> None:
         # Один свой и один чужой: без отбора чужой встал бы единственным соседом.
