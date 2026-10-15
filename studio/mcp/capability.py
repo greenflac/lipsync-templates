@@ -135,12 +135,65 @@ LANGUAGE_LIST_MIN = 3
 #: Слова вопроса, не несущие смысла поиска.
 _ПУСТЫЕ = frozenset(
     {
-        "which", "what", "best", "the", "a", "an", "for", "of", "and", "or", "with", "that", "is",
-        "does", "do", "can", "model", "models", "handles", "handle", "keeps", "keep", "good",
-        "without", "renders", "render", "use", "one", "many", "across", "from", "into", "to",
-        "какой", "какая", "какие", "лучший", "лучшая", "лучше", "всего", "для", "и", "с", "что",
-        "модель", "модели", "держит", "faces", "face", "лицо", "лица", "open", "weights",
-        "commercial", "cheap", "cheapest", "no", "not", "extra",
+        "which",
+        "what",
+        "best",
+        "the",
+        "a",
+        "an",
+        "for",
+        "of",
+        "and",
+        "or",
+        "with",
+        "that",
+        "is",
+        "does",
+        "do",
+        "can",
+        "model",
+        "models",
+        "handles",
+        "handle",
+        "keeps",
+        "keep",
+        "good",
+        "without",
+        "renders",
+        "render",
+        "use",
+        "one",
+        "many",
+        "across",
+        "from",
+        "into",
+        "to",
+        "какой",
+        "какая",
+        "какие",
+        "лучший",
+        "лучшая",
+        "лучше",
+        "всего",
+        "для",
+        "и",
+        "с",
+        "что",
+        "модель",
+        "модели",
+        "держит",
+        "faces",
+        "face",
+        "лицо",
+        "лица",
+        "open",
+        "weights",
+        "commercial",
+        "cheap",
+        "cheapest",
+        "no",
+        "not",
+        "extra",
     }
 )
 
@@ -251,7 +304,9 @@ class Вопрос:
         # вопрос спрашивает о ДЛИНЕ прогона (семья `max_seconds` названа: «long»,
         # «duration», «in one go»): в «cheapest 1 minute of 1080p» минута —
         # сколько купить, а не предел модели.
-        if re.search(r"in one (?:go|run|take)|single (?:run|take|generation)|за один|без склейки", текст):
+        if re.search(
+            r"in one (?:go|run|take)|single (?:run|take|generation)|за один|без склейки", текст
+        ):
             if "max_seconds" not in self.семьи:
                 self.семьи.append("max_seconds")
         self.секунды = _секунды(текст) if "max_seconds" in self.семьи else None
@@ -342,7 +397,11 @@ def _языки_строки(значение: str) -> frozenset[str]:
 def _fps_строки(значение: str, атрибут: str) -> list[float]:
     низ = _норм(значение)
     числа = [float(ч) for ч in re.findall(r"(\d+(?:\.\d+)?)\s*fps", низ)]
-    if not числа and attrfamily.семья_имени(атрибут) == "frame_rate" and атрибут in ("fps", "frame_rate"):
+    if (
+        not числа
+        and attrfamily.семья_имени(атрибут) == "frame_rate"
+        and атрибут in ("fps", "frame_rate")
+    ):
         числа = [float(ч) for ч in re.findall(r"\d+(?:\.\d+)?", низ)]
     return числа
 
@@ -369,18 +428,30 @@ def знак(f: Fact, вопрос: Вопрос | None = None) -> tuple[str, st
             if нужные:
                 return GOOD, POLARITY_CONSTRAINT, f"languages list {', '.join(нужные)}"
             if есть and pl.exclusive_language(f.value):
-                return BAD, POLARITY_CONSTRAINT, f"exclusive language list without {', '.join(вопрос.языки)}"
+                return (
+                    BAD,
+                    POLARITY_CONSTRAINT,
+                    f"exclusive language list without {', '.join(вопрос.языки)}",
+                )
         if семья == "max_seconds" and вопрос.секунды is not None:
             предел = секунд_в_строке(f.attribute, f.value)
             if предел is not None:
                 if предел >= вопрос.секунды:
-                    return GOOD, POLARITY_CONSTRAINT, f"limit {предел:g} s >= asked {вопрос.секунды:g} s"
+                    return (
+                        GOOD,
+                        POLARITY_CONSTRAINT,
+                        f"limit {предел:g} s >= asked {вопрос.секунды:g} s",
+                    )
                 return BAD, POLARITY_CONSTRAINT, f"limit {предел:g} s < asked {вопрос.секунды:g} s"
         if семья == "frame_rate" and вопрос.кадров is not None:
             числа = _fps_строки(f.value, f.attribute)
             if числа:
                 if max(числа) >= вопрос.кадров:
-                    return GOOD, POLARITY_CONSTRAINT, f"{max(числа):g} fps >= asked {вопрос.кадров:g}"
+                    return (
+                        GOOD,
+                        POLARITY_CONSTRAINT,
+                        f"{max(числа):g} fps >= asked {вопрос.кадров:g}",
+                    )
                 return BAD, POLARITY_CONSTRAINT, f"{max(числа):g} fps < asked {вопрос.кадров:g}"
     return INFO, POLARITY_NONE, "no polarity declared"
 
@@ -505,15 +576,21 @@ def _требование(
     лицензии = [f for f in строки if attrfamily.семья_имени(f.attribute) == "license"]
     if ключ == REQ_OPEN:
         state, нота = hn.weights_state(строки, семья)
-        опора = лицензии or [f for _, rows in семья for f in rows if attrfamily.семья_имени(f.attribute) == "license"]
+        опора = лицензии or [
+            f for _, rows in семья for f in rows if attrfamily.семья_имени(f.attribute) == "license"
+        ]
         if state in (hn.WEIGHTS_YES, hn.WEIGHTS_FAMILY):
             return PASS, f"open weights: {нота}", опора[:1]
         if state == hn.WEIGHTS_NO:
             return FAIL, f"closed: {нота}", опора[:1]
         return UNMEASURED, "weights not recorded", []
     if ключ == REQ_COMMERCIAL:
-        свои = list(строки) + [f for _, rows in семья for f in rows if attrfamily.семья_имени(f.attribute) == "license"]
-        проба = pl.probe_licence(pl.Step(name="find", model=модель, requirement="", use=pl.USE_COMMERCIAL), свои)
+        свои = list(строки) + [
+            f for _, rows in семья for f in rows if attrfamily.семья_имени(f.attribute) == "license"
+        ]
+        проба = pl.probe_licence(
+            pl.Step(name="find", model=модель, requirement="", use=pl.USE_COMMERCIAL), свои
+        )
         опора = [f for f in свои if attrfamily.семья_имени(f.attribute) == "license"]
         if проба.outcome == PASS:
             return PASS, f"licence permits commercial use: {проба.note}", опора[:1]
@@ -548,9 +625,7 @@ def _ступень(f: Fact) -> int:
     return TIERS.index(f.tier) if f.tier in TIERS else len(TIERS)
 
 
-def scope(
-    function: str, need: str, terms: str = ""
-) -> tuple[tuple[str, ...], str]:
+def scope(function: str, need: str, terms: str = "") -> tuple[tuple[str, ...], str]:
     """(работы реестра, как поняты). Пусто — работа не понята ни из `function`, ни из вопроса."""
     работы, широкое = ep.jobs_of_word(function)
     в_вопросе = ep.job_words(f"{need} {terms}")
@@ -655,10 +730,19 @@ def find(
             # Язык — требование тоже: модель, чей список языков ИСКЛЮЧИТЕЛЕН
             # («English only») и нужного не содержит, отсеивается.
             списки = [f for f in строки if attrfamily.семья_имени(f.attribute) == "languages"]
-            есть = frozenset().union(*[_языки_строки(f.value) for f in списки]) if списки else frozenset()
+            есть = (
+                frozenset().union(*[_языки_строки(f.value) for f in списки])
+                if списки
+                else frozenset()
+            )
             нет = [я for я in вопрос.языки if я not in есть]
             if нет and any(pl.exclusive_language(f.value) for f in списки):
-                отсеяно.append({"model": у.model, "why": f"languages: {', '.join(нет)} not in an exclusive list"})
+                отсеяно.append(
+                    {
+                        "model": у.model,
+                        "why": f"languages: {', '.join(нет)} not in an exclusive list",
+                    }
+                )
                 continue
             for я in вопрос.языки:
                 требования[я] = {
@@ -695,7 +779,9 @@ def find(
                 "best_tier": опорные[0][0].tier if опорные else "",
                 "good": [_строка(f, з, о, п) for f, з, о, п in хорошие[:СВИДЕТЕЛЬСТВ_ПОКАЗАНО]],
                 "bad": [_строка(f, з, о, п) for f, з, о, п in плохие[:СВИДЕТЕЛЬСТВ_ПОКАЗАНО]],
-                "informational": [_строка(f, з, о, п) for f, з, о, п in прочие[:СВИДЕТЕЛЬСТВ_ПОКАЗАНО]],
+                "informational": [
+                    _строка(f, з, о, п) for f, з, о, п in прочие[:СВИДЕТЕЛЬСТВ_ПОКАЗАНО]
+                ],
                 "good_total": len(хорошие),
                 "bad_total": len(плохие),
                 "informational_total": len(прочие),
@@ -732,7 +818,9 @@ def find(
     ][: СВИДЕТЕЛЬСТВ_ПОКАЗАНО * 2]
     показано = ранжировано[: max(1, int(top or 8))]
     итог_pass = bool(с_хорошей)
-    спрошено = ", ".join(вопрос.описание()[:6]) or ("(requirements only)" if англ else "(только требования)")
+    спрошено = ", ".join(вопрос.описание()[:6]) or (
+        "(requirements only)" if англ else "(только требования)"
+    )
     требования_все = [*вопрос.требования, *вопрос.языки]
     if англ:
         нота = (
@@ -752,7 +840,11 @@ def find(
                 else "No model has declared good news on this — a gap in the base, not proof that none "
                 "can: search the web and record what you find with record_model_fact (with contra)."
             )
-            + (" Price is not capability: ask plan_pipeline or model_advice for cost." if вопрос.цена_спрошена else "")
+            + (
+                " Price is not capability: ask plan_pipeline or model_advice for cost."
+                if вопрос.цена_спрошена
+                else ""
+            )
             + " Before recommending any name, call model_advice on it."
             + (
                 f" Not understood as a requirement (ignored): {', '.join(вопрос.непонятые)}."
@@ -778,7 +870,11 @@ def find(
                 else "Объявленной хорошей новости нет ни у одной модели — это пробел базы, а не "
                 "доказательство, что не умеет никто: поищите и запишите через record_model_fact (с contra)."
             )
-            + (" Цена — не способность: стоимость спросите у plan_pipeline или model_advice." if вопрос.цена_спрошена else "")
+            + (
+                " Цена — не способность: стоимость спросите у plan_pipeline или model_advice."
+                if вопрос.цена_спрошена
+                else ""
+            )
             + " Прежде чем назвать модель, спросите о ней model_advice."
             + (
                 f" Не понято как требование (не учтено): {', '.join(вопрос.непонятые)}."

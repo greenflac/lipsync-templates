@@ -49,8 +49,16 @@ def _f(
     _f("alpha-lipsync", "pose_range", "Native on extreme angles and side profiles", contra=False),
     _f("alpha-lipsync", "price_per_second", "$0.10 per second"),
     _f("beta-lipsync", "pose_range", "'Limited' on extreme angles", contra=True),
-    _f("beta-lipsync", "pose_range", "extreme profile views may yield suboptimal results", "portal"),
-    _f("gamma-lipsync", "pose_range", "handles side profiles up to 80 degrees", "operator", contra=False),
+    _f(
+        "beta-lipsync", "pose_range", "extreme profile views may yield suboptimal results", "portal"
+    ),
+    _f(
+        "gamma-lipsync",
+        "pose_range",
+        "handles side profiles up to 80 degrees",
+        "operator",
+        contra=False,
+    ),
     _f("gamma-lipsync", "failure_mode", "mouth smears on profile view at 90 degrees", "blog"),
     # Описание без знака: «справляется с профилем» — информация, не похвала.
     _f("delta-lipsync", "pose_range", "works on profile shots", "blog"),
@@ -66,7 +74,13 @@ def _f(
         "removes backgrounds from talking heads and product shots",
         "portal",
     ),
-    _f("cutout-background-removal", "observed_behaviour", "hair edges stay clean", "operator", contra=False),
+    _f(
+        "cutout-background-removal",
+        "observed_behaviour",
+        "hair edges stay clean",
+        "operator",
+        contra=False,
+    ),
     _f("matte-bg-remove", "failure_mode", "flickering edge on fast motion", "blog"),
     # --- TTS: открытые веса и язык ---------------------------------------------------
     _f("open-tts", "license", "MIT", url=f"{HF}/open/tts"),
@@ -88,14 +102,25 @@ def _f(
     _f("kilo-t2v", "failure_mode", "hands mangle and fingers multiply in close-ups", "blog"),
     _f("kilo-t2v", "benchmark_score", "VTR-Bench (T2V): overall text WER 0.900", "paper"),
     _f("kilo-t2v", "price_per_second", "$0.05 per second, cheap"),
-    _f("mega-t2v", "observed_behaviour", "hands and fingers render correctly", "operator", contra=False),
+    _f(
+        "mega-t2v",
+        "observed_behaviour",
+        "hands and fingers render correctly",
+        "operator",
+        contra=False,
+    ),
     _f("mega-t2v", "benchmark_score", "VTR-Bench (T2V): overall text WER 0.300", "paper"),
     _f("giga-t2v", "limitation", "cannot render legible text or logos", "vendor"),
     _f("giga-t2v", "max_seconds", "5 exactly, 1080P at 30fps, MP4 H.264"),
     _f("tera-t2v", "max_seconds", "integer 2 to 15, 720P or 1080P"),
     _f("rigid-t2v", "fps", "24"),
     # --- i2v: логотип ----------------------------------------------------------------
-    _f("pix-i2v", "text_rendering", "logos and wordmarks stay legible from the first frame", contra=False),
+    _f(
+        "pix-i2v",
+        "text_rendering",
+        "logos and wordmarks stay legible from the first frame",
+        contra=False,
+    ),
     _f("blur-i2v", "text_rendering", "small text in the first frame turns to mush", contra=True),
     _f("plain-i2v", "positioning", "fast image-to-video drafts", "portal"),
     # --- интерполяция: частота кадров числом -----------------------------------------
@@ -107,13 +132,24 @@ def _f(
     _f("short-avatar", "max_seconds", "20 on the hosted API"),
     _f("mute-avatar", "positioning", "talking avatar for short clips", "portal"),
     # --- апскейл: кожа ---------------------------------------------------------------
-    _f("skin-upscale-video", "observed_behaviour", "keeps skin texture, no plastic faces", "operator", contra=False),
+    _f(
+        "skin-upscale-video",
+        "observed_behaviour",
+        "keeps skin texture, no plastic faces",
+        "operator",
+        contra=False,
+    ),
     _f("wax-upscale-video", "failure_mode", "plastic skin texture on faces", "blog"),
     _f("plain-upscale-image", "positioning", "4x photo upscaler", "portal"),
     # --- замена лица -----------------------------------------------------------------
     _f("x-faceswap", "positioning", "swaps a face in a photo", "portal"),
     # --- о классе --------------------------------------------------------------------
-    _f("*", "failure_mode", "every audio-driven model loses the mouth at full profile view", "paper"),
+    _f(
+        "*",
+        "failure_mode",
+        "every audio-driven model loses the mouth at full profile view",
+        "paper",
+    ),
 ]
 
 
@@ -129,87 +165,271 @@ def _верх(итог: dict, n: int = 3) -> list[str]:
 #: пробелы). Литералы (Т2); каждый проверен чтением фикстуры.
 ВОПРОСЫ: list[tuple[str, str, str, str, list[str], list[str]]] = [
     # 1-6: профиль
-    ("which lipsync handles profile faces", "lipsync", "", "",
-     ["alpha-lipsync", "delta-lipsync", "gamma-lipsync"], ["eps-lipsync", "zeta-lipsync"]),
-    ("which lipsync handles profile / side view faces", "lipsync", "profile, side view", "",
-     ["alpha-lipsync", "delta-lipsync", "gamma-lipsync"], ["eps-lipsync", "zeta-lipsync"]),
-    ("lip sync on a side-profile shot", "lip sync", "", "",
-     ["alpha-lipsync", "delta-lipsync", "gamma-lipsync"], ["eps-lipsync", "zeta-lipsync"]),
-    ("какой липсинк держит лицо в профиль", "липсинк", "", "",
-     ["alpha-lipsync", "delta-lipsync", "gamma-lipsync"], ["eps-lipsync", "zeta-lipsync"]),
-    ("липсинк для ракурса сбоку", "lipsync", "ракурс", "",
-     ["alpha-lipsync", "delta-lipsync", "gamma-lipsync"], ["eps-lipsync", "zeta-lipsync"]),
-    ("lipsync for extreme angles", "", "extreme angles", "",
-     ["alpha-lipsync", "delta-lipsync", "gamma-lipsync"], ["eps-lipsync", "zeta-lipsync"]),
+    (
+        "which lipsync handles profile faces",
+        "lipsync",
+        "",
+        "",
+        ["alpha-lipsync", "delta-lipsync", "gamma-lipsync"],
+        ["eps-lipsync", "zeta-lipsync"],
+    ),
+    (
+        "which lipsync handles profile / side view faces",
+        "lipsync",
+        "profile, side view",
+        "",
+        ["alpha-lipsync", "delta-lipsync", "gamma-lipsync"],
+        ["eps-lipsync", "zeta-lipsync"],
+    ),
+    (
+        "lip sync on a side-profile shot",
+        "lip sync",
+        "",
+        "",
+        ["alpha-lipsync", "delta-lipsync", "gamma-lipsync"],
+        ["eps-lipsync", "zeta-lipsync"],
+    ),
+    (
+        "какой липсинк держит лицо в профиль",
+        "липсинк",
+        "",
+        "",
+        ["alpha-lipsync", "delta-lipsync", "gamma-lipsync"],
+        ["eps-lipsync", "zeta-lipsync"],
+    ),
+    (
+        "липсинк для ракурса сбоку",
+        "lipsync",
+        "ракурс",
+        "",
+        ["alpha-lipsync", "delta-lipsync", "gamma-lipsync"],
+        ["eps-lipsync", "zeta-lipsync"],
+    ),
+    (
+        "lipsync for extreme angles",
+        "",
+        "extreme angles",
+        "",
+        ["alpha-lipsync", "delta-lipsync", "gamma-lipsync"],
+        ["eps-lipsync", "zeta-lipsync"],
+    ),
     # 7-10: язык липсинка
     # eps: «only English» — исключительный список, отсеяна, а не пробел.
-    ("which lipsync is best for Russian speech", "lipsync", "", "russian",
-     ["zeta-lipsync"], ["alpha-lipsync", "beta-lipsync", "delta-lipsync", "gamma-lipsync"]),
-    ("какая модель липсинка лучше для русской речи", "lipsync", "", "",
-     ["zeta-lipsync"], ["alpha-lipsync", "beta-lipsync", "delta-lipsync", "gamma-lipsync"]),
-    ("lipsync for English dialogue", "lipsync", "", "english",
-     ["eps-lipsync", "zeta-lipsync"], ["alpha-lipsync", "beta-lipsync", "delta-lipsync", "gamma-lipsync"]),
+    (
+        "which lipsync is best for Russian speech",
+        "lipsync",
+        "",
+        "russian",
+        ["zeta-lipsync"],
+        ["alpha-lipsync", "beta-lipsync", "delta-lipsync", "gamma-lipsync"],
+    ),
+    (
+        "какая модель липсинка лучше для русской речи",
+        "lipsync",
+        "",
+        "",
+        ["zeta-lipsync"],
+        ["alpha-lipsync", "beta-lipsync", "delta-lipsync", "gamma-lipsync"],
+    ),
+    (
+        "lipsync for English dialogue",
+        "lipsync",
+        "",
+        "english",
+        ["eps-lipsync", "zeta-lipsync"],
+        ["alpha-lipsync", "beta-lipsync", "delta-lipsync", "gamma-lipsync"],
+    ),
     # Веса не записаны — не «закрыта», а пробел.
-    ("open-weights lipsync", "lipsync", "", "open",
-     ["delta-lipsync", "zeta-lipsync"], ["alpha-lipsync", "beta-lipsync", "eps-lipsync", "gamma-lipsync"]),
+    (
+        "open-weights lipsync",
+        "lipsync",
+        "",
+        "open",
+        ["delta-lipsync", "zeta-lipsync"],
+        ["alpha-lipsync", "beta-lipsync", "eps-lipsync", "gamma-lipsync"],
+    ),
     # 11-15: TTS. CC BY-NC — открытые веса (nc-tts первой: свежесть равна, имя).
     # nolang-tts: веса открыты, язык не записан — после подтвердивших оба.
-    ("best open-weights Russian TTS", "tts", "", "open, russian",
-     ["nc-tts", "open-tts", "nolang-tts"], []),
-    ("лучший открытый синтез речи на русском", "tts", "", "открытые веса, ru",
-     ["nc-tts", "open-tts", "nolang-tts"], []),
+    (
+        "best open-weights Russian TTS",
+        "tts",
+        "",
+        "open, russian",
+        ["nc-tts", "open-tts", "nolang-tts"],
+        [],
+    ),
+    (
+        "лучший открытый синтез речи на русском",
+        "tts",
+        "",
+        "открытые веса, ru",
+        ["nc-tts", "open-tts", "nolang-tts"],
+        [],
+    ),
     # Коммерция: nc-tts отсеяна лицензией.
-    ("open TTS for Russian, commercial use", "tts", "", "open, russian, commercial",
-     ["open-tts", "nolang-tts"], []),
+    (
+        "open TTS for Russian, commercial use",
+        "tts",
+        "",
+        "open, russian, commercial",
+        ["open-tts", "nolang-tts"],
+        [],
+    ),
     # nc-tts: язык записан, английского нет и список не исключительный — информация.
-    ("text-to-speech in English", "", "", "en",
-     ["closed-tts", "english-tts", "open-tts"], ["nolang-tts"]),
+    (
+        "text-to-speech in English",
+        "",
+        "",
+        "en",
+        ["closed-tts", "english-tts", "open-tts"],
+        ["nolang-tts"],
+    ),
     # english-tts: «English only» — отсеяна для русского.
-    ("Russian voiceover model", "tts", "", "",
-     ["closed-tts", "nc-tts", "open-tts"], ["nolang-tts"]),
+    (
+        "Russian voiceover model",
+        "tts",
+        "",
+        "",
+        ["closed-tts", "nc-tts", "open-tts"],
+        ["nolang-tts"],
+    ),
     # 16-18: музыка
-    ("music model that sings lyrics in Spanish for commercial use", "music", "vocals, lyrics, commercial", "spanish",
-     ["free-music", "api-music"], []),
-    ("музыка с вокалом на испанском для коммерческого использования", "music", "", "spanish, commercial",
-     ["free-music"], ["api-music"]),
-    ("music with vocals", "music", "vocals", "",
-     ["api-music"], ["free-music", "vox-music"]),
+    (
+        "music model that sings lyrics in Spanish for commercial use",
+        "music",
+        "vocals, lyrics, commercial",
+        "spanish",
+        ["free-music", "api-music"],
+        [],
+    ),
+    (
+        "музыка с вокалом на испанском для коммерческого использования",
+        "music",
+        "",
+        "spanish, commercial",
+        ["free-music"],
+        ["api-music"],
+    ),
+    ("music with vocals", "music", "vocals", "", ["api-music"], ["free-music", "vox-music"]),
     # 19-21: руки
-    ("which t2v renders hands without extra fingers", "t2v", "hands, fingers", "",
-     ["mega-t2v", "kilo-t2v"], ["giga-t2v", "rigid-t2v", "tera-t2v"]),
-    ("какая модель видео по тексту рисует руки", "t2v", "руки", "",
-     ["mega-t2v", "kilo-t2v"], ["giga-t2v", "rigid-t2v", "tera-t2v"]),
-    ("hands in text to video", "", "hands", "",
-     ["mega-t2v", "kilo-t2v"], ["giga-t2v", "rigid-t2v", "tera-t2v"]),
+    (
+        "which t2v renders hands without extra fingers",
+        "t2v",
+        "hands, fingers",
+        "",
+        ["mega-t2v", "kilo-t2v"],
+        ["giga-t2v", "rigid-t2v", "tera-t2v"],
+    ),
+    (
+        "какая модель видео по тексту рисует руки",
+        "t2v",
+        "руки",
+        "",
+        ["mega-t2v", "kilo-t2v"],
+        ["giga-t2v", "rigid-t2v", "tera-t2v"],
+    ),
+    (
+        "hands in text to video",
+        "",
+        "hands",
+        "",
+        ["mega-t2v", "kilo-t2v"],
+        ["giga-t2v", "rigid-t2v", "tera-t2v"],
+    ),
     # 22-25: текст и логотип
-    ("which text-to-video keeps on-screen text legible", "t2v", "text legibility", "",
-     ["mega-t2v", "kilo-t2v", "giga-t2v"], ["rigid-t2v", "tera-t2v"]),
-    ("which image-to-video keeps logos legible", "i2v", "logo, legible", "",
-     ["pix-i2v", "blur-i2v"], ["plain-i2v"]),
-    ("какое оживление фото сохраняет логотип читаемым", "i2v", "логотип", "",
-     ["pix-i2v", "blur-i2v"], ["plain-i2v"]),
-    ("animate a logo wordmark", "image-to-video", "wordmark", "",
-     ["pix-i2v", "blur-i2v"], ["plain-i2v"]),
+    (
+        "which text-to-video keeps on-screen text legible",
+        "t2v",
+        "text legibility",
+        "",
+        ["mega-t2v", "kilo-t2v", "giga-t2v"],
+        ["rigid-t2v", "tera-t2v"],
+    ),
+    (
+        "which image-to-video keeps logos legible",
+        "i2v",
+        "logo, legible",
+        "",
+        ["pix-i2v", "blur-i2v"],
+        ["plain-i2v"],
+    ),
+    (
+        "какое оживление фото сохраняет логотип читаемым",
+        "i2v",
+        "логотип",
+        "",
+        ["pix-i2v", "blur-i2v"],
+        ["plain-i2v"],
+    ),
+    (
+        "animate a logo wordmark",
+        "image-to-video",
+        "wordmark",
+        "",
+        ["pix-i2v", "blur-i2v"],
+        ["plain-i2v"],
+    ),
     # 26-27: интерполяция числом
-    ("frame interpolation to 60/120 fps", "video", "interpolation, fps, slow motion", "",
-     ["smooth-interpolate", "slow-interpolate"], ["blank-interpolate"]),
-    ("интерполяция кадров до 60 fps", "", "", "",
-     ["slow-interpolate", "smooth-interpolate"], ["blank-interpolate"]),
+    (
+        "frame interpolation to 60/120 fps",
+        "video",
+        "interpolation, fps, slow motion",
+        "",
+        ["smooth-interpolate", "slow-interpolate"],
+        ["blank-interpolate"],
+    ),
+    (
+        "интерполяция кадров до 60 fps",
+        "",
+        "",
+        "",
+        ["slow-interpolate", "smooth-interpolate"],
+        ["blank-interpolate"],
+    ),
     # 28-29: длина прогона числом
-    ("talking avatar that can do 5 minutes in one go", "avatar", "long, minutes, duration", "",
-     ["long-avatar", "short-avatar"], ["mute-avatar"]),
-    ("аватар на 30 секунд за один прогон", "talking-avatar", "", "",
-     ["long-avatar", "short-avatar"], ["mute-avatar"]),
+    (
+        "talking avatar that can do 5 minutes in one go",
+        "avatar",
+        "long, minutes, duration",
+        "",
+        ["long-avatar", "short-avatar"],
+        ["mute-avatar"],
+    ),
+    (
+        "аватар на 30 секунд за один прогон",
+        "talking-avatar",
+        "",
+        "",
+        ["long-avatar", "short-avatar"],
+        ["mute-avatar"],
+    ),
     # 30-31: апскейл
-    ("which upscaler keeps skin texture, no plastic faces", "upscale", "skin, texture, plastic", "",
-     ["skin-upscale-video", "wax-upscale-video"], ["plain-upscale-image"]),
-    ("апскейл видео без пластиковой кожи", "upscale-video", "кожа, plastic", "",
-     ["skin-upscale-video", "wax-upscale-video"], []),
+    (
+        "which upscaler keeps skin texture, no plastic faces",
+        "upscale",
+        "skin, texture, plastic",
+        "",
+        ["skin-upscale-video", "wax-upscale-video"],
+        ["plain-upscale-image"],
+    ),
+    (
+        "апскейл видео без пластиковой кожи",
+        "upscale-video",
+        "кожа, plastic",
+        "",
+        ["skin-upscale-video", "wax-upscale-video"],
+        [],
+    ),
     # 32-33: удаление фона и замена лица — работы, которых не было в старом списке
-    ("background removal for video, matting", "video", "background removal, matting, alpha, hair", "",
-     ["cutout-background-removal"], ["matte-bg-remove"]),
-    ("anything", "faceswap", "", "",
-     [], ["x-faceswap"]),
+    (
+        "background removal for video, matting",
+        "video",
+        "background removal, matting, alpha, hair",
+        "",
+        ["cutout-background-removal"],
+        ["matte-bg-remove"],
+    ),
+    ("anything", "faceswap", "", "", [], ["x-faceswap"]),
 ]
 
 
@@ -242,7 +462,14 @@ class Знак(unittest.TestCase):
                     проверено += 1
                     self.assertIn(строка["polarity"], ("declared", "constraint"), строка)
                     if строка["polarity"] == "declared":
-                        f = по_ключу[(r["model"], строка["attribute"], строка["source_url"], строка["value"][:60])]
+                        f = по_ключу[
+                            (
+                                r["model"],
+                                строка["attribute"],
+                                строка["source_url"],
+                                строка["value"][:60],
+                            )
+                        ]
                         self.assertIs(False, f.contra)
         self.assertGreater(проверено, 20)
 
@@ -275,14 +502,16 @@ class Знак(unittest.TestCase):
 
     def test_исключительный_список_языков_отсеивает(self) -> None:
         итог = _найти("russian tts", "tts", "", "russian")
-        self.assertIn(
-            "english-tts", [e["model"] for e in итог["gaps"]["excluded_examples"]]
-        )
+        self.assertIn("english-tts", [e["model"] for e in итог["gaps"]["excluded_examples"]])
 
     def test_длительность_по_единицам(self) -> None:
-        self.assertEqual(5.0, capability.секунд_в_строке("max_seconds", "5 exactly, 1080P at 30fps, MP4 H.264"))
+        self.assertEqual(
+            5.0, capability.секунд_в_строке("max_seconds", "5 exactly, 1080P at 30fps, MP4 H.264")
+        )
         self.assertEqual(600.0, capability.секунд_в_строке("max_seconds", "600 (up to 10 minutes)"))
-        self.assertEqual(15.0, capability.секунд_в_строке("max_seconds", "integer 2 to 15, 720P or 1080P"))
+        self.assertEqual(
+            15.0, capability.секунд_в_строке("max_seconds", "integer 2 to 15, 720P or 1080P")
+        )
         self.assertEqual(2.5, capability.секунд_в_строке("max_duration_ms", "2500"))
         self.assertIsNone(capability.секунд_в_строке("max_seconds", "follows the audio"))
 
@@ -316,7 +545,10 @@ class Область(unittest.TestCase):
             with self.subTest(работа=работа):
                 итог = _найти("anything", работа)
                 self.assertNotEqual("function_unknown", итог.get("reason"))
-                self.assertEqual([работа], [итог["function"]] if isinstance(итог["function"], str) else итог["function"])
+                self.assertEqual(
+                    [работа],
+                    [итог["function"]] if isinstance(итог["function"], str) else итог["function"],
+                )
 
     def test_короткое_слово_работы_только_целым(self) -> None:
         self.assertEqual((), ep.job_words("settings for a dubai trip"))
@@ -328,13 +560,20 @@ class Область(unittest.TestCase):
             self.assertIn(работа, слова)
 
     def test_широкое_слово_уточняется_вопросом(self) -> None:
-        self.assertEqual(("bg-remove",), capability.scope("video", "background removal for a talking-head video")[0])
-        self.assertEqual(("t2v", "i2v", "r2v", "v2v-edit"), capability.scope("video", "a nice clip")[0])
+        self.assertEqual(
+            ("bg-remove",),
+            capability.scope("video", "background removal for a talking-head video")[0],
+        )
+        self.assertEqual(
+            ("t2v", "i2v", "r2v", "v2v-edit"), capability.scope("video", "a nice clip")[0]
+        )
         self.assertEqual(("frame-interpolate",), capability.scope("", "интерполяция кадров")[0])
 
     def test_незнакомая_функция(self) -> None:
         итог = _найти("anything", "teleport")
-        self.assertEqual(("could not measure", "function_unknown"), (итог["outcome"], итог["reason"]))
+        self.assertEqual(
+            ("could not measure", "function_unknown"), (итог["outcome"], итог["reason"])
+        )
         self.assertEqual(list(ep.FUNCTIONS), итог["functions"])
 
     def test_находка_о_классе_отдельно(self) -> None:
@@ -379,7 +618,11 @@ class Условия(unittest.TestCase):
 
     def test_числа_ступеней_у_плановщика_те_же(self) -> None:
         self.assertEqual(
-            {0: capability.CONDITION_POSITIVE, 1: capability.CONDITION_UNKNOWN, 2: capability.CONDITION_NEGATIVE},
+            {
+                0: capability.CONDITION_POSITIVE,
+                1: capability.CONDITION_UNKNOWN,
+                2: capability.CONDITION_NEGATIVE,
+            },
             {к: к for к in pn.CONDITION_WORDS},
         )
         self.assertEqual(
@@ -394,16 +637,34 @@ class Условия(unittest.TestCase):
         у `sync-lipsync-v3` — ни одной, но вендор пишет «Native on extreme angles».
         """
         измеренная = pn.Candidate(
-            model="measured", evidence=(), applicability=3, capability=0, unresolved=0, price="",
-            against=1, condition_rank=1,
+            model="measured",
+            evidence=(),
+            applicability=3,
+            capability=0,
+            unresolved=0,
+            price="",
+            against=1,
+            condition_rank=1,
         )
         похвала = pn.Candidate(
-            model="praised", evidence=(), applicability=0, capability=0, unresolved=0, price="",
-            condition_rank=0, condition_note="for — pose_range: vendor table: Native",
+            model="praised",
+            evidence=(),
+            applicability=0,
+            capability=0,
+            unresolved=0,
+            price="",
+            condition_rank=0,
+            condition_note="for — pose_range: vendor table: Native",
         )
         провал = pn.Candidate(
-            model="limited", evidence=(), applicability=4, capability=0, unresolved=0, price="",
-            against=0, condition_rank=2,
+            model="limited",
+            evidence=(),
+            applicability=4,
+            capability=0,
+            unresolved=0,
+            price="",
+            against=0,
+            condition_rank=2,
         )
         порядок = sorted([провал, измеренная, похвала], key=pn.by_evidence)
         self.assertEqual(["praised", "measured", "limited"], [c.model for c in порядок])
@@ -442,11 +703,16 @@ class ЖиваяБаза(unittest.TestCase):
         return capability.find(*a, top=30, facts=self.база)
 
     def test_f01_профиль_sync3_выше_lipsync2pro_и_19(self) -> None:
-        итог = self._найти("which lipsync handles profile / side view faces", "lipsync", "profile, side view", "")
+        итог = self._найти(
+            "which lipsync handles profile / side view faces", "lipsync", "profile, side view", ""
+        )
         порядок = [r["model"] for r in итог["ranked"]]
         self.assertEqual("sync-lipsync-v3", порядок[0])
         self.assertLess(порядок.index("sync-lipsync-v3"), порядок.index("sync-lipsync-v2-pro"))
-        self.assertEqual("bad_news_only", next(r for r in итог["ranked"] if r["model"] == "sync-lipsync-v2-pro")["verdict"])
+        self.assertEqual(
+            "bad_news_only",
+            next(r for r in итог["ranked"] if r["model"] == "sync-lipsync-v2-pro")["verdict"],
+        )
         self.assertNotIn("bria-video-background-removal-v3", порядок + итог["gaps"]["examples"])
 
     def test_f03_открытый_русский_tts_не_пробелы(self) -> None:
@@ -457,13 +723,18 @@ class ЖиваяБаза(unittest.TestCase):
             self.assertNotIn(имя, итог["gaps"]["examples"])
 
     def test_f05_minimax_h3_не_интерполятор(self) -> None:
-        итог = self._найти("frame interpolation to 60/120 fps", "video", "interpolation, fps, slow motion", "")
+        итог = self._найти(
+            "frame interpolation to 60/120 fps", "video", "interpolation, fps, slow motion", ""
+        )
         self.assertEqual("frame-interpolate", итог["function"])
         self.assertNotIn("minimax-h3", [r["model"] for r in итог["ranked"]])
 
     def test_f08_некоммерческая_не_хорошая_новость(self) -> None:
         итог = self._найти(
-            "music model that sings lyrics in Spanish for commercial use", "music", "vocals, lyrics, commercial", "spanish"
+            "music model that sings lyrics in Spanish for commercial use",
+            "music",
+            "vocals, lyrics, commercial",
+            "spanish",
         )
         for r in итог["ranked"]:
             for строка in r["good"]:
