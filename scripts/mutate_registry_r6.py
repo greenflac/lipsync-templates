@@ -34,7 +34,9 @@ ROOT = Path(__file__).resolve().parents[1]
     "studio.tests.test_registry_r6",
     "studio.tests.test_endpoints_r5",
     "studio.tests.test_prices_round4",
+    "studio.tests.test_integration_r6",
 )
+BS = "studio/brief_spec.py"
 
 EP = "studio/endpoints.py"
 PR = "studio/pricing.py"
@@ -107,6 +109,18 @@ MUTANTS: tuple[tuple[str, str, str, str], ...] = (
     (EP, "        r\"|audio-driven\",", "        r\"\",", "audio-driven не аватар"),
     (EP, "|talking-?heads?|talking-?videos?|", "|talking-?heads?|", "«talking video» не аватар"),
     (EP, "|lipsync|latentsync\", (LIPSYNC,)),", "|lipsync\", (LIPSYNC,)),", "latentsync не липсинк"),
+    # --- интеграция шестого круга: что правит шаг правки видео (`spec.edit`)
+    (EP, 'NOT_AN_EDIT = r"extend|extend-video|reference|motion-control|3d-to-video|draft|insert-video"', 'NOT_AN_EDIT = r"draft"', "продление и референс — правка"),
+    (EP, '    EDIT_REFRAME: r"reframe|outpaint",', '    EDIT_REFRAME: r"outpaint",', "reframe не рефрейм"),
+    (EP, '    EDIT_REMOVE_OBJECT: _ПРАВКА_ПО_ИНСТРУКЦИИ + r"|clean-plate|object-removal|remove-object",', '    EDIT_REMOVE_OBJECT: _ПРАВКА_ПО_ИНСТРУКЦИИ,', "clean-plate не удаление"),
+    (EP, '    EDIT_STABILISE: r"stabili[sz]\\w*",', '    EDIT_STABILISE: _ПРАВКА_ПО_ИНСТРУКЦИИ,', "правка по инструкции — стабилизация"),
+    (EP, "    if not итог and not any(_звено(NOT_AN_EDIT, _звенья(т)) for т in тексты):", "    if False:", "голое v2v не перерисовка"),
+    (PN, "EDIT_DEFAULT_INTENTS: tuple[str, ...] = (ep.EDIT_REPLACE_OBJECT,)", "EDIT_DEFAULT_INTENTS: tuple[str, ...] = (ep.EDIT_RESTYLE,)", "правка без spec.edit — перерисовка"),
+    (PN, "        if ep.not_an_edit(что):", "        if False:", "продление не отсеивается как не-правка"),
+    (PN, "        if not set(нужно) <= умеет:", "        if умеет and not set(нужно) & умеет:", "правка: хватает одной из названных или ни одной"),
+    (PN, '    {"правка_видео", "реставрация", "удаление_фона_видео", "интерполяция_кадров"}', '    {"реставрация", "удаление_фона_видео", "интерполяция_кадров"}', "правка до апскейла по кадру заказа"),
+    (PN, "    кадр_исходника = bs.source_frame(понято) or bs.frame(", "    кадр_исходника = None or bs.frame(", "кадр исходника не читается"),
+    (BS, '    # Интеграция шестого круга: ЧТО правится в `video-edit` (`endpoints.EDIT_INTENTS`).\n    "edit",\n', "", "spec.edit — неизвестное поле"),
 )
 
 

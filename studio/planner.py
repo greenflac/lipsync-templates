@@ -6610,13 +6610,9 @@ def отбор_правки(
     # по найденным словами): ноль — правка не измерена, и это печатается.
     узлы = [у for у in реестр.orderable_for(ep.V2V_EDIT) if not ep.not_an_edit(у)]
     покрытие = {п: sorted(у.model for у in узлы if п in ep.edit_intents(у)) for п in нужно}
+    # Правки, которой не называет никто, нет и у оставшихся кандидатов (отбор
+    # выше требует ВСЕ названные правки) — шаг остаётся без кандидата.
     не_измерено = [п for п, кто in покрытие.items() if not кто]
-    if не_измерено:
-        for ключ in list(по_модели):
-            отсеяно_не_та.setdefault(
-                написание.get(ключ, ключ), f"правка {', '.join(не_измерено)}: ни один эндпоинт её не называет"
-            )
-            del по_модели[ключ]
     return {
         "asked": list(нужно),
         "asked_from": "spec.edit" if названы else "default (spec.edit not named): edit by instruction",

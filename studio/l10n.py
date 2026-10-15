@@ -895,7 +895,6 @@ EN_FRAGMENTS: tuple[tuple[str, str], ...] = (
         "and the step needs an edit of your footage",
     ),
     (r"правка: умеет (.+?), а нужно (.+)$", r"edit: does \1, the step needs \2"),
-    (r"правка (.+?): ни один эндпоинт её не называет", r"edit \1: no endpoint names it"),
     (r"\bне названо\b", "not named"),
     (r"\(прогон = 1 кадр\)", "(run = 1 image)"),
     (r"\(прогон = ([\d.]+) с\)", r"(run = \1 s)"),
