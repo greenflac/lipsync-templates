@@ -536,6 +536,20 @@ class ПлановыйКадр(unittest.TestCase):
         self.assertTrue(смета)
         self.assertEqual([1080], [ш["options"][0]["resolution"] for ш in смета])
 
+    def test_текстовый_путь_допущение_планировщика(self) -> None:
+        """Допущение кадра цены делает и сам планировщик — на текстовом пути
+        (`план_по_тексту`), где спецификация кадра не допускает."""
+        import json
+
+        from studio.mcp import server
+
+        план = json.loads(
+            server.план_по_тексту(
+                "a 10 second video of a red fox running through snow, from scratch"
+            )
+        )
+        self.assertIn(pn.ASSUMED_PRICE_FRAME, план["understood_as"]["assumptions"])
+
 
 class Ничья(unittest.TestCase):
     def test_живое_удаление_фона_видео_цена_старше(self) -> None:
