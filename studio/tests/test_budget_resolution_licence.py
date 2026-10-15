@@ -339,7 +339,9 @@ class ЖивыеБрифы(unittest.TestCase):
             видео["licence_alternative"]["licence_risk"],
         )
         self.assertEqual("юрисдикция", итог["question"]["axis"])
-        self.assertEqual((4.16, "годно"), (итог["pipeline_price"]["смета"]["usd"], итог["pipeline_price"]["outcome"]))
+        # Круг 4: wan-3.0-i2v «$0.05 480p, $0.10 720p, or $0.20 1080p» — 1080p
+        # стоит 0.20 usd/с (8.00 за 40 с), а не 0.05 (было 4.16 за весь план).
+        self.assertEqual((10.16, "годно"), (итог["pipeline_price"]["смета"]["usd"], итог["pipeline_price"]["outcome"]))
         self.assertNotIn("optimised", итог["pipeline_price"])
         self.assertEqual("latentsync", итог["steps"][4]["cheaper_same_rank"]["model"])
 

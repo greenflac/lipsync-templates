@@ -4331,6 +4331,7 @@ def нужда_шага(
     длительность: "dur.Запрос",
     кадр: tuple[int, int] | None,
     кадров: int | None = None,
+    fps: float | None = None,
 ) -> pricing.Need:
     """Что шаг должен выдать на ЭТОМ брифе — от этого зависит строка таблицы цен.
 
@@ -4354,7 +4355,21 @@ def нужда_шага(
         else float(кадров or 1) if картинка else 1.0,
         megapixels=(кадр[0] * кадр[1] / 1e6) if кадр else 1.0,
         mode=РЕЖИМ_ШАГА.get(op.name, ""),
+        fps=fps,
     )
+
+
+#: «60fps», «24 fps», «30 кадров в секунду», «25 к/с» — частота кадров в брифе.
+_FPS_В_БРИФЕ = re.compile(
+    r"(?<![\w.])(\d{2,3})\s*-?\s*(?:fps\b|frames? per second|кадр[а-яё]*\s+в\s+секунду|к/с|кадр/с)",
+    re.I,
+)
+
+
+def fps_из_брифа(brief: str) -> float | None:
+    """Частота кадров, названная в брифе, или None (круг 4: цена видео за мегапиксель)."""
+    м = _FPS_В_БРИФЕ.search(brief or "")
+    return float(м.group(1)) if м else None
 
 
 #: Хост источника -> маршрут (кто продаёт прогон). Заведено 2026-10-15 по
@@ -4676,6 +4691,7 @@ def pipeline_price(выбор: "Sequence[tuple[Operation, Candidate | None]]") -
     без_цены: list[str] = []
     не_складывается: list[dict] = []
     по_смете: list[str] = []
+    поштучно: list[str] = []
     for оп, кандидат in выбор:
         цена = кандидат.price_value if кандидат else None
         if цена is None and кандидат is not None and кандидат.cost is not None:
@@ -4695,8 +4711,13 @@ def pipeline_price(выбор: "Sequence[tuple[Operation, Candidate | None]]") -
                 не_складывается.append({"step": оп.name, "price": кандидат.price})
             continue
         цены.append(цена)
+        if цена.per not in ЗА_СЕКУНДУ | ЗА_МИНУТУ:
+            поштучно.append(оп.name)
     итог = pricing.total(цены)
     итог["steps_without_price"] = без_цены
+    # Шаги, чья цена «за кадр / мегапиксель / прогон» в цену РОЛИКА не
+    # переводится (круг 4): с ними вердикт бюджета — «не подтвердить».
+    итог["steps_priced_per_unit"] = поштучно
     итог["steps_price_not_summable"] = не_складывается
     итог["steps_priced"] = len(цены) + len(по_смете)
     # НОТА ПЕРЕСОБИРАЕТСЯ, И ЭТО ПОЧИНКА СОБСТВЕННОГО ЗАГОЛОВКА. `pricing.total`
@@ -4802,6 +4823,11 @@ def в_ролик(
                 f"{цена.get('note', '')} — ПОТОЛОК {потолок:g}: работа столько не стоит, "
                 f"любая записанная цена больше нуля (наименьшая {min(положительные):g} {pl.BUDGET_UNIT})"
             )
+        elif потолок is not None and нижняя:
+            # ЦЕНА ЕСТЬ, НО НЕ В ДЕНЬГАХ РОЛИКА (круг 4): «0.001205 usd за
+            # megapixel» печаталось рядом с «бюджет 0.1 usd: укладывается» —
+            # сравнив ноль позиций. Не сравнено — не подтверждено.
+            _не_подтверждено(цена, потолок, list(цена.get("steps_priced_per_unit") or []))
         return цена
     if секунды is None:
         # ПОДПИСЬ НАЗЫВАЕТ ТОЛЬКО ПОСЕКУНДНОЕ (2026-10-14, G11): «это СТАВКА ЗА
@@ -4912,6 +4938,10 @@ def в_ролик(
                 f" — ПОТОЛОК {потолок:g}: работа столько не стоит, "
                 f"дешевле всего выходит {min(в_валюте_бюджета.values()):.2f}"
             )
+    поштучные = list(цена.get("steps_priced_per_unit") or [])
+    if поштучные and потолок is not None and цена.get("outcome") != "не годно":
+        _не_подтверждено(цена, потолок, поштучные)
+        return цена
     if неполная and потолок is not None and цена.get("outcome") != "не годно":
         # Превышение по НИЖНЕЙ границе — доказательство; «укладывается» по ней
         # же — нет: шаги без цены могут вынести за потолок. Третий исход.
@@ -4921,6 +4951,17 @@ def в_ролик(
             f"цены ({', '.join(без_цены)}) могут его превысить, и это не проверено"
         )
     return цена
+
+
+def _не_подтверждено(цена: dict, потолок: float, шаги: Sequence[str]) -> None:
+    """Вердикт «не подтвердить»: цена этих шагов в цену ролика не переводится."""
+    цена["outcome"] = pricing.НЕ_СМОГЛИ
+    цена["budget_unconfirmed_steps"] = list(шаги)
+    цена["note"] = (
+        f"{цена.get('note', '')} — с потолком {потолок:g} НЕ СРАВНЕНО: цена шагов "
+        f"{', '.join(шаги) or '—'} записана не за секунду (за кадр, мегапиксель или прогон), "
+        "и в цену ролика без числа кадров, частоты или длины прогона не переводится"
+    )
 
 
 def смета_ролика(
@@ -4950,7 +4991,13 @@ def смета_ролика(
     делает_ролик = any(
         OUTPUT_KINDS.get(а) == "видео" for оп, кандидат in выбор for а in оп.produces
     )
-    if ролик_заказан and not делает_ролик:
+    без_ролика = ролик_заказан and not делает_ролик
+    if без_ролика:
+        # ЦЕНЫ РОЛИКА НЕТ — НО ЦЕНА ПЛАНА ЕСТЬ (круг 4). Раньше здесь был
+        # возврат, и план из одной музыки или одних кадров терял и сумму, и
+        # вердикт бюджета: «$1 на 30 секунд музыки» не отвечался вовсе. Теперь
+        # заголовок прежний (ролика план не делает), а цена плана и вердикт —
+        # как у любого плана, какого бы рода ни был его выход.
         цена.pop("за_ролик", None)
         цена["outcome"] = pricing.НЕ_СМОГЛИ
         цена["no_clip_price"] = True
@@ -4958,7 +5005,6 @@ def смета_ролика(
             f"{цена.get('note', '')}. {NO_CLIP_PRICE_MARK}: ни один шаг плана не делает сам ролик "
             f"(видео) — посчитаны только шаги {', '.join(оп.name for оп, _ in выбор) or '—'}"
         )
-        return цена
     с_ценой = [(оп, к) for оп, к in выбор if к is not None and к.cost is not None]
 
     def _ст(к: Candidate) -> Стоимость:
@@ -4968,8 +5014,20 @@ def смета_ролика(
     if not с_ценой:
         return цена
     без = [оп.name for оп, к in выбор if к is None or к.cost is None]
+    # НИЖНЯЯ ГРАНИЦА ШАГА — НЕ ЦЕНА (круг 4): «$0.49 за генерацию» без записанной
+    # длины прогона на ролике 120 с. Сумма с таким шагом доказывает «не влезает»,
+    # но не «влезает» — как и шаг без цены вовсе.
+    нижние = [
+        f"{оп.name} ({_ст(к).default.lower_bound})" for оп, к in с_ценой if _ст(к).default.lower_bound
+    ]
+    неоднозначные = [
+        f"{оп.name}: {_ст(к).default.ambiguous}" for оп, к in с_ценой if _ст(к).default.ambiguous
+    ]
     итого = round(sum(_ст(к).default.usd for _, к in с_ценой), 4)
     дёшево = round(sum(_ст(к).cheapest.usd for _, к in с_ценой), 4)
+    # Наименьшая ИЗВЕСТНАЯ стоимость плана: самый дешёвый тариф каждого шага и
+    # нижний край его неоднозначной ставки. Ею одной доказывается «не влезает».
+    минимум = round(sum(min(o.least for o in _ст(к).options) for _, к in с_ценой), 4)
     дешёвые_тарифы = sorted(
         {
             _ст(к).cheapest.tier
@@ -4980,6 +5038,8 @@ def смета_ролика(
     цена["смета"] = {
         "usd": round(итого, 2),
         "usd_cheapest_tiers": round(дёшево, 2),
+        # Наименьшая известная стоимость (круг 4): ею доказывается «не влезает».
+        "usd_min_known": round(минимум, 2),
         "steps": [
             {
                 "step": оп.name,
@@ -4993,10 +5053,14 @@ def смета_ролика(
                 ],
                 "other_routes": [{"route": м, "usd": o.usd} for м, o in _ст(к).other_routes],
                 "contradictions": list(_ст(к).contradictions),
+                "lower_bound": _ст(к).default.lower_bound,
+                "ambiguous": _ст(к).default.ambiguous,
             }
             for оп, к in с_ценой
         ],
         "steps_without_cost": без,
+        "steps_lower_bound": нижние,
+        "steps_ambiguous": неоднозначные,
     }
     расклад = "; ".join(
         f"{оп.name} {к.model}"
@@ -5008,16 +5072,20 @@ def смета_ролика(
     # неправда в заголовке (G1/G11). Тогда это цена ПЛАНА.
     полная, частичная = (
         (FULL_PRICE_MARK, PARTIAL_PRICE_MARK)
-        if делает_ролик or ролик_заказан
+        if делает_ролик or (ролик_заказан and not без_ролика)
         else ("ЦЕНА ПЛАНА", "НИЖНЯЯ ГРАНИЦА ПЛАНА")
     )
     голова = f"{секунды:g} с × ставки шагов = " if секунды else ""
-    цена["за_ролик"] = {"usd": round(итого, 2)}
+    if not без_ролика:
+        цена["за_ролик"] = {"usd": round(итого, 2)}
     цена["steps_without_price"] = без
-    if без:
+    неполная = bool(без or нижние)
+    if неполная:
         цена["note"] = (
             f"{цена.get('note', '')}. {частичная}: {голова}{итого:.2f} usd ({расклад}) — "
-            f"это не полная цена, без цены шаги {', '.join(без)}"
+            "это не полная цена"
+            + (f", без цены шаги {', '.join(без)}" if без else "")
+            + (f", НИЖНЯЯ ГРАНИЦА у шагов {'; '.join(нижние)}" if нижние else "")
         )
     else:
         цена["note"] = f"{цена.get('note', '')}. {полная}: {голова}{итого:.2f} usd ({расклад})" + (
@@ -5025,8 +5093,13 @@ def смета_ролика(
             if дёшево < итого
             else ""
         )
+    if неоднозначные:
+        цена["note"] += (
+            f". НЕОДНОЗНАЧНО ({'; '.join(неоднозначные)}): в цене — наибольшая, "
+            f"наименьшая известная стоимость плана {минимум:.2f} usd"
+        )
     if потолок is None:
-        цена["outcome"] = pricing.ГОДНО if not без else pricing.НЕ_СМОГЛИ
+        цена["outcome"] = pricing.ГОДНО if not (неполная or без_ролика) else pricing.НЕ_СМОГЛИ
         return цена
     названо = {str(с).strip().lower() for с in (за_что or ())}
     if названо and not (названо & ({WHOLE_CLIP} | set(DEFAULT_PER))):
@@ -5034,21 +5107,36 @@ def смета_ролика(
             f". Потолок назван за {', '.join(sorted(названо))}, а посчитана цена "
             "ВСЕГО РОЛИКА — это величины разного рода, и сравнение не делалось"
         )
-        цена["outcome"] = pricing.ГОДНО if not без else pricing.НЕ_СМОГЛИ
+        цена["outcome"] = pricing.ГОДНО if not неполная else pricing.НЕ_СМОГЛИ
         return цена
     if потолок <= 0:
         if итого > 0:
             цена["outcome"] = "не годно"
             цена["note"] += (
                 f" — ПОТОЛОК {потолок:g}: работа столько не стоит, "
-                f"дешевле всего выходит {дёшево:.2f} {pl.BUDGET_UNIT}"
+                f"дешевле всего выходит {минимум:.2f} {pl.BUDGET_UNIT}"
             )
         return цена
-    if дёшево > потолок:
+    # «НЕ ВЛЕЗАЕТ» ДОКАЗЫВАЕТ ТОЛЬКО НАИМЕНЬШАЯ ИЗВЕСТНАЯ СТОИМОСТЬ (круг 4):
+    # самый дешёвый тариф каждого шага и нижний край неоднозначной ставки.
+    # Шаги без цены и нижние границы её только увеличат, так что превышение по
+    # ней — доказательство и с дырами в смете.
+    if минимум > потолок:
         цена["outcome"] = "не годно"
         цена["note"] += (
-            f" — ПОТОЛОК {потолок:g} ПРЕВЫШЕН (usd): {дёшево:.2f} против {потолок:g} "
-            f"даже на самых дешёвых тарифах, это дороже в {дёшево / потолок:.1f} раза"
+            f" — ПОТОЛОК {потолок:g} ПРЕВЫШЕН (usd): наименьшая известная стоимость "
+            f"{минимум:.2f} против {потолок:g} даже на самых дешёвых тарифах, это дороже в "
+            f"{минимум / потолок:.1f} раза"
+            + (" — и это без шагов, у которых цены нет или она нижняя граница" if неполная else "")
+        )
+        return цена
+    if дёшево > потолок:
+        # Влезает только нижний край НЕОДНОЗНАЧНОЙ ставки: ответ зависит от
+        # того, какая ставка на деле — сказать «укладывается» нельзя.
+        цена["outcome"] = pricing.НЕ_СМОГЛИ
+        цена["note"] += (
+            f" — в потолок {потолок:g} влезает только нижний край неоднозначных ставок "
+            f"({минимум:.2f} usd); по наибольшей {дёшево:.2f} usd — ПРЕВЫШЕН. Не проверить"
         )
         return цена
     if итого > потолок:
@@ -5070,11 +5158,16 @@ def смета_ролика(
             f"{'; '.join(влезают) or f'все шаги на самых дешёвых, {дёшево:.2f} usd'}; "
             f"по умолчанию {итого:.2f} usd — ПРЕВЫШЕН"
         )
-    if без:
+    if неполная:
+        # ЛЮБОЙ ШАГ БЕЗ ЦЕНЫ ИЛИ С НИЖНЕЙ ГРАНИЦЕЙ — «НЕ ПОДТВЕРДИТЬ» (круг 4).
         цена["outcome"] = pricing.НЕ_СМОГЛИ
+        цена["budget_unconfirmed_steps"] = без + [н.split(" (")[0] for н in нижние]
         цена["note"] += (
-            f" — в потолок {потолок:g} укладывается только ИЗВЕСТНАЯ часть; шаги без "
-            f"цены ({', '.join(без)}) могут его превысить, и это не проверено"
+            f" — в потолок {потолок:g} укладывается только ИЗВЕСТНАЯ часть; "
+            + (f"шаги без цены ({', '.join(без)})" if без else "")
+            + ("; " if без and нижние else "")
+            + (f"шаги с нижней границей вместо цены ({'; '.join(нижние)})" if нижние else "")
+            + " могут его превысить, и это не проверено"
         )
         return цена
     цена["outcome"] = pricing.ГОДНО
@@ -7171,7 +7264,12 @@ IMAGE_PRICE_MARKS: tuple[str, ...] = ("кадр(ов)", " Мп ")
 
 def цена_полная(c: Candidate, op: Operation | None = None) -> bool:
     """Годится ли цена кандидата для минимума суммы: посчитана целиком и в своём роде."""
-    if c.cost is None or c.cost.default.usd <= 0 or c.cost.default.conditional:
+    if (
+        c.cost is None
+        or c.cost.default.usd <= 0
+        or c.cost.default.conditional
+        or c.cost.default.lower_bound
+    ):
         return False
     расчёт = c.cost.default.formula
     if any(м in расчёт for м in INCOMPLETE_PRICE_MARKS):
@@ -7807,6 +7905,11 @@ def _по_английски(текст: str) -> str:
     (r"через (\S+) — ", r"via \1 — "),
     (r"; другие маршруты: ", "; other routes: "),
     (r"ИСТОЧНИКИ РАСХОДЯТСЯ: ", "SOURCES DISAGREE: "),
+    (r"НЕОДНОЗНАЧНО: ставки не различить по брифу \(([^)]*)\), взята наибольшая", r"AMBIGUOUS: the brief cannot tell the rates apart (\1), the dearest is taken"),
+    (r"НИЖНЯЯ ГРАНИЦА: сколько секунд даёт прогон — не записано: посчитан один прогон", "LOWER BOUND: seconds per run not recorded, one run counted"),
+    (r"⌈([\d.]+)/([\d.]+)⌉ = (\d+) блок\(ов\)", r"⌈\1/\2⌉ = \3 block(s)"),
+    (r"\(блок = ([\d.]+) с\)", r"(block = \1 s)"),
+    (r"Мп/кадр × (\d+) кадров", r"MP/frame × \1 frames"),
     (r"\) против ", ") vs "),
     (r" — в смету взято ", " — the estimate takes "),
     (r"\(ступень (\w+), из равных по ступени — дороже\)", r"(\1 tier; of equal tiers, the dearer)"),
@@ -7888,7 +7991,7 @@ def _цена_словами(итог: dict, англ: bool) -> str:
     цена = итог.get("pipeline_price") or {}
     смета = цена.get("смета") or {}
     if цена.get("no_clip_price"):
-        return (
+        без_ролика = (
             # «звуковые» было неправдой о плане из одних кадров (2026-10-15).
             "NO CLIP PRICE: no step of the plan makes the video itself — only the steps that "
             "make images or audio are priced"
@@ -7896,6 +7999,9 @@ def _цена_словами(итог: dict, англ: bool) -> str:
             else "ЦЕНЫ РОЛИКА НЕТ: ни один шаг плана не делает сам ролик — посчитаны только "
             "шаги, которые делают кадры или звук"
         )
+        # Цена ПЛАНА и вердикт бюджета печатаются и здесь (круг 4): план из
+        # одной музыки — тоже план, и «$1 на музыку» должен получить ответ.
+        return без_ролика + ("; " + _смета_словами(итог, смета, англ) if смета else "")
     if смета:
         return _смета_словами(итог, смета, англ)
     без = list(цена.get("steps_without_price") or [])
@@ -7952,18 +8058,40 @@ def _цена_словами(итог: dict, англ: bool) -> str:
                 if исход == "не годно"
                 else ("fits" if англ else "укладывается")
                 if исход == "годно"
-                else ("cannot tell" if англ else "не проверить — цены неполные")
+                else _не_подтвердить(цена, англ)
             )
         )
     return "; ".join(части)
+
+
+def _не_подтвердить(цена: dict, англ: bool) -> str:
+    """«Укладывается» не подтвердить — и ЧЕМ: шаги без цены или с нижней границей названы."""
+    шаги = [
+        _имя_шага(ш, англ)
+        for ш in (
+            цена.get("budget_unconfirmed_steps")
+            or (цена.get("смета") or {}).get("steps_without_cost")
+            or цена.get("steps_without_price")
+            or []
+        )
+    ]
+    if англ:
+        return "cannot confirm it fits" + (
+            f" — no full price for: {', '.join(шаги)}" if шаги else " — some prices are incomplete"
+        )
+    return "не подтвердить, что укладывается" + (
+        f" — нет полной цены у шагов: {', '.join(шаги)}" if шаги else " — цены неполные"
+    )
 
 
 def _смета_словами(итог: dict, смета: dict, англ: bool) -> str:
     """Цена плана по смете шагов: сумма, дешёвые тарифы, шаги без цены, бюджет."""
     цена = итог.get("pipeline_price") or {}
     без = list(смета.get("steps_without_cost") or [])
+    нижние = [str(н).split(" (")[0] for н in смета.get("steps_lower_bound") or []]
     итого = float(смета.get("usd") or 0.0)
     дёшево = float(смета.get("usd_cheapest_tiers") or итого)
+    минимум = float(смета.get("usd_min_known", дёшево))
     ролик = "ЦЕНА ПЛАНА" not in str(цена.get("note") or "") and "НИЖНЯЯ ГРАНИЦА ПЛАНА" not in str(
         цена.get("note") or ""
     )
@@ -7974,7 +8102,7 @@ def _смета_словами(итог: dict, смета: dict, англ: bool)
                 if ролик
                 else (f"plan price {итого:g} usd" if англ else f"цена плана {итого:g} usd")
             )
-            if not без
+            if not (без or нижние)
             else (
                 f"at least {итого:g} usd (known steps only)"
                 if англ
@@ -7993,6 +8121,20 @@ def _смета_словами(итог: dict, смета: dict, англ: bool)
             ("NO PRICE for: " if англ else "БЕЗ ЦЕНЫ: ")
             + ", ".join(_имя_шага(б, англ) for б in без)
         )
+    if нижние:
+        части.append(
+            ("LOWER BOUND ONLY (run length not recorded) for: " if англ else "ТОЛЬКО НИЖНЯЯ ГРАНИЦА (длина прогона не записана): ")
+            + ", ".join(_имя_шага(н, англ) for н in нижние)
+        )
+    if смета.get("steps_ambiguous"):
+        части.append(
+            (
+                f"AMBIGUOUS rate (the dearest is taken; least known plan cost {минимум:g} usd) for: "
+                if англ
+                else f"НЕОДНОЗНАЧНАЯ ставка (взята наибольшая; наименьшая известная стоимость {минимум:g} usd): "
+            )
+            + ", ".join(_имя_шага(str(н).split(":")[0], англ) for н in смета["steps_ambiguous"])
+        )
     бюджет = итог.get("budget") or {}
     if бюджет.get("amount") is not None:
         исход = str(цена.get("outcome") or "")
@@ -8004,7 +8146,11 @@ def _смета_словами(итог: dict, смета: dict, англ: bool)
             else f"бюджет {бюджет['amount']:g} usd ({на_что}): "
         )
         части[-1] += (
-            ("over budget" if англ else "ПРЕВЫШЕН")
+            (
+                f"over budget — the least known cost is {минимум:g} usd"
+                if англ
+                else f"ПРЕВЫШЕН — наименьшая известная стоимость {минимум:g} usd"
+            )
             if исход == "не годно"
             else (
                 (
@@ -8016,10 +8162,8 @@ def _смета_словами(итог: dict, смета: dict, англ: bool)
                 else ("fits" if англ else "укладывается")
             )
             if исход == pricing.ГОДНО
-            else (
-                "cannot tell — some steps have no price" if англ else "не проверить — цены неполные"
-            )
-            if без
+            else _не_подтвердить(цена, англ)
+            if без or нижние or цена.get("budget_unconfirmed_steps") or смета.get("steps_ambiguous")
             else (
                 "not compared — different units"
                 if англ
@@ -8027,6 +8171,114 @@ def _смета_словами(итог: dict, смета: dict, англ: bool)
             )
         )
     return "; ".join(части)
+
+
+#: ПРОТИВОРЕЧИЯ БРИФА (круг 4): требования, которые не выполнить вместе.
+#: Планировщик раньше молча выбирал одно из двух — «cheapest AND best quality»
+#: становилось «cheapest», «silent» рядом с «native audio dialogue» — нативным
+#: звуком. Решать за заказчика нельзя: противоречие печатается и, если других
+#: вопросов нет, становится вопросом. Пары — (метка, образцы А, образцы Б).
+#: КОНСТАНТА-РЕШЕНИЕ: словарь закрытый; новое противоречие заводится строкой.
+BRIEF_CONFLICTS: tuple[tuple[str, tuple[str, ...], tuple[str, ...]], ...] = (
+    (
+        "цена_и_качество",
+        CHEAPEST_CUES,
+        (
+            r"best quality",
+            r"highest quality",
+            r"top quality",
+            r"max(?:imum)? quality",
+            r"quality over price",
+            r"лучш[а-яё]* качеств",
+            r"максимальн[а-яё]* качеств",
+            r"качество важнее",
+        ),
+    ),
+    (
+        "тишина_и_звук",
+        (
+            r"(?<![a-z])silent(?![a-z])",
+            r"(?<![a-z])no audio(?![a-z])",
+            r"without (?:audio|sound)",
+            r"(?<![a-z])muted?(?![a-z])",
+            r"без звука",
+            r"беззвуч",
+        ),
+        (
+            r"native audio",
+            r"with audio",
+            r"(?<![a-z])dialog(?:ue)?(?![a-z])",
+            r"(?<![a-z])speech(?![a-z])",
+            r"нативн[а-яё]* звук",
+            r"со звуком",
+            r"диалог",
+        ),
+    ),
+)
+
+_ПРОТИВОРЕЧИЕ_СЛОВАМИ: dict[str, tuple[str, str, tuple[str, ...], tuple[str, ...]]] = {
+    "цена_и_качество": (
+        "В брифе и «самое дешёвое», и «лучшее качество» — вместе их не выполнить. Что важнее?",
+        "The brief asks for both the cheapest and the best quality — they cannot both hold. "
+        "Which wins?",
+        ("самое дешёвое", "лучшее качество", "лучшее качество в пределах бюджета"),
+        ("the cheapest", "the best quality", "the best quality within the budget"),
+    ),
+    "тишина_и_звук": (
+        "В брифе ролик и без звука, и со звуком (диалог/нативный звук). Звук нужен?",
+        "The brief asks for a silent clip and for audio (dialogue / native audio) at once. "
+        "Is sound wanted?",
+        ("без звука", "со звуком"),
+        ("silent", "with sound"),
+    ),
+}
+
+
+def противоречия(brief: str, шаги: Sequence[dict]) -> list[dict]:
+    """Противоречия брифа и плана — списком, по одному на пару требований.
+
+    Два источника: пары слов брифа (`BRIEF_CONFLICTS`) и кадр, которого
+    выбранная модель не даёт (план дописал апскейл — значит, заказ и модель
+    расходятся, и заказчик должен это видеть, а не прочесть в шагах).
+    """
+    низ = _norm(brief)
+    итог: list[dict] = []
+    for метка, а, б in BRIEF_CONFLICTS:
+        if any(re.search(о, низ) for о in а) and any(re.search(о, низ) for о in б):
+            ру, en, вар_ру, вар_en = _ПРОТИВОРЕЧИЕ_СЛОВАМИ[метка]
+            итог.append(
+                {"kind": метка, "text": ру, "text_en": en, "options": list(вар_ру), "options_en": list(вар_en)}
+            )
+    for шаг in шаги:
+        if шаг.get("step") in UPSCALE_STEPS and шаг.get("inferred"):
+            почему = str(шаг["inferred"])
+            итог.append(
+                {
+                    "kind": "кадр_выше_модели",
+                    "text": "Заказанный кадр выбранная модель не даёт — или это не записано: "
+                    f"{почему}. Апскейл или другая модель?",
+                    "text_en": "The chosen model does not deliver the frame asked, or that is not "
+                    f"recorded ({_по_английски(почему)}). Upscale or another model?",
+                    "options": ["апскейл", "другая модель", "кадр ниже"],
+                    "options_en": ["upscale", "another model", "a lower frame"],
+                }
+            )
+    return итог
+
+
+def вопрос_о_противоречии(п: dict) -> clarify.Вопрос:
+    """Первое противоречие — вопрос заказчику, когда других вопросов нет."""
+    return clarify.Вопрос(
+        ось="противоречие_брифа",
+        текст=п["text"],
+        почему="решать за заказчика, какое из двух требований уступает, план не вправе",
+        варианты=tuple(п["options"]),
+        english=(
+            п["text_en"],
+            "the plan may not decide for you which of the two requirements gives way",
+            tuple(п["options_en"]),
+        ),
+    )
 
 
 def сводка(итог: dict) -> str:
@@ -8097,6 +8349,11 @@ def сводка(итог: dict) -> str:
                 ("price: " if англ else "цена: ")
                 + _коротко(_форма_по_английски(цена_шага) if англ else цена_шага, SUMMARY_PRICE)
             )
+            for флаг in выбран.get("price_flags") or []:
+                хвост.append(
+                    ("price warning: " if англ else "цена, внимание: ")
+                    + _коротко(_форма_по_английски(флаг) if англ else флаг, 200)
+                )
             риск = _риск_шага(итог, шаг, англ)
             if риск:
                 хвост.append(("risk: " if англ else "риск: ") + риск)
@@ -8260,6 +8517,11 @@ def сводка(итог: dict) -> str:
                 else f"УСЛОВНО (не в цене): {_имя_шага(у.get('step'), False)} {у.get('model')}"
             )
             + (f" {float(у['usd']):.2f} usd" if у.get("usd") is not None else "")
+        )
+    for п in итог.get("conflicts") or []:
+        строки.append(
+            ("CONFLICT IN THE BRIEF: " if англ else "ПРОТИВОРЕЧИЕ В БРИФЕ: ")
+            + _коротко(п.get("text_en") if англ else п.get("text"), 220)
         )
     вопрос = итог.get("question") or {}
     if вопрос:
@@ -8617,7 +8879,13 @@ def plan(
             sorted(есть),
             языки if op.name in SPEECH_STEPS else (),
             use,
-            нужда_шага(op, длительность, кадр_из_брифа(brief) or кадр, кадров_заказано(brief)),
+            нужда_шага(
+                op,
+                длительность,
+                кадр_из_брифа(brief) or кадр,
+                кадров_заказано(brief),
+                fps_из_брифа(brief),
+            ),
             bool(COMMUNITY_ASKED.search(brief)),
             условия,
             юрисдикции,
@@ -9034,6 +9302,11 @@ def plan(
         "classes": list(отчёт["classes"]),
         "validator": отчёт,
     }
+    # ПРОТИВОРЕЧИЯ БРИФА — вслух, а при отсутствии других вопросов — вопросом
+    # (круг 4): план не решает за заказчика, какое требование уступает.
+    ответ["conflicts"] = противоречия(brief, строки_шагов)
+    if ответ["conflicts"] and not ответ["question"]:
+        ответ["question"] = вопрос_о_противоречии(ответ["conflicts"][0]).row(по_английски)
     ответ["по_английски"] = по_английски
     ответ["что_дальше"] = что_дальше(ответ)
     ответ["summary"] = сводка(ответ)
@@ -9072,6 +9345,7 @@ def _кратко_кандидат(c: dict | None, соседи: bool = False) -
             "against",
             "in_favour",
             "price",
+            "price_flags",
             "price_state",
             "price_note",
             "licence_risk",
@@ -9195,6 +9469,7 @@ def сжать(ответ: dict) -> dict:
         "unmeasured_requirements": ответ.get("unmeasured_requirements"),
         "pipeline_price": цена,
         "question": ответ.get("question"),
+        "conflicts": ответ.get("conflicts") or [],
         "budget": бюджет,
         "creative": ответ.get("creative"),
         "steps": шаги,
@@ -9281,6 +9556,23 @@ def _alternative_row(c: Candidate) -> dict:
     return строка
 
 
+def флаги_цены(c: Candidate) -> list[str]:
+    """Что в цене шага НЕ ЦЕНА — одним списком для всех путей выдачи (круг 4).
+
+    Расхождения источников, неоднозначная ставка и нижняя граница раньше жили
+    только в хвосте строки цены, а краткий план режет её до 80 знаков — и
+    «$0.18/1K у LiteLLM против $0.08 у вендора» не доходило до читателя.
+    """
+    if c.cost is None:
+        return []
+    флаги = [f"ИСТОЧНИКИ РАСХОДЯТСЯ: {р}" for р in c.cost.contradictions]
+    if c.cost.default.ambiguous:
+        флаги.append(f"НЕОДНОЗНАЧНО: {c.cost.default.ambiguous}")
+    if c.cost.default.lower_bound:
+        флаги.append(f"НИЖНЯЯ ГРАНИЦА: {c.cost.default.lower_bound}")
+    return флаги
+
+
 def _candidate_row(c: Candidate | None) -> dict | None:
     if c is None:
         return None
@@ -9302,6 +9594,7 @@ def _candidate_row(c: Candidate | None) -> dict | None:
         "capability": c.capability,
         "unresolved": c.unresolved,
         "price": c.price,
+        "price_flags": флаги_цены(c),
         "licence_risk": c.licence_risk,
         "superseded": c.superseded,
         "community": c.community,
