@@ -246,7 +246,12 @@ class ЛюдиИУсловияПоSpec(unittest.TestCase):
         )
         self.assertEqual(["pose_range"], план["stated_conditions"]["understood"])
         без = _план({к: з for к, з in spec.items() if к != "conditions"}, "lip sync my clip")
-        self.assertNotEqual("sync-lipsync-v3", без["steps"][0]["chosen"]["model"])
+        # СЕДЬМОЙ КРУГ (валидатор v7: w24, n15, n16): и без условия
+        # `sync-lipsync-v3` (объявленная похвала, провалов нет) выше
+        # `sync-lipsync` (записан провал рта) — но уже не условием, а полем
+        # «провал против объявленной хорошей новости».
+        self.assertEqual("sync-lipsync-v3", без["steps"][0]["chosen"]["model"])
+        self.assertEqual("", без["steps"][0]["chosen"].get("condition_note", ""))
 
 
 if __name__ == "__main__":

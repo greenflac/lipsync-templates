@@ -6930,7 +6930,8 @@ def candidates_for(
     # работу не установил никто, — тестовая или новая) модели старых каналов
     # остаются кандидатами, но после установленных (`UNCLASSIFIED_RANK`).
     строгий = bool(работы) and (
-        op.name in ТОЛЬКО_РЕЕСТР or any(реестр.orderable_for(р) for р in работы)
+        op.name in ТОЛЬКО_РЕЕСТР
+        or any(not семья_только_у_себя(у) for р in работы for у in реестр.orderable_for(р))
     )
     if работы:
         for ключ in list(по_модели):
