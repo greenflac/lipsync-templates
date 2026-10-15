@@ -188,6 +188,27 @@ class Маршрут(unittest.TestCase):
         self.assertEqual(
             (), ep.own_routes("acme-v", документ, family=True, vendor_hosts={"elevenlabs.io": "elevenlabs"})
         )
+        # Строка ПОРТАЛА (пересказ) на хосте вендора — не страница API вендора.
+        пересказ = [факт("acme-v", "latency", "75 ms", "https://elevenlabs.io/docs/models", tier="portal")]
+        self.assertEqual(
+            (), ep.own_routes("acme-v", пересказ, family=False, vendor_hosts={"elevenlabs.io": "elevenlabs"})
+        )
+
+    def test_страница_весов_это_репозиторий_а_не_поиск_по_каталогу(self) -> None:
+        поиск = ep.build([факт("acme-w", "license", "apache-2.0", "https://huggingface.co/api/models?search=acme")])
+        репо = ep.build([факт("acme-w", "license", "apache-2.0", "https://huggingface.co/acme/w")])
+        узел_поиска, узел_репо = поиск.get("acme-w"), репо.get("acme-w")
+        assert узел_поиска is not None and узел_репо is not None
+        self.assertEqual((False, ()), (узел_поиска.orderable, узел_поиска.route_ids))
+        self.assertEqual(
+            (True, (("self-host", "https://huggingface.co/acme/w"),)), (узел_репо.orderable, узел_репо.route_ids)
+        )
+
+    def test_ставка_без_единицы_не_цена_узла(self) -> None:
+        реестр = ep.build([факт("acme-p", "price", "$0.05 per banana", "https://fal.ai/models/acme/p")])
+        узел = реестр.get("acme-p")
+        assert узел is not None
+        self.assertEqual((True, False), (узел.orderable, узел.priced))
 
 
 # --------------------------------------------------------------------------
@@ -317,6 +338,20 @@ class Тарифы(unittest.TestCase):
         c = pn.стоимость(строки, pricing.Need(seconds=10.0, resolution=720))
         assert c is not None
         self.assertEqual(1, len(c.contradictions))
+
+    def test_кадр_и_звук_разных_строк_не_спор(self) -> None:
+        for имя, строки, сумма in (
+            ("кадр", [("price_per_second_usd", "$0.10 per second at 720p", "https://fal.ai/models/acme/v"),
+                      ("price", "Your request will cost $0.20 per second at 1080p", "https://fal.ai/models/acme/v/api")],
+             1.0),
+            ("звук", [("price_per_second_usd", "$0.10 per second (audio off)", "https://fal.ai/models/acme/v"),
+                      ("price", "Your request will cost $0.15 per second (audio on)", "https://fal.ai/models/acme/v/api")],
+             1.5),
+        ):
+            with self.subTest(имя=имя):
+                c = pn.стоимость([факт("acme-v", а, з, у) for а, з, у in строки], pricing.Need(seconds=10.0))
+                assert c is not None
+                self.assertEqual((сумма, ()), (c.default.usd, c.contradictions))
 
     def test_разные_ступени_не_спор(self) -> None:
         строки = [
