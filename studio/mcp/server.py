@@ -414,8 +414,20 @@ def _index() -> Any:
 MAX_RESPONSE_CHARS = 40_000
 
 #: Как взять остальное — по инструментам, которые умеют отдавать частями.
+#: ПО ИНСТРУМЕНТУ (валидатор 5-го круга): обрезанный полный план получал
+#: подсказку, где `plan_pipeline` не было вовсе, — листать было нечем.
+HOW_TO_PAGE_BY_TOOL: dict[str, str] = {
+    "plan_pipeline": (
+        "plan_pipeline — call again with the same brief/spec, full=True and "
+        "offset=page.next_offset (the next chunk of steps and plan fields not yet shown in full); "
+        "or full=False for the compact plan"
+    ),
+    "model_advice": "model_advice — offset=page.next_offset, or one attribute",
+    "fetch_url": "fetch_url — call again with offset=next_offset (and/or a smaller max_chars)",
+}
 HOW_TO_PAGE = (
-    "Ask for less or page: fetch_url — call again with offset=next_offset "
+    "Ask for less or page: " + HOW_TO_PAGE_BY_TOOL["plan_pipeline"] + "; "
+    "fetch_url — call again with offset=next_offset "
     "(and/or a smaller max_chars); stale_model_facts — offset/limit (or model=); "
     "blocked_hosts — full=False; model_advice — offset=page.next_offset, or one attribute; "
     "measurement_proposals — state=…; search_web — a smaller count."
@@ -449,7 +461,13 @@ def _set_at(work: dict, path: tuple[str, ...], value: Any) -> None:
     target[path[-1]] = value
 
 
-def cap_response(payload: Any, limit: int = MAX_RESPONSE_CHARS) -> str:
+#: Списки, которые потолок НЕ укорачивает по счёту (валидатор 5-го круга):
+#: `steps` плана — сам план; обрезка «0 из 5 шагов» отдавала план без плана.
+#: Внутри шагов режутся строки, а листание — у самого инструмента.
+CAP_PROTECTED_LISTS: frozenset[tuple[str, ...]] = frozenset({("steps",)})
+
+
+def cap_response(payload: Any, limit: int = MAX_RESPONSE_CHARS, tool: str = "") -> str:
     """JSON ответа, не длиннее `limit` символов; обрезка ОБЪЯВЛЯЕТСЯ в ответе.
 
     Порядок (дешёвое и точное раньше грубого):
@@ -505,7 +523,12 @@ def cap_response(payload: Any, limit: int = MAX_RESPONSE_CHARS) -> str:
     guard = 0
     while size() > budget and guard < 200:
         guard += 1
-        lists = [(path, lst) for path, lst in _lists_in(work) if len(lst) > 0]
+        lists = [
+            (path, lst)
+            for path, lst in _lists_in(work)
+            # `page` — записка о листании: обрезанная, она врёт о том, что дальше.
+            if len(lst) > 0 and path not in CAP_PROTECTED_LISTS and path[0] != "page"
+        ]
         if not lists:
             break
         path, biggest = max(lists, key=lambda item: len(_dump(item[1])))
@@ -540,14 +563,31 @@ def cap_response(payload: Any, limit: int = MAX_RESPONSE_CHARS) -> str:
         trimmed.append({"field": key, "total_chars": len(longest), "shown_chars": keep})
 
     if size() > budget:
+        шаги = work.get("steps")
         work = {
             key: work.get(key)
-            for key in ("outcome", "checked", "violations", "unmeasured")
+            for key in ("outcome", "reason", "checked", "violations", "unmeasured", "page")
             if key in work
         }
+        if isinstance(шаги, list):
+            # Даже последний шаг потолка шагов не теряет: имя и выбранная модель.
+            work["steps"] = [
+                {
+                    "step": ш.get("step"),
+                    "chosen": {"model": (ш.get("chosen") or {}).get("model")}
+                    if isinstance(ш.get("chosen"), dict)
+                    else ш.get("chosen"),
+                }
+                if isinstance(ш, dict)
+                else ш
+                for ш in шаги
+            ]
         work["note"] = str(payload.get("note", ""))[:2_000]
         trimmed.append({"field": "*", "why": "nothing smaller than the whole answer could be cut"})
 
+    подсказка = (
+        f"Ask for less or page: {HOW_TO_PAGE_BY_TOOL[tool]}" if tool in HOW_TO_PAGE_BY_TOOL else HOW_TO_PAGE
+    )
     notice = (
         f"[RESPONSE CUT by the server's {limit}-character cap: the full answer was "
         f"{len(text)} characters. Cut: "
@@ -556,21 +596,112 @@ def cap_response(payload: Any, limit: int = MAX_RESPONSE_CHARS) -> str:
             f"{t.get('total', t.get('total_chars', '?'))})"
             for t in trimmed
         )
-        + f". {HOW_TO_PAGE}]"
+        + f". {подсказка}]"
     )
     work["note"] = f"{work.get('note', '')} {notice}".strip()
     work["response_cap"] = {
         "limit_chars": limit,
         "original_chars": len(text),
         "trimmed": trimmed,
-        "how_to_page": HOW_TO_PAGE,
+        "how_to_page": подсказка,
     }
     return _dump(work)
 
 
-def _json(payload: Any) -> str:
+def _json(payload: Any, tool: str = "") -> str:
     """Every tool answers through here, so the cap is one rule, not ten (Е1)."""
-    return cap_response(payload)
+    return cap_response(payload, tool=tool)
+
+
+#: Поле длиннее этого (знаков JSON) сворачивается в КРАТКОМ виде шага на
+#: странице плана. ВЫБРАНО 250: у полного плана p13 (5 шагов, 93 тыс. знаков)
+#: крупные поля шага — 1,3–4,3 тыс. знаков (альтернативы, доводы), поля
+#: `chosen` о цене — 230–340, имя модели, причина и ступень — до 100. При 400
+#: краткие шаги занимали 19 тыс. знаков, и на страницу влезал один кусок.
+PLAN_FOLD_CHARS = 250
+#: Запас страницы плана: под `page`, ноту страницы и РОСТ ПРИ ПЕРЕВОДЕ (глоссы
+#: `[ru: …]` к цитатам добавляются после сборки страницы).
+PLAN_PAGE_RESERVE = 3_000
+#: Поля плана, которые стоят на КАЖДОЙ странице: вердикт и то, что читают первым.
+PLAN_PAGE_HEADER = (
+    "summary", "outcome", "reason", "checked", "violations", "unmeasured", "note",
+    "question", "что_дальше", "budget", "hard", "full", "risks", "risky",
+)
+
+
+def _свернуть(что: Any, где: str) -> Any:
+    """Словарь без крупных вложенных полей; свёрнутое названо в `paged`."""
+    if not isinstance(что, dict):
+        return что
+    out: dict = {}
+    свёрнуто: list[str] = []
+    for k, v in что.items():
+        if isinstance(v, dict) and k == "chosen":
+            out[k] = _свернуть(v, f"{где}.chosen")
+        elif isinstance(v, (list, dict)) and len(_dump(v)) > PLAN_FOLD_CHARS:
+            свёрнуто.append(str(k))
+        else:
+            out[k] = v
+    if свёрнуто:
+        out["paged"] = {"folded": свёрнуто, "chunk": где}
+    return out
+
+
+def page_full_plan(итог: dict, offset: int = 0, limit: int = MAX_RESPONSE_CHARS) -> dict:
+    """Полный план СТРАНИЦЕЙ: шаги — все и всегда, подробности — кусками.
+
+    НАЙДЕНО валидатором 5-го круга: `plan_pipeline(full=True)` на 40-секундном
+    ролике с двумя бойцами — 93 тыс. знаков, и общий потолок ответа укоротил
+    `steps` до 0 из 5. План без шагов — не форма плана, а его отсутствие.
+
+    На каждой странице: заголовок плана (`PLAN_PAGE_HEADER`) и ВСЕ шаги в
+    кратком виде (крупные поля свёрнуты и названы в `paged.folded`). Подробности
+    идут КУСКАМИ по порядку: сначала каждый шаг целиком (`steps[i]`), потом
+    прочие поля плана (`native_audio_variant`, `validator`, …). Страница берёт
+    куски с `offset`, пока влезает; `page.next_offset` — первый не взятый.
+    """
+    шаги = list(итог.get("steps") or [])
+    начало = max(0, int(offset or 0))
+    if начало == 0 and len(_dump(итог)) <= limit:
+        return итог
+    budget = max(1_000, limit - _CAP_RESERVE)
+    куски: list[tuple[str, Any]] = [(f"steps[{i}]", ш) for i, ш in enumerate(шаги)] + [
+        (k, v) for k, v in итог.items() if k not in PLAN_PAGE_HEADER and k != "steps"
+    ]
+    страница: dict = {k: итог[k] for k in PLAN_PAGE_HEADER if k in итог}
+    страница["steps"] = [_свернуть(ш, f"steps[{i}]") for i, ш in enumerate(шаги)]
+    подробно: dict[str, Any] = {}
+    взято: list[str] = []
+    размер = len(_dump(страница)) + PLAN_PAGE_RESERVE
+    for имя, кусок in куски[начало:]:
+        длина = len(_dump({имя: кусок})) + 4
+        if взято and размер + длина > budget:
+            break
+        взято.append(имя)
+        размер += длина
+        if имя.startswith("steps["):
+            i = int(имя[6:-1])
+            страница["steps"][i] = кусок
+        else:
+            подробно[имя] = кусок
+    страница.update(подробно)
+    дальше = начало + len(взято)
+    есть_дальше = дальше < len(куски)
+    страница["page"] = {
+        "offset": начало,
+        "chunks_total": len(куски),
+        "chunks_here": взято,
+        "chunks_order": [имя for имя, _ in куски],
+        "steps_total": len(шаги),
+        "next_offset": дальше if есть_дальше else None,
+        "how": HOW_TO_PAGE_BY_TOOL["plan_pipeline"],
+    }
+    страница["note"] = (
+        f"{итог.get('note', '')} [страница полного плана: шагов {len(шаги)} из {len(шаги)}, "
+        f"подробно — куски {начало}..{дальше - 1} из {len(куски)}"
+        + (f"; следующая страница offset={дальше}]" if есть_дальше else "; последняя страница]")
+    ).strip()
+    return страница
 
 
 def advise_and_note(
@@ -728,13 +859,13 @@ def model_advice(
         return _json(refused)
     язык = advice_lang(model, attribute, lang)
     if not full:
-        return _json(advise_and_note(model, attribute, brief=True, lang=язык))
+        return _json(advise_and_note(model, attribute, brief=True, lang=язык), tool="model_advice")
     # Журнал вопросов пишется на первой странице: листание — тот же вопрос.
     if int(offset or 0) > 0:
         answer = l10n.localise_payload(advice.advise(model, attribute), язык)
     else:
         answer = advise_and_note(model, attribute, brief=False, lang=язык)
-    return _json(l10n.localise_payload(page_full_advice(answer, offset), язык))
+    return _json(l10n.localise_payload(page_full_advice(answer, offset), язык), tool="model_advice")
 
 
 #: ПОТОЛОК ДЛИНЫ АТРИБУТА (и имени модели, если слой имён своего не назвал).
@@ -956,6 +1087,7 @@ def plan_pipeline(
     budget_usd: float = 0.0,
     full: bool = False,
     spec: dict | None = None,
+    offset: int = 0,
 ) -> str:
     """Build a PIPELINE from what the customer said, then judge it immediately.
 
@@ -1041,7 +1173,13 @@ def plan_pipeline(
         refused (`fail`) before anything is planned.
     :param full: the planner's full form (every candidate and its evidence)
         instead of the compact one. Passed on only when this server's planner
-        accepts it; otherwise `ignored_params` names it.
+        accepts it; otherwise `ignored_params` names it. A full plan larger
+        than the response cap comes in PAGES: every step is on every page
+        with its chosen model (bulky fields folded and named in `paged`);
+        details come as chunks — each step in full, then the other plan
+        fields — listed in `page.chunks_here`. Call again with the same
+        brief/spec, `full=True, offset=page.next_offset` for the next chunks.
+    :param offset: with `full=True`, the first chunk of the page (`page.chunks_order`).
 
     WHEN A CEILING IS KNOWN, PRICE IS THE SENIOR SORT KEY, because the money is
     the customer's decision and not the tool's. Each candidate comes back in one
@@ -1221,7 +1359,9 @@ def plan_pipeline(
             f"{итог.get('note', '')} [not applied — this server's planner does not take "
             f"{', '.join(пропущено)} yet]"
         ).strip()
-    return _json(l10n.localise_payload(итог, язык))
+    if full:
+        итог = page_full_plan(json.loads(_dump(итог)), int(offset or 0))
+    return _json(l10n.localise_payload(итог, язык), tool="plan_pipeline")
 
 
 def budget_refusal(budget_usd: Any) -> dict | None:
@@ -1630,6 +1770,7 @@ def fetch_url(
     max_chars: int = fetch.PAGE_CHARS,
     offset: int = 0,
     raw: bool = False,
+    lang: str = "",
 ) -> str:
     """Fetch a page or a file from the web through this session's egress policy.
 
@@ -1660,10 +1801,20 @@ def fetch_url(
         cut there and `next_offset` points at the first character NOT returned).
     :param offset: where in the extracted text to start.
     :param raw: return the body as received instead of extracted text.
+    :param lang: `en` or `ru` — the language of the answer's own sentences
+        (refusal notes); empty means the language of `why_wanted` (English
+        when it has no Cyrillic). The fetched `text` is never translated.
     """
-    return _json(
-        fetch.page(url, why_wanted=why_wanted, max_chars=max_chars, offset=offset, raw=raw)
-    )
+    явный = str(lang or "").strip().lower()
+    язык = явный if явный in ("en", "ru") else l10n.lang_of(why_wanted)
+    ответ = fetch.page(url, why_wanted=why_wanted, max_chars=max_chars, offset=offset, raw=raw)
+    if isinstance(ответ, dict) and "text" in ответ:
+        # Тело страницы — чужой текст, а не наша нота: не переводится.
+        тело = ответ["text"]
+        ответ = {**l10n.localise_payload({k: v for k, v in ответ.items() if k != "text"}, язык), "text": тело}
+    else:
+        ответ = l10n.localise_payload(ответ, язык)
+    return _json(ответ, tool="fetch_url")
 
 
 @server.tool()

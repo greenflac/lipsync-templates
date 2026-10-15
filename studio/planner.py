@@ -362,6 +362,7 @@ __all__ = [
     "REASON_PLAN_REFUSED",
     "REASON_PLAN_STANDS",
     "REASON_PLAN_UNCONFIRMED",
+    "REASON_OVER_BUDGET",
     "Candidate",
     "Evidence",
     "Operation",
@@ -1262,6 +1263,12 @@ REASON_NO_CANDIDATES = "шаг_без_кандидатов"
 REASON_PLAN_REFUSED = "валидатор_отверг"
 REASON_PLAN_UNCONFIRMED = "план_не_подтверждён"
 REASON_PLAN_STANDS = "план_подтверждён"
+#: СМЕТА ДОРОЖЕ ПОТОЛКА ПО НАИМЕНЬШЕЙ ИЗВЕСТНОЙ СТОИМОСТИ (валидатор 5-го
+#: круга). Бриф «$0.10 за 8 с 4K со звуком» — наименьшая известная 2.40 usd,
+#: в 24 раза дороже, — получал «не смогли подтвердить»: провал сметы тонул в
+#: исходе валидатора. Известная нижняя граница выше потолка — измерение, а не
+#: пробел (Р1): `не годно` с числом. «Не смогли» — только когда цен нет.
+REASON_OVER_BUDGET = "дороже_потолка"
 #: Потолок, названный параметром, не число: отрицательный, NaN, бесконечность.
 REASON_BAD_BUDGET = "бюджет_не_число"
 #: Структура `spec`, поданная вызывающим, не разобрана: неизвестное поле,
@@ -1278,6 +1285,7 @@ REASONS: tuple[str, ...] = (
     REASON_PLAN_REFUSED,
     REASON_PLAN_UNCONFIRMED,
     REASON_PLAN_STANDS,
+    REASON_OVER_BUDGET,
 )
 
 
@@ -4966,6 +4974,7 @@ def в_ролик(
         if дороже:
             наибольшая = max(в_валюте_бюджета[в] for в in дороже)
             цена["outcome"] = "не годно"
+            цена["over_ceiling"] = {"least_known_usd": round(наибольшая, 4), "ceiling_usd": потолок}
             цена["note"] += (
                 f" — ПОТОЛОК {потолок:g} ПРЕВЫШЕН ({', '.join(дороже)}): "
                 f"{наибольшая:.2f} против {потолок:g}, "
@@ -4979,6 +4988,10 @@ def в_ролик(
         дороже = [в for в, с in в_валюте_бюджета.items() if с > потолок]
         if дороже:
             цена["outcome"] = "не годно"
+            цена["over_ceiling"] = {
+                "least_known_usd": round(min(в_валюте_бюджета.values()), 4),
+                "ceiling_usd": потолок,
+            }
             цена["note"] += (
                 f" — ПОТОЛОК {потолок:g}: работа столько не стоит, "
                 f"дешевле всего выходит {min(в_валюте_бюджета.values()):.2f}"
@@ -5168,6 +5181,7 @@ def смета_ролика(
     # ней — доказательство и с дырами в смете.
     if минимум > потолок:
         цена["outcome"] = "не годно"
+        цена["over_ceiling"] = {"least_known_usd": round(минимум, 4), "ceiling_usd": потолок}
         цена["note"] += (
             f" — ПОТОЛОК {потолок:g} ПРЕВЫШЕН (usd): наименьшая известная стоимость "
             f"{минимум:.2f} против {потолок:g} даже на самых дешёвых тарифах, это дороже в "
@@ -7198,6 +7212,20 @@ def что_дальше(итог: dict) -> str:
             "озвучить, снять с нуля или попасть в губы на готовом видео"
         )
 
+    if итог.get("reason") == REASON_OVER_BUDGET:
+        сверх = (итог.get("pipeline_price") or {}).get("over_ceiling") or {}
+        сколько = float(сверх.get("least_known_usd") or 0)
+        if итог.get("по_английски"):
+            return (
+                f"the job costs at least {сколько:.2f} usd at the cheapest known rates: raise the "
+                "budget to at least that, or make the clip shorter, lower-resolution or simpler"
+            )
+        return (
+            f"работа стоит не меньше {сколько:.2f} usd даже по самым дешёвым известным ставкам: "
+            "поднимите бюджет хотя бы до этой суммы — или сделайте ролик короче, ниже "
+            "разрешением или проще"
+        )
+
     if "применимость" in классы:
         плохие = [ш for ш in шаги if int(((ш.get("chosen") or {}).get("against") or 0)) > 0]
         if плохие:
@@ -7389,6 +7417,32 @@ def свести_исход(без_кандидата: int, отчёт: dict, ш
             f"валидатор-2 не смог подтвердить план: {отчёт['note']}",
         )
     return PASS, REASON_PLAN_STANDS, f"валидатор-2 не опроверг план: {отчёт['note']}"
+
+
+def дороже_потолка(
+    исход: str, причина: str, нота: str, цена: dict, видео_из_догадки: bool
+) -> tuple[str, str, str]:
+    """Смета дороже потолка по НАИМЕНЬШЕЙ известной — `fail` с числом (Р1).
+
+    Только при `over_ceiling` (нижняя граница известна и выше потолка). Цен
+    нет или они неполны — смета сама говорит «не смогли», и исход не трогается.
+    Вопрос «видео снято?» при видео из догадки остаётся старше: от ответа
+    зависит, будет ли дорогой шаг вообще (та же логика, что `провал_только_догадки`).
+    """
+    сверх = цена.get("over_ceiling") if цена.get("outcome") == "не годно" else None
+    if not сверх or исход == FAIL:
+        return исход, причина, нота
+    if причина == REASON_NEED_ANSWER and видео_из_догадки:
+        return исход, причина, нота
+    сколько = float(сверх.get("least_known_usd") or 0)
+    потолок = float(сверх.get("ceiling_usd") or 0)
+    раз = f", в {сколько / потолок:.1f} раза" if потолок > 0 else ""
+    return (
+        FAIL,
+        REASON_OVER_BUDGET,
+        f"смета дороже потолка: наименьшая известная стоимость {сколько:.2f} usd против "
+        f"потолка {потолок:g} usd{раз}; {нота}",
+    )
 
 
 # --------------------------------------------------------------------------
@@ -8654,6 +8708,16 @@ def сводка(итог: dict) -> str:
         else "есть шаг с измеренным провалом — см. риски",
         UNMEASURED: "could not confirm" if англ else "подтвердить не смогли",
     }.get(исход, исход)
+    if итог.get("reason") == REASON_OVER_BUDGET:
+        # Провал сметы — не провал шага: «см. риски» послало бы читать не туда.
+        сверх = (итог.get("pipeline_price") or {}).get("over_ceiling") or {}
+        сколько = float(сверх.get("least_known_usd") or 0)
+        потолок = float(сверх.get("ceiling_usd") or 0)
+        исход_словами = (
+            f"OVER BUDGET — the least known cost is {сколько:.2f} usd against a ceiling of {потолок:g} usd"
+            if англ
+            else f"ДОРОЖЕ ПОТОЛКА — наименьшая известная стоимость {сколько:.2f} usd при потолке {потолок:g} usd"
+        )
     строки = [
         (
             f"PLAN IN SHORT: {len(шаги)} step(s); check: {исход_словами}."
@@ -9075,6 +9139,38 @@ def вопрос_чего_нет(понято: "bs.Spec") -> "clarify.Вопро
     )
 
 
+#: ПРОСЬБА БЕЗ ПРЕДМЕТА (валидатор 5-го круга, 2026-10-15): «make it look
+#: good», «сделай красиво» — заказчик чего-то ХОЧЕТ от студии, но не назвал
+#: ни работы, ни носителя. Ответ «шаги не выведены» с нотой про словарь —
+#: молчание вместо вопроса (Р1). Признак — глагол заказа или оценка вида
+#: целым словом; бриф без них («посчитайте юнит-экономику») остаётся без
+#: вопроса, это негативный контроль (И5).
+_ПРОСЬБА_БЕЗ_ПРЕДМЕТА = re.compile(
+    r"(?<![\w-])(?:make|create|look(?:s)? good|beautiful|pretty|stylish|nicer|"
+    r"сдела(?:й|йте|ть)|созда(?:й|йте|ть)|красив\w*|красиво|стильн\w*|эффектн\w*)(?![\w-])",
+    re.IGNORECASE,
+)
+
+
+def вопрос_что_сделать(brief: str) -> "clarify.Вопрос | None":
+    """Просьба без предмета — вопрос «что сделать и с чем»; иначе None."""
+    if not _ПРОСЬБА_БЕЗ_ПРЕДМЕТА.search(str(brief or "")):
+        return None
+    работы = "generate a clip / animate a photo / lip sync / voiceover / dub / avatar / upscale / edit"
+    return clarify.Вопрос(
+        ось="что_заказано",
+        текст="что именно сделать и с чем: снять ролик с нуля, оживить фото, попасть в губы, "
+        "озвучить, дублировать, аватар, апскейл или правка — и что у вас уже есть?",
+        почему="в брифе есть просьба, но не названы ни работа, ни носитель — план из догадки был бы чужим заказом",
+        варианты=("ответить словами", "передать spec={task, outputs, inputs, ...}"),
+        english=(
+            f"what exactly should be made, and from what: {работы} — and what do you already have?",
+            "the brief asks for something but names neither the job nor the medium — a plan built on a guess would be someone else's order",
+            ("answer in words", "pass spec={task, outputs, inputs, ...}"),
+        ),
+    )
+
+
 def вопрос_о_нехватке(
     маршрут: "bs.Маршрут",
     понято: "bs.Spec",
@@ -9371,7 +9467,7 @@ def plan(
     # названной работы — там совет `что_дальше` уже называет варианты, а второй
     # вопрос вернул бы заказчика в круг, из которого он только что вышел.
     if not операции and вопрос is None and ARTEFACT_VIDEO not in есть and not чужое_ремесло(brief):
-        вопрос = вопрос_чего_нет(понято)
+        вопрос = вопрос_чего_нет(понято) or вопрос_что_сделать(brief)
     if not операции:
         return {
             "understood_as": bs.echo(понято),
@@ -9444,9 +9540,8 @@ def plan(
                         # который написал по-английски намеренно. Теперь
                         # называются САМИ ОБОРОТЫ, которые продукт понимает:
                         # заказчику нужен пример, а не указание сменить язык.
-                        ". The brief is in English, and the studio's"
-                        " vocabulary of operations is mostly Russian: name the"
-                        " job with one of the wordings we do read —"
+                        ". No studio operation was recognised in this brief:"
+                        " name the job with one of the wordings we read —"
                         " `talking head`, `lip sync`, `voiceover`, `dub`,"
                         " `animate this photo`, `generate a video from"
                         " scratch`, `sound effects` — or write it in Russian"
@@ -9962,10 +10057,15 @@ def plan(
         # кандидата шага цена больше нуля.
         шаг, сколько = min(платные.items(), key=lambda п: п[1])
         цена_пайплайна["outcome"] = "не годно"
+        цена_пайплайна["over_ceiling"] = {
+            "least_known_usd": round(сколько, 4),
+            "ceiling_usd": float(бюджет.amount or 0),
+        }
         цена_пайплайна["note"] = (
             f"{цена_пайплайна.get('note', '')} — ПОТОЛОК {float(бюджет.amount or 0):g}: работа столько не стоит: "
             f"самый дешёвый записанный кандидат шага {шаг} стоит {сколько:.2f} {BUDGET_UNIT}"
         )
+    исход, причина, нота = дороже_потолка(исход, причина, нота, цена_пайплайна, видео_из_догадки)
     сборка = нужна_сборка(выбор, длительность)
     со_звуком = вариант_со_звуком(
         выбор,

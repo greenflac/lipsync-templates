@@ -88,6 +88,26 @@ class Свойство(unittest.TestCase):
                     self.assertIn("RELATED, NOT AN ANSWER", ответ["note"])
 
 
+class Смежные(unittest.TestCase):
+    """Семьи одной величины со смежным членом: тема та же, вопрос другой."""
+
+    def test_смежный_не_отвечает_ни_слову_семьи_ни_члену(self) -> None:
+        self.assertTrue(attrfamily.СМЕЖНЫЕ)
+        for семья, смежные in attrfamily.СМЕЖНЫЕ.items():
+            for смежный in смежные:
+                with self.subTest(семья=семья, смежный=смежный):
+                    self.assertEqual(семья, attrfamily.семья_имени(смежный))
+                    self.assertEqual([], attrfamily.expand(семья, [смежный]))
+                    self.assertEqual([смежный], attrfamily.substitutes(семья, [смежный]))
+                    # Спрошенный буквально — отвечает сам за себя.
+                    self.assertEqual([смежный], attrfamily.expand(смежный, [смежный]))
+
+    def test_язык_промпта_не_языки_речи(self) -> None:
+        записано = ["languages", "prompt_language"]
+        self.assertEqual(["languages"], attrfamily.expand("languages", записано))
+        self.assertEqual(["prompt_language"], attrfamily.substitutes("languages", записано))
+
+
 class ТотЖеАтрибутУВарианта(unittest.TestCase):
     """Сначала тот же атрибут у варианта (и назван вариант), смежное — после."""
 

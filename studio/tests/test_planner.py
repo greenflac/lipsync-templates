@@ -1580,11 +1580,22 @@ class ТриИсхода(unittest.TestCase):
         self.assertEqual(итог["steps"][0]["chosen"]["model"], "тестовая-i2v")
 
     def test_не_смогли_шаги_не_выведены(self) -> None:
-        итог = _полный_план("сделай красиво", facts=list(ЗДОРОВЫЕ), today=СЕГОДНЯ)
+        итог = _полный_план("Посчитайте юнит-экономику подписки на год", facts=list(ЗДОРОВЫЕ), today=СЕГОДНЯ)
         self.assertEqual(итог["outcome"], "could not measure")
         self.assertEqual(итог["reason"], "шаги_не_выведены")
         self.assertEqual(итог["steps"], [])
         self.assertEqual(итог["unmeasured"], 1)
+
+    def test_просьба_без_предмета_вопрос(self) -> None:
+        """Валидатор 5-го круга: «сделай красиво» / «make it look good» — просьба
+        без работы и носителя. Прежде — «шаги не выведены» и вопрос None (Р1)."""
+        for бриф in ("сделай красиво", "make it look good"):
+            итог = _полный_план(бриф, facts=list(ЗДОРОВЫЕ), today=СЕГОДНЯ)
+            with self.subTest(бриф=бриф):
+                self.assertEqual("could not measure", итог["outcome"])
+                self.assertEqual("нужен_ответ_заказчика", итог["reason"])
+                self.assertEqual("что_заказано", итог["question"]["axis"])
+                self.assertNotIn("mostly Russian", итог["note"])
 
     def test_не_смогли_шаг_без_кандидатов(self) -> None:
         # План НЕ пуст: первый шаг собран, второй назван пустым. Свернуть это в
@@ -1733,6 +1744,7 @@ class Контракт(unittest.TestCase):
                     "валидатор_отверг",
                     "план_не_подтверждён",
                     "план_подтверждён",
+                    "дороже_потолка",
                 ]
             ),
         )

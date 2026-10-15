@@ -620,6 +620,42 @@ EN: tuple[tuple[str, str], ...] = (
     (r"память: ", "memory: "),
     (r" — нужно ([\d.]+) ГБ при ([\d.]+) ГБ", r" — needs \1 GB of \2 GB"),
     (r"источники расходятся в (\S+): (.+) — сторона не выбирается", r"sources disagree on \1: \2 — no side is taken"),
+    # --- справка: разворот спрошенного и ответ семьи (attrfamily.как_отвечено,
+    # advice._ответ_семьи) — валидатор 5-го круга нашёл их по-русски в
+    # английском ответе.
+    (r"спрошено ('[^']*'), а записано под именами: (.+?)\. Единицы у них РАЗНЫЕ и между собой не переводятся — сравнивать значения можно только внутри одного имени\.",
+     r"asked \1, recorded under the names: \2. Their units DIFFER and do not convert into each other — compare values only within one name."),
+    (r"спрошено ('[^']*'), а записано под именем ('[^']*') — единица ответа в этом имени, не в вопросе\.",
+     r"asked \1, recorded under the name \2 — the unit of the answer is in that name, not in the question."),
+    (r"о самой ('[^']*')((?:\.[\w.\-]+)?) не записано ничего; ответ — из утверждений вариантов семьи \(([^)]*)\): (\d+) из (\d+) в family_claims, каждое помечено, О КАКОМ ИМЕНИ оно\. Это НЕ измерение спрошенной модели\.",
+     r"nothing is recorded about \1\2 itself; the answer comes from the family's variants (\3): \4 of \5 in family_claims, each labelled with the NAME it is about. This is NOT a measurement of the model asked about."),
+    (r"о самой ('[^']*')((?:\.[\w.\-]+)?) не записано ничего; ответ — из утверждений семьи \(([^)]*)\): (\d+) из (\d+) в family_claims, каждое помечено, О КАКОМ ИМЕНИ оно\. Это НЕ измерение спрошенной модели\.",
+     r"nothing is recorded about \1\2 itself; the answer comes from the family (\3): \4 of \5 in family_claims, each labelled with the NAME it is about. This is NOT a measurement of the model asked about."),
+    (r" Спорно: ", " Contested: "),
+    (r"ВНИМАНИЕ: ", "WARNING: "),
+    # --- отказ SSRF и разбор хоста (studio/mcp/fetch.py)
+    (r"(\S+) лежит во внутренней сети (\S+)", r"\1 lies in the internal network \2"),
+    (r"(\S+) — не публичный адрес", r"\1 is not a public address"),
+    (r"(\S+) — служебное внутреннее имя", r"\1 is a reserved internal name"),
+    (r"('[^']*') похоже на IP-адрес, но адресом не является \(invalid IP literal\)", r"\1 looks like an IP address but is not one (invalid IP literal)"),
+    (r"('[^']*') не похоже на имя хоста", r"\1 does not look like a host name"),
+    (r"('[^']*') не IP-адрес", r"\1 is not an IP address"),
+    (r"('[^']*') не разбирается как адрес: ", r"\1 does not parse as an address: "),
+    (r"('[^']*'): схема ('[^']*'), а пробуются только http и https", r"\1: scheme \2, and only http and https are probed"),
+    (r"адрес не разбирается: ", "the address does not parse: "),
+    (r"схема ('[^']*'): запрашиваются только http и https", r"scheme \1: only http and https are requested"),
+    (r"в адресе нет хоста", "the address has no host"),
+    (r"^пустая строка$", "an empty string"),
+    # --- смета дороже потолка (planner.дороже_потолка)
+    (r"смета дороже потолка: наименьшая известная стоимость ([\d.]+) usd против потолка ([\d.]+) usd, в ([\d.]+) раза; ",
+     r"the estimate is over the ceiling: the least known cost is \1 usd against a ceiling of \2 usd, \3 times over; "),
+    (r"смета дороже потолка: наименьшая известная стоимость ([\d.]+) usd против потолка ([\d.]+) usd; ",
+     r"the estimate is over the ceiling: the least known cost is \1 usd against a ceiling of \2 usd; "),
+    # --- страница полного плана (server.page_full_plan)
+    (r"\[страница полного плана: шагов (\d+) из (\d+), подробно — куски (\d+)\.\.(-?\d+) из (\d+); следующая страница offset=(\d+)\]",
+     r"[page of the full plan: steps \1 of \2, in full — chunks \3..\4 of \5; next page offset=\6]"),
+    (r"\[страница полного плана: шагов (\d+) из (\d+), подробно — куски (\d+)\.\.(-?\d+) из (\d+); последняя страница\]",
+     r"[page of the full plan: steps \1 of \2, in full — chunks \3..\4 of \5; last page]"),
 )
 
 
@@ -760,6 +796,26 @@ LABELS_EN: dict[str, str] = {
 # ---------------------------------------------------------------------------
 
 RU: tuple[tuple[str, str], ...] = (
+    # --- пробел в записанном (advice: ветка «атрибут не записан»)
+    (r"nothing is recorded about (\S+)\. The model itself IS in the fact base, so this is a gap in what was recorded, not an unknown name\.",
+     r"о \1 ничего не записано. Сама модель В базе фактов есть, так что это пробел в записанном, а не незнакомое имя."),
+    (r"(\d+) of (\d+) attribute\(s\) rest on blog-tier or stale sources only, and repetition is not corroboration\. The model itself IS in the fact base, so this is a gap in what was recorded, not an unknown name\.",
+     r"атрибутов \1 из \2 стоят только на источниках ступени blog или устаревших, а повтор — не подтверждение. Сама модель В базе фактов есть, так что это пробел в записанном, а не незнакомое имя."),
+    (r" Recorded attributes for this model \((\d+)\): ", r" Записанные атрибуты этой модели (\1): "),
+    (r", … and (\d+) more\.", r", … и ещё \1."),
+    (r"the model itself is unusable: ", "сама модель непригодна: "),
+    (r" The base does hold (.+?) — if that is the same model under another name, ask again by that id\.",
+     r" В базе есть \1 — если это та же модель под другим именем, спросите по нему."),
+    # --- смежное, не ответ (advice, валидатор 5-го круга)
+    (r"RELATED, NOT AN ANSWER: recorded for ('[^']*') under the same topic as ('[^']*'), but each answers a different question and none is counted as answering ('[^']*'): (.+?) \(in substitutes\)\.",
+     r"СМЕЖНОЕ, НЕ ОТВЕТ: у \1 записано на ту же тему, что \2, но каждое отвечает на другой вопрос, и ничто из этого не считается ответом на \3: \4 (в substitutes)."),
+    # --- отказ SSRF (fetch_url по-русски)
+    (r"('[^']*') is refused before sending: (.+?)\. Requests from a tool call never go to private, loopback, link-local or metadata addresses\. Nothing was sent and nothing was recorded in the denial journal\.",
+     r"\1 отвергнут до отправки: \2. Запросы инструмента не ходят на частные, петлевые, локальные и служебные (metadata) адреса. Ничего не отправлено и ничего не записано в журнал отказов."),
+    (r"('[^']*') is not an http\(s\) URL, so nothing was attempted", r"\1 — не адрес http(s), поэтому ничего не запрашивалось"),
+    # --- потолок ответа и листание плана (server)
+    (r"plan_pipeline — call again with the same brief/spec, full=True and offset=page\.next_offset \(the next chunk of steps and plan fields not yet shown in full\); or full=False for the compact plan",
+     "plan_pipeline — тот же бриф/spec, full=True и offset=page.next_offset (следующий кусок шагов и полей плана, ещё не показанный целиком); или full=False — краткий план"),
     (r"\[page of the full answer: attributes (\d+)\.\.(\d+) of (\d+); next page offset=(\d+)\]",
      r"[страница полного ответа: атрибуты \1..\2 из \3; следующая страница — offset=\4]"),
     (r"\[page of the full answer: attributes (\d+)\.\.(\d+) of (\d+); last page\]",
