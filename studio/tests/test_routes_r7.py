@@ -238,6 +238,7 @@ class МонтажИПробелы(unittest.TestCase):
         for raw in (
             {"task": "avatar", "inputs": [{"kind": "text", "owned": True}], "outputs": ["video"], "languages": ["ase"]},
             {"task": "avatar", "inputs": [], "outputs": ["video"], "languages": ["en"], "conditions": ["ASL sign language"]},
+            {"task": "avatar", "inputs": [], "outputs": ["video"], "languages": ["en"], "conditions": ["sign language interpreter"]},
         ):
             self.assertEqual((bs.NOTE_SIGN, bs.NOTES_EN[bs.NOTE_SIGN]), маршрут(raw).пробел, raw)
         self.assertIsNone(
@@ -255,6 +256,15 @@ class МонтажИПробелы(unittest.TestCase):
             (итог["steps"], итог["outcome"], итог["reason"], итог["gap"]["job"]),
         )
         self.assertTrue(итог["summary"].startswith("NOT SUPPORTED: sign language is not something generative models do"))
+
+    def test_язык_жестов_словами_брифа_при_spec_без_тега(self) -> None:
+        """Вызывающий поставил languages=["en"], а бриф говорит «ASL» — аватара всё равно нет."""
+        итог = план(
+            {"task": "avatar", "inputs": [{"kind": "text", "owned": True}], "outputs": ["video"], "duration_s": 60,
+             "languages": ["en"]},
+            бриф="Sign-language avatar that signs our 1-minute announcement in ASL",
+        )
+        self.assertEqual(([], "работа_не_поддерживается"), (итог["steps"], итог["reason"]))
 
     def test_визуализатор_реагирует_на_звук_при_сборке(self) -> None:
         м = маршрут({"task": "music-visualiser", "inputs": [свой("audio", 240)], "outputs": ["video"]})
@@ -317,6 +327,10 @@ class СерияСПерсонажем(unittest.TestCase):
             ("генерация_изображения",),
             маршрут({"task": "generate", "inputs": [], "outputs": ["image"], "shots": 1, "characters": 1}).шаги,
         )
+
+    def test_две_картинки_уже_серия(self) -> None:
+        м = маршрут({"task": "generate", "inputs": [], "outputs": ["image"], "shots": 2, "characters": 1})
+        self.assertEqual({"генерация_изображения": 1, "редактирование_изображения": 2}, dict(м.штук))
 
     def test_свой_референс_только_правки(self) -> None:
         м = маршрут({"task": "generate", "inputs": [свой("image")], "outputs": ["image"], "shots": 6, "characters": 1})
@@ -395,6 +409,16 @@ class ЛюбаяПисьменность(unittest.TestCase):
             (True, True, False, False),
             tuple(server.есть_слова(т) for т in ("为我们的茶叶品牌", "สวัสดี", "!!! 123", "")),
         )
+
+    def test_непрочитанный_просевом_бриф_не_pass(self) -> None:
+        from studio.mcp import server
+
+        итог = server._просев_не_читал({"outcome": "pass", "unmeasured": 0, "note": "plan stands"})
+        self.assertEqual(
+            ("could not measure", 1, False, "plan stands. " + server.NOTE_SCRIPT_NOT_SCREENED),
+            (итог["outcome"], итог["unmeasured"], итог["brief_screened"], итог["note"]),
+        )
+        self.assertEqual("fail", server._просев_не_читал({"outcome": "fail"})["outcome"])
 
     def test_пустой_бриф_без_spec_по_прежнему_пуст(self) -> None:
         from studio.mcp import server
