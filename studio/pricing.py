@@ -325,6 +325,15 @@ TIER_WORDS: tuple[str, ...] = (
     "ultra",
     "max",
     "preview",
+    # «Batch/Flex $0.067 / $0.12» — тарифы пакетной обработки (круг 4).
+    "batch",
+    "flex",
+    # Качество картинки у gpt-image («high 1024x1024 $0.211; low …») —
+    # тариф, а не разрешение (2026-10-15, круг 4).
+    "high",
+    "xhigh",
+    "medium",
+    "low",
 )
 
 #: Режимы работы, которыми вендор подписывает кусок таблицы (`t2v/i2v $0.17/s
@@ -333,7 +342,11 @@ MODE_WORDS: tuple[str, ...] = ("t2v", "i2v", "v2v")
 
 #: Разрешение словами -> короткая сторона кадра в пикселях.
 RESOLUTION_WORDS: dict[str, int] = {
+    # «0.5K» / «1K» у картиночных моделей (nano-banana): сторона 512 / 1024.
+    "0.5k": 512,
+    "1k": 1024,
     "4k": 2160,
+    "8k": 4320,
     "2k": 1440,
     "uhd": 2160,
     "fhd": 1080,
@@ -343,16 +356,19 @@ RESOLUTION_WORDS: dict[str, int] = {
 }
 
 _RES = re.compile(
-    r"(?<![\w.])(?:(\d{3,4})\s*p\b|(\d{3,4})\s*[x×]\s*(\d{3,4})|([248])\s*k\b|(fhd|uhd|full hd|hd|sd)\b)",
+    r"(?<![\w.])(?:(\d{3,4})\s*p\b|(\d{3,4})\s*[x×]\s*(\d{3,4})|(0\.5|[1248])\s*k\b(?!\s*(?:characters?|chars?|tokens?|credits?)\b)|(fhd|uhd|full hd|hd|sd)\b)",
     re.I,
 )
 #: Сумма в строке: доллары, кредиты или голое число (последнее — только там,
 #: где в куске нет ни одного `$`, а единицу назвало имя атрибута).
 _AMOUNT = re.compile(
     r"\$\s*~?\s*(\d+(?:\.\d+)?)"
-    r"|~?(\d+(?:\.\d+)?)\s*\$"
+    # «0.08$» — но не «1024x1024 $0.211»: число перед `$` и числом за ним —
+    # это подпись следующей суммы, а не сумма (круг 4: читалось 1024 usd).
+    r"|~?(\d+(?:\.\d+)?)\s*\$(?!\s*~?\d)"
     r"|(\d+(?:\.\d+)?)\s*(?:credits?|cr)\b"
-    r"|(?<![\w.$-])~?(\d+(?:\.\d+)?)(?![\w.%])",
+    # Голое число — но не кусок «4,096» (разделитель тысяч, круг 4).
+    r"|(?<![\w.$-])(?<!\d,)~?(\d+(?:\.\d+)?)(?![\w.%])(?!,\d{3})",
     re.I,
 )
 #: Количество, которое НЕ сумма: «40 seconds», «1–7 supported», «5s».
@@ -361,12 +377,31 @@ _НЕ_СУММА_ПОСЛЕ = re.compile(
     r"megapixels?|mp\b|tokens?|k\b|m\b|x\b|supported|second\b|credit\b)",
     re.I,
 )
-_ПРИМЕР = re.compile(r"^\s*(?:for example|e\.g\.|a\s+\d|so\s+\d)", re.I)
+_ПРИМЕР = re.compile(r"^\s*(?:for example|for instance|e\.g\.|a\s+\d|so\s+\d)", re.I)
 _ЗВУК_ДА = re.compile(r"with audio|audio on|with sound|sound on", re.I)
 _ЗВУК_НЕТ = re.compile(r"no audio|audio off|without(?: audio| sound)?\b|sound off", re.I)
 #: Слова, после которых ставка — не вся цена: минимум, доплата, «если».
 _УСЛОВИЕ_СТАВКИ = re.compile(r"\b(?:minimum|upfront|if|when|rounded|rolling|billed)\b", re.I)
 _ЛЕГЕНДА_ЗВУКА = re.compile(r"\(\s*(?:no audio|audio off)\s*/\s*(?:with audio|audio on)\s*\)", re.I)
+
+_РЕЗ_СЛОВО = r"(?:\d{3,4}\s*p|\d{3,4}\s*[x×]\s*\d{3,4}|(?:0\.5|[1248])\s*k(?!\s*(?:characters?|chars?|tokens?|credits?)\b)|fhd|uhd|full hd|hd|sd)"
+#: Разрешение ВПЛОТНУЮ после суммы: «$0.05 480p», «$0.17/s hd», «$0.13 2K».
+_РЕЗ_ВПЛОТНУЮ_ПОСЛЕ = re.compile(
+    r"^\s*(?:/\s*s(?:ec(?:ond)?)?\b\s*|per\s+)?(" + _РЕЗ_СЛОВО + r")(?![\w])", re.I
+)
+#: «at / for / (» после суммы, но В ТОЙ ЖЕ части фразы: до предлога нет
+#: запятой, точки и слов, начинающих следующую часть («and», «or», «charged»).
+#: Без этой границы «$0.3034/second and for 1080p you will be charged $0.682»
+#: отдавало 1080p первой сумме.
+_РЕЗ_ПОСЛЕ = re.compile(
+    r"^(?:(?!\b(?:and|or|charged|costs?|will|then|plus)\b)[^$;,.])*?(?:\bat\b|\bfor\b|\bup to\b|\()\s*([^$;]*)",
+    re.I,
+)
+#: Метка «за что не названо у этой суммы» — внутренняя, в `per` не попадает.
+_НЕ_НАЗВАНО = "\0"
+#: «За что», которое соседняя сумма без своего «за что» наследует. Прогон не
+#: наследуется: «$0.2 for videos up to 40 seconds» не говорит о соседе.
+_ОБЩИЕ_ЕДИНИЦЫ = frozenset({"second", "minute", "megapixel", "image", "1000_chars"})
 
 
 @dataclass(frozen=True)
@@ -392,6 +427,13 @@ class Rate:
     mode: str = ""
     conditional: bool = False
     source: str = ""
+    #: Размер БЛОКА, которым вендор считает («per 10 seconds», «per started 2
+    #: megapixels»): `amount` — за ЕДИНИЦУ `per`, а платится за каждый начатый
+    #: блок целиком (2026-10-15, круг 4). None — блока нет, счёт линейный.
+    block: float | None = None
+    #: Частота кадров, к которой относится ставка («At 60 fps, the same job
+    #: costs $6.00»). None — не названа (2026-10-15, круг 4).
+    fps: float | None = None
 
 
 def _разрешения(текст: str) -> tuple[int, ...]:
@@ -418,6 +460,9 @@ def вид_доплаты(голова: str) -> str:
 def _за_что(после: str, по_умолчанию: str) -> tuple[str, float, float | None, str]:
     """«За что» ставки по тексту ПОСЛЕ суммы: (per, множитель суммы, секунд в прогоне, вид).
 
+    Размер блока («per 10 seconds» -> 10) отдаёт `_блок` — отдельно, чтобы
+    форма ответа не менялась для всех прочих ветвей.
+
     Множитель нужен там, где вендор назвал не ту меру, что у нас: «per 100
     characters» — это десятая доля «за 1000 знаков», «per 30 seconds» — за
     тридцать секунд. Вид — '' | 'over' | 'upfront' | 'minimum' | 'skip'.
@@ -443,6 +488,11 @@ def _за_что(после: str, по_умолчанию: str) -> tuple[str, fl
         or "token" in голова[:30]
     ):
         return "token", 1.0, None, "skip"
+    if re.match(r"^[^$]{0,20}?per\s+(?:\w+\s+)?megapixels?\s+per\s+(?:second|sec|frame)", голова):
+        # «$0.10 per megapixel per second» — мера из двух множителей, которой в
+        # `PER` нет; прочесть её «за секунду» значило бы потерять мегапиксели
+        # (круг 4). Ставка не читается: шаг честно остаётся без цены.
+        return "", 1.0, None, "skip"
     if re.match(r"^\s*per\s+(?:clone|created voice|credit)", голова):
         return "", 1.0, None, "skip"
     вид = вид_доплаты(голова)
@@ -459,6 +509,11 @@ def _за_что(после: str, по_умолчанию: str) -> tuple[str, fl
         return "second", 1.0, None, вид
     if re.match(r"^[^$]{0,30}?(?:/\s*min\b|per\s+(?:\w+\s+){0,2}minutes?)", голова):
         return "minute", 1.0, None, вид
+    м = re.match(
+        r"^[^$]{0,20}?per\s+(?:started\s+)?(\d+(?:\.\d+)?)\s*(?:megapixels?|mp)\b", голова
+    )
+    if м:
+        return "megapixel", 1.0 / float(м.group(1)), None, вид
     if re.match(r"^[^$]{0,20}?per\s+(?:\w+\s+)?(?:processed\s+)?megapixel", голова):
         return "megapixel", 1.0, None, вид
     if re.match(r"^[^$]{0,20}?(?:per|/)\s*(?:\w+\s+)?image", голова):
@@ -468,12 +523,32 @@ def _за_что(после: str, по_умолчанию: str) -> tuple[str, fl
     )
     if м:
         return "run", 1.0, float(м.group(1)), вид
-    м = re.match(r"^\s*per\s+(?:\d{3,4}p\s+)?(\d+)\s*s\s+video", голова)
+    м = re.match(r"^\s*per\s+(?:\d{3,4}\s*p\s+)?(\d+)\s*s(?:\s+video|\s*$|\s*[;,.])", голова)
     if м:
         return "run", 1.0, float(м.group(1)), вид
     if re.match(r"^[^$]{0,25}?per\s+(?:video\s+)?(?:run|generation|video)\b", голова):
         return "run", 1.0, None, вид
     return по_умолчанию, 1.0, None, вид
+
+
+def _блок(после: str) -> float | None:
+    """«per 10 seconds», «/10s», «per started 2 megapixels» -> 10, 10, 2. Иначе None.
+
+    ЗАЧЕМ (2026-10-15, круг 4): «$0.10 per 10 seconds» считалось линейно, то
+    есть 15 с стоили $0.15, а вендор берёт за НАЧАТЫЙ блок — $0.20. Линейный
+    счёт занижает; блочный — не ниже правды, когда вендор считает блоками, и
+    равен линейному на кратной длине.
+    """
+    голова = после.lower()[:60]
+    м = re.match(r"^\s*(?:/|per|for every|every|each)\s*(\d+)\s*(?:seconds?|secs?|s)\b", голова)
+    if м and float(м.group(1)) > 1:
+        return float(м.group(1))
+    м = re.match(
+        r"^[^$]{0,20}?per\s+(?:started\s+)?(\d+(?:\.\d+)?)\s*(?:megapixels?|mp)\b", голова
+    )
+    if м and float(м.group(1)) > 1:
+        return float(м.group(1))
+    return None
 
 
 def rates(value: str, attribute: str = "") -> list[Rate]:
@@ -522,6 +597,29 @@ def rates(value: str, attribute: str = "") -> list[Rate]:
                     итог[прогон] = Rate(**{**итог[прогон].__dict__, "over_per_second": r.amount})
                     continue
                 итог.append(r)
+    return _привязать_повтор(итог)
+
+
+def _привязать_повтор(ставки: list[Rate]) -> list[Rate]:
+    """«$0.3034; 1080p $0.682; 480p $0.1346; 720p $0.3034»: голая первая сумма
+    сводки — ПОВТОР одной из привязанных (цена по умолчанию), и она получает её
+    разрешение (круг 4). Сумма, равная привязанным с РАЗНЫМИ разрешениями или
+    не равная ни одной, остаётся без разрешения — выдумывать пару нельзя.
+    """
+    итог = list(ставки)
+    for i, r in enumerate(итог):
+        if r.resolutions or r.conditional:
+            continue
+        двойники = {
+            x.resolutions
+            for x in итог
+            if x is not r
+            and x.resolutions
+            and x.amount == r.amount
+            and (x.per, x.tier, x.unit, x.mode, x.audio) == (r.per, r.tier, r.unit, r.mode, r.audio)
+        }
+        if len(двойники) == 1:
+            итог[i] = Rate(**{**r.__dict__, "resolutions": next(iter(двойники))})
     return итог
 
 
@@ -538,12 +636,14 @@ def _ставки_куска(
     м = re.match(r"^(?:v\d+(?:\.\d+)?\s+)?([a-z0-9/,]+)\b", голова)
     if м:
         слово = м.group(1)
-        if слово in TIER_WORDS:
+        if слово.split("/")[0] in TIER_WORDS:
+            слово = слово.split("/")[0]
             tier = "draft" if слово == "drafts" else слово
         elif any(р in слово.split("/") for р in MODE_WORDS):
             mode = слово
     # «5s:» / «HDR 5s» в начале куска — цена за прогон столько-то секунд.
-    м_прогон = re.match(r"^(?:[a-z]+\s+)?(\d+)\s*s\b\s*:?", голова)
+    # «For a 6s 480p video your request will cost $0.36» — тоже прогон (круг 4).
+    м_прогон = re.match(r"^(?:[a-z]+\s+)?(?:a\s+)?(\d+)\s*s\b\s*:?", голова)
     прогон_куска = float(м_прогон.group(1)) if м_прогон else None
     есть_доллар = "$" in кусок
     найдены = [
@@ -559,8 +659,15 @@ def _ставки_куска(
         and not _НЕ_СУММА_ПОСЛЕ.match(кусок[м.end() :])
         and not re.match(r"^\s*[–-]\s*\d", кусок[м.end() :])
         and not (м.group(4) and прогон_куска is not None and float(м.group(4)) == прогон_куска)
+        # Множитель формулы («(height * width * duration * 24) / 1024») — не
+        # сумма: голое число рядом со знаком умножения (круг 4: читалось $24/с).
+        and not re.search(r"[*×=]\s*~?\$?\s*$", кусок[: м.start()])
+        and not re.match(r"^\s*[*×=]", кусок[м.end() :])
     ]
     ставки: list[Rate] = []
+    #: (после, разрешение привязано ПОСЛЕ суммы) — для каждой ставки `ставки`.
+    следы: list[tuple[str, bool]] = []
+    общее: tuple[str, float, float | None] | None = None
     for i, м in enumerate(найдены):
         конец_след = найдены[i + 1].start() if i + 1 < len(найдены) else len(кусок)
         начало_пред = найдены[i - 1].end() if i > 0 else 0
@@ -574,7 +681,47 @@ def _ставки_куска(
             сумма, единица = float(м.group(3)), "credits"
         else:
             сумма, единица = float(м.group(4)), единица_имени
-        за, множитель, прогон, вид = _за_что(после, за_имени)
+        # «За что» НЕ НАЗВАНО у суммы — оно общее с соседней суммой куска
+        # (2026-10-15, круг 4): «$0.10 per 10 seconds of output at 720p, $0.20 at
+        # 1080p, and $0.60 at 4K» — вторая и третья суммы тоже за 10 секунд, а
+        # читались «за прогон» по имени атрибута: 4K выходил дешевле 720p.
+        за, множитель, прогон, вид = _за_что(после, _НЕ_НАЗВАНО)
+        блок = _блок(после)
+        м_до_блок = re.search(
+            r"(?:(\d+)|every|each)\s*(?:seconds?|secs?|s)\s+(?:of\s+\w+\s+)?(?:costs?|is|=)\s*~?\$?\s*$",
+            до,
+            re.I,
+        )
+        if за == _НЕ_НАЗВАНО and м_до_блок:
+            # «10 seconds costs $3.00», «every second costs $0.05» — «за что»
+            # стоит ПЕРЕД суммой (круг 4).
+            n = float(м_до_блок.group(1) or 1)
+            за, множитель, блок = "second", 1.0 / n, (n if n > 1 else None)
+            if вид == "":
+                общее = (за, множитель, блок)
+        по_имени = False
+        if за == _НЕ_НАЗВАНО:
+            if общее is not None:
+                за, множитель, блок = общее
+            else:
+                за = за_имени
+                по_имени = True
+        elif вид == "" and за in _ОБЩИЕ_ЕДИНИЦЫ and прогон is None:
+            общее = (за, множитель, блок)
+        if re.match(r"^\s*,?\s*you can run\b", после, re.I):
+            # «For $1.00, you can run this model 12 times» — арифметика, не ставка.
+            continue
+        открыта = кусок.rfind("(", 0, м.start())
+        if открыта > кусок.rfind(")", 0, м.start()) and any(
+            н.start() < открыта for н in найдены[:i]
+        ):
+            # «$0.28/second ($0.14 per input second and 0.14 per output
+            # second)» — РАСКЛАДКА суммы в скобках, а не вторая ставка (круг 4).
+            continue
+        if re.search(r"\bminimum(?:\s+of)?\s*$", до, re.I):
+            # «(minimum 1 credit)» — порог, а не ставка (круг 4: иначе сумма
+            # наследовала «за что» соседа и становилась второй ставкой).
+            continue
         if вид in ("skip", "minimum") or not единица:
             continue
         # «with TURBO» после суммы — тариф этой ставки.
@@ -582,22 +729,28 @@ def _ставки_куска(
         тариф = tier
         if м_тариф and м_тариф.group(1).lower() in TIER_WORDS:
             тариф = м_тариф.group(1).lower()
-        # Разрешение: «at 720p», «(720p)», «for 720p» после суммы — или
-        # «720p $0.08», «480p at $0.08» вплотную перед ней.
+        # Разрешение (переписано 2026-10-15, круг 4: «$0.05 480p, $0.10 720p, or
+        # $0.20 1080p» не связывалось вовсе, и шаг 1080p платил по 480p).
+        # Порядок: вплотную ПОСЛЕ суммы («$0.05 480p», «$0.17/s hd»); «at /
+        # for / (» после суммы, но в той же части фразы («$0.40/s at 720p»,
+        # «$0.40 with audio for 720p or 1080p»); вплотную ПЕРЕД («720p $0.08»,
+        # «480p at $0.08»); наконец — единственное разрешение в тексте между
+        # прошлой суммой и этой («For every second of 720p video … $0.14»), если
+        # прошлая сумма это разрешение не забрала себе.
         разрешения: tuple[int, ...] = ()
-        м_после = re.search(r"(?:\bat\b|\bfor\b|\()\s*([^$;]*)", после, re.I)
-        if м_после:
-            разрешения = _разрешения(
-                м_после.group(1).split(",")[0]
-                if "(" not in м_после.group(0)
-                else м_после.group(1).split(")")[0]
-            )
+        после_привязано = False
+        м_рядом = _РЕЗ_ВПЛОТНУЮ_ПОСЛЕ.match(после)
+        if м_рядом:
+            разрешения = _разрешения(м_рядом.group(1))
         if not разрешения:
-            м_сразу = re.match(
-                r"^\s*/\s*s(?:ec)?\s+(fhd|uhd|hd|\d{3,4}\s*p|[248]\s*k)\b", после, re.I
-            )
-            if м_сразу:
-                разрешения = _разрешения(м_сразу.group(1))
+            м_после = _РЕЗ_ПОСЛЕ.match(после)
+            if м_после:
+                разрешения = _разрешения(
+                    м_после.group(1).split(",")[0]
+                    if "(" not in м_после.group(0)
+                    else м_после.group(1).split(")")[0]
+                )
+        после_привязано = bool(разрешения)
         if not разрешения:
             хвост_до = до[-24:]
             м_до = re.search(
@@ -607,13 +760,25 @@ def _ставки_куска(
             )
             if м_до:
                 разрешения = _разрешения(м_до.group(1))
-            elif до.strip() in ("/", "or") and ставки:
+            elif re.search(r"(?:^|[\s,])(?:or|/)\s*$", до) and ставки:
                 разрешения = ставки[-1].resolutions
+            elif not (следы and следы[-1][1]):
+                в_до = _разрешения(до)
+                if len(в_до) == 1:
+                    разрешения = в_до
         звук: bool | None = None
         около = после[:40]
         if _ЗВУК_НЕТ.search(около):
             звук = False
         elif _ЗВУК_ДА.search(около):
+            звук = True
+        if (
+            звук is None
+            and re.match(r"^\s*with\b\s*[.,;)]?\s*$", после)
+            and ставки
+            and ставки[-1].audio is False
+        ):
+            # «$0.40 per second without audio, or $0.60 with.» (круг 4)
             звук = True
         if легенда and звук is None:
             звук = до.strip() == "/"
@@ -622,25 +787,100 @@ def _ставки_куска(
         )
         ставки.append(
             Rate(
-                amount=round(сумма * множитель, 6),
+                # Ставка с блоком не округляется: «$0.08 per started 24 MP» —
+                # это 0.08/24 за Мп, и округлённое до 6 знаков давало 0.079992.
+                amount=сумма * множитель if блок else round(сумма * множитель, 6),
                 unit=единица,
+                # Прогон куска («5s:», «For a 6s 480p video … $0.36») сильнее
+                # «за что» из ИМЕНИ атрибута: имя «за секунду» не делает
+                # цену прогона посекундной (круг 4: $0.36 за 6 с читалось $/с).
                 per="run"
-                if прогон_куска is not None and за in ("", "run", за_имени) and за != "second"
+                if прогон_куска is not None
+                and (за in ("", "run") or по_имени or (за == за_имени and за != "second"))
                 else за,
                 tier=тариф,
                 resolutions=разрешения,
                 audio=звук,
                 run_seconds=прогон
                 if прогон is not None
-                else (прогон_куска if прогон_куска is not None and за != "second" else None),
+                else (
+                    прогон_куска
+                    if прогон_куска is not None and (за != "second" or по_имени)
+                    else None
+                ),
                 upfront=вид == "upfront",
                 over=сверх,
-                mode=mode,
-                conditional=bool(_УСЛОВИЕ_СТАВКИ.search(после[:60])),
+                mode=_режим_в_скобках(после) or mode,
+                # «if voice control is used … $0.154» — условие стоит ПЕРЕД
+                # суммой (круг 4); раньше смотрели только после неё.
+                # Условие ПОСЛЕ суммы — до запятой, если за ней есть ещё сумма:
+                # «$0.126 (audio on), if voice control … $0.154» — «if» о третьей.
+                conditional=bool(
+                    _УСЛОВИЕ_СТАВКИ.search(
+                        (после if i + 1 == len(найдены) else re.split(r"[,;]", после)[0])[:60]
+                    )
+                )
+                or bool(re.search(r"\b(?:if|when)\b", до, re.I))
+                # Доплата за ВХОД («image input $0.01», «+ $0.01 per second of
+                # video input») — надбавка, а не цена шага.
+                or bool(re.search(r"\binput\s*$|\+\s*$|\bplus\s*$", до[-20:], re.I))
+                # «each additional image costs $0.08», «Each input image costs
+                # $0.01» — доплата за вход, а не цена шага (круг 4).
+                or bool(
+                    re.search(
+                        r"\b(?:each|every|per)\s+(?:\w+\s+){0,2}(?:image|reference|input)s?\b[^$]{0,25}$",
+                        до,
+                        re.I,
+                    )
+                )
+                # «$0.02–$0.04 each» — верхний край диапазона наследует условие.
+                or bool(ставки and ставки[-1].conditional and до.strip() in ("–", "-", "to"))
+                # «0.196 with voice control» — доплата за функцию, не за звук.
+                or bool(
+                    re.match(r"^\s*\(?\s*with\s+(?!audio|sound)(\w+)", после, re.I)
+                    and (re.match(r"^\s*\(?\s*with\s+(\w+)", после, re.I).group(1).lower() not in TIER_WORDS)
+                ),
                 source=кусок.strip()[:120],
+                block=блок,
+                fps=_кадры_в_секунду(кусок[: м.start()]),
             )
         )
+        следы.append((после, после_привязано))
+    _общее_разрешение_пары(ставки, следы)
     return _по_порядку(_режим_куска(низ, ставки), кусок, прежние)
+
+
+def _кадры_в_секунду(до: str) -> float | None:
+    """Последняя частота кадров, названная ПЕРЕД суммой в куске: «At 60 fps, … $6.00» -> 60."""
+    найдены = re.findall(r"(\d{2,3})\s*-?\s*fps\b", до, re.I)
+    return float(найдены[-1]) if найдены else None
+
+
+def _режим_в_скобках(после: str) -> str:
+    """«$0.06/s (t2v,i2v)» -> 't2v/i2v': режим, названный в скобках сразу после суммы."""
+    м = re.match(r"^\s*(?:/\s*s(?:ec)?\b)?\s*\(\s*([a-z0-9,/ ]+)\)", после, re.I)
+    if not м:
+        return ""
+    слова = [с for с in re.split(r"[,/ ]+", м.group(1).lower()) if с]
+    return "/".join(слова) if слова and all(с in MODE_WORDS for с in слова) else ""
+
+
+def _общее_разрешение_пары(ставки: list[Rate], следы: list[tuple[str, bool]]) -> None:
+    """«$0.20 without audio or $0.40 with audio for 720p or 1080p»: разрешение
+    названо ОДИН раз после пары и относится к обеим (2026-10-15, круг 4).
+
+    Сумма без разрешения, за которой идёт только «or» / «/» и соседняя сумма с
+    разрешением, получает его разрешение. Правит список на месте.
+    """
+    for i in range(len(ставки) - 2, -1, -1):
+        после = следы[i][0]
+        if (
+            not ставки[i].resolutions
+            and ставки[i + 1].resolutions
+            and re.search(r"(?:^|\s)(?:or|/)\s*$", после)
+            and not _разрешения(после)
+        ):
+            ставки[i] = Rate(**{**ставки[i].__dict__, "resolutions": ставки[i + 1].resolutions})
 
 
 #: «in `pro` mode», «Creative mode», «In precise mode»: РЕЖИМ, которым вендор
@@ -728,17 +968,35 @@ class Need:
     max_run_seconds: float | None = None
     #: Режим шага (`t2v`, `i2v`, `v2v`), чтобы чужой кусок таблицы не стал ценой.
     mode: str = ""
+    #: Частота кадров ролика (круг 4): нужна цене «за мегапиксель» у видео —
+    #: мегапиксели кадра × кадров (fps × секунды). None — не названа.
+    fps: float | None = None
 
 
 @dataclass(frozen=True)
 class Option:
-    """Сколько стоит шаг на одном тарифе: число, тариф, разрешение и расчёт словами."""
+    """Сколько стоит шаг на одном тарифе: число, тариф, разрешение и расчёт словами.
+
+    `lower_bound` — почему это НИЖНЯЯ граница, а не цена (пусто — цена полная):
+    за прогон, когда длина прогона не записана, ролик дороже одного прогона.
+    `ambiguous` — какие ставки не удалось привязать к брифу; тогда `usd` —
+    наибольшая из них (осторожная), а `usd_min` — наименьшая: «не влезает»
+    доказывает только наименьшая, «влезает» — только наибольшая (круг 4).
+    """
 
     usd: float
     tier: str
     resolution: int | None
     formula: str
     conditional: bool = False
+    lower_bound: str = ""
+    ambiguous: str = ""
+    usd_min: float | None = None
+
+    @property
+    def least(self) -> float:
+        """Наименьшая сумма, которую эта ставка может стоить."""
+        return self.usd if self.usd_min is None else min(self.usd, self.usd_min)
 
 
 #: Сколько знаков в секунде речи. КОНСТАНТА-РЕШЕНИЕ, ВЫБРАНО 15: дикторская
@@ -746,12 +1004,30 @@ class Option:
 #: текста, а не цена: она печатается в расчёте, чтобы её можно было оспорить.
 CHARS_PER_SECOND = 15.0
 
+#: Причина «нижней границы» у цены за прогон без записанной длины прогона.
+LOWER_BOUND_RUN = "сколько секунд даёт прогон — не записано: посчитан один прогон"
+
 
 def _подходит_звук(r: Rate, нужно: bool | None) -> int:
     """0 — подходит, 1 — о звуке не сказано, 2 — не тот звук."""
     if нужно is None or r.audio is None:
         return 0 if r.audio is None or нужно is None else 1
     return 0 if r.audio == нужно else 2
+
+
+def _подходит_fps(r: Rate, нужно: float | None) -> int | None:
+    """0 — подходит, 1 — не та, но не меньше; None — ставка за меньшую частоту.
+
+    Ставка без частоты — обычная (её пишут за 30 fps); ставка за НЕзаказанную
+    частоту выше обычной — штраф 1 (это доплата, а не цена по умолчанию).
+    """
+    if r.fps is None:
+        return 0 if нужно is None or нужно <= 30 else 1
+    if нужно is None:
+        return 0 if r.fps <= 30 else 1
+    if r.fps == нужно:
+        return 0
+    return 1 if r.fps > нужно else None
 
 
 def _подходит_кадр(r: Rate, нужно: int | None) -> tuple[int, int] | None:
@@ -771,46 +1047,99 @@ def _подходит_кадр(r: Rate, нужно: int | None) -> tuple[int, in
     return (3, max(r.resolutions))
 
 
-def _деньги(r: Rate, need: Need) -> tuple[float, str] | None:
-    """Стоимость шага по одной ставке и расчёт словами. None — не на что умножать."""
+def _блоками(количество: float, r: Rate) -> tuple[float, str]:
+    """Сумма за `количество` единиц `r.per` блоками `r.block`: (деньги, расчёт)."""
+    assert r.block  # зовётся только для ставки с блоком
+    блоков = math.ceil(количество / r.block - 1e-9)
+    за_блок = round(r.amount * r.block, 6)
+    return (
+        блоков * за_блок,
+        f"⌈{количество:g}/{r.block:g}⌉ = {блоков} блок(ов) × {за_блок:g} usd",
+    )
+
+
+def _деньги(r: Rate, need: Need) -> tuple[float, str, str] | None:
+    """Стоимость шага по одной ставке: (деньги, расчёт словами, почему нижняя граница).
+
+    None — не на что умножать. Третье поле пусто, когда цена полная.
+    """
     сек = need.seconds
     if r.per == "second":
         if сек is None:
             return None
-        return r.amount * сек, f"{сек:g} с × {r.amount:g} usd/с"
+        if r.block:
+            сумма, расчёт = _блоками(сек, r)
+            return сумма, f"{сек:g} с: {расчёт} (блок = {r.block:g} с)", ""
+        return r.amount * сек, f"{сек:g} с × {r.amount:g} usd/с", ""
     if r.per == "minute":
         if сек is None:
             return None
-        return r.amount * сек / 60.0, f"{сек:g} с × {r.amount:g} usd/мин ÷ 60"
+        return r.amount * сек / 60.0, f"{сек:g} с × {r.amount:g} usd/мин ÷ 60", ""
     if r.per in ("run", "generation"):
         if r.run_seconds and r.over_per_second is not None:
             лишние = max(0.0, (сек or 0.0) - r.run_seconds)
             return (
                 r.amount + лишние * r.over_per_second,
                 f"{r.amount:g} usd за первые {r.run_seconds:g} с + {лишние:g} с × {r.over_per_second:g} usd/с",
+                "",
             )
         if сек is None and need.images > 1:
             # Картиночный шаг с ценой «за запрос»: прогон — один кадр, и шесть
             # заказанных кадров — шесть прогонов (2026-10-15, аудит третьего круга).
             прогонов = math.ceil(need.images)
-            return r.amount * прогонов, f"{прогонов} прогон(ов) × {r.amount:g} usd (прогон = 1 кадр)"
+            return (
+                r.amount * прогонов,
+                f"{прогонов} прогон(ов) × {r.amount:g} usd (прогон = 1 кадр)",
+                "",
+            )
         покрывает = r.run_seconds or need.max_run_seconds
-        прогонов = math.ceil(сек / покрывает) if сек and покрывает else 1
         if сек and not покрывает:
+            # ДЛИНА ПРОГОНА НЕ ЗАПИСАНА — ЭТО НИЖНЯЯ ГРАНИЦА (круг 4). Раньше
+            # $0.49 «за генерацию» стояли ценой и 120-секундного, и
+            # 300-секундного ролика, а бюджет объявлялся «укладывается».
             return (
                 r.amount,
                 f"{r.amount:g} usd за прогон (сколько секунд даёт прогон — не записано)",
+                LOWER_BOUND_RUN,
             )
-        return r.amount * прогонов, f"{прогонов} прогон(ов) × {r.amount:g} usd" + (
-            f" (прогон = {покрывает:g} с)" if покрывает else ""
+        прогонов = math.ceil(сек / покрывает) if сек and покрывает else 1
+        return (
+            r.amount * прогонов,
+            f"{прогонов} прогон(ов) × {r.amount:g} usd"
+            + (f" (прогон = {покрывает:g} с)" if покрывает else ""),
+            "",
         )
-    if r.per in ("image", "megapixel") and need.images <= 0:
+    if r.per == "megapixel" and need.images <= 0:
+        # ВИДЕО «ЗА МЕГАПИКСЕЛЬ» (круг 4): мегапиксели кадра × кадров, а кадров
+        # — fps × секунды. Чего-то из трёх нет — не на что умножать, и шаг
+        # остаётся без цены, а не «0.001 usd за megapixel» рядом с «укладывается».
+        if not (сек and need.fps and need.resolution):
+            return None
+        кадров = math.ceil(need.fps * сек)
+        мп = need.megapixels * кадров
+        if r.block:
+            сумма, расчёт = _блоками(мп, r)
+        else:
+            сумма, расчёт = r.amount * math.ceil(мп), f"⌈{мп:g}⌉ Мп × {r.amount:g} usd"
+        return (
+            сумма,
+            f"{need.megapixels:g} Мп/кадр × {кадров} кадров ({need.fps:g} fps × {сек:g} с): {расчёт}",
+            "",
+        )
+    if r.per == "image" and need.images <= 0:
         return None
     if r.per == "image":
-        return r.amount * need.images, f"{need.images:g} кадр(ов) × {r.amount:g} usd"
+        return r.amount * need.images, f"{need.images:g} кадр(ов) × {r.amount:g} usd", ""
     if r.per == "megapixel":
+        if r.block:
+            сумма, расчёт = _блоками(need.megapixels, r)
+            return сумма * need.images, f"{need.images:g} кадр(ов) × ({расчёт})", ""
         мп = math.ceil(need.megapixels)
-        return r.amount * мп * need.images, f"{need.images:g} кадр(ов) × {мп} Мп × {r.amount:g} usd"
+        return (
+            r.amount * мп * need.images,
+            f"{need.images:g} кадр(ов) × {мп} Мп × {r.amount:g} usd",
+            "",
+        )
     if r.per in ("1000_chars", "character"):
         if need.chars is None:
             return None
@@ -819,6 +1148,7 @@ def _деньги(r: Rate, need: Need) -> tuple[float, str] | None:
             за_тысячу * need.chars / 1000.0,
             f"≈{need.chars:g} знаков × {за_тысячу:g} usd за 1000_chars"
             + (f" ({r.amount:g} usd за знак)" if r.per == "character" else ""),
+            "",
         )
     return None
 
@@ -828,8 +1158,18 @@ def estimate(ставки: list[Rate], need: Need) -> list[Option]:
     порядок — порядок вендора (флагман первым), чтобы тариф по умолчанию был его, а не наш.
 
     Только доллары: кредиты в доллары не переводятся (курс — решение вендора).
+
+    ВЫБОР ВНУТРИ ТАРИФА (переписано 2026-10-15, круг 4). Ставки тарифа
+    сравниваются по тому, насколько они ПРО ЗАКАЗ: разрешение (точное, ближайшее
+    выше, не названо), звук, частота кадров, безусловность, полнота цены. Раньше
+    при равенстве брался МИНИМУМ суммы — и три непривязанные ставки «$0.05 480p,
+    $0.10 720p, $0.20 1080p» отдавали шагу 1080p цену 480p. Теперь равные по
+    привязке, но разные по сумме ставки — НЕОДНОЗНАЧНОСТЬ: берётся наибольшая
+    (осторожно), наименьшая кладётся в `usd_min`, и это сказано в расчёте.
+    Разрешение в брифе НЕ названо — разные разрешения не неоднозначность, а
+    выбор заказчика: берётся наименьшее разрешение, как и прежде, с подписью.
     """
-    по_тарифу: dict[str, list[tuple[tuple, Rate, int]]] = {}
+    по_тарифу: dict[str, list[tuple[tuple, Rate, int, tuple[float, str, str]]]] = {}
     for r in ставки:
         if r.unit != "usd" or r.upfront or r.amount <= 0:
             # Ноль — не цена: бесплатным не считается ничего (запись «$0» —
@@ -843,41 +1183,50 @@ def estimate(ставки: list[Rate], need: Need) -> list[Option]:
         кадр = _подходит_кадр(r, need.resolution)
         if кадр is None:
             continue
-        по_тарифу.setdefault(r.tier, []).append(((кадр[0], звук), r, кадр[1]))
+        частота = _подходит_fps(r, need.fps)
+        if частота is None:
+            continue
+        деньги = _деньги(r, need)
+        if деньги is None:
+            continue
+        разница = abs(кадр[1] - need.resolution) if need.resolution and кадр[1] else кадр[1]
+        ключ = (кадр[0], разница, звук, частота, r.conditional, bool(деньги[2]))
+        по_тарифу.setdefault(r.tier, []).append((ключ, r, кадр[1], деньги))
     варианты: list[Option] = []
     for тариф, пары in по_тарифу.items():
-        лучшие: list[tuple[tuple[tuple[int, ...], float], Option]] = []
-        for штраф, r, разрешение in пары:
-            деньги = _деньги(r, need)
-            if деньги is None:
-                continue
-            сумма, расчёт = деньги
-            подпись = " ".join(
-                ч
-                for ч in (
-                    тариф.capitalize() if тариф else "",
-                    f"{разрешение}p" if разрешение else "",
-                    (
-                        f"ниже заказанного {need.resolution}p — нужен апскейл"
-                        if штраф[0] == 3
-                        else ""
-                    ),
-                    "со звуком" if r.audio else "без звука" if r.audio is False else "",
-                )
-                if ч
+        лучший = min(п[0] for п in пары)
+        равные = [п for п in пары if п[0] == лучший]
+        суммы = sorted({round(п[3][0], 6) for п in равные})
+        ключ, r, разрешение, (сумма, расчёт, нижняя) = max(равные, key=lambda п: п[3][0])
+        неоднозначно = ""
+        if len(суммы) > 1:
+            неоднозначно = (
+                f"ставки не различить по брифу ({', '.join(f'{с:g}' for с in суммы)} usd), "
+                "взята наибольшая"
             )
-            лучшие.append(
-                (
-                    (штраф, сумма),
-                    Option(
-                        round(сумма, 4),
-                        тариф,
-                        разрешение or None,
-                        (f"[{подпись}] " if подпись else "") + f"{расчёт} = {сумма:.2f} usd",
-                        r.conditional,
-                    ),
-                )
+        подпись = " ".join(
+            ч
+            for ч in (
+                тариф.capitalize() if тариф else "",
+                f"{разрешение}p" if разрешение else "",
+                (f"ниже заказанного {need.resolution}p — нужен апскейл" if ключ[0] == 3 else ""),
+                "со звуком" if r.audio else "без звука" if r.audio is False else "",
+                f"{r.fps:g} fps" if r.fps else "",
             )
-        if лучшие:
-            варианты.append(min(лучшие, key=lambda п: п[0])[1])
+            if ч
+        )
+        варианты.append(
+            Option(
+                round(сумма, 4),
+                тариф,
+                разрешение or None,
+                (f"[{подпись}] " if подпись else "")
+                + f"{расчёт} = {сумма:.2f} usd"
+                + (f"; НЕОДНОЗНАЧНО: {неоднозначно}" if неоднозначно else ""),
+                r.conditional,
+                lower_bound=нижняя,
+                ambiguous=неоднозначно,
+                usd_min=round(суммы[0], 4) if неоднозначно else None,
+            )
+        )
     return варианты
