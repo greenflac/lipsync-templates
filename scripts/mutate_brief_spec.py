@@ -44,6 +44,7 @@ PR = "studio/pricing.py"
 HN = "studio/hardneed.py"
 L10N = "studio/l10n.py"
 EP = "studio/endpoints.py"
+ER = "scripts/endpoint_report.py"
 
 #: (файл, было, стало, что ломается). Каждая константа — строже и слабее.
 MUTANTS: tuple[tuple[str, str, str, str], ...] = (
@@ -141,6 +142,12 @@ MUTANTS: tuple[tuple[str, str, str, str], ...] = (
     (PN, "            if not узел.orderable and not (hard is not None and hard.self_host and узел.self_hostable):\n", "            if False:\n", "узел семьи снова кандидат"),
     (PN, "    if not реестр.orderable_for(работа) and op.name in ЗАПАСНАЯ_РАБОТА:", "    if False:", "оборот без запасной работы"),
     (PN, "    if предел_прогона(все) is not None:\n        return None\n", "", "допущение поверх своей записи"),
+    (PN, "        op.name in ТОЛЬКО_РЕЕСТР or any(реестр.orderable_for(р) for р in работы)", "        op.name in ТОЛЬКО_РЕЕСТР", "неустановленные остаются при известной работе"),
+    (PN, "        op.name in ТОЛЬКО_РЕЕСТР or any(реестр.orderable_for(р) for р in работы)", "        any(реестр.orderable_for(р) for р in работы)", "работы пятого круга снова из слов"),
+    (PN, '        "реставрация",\n        "интерполяция_кадров",\n', '        "реставрация",\n', "интерполяция не только из реестра"),
+    (ER, 'GUARDED: tuple[str, ...] = ("orderable", "priced", "with_run_length")', 'GUARDED: tuple[str, ...] = ("orderable", "with_run_length")', "гейт не держит число с ценой"),
+    (ER, 'GUARDED: tuple[str, ...] = ("orderable", "priced", "with_run_length")', 'GUARDED: tuple[str, ...] = ("orderable", "priced", "with_run_length", "video")', "гейт держит лишнее поле"),
+    (ER, 'BASELINE = ROOT / "studio" / "knowledge" / "endpoint_coverage.json"', 'BASELINE = ROOT / "studio" / "knowledge" / "endpoint_coverage_missing.json"', "гейт без базы"),
     (BS, '    "restore": (("video", "реставрация"),),\n', "", "реставрация снова без маршрута"),
     (BS, '                return Маршрут((шаг,), {шаг: NOTE_CAPTIONS} if задача == "captions" else {})', "                return Маршрут((шаг,), {})", "субтитры без пометки монтажа"),
 )

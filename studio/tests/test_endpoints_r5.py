@@ -265,14 +265,15 @@ class Семья(unittest.TestCase):
         self.assertNotIn("lipsync", e.functions)
 
     def test_кэш_держит_базы_до_предела(self) -> None:
+        # Литералы (Т2): восемь баз помещаются, девятая сбрасывает кэш.
         ep._КЭШ.clear()
-        базы = [[факт(f"m-{i}", "license", "mit")] for i in range(ep.CACHE_LIMIT + 1)]
+        базы = [[факт(f"m-{i}", "license", "mit")] for i in range(9)]
         первый = ep.build(базы[0])
-        for б in базы[1 : ep.CACHE_LIMIT]:
+        for б in базы[1:8]:
             ep.build(б)
         self.assertIs(первый, ep.build(базы[0]))
-        ep.build(базы[ep.CACHE_LIMIT])
-        self.assertLessEqual(len(ep._КЭШ), ep.CACHE_LIMIT)
+        ep.build(базы[8])
+        self.assertLessEqual(len(ep._КЭШ), 8)
 
     def test_индекс_работ_только_заказываемые(self) -> None:
         self.assertEqual(
@@ -337,6 +338,35 @@ class Отбор(unittest.TestCase):
         self.assertEqual(1, вариант.applicability)
         self.assertEqual(["zeta-3.0"], [м["model"] for м in найдены.реестр["not_orderable"]])
 
+    def test_без_установленной_работы_не_кандидат_когда_реестр_знает_работу(self) -> None:
+        база = [
+            *self.база(),
+            факт("mystery-model", "failure_mode", "lipsync drifts on long takes", tier="operator"),
+        ]
+        найдены = pn.candidates_for(операция("липсинк"), FactIndex(facts=база))
+        self.assertNotIn("mystery-model", [c.model for c in найдены])
+        self.assertEqual(["mystery-model"], найдены.реестр["unclassified_dropped"])
+
+    def test_без_установленной_работы_остаётся_когда_реестр_работы_не_знает(self) -> None:
+        база = [
+            факт("mystery-model", "failure_mode", "lipsync drifts on long takes", tier="operator")
+        ]
+        найдены = pn.candidates_for(операция("липсинк"), FactIndex(facts=база))
+        self.assertEqual([("mystery-model", True)], [(c.model, c.unclassified) for c in найдены])
+
+    def test_работы_пятого_круга_только_из_реестра(self) -> None:
+        база = [
+            факт(
+                "mystery-model",
+                "failure_mode",
+                "frame interpolation ghosts on fast motion",
+                tier="operator",
+            )
+        ]
+        найдены = pn.candidates_for(операция("интерполяция_кадров"), FactIndex(facts=база))
+        self.assertEqual([], [c.model for c in найдены])
+        self.assertEqual(1, найдены.реестр["unclassified_dropped_count"])
+
     def test_заказываемая_семья_не_одалживает(self) -> None:
         найдены = pn.candidates_for(операция("генерация_видео"), FactIndex(facts=self.база()))
         вариант = next(c for c in найдены if c.model == "omega-2-t2v")
@@ -375,6 +405,27 @@ class Отбор(unittest.TestCase):
             for c in pn.candidates_for(op, FactIndex(facts=база), hard=hn.Hard(self_host=True))
         ]
         self.assertEqual((False, True), ("kappa-1" in через_api, "kappa-1" in свой_gpu))
+
+    def test_аватар_вариант_не_берёт_строк_семьи_без_работы(self) -> None:
+        # Узел семьи без установленной работы одалживает строки только режимам
+        # генерации: аватар-вариант их не берёт.
+        база = [
+            факт("theta-2", "failure_mode", "faces smear in crowds", tier="operator"),
+            на_фал("theta-2-t2v", "acme/theta-2/text-to-video", "text-to-video"),
+            на_фал("theta-2-avatar", "acme/theta-2/avatar", "image-to-video"),
+        ]
+        self.assertEqual((), ep.build(база).get("theta-2").functions)  # type: ignore[union-attr]
+        аватар = next(
+            c
+            for c in pn.candidates_for(операция("говорящий_аватар"), FactIndex(facts=база))
+            if c.model == "theta-2-avatar"
+        )
+        генератор = next(
+            c
+            for c in pn.candidates_for(операция("генерация_видео"), FactIndex(facts=база))
+            if c.model == "theta-2-t2v"
+        )
+        self.assertEqual((0, 1), (аватар.applicability, генератор.applicability))
 
     def test_реестр_добавляет_не_найденных_словами(self) -> None:
         # У `zeta-3.0-t2v` нет ни одного слова операции в строках — только каталог
@@ -540,7 +591,44 @@ class Маршрут(unittest.TestCase):
 
 
 # --------------------------------------------------------------------------
-# 6. ЖИВАЯ БАЗА: находки валидатора круга 4 не возвращаются
+# 6. ГЕЙТ ПОКРЫТИЯ (`scripts/endpoint_report.py`)
+
+
+def _отчёт():  # type: ignore[no-untyped-def]
+    import importlib.util
+    from pathlib import Path
+
+    путь = Path(__file__).resolve().parents[2] / "scripts" / "endpoint_report.py"
+    spec = importlib.util.spec_from_file_location("endpoint_report", путь)
+    assert spec is not None and spec.loader is not None
+    модуль = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(модуль)
+    return модуль
+
+
+class ГейтПокрытия(unittest.TestCase):
+    СТРОКА = {"function": "t2v", "orderable": 10, "priced": 8, "with_run_length": 7}
+
+    def test_падение_любого_счёта_провал(self) -> None:
+        отчёт = _отчёт()
+        for поле in ("orderable", "priced", "with_run_length"):
+            with self.subTest(поле=поле):
+                сейчас = [{**self.СТРОКА, поле: self.СТРОКА[поле] - 1}]
+                упало, _ = отчёт.compare(сейчас, [self.СТРОКА])
+                self.assertEqual(
+                    [f"t2v.{поле}: {self.СТРОКА[поле]} -> {self.СТРОКА[поле] - 1}"], упало
+                )
+
+    def test_рост_не_провал(self) -> None:
+        упало, выросло = _отчёт().compare([{**self.СТРОКА, "priced": 9}], [self.СТРОКА])
+        self.assertEqual(([], ["t2v.priced: 8 -> 9"]), (упало, выросло))
+
+    def test_живая_база_не_ниже_записанного(self) -> None:
+        self.assertEqual(0, _отчёт().main(["--check"]))
+
+
+# --------------------------------------------------------------------------
+# 7. ЖИВАЯ БАЗА: находки валидатора круга 4 не возвращаются
 
 
 class ЖиваяБаза(unittest.TestCase):
