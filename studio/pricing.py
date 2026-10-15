@@ -70,7 +70,9 @@ PER = (
 #: пересчёт значило бы заменить одно уверенное неверное число другим. Меняется
 #: «за что»: сравнение с потолком «за токен» честно становится несравнимым,
 #: то есть третьим исходом вместо ложного отказа.
-_ЗА_МИЛЛИОН = re.compile(r"per\s*(?:1\s*m\b|1[\s,]?000[\s,]?000|million)", re.I)
+_ЗА_МИЛЛИОН = re.compile(
+    r"per\s*(?:1\s*m\b|1[\s,]?000[\s,]?000|million)(?!\s*(?:characters?|chars?)\b)", re.I
+)
 
 _MONEY = re.compile(r"\$\s*(\d+(?:\.\d+)?)")
 #: Ведущее число строки: то, что источник поставил ПЕРВЫМ, когда единица уже
@@ -126,7 +128,10 @@ def unit_and_per(attribute: str) -> tuple[str, str]:
     источник как хочет. Брать единицу из текста значит доверять чужому
     форматированию в вопросе, где ошибка стоит неверной суммы.
     """
-    a = attribute.lower()
+    # ХВОСТ `_via_<провайдер>` — ИМЯ ПРОДАВЦА, а не единица (2026-10-15, аудит
+    # импортёра LiteLLM): `price_per_character_usd_via_runwayml` находил «run»
+    # в «runwayml» раньше, чем «character», и цена за знак читалась за прогон.
+    a = re.sub(r"_via_[a-z0-9_]+$", "", attribute.lower())
     единица = "usd" if a.endswith("_usd") or "usd" in a else ""
     за = ""
     # Имена вида `price_per_million_input_usd` называют «за что» ЧЕСТНО, и
@@ -405,6 +410,11 @@ def _разрешения(текст: str) -> tuple[int, ...]:
     return tuple(dict.fromkeys(итог))
 
 
+def вид_доплаты(голова: str) -> str:
+    """'over', если текст после суммы говорит о доплате сверх прогона."""
+    return "over" if re.search(r"additional|then|longer|beyond", голова[:40]) else ""
+
+
 def _за_что(после: str, по_умолчанию: str) -> tuple[str, float, float | None, str]:
     """«За что» ставки по тексту ПОСЛЕ суммы: (per, множитель суммы, секунд в прогоне, вид).
 
@@ -420,6 +430,14 @@ def _за_что(после: str, по_умолчанию: str) -> tuple[str, fl
         return "", 1.0, None, "minimum"
     if re.match(r"^\s*(?:credits?\s+)?upfront", голова):
         return "run", 1.0, None, "upfront"
+    # «per 1K characters» — ТЫСЯЧА ЗНАКОВ, а не токены (2026-10-15, по
+    # независимому валидатору): строка вендора `eleven_v3` «$0.08 per 1K
+    # characters (API)» уходила в правило токенов ниже и давала пустой список —
+    # то есть цена ПРЯМОГО маршрута пропадала, и смета брала пересказ
+    # агрегатора. Проверяется ДО правила токенов, потому что то ловит «per 1K».
+    м = re.match(r"^\s*(?:/|per)\s*1\s*([km])\s*(?:characters?|chars?)\b", голова)
+    if м:
+        return "1000_chars", 1.0 if м.group(1) == "k" else 0.001, None, вид_доплаты(голова)
     if (
         re.match(r"^\s*(?:/\s*1\s*[km]\b|per\s+1\s*[km]\b|/\s*1k|per\s+(?:1m|million))", голова)
         or "token" in голова[:30]
@@ -427,7 +445,7 @@ def _за_что(после: str, по_умолчанию: str) -> tuple[str, fl
         return "token", 1.0, None, "skip"
     if re.match(r"^\s*per\s+(?:clone|created voice|credit)", голова):
         return "", 1.0, None, "skip"
-    вид = "over" if re.search(r"additional|then|longer|beyond", голова[:40]) else ""
+    вид = вид_доплаты(голова)
     м = re.match(r"^\s*(?:/|per|for every|a|each)?\s*(\d+)\s*(?:seconds?|s)\b", голова)
     if м and not re.match(r"^\s*for\b", голова):
         return "second", 1.0 / float(м.group(1)), None, вид
@@ -487,7 +505,7 @@ def rates(value: str, attribute: str = "") -> list[Rate]:
     предложения = [п for п in re.split(r"(?<=[.!?])\s+(?=[A-Z])", текст) if not _ПРИМЕР.match(п)]
     for предложение in предложения:
         for кусок in re.split(r";", предложение):
-            for r in _ставки_куска(кусок, единица_имени, за_имени, легенда):
+            for r in _ставки_куска(кусок, единица_имени, за_имени, легенда, итог):
                 # ДОПЛАТА СВЕРХ ПРОГОНА живёт часто в соседнем предложении
                 # («$0.2 for videos up to 40 seconds. For longer videos ...
                 # $0.005 per second») — и приклеивается к прогону, а не
@@ -507,12 +525,17 @@ def rates(value: str, attribute: str = "") -> list[Rate]:
     return итог
 
 
-def _ставки_куска(кусок: str, единица_имени: str, за_имени: str, легенда: bool) -> list[Rate]:
+def _ставки_куска(
+    кусок: str, единица_имени: str, за_имени: str, легенда: bool, прежние: list[Rate] | None = None
+) -> list[Rate]:
+    прежние = прежние or []
     низ = кусок.lower()
     голова = низ.lstrip(" ,—-")
     tier = ""
     mode = ""
-    м = re.match(r"^([a-z0-9/,]+)\b", голова)
+    # «v4 Turbo $0.04»: номер версии перед словом тарифа тарифом не мешает
+    # (иначе Turbo ложился в безымянный тариф рядом с основной ценой).
+    м = re.match(r"^(?:v\d+(?:\.\d+)?\s+)?([a-z0-9/,]+)\b", голова)
     if м:
         слово = м.group(1)
         if слово in TIER_WORDS:
@@ -578,7 +601,7 @@ def _ставки_куска(кусок: str, единица_имени: str, з
         if not разрешения:
             хвост_до = до[-24:]
             м_до = re.search(
-                r"((?:\d{3,4}\s*p|\d{3,4}\s*[x×]\s*\d{3,4}|[248]\s*k|fhd|uhd|hd)\b)\s*(?:at|-|–|:)?\s*~?\$?\s*$",
+                r"((?:\d{3,4}\s*p|\d{3,4}\s*[x×]\s*\d{3,4}|[248]\s*k|fhd|uhd|hd)\b)\s*(?:at|-|–|:|costs?)?\s*~?\$?\s*$",
                 хвост_до,
                 re.I,
             )
@@ -617,7 +640,75 @@ def _ставки_куска(кусок: str, единица_имени: str, з
                 source=кусок.strip()[:120],
             )
         )
-    return ставки
+    return _по_порядку(_режим_куска(низ, ставки), кусок, прежние)
+
+
+#: «in `pro` mode», «Creative mode», «In precise mode»: РЕЖИМ, которым вендор
+#: подписывает часть таблицы. Становится тарифом ставки.
+_РЕЖИМ_ВЕНДОРА = re.compile(r"(?:^|\bin\s+)`?([a-z][a-z0-9-]*)`?\s+mode\b", re.I)
+#: Режим, который ДОРОЖЕ обычного («10 times of the normal price», «costs
+#: more», «doubles»): его ставка — условие, а не цена по умолчанию.
+_РЕЖИМ_ДОРОЖЕ = re.compile(r"\b(?:\d+(?:\.\d+)?\s*(?:times|x)\b|more\b|doubles?\b|double\b)", re.I)
+
+
+def _режим_куска(низ: str, ставки: list[Rate]) -> list[Rate]:
+    """Ставки куска, подписанного режимом вендора, получают этот режим ТАРИФОМ.
+
+    ЗАЧЕМ (2026-10-15, независимый валидатор). `bytedance-upscaler`: «Processing
+    in `pro` mode makes the price 10 times of the normal price ($0.072/s, …,
+    $0.288/s …)». Без этой ветки pro-ставки ложились в безымянный тариф рядом с
+    обычными, и 1080p оценивался по pro-4K — $0.288/s вместо $0.0072/s, в сорок
+    раз дороже правды. Режим, который назван ДОРОЖЕ обычного, — условие
+    (`conditional`): тарифом по умолчанию он не становится никогда, потому что
+    у планировщика по умолчанию — безымянный тариф.
+    """
+    м = _РЕЖИМ_ВЕНДОРА.search(низ.lstrip(" ,—-("))
+    if not м or not ставки:
+        return ставки
+    слово = м.group(1).lower()
+    if слово in MODE_WORDS:
+        return ставки
+    дороже = bool(_РЕЖИМ_ДОРОЖЕ.search(низ))
+    return [
+        Rate(
+            **{
+                **r.__dict__,
+                "tier": r.tier or слово,
+                "conditional": r.conditional or дороже,
+            }
+        )
+        for r in ставки
+    ]
+
+
+def _по_порядку(ставки: list[Rate], кусок: str, прежние: list[Rate]) -> list[Rate]:
+    """«$a, $b, $c for 1080p, 2K, 4K respectively» — разрешения ПО ПОРЯДКУ.
+
+    ЗАЧЕМ (2026-10-15, независимый валидатор). Список разрешений после
+    последней суммы прилипал к ней одной («$0.288/s for 1080p» — а это 4K), и
+    1080p получал цену 4K. Здесь i-я сумма получает i-е разрешение. Если списка
+    нет («Creative mode costs more at each tier: $0.20, $0.35, and $0.79 per
+    second respectively»), берутся разрешения стольких же ПРЕДЫДУЩИХ ставок
+    строки, по порядку, — «each tier» отсылает к ним. Не сошлось число — не
+    сопоставляется ничего (выдумывать пары хуже, чем оставить без разрешения).
+    «За что» у сумм списка общее: его называет последняя («per second»).
+    """
+    if not ставки or not re.search(r"\brespectively\b", кусок, re.I):
+        return ставки
+    последняя_сумма = list(_AMOUNT.finditer(кусок))
+    хвост = кусок[последняя_сумма[-1].end() :] if последняя_сумма else ""
+    хвост = re.split(r"\brespectively\b", хвост, maxsplit=1, flags=re.I)[0]
+    разрешения: list[tuple[int, ...]] = [(р,) for р in _разрешения(хвост)]
+    if not разрешения:
+        с_кадром = [r.resolutions for r in прежние if r.resolutions]
+        разрешения = с_кадром[-len(ставки) :] if len(с_кадром) >= len(ставки) else []
+    if len(разрешения) != len(ставки):
+        return ставки
+    за = next((r.per for r in reversed(ставки) if r.per), "")
+    return [
+        Rate(**{**r.__dict__, "resolutions": разрешения[i], "per": r.per or за})
+        for i, r in enumerate(ставки)
+    ]
 
 
 @dataclass(frozen=True)
