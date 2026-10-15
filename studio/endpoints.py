@@ -244,9 +244,6 @@ PIPELINE_FUNCTIONS: dict[str, tuple[str, ...]] = {
 EVIDENCE_PRICE_UNIT = "price-unit"
 PRICE_UNIT_FUNCTIONS: tuple[tuple[str, tuple[str, ...]], ...] = (
     (r"^price_per_image(?:_usd)?(?:_via_|$)", (T2I,)),
-    # «за 1000 знаков» — продаётся синтез речи из текста (`eleven_v4`,
-    # `yandex-speechkit`): знаки на входе, звук на выходе.
-    (r"^price_per_1000_chars(?:_usd)?(?:_via_|$)", (TTS,)),
 )
 
 #: Описательные атрибуты, чьи значения — слова вендора или площадки о том, ЧТО

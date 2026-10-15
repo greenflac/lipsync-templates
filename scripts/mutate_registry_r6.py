@@ -107,8 +107,6 @@ MUTANTS: tuple[tuple[str, str, str, str], ...] = (
     (EP, "        r\"|audio-driven\",", "        r\"\",", "audio-driven не аватар"),
     (EP, "|talking-?heads?|talking-?videos?|", "|talking-?heads?|", "«talking video» не аватар"),
     (EP, "|lipsync|latentsync\", (LIPSYNC,)),", "|lipsync\", (LIPSYNC,)),", "latentsync не липсинк"),
-    (EP, '    (r"^price_per_1000_chars(?:_usd)?(?:_via_|$)", (TTS,)),', "", "цена за знаки не канал речи"),
-    (EP, '    (r"^price_per_1000_chars(?:_usd)?(?:_via_|$)", (TTS,)),', '    (r"^price_per_1000_chars(?:_usd)?(?:_via_|$)", (TTS, MUSIC)),', "цена за знаки — ещё и музыка"),
 )
 
 

@@ -73,11 +73,11 @@
  },
  {
   "function": "tts",
-  "orderable": 70,
-  "priced": 15,
-  "priced_pct": 21.4,
+  "orderable": 68,
+  "priced": 13,
+  "priced_pct": 19.1,
   "with_run_length": 1,
-  "run_length_pct": 1.4,
+  "run_length_pct": 1.5,
   "video": false
  },
  {
