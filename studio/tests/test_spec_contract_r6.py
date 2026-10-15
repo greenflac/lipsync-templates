@@ -480,6 +480,18 @@ class ПланПоSpec(unittest.TestCase):
         self.assertEqual(["озвучка"], шаги(итог))
         self.assertTrue(any("kk" in д and "UNMEASURED" in д for д in итог["understood_as"]["assumptions"]))
 
+    def test_assumed_frame_adds_no_upscale_a_named_one_does(self) -> None:
+        """Кадр-допущение (1080p, не названный) ранжирует, но платного апскейла
+        не дописывает; названный кадр выше записанного у модели — дописывает."""
+        база = [*БАЗА, факт("x-i2v", "max_resolution", "720p")]
+        spec = {"task": "animate", "inputs": свой("image"), "outputs": ["video"], "duration_s": 5}
+
+        def шаги_по(с: dict) -> list[str]:
+            return шаги(pn.plan("x", facts=база, today=СЕГОДНЯ, full=True, spec=с, spec_only=True))
+
+        self.assertEqual(["оживление"], шаги_по(spec))
+        self.assertEqual(["оживление", "апскейл"], шаги_по({**spec, "resolution": "1080p"}))
+
     def test_wide_aspect_plans(self) -> None:
         итог = план(
             {"task": "generate", "inputs": [], "outputs": ["video", "sfx"], "duration_s": 45, "aspect": "2.39:1", "audio": "native"}
