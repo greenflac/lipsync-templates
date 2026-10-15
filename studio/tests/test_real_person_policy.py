@@ -40,6 +40,21 @@ def исход(текст: str, люди: object = None) -> str:
     "20 секунд, его голосом"
 )
 CEO = "Our CEO, she consented, says welcome to new employees, 30s talking head lipsync"
+#: Решающие поля spec для брифов выше — как их заполнила бы вызывающая модель.
+АВАТАР_CEO = {
+    "task": "avatar",
+    "inputs": [],
+    "outputs": ["video", "speech"],
+    "duration_s": 30,
+    "languages": ["en"],
+}
+ПЕСНЯ_ГОЛОСОМ = {
+    "task": "avatar",
+    "inputs": [],
+    "outputs": ["video", "speech"],
+    "duration_s": 15,
+    "languages": ["en"],
+}
 
 #: (бриф, spec.people, исход). Со `spec.people` — главный путь.
 СО_SPEC: tuple[tuple[str, object, str], ...] = (
@@ -327,8 +342,11 @@ class План(unittest.TestCase):
     def setUpClass(cls) -> None:
         os.environ["STUDIO_NO_JOURNAL"] = "1"
 
-    def _план(self, бриф: str, люди: object = None) -> dict:
-        spec = None if люди is None else {"people": люди}
+    def _план(self, бриф: str, люди: object = None, работа: dict | None = None) -> dict:
+        """С 6-го круга план строится только по полной spec: `работа` — её
+        решающие поля (без них отказ политики приходит раньше контракта, а
+        вопрос/план — только когда работа названа)."""
+        spec = None if люди is None else {**(работа or {}), "people": люди}
         return json.loads(server.plan_pipeline(бриф, spec=spec))
 
     def test_находки_валидатора_отказ_со_spec(self) -> None:
@@ -351,7 +369,7 @@ class План(unittest.TestCase):
         self.assertIn("заявление от имени реального публичного человека", итог["summary"])
 
     def test_ceo_с_согласием_план(self) -> None:
-        итог = self._план(CEO, [_ч("our CEO", public=False, consent="stated")])
+        итог = self._план(CEO, [_ч("our CEO", public=False, consent="stated")], АВАТАР_CEO)
         self.assertNotIn(итог["outcome"], ("fail",))
         self.assertNotIn((итог.get("question") or {}).get("axis"), ("согласие_на_образ", "люди_в_заказе"))
         self.assertEqual(["our CEO"], итог["people_policy"]["consent_recorded"])
@@ -359,7 +377,9 @@ class План(unittest.TestCase):
         self.assertTrue(итог["steps"])
 
     def test_вопрос_о_согласии_со_spec(self) -> None:
-        итог = self._план("Make Taylor Swift sing a lullaby for my daughter, 15 seconds", [_ч("Taylor Swift")])
+        итог = self._план(
+            "Make Taylor Swift sing a lullaby for my daughter, 15 seconds", [_ч("Taylor Swift")], ПЕСНЯ_ГОЛОСОМ
+        )
         self.assertEqual(("could not measure", "согласие_на_образ"), (итог["outcome"], итог["question"]["axis"]))
         self.assertTrue(итог["summary"].startswith("QUESTION: the order uses the voice and likeness of a real person (Taylor Swift)"))
 

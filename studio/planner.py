@@ -6560,6 +6560,76 @@ REGISTRY_UNCLASSIFIED_NOTE = "реестр: работа модели не ус�
 REGISTRY_SHOWN = 3
 
 
+#: Правка, которой ждёт шаг `правка_видео`, когда `spec.edit` не назван:
+#: правка ПО ИНСТРУКЦИИ (замени / убери / поправь словами) — она покрывает
+#: работу «video-edit» шире всех, а перерисовка и перекадровка — частные.
+EDIT_DEFAULT_INTENTS: tuple[str, ...] = (ep.EDIT_REPLACE_OBJECT,)
+
+EDIT_NOT_AN_EDIT_NOTE = (
+    "реестр: эндпоинт делает НОВОЕ видео (продление / по референсу / по движению / черновик), "
+    "а шагу нужна правка вашего ролика"
+)
+
+
+def отбор_правки(
+    op: "Operation",
+    по_модели: dict[str, list],
+    написание: Mapping[str, str],
+    реестр: "ep.Registry",
+    названы: Sequence[str],
+) -> dict[str, Any]:
+    """Шаг `правка_видео`: оставить только эндпоинты, которые ДЕЛАЮТ названную правку.
+
+    Интеграция шестого круга (валидатор: «замена неба» выбрала продление
+    `ltx-2.3-extend`, «смена кадра» — `wan-3.0-r2v`). Что эндпоинт правит —
+    по звеньям его идентификатора (`ep.edit_intents`); продление, референс и
+    перенос движения (`ep.not_an_edit`) правкой не бывают никогда. Правка,
+    которой не делает НИ ОДИН эндпоинт с таким свидетельством, называется
+    «не измерено» (`not_measured`), и кандидатов у шага нет — подставлять
+    чужую работу на её место нельзя. Удаляет из `по_модели` на месте.
+    """
+    if op.name != "правка_видео":
+        return {}
+    нужно = tuple(названы) or EDIT_DEFAULT_INTENTS
+    отсеяно_не_правка: dict[str, str] = {}
+    отсеяно_не_та: dict[str, str] = {}
+    for ключ in list(по_модели):
+        узел = реестр.by_key.get(ключ)
+        что: "ep.Endpoint | str" = узел if узел is not None else написание.get(ключ, ключ)
+        if ep.not_an_edit(что):
+            отсеяно_не_правка[написание.get(ключ, ключ)] = EDIT_NOT_AN_EDIT_NOTE
+            del по_модели[ключ]
+            continue
+        умеет = ep.edit_intents(что)
+        if not set(нужно) <= умеет:
+            отсеяно_не_та[написание.get(ключ, ключ)] = (
+                f"правка: умеет {', '.join(sorted(умеет)) or 'не названо'}, а нужно {', '.join(нужно)}"
+            )
+            del по_модели[ключ]
+    # Кто из реестра делает каждую названную правку (по всей работе, не только
+    # по найденным словами): ноль — правка не измерена, и это печатается.
+    узлы = [у for у in реестр.orderable_for(ep.V2V_EDIT) if not ep.not_an_edit(у)]
+    покрытие = {п: sorted(у.model for у in узлы if п in ep.edit_intents(у)) for п in нужно}
+    не_измерено = [п for п, кто in покрытие.items() if not кто]
+    if не_измерено:
+        for ключ in list(по_модели):
+            отсеяно_не_та.setdefault(
+                написание.get(ключ, ключ), f"правка {', '.join(не_измерено)}: ни один эндпоинт её не называет"
+            )
+            del по_модели[ключ]
+    return {
+        "asked": list(нужно),
+        "asked_from": "spec.edit" if названы else "default (spec.edit not named): edit by instruction",
+        "endpoints": {п: кто[:REGISTRY_SHOWN] for п, кто in покрытие.items()},
+        "endpoints_count": {п: len(кто) for п, кто in покрытие.items()},
+        "not_measured": не_измерено,
+        "not_an_edit_count": len(отсеяно_не_правка),
+        "not_an_edit": list(отсеяно_не_правка)[:REGISTRY_SHOWN],
+        "other_edit_count": len(отсеяно_не_та),
+        "other_edit": [{"model": м, "why": п} for м, п in list(отсеяно_не_та.items())[:REGISTRY_SHOWN]],
+    }
+
+
 def реестр_шага(
     работы: Sequence[str],
     запасная_нота: str,
@@ -6567,11 +6637,13 @@ def реестр_шага(
     чужая: Mapping[str, str],
     неустановленных: int,
     отсеяны_без_работы: Mapping[str, str] | None = None,
+    правка: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Что реестр сделал на шаге — счётом и первыми примерами (для строки шага)."""
     if not работы:
         return {}
     return {
+        **({"edit": dict(правка)} if правка else {}),
         "function": list(работы),
         "fallback": запасная_нота,
         "not_orderable_count": len(не_заказываются),
@@ -6602,6 +6674,7 @@ def candidates_for(
     brief_frame: tuple[int, int] | None = None,
     hard: "hn.Hard | None" = None,
     stated_conditions: Sequence[str] = (),
+    edit_intents: Sequence[str] = (),
 ) -> "Кандидаты":
     """Кандидаты на операцию: модели, о которых база говорит СЛОВАМИ ОПЕРАЦИИ.
 
@@ -6769,6 +6842,8 @@ def candidates_for(
                 слова[id(f)] = (
                     f"{REGISTRY_MATCH_LABEL}: {'/'.join(set(работы) & set(узел.functions))} ({узел.evidence})",
                 )
+
+    правка = отбор_правки(op, по_модели, написание, реестр, edit_intents) if работы else {}
 
     wanted = wanted if wanted is not None else dur.Запрос(None, "длительность не спрашивали")
     найдены: list[Candidate] = []
@@ -6974,6 +7049,7 @@ def candidates_for(
             чужая_по_реестру,
             len(неустановленные),
             неустановленные_отсеяны,
+            правка,
         ),
     )
 
@@ -7509,6 +7585,12 @@ PER_LANGUAGE_STEPS: frozenset[str] = SPEECH_STEPS | {"клонирование_�
 #: длиной: расшифровка длинного интервью перед нарезкой шортсов стоит по длине
 #: интервью (`brief_spec.source_seconds`), а не по сумме шортсов.
 ON_SOURCE_STEPS: frozenset[str] = frozenset({"расшифровка"})
+
+#: Шаги, которые правят ПРИНЕСЁННЫЙ ролик в его собственном кадре: перед
+#: апскейлом их цена считается по кадру исходника (`bs.source_frame`).
+SOURCE_EDIT_STEPS: frozenset[str] = frozenset(
+    {"правка_видео", "реставрация", "удаление_фона_видео", "интерполяция_кадров"}
+)
 
 #: Признак записи о запуске на Apple silicon (MPS, MLX, Metal).
 APPLE_RUNTIME = re.compile(r"\bmps\b|\bmlx\b|apple silicon|\bmetal\b|\bcoreml\b", re.I)
@@ -10564,6 +10646,24 @@ def plan(
         else None
     )
 
+    # ШАГ НА ИСХОДНИКЕ ДО АПСКЕЙЛА (интеграция круга 6, w07): правка своего
+    # ролика идёт в кадре ИСХОДНИКА, а заказанный кадр даёт апскейл после неё.
+    # Цена такого шага — по кадру исходника (spec.inputs[].resolution), не
+    # назван — по кадру-допущению (`bs.DEFAULT_VIDEO_RESOLUTION`); иначе правка
+    # 2.7K-ролика считалась по 4K и стоила вдвое (53.97 usd вместо 26.75).
+    имена_по_порядку = [оп.name for оп in операции]
+    до_апскейла = (
+        frozenset(имена_по_порядку[: имена_по_порядку.index("апскейл")]) & SOURCE_EDIT_STEPS
+        if "апскейл" in имена_по_порядку and "video" in понято.inputs
+        else frozenset()
+    )
+    кадр_исходника = bs.source_frame(понято) or bs.frame(
+        replace(понято, resolution=bs.DEFAULT_VIDEO_RESOLUTION)
+    )
+
+    def кадр_цены_шага(op: Operation) -> tuple[int, int] | None:
+        return кадр_исходника if op.name in до_апскейла else кадр_цены
+
     def языков_на_шаг(op: Operation) -> int:
         """Сколько раз шаг делается по языкам: только речевые шаги и только языки из spec."""
         if op.name in PER_LANGUAGE_STEPS and понято.source.get("languages") == bs.SOURCE_SPEC:
@@ -10585,7 +10685,7 @@ def plan(
             нужда_шага(
                 op,
                 длительность_исходника if (op.name in ON_SOURCE_STEPS and длительность_исходника) else длительность,
-                кадр_цены,
+                кадр_цены_шага(op),
                 кадров,
                 fps=понято.fps or fps_из_брифа(brief),
                 клипов=клипов,
@@ -10597,6 +10697,7 @@ def plan(
             заказанный_кадр or кадр,
             жёсткие,
             stated_conditions=заявленные_условия,
+            edit_intents=понято.edit,
         )
 
     # СКОЛЬКО ШОТОВ (2026-10-15, четвёртый круг). Явное число; «each» над N;

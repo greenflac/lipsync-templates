@@ -368,8 +368,21 @@ class ПлановыйКадр(unittest.TestCase):
 
         from studio.mcp import server
 
-        план = json.loads(server.plan_pipeline("a 10 second video of a red fox running through snow, from scratch"))
-        self.assertIn(pn.ASSUMED_PRICE_FRAME, план["understood_as"]["assumptions"])
+        план = json.loads(
+            server.plan_pipeline(
+                "a 10 second video of a red fox running through snow, from scratch",
+                spec={"task": "generate", "inputs": [], "outputs": ["video"], "duration_s": 10},
+            )
+        )
+        # С 6-го круга кадр не назван в ПОЛНОЙ spec — допущение 1080p делает
+        # сама спецификация (`bs.DEFAULT_VIDEO_RESOLUTION`), и тариф идёт по нему.
+        допущения = план["understood_as"]["assumptions"]
+        self.assertTrue(
+            any("1080p assumed" in д for д in допущения) or pn.ASSUMED_PRICE_FRAME in допущения, допущения
+        )
+        смета = план["pipeline_price"]["смета"]["steps"]
+        self.assertTrue(смета)
+        self.assertEqual([1080], [ш["options"][0]["resolution"] for ш in смета])
 
 
 class Ничья(unittest.TestCase):

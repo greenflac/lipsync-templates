@@ -33,6 +33,7 @@ import re
 from dataclasses import dataclass, field, replace
 from typing import Any, Mapping
 
+from studio import endpoints as ep
 from studio import hardneed as hn
 from studio import pipeline as pl
 
@@ -118,6 +119,8 @@ SPEC_FIELDS: tuple[str, ...] = (
     "people",
     "conditions",
     "open_weights",
+    # Интеграция шестого круга: ЧТО правится в `video-edit` (`endpoints.EDIT_INTENTS`).
+    "edit",
 )
 
 SOURCE_SPEC = "spec"
@@ -473,6 +476,9 @@ class Spec:
     conditions: tuple[str, ...] = ()
     #: Требуются открытые веса (без своего запуска тоже).
     open_weights: bool | None = None
+    #: Что правится в `video-edit`: reframe | replace-object | remove-object |
+    #: replace-sky | stabilise | relight | restyle (`endpoints.EDIT_INTENTS`).
+    edit: tuple[str, ...] = ()
 
     def has(self, имя: str) -> bool:
         значение = getattr(self, имя)
@@ -945,6 +951,14 @@ def parse_spec(raw: Mapping[str, Any] | None) -> tuple[Spec, list[str]]:
         поля["conditions"] = tuple(
             dict.fromkeys(str(у).strip() for у in _список(raw["conditions"]) if str(у).strip())
         )
+    if raw.get("edit") is not None:
+        правки = [str(п).strip().lower() for п in _список(raw["edit"]) if str(п).strip()]
+        чужие = [п for п in правки if п not in ep.EDIT_INTENTS]
+        if чужие:
+            ошибки.append(
+                f"spec.edit: {', '.join(map(repr, чужие))} — allowed: {', '.join(ep.EDIT_INTENTS)}"
+            )
+        поля["edit"] = tuple(dict.fromkeys(п for п in правки if п in ep.EDIT_INTENTS))
     if raw.get("open_weights") is not None:
         if not isinstance(raw["open_weights"], bool):
             ошибки.append(f"spec.open_weights={raw['open_weights']!r}: must be true or false")
@@ -1866,6 +1880,22 @@ def source_seconds(spec: Spec) -> float | None:
         if з.get("kind") in ("video", "audio") and з.get("duration_s")
     ]
     return max(длины) if длины else None
+
+
+def source_frame(spec: Spec) -> tuple[int, int] | None:
+    """Кадр принесённого видео (самый крупный вход video с `resolution`), или None.
+
+    Нужен цене шага, который работает на исходнике ДО апскейла: правка 2.7K
+    ролика считается по кадру 2.7K, а не по 4K, до которого его потом
+    поднимет апскейл (круг 6, w07: $53.97 за правку по кадру 4K).
+    """
+    кадры = [
+        frame(replace(spec, resolution=str(з["resolution"])))
+        for з in spec.input_items
+        if з.get("kind") == "video" and з.get("resolution")
+    ]
+    кадры = [к for к in кадры if к]
+    return max(кадры, key=lambda к: к[0] * к[1]) if кадры else None
 
 
 #: Работы, которые ведёт ДОРОЖКА заказчика: принесённый звук и есть длина

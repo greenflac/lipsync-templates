@@ -1060,6 +1060,79 @@ BROAD_JOB_WORDS: dict[str, tuple[str, ...]] = {
     "restore-colorize": (RESTORE, COLORIZE),
 }
 
+# --- ПРАВКА ВИДЕО: что именно правится (интеграция шестого круга) -------------
+#
+# Работа `v2v-edit` в реестре широкая: в ней и правка по инструкции
+# (`kling-video/o3/.../video-to-video/edit`), и продление ролика (`extend-video`),
+# и генерация по референсу (`.../video-to-video/reference`), и перенос движения
+# (`motion-control`). Валидатор шестого круга: «замена неба» выбрала продление,
+# «смена кадра» — r2v. Ниже — что правка делает, по ЗВЕНЬЯМ идентификатора
+# (то же свидетельство, что и у работы, — `EVIDENCE_ID`/категория площадки).
+
+EDIT_REFRAME = "reframe"
+EDIT_REPLACE_OBJECT = "replace-object"
+EDIT_REMOVE_OBJECT = "remove-object"
+EDIT_REPLACE_SKY = "replace-sky"
+EDIT_STABILISE = "stabilise"
+EDIT_RELIGHT = "relight"
+EDIT_RESTYLE = "restyle"
+
+#: Допустимые значения `spec.edit`. КОНСТАНТА-РЕШЕНИЕ.
+EDIT_INTENTS: tuple[str, ...] = (
+    EDIT_REFRAME,
+    EDIT_REPLACE_OBJECT,
+    EDIT_REMOVE_OBJECT,
+    EDIT_REPLACE_SKY,
+    EDIT_STABILISE,
+    EDIT_RELIGHT,
+    EDIT_RESTYLE,
+)
+
+#: Звено ПРАВКИ ПО ИНСТРУКЦИИ: модель правит кадр заказчика словами
+#: («замени небо», «убери машину») — она и отвечает за замену и удаление.
+_ПРАВКА_ПО_ИНСТРУКЦИИ = r"edit|edit-video|video-edit|v2v-edit|inpaint"
+
+#: Под-работа -> звенья идентификатора, которые её называют.
+EDIT_RULES: dict[str, str] = {
+    EDIT_REFRAME: r"reframe|outpaint",
+    EDIT_REPLACE_OBJECT: _ПРАВКА_ПО_ИНСТРУКЦИИ,
+    EDIT_REMOVE_OBJECT: _ПРАВКА_ПО_ИНСТРУКЦИИ + r"|clean-plate|object-removal|remove-object",
+    EDIT_REPLACE_SKY: _ПРАВКА_ПО_ИНСТРУКЦИИ + r"|sky-replace\w*|replace-sky",
+    EDIT_STABILISE: r"stabili[sz]\w*",
+    EDIT_RELIGHT: r"relight\w*|day-to-night|hdr",
+    EDIT_RESTYLE: r"recast|render-to-real|restyle|style-transfer",
+}
+
+#: Звенья, при которых эндпоинт работы `v2v-edit` — НЕ правка ролика
+#: заказчика: он делает новое видео (продление, по референсу, по движению,
+#: из 3D, черновик). На шаге правки он кандидатом не бывает.
+NOT_AN_EDIT = r"extend|extend-video|reference|motion-control|3d-to-video|draft|insert-video"
+
+
+def edit_intents(endpoint: "Endpoint | str") -> frozenset[str]:
+    """Какие правки называет идентификатор эндпоинта (`EDIT_INTENTS`); пусто — не названо."""
+    if isinstance(endpoint, str):
+        тексты: tuple[str, ...] = (endpoint,)
+    else:
+        тексты = (endpoint.model, *endpoint.ids)
+    итог: set[str] = set()
+    for т in тексты:
+        звенья = _звенья(т)
+        итог.update(п for п, образец in EDIT_RULES.items() if _звено(образец, звенья))
+    # Голое «video-to-video» без названной правки (`ltx-2.3-22b/video-to-video`,
+    # `hunyuan-video/video-to-video`) — перерисовка всего ролика по подсказке.
+    if not итог and not any(_звено(NOT_AN_EDIT, _звенья(т)) for т in тексты):
+        if any(_звено(r"v2v|video-to-video", _звенья(т)) for т in тексты):
+            итог.add(EDIT_RESTYLE)
+    return frozenset(итог)
+
+
+def not_an_edit(endpoint: "Endpoint | str") -> bool:
+    """Эндпоинт делает НОВОЕ видео (продление, референс, движение), а не правит данное."""
+    тексты = (endpoint,) if isinstance(endpoint, str) else (endpoint.model, *endpoint.ids)
+    return any(_звено(NOT_AN_EDIT, _звенья(т)) for т in тексты)
+
+
 #: Короче этого — фраза ловится только целым словом (`tts`, `i2v`, `dub`).
 JOB_WORD_STEM_MIN = 5
 
