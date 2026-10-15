@@ -1511,9 +1511,11 @@ ASSEMBLY_REASONS: dict[str, tuple[str, str]] = {
     ),
     NOTE_STABILISE: (
         "стабилизация: ffmpeg vidstab (vidstabdetect + vidstabtransform) или Gyroflow по данным гироскопа — "
-        "0 usd; генеративной модели стабилизации с записанным свидетельством в реестре нет",
-        "stabilisation: ffmpeg vidstab (vidstabdetect + vidstabtransform) or Gyroflow from gyro data — 0 usd; "
-        "no generative stabilisation endpoint with recorded evidence is in the registry",
+        "0 usd, первой, на исходнике до шагов-моделей; генеративной модели стабилизации с записанным "
+        "свидетельством в реестре нет",
+        "stabilisation: ffmpeg vidstab (vidstabdetect + vidstabtransform) or Gyroflow from gyro data — 0 usd, "
+        "first, on the source before any model step; no generative stabilisation endpoint with recorded "
+        "evidence is in the registry",
     ),
     NOTE_VISUALISER_SYNC: (
         "реакция на звук — при сборке: доли и атаки ВАШЕГО трека (librosa / aubio) ведут склейки и пульсацию, "

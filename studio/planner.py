@@ -5468,6 +5468,9 @@ def смета_ролика(
     if потолок <= 0:
         if итого > 0:
             цена["outcome"] = "не годно"
+            # СЕДЬМОЙ КРУГ (w33): без `over_ceiling` исход плана не узнавал о
+            # превышении, и «бюджет 0» печатал `pass` рядом с ценой 0.02 usd.
+            цена["over_ceiling"] = {"least_known_usd": round(минимум, 4), "ceiling_usd": потолок}
             цена["note"] += (
                 f" — ПОТОЛОК {потолок:g}: работа столько не стоит, "
                 f"дешевле всего выходит {минимум:.2f} {pl.BUDGET_UNIT}"
@@ -8499,6 +8502,100 @@ def решить_апскейл(
     return "", False, ""
 
 
+#: Атрибуты, где база записывает частоту кадров выхода модели.
+FPS_ATTRIBUTES: tuple[str, ...] = ("fps", "frame_rate")
+#: Частота числом: «24 fps», «30fps fixed», «25 or 50». Скобки отброшены до
+#: поиска: «24 fps (… contradicts the 30/60 fps in blogs)» — это 24.
+_ЧАСТОТА = re.compile(r"(?<![\d.])(\d{2,3})(?![\d.])")
+#: Частоты вне этого диапазона — не частота кадров (секунды, разрешения).
+FPS_RANGE: tuple[int, int] = (8, 240)
+
+
+def _частоты_строки(значение: str) -> list[str]:
+    """Числа частоты в строке: при слове fps — только стоящие при нём («24 / 30 fps»), иначе все."""
+    низ = re.sub(r"\([^)]*\)", " ", значение.lower())
+    if "fps" not in низ:
+        return _ЧАСТОТА.findall(низ)
+    return [ч for м in re.finditer(r"((?:\d{2,3}\s*(?:or|/|,)\s*)*\d{2,3})\s*fps", низ) for ч in _ЧАСТОТА.findall(м.group(1))]
+
+
+def частота_записана(модель: str, facts: Sequence[Fact]) -> float | None:
+    """Наибольшая ЗАПИСАННАЯ частота кадров выхода модели (своя строка, иначе семья) или None."""
+    по_имени: dict[str, list[Fact]] = defaultdict(list)
+    for f in facts:
+        по_имени[fold(f.model)].append(f)
+    известные = sorted({f.model for f in facts})
+    for строки in (pl.facts_for(модель, facts), *(с for _, с in _семья_строк(модель, по_имени, известные))):
+        частоты = [
+            int(ч)
+            for f in строки
+            if f.attribute in FPS_ATTRIBUTES
+            for ч in _частоты_строки(str(f.value))
+            if FPS_RANGE[0] <= int(ч) <= FPS_RANGE[1]
+        ]
+        if частоты:
+            return float(max(частоты))
+    return None
+
+
+def решить_частоту(
+    выбор: Sequence[tuple[Operation, Candidate | None]],
+    просят: float | None,
+    facts: Sequence[Fact],
+    англ: bool,
+) -> tuple[str, str]:
+    """Нужна ли интерполяция кадров до заказанной частоты: (почему шаг, нота).
+
+    Седьмой круг (n08: «120 fps» отдавался моделью с записанными 24 fps без
+    слова). Смотрит шаги, отдающие ВИДЕО, с конца; шаг над готовым видео
+    (апскейл, правка) частоту проносит — решает шаг до него. Записано ниже
+    заказа — шаг интерполяции (RIFE / FILM / AMT). Не записано — нота, не шаг:
+    молчание базы не повод платить.
+    """
+    if not просят:
+        return "", ""
+    видео = [(op, к) for op, к in выбор if any(OUTPUT_KINDS.get(а) == "видео" for а in op.produces)]
+    for i in range(len(видео) - 1, -1, -1):
+        op, кандидат = видео[i]
+        if кандидат is None:
+            return "", ""
+        записано = частота_записана(кандидат.model, facts)
+        if записано is not None:
+            if просят <= записано:
+                return "", ""
+            return (
+                (
+                    f"{просят:g} fps asked, and {кандидат.model} ({_имя_шага(op.name, True)}) records "
+                    f"{записано:g} fps at most — frame interpolation (RIFE / FILM / AMT) lifts it"
+                    if англ
+                    else f"заказано {просят:g} fps, а у {кандидат.model} (шаг {op.name}) записано не больше "
+                    f"{записано:g} fps — частоту поднимает интерполяция кадров (RIFE / FILM / AMT)"
+                ),
+                "",
+            )
+        if ARTEFACT_VIDEO in op.requires and i > 0:
+            continue
+        if ARTEFACT_VIDEO in op.requires:
+            return "", (
+                f"{просят:g} fps asked: the frame rate of YOUR video is not stated and the base records none for "
+                f"{кандидат.model} — if the source is below {просят:g} fps, add frame interpolation (RIFE / FILM)"
+                if англ
+                else f"заказано {просят:g} fps: частота ВАШЕГО видео не названа, и о {кандидат.model} база молчит — "
+                f"если исходник ниже {просят:g} fps, нужна интерполяция кадров (RIFE / FILM)"
+            )
+        break
+    if not видео:
+        return "", ""
+    op, кандидат = видео[-1]
+    return "", (
+        f"{просят:g} fps asked: the base records no frame rate for {кандидат.model if кандидат else op.name} — "
+        "if it outputs 24–30 fps, a frame-interpolation step (RIFE / FILM) is needed; not added on silence"
+        if англ
+        else f"заказано {просят:g} fps: частота выхода {кандидат.model if кандидат else op.name} в базе не "
+        "записана — если она 24–30 fps, нужен шаг интерполяции (RIFE / FILM); по молчанию не дописан"
+    )
+
+
 def нужен_апскейл(
     выбор: Sequence[tuple[Operation, Candidate | None]],
     просят: tuple[int, int] | None,
@@ -9865,6 +9962,8 @@ def сводка(итог: dict) -> str:
                 300,
             )
         )
+    if (итог.get("frame_rate") or {}).get("note"):
+        строки.append(("FRAME RATE: " if англ else "ЧАСТОТА КАДРОВ: ") + _коротко(итог["frame_rate"]["note"], 300))
     строки.append(("PRICE: " if англ else "ЦЕНА: ") + _цена_словами(итог, англ))
     строка_требований = _требования_словами(итог, англ)
     if строка_требований:
@@ -11023,6 +11122,8 @@ def plan(
     просят_кадр = None if понято.source.get("resolution") == bs.SOURCE_DEFAULT else заказанный_кадр
     условные: set[str] = set()
     пронесено = [""]
+    частота = [""]
+    fps_заказано = float(понято.fps) if понято.fps else fps_из_брифа(brief)
 
     def _собрать() -> None:
         выбор.clear()
@@ -11045,6 +11146,13 @@ def plan(
                 if условно:
                     условные.add(имя_апскейла)
                     строки_шагов[-1]["conditional"] = True
+        # ЧАСТОТА КАДРОВ (седьмой круг): заказано больше записанного у модели —
+        # шаг интерполяции; не записано — нота `frame_rate`.
+        частота[0] = ""
+        if not any(op.name == "интерполяция_кадров" for op, _ in выбор):
+            почему_частота, частота[0] = решить_частоту(выбор, fps_заказано, индекс.facts, по_английски)
+            if почему_частота:
+                _шаг(next(оп for оп in OPERATIONS if оп.name == "интерполяция_кадров"), почему_частота)
 
     _собрать()
 
@@ -11338,7 +11446,7 @@ def plan(
         длительность,
         бюджет,
     )
-    строка_бюджета = _budget_row(бюджет)
+    строка_бюджета = сверить_бюджет(_budget_row(бюджет), бюджет, цена_пайплайна)
     if бюджет.known and not пошаговый:
         строка_бюджета["note"] += (
             f". Валидатору потолок НЕ передан: его поле — бюджет ШАГА "
@@ -11395,6 +11503,7 @@ def plan(
         "steps": строки_шагов,
         "assembly": сборка,
         "resolution_carry": пронесено[0],
+        "frame_rate": {"asked": fps_заказано, "note": частота[0]} if fps_заказано else None,
         "native_audio_variant": со_звуком,
         "classes": list(отчёт["classes"]),
         "validator": отчёт,
@@ -11595,6 +11704,7 @@ def сжать(ответ: dict) -> dict:
         "steps": шаги,
         "assembly": ответ.get("assembly"),
         "resolution_carry": ответ.get("resolution_carry"),
+        "frame_rate": ответ.get("frame_rate"),
         "native_audio_variant": вариант,
         "classes": ответ.get("classes"),
         "validator": {
@@ -11628,6 +11738,29 @@ def сжать(ответ: dict) -> dict:
         "full": False,
         "omitted": COMPACT_OMITTED,
     }
+
+
+def сверить_бюджет(строка: dict, бюджет: "Budget", цена: Mapping[str, Any]) -> dict:
+    """Исход строки бюджета = вердикт сметы по потолку (седьмой круг, n05).
+
+    `Budget.outcome` говорит, что потолок РАЗОБРАН; строка же читается как «в
+    бюджет укладывается». n05 печатал `budget: pass` рядом с `fail
+    дороже_потолка` (508 usd против 5). Теперь: превышение — `fail`; смета
+    сравнена и годна — `pass`; не сравнено — третий исход.
+    """
+    if not бюджет.known or бюджет.amount is None:
+        return строка
+    out = dict(строка)
+    if цена.get("over_ceiling"):
+        out["outcome"] = FAIL
+        out["verdict"] = "over the ceiling"
+    elif цена.get("outcome") == pricing.ГОДНО:
+        out["outcome"] = PASS
+        out["verdict"] = "fits the ceiling"
+    else:
+        out["outcome"] = UNMEASURED
+        out["verdict"] = "not compared: the plan price is incomplete"
+    return out
 
 
 def _budget_row(b: Budget) -> dict:
