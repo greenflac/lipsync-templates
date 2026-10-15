@@ -9632,8 +9632,17 @@ def сводка(итог: dict) -> str:
     for i, шаг in enumerate(шаги, 1):
         выбран = шаг.get("chosen") or {}
         имя = _имя_шага(шаг.get("step"), англ)
+        не_измерено = (шаг.get("edit") or {}).get("not_measured") or []
         модель = выбран.get("model") or (
-            "NO CANDIDATE in the base" if англ else "КАНДИДАТА НЕТ в базе"
+            (
+                f"COULD NOT MEASURE: no endpoint in the registry names the edit {', '.join(не_измерено)}"
+                if англ
+                else f"НЕ ИЗМЕРЕНО: ни один эндпоинт реестра не называет правку {', '.join(не_измерено)}"
+            )
+            if не_измерено
+            else "NO CANDIDATE in the base"
+            if англ
+            else "КАНДИДАТА НЕТ в базе"
         )
         хвост = []
         if шаг.get("inferred"):
@@ -10818,6 +10827,11 @@ def plan(
                 # РЕЕСТР ЭНДПОИНТОВ (пятый круг): работа шага, запасная работа,
                 # кого реестр не пустил (узел семьи, другая работа) — счётом.
                 "registry": getattr(найдено_на_шаг[op.name], "реестр", {}),
+                **(
+                    {"edit": правка_шага}
+                    if (правка_шага := getattr(найдено_на_шаг[op.name], "реестр", {}).get("edit"))
+                    else {}
+                ),
                 "hard_excluded_count": len(отсеяны),
                 "hard_excluded": [
                     {"model": м, "why": п} for м, п in list(отсеяны.items())[:HARD_EXCLUDED_SHOWN]
@@ -11353,7 +11367,14 @@ def сжать(ответ: dict) -> dict:
                 "speakers_note": ш.get("speakers_note"),
                 **{
                     к: ш.get(к)
-                    for к in ("conditional", "budget_swap", "languages_multiplier", "language_support", "apple_silicon")
+                    for к in (
+                        "conditional",
+                        "budget_swap",
+                        "languages_multiplier",
+                        "language_support",
+                        "apple_silicon",
+                        "edit",
+                    )
                     if к in ш
                 },
                 "cheaper_same_rank": _кратко_кандидат(ш.get("cheaper_same_rank"), соседи=True),

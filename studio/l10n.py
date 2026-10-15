@@ -242,7 +242,7 @@ EN: tuple[tuple[str, str], ...] = (
      r"applicability was observed FOR THIS requirement and it is negative: \1 row(s) about where it breaks"),
     (r"применимость наблюдалась ПО ЭТОМУ требованию и она положительная: (\d+) строк\(и\)",
      r"applicability was observed FOR THIS requirement and it is positive: \1 row(s)"),
-    (r"вне языка шага отброшено: (\d+) строк\(и\) о языке (\w+), а шаг — о (\w+)",
+    (r"вне языка шага отброшено: (\d+) строк\(и\) о языке ([\w?]+(?:, [\w?]+)*), а шаг — о ([\w?]+(?:, [\w?]+)*)",
      r"dropped as outside the step's language: \1 row(s) about \2, while the step is about \3"),
     (r"вне языка шага отброшено: (\d+) строк\(и\) о языке (\w+)", r"dropped as outside the step's language: \1 row(s) about \2"),
     (r"вне языка шага отброшено", "dropped as outside the step's language"),
@@ -351,6 +351,8 @@ EN: tuple[tuple[str, str], ...] = (
     (r"нужного вида НЕ отдаёт", "does NOT produce the needed kind"),
     (r"выход не записан", "output not recorded"),
     (r"шагу нужен (\S+), модель отдаёт (\S+) ", r"the step needs \1, the model produces \2 "),
+    (r"шагу нужен ([\w]+(?:, [\w]+)*), а модель отдаёт ([\w]+(?:, [\w]+)*)",
+     r"the step needs \1, and the model produces \2"),
     (r"ролик ДЛИННЕЕ предела", "clip LONGER than the limit"),
     (r"длительность принимает", "duration accepted"),
     (r"предел длительности не записан", "duration limit not recorded"),
@@ -631,6 +633,18 @@ EN: tuple[tuple[str, str], ...] = (
     # --- круг 6: пометки маршрутов по spec (`brief_spec.NOTES_EN` — те же слова)
     (r"субтитры вжигает монтаж \(ffmpeg\) по расшифровке с таймингами — модели на это не нужно",
      "captions are burned in at assembly (ffmpeg) from the timed transcript — no model needed for that"),
+    (r"правка ГОТОВОГО видео \(стабилизация, рефрейм, замена неба, вырезка\): всё, что не правится, "
+     r"остаётся как было; новый ролик не генерируется",
+     "an edit of the FINISHED video (stabilise, reframe, sky replacement, cut-out): whatever is not "
+     "edited stays as it was; no new clip is generated"),
+    (r"\(длина вашего материала\)", "(the length of your material)"),
+    (r"\(весь ваш материал\)", "(all of your material)"),
+    (r"брифа нет — бюджета в нём тоже нет", "no brief — so no budget in it either"),
+    (r"брифа нет — длительности в нём тоже нет", "no brief — so no duration in it either"),
+    (r"потолок ([\d.]+) usd назван параметром вызова", r"a ceiling of \1 usd was named as a call parameter"),
+    (r"один и тот же персонаж во всех шотах — по референсу, без дрейфа лица и одежды",
+     "one and the same character in every shot — from the reference, no drift of face or clothes"),
+    (r"ни предела VRAM, ни числа параметров не записано", "neither a VRAM limit nor a parameter count is recorded"),
     (r"правка ВАШЕГО видео \(стабилизация, рефрейм, замена неба, вырезка\): нового ролика никто не генерирует",
      "an edit of YOUR video (stabilise, reframe, sky replacement, cut-out): no new clip is generated"),
     (r"референс персонажа делается один раз, и каждый шот строится по нему — персонаж не разъезжается",
@@ -839,6 +853,9 @@ EN_FRAGMENTS: tuple[tuple[str, str], ...] = (
     # Ключ сравнения кандидатов (`why_not`): поле-флаг печатается «да»/«нет».
     (r"\(да vs нет\)", "(yes vs no)"),
     (r"\(нет vs да\)", "(no vs yes)"),
+    (r"\(нет vs ", "(no vs "),
+    (r" vs нет\)", " vs no)"),
+    (r"\bимя эндпоинта \(", "endpoint name ("),
     (r"шагов выведено (\d+), из них без единого кандидата (\d+): модель по умолчанию не подставляется",
      r"steps derived \1, of them without a single candidate \2: no default model is substituted"),
     (r"о модели в базе (\d+) утверждений при пороге (\d+): опереть шаг не на что",
@@ -870,6 +887,16 @@ EN_FRAGMENTS: tuple[tuple[str, str], ...] = (
     (r"\bполной цены шага нет\b", "no full price for the step"),
     (r"\bцена шага записана\b", "the step's price is recorded"),
     (r"реестр: делает (.+?) \((\w+)\), а шагу нужна (.+)$", r"registry: does \1 (\2), the step needs \3"),
+    # --- интеграция шестого круга: что правит шаг «правка видео» (`spec.edit`)
+    (
+        r"реестр: эндпоинт делает НОВОЕ видео \(продление / по референсу / по движению / черновик\), "
+        r"а шагу нужна правка вашего ролика",
+        "registry: the endpoint makes a NEW video (extend / reference / motion / draft), "
+        "and the step needs an edit of your footage",
+    ),
+    (r"правка: умеет (.+?), а нужно (.+)$", r"edit: does \1, the step needs \2"),
+    (r"правка (.+?): ни один эндпоинт её не называет", r"edit \1: no endpoint names it"),
+    (r"\bне названо\b", "not named"),
     (r"\(прогон = 1 кадр\)", "(run = 1 image)"),
     (r"\(прогон = ([\d.]+) с\)", r"(run = \1 s)"),
     (r"usd за первые ([\d.]+) с", r"usd for the first \1 s"),
