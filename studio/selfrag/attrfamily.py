@@ -606,6 +606,10 @@ import re
             "retrieval_grounding",
             "embedding_types",
             "endpoint_purpose",
+            # Задача, объявленная автором весов на хабе (HF `pipeline_tag`:
+            # «text-to-image», «image-to-video») — шестой круг, канал работы
+            # реестра `studio/endpoints.py`. Отвечает на «что она делает».
+            "pipeline_tag",
         ),
         "подстроки": (),
         "кроме": (),

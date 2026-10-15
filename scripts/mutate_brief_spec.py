@@ -113,7 +113,7 @@ MUTANTS: tuple[tuple[str, str, str, str], ...] = (
     (PR, "            прогонов = need.shots * прогонов_на_шот", "            прогонов = прогонов_на_шот", "цена за один шот вместо всех"),
     # --- реестр эндпоинтов (пятый круг): работа из свидетельства, узел семьи,
     # прогоны, «самое дешёвое», новые работы маршрута
-    (EP, '    (r"lip-?sync(?:ing)?|lipsync", (LIPSYNC,)),\n', "", "липсинк в пути больше не работа"),
+    (EP, '    (r"lip-?sync(?:ing)?|lipsync|latentsync", (LIPSYNC,)),\n', "", "липсинк в пути больше не работа"),
     (EP, "    if работы:\n        yield _порядок(работы), EVIDENCE_ID", "    if False:\n        yield _порядок(работы), EVIDENCE_ID", "работа в пути не старше режима"),
     (EP, "AUDIO_DRIVEN: frozenset[str] = frozenset({LIPSYNC, AVATAR})", "AUDIO_DRIVEN: frozenset[str] = frozenset()", "обязательный звук не подпись работы"),
     (EP, "AUDIO_DRIVEN: frozenset[str] = frozenset({LIPSYNC, AVATAR})", "AUDIO_DRIVEN: frozenset[str] = frozenset({LIPSYNC})", "аватар по звуку не узнаётся"),
@@ -141,7 +141,7 @@ MUTANTS: tuple[tuple[str, str, str, str], ...] = (
     (PN, "    if not set(работы) & ep.FAMILY_MODES:\n        return False\n", "", "аватар берёт строки генератора"),
     (PN, "    if семья is None or семья.orderable:", "    if семья is None:", "заказываемая семья одалживает"),
     (PN, "            elif узел.functions and not set(узел.functions) & set(работы):", "            elif False:", "видеомодель снова кандидат на липсинк"),
-    (PN, "            if not узел.orderable and not (hard is not None and hard.self_host and узел.self_hostable):\n", "            if False:\n", "узел семьи снова кандидат"),
+    (PN, "            if (\n                not узел.orderable\n                and not (hard is not None and hard.self_host and узел.self_hostable)\n", "            if (\n                False\n                and not (hard is not None and hard.self_host and узел.self_hostable)\n", "узел семьи снова кандидат"),
     (PN, "    if not реестр.orderable_for(работа) and op.name in ЗАПАСНАЯ_РАБОТА:", "    if False:", "оборот без запасной работы"),
     (PN, "    if предел_прогона(все) is not None:\n        return None\n", "", "допущение поверх своей записи"),
     (PN, "        op.name in ТОЛЬКО_РЕЕСТР or any(реестр.orderable_for(р) for р in работы)", "        op.name in ТОЛЬКО_РЕЕСТР", "неустановленные остаются при известной работе"),
