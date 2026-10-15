@@ -987,6 +987,115 @@ def _собрать(facts: Sequence[Fact]) -> Registry:
     return реестр
 
 
+# --- словарь вопроса: как человек называет работу --------------------------------
+
+#: ИМЕНА РАБОТЫ В ВОПРОСЕ (шестой круг, 2026-10-15). `find_models` держал свой
+#: список из девяти «функций» с регулярками по имени и по описанию, и
+#: `bria-video-background-removal-v3` считался липсинком, потому что в его
+#: описании стоит «talking heads». Работа модели — одна на проект: её
+#: устанавливает `classify` свидетельством; здесь только СЛОВА, которыми
+#: человек называет работу в вопросе. Каждая работа `FUNCTIONS` называется и
+#: своим идентификатором (строка тест-сторожа).
+#:
+#: Фраза сверяется с началом слова и целиком по началу (`job_words`): «липсинк»
+#: ловит «липсинка», «interpolation» — «interpolation», но «tts» не ловит
+#: «settings». Короче `JOB_WORD_STEM_MIN` символов — только целым словом.
+JOB_WORDS: dict[str, tuple[str, ...]] = {
+    T2V: ("t2v", "text-to-video", "text to video", "видео по тексту"),
+    I2V: ("i2v", "image-to-video", "image to video", "img2vid", "оживить фото", "оживление фото"),
+    R2V: ("r2v", "reference-to-video", "reference to video"),
+    V2V_EDIT: ("v2v-edit", "v2v", "video-to-video", "video to video", "video edit", "правка видео"),
+    LIPSYNC: ("lipsync", "lip-sync", "lip sync", "липсинк", "синхронизация губ"),
+    AVATAR: ("talking avatar", "talking-avatar", "talking head", "talking-head", "avatar", "аватар"),
+    FACE_SWAP: ("face-swap", "face swap", "faceswap", "замена лица"),
+    DUB: ("dub-translate", "dubbing", "dub", "дубляж"),
+    TTS: ("tts", "text-to-speech", "text to speech", "speech synthesis", "voiceover", "озвучк", "синтез речи"),
+    VOICE_CLONE: ("voice-clone", "voice clone", "voice cloning", "клон голоса", "клонирование голоса"),
+    MUSIC: ("music", "song", "музык", "песн"),
+    SFX: ("sfx", "sound effects", "sound effect", "foley", "звуковые эффекты", "шумы"),
+    T2I: ("t2i", "text-to-image", "text to image", "image generation", "генерация изображений"),
+    IMAGE_EDIT: ("image-edit", "image edit", "edit image", "редактирование изображен"),
+    BG_REMOVE: (
+        "bg-remove",
+        "background removal",
+        "remove background",
+        "remove the background",
+        "matting",
+        "удаление фона",
+        "удалить фон",
+    ),
+    UPSCALE_IMAGE: ("upscale-image", "image upscale", "upscale image", "апскейл изображен"),
+    UPSCALE_VIDEO: ("upscale-video", "video upscale", "upscale video", "апскейл видео"),
+    RESTORE: ("restore-colorize", "restoration", "colorize", "colourise", "реставрац", "раскрас"),
+    INTERPOLATE: ("frame-interpolate", "frame interpolation", "interpolation", "slow motion", "интерполяц"),
+    TRANSCRIBE: (
+        "transcribe-diarize",
+        "transcribe",
+        "transcription",
+        "speech-to-text",
+        "diarization",
+        "stt",
+        "расшифровк",
+        "транскрипц",
+    ),
+    CAPTIONS: ("captions", "subtitles", "субтитр"),
+    TURNTABLE: ("turntable-360", "turntable", "360 spin", "оборот 360"),
+}
+
+#: ШИРОКИЕ СЛОВА: называют не одну работу, а несколько. Как `function` они
+#: задают область; работу, названную в самом вопросе, область уточняет
+#: (`function="video"`, «background removal for video» — удаление фона).
+BROAD_JOB_WORDS: dict[str, tuple[str, ...]] = {
+    "video": (T2V, I2V, R2V, V2V_EDIT),
+    "видео": (T2V, I2V, R2V, V2V_EDIT),
+    "image": (T2I, IMAGE_EDIT),
+    "картинка": (T2I, IMAGE_EDIT),
+    "upscale": (UPSCALE_VIDEO, UPSCALE_IMAGE),
+    "upscaler": (UPSCALE_VIDEO, UPSCALE_IMAGE),
+    "апскейл": (UPSCALE_VIDEO, UPSCALE_IMAGE),
+    "audio": (TTS, MUSIC, SFX),
+    "speech": (TTS,),
+    "voice": (TTS, VOICE_CLONE),
+}
+
+#: Короче этого — фраза ловится только целым словом (`tts`, `i2v`, `dub`).
+JOB_WORD_STEM_MIN = 5
+
+
+def job_words(text: str) -> tuple[str, ...]:
+    """Работы, названные в тексте словами `JOB_WORDS`, в порядке ПЕРВОГО упоминания.
+
+    Порядок — не алфавит и не `FUNCTIONS`: в «remove the background from a
+    talking-head video» работа — удаление фона, а «talking-head» описывает
+    материал. Первой названа работа, о которой спрашивают.
+    """
+    низ = " ".join(str(text or "").lower().split())
+    где: dict[str, int] = {}
+    for работа, фразы in JOB_WORDS.items():
+        for ф in фразы:
+            хвост = r"[\w-]*" if len(ф) >= JOB_WORD_STEM_MIN else ""
+            м = re.search(rf"(?<![\w-]){re.escape(ф)}{хвост}(?![\w-])", низ)
+            if м and (работа not in где or м.start() < где[работа]):
+                где[работа] = м.start()
+    return tuple(sorted(где, key=lambda р: (где[р], FUNCTIONS.index(р))))
+
+
+def jobs_of_word(word: str) -> tuple[tuple[str, ...], bool]:
+    """(работы, широкое ли слово) для значения `function`; пусто — не понято."""
+    низ = " ".join(str(word or "").strip().lower().split())
+    if not низ:
+        return (), False
+    if низ in FUNCTIONS:
+        return (низ,), False
+    if низ in BROAD_JOB_WORDS:
+        return BROAD_JOB_WORDS[низ], True
+    for работа, фразы in JOB_WORDS.items():
+        if низ in фразы:
+            return (работа,), False
+    named = job_words(низ)
+    return named, len(named) > 1
+
+
 def coverage(реестр: Registry) -> list[dict]:
     """По работе: заказываемых узлов, с ценой, с длиной прогона (доли — проценты)."""
     строки = []

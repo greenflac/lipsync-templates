@@ -905,6 +905,11 @@ LABELS_EN: dict[str, str] = {
     "отдаёт ли заказанный кадр сам, без апскейла": "does it deliver the ordered frame itself, without upscaling",
     "модель сообщества (воркфлоу, LoRA, мёрж), а не продукт": "a community model (workflow, LoRA, merge), not a product",
     "вытеснена более новым поколением": "superseded by a newer generation",
+    "свидетельство на заявленном условии: за / не записано / против":
+        "evidence on your stated condition: for / not recorded / against",
+    "за на заявленном условии": "for, on your stated condition",
+    "на заявленном условии не записано": "nothing recorded on your stated condition",
+    "против на заявленном условии": "against, on your stated condition",
     "знак измеренного: чисто / спорно / только плохое / молчание":
         "sign of what was measured: clean / disputed / only bad / silence",
     "строк применимости ЗА модель": "applicability rows FOR the model",
@@ -936,6 +941,10 @@ RU: tuple[tuple[str, str], ...] = (
     (r" Recorded attributes for this model \((\d+)\): ", r" Записанные атрибуты этой модели (\1): "),
     (r", … and (\d+) more\.", r", … и ещё \1."),
     (r"the model itself is unusable: ", "сама модель непригодна: "),
+    # --- заявленные условия (capability.condition_state, шестой круг)
+    (r"\bfor — (\S+): ", r"за — \1: "),
+    (r"\bagainst — (\S+): ", r"против — \1: "),
+    (r"nothing recorded on ", "на условии ничего не записано: "),
     (r" The base does hold (.+?) — if that is the same model under another name, ask again by that id\.",
      r" В базе есть \1 — если это та же модель под другим именем, спросите по нему."),
     # --- смежное, не ответ (advice, валидатор 5-го круга)

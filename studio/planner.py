@@ -1070,6 +1070,17 @@ CONSTRAINT_KEYS = 5
 #: всех и порядка не меняет.
 HARD_KEY_FIELD = "требования заказчика (свой GPU, качество) подтверждены записью, а не молчанием"
 
+#: Поле ключа ЗАЯВЛЕННЫХ УСЛОВИЙ (шестой круг, 2026-10-15). Стоит ПЕРЕД знаком
+#: измеренного: провал, записанный на условии заказа («лицо в профиль»), хуже
+#: молчания, а вендорское «держит профиль» лучше чужого измерения о другом.
+CONDITION_KEY_FIELD = "свидетельство на заявленном условии: за / не записано / против"
+#: Слова ступеней (числа — `studio.mcp.capability.CONDITION_*`, сверяет тест).
+CONDITION_WORDS: dict[int, str] = {
+    0: "за на заявленном условии",
+    1: "на заявленном условии не записано",
+    2: "против на заявленном условии",
+}
+
 KEY_FIELDS: tuple[str, ...] = (
     "нельзя ли этим воспользоваться",
     "делает ли модель эту работу, а не соседнюю",
@@ -1081,6 +1092,7 @@ KEY_FIELDS: tuple[str, ...] = (
     "отдаёт ли заказанный кадр сам, без апскейла",
     "модель сообщества (воркфлоу, LoRA, мёрж), а не продукт",
     "вытеснена более новым поколением",
+    CONDITION_KEY_FIELD,
     "знак измеренного: чисто / спорно / только плохое / молчание",
     "строк применимости ЗА модель",
     "строк применимости всего",
@@ -2429,6 +2441,14 @@ class Candidate:
     #: Провалы, записанные при УСЛОВИЯХ, которых в брифе нет (текст в кадре,
     #: руки, несколько людей...): в счёт не идут, печатаются оговоркой (G6).
     outside_brief: tuple[str, ...] = ()
+    #: Свидетельство на ЗАЯВЛЕННЫХ УСЛОВИЯХ заказа (профиль, логотип, руки):
+    #: `capability.CONDITION_POSITIVE` (0) / `_UNKNOWN` (1) / `_NEGATIVE` (2) и
+    #: нота — какая строка решила. Шестой круг (валидатор w19): на «липсинк
+    #: лица в профиль» выбиралась `sync-lipsync` (1.9) с записанным провалом
+    #: рта, а `sync-lipsync-v3` с вендорским «Native on extreme angles» стояла
+    #: ниже — у неё не было строк применимости.
+    condition_rank: int = 1
+    condition_note: str = ""
     #: Цена в порядке НЕ участвует: никто с записанной ценой в потолок не влез.
     price_rank_off: bool = False
     #: Лицензия модели ИСКЛЮЧАЕТ территории, а юрисдикция заказчика в брифе НЕ
@@ -5787,6 +5807,11 @@ def by_evidence(c: Candidate) -> tuple:
         # нашего мнения о брендах.
         int(c.community),
         int(bool(c.superseded)),
+        # ЗАЯВЛЕННОЕ УСЛОВИЕ — ДО ЗНАКА ИЗМЕРЕННОГО (2026-10-15, шестой круг,
+        # валидатор w19). Провал на условии заказа отодвигает кандидата ниже
+        # тех, о ком на этом условии записана похвала или не записано ничего;
+        # похвала — выше молчания. Без названных условий поле у всех одно.
+        c.condition_rank,
         sign_rank(c),
         # СЧИТАЕТСЯ ТО, ЧТО ГОВОРИТ ЗА МОДЕЛЬ, А НЕ ОБЪЁМ НАПИСАННОГО О НЕЙ.
         # ИЗМЕРЕНО 2026-09-05 на брифе «есть готовое видео и своя дорожка —
@@ -5878,6 +5903,7 @@ def _поле(c: Candidate, i: int) -> str:
         "по записи ниже заказанного кадра" if c.below_frame else "не ниже по записи",
         "сообщество" if c.community else "продукт",
         f"вытеснена: {c.superseded}" if c.superseded else "текущее поколение",
+        c.condition_note or CONDITION_WORDS.get(c.condition_rank, "?"),
         SIGN_WORDS[sign_rank(c)],
         f"{c.in_favour}",
         f"{c.applicability}",
@@ -6534,8 +6560,14 @@ def candidates_for(
     юрисдикции: tuple[str, ...] | None = None,
     brief_frame: tuple[int, int] | None = None,
     hard: "hn.Hard | None" = None,
+    stated_conditions: Sequence[str] = (),
 ) -> "Кандидаты":
     """Кандидаты на операцию: модели, о которых база говорит СЛОВАМИ ОПЕРАЦИИ.
+
+    :param stated_conditions: условия заказа (`attrfamily.УСЛОВИЯ`: `pose_range`,
+        `text_legibility`, `hands`…): по ним `capability.condition_state`
+        ставит `Candidate.condition_rank` — за / не записано / против (шестой
+        круг, 2026-10-15).
 
     :param hard: жёсткие требования заказчика (`studio/hardneed.py`): свой GPU
         и цель «качество». Не прошедшие их в список НЕ попадают — они в
@@ -6768,6 +6800,18 @@ def candidates_for(
             pl.Step(name=op.name, model=имя, requirement="", use=use, jurisdictions=юрисдикции), все
         )
         семья, территории_семьи = семья_с_территориями(имя, все, по_имени, известные)
+        ступень_условия, нота_условия = 1, ""
+        if stated_conditions:
+            # Импорт внутри: правило знака живёт у `find_models` (Е1), а пакет
+            # `studio.mcp` зовёт плановщик, не наоборот.
+            from studio.mcp import capability as cap
+
+            строки_семьи = (
+                по_имени.get(fold(узел.family), []) if узел is not None and узел.family else []
+            )
+            ступень_условия, нота_условия, _ = cap.condition_state(
+                list(все) + list(строки_семьи), stated_conditions
+            )
         найдены.append(
             Candidate(
                 model=имя,
@@ -6784,6 +6828,8 @@ def candidates_for(
                 price_value=None if жёсткое.свой_gpu else цена_разобранная,
                 hard_rank=жёсткое.ранг,
                 hard_note=жёсткое.нота,
+                condition_rank=ступень_условия,
+                condition_note=нота_условия,
                 cost=сколько,
                 run_s=предел_прогона(все),
                 anchored=len(свои),
@@ -9508,6 +9554,13 @@ def сводка(итог: dict) -> str:
                     ("superseded: " if англ else "вытеснена: ")
                     + _коротко(выбран["superseded"], 120)
                 )
+            if выбран.get("condition_note"):
+                # ПОЧЕМУ ВЫБРАН НА ЗАЯВЛЕННОМ УСЛОВИИ (шестой круг): строка,
+                # которая решила поле `CONDITION_KEY_FIELD`, — словами.
+                хвост.append(
+                    ("your condition: " if англ else "ваше условие: ")
+                    + _коротко(выбран["condition_note"], 200)
+                )
             if шаг.get("speakers_note"):
                 хвост.append(
                     ("speakers: " if англ else "голоса: ") + _коротко(шаг["speakers_note"], 220)
@@ -9927,6 +9980,39 @@ def вопрос_о_нехватке(
     }
 
 
+def заявленные(
+    понято: Any, spec: Mapping[str, Any] | None, brief: str
+) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    """УСЛОВИЯ ЗАКАЗА для порядка кандидатов: (понятые условия, непонятые слова).
+
+    Три источника, один словарь (`attrfamily.УСЛОВИЯ`): поле спецификации
+    `conditions` (свободные слова: «profile face», «logo legible», «hands»),
+    то же поле сырого `spec` (если разбор спецификации его ещё не несёт) и
+    темы, которые называет сам бриф (`pipeline.conditions_of_brief` БЕЗ
+    длительности: «длинный ролик», выведенный из секунд, заказчиком не
+    заявлен). Непонятое слово не глотается — оно печатается в плане.
+    """
+    from studio.mcp import capability as cap
+
+    слова: list[str] = []
+    for источник in (
+        getattr(понято, "conditions", None),
+        spec.get("conditions") if isinstance(spec, Mapping) else None,
+    ):
+        if isinstance(источник, str):
+            источник = [т for т in источник.split(",")]
+        for т in источник or ():
+            if str(т).strip() and str(т).strip() not in слова:
+                слова.append(str(т).strip())
+    понятые, непонятые = cap.conditions_of(слова)
+    итог = list(понятые)
+    for тема in pl.conditions_of_brief(brief):
+        у = af.условие_темы(тема)
+        if у and у not in итог:
+            итог.append(у)
+    return tuple(итог), tuple(непонятые)
+
+
 def plan(
     brief: str,
     facts: Sequence[Fact] | None = None,
@@ -10321,6 +10407,7 @@ def plan(
     условия = pl.conditions_of_brief(
         brief, длительность.секунды if длительность.разобрано else None
     )
+    заявленные_условия, условия_не_поняты = заявленные(понято, spec, brief)
     #: Самая дешёвая записанная стоимость шага среди ВСЕХ его кандидатов —
     #: для ответа на «бюджет 0»: выбранный может быть без цены, а работа всё
     #: равно не бесплатна, и это видно по соседям.
@@ -10369,6 +10456,7 @@ def plan(
             юрисдикции,
             заказанный_кадр or кадр,
             жёсткие,
+            stated_conditions=заявленные_условия,
         )
 
     # СКОЛЬКО ШОТОВ (2026-10-15, четвёртый круг). Явное число; «each» над N;
@@ -10868,6 +10956,10 @@ def plan(
         ),
         "languages": list(языки),
         "unmeasured_requirements": требования_без_ответа(brief, по_английски),
+        "stated_conditions": {
+            "understood": list(заявленные_условия),
+            "not_understood": list(условия_не_поняты),
+        },
         "pipeline_price": цена_пайплайна,
         "question": вопрос.row(по_английски) if вопрос else None,
         "budget": строка_бюджета,
@@ -10929,6 +11021,7 @@ def _кратко_кандидат(c: dict | None, соседи: bool = False) -
             "superseded",
             "community",
             "failures_outside_brief",
+            "condition_note",
             "fit_state",
             "dur_state",
             "ban_state",
@@ -11058,6 +11151,7 @@ def сжать(ответ: dict) -> dict:
         "understood_as": ответ.get("understood_as"),
         "languages": ответ.get("languages"),
         "unmeasured_requirements": ответ.get("unmeasured_requirements"),
+        "stated_conditions": ответ.get("stated_conditions"),
         "pipeline_price": цена,
         "question": ответ.get("question"),
         "conflicts": ответ.get("conflicts") or [],
@@ -11192,6 +11286,8 @@ def _candidate_row(c: Candidate | None) -> dict | None:
         "community": c.community,
         "failures_outside_brief": list(c.outside_brief[:2]),
         "failures_outside_brief_count": len(c.outside_brief),
+        "condition_rank": c.condition_rank,
+        "condition_note": c.condition_note,
         "price_state": c.price_state,
         "price_note": c.price_note,
         "fit_state": c.fit_state,

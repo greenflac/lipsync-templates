@@ -1282,3 +1282,126 @@ def variant_slice(value: str, words: tuple[str, ...] | list[str]) -> str:
     слова = [str(w).strip().lower() for w in words if str(w).strip()]
     найдено = [к for к in куски if any(re.match(rf"{re.escape(w)}\b", к.lower()) for w in слова)]
     return "; ".join(найдено)
+
+
+# --------------------------------------------------------------------------
+# УСЛОВИЯ ЗАКАЗА -> АТРИБУТЫ (2026-10-15, шестой круг, валидатор w19)
+#
+# «Лицо в профиль», «логотип читается», «руки в кадре» — не вопрос о модели, а
+# УСЛОВИЕ, при котором её спрашивают. Отвечают на него записанные имена
+# (`pose_range`, `occlusion_handling`, `text_rendering`), бенчмарк, названный в
+# строке (`VTR-Bench`), и строки о провале, назвавшие то же условие
+# (`pipeline.CONDITION_THEMES`; поле `тема` — ИМЯ темы оттуда, а не копия её
+# образца: Е1, правило «что строка называет» одно на проект).
+#
+# Отдельная таблица, а не новые семьи `СЕМЬИ`: `text_rendering` отвечает и на
+# вопрос «что она умеет» (семья `capabilities`), а семья у имени одна. Условие
+# СОБИРАЕТ имена разных семей — читается поверх них и ничего у них не отнимает.
+# --------------------------------------------------------------------------
+
+#: Условие -> {имена: записанные атрибуты о нём; семьи: семьи `СЕМЬИ`, целиком
+#: отвечающие на него; бенчмарки: имена бенчмарков, меряющих ровно его (в
+#: нижнем регистре); тема: имя темы в `pipeline.CONDITION_THEMES`}.
+#: КОНСТАНТА-РЕШЕНИЕ, список закрытый: незнакомое условие остаётся словом и
+#: ищется в строках как слово, без знака.
+УСЛОВИЯ: dict[str, dict] = {
+    "pose_range": {"имена": (), "семьи": ("pose_range",), "бенчмарки": (), "тема": "поворот головы"},
+    "text_legibility": {
+        "имена": ("text_rendering", "text_rendering_non_latin"),
+        "семьи": (),
+        "бенчмарки": ("vtr-bench",),
+        "тема": "текст в кадре",
+    },
+    "hands": {"имена": (), "семьи": (), "бенчмарки": (), "тема": "руки"},
+    "multiple_people": {"имена": (), "семьи": (), "бенчмарки": (), "тема": "несколько людей"},
+    "fast_motion": {"имена": (), "семьи": (), "бенчмарки": (), "тема": "быстрое движение"},
+    "stylised": {"имена": (), "семьи": (), "бенчмарки": (), "тема": "стилизация"},
+    "low_light": {"имена": (), "семьи": (), "бенчмарки": (), "тема": "темнота"},
+    "singing": {"имена": (), "семьи": (), "бенчмарки": (), "тема": "пение"},
+}
+
+#: Как условие называет человек -> условие. Сверяется ЦЕЛИКОМ в `норма`
+#: (пробел = подчёркивание): «text» — условие, «text-to-video» — нет.
+УСЛОВИЯ_СИНОНИМЫ: dict[str, str] = {
+    "profile": "pose_range",
+    "profiles": "pose_range",
+    "profile face": "pose_range",
+    "profile faces": "pose_range",
+    "side profile": "pose_range",
+    "side-profile": "pose_range",
+    "side view": "pose_range",
+    "side-view": "pose_range",
+    "extreme angle": "pose_range",
+    "extreme angles": "pose_range",
+    "head turn": "pose_range",
+    "head turns": "pose_range",
+    "occlusion": "pose_range",
+    "профиль": "pose_range",
+    "профиле": "pose_range",
+    "лицо в профиль": "pose_range",
+    "поворот головы": "pose_range",
+    "ракурс": "pose_range",
+    "логотип": "text_legibility",
+    "логотипы": "text_legibility",
+    "надписи": "text_legibility",
+    "текст в кадре": "text_legibility",
+    "logo": "text_legibility",
+    "logos": "text_legibility",
+    "logo legible": "text_legibility",
+    "legible": "text_legibility",
+    "legibility": "text_legibility",
+    "text": "text_legibility",
+    "text legibility": "text_legibility",
+    "text legible": "text_legibility",
+    "on-screen text": "text_legibility",
+    "typography": "text_legibility",
+    "lettering": "text_legibility",
+    "wordmark": "text_legibility",
+    "hands": "hands",
+    "hand": "hands",
+    "fingers": "hands",
+    "руки": "hands",
+    "рук": "hands",
+    "пальцы": "hands",
+    "several people": "multiple_people",
+    "multiple people": "multiple_people",
+    "two people": "multiple_people",
+    "несколько людей": "multiple_people",
+    "fast motion": "fast_motion",
+    "быстрое движение": "fast_motion",
+    "anime": "stylised",
+    "cartoon": "stylised",
+    "стилизация": "stylised",
+    "low light": "low_light",
+    "night": "low_light",
+    "темнота": "low_light",
+    "singing": "singing",
+    "пение": "singing",
+}
+
+
+def условие(слово: str) -> str:
+    """Условие для слова или фразы; пусто — это не условие."""
+    ключ = норма(слово)
+    if ключ in УСЛОВИЯ:
+        return ключ
+    for к, у in УСЛОВИЯ_СИНОНИМЫ.items():
+        if норма(к) == ключ:
+            return у
+    return ""
+
+
+def условие_темы(тема: str) -> str:
+    """Условие по имени темы `pipeline.CONDITION_THEMES`; пусто — темы нет в таблице."""
+    for у, правило in УСЛОВИЯ.items():
+        if правило["тема"] == тема:
+            return у
+    return ""
+
+
+def об_условии(имя_условия: str, атрибут: str) -> bool:
+    """Отвечает ли записанное ИМЯ атрибута на условие (значение не читается)."""
+    правило = УСЛОВИЯ.get(имя_условия)
+    if not правило:
+        return False
+    return атрибут in правило["имена"] or семья_имени(атрибут) in правило["семьи"]
