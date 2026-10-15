@@ -231,6 +231,7 @@ from lipsync.fork_identity import FAIL, PASS, UNMEASURED
 from studio import brief_spec as bs
 from studio import clarify
 from studio import duration as dur
+from studio import l10n
 from studio import factaxis as fa
 from studio import hardneed as hn
 from studio import lifecycle as life
@@ -4530,7 +4531,7 @@ def стоимость(facts: Sequence[Fact], need: pricing.Need | None) -> "С�
             if len(суммы) > 1 and суммы[-1] - суммы[0] > РАСХОЖДЕНИЕ * суммы[-1]:
                 голоса: list[str] = []
                 for _, o, сказал, f in sorted(записи, key=lambda з: (з[0], -з[1].usd)):
-                    голос = f"{o.usd:.4g} usd ({сказал}: {f.attribute} = {f.value[:60]})"
+                    голос = f"{o.usd:.4g} usd ({сказал}: {f.attribute} = «{f.value[:60]}»)"
                     if голос not in голоса:
                         голоса.append(голос)
                 ступень = TIERS[сильнейшая] if сильнейшая < len(TIERS) else "?"
@@ -4636,7 +4637,7 @@ def price_stance(
 
     if not приведённые:
         if свои:
-            образец = "; ".join(f"{f.attribute}={f.value[:48]}" for f in свои[:2])
+            образец = "; ".join(f"{f.attribute}=«{f.value[:48]}»" for f in свои[:2])
             return (
                 PRICE_INCOMPARABLE,
                 f"ценовых строк {len(свои)}, сравнимых с потолком 0 ({образец})",
@@ -7005,6 +7006,11 @@ def _есть_кириллица(текст: str) -> bool:
 }
 
 
+# Имена шагов — в общий словарь языка ответа (Е1): `l10n` переводит их и
+# внутри строк («слабейшее звено: липсинк»), а не только в сводке.
+l10n.TERMS_EN.update(ШАГ_ПО_АНГЛИЙСКИ)
+
+
 def шаг_словами(имя: object, по_английски: bool) -> str:
     """Имя шага так, как его прочтёт заказчик. Незнакомое — как есть."""
     имя = str(имя or "")
@@ -8244,139 +8250,25 @@ def _по_английски(текст: str) -> str:
         return (
             f"the brief asks for {м.group(1)}, and the last image/video model does not confirm it"
         )
-    return t
+    return _форма_по_английски(t)
 
 
 #: ФОРМЫ, КОТОРЫЕ ПЛАНИРОВЩИК И СМЕТА СТРОЯТ ПО-РУССКИ, — английскому заказчику.
 #: НАЙДЕНО аудитом третьего круга 2026-10-15: английский бриф получал «0.08 usd
 #: за шаг: ≈450 знаков × …», «ffmpeg или монтажная программа (не модель)»,
 #: строки лицензии и «о речи на языке брифа …» по-русски посреди английского
-#: плана. Переводятся только ФОРМЫ (шаблоны строк); цитаты из базы в «ёлочках»
-#: остаются на языке того, кто их записал. Порядок важен: длинные обороты
-#: раньше коротких, иначе «usd за шаг» съест «за».
-ФОРМЫ_ПО_АНГЛИЙСКИ: tuple[tuple[str, str], ...] = (
-    # СВОЙ GPU (2026-10-15, `studio/hardneed.py`): цена временем GPU.
-    (
-        r"с ней план стоит ([\d.]+) usd — выше потолка ролика ([\d.]+) usd",
-        r"with it the plan costs \1 usd — over the clip ceiling \2 usd",
-    ),
-    (r"цены нет, а потолок ролика ([\d.]+) usd назван", r"it has no price, and a clip ceiling of \1 usd is set"),
-    (
-        r"заказано самое дешёвое, а (\S+) в той же полосе дешевле",
-        r"the cheapest was asked, and \1 is cheaper in the same band",
-    ),
-    (r"через свой GPU — ", "via own GPU — "),
-    (r"свой GPU: цена — время GPU × ставка аренды; ", "own GPU: price = GPU time × rental rate; "),
-    (r"время GPU на клип не записано", "GPU time per clip not recorded"),
-    (r"ставка не записана", "rental rate not recorded"),
-    (r"\(GPU не назван\)", "(no GPU named)"),
-    (r"ОЦЕНКА: ", "ESTIMATE: "),
-    (r"GPU-с на клип ([\d.]+) с", r"GPU-s per \1 s clip"),
-    (r"GPU-с на прогон \(длина клипа в источнике не названа\)", "GPU-s per run (the source names no clip length)"),
-    (r"\(линейно — допущение\)", "(linear — an assumption)"),
-    (r"GPU-с × ", "GPU-s × "),
-    (r"usd/ч ÷ 3600", "usd/h ÷ 3600"),
-    (r"; время: ", "; time: "),
-    (r"; ставка: ", "; rate: "),
-    (r"ffmpeg или монтажная программа \(не модель\)", "ffmpeg or an editing app (not a model)"),
-    (r"0 usd \(не модель\)", "0 usd (not a model)"),
-    (r"видео сводится с отдельными дорожками: ", "the video is mixed with separate tracks: "),
-    (r"озвучка за кадром", "off-screen voiceover"),
-    (r"за один прогон ролик не отдаёт", "cannot deliver the clip in one run"),
-    (r"ролик собирается из нескольких клипов", "the clip is assembled from several clips"),
-    (r"ролик ([\d.]+) с ДЛИННЕЕ предела ([\d.]+) с", r"clip \1 s is LONGER than the \2 s limit"),
-    (r"предел ([\d.]+) с: ", r"limit \1 s: "),
-    (
-        r"о речи на языке брифа \(([^)]*)\) у (\S+) ничего не записано — проверить пробным "
-        r"прогоном до заказа",
-        r"nothing is recorded about \2 speaking the brief's language (\1) — "
-        r"test it with a trial run before ordering",
-    ),
-    (r"лицензия СЕМЬИ (\S+) исключает вашу территорию", r"the licence of the FAMILY \1 EXCLUDES your territory"),
-    (r"лицензия СЕМЬИ (\S+) исключает территории ", r"the licence of the FAMILY \1 excludes territories "),
-    (r"лицензия СЕМЬИ (\S+) исключает ", r"the licence of the FAMILY \1 excludes "),
-    (
-        r"лицензия для варианта (\S+) в базе НЕ записана — перенесена осторожность семьи, а не факт",
-        r"no licence is recorded for the variant \1 — the family's caution is carried over, not a fact",
-    ),
-    (r"лицензия ИСКЛЮЧАЕТ вашу территорию", "the licence EXCLUDES your territory"),
-    (r"лицензия исключает территории ", "the licence excludes territories "),
-    (r"лицензия исключает ", "the licence excludes "),
-    (r"; ваша \(([^)]*)\) не исключена", r"; yours (\1) is not excluded"),
-    (r" — где работает заказчик\?", " — where will you use it?"),
-    (r"порог выручки ", "revenue threshold "),
-    (r" — выше него нужна отдельная лицензия", " — above it a separate licence is needed"),
-    (
-        r"лицензия записана о ВЕСАХ \(самостоятельный запуск\); при доступе через API-площадку "
-        r"действуют условия площадки — прочитать их отдельно",
-        "the licence recorded is for the WEIGHTS (self-hosting); through an API platform its own "
-        "terms apply — read them separately",
-    ),
-    (
-        r"это лицензия ВЕСОВ \(самостоятельный запуск\); условия API-площадки — другой документ: "
-        r"в базе НЕ записаны — переносятся ли на API исключения весов, неизвестно",
-        "this is the WEIGHTS licence (self-hosting); the API platform's terms are another document: "
-        "NOT recorded in the base — whether the weights' exclusions carry over to the API is unknown",
-    ),
-    (
-        r"это лицензия ВЕСОВ \(самостоятельный запуск\); условия API-площадки — другой документ: ",
-        "this is the WEIGHTS licence (self-hosting); the API platform's terms are another document: ",
-    ),
-    (r" — при условии: ", " — when: "),
-    (r"текст в кадре", "text in frame"),
-    (r"USD в год", "USD a year"),
-    (r"usd за шаг: ", "usd per step: "),
-    (r"; дешевле: ", "; cheaper: "),
-    # Маршрут и расхождения источников (2026-10-15, интеграция цен и брифа).
-    (r"через (\S+) — ", r"via \1 — "),
-    (r"; другие маршруты: ", "; other routes: "),
-    (r"ИСТОЧНИКИ РАСХОДЯТСЯ: ", "SOURCES DISAGREE: "),
-    (r"НЕОДНОЗНАЧНО: ставки не различить по брифу \(([^)]*)\), взята наибольшая", r"AMBIGUOUS: the brief cannot tell the rates apart (\1), the dearest is taken"),
-    (r"НИЖНЯЯ ГРАНИЦА: сколько секунд даёт прогон — не записано: посчитан один прогон", "LOWER BOUND: seconds per run not recorded, one run counted"),
-    (r"⌈([\d.]+)/([\d.]+)⌉ = (\d+) блок\(ов\)", r"⌈\1/\2⌉ = \3 block(s)"),
-    (r"\(блок = ([\d.]+) с\)", r"(block = \1 s)"),
-    (r"Мп/кадр × (\d+) кадров", r"MP/frame × \1 frames"),
-    (r"\) против ", ") vs "),
-    (r" — в смету взято ", " — the estimate takes "),
-    (r"\(ступень (\w+), из равных по ступени — дороже\)", r"(\1 tier; of equal tiers, the dearer)"),
-    (r"\(ступень (\w+)\)", r"(\1 tier)"),
-    (
-        r"usd за прогон \(сколько секунд даёт прогон — не записано\)",
-        "usd per run (seconds per run not recorded)",
-    ),
-    (r"\(прогон = 1 кадр\)", "(run = 1 image)"),
-    (r"\(прогон = ([\d.]+) с\)", r"(run = \1 s)"),
-    (r"usd за первые ([\d.]+) с", r"usd for the first \1 s"),
-    (r"прогон\(ов\)", "run(s)"),
-    (r"кадр\(ов\)", "image(s)"),
-    (r"знаков", "chars"),
-    (r"usd за 1000_chars", "usd per 1000 chars"),
-    (r"usd за знак", "usd per char"),
-    (r"usd/мин", "usd/min"),
-    (r"usd/с\b", "usd/s"),
-    (r"(\d) с\b", r"\1 s"),
-    (r"(\d) Мп\b", r"\1 MP"),
-    (r"по пути (.+) файла нет", r"nothing at \1"),
-    (r"путь к креативу не назван", "no path to the creative was given"),
-    (r" — это адрес в сети, а не путь к файлу на диске", " is a web address, not a path to a file on disk"),
-    (r" — это каталог, а не файл", " is a directory, not a file"),
-    (r" существует, но это не обычный файл", " exists but is not a regular file"),
-)
+#: плана. С 4-го круга таблица живёт в `studio/l10n.py` (`l10n.EN`) — одна на
+#: весь продукт, вместе со справкой и отказами; имя оставлено для читающих.
+ФОРМЫ_ПО_АНГЛИЙСКИ = l10n.EN + l10n.EN_FRAGMENTS
 
 
 def _форма_по_английски(текст: object) -> str:
-    """Строка, построенная по-русски шаблоном, — по-английски (`ФОРМЫ_ПО_АНГЛИЙСКИ`).
+    """Строка, построенная по-русски шаблоном, — по-английски (`l10n.localise`).
 
-    Цитаты в «ёлочках» не трогаются: это слова источника, а не наши.
+    Цитаты в «ёлочках» не переписываются: это слова источника, а не наши; к
+    русской цитате добавляется английский глосс `[ru: …]`.
     """
-    куски = re.split(r"(«[^»]*»)", str(текст or ""))
-    for i, кусок in enumerate(куски):
-        if кусок.startswith("«"):
-            continue
-        for образец, замена in ФОРМЫ_ПО_АНГЛИЙСКИ:
-            кусок = re.sub(образец, замена, кусок)
-        куски[i] = кусок
-    return "".join(куски)
+    return str(l10n.localise(str(текст or ""), "en"))
 
 
 def _шаги_по_английски(текст: str) -> str:
@@ -8399,8 +8291,14 @@ def _риск_шага(итог: dict, шаг: dict, англ: bool) -> str:
         if проба["class"] == pl.CLASS_APPLICABILITY:
             запись = худшая_новость(выбран.get("evidence") or [])
             if запись.get("value"):
-                return ("measured failure: " if англ else "измеренный провал: ") + (
-                    f"«{_коротко(запись.get('value'))}»"
+                # Цитата — с источником (ступень, дата): это слова записи, не наши.
+                откуда = ", ".join(
+                    str(запись.get(к)) for к in ("tier", "stated_on") if запись.get(к)
+                )
+                return (
+                    ("measured failure: " if англ else "измеренный провал: ")
+                    + f"«{_коротко(запись.get('value'))}»"
+                    + (f" ({откуда})" if откуда else "")
                 )
         return f"{проба['class']}: {_коротко(проба['note'])}"
     if выбран and not int(выбран.get("applicability") or 0):
@@ -8793,7 +8691,12 @@ def сводка(итог: dict) -> str:
                     else f"перевыбрано под бюджет: {обмен_шага['from']} {обмен_шага['from_usd']:.2f} -> "
                     f"{обмен_шага['to']} {обмен_шага['to_usd']:.2f} usd; отдано: "
                 )
-                + _коротко(обмен_шага.get("traded"), 260)
+                + _коротко(
+                    _форма_по_английски(обмен_шага.get("traded"))
+                    if англ
+                    else обмен_шага.get("traded"),
+                    260,
+                )
             )
         if выбран:
             метка = str(выбран.get("mark") or "")
@@ -8961,7 +8864,11 @@ def сводка(итог: dict) -> str:
             )
     if итог.get("resolution_carry"):
         строки.append(
-            ("RESOLUTION: " if англ else "КАДР: ") + _коротко(итог["resolution_carry"], 300)
+            ("RESOLUTION: " if англ else "КАДР: ")
+            + _коротко(
+                _форма_по_английски(итог["resolution_carry"]) if англ else итог["resolution_carry"],
+                300,
+            )
         )
     строки.append(("PRICE: " if англ else "ЦЕНА: ") + _цена_словами(итог, англ))
     строка_требований = _требования_словами(итог, англ)
@@ -10860,3 +10767,35 @@ def rows_in(path: Path = DEFAULT_BRIEFS_PATH) -> int:
         for line in path.read_text(encoding="utf-8").splitlines()
         if line.strip() and not line.strip().startswith("//")
     )
+
+
+# ---------------------------------------------------------------------------
+# ЯЗЫК ОТВЕТА — НА ГРАНИЦЕ (аудит 4-го круга, 2026-10-15).
+#
+# Английский бриф получал «цена не записана», строку RESOLUTION и ноты
+# валидатора по-русски. Теперь весь ответ проходит `l10n.localise_payload` на
+# языке брифа, и ДО сжатия: краткий ответ режет строки (`_коротко`), а
+# обрезанный посреди слова шаблон не узнаётся таблицей. Поэтому план строится
+# полным, переводится и только потом сжимается — краткий ответ остаётся видом
+# на полный (Е1), решения в обоих те же.
+# ---------------------------------------------------------------------------
+
+_план_на_языке_шаблонов = plan
+
+
+def _язык_брифа(brief: object) -> str:
+    return "ru" if _есть_кириллица(str(brief or "")) else "en"
+
+
+def plan(brief: str, *args: Any, full: bool = False, **kwargs: Any) -> dict:  # noqa: F811
+    ответ = _план_на_языке_шаблонов(brief, *args, full=True, **kwargs)
+    язык = _язык_брифа(brief)
+    ответ = l10n.localise_payload(ответ, язык)
+    if ответ.get("full") is True and not full:
+        # Строки самого сжатия («omitted») — тем же путём.
+        return l10n.localise_payload(сжать(ответ), язык)
+    return ответ
+
+
+plan.__doc__ = _план_на_языке_шаблонов.__doc__
+plan.__wrapped__ = _план_на_языке_шаблонов  # type: ignore[attr-defined]

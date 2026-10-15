@@ -2834,8 +2834,9 @@ MUTANTS: list[tuple[str, str, str, str, str]] = [
         # ПЕРЕНАЦЕЛЕН 2026-09-07: между просевом и отказом встала ветка
         # третьего исхода для бессловесного брифа.
         # ПЕРЕНАЦЕЛЕН 2026-09-07: обе ветки отказа сведены в общую функцию.
-        '    if просев["outcome"] != PASS:\n        return _json(\n            {\n                **_общий_отказ(просев, brief',
-        "    if False:\n        return _json(\n            {\n                **_общий_отказ(просев, brief",
+        # ПЕРЕНАЦЕЛЕН 2026-10-15: отказ идёт через язык ответа (`l10n`).
+        '    if просев["outcome"] != PASS:\n        return _json(\n            l10n.localise_payload(\n                {\n                    **_общий_отказ(просев, brief',
+        "    if False:\n        return _json(\n            l10n.localise_payload(\n                {\n                    **_общий_отказ(просев, brief",
         "план: бриф снова не просеивается — продукт строит план производства дипфейка",
         "studio.mcp.tests.test_screen_customer_words",
     ),

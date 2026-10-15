@@ -55,6 +55,8 @@ __all__ = [
     "ROLE_COMMUNITY",
     "ROLE_VENDOR_VARIANT",
     "SYNONYM_EVIDENCE",
+    "HOW_VENDOR_DROPPED",
+    "MIN_FAMILY_WORD",
     "lineage",
     "name_role",
     "synonym_evidence",
@@ -172,9 +174,13 @@ ALIASES: dict[str, str] = {
     # в `SYNONYM_EVIDENCE` под звеньями спрошенного имени.
     #
     # Kling 3 Pro — режим `pro` той же Kling 3.0 (fal: `kling-video/v3/pro/…`,
-    # «Kling V3 (pro)»), а не отдельная модель; у базы режимы лежат вариантами
-    # `kling-3.0-pro-i2v/t2v`, корень — `kling-3.0`.
-    "kling3pro": "kling3",
+    # «Kling V3 (pro)»); у базы режимы лежат вариантами `kling-3.0-pro-i2v/t2v`.
+    # ИСПРАВЛЕНО аудитом 4-го круга 2026-10-15: строка вела в КОРЕНЬ `kling-3.0`,
+    # и «kling 3 pro» отвечался фактами базовой модели, хотя вариант pro в базе
+    # есть. Теперь — в `kling-3.0-pro-i2v`: заголовок «Kling V3 (pro)» у fal
+    # стоит именно на эндпоинте image-to-video, и у этого варианта база держит
+    # схему, цену и длительности; text-to-video pro назван в свидетельстве.
+    "kling3pro": "kling3proi2v",
     # HeyGen Avatar 4 (Avatar IV): fal описывает `heygen/avatar4/image-to-video`
     # как «Generate a video from a photo using HeyGen Avatar 4».
     "heygenavatar4": "heygenavatar4i2v",
@@ -332,8 +338,10 @@ ALIASES: dict[str, str] = {
 #: едет в ответ (`Resolution.evidence`), когда имя разрешилось через перепись, —
 #: спросивший видит, ПОЧЕМУ `hailuo3` отвечается фактами о `minimax-h3`.
 #: Ключ — левая часть переписи. Перепись без строки здесь — красный тест.
+#: Строки — ПО-АНГЛИЙСКИ (4-й круг): это свидетельство, которое едет в ответ
+#: любому спросившему, и его источники английские.
 SYNONYM_EVIDENCE: dict[tuple[str, ...], str] = {
-    ("kling", "video"): "fal: каталог `fal-ai/kling-video/v3/...` = Kling 3.0",
+    ("kling", "video"): "fal: catalogue `fal-ai/kling-video/v3/...` = Kling 3.0",
     (
         "elevenlabs",
         "tts",
@@ -345,27 +353,28 @@ SYNONYM_EVIDENCE: dict[tuple[str, ...], str] = {
     ("elevenlabs", "turbo"): "ElevenLabs API id `eleven_turbo_v2_5`",
     ("elevenlabs", "flash"): "ElevenLabs API id `eleven_flash_v2_5`",
     ("elevenlabs", "3"): "ElevenLabs «Eleven v3» = API id `eleven_v3`",
-    ("ltx", "2", "3"): "Lightricks пишет «LTX-2.3», HF-слаги — `ltx-2-3`",
+    ("ltx", "2", "3"): "Lightricks writes «LTX-2.3», HF slugs `ltx-2-3`",
     ("gemini", "3.1", "flash", "image"): "Google: Nano Banana 2 = Gemini 3.1 Flash Image",
     ("gemini", "image", "3.1", "flash"): "Runway `gemini_image3.1_flash` = Nano Banana 2",
     ("gemini", "3", "pro", "image"): "fal: nano-banana-pro.underlying_model = Gemini 3 Pro Image",
     ("gemini", "image", "3", "pro"): "Runway `gemini_image3_pro` = Nano Banana Pro",
-    ("happy", "horse"): "HappyHorse пишут слитно и через дефис; в базе `happyhorse_1_0`",
+    ("happy", "horse"): "HappyHorse is written joined and hyphenated; base id `happyhorse_1_0`",
     ("hailuo", "3"): (
-        "Runway openapi: `hailuo3` («Hailuo 3.0 supports 768p and 2k») в одной линейке с "
-        "`h3_max` («MiniMax H3 Max»); 768P/2K и 15 с — как у MiniMax-H3 на platform.minimax.io"
+        "Runway openapi: `hailuo3` («Hailuo 3.0 supports 768p and 2k») in one line with "
+        "`h3_max` («MiniMax H3 Max»); 768P/2K and 15 s — as MiniMax-H3 on platform.minimax.io"
     ),
-    ("minimax", "hailuo", "3"): "то же, что `hailuo3`: Hailuo 3 = MiniMax H3",
+    ("minimax", "hailuo", "3"): "same as `hailuo3`: Hailuo 3 = MiniMax H3",
     ("hailuo", "02"): (
         "MiniMax API model `MiniMax-Hailuo-02` (platform.minimax.io/docs/guides/video-generation); "
         "fal `fal-ai/minimax/hailuo-02/...` «MiniMax Hailuo-02»"
     ),
-    ("hailou", "02"): "опечатка `hailou` = `hailuo`: MiniMax `MiniMax-Hailuo-02`",
-    ("minimax", "hailou"): "опечатка `hailou` = `hailuo` (MiniMax пишет «Hailuo»)",
+    ("hailou", "02"): "typo `hailou` = `hailuo`: MiniMax `MiniMax-Hailuo-02`",
+    ("minimax", "hailou"): "typo `hailou` = `hailuo` (MiniMax writes «Hailuo»)",
     # Целые имена из `ALIASES` (ключ — звенья спрошенного имени):
     ("kling", "3", "pro"): (
-        "fal `fal-ai/kling-video/v3/pro/image-to-video` «Kling V3 (pro)»: режим pro "
-        "той же Kling 3.0 (fal.ai/api/openapi/queue/openapi.json?endpoint_id=fal-ai/kling-video/v3/pro/image-to-video)"
+        "fal `fal-ai/kling-video/v3/pro/image-to-video` «Kling V3 (pro)»: the pro mode "
+        "of Kling 3.0 (fal.ai/api/openapi/queue/openapi.json?endpoint_id=fal-ai/kling-video/v3/pro/image-to-video); "
+        "pro text-to-video is the variant `kling-3.0-pro-t2v`"
     ),
     ("heygen", "avatar", "4"): (
         "fal `fal-ai/heygen/avatar4/image-to-video`: «Generate a video from a photo using "
@@ -378,20 +387,22 @@ SYNONYM_EVIDENCE: dict[tuple[str, ...], str] = {
     ): "HeyGen Avatar IV = Avatar 4; fal `fal-ai/heygen/avatar4/image-to-video`",
     ("topaz", "starlight"): (
         "fal `topaz/upscale/video/generative`: «Topaz Generative Video Upscale (Starlight)», "
-        "поле model: Starlight Precise 2.6/HQ/Mini/Sharp/Fast 2 "
+        "field model: Starlight Precise 2.6/HQ/Mini/Sharp/Fast 2 "
         "(fal.ai/api/openapi/queue/openapi.json?endpoint_id=topaz/upscale/video/generative)"
     ),
-    ("starlight",): "Topaz Starlight — модели эндпоинта fal `topaz/upscale/video/generative`",
+    (
+        "starlight",
+    ): "Topaz Starlight — the models of the fal endpoint `topaz/upscale/video/generative`",
     (
         "flux",
         "kontext",
         "pro",
-    ): "fal `fal-ai/flux-pro/kontext` = «FLUX.1 Kontext [pro]»; BFL (bfl.ai/pricing) то же имя",
+    ): "fal `fal-ai/flux-pro/kontext` = «FLUX.1 Kontext [pro]»; BFL (bfl.ai/pricing) uses the same name",
     (
         "flux",
         "kontext",
         "max",
-    ): "BFL «FLUX.1 Kontext [max]» (bfl.ai/pricing); в базе `flux-1-kontext-max`",
+    ): "BFL «FLUX.1 Kontext [max]» (bfl.ai/pricing); base id `flux-1-kontext-max`",
     (
         "lipsync",
         "2",
@@ -534,8 +545,35 @@ HOW_NEIGHBOUR = "unique_neighbour"
 #: Единственный сосед — единственная версия (`happyhorse` -> `happyhorse_1_0`).
 #: Тоже вывод.
 HOW_ONLY_VERSION = "only_version"
+#: Единственный сосед отличается ТОЛЬКО вендором впереди, и остаток имени сам
+#: называет линейку: слово семьи (буквами, не короче `MIN_FAMILY_WORD`) и номер
+#: версии совпадают звено в звено (`Hailuo 2.3` -> `minimax-hailuo-2.3`,
+#: `ltx-2` -> `lightricks-ltx-2`, `speech-02-hd` -> `minimax-speech-02-hd`).
+#: Аудит 4-го круга 2026-10-15: такие имена отвечали «возможно, опечатка»,
+#: хотя вендор сам пишет их без своего имени впереди, а сосед в базе ровно
+#: один. Это ТОЖДЕСТВО ПО ЗВЕНЬЯМ, и ответ — факт о соседе с нотой «прочитано
+#: как X», а не подсказка. `h3-max` сюда НЕ попадает (голден g15, решение
+#: владельца): «h» — одна буква, код версии, а не имя линейки (у Kling есть
+#: свой «O3»), и такой ответ остаётся подсказкой (`HOW_NEIGHBOUR`).
+HOW_VENDOR_DROPPED = "vendor_dropped"
 #: Как разрешается выводом, а не тождеством: такой ответ — подсказка, а не факт.
 HOW_INFERRED: frozenset[str] = frozenset({HOW_NEIGHBOUR, HOW_ONLY_VERSION})
+
+#: ВЫБРАНО: самое короткое слово семьи, которое само называет линейку. Три
+#: буквы — `ltx`, `wan`, `veo`; две и меньше — коды (`h3`, `m2`, `o3`),
+#: которые у разных вендоров значат разное. Сторожится тестом с обеих
+#: сторон: `ltx-2` разрешается, `h3-max` — нет.
+MIN_FAMILY_WORD = 3
+
+
+def _линейка_названа(звенья_: Sequence[str]) -> bool:
+    """Звенья (без вендора) начинаются словом семьи и несут номер версии."""
+    return (
+        len(звенья_) >= 2
+        and звенья_[0].isalpha()
+        and len(звенья_[0]) >= MIN_FAMILY_WORD
+        and any(_ГОЛАЯ_ВЕРСИЯ.fullmatch(з) for з in звенья_[1:])
+    )
 
 
 def fold(name: str) -> str:
@@ -815,7 +853,8 @@ def _единственный_сосед(
         return ключ, HOW_VENDOR
     по_вендору = {k for k in groups for n in groups[k] if _стержень(n) == ключ}
     if len(по_вендору) == 1:
-        return next(iter(по_вендору)), HOW_NEIGHBOUR
+        как = HOW_VENDOR_DROPPED if _линейка_названа(звенья_) else HOW_NEIGHBOUR
+        return next(iter(по_вендору)), как
     по_версии = {
         k
         for k in groups
@@ -827,6 +866,17 @@ def _единственный_сосед(
     if len(по_версии) == 1 and len(ключ) >= MIN_SHARED_PREFIX:
         return next(iter(по_версии)), HOW_ONLY_VERSION
     return "", ""
+
+
+def _путь_с_вендором(name: str) -> str:
+    """`fal-ai/minimax/h3` -> `minimax-h3`: срезана площадка, вендор оставлен."""
+    low = " ".join(str(name or "").split()).strip().lower()
+    if "/" not in low:
+        return low
+    куски = [к for к in low.strip("/").split("/") if к]
+    while len(куски) > 1 and куски[0] in ПЛОЩАДКИ_В_ПУТИ:
+        куски = куски[1:]
+    return "-".join(куски)
 
 
 def resolve(
@@ -858,6 +908,13 @@ def resolve(
     ключ = fold(asked)
     how = HOW_EXACT
     if ключ not in groups:
+        # ВЕНДОР НАЗВАН КАТАЛОГОМ ПУТИ (`minimax/h3`): `tokens` срезает его как
+        # каталог, и остаток (`h3`) уже не имя. Но спросивший вендора НАЗВАЛ —
+        # склеенное `minimax-h3` и есть имя базы. Только площадка срезается.
+        с_вендором = fold(_путь_с_вендором(asked))
+        if с_вендором in groups:
+            ключ = с_вендором
+    if ключ not in groups:
         ключ, how = _единственный_сосед(asked, every, groups)
     names = tuple(groups.get(ключ, ())) if ключ else ()
     if not names:
@@ -885,6 +942,10 @@ def resolve(
         HOW_VENDOR: " (разрешено по вендору впереди спрошенного имени)",
         HOW_NEIGHBOUR: " (разрешено АВТОМАТИЧЕСКИ: единственный сосед отличается только вендором впереди)",
         HOW_ONLY_VERSION: " (разрешено АВТОМАТИЧЕСКИ: в базе это единственная версия модели)",
+        HOW_VENDOR_DROPPED: (
+            " (прочитано как имя базы: спрошено без вендора впереди, слово семьи и "
+            "версия совпадают, сосед единственный)"
+        ),
     }[how]
     return Resolution(
         outcome=PASS,
@@ -898,7 +959,15 @@ def resolve(
         evidence=свидетельство,
         note=(
             f"{asked!r} разрешено в {canonical!r}{как}"
-            + (f" [тождество по курируемой таблице: {свидетельство}]" if свидетельство else "")
+            # Свидетельство — цитатой: это запись таблицы со своими источниками,
+            # а не наш текст (4-й круг, `studio/l10n.py`).
+            + (
+                " [тождество по курируемой таблице: «"
+                + свидетельство.replace("«", "‹").replace("»", "›")
+                + "»]"
+                if свидетельство
+                else ""
+            )
             + (
                 f"; та же модель записана и как {', '.join(n for n in names if n != canonical)}"
                 if len(names) > 1
