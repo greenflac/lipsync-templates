@@ -1889,12 +1889,12 @@ def source_frame(spec: Spec) -> tuple[int, int] | None:
     ролика считается по кадру 2.7K, а не по 4K, до которого его потом
     поднимет апскейл (круг 6, w07: $53.97 за правку по кадру 4K).
     """
-    кадры = [
-        frame(replace(spec, resolution=str(з["resolution"])))
+    кадры: list[tuple[int, int]] = [
+        к
         for з in spec.input_items
         if з.get("kind") == "video" and з.get("resolution")
+        if (к := frame(replace(spec, resolution=str(з["resolution"])))) is not None
     ]
-    кадры = [к for к in кадры if к]
     return max(кадры, key=lambda к: к[0] * к[1]) if кадры else None
 
 

@@ -693,14 +693,16 @@ class Обёртка(unittest.TestCase):
 class ЖиваяБаза(unittest.TestCase):
     """Вопросы валидатора на ЖИВОЙ базе: на них шестой круг и упал."""
 
+    база: list[Fact]
+
     @classmethod
     def setUpClass(cls) -> None:
         from studio.mcp.advice import store_for
 
         cls.база = store_for().facts
 
-    def _найти(self, *a: str) -> dict:
-        return capability.find(*a, top=30, facts=self.база)
+    def _найти(self, need: str, function: str, terms: str = "", require: str = "") -> dict:
+        return capability.find(need, function, terms, require, top=30, facts=self.база)
 
     def test_f01_профиль_sync3_выше_lipsync2pro_и_19(self) -> None:
         итог = self._найти(
