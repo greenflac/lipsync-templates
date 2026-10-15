@@ -30,7 +30,7 @@ from __future__ import annotations
 
 import math
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any, Mapping
 
 from studio import hardneed as hn
@@ -57,9 +57,40 @@ TASKS: tuple[str, ...] = (
     "voice-clone",
     "turntable",
     "captions",
+    # Шестой круг (вызывающий — языковая модель, она и понимает бриф): работы
+    # над материалом заказчика и консистентные персонажи, которые прежде
+    # собирались генерацией с нуля.
+    "video-edit",
+    "r2v",
+    "music-visualiser",
+    "sing-photo",
+    "cut-to-shorts",
 )
 AUDIO_MODES: tuple[str, ...] = ("none", "native", "voiceover")
-INPUT_KINDS: tuple[str, ...] = ("photo", "video", "audio", "script")
+INPUT_KINDS: tuple[str, ...] = ("photo", "video", "audio", "script", "model-weights")
+#: Вид входа в `spec.inputs[].kind` -> внутреннее имя (`INPUT_KINDS`). Слева —
+#: словарь контракта шестого круга (video|image|audio|text|model-weights) и
+#: прежние имена (photo, script), чтобы старый вызов не ломался.
+SPEC_INPUT_KINDS: dict[str, str] = {
+    "video": "video",
+    "image": "photo",
+    "photo": "photo",
+    "audio": "audio",
+    "text": "script",
+    "script": "script",
+    "model-weights": "model-weights",
+}
+#: Внутреннее имя входа -> имя в контракте (для черновика и эха).
+INPUT_KIND_OUT: dict[str, str] = {
+    "video": "video",
+    "photo": "image",
+    "audio": "audio",
+    "script": "text",
+    "model-weights": "model-weights",
+}
+#: Согласие и род заявления о человеке в кадре (`spec.people`, читает `screen`).
+CONSENT_STATES: tuple[str, ...] = ("stated", "none", "unknown")
+CLAIM_KINDS: tuple[str, ...] = ("none", "endorsement", "political", "news", "other")
 OBJECTIVES: tuple[str, ...] = ("cheapest", "balanced", "quality")
 
 #: Все поля `spec`, которые плановщик принимает. Неизвестное поле — ошибка, а
@@ -82,6 +113,11 @@ SPEC_FIELDS: tuple[str, ...] = (
     "budget_usd",
     "self_host",
     "jurisdiction",
+    # Шестой круг.
+    "budget",
+    "people",
+    "conditions",
+    "open_weights",
 )
 
 SOURCE_SPEC = "spec"
@@ -146,7 +182,7 @@ SHOT_NOUN = (
     r"|картин[а-яё]*|изображени[а-яё]*|шот[а-яё]*|вариант[а-яё]*)"
 )
 _СЧЁТ = re.compile(
-    r"(?<![\w.$])(?P<n>" + _ЧИСЛО + r")"
+    r"(?<![\w.$:])(?P<n>" + _ЧИСЛО + r")"
     r"(?!\s*-?\s*(?:s|secs?|seconds?|minutes?|mins?|с|сек|секунд[а-яё]*|минут[а-яё]*)(?![a-zа-яё]))"
     r"\s+(?:[a-zа-яё'-]+\s+){0,2}?(?P<noun>" + SHOT_NOUN + r")(?![a-zа-яё])"
     r"(?!\s*(?:в секунду|per second|a second|/\s*s\b|fps))"
@@ -416,10 +452,207 @@ class Spec:
     assumptions: tuple[str, ...] = ()
     #: Почему число шотов такое (явный счёт, «each», деление длительности).
     shots_basis: str = ""
+    # --- шестой круг -------------------------------------------------------
+    #: Работы ПОСЛЕ главной (`task` списком: ["video-edit", "upscale"]).
+    then_tasks: tuple[str, ...] = ()
+    #: Входы подробно: {kind, owned, duration_s, count, resolution} — как
+    #: назвал вызывающий (kind — внутреннее имя).
+    input_items: tuple[Mapping[str, Any], ...] = ()
+    #: Языки речи как ТЕГИ BCP-47 (`languages` — имена для отбора).
+    language_tags: tuple[str, ...] = ()
+    #: Бюджет, как назван: сумма и валюта ISO 4217; `budget_usd` — только
+    #: если валюта — USD или курс записан (`RECORDED_RATES`).
+    budget_amount: float | None = None
+    budget_currency: str | None = None
+    budget_note: str = ""
+    #: Люди в кадре: {name, real, public_figure, consent, claim} (читает `screen`).
+    people: tuple[Mapping[str, Any], ...] = ()
+    #: Условия кадра свободными словами («profile face», «hands») — в отбор.
+    conditions: tuple[str, ...] = ()
+    #: Требуются открытые веса (без своего запуска тоже).
+    open_weights: bool | None = None
 
     def has(self, имя: str) -> bool:
         значение = getattr(self, имя)
         return значение not in (None, (), {}, "")
+
+
+# --- языки: теги BCP-47 ----------------------------------------------------------
+
+#: Синтаксис тега BCP-47 (RFC 5646), без реестра: язык 2–3 буквы (+ до трёх
+#: расширений), письменность 4 буквы, регион 2 буквы или 3 цифры, варианты,
+#: расширения, private use. КОНСТАНТА-РЕШЕНИЕ шестого круга: проверяется
+#: ТОЛЬКО синтаксис — поддержку языка моделью судит план по записям о модели
+#: (измерено / не измерено), а не список «языков, которые мы знаем». До него
+#: казахский, польский и иврит отвергались ещё до плана (`spec_не_разобран`).
+BCP47 = re.compile(
+    r"^[a-z]{2,3}(?:-[a-z]{3}){0,3}(?:-[a-z]{4})?(?:-(?:[a-z]{2}|\d{3}))?"
+    r"(?:-(?:[a-z\d]{5,8}|\d[a-z\d]{3}))*(?:-[a-wyz\d](?:-[a-z\d]{2,8})+)*(?:-x(?:-[a-z\d]{1,8})+)?$"
+)
+
+#: Первичный подтег -> имя языка, которым его знает база (`pipeline.LANGUAGE_FORMS`).
+#: Язык вне этой таблицы остаётся ТЕГОМ: о нём в базе не записано ничего, и
+#: поддержка его любой моделью — «не измерено», а не отказ.
+CODE_TO_LANGUAGE: dict[str, str] = {
+    "en": "english", "ru": "russian", "hi": "hindi", "te": "telugu", "ta": "tamil",
+    "bn": "bengali", "zh": "chinese", "cmn": "chinese", "yue": "chinese", "ja": "japanese",
+    "ko": "korean", "ar": "arabic", "es": "spanish", "fr": "french", "de": "german",
+    "pt": "portuguese", "it": "italian", "tr": "turkish", "uk": "ukrainian", "vi": "vietnamese",
+}  # fmt: skip
+
+#: Имена языков ВНЕ словаря базы — для черновика из текста и для вызывающего,
+#: написавшего имя вместо тега. Тег -> формы в тексте.
+EXTRA_LANGUAGE_FORMS: dict[str, tuple[str, ...]] = {
+    "kk": ("kazakh", "казахск"), "pl": ("polish", "польск"), "he": ("hebrew", "иврит"),
+    "nl": ("dutch", "нидерландск", "голландск"), "sv": ("swedish", "шведск"),
+    "el": ("greek", "греческ"), "cs": ("czech", "чешск"), "ro": ("romanian", "румынск"),
+    "hu": ("hungarian", "венгерск"), "id": ("indonesian", "индонезийск"), "th": ("thai", "тайск"),
+    "fa": ("persian", "farsi", "персидск"), "uz": ("uzbek", "узбекск"), "ka": ("georgian", "грузинск"),
+    "hy": ("armenian", "армянск"), "fi": ("finnish", "финск"), "da": ("danish", "датск"),
+    "no": ("norwegian", "норвежск"), "ms": ("malay", "малайск"), "fil": ("filipino", "tagalog"),
+    "sw": ("swahili", "суахили"), "be": ("belarusian", "белорусск"), "az": ("azerbaijani", "азербайджанск"),
+}  # fmt: skip
+
+#: Имя языка базы -> тег (обратная `CODE_TO_LANGUAGE`).
+LANGUAGE_TO_CODE: dict[str, str] = {
+    "english": "en", "russian": "ru", "hindi": "hi", "telugu": "te", "tamil": "ta",
+    "bengali": "bn", "chinese": "zh", "japanese": "ja", "korean": "ko", "arabic": "ar",
+    "spanish": "es", "french": "fr", "german": "de", "portuguese": "pt", "italian": "it",
+    "turkish": "tr", "ukrainian": "uk", "vietnamese": "vi", "indic": "hi",
+}  # fmt: skip
+
+
+def language_tag(значение: str) -> str | None:
+    """Тег BCP-47 из тега или имени языка; None — не тег и не известное имя."""
+    низ = str(значение or "").strip().replace("_", "-").lower()
+    if низ in LANGUAGE_TO_CODE:
+        return LANGUAGE_TO_CODE[низ]
+    for тег, формы in EXTRA_LANGUAGE_FORMS.items():
+        if низ in формы:
+            return тег
+    if BCP47.match(низ):
+        # Каноническое написание RFC 5646: язык строчными, письменность с
+        # заглавной, регион заглавными («pt-br» -> «pt-BR», «zh-hant» -> «zh-Hant»).
+        части = низ.split("-")
+        return "-".join(
+            [части[0]]
+            + [ч.title() if len(ч) == 4 and ч.isalpha() else ч.upper() if len(ч) == 2 else ч for ч in части[1:]]
+        )
+    return None
+
+
+def language_name(тег: str) -> str:
+    """Имя для отбора: язык базы, если он ей известен, иначе сам тег."""
+    return CODE_TO_LANGUAGE.get(тег.split("-")[0], тег)
+
+
+def languages_in_text(низ: str) -> tuple[str, ...]:
+    """Теги языков, названных в тексте: словарь базы + `EXTRA_LANGUAGE_FORMS`."""
+    теги = {LANGUAGE_TO_CODE[я] for я in pl.languages_in(низ) if я in LANGUAGE_TO_CODE}
+    for тег, формы in EXTRA_LANGUAGE_FORMS.items():
+        if any(re.search(rf"(?<![a-zа-яё]){re.escape(ф)}", низ) for ф in формы):
+            теги.add(тег)
+    return tuple(sorted(теги))
+
+
+# --- соотношение сторон ------------------------------------------------------------
+
+#: Любое W:H (или W/H) и одно десятичное число («2.39» = 2.39:1).
+_ASPECT_FREE = re.compile(r"^(\d+(?:\.\d+)?)\s*[:/]\s*(\d+(?:\.\d+)?)$|^(\d+(?:\.\d+)?)$")
+#: Предел соотношения: уже 1:10 или шире 10:1 — не кадр, а опечатка.
+ASPECT_LIMIT = 10.0
+
+
+def aspect_label(значение: Any) -> str | None:
+    """«2.39:1», «9:16», «2.39», «vertical» -> «W:H»; None — не соотношение."""
+    a = str(значение).strip().lower()
+    a = {"vertical": "9:16", "portrait": "9:16", "horizontal": "16:9", "landscape": "16:9", "square": "1:1"}.get(a, a)
+    м = _ASPECT_FREE.match(a)
+    if not м:
+        return None
+    w = float(м.group(1) or м.group(3))
+    h = float(м.group(2) or 1)
+    if w <= 0 or h <= 0 or not (1 / ASPECT_LIMIT <= w / h <= ASPECT_LIMIT):
+        return None
+    return f"{w:g}:{h:g}"
+
+
+def aspect_ratio(метка: str | None) -> float | None:
+    """W/H из метки «W:H»; None — метки нет."""
+    if not метка:
+        return None
+    w, h = метка.split(":")
+    return float(w) / float(h)
+
+
+# --- деньги ---------------------------------------------------------------------
+
+#: Курсы к USD, ЗАПИСАННЫЕ с источником и датой: валюта -> (usd за единицу,
+#: источник, дата). ПУСТО НАМЕРЕННО: курса у нас не записано ни одного, а
+#: выдуманный курс — выдуманный потолок. Валюта без записи — бюджет назван,
+#: вердикта по нему нет, и это печатается.
+RECORDED_RATES: dict[str, tuple[float, str, str]] = {}
+
+ISO_CURRENCY = re.compile(r"^[A-Z]{3}$")
+
+#: Знаки и слова валют в тексте -> код ISO 4217 (для черновика и для
+#: `planner.budget_from`). Порядок — порядок поиска.
+CURRENCY_WORDS: tuple[tuple[str, str], ...] = (
+    ("USD", r"\$|us\$|usd|доллар\w*|долл\.?|бакс\w*|dollars?|bucks?"),
+    ("EUR", r"€|eur|euros?|евро"),
+    ("RUB", r"₽|rub|руб\.?|рубл\w*|roubles?|rubles?"),
+    ("GBP", r"£|gbp|фунт\w*|pounds?"),
+    ("KZT", r"₸|kzt|тенге|tenge"),
+    ("UAH", r"₴|uah|гривн\w*|hryvni?a"),
+    ("INR", r"₹|inr|рупи\w*|rupees?"),
+    ("CNY", r"¥|cny|rmb|юан\w*|yuan"),
+    ("JPY", r"jpy|иен\w*|yen"),
+    ("PLN", r"pln|zł|zloty|злот\w*"),
+    ("TRY", r"₺|lira|лир[аыу]"),
+    ("ILS", r"₪|ils|nis|shekels?|шекел\w*"),
+)
+_СУММА = r"(\d[\d ]{0,12}?(?:[.,]\d{1,2})?)(?: ?(k|к|тыс\.?|тысяч\w*|thousand)(?![a-zа-яё]))?"
+
+
+def money_in_text(текст: str) -> tuple[float, str] | None:
+    """(сумма, ISO-код) — ЧИСЛО ВПЛОТНУЮ К ЗНАКУ ВАЛЮТЫ, а не первое в окне.
+
+    НАЙДЕНО валидатором пятого круга: «9:16 … budget €12» читалось как 9 EUR
+    (первое число в окне вокруг «€» — из соотношения сторон), «1:1, бюджет 100
+    рублей» — как 1 RUB. Число берётся только примыкающее к знаку: знак перед
+    («€12», «$ 4») или слово после («100 рублей», «12 EUR»), и не часть
+    соотношения («9:16»).
+    """
+    низ = _norm(текст)
+    for код, слова in CURRENCY_WORDS:
+        перед = rf"(?<![\w])(?:{слова}) ?{_СУММА}(?![\d:])"
+        после = rf"(?<![\d:.,]){_СУММА} ?(?:{слова})(?![a-zа-яё])"
+        for м in re.finditer(rf"{перед}|{после}", низ):
+            сырое = м.group(1) or м.group(3)
+            тыс = м.group(2) or м.group(4)
+            if not сырое or not сырое.strip():
+                continue
+            число = float(сырое.replace(" ", "").replace(",", "."))
+            if тыс:
+                число *= 1000
+            return число, код
+    return None
+
+
+def budget_in_usd(сумма: float, валюта: str) -> tuple[float | None, str]:
+    """(потолок в USD или None, нота). Перевод только по записанному курсу."""
+    if валюта == "USD":
+        return сумма, ""
+    if валюта in RECORDED_RATES:
+        курс, источник, дата = RECORDED_RATES[валюта]
+        return сумма * курс, (
+            f"budget {сумма:g} {валюта} = {сумма * курс:.2f} USD at the recorded rate {курс:g} USD/{валюта} "
+            f"({источник}, {дата})"
+        )
+    return None, (
+        f"budget named in {валюта} ({сумма:g} {валюта}); no {валюта}->USD rate is recorded and none is "
+        "invented — the plan gives NO budget verdict. Pass the budget in USD to get one"
+    )
 
 
 # --- spec от вызывающего -------------------------------------------------------
@@ -443,6 +676,170 @@ def _положительное(значение: Any, целое: bool = False)
             raise ValueError("must be a whole number")
         return int(значение)
     return float(значение)
+
+
+#: Признак Apple silicon в имени «GPU»: единая память — НЕ видеопамять CUDA.
+APPLE_SILICON = re.compile(
+    r"\bapple\b|\bm[1-9](?:\s*(?:pro|max|ultra))?\b|\bmac(?:book|studio| ?mini| ?pro)?\b|\bmps\b|\bmlx\b"
+)
+
+NOTE_APPLE = (
+    "Apple silicon: {mem} unified memory is NOT CUDA VRAM — candidates are not filtered by it; "
+    "whether each model runs on MPS/MLX is unmeasured unless the base records it (see apple_silicon per step)"
+)
+
+_INPUT_FIELDS = frozenset({"kind", "owned", "duration_s", "count", "resolution", "note"})
+
+
+def _входы_spec(raw: Any, ошибки: list[str]) -> tuple[tuple[str, ...], tuple[dict[str, Any], ...]]:
+    """`spec.inputs` -> (виды, подробные записи). Строка — прежняя форма: владение не названо."""
+    виды: list[str] = []
+    подробно: list[dict[str, Any]] = []
+    for i, вход in enumerate(_список(raw)):
+        if isinstance(вход, str):
+            вид = SPEC_INPUT_KINDS.get(вход.strip().lower())
+            if вид is None:
+                ошибки.append(f"spec.inputs[{i}]: {вход!r} not in {', '.join(INPUT_KIND_OUT.values())}")
+                continue
+            виды.append(вид)
+            подробно.append({"kind": вид, "owned": None})
+            continue
+        if not isinstance(вход, Mapping):
+            ошибки.append(f"spec.inputs[{i}]: must be an object {{kind, owned, duration_s, count, resolution}}")
+            continue
+        лишние = set(вход) - _INPUT_FIELDS
+        if лишние:
+            ошибки.append(f"spec.inputs[{i}]: unknown field(s) {', '.join(sorted(лишние))}")
+        вид = SPEC_INPUT_KINDS.get(str(вход.get("kind", "")).strip().lower())
+        if вид is None:
+            ошибки.append(
+                f"spec.inputs[{i}].kind={вход.get('kind')!r}: not in {', '.join(INPUT_KIND_OUT.values())}"
+            )
+            continue
+        запись: dict[str, Any] = {"kind": вид, "owned": None}
+        if вход.get("owned") is not None:
+            if not isinstance(вход["owned"], bool):
+                ошибки.append(f"spec.inputs[{i}].owned={вход['owned']!r}: must be true or false")
+            else:
+                запись["owned"] = вход["owned"]
+        for ключ, целое in (("duration_s", False), ("count", True)):
+            if вход.get(ключ) is not None:
+                try:
+                    запись[ключ] = _положительное(вход[ключ], целое)
+                except ValueError as e:
+                    ошибки.append(f"spec.inputs[{i}].{ключ}={вход[ключ]!r}: {e}")
+        if вход.get("resolution") is not None:
+            метка = resolution_label(str(вход["resolution"]))
+            if метка is None:
+                ошибки.append(f"spec.inputs[{i}].resolution={вход['resolution']!r}: not a resolution")
+            else:
+                запись["resolution"] = метка
+        виды.append(вид)
+        подробно.append(запись)
+    return tuple(dict.fromkeys(виды)), tuple(подробно)
+
+
+_PEOPLE_FIELDS = frozenset({"name", "real", "public_figure", "consent", "claim"})
+
+
+def _люди_spec(raw: Any, ошибки: list[str]) -> tuple[dict[str, Any], ...]:
+    """`spec.people` -> записи. Поля — для `screen` (политика образа), здесь только проверка формы."""
+    люди: list[dict[str, Any]] = []
+    for i, ч in enumerate(_список(raw)):
+        if not isinstance(ч, Mapping):
+            ошибки.append(f"spec.people[{i}]: must be an object {{name, real, public_figure, consent, claim}}")
+            continue
+        лишние = set(ч) - _PEOPLE_FIELDS
+        if лишние:
+            ошибки.append(f"spec.people[{i}]: unknown field(s) {', '.join(sorted(лишние))}")
+        запись: dict[str, Any] = {"name": str(ч.get("name") or "").strip()}
+        for ключ in ("real", "public_figure"):
+            if ч.get(ключ) is not None and not isinstance(ч[ключ], bool):
+                ошибки.append(f"spec.people[{i}].{ключ}={ч[ключ]!r}: must be true or false")
+            запись[ключ] = ч[ключ] if isinstance(ч.get(ключ), bool) else None
+        for ключ, допустимо, по_умолчанию in (
+            ("consent", CONSENT_STATES, "unknown"),
+            ("claim", CLAIM_KINDS, "none"),
+        ):
+            з = str(ч.get(ключ) if ч.get(ключ) is not None else по_умолчанию).strip().lower()
+            if з not in допустимо:
+                ошибки.append(f"spec.people[{i}].{ключ}={ч.get(ключ)!r}: not in {', '.join(допустимо)}")
+                з = по_умолчанию
+            запись[ключ] = з
+        люди.append(запись)
+    return tuple(люди)
+
+
+def _бюджет_spec(raw: Mapping[str, Any], поля: dict[str, Any], ошибки: list[str]) -> None:
+    """`budget_usd` (прежняя форма) или `budget` {amount, currency} — одно из двух."""
+    if raw.get("budget_usd") is not None:
+        б = raw["budget_usd"]
+        if isinstance(б, bool) or not isinstance(б, (int, float)) or math.isnan(б) or math.isinf(б) or б < 0:
+            ошибки.append(f"spec.budget_usd={б!r}: must be a finite number, 0 or more")
+        else:
+            поля["budget_usd"] = float(б)
+            поля["budget_amount"], поля["budget_currency"] = float(б), "USD"
+    if raw.get("budget") is None:
+        return
+    б = raw["budget"]
+    if raw.get("budget_usd") is not None:
+        ошибки.append("spec.budget: give budget {amount, currency} OR budget_usd, not both")
+        return
+    if not isinstance(б, Mapping):
+        ошибки.append("spec.budget: must be an object {amount, currency}")
+        return
+    сумма, валюта = б.get("amount"), str(б.get("currency") or "").strip().upper()
+    if (
+        isinstance(сумма, bool)
+        or not isinstance(сумма, (int, float))
+        or math.isnan(сумма)
+        or math.isinf(сумма)
+        or сумма < 0
+    ):
+        ошибки.append(f"spec.budget.amount={сумма!r}: must be a finite number, 0 or more")
+        return
+    if not ISO_CURRENCY.match(валюта):
+        ошибки.append(f"spec.budget.currency={б.get('currency')!r}: an ISO 4217 code such as USD, EUR, KZT")
+        return
+    usd, нота = budget_in_usd(float(сумма), валюта)
+    поля["budget_amount"], поля["budget_currency"] = float(сумма), валюта
+    if usd is not None:
+        поля["budget_usd"] = float(usd)
+    if нота:
+        поля["budget_note"] = нота
+
+
+def _свой_запуск_spec(sh: Any, поля: dict[str, Any], ошибки: list[str]) -> None:
+    if isinstance(sh, bool):
+        # true — свой GPU без имени; false — явно НЕ свой (перекрывает текст).
+        поля["self_host"] = {"gpu": None, "vram_gb": None} if sh else {"enabled": False}
+        return
+    if not isinstance(sh, Mapping):
+        ошибки.append("spec.self_host: must be an object {gpu, vram_gb, unified_memory_gb} or true/false")
+        return
+    лишние = set(sh) - {"gpu", "vram_gb", "unified_memory_gb"}
+    if лишние:
+        ошибки.append(f"spec.self_host: unknown field(s) {', '.join(sorted(лишние))}")
+    память: dict[str, Any] = {}
+    for ключ in ("vram_gb", "unified_memory_gb"):
+        if sh.get(ключ) is not None:
+            try:
+                память[ключ] = _положительное(sh[ключ])
+            except ValueError as e:
+                ошибки.append(f"spec.self_host.{ключ}={sh[ключ]!r}: {e}")
+    gpu = sh.get("gpu")
+    if (gpu and APPLE_SILICON.search(str(gpu).lower())) or "unified_memory_gb" in память:
+        # ЕДИНАЯ ПАМЯТЬ — НЕ ВИДЕОПАМЯТЬ CUDA (шестой круг). «128 GB» у M3 Max
+        # прежде шло в отбор как `vram_gb` и пускало модели, которые на MPS не
+        # запускал никто.
+        поля["self_host"] = {
+            "gpu": gpu,
+            "vram_gb": None,
+            "unified_memory_gb": память.get("unified_memory_gb") or память.get("vram_gb"),
+            "platform": "apple-silicon",
+        }
+    else:
+        поля["self_host"] = {"gpu": gpu, "vram_gb": память.get("vram_gb")}
 
 
 def parse_spec(raw: Mapping[str, Any] | None) -> tuple[Spec, list[str]]:
@@ -470,11 +867,23 @@ def parse_spec(raw: Mapping[str, Any] | None) -> tuple[Spec, list[str]]:
         elif значения:
             поля[ключ] = значения[0]
 
-    _enum("task", TASKS)
     _enum("outputs", OUTPUTS, много=True)
     _enum("audio", AUDIO_MODES)
-    _enum("inputs", INPUT_KINDS, много=True)
     _enum("objective", OBJECTIVES)
+    # Работа — одна или ЦЕПОЧКА: ["video-edit", "upscale"] — стабилизировать,
+    # затем поднять разрешение. Первая — главная (`task`), прочие — `then_tasks`.
+    if raw.get("task") is not None:
+        работы = [str(з).strip().lower() for з in _список(raw["task"])]
+        плохие = [з for з in работы if з not in TASKS]
+        if плохие:
+            ошибки.append(f"spec.task: {', '.join(плохие)} not in {', '.join(TASKS)}")
+        работы = list(dict.fromkeys(з for з in работы if з in TASKS))
+        if работы:
+            поля["task"] = работы[0]
+            if работы[1:]:
+                поля["then_tasks"] = tuple(работы[1:])
+    if raw.get("inputs") is not None:
+        поля["inputs"], поля["input_items"] = _входы_spec(raw["inputs"], ошибки)
     for ключ, целое in (
         ("duration_s", False),
         ("per_shot_s", False),
@@ -488,12 +897,7 @@ def parse_spec(raw: Mapping[str, Any] | None) -> tuple[Spec, list[str]]:
             поля[ключ] = _положительное(raw[ключ], целое)
         except ValueError as e:
             ошибки.append(f"spec.{ключ}={raw[ключ]!r}: {e}")
-    if raw.get("budget_usd") is not None:
-        б = raw["budget_usd"]
-        if isinstance(б, bool) or not isinstance(б, (int, float)) or math.isnan(б) or math.isinf(б) or б < 0:
-            ошибки.append(f"spec.budget_usd={б!r}: must be a finite number, 0 or more")
-        else:
-            поля["budget_usd"] = float(б)
+    _бюджет_spec(raw, поля, ошибки)
     if raw.get("resolution") is not None:
         метка = resolution_label(str(raw["resolution"]))
         if метка is None:
@@ -504,22 +908,23 @@ def parse_spec(raw: Mapping[str, Any] | None) -> tuple[Spec, list[str]]:
         else:
             поля["resolution"] = метка
     if raw.get("aspect") is not None:
-        a = str(raw["aspect"]).strip().lower()
-        a = {"vertical": "9:16", "horizontal": "16:9", "landscape": "16:9", "square": "1:1"}.get(a, a)
-        if not _ASPECT.fullmatch(a):
-            ошибки.append(f"spec.aspect={raw['aspect']!r}: use W:H such as 9:16, 16:9, 1:1, 4:5")
+        a = aspect_label(raw["aspect"])
+        if a is None:
+            ошибки.append(
+                f"spec.aspect={raw['aspect']!r}: use W:H such as 9:16, 16:9, 2.39:1 (or a decimal like 2.39)"
+            )
         else:
             поля["aspect"] = a
     if raw.get("languages") is not None:
-        языки = []
+        теги: list[str] = []
         for я in _список(raw["languages"]):
-            найдено = pl.languages_in(str(я)) or (
-                {str(я).strip().lower()} if str(я).strip().lower() in pl.LANGUAGE_FORMS else set()
-            )
-            if not найдено:
-                ошибки.append(f"spec.languages: {я!r} is not a language we know ({', '.join(pl.LANGUAGE_FORMS)})")
-            языки.extend(sorted(найдено))
-        поля["languages"] = tuple(dict.fromkeys(языки))
+            тег = language_tag(str(я))
+            if тег is None:
+                ошибки.append(f"spec.languages: {я!r} is not a BCP-47 language tag (e.g. en, kk, pl, he, pt-BR)")
+                continue
+            теги.append(тег)
+        поля["language_tags"] = tuple(dict.fromkeys(теги))
+        поля["languages"] = tuple(dict.fromkeys(language_name(т) for т in теги))
     if raw.get("jurisdiction") is not None:
         # Коды и имена («DE», «Germany», «EU») — тем же разборщиком, что у отбора.
         блоки, _ = hn.jurisdiction_codes([str(з) for з in _список(raw["jurisdiction"])])
@@ -529,21 +934,20 @@ def parse_spec(raw: Mapping[str, Any] | None) -> tuple[Spec, list[str]]:
             } | set(блоки))
         )
     if raw.get("self_host") is not None:
-        sh = raw["self_host"]
-        if isinstance(sh, bool):
-            # true — свой GPU без имени; false — явно НЕ свой (перекрывает текст).
-            поля["self_host"] = {"gpu": None, "vram_gb": None} if sh else {"enabled": False}
-        elif not isinstance(sh, Mapping):
-            ошибки.append("spec.self_host: must be an object {gpu, vram_gb} or true/false")
+        _свой_запуск_spec(raw["self_host"], поля, ошибки)
+    if raw.get("people") is not None:
+        поля["people"] = _люди_spec(raw["people"], ошибки)
+    if raw.get("conditions") is not None:
+        if any(not isinstance(у, str) for у in _список(raw["conditions"])):
+            ошибки.append('spec.conditions: a list of short phrases, e.g. ["profile face", "logo legible"]')
+        поля["conditions"] = tuple(
+            dict.fromkeys(str(у).strip() for у in _список(raw["conditions"]) if str(у).strip())
+        )
+    if raw.get("open_weights") is not None:
+        if not isinstance(raw["open_weights"], bool):
+            ошибки.append(f"spec.open_weights={raw['open_weights']!r}: must be true or false")
         else:
-            vram = sh.get("vram_gb")
-            if vram is not None:
-                try:
-                    vram = _положительное(vram)
-                except ValueError as e:
-                    ошибки.append(f"spec.self_host.vram_gb={vram!r}: {e}")
-                    vram = None
-            поля["self_host"] = {"gpu": sh.get("gpu"), "vram_gb": vram}
+            поля["open_weights"] = raw["open_weights"]
     if поля.get("per_shot_s") and поля.get("shots") and not поля.get("duration_s"):
         поля["duration_s"] = поля["per_shot_s"] * поля["shots"]
     return Spec(**поля, source={к: SOURCE_SPEC for к in поля}), ошибки
@@ -637,6 +1041,9 @@ def _длительности(низ: str) -> tuple[float | None, float | None]:
         после = низ[м.end() :]
         # `m`/`s` после чисел-разрешений и денег — не время: «$4m», «4s» после «$».
         if до.rstrip().endswith("$") or re.match(r"\s*(?:fps|p\b)", после):
+            continue
+        # «1970s home movie» — десятилетие, а не 1970 секунд (валидатор 5-го круга).
+        if re.fullmatch(r"(?:19|20)\d0", м.group("n")) and м.group("u") == "s":
             continue
         число = float(м.group("n").replace(",", "."))
         секунды = число * (60.0 if м.group("u").startswith(("min", "мин")) else 1.0)
@@ -818,13 +1225,20 @@ def from_text(brief: str) -> Spec:
     return Spec(**поля, source={к: SOURCE_TEXT for к in поля if к != "absent"})
 
 
+#: Поля `Spec`, которые несут ЗНАЧЕНИЕ заказа (а не источник, допущения и
+#: основание шотов): по ним `resolve` кладёт spec поверх текста.
+SPEC_STATE_FIELDS: tuple[str, ...] = tuple(
+    имя for имя in Spec.__dataclass_fields__ if имя not in ("source", "assumptions", "shots_basis")
+)
+
+
 def resolve(brief: str, raw: Mapping[str, Any] | None = None) -> tuple[Spec, list[str]]:
     """Поля `spec` поверх разобранного из текста. Возвращает (итог, ошибки spec)."""
     от_вызова, ошибки = parse_spec(raw)
     из_текста = from_text(brief)
     поля: dict[str, Any] = {}
     источник: dict[str, str] = {}
-    for имя in SPEC_FIELDS + ("absent",):
+    for имя in SPEC_STATE_FIELDS:
         if от_вызова.has(имя):
             поля[имя] = getattr(от_вызова, имя)
             источник[имя] = SOURCE_SPEC
@@ -874,6 +1288,9 @@ def hard(
     из_текста = hn.from_brief(brief)
     поля: dict[str, Any] = {"open_weights": из_текста.open_weights}
     источники: dict[str, str] = {"open_weights": "бриф"} if из_текста.open_weights else {}
+    if spec.open_weights is not None:
+        поля["open_weights"] = spec.open_weights
+        источники["open_weights"] = HARD_SOURCE.get(spec.source.get("open_weights", SOURCE_SPEC), "spec")
 
     def _от(имя: str) -> str:
         return HARD_SOURCE.get(spec.source.get(имя, SOURCE_TEXT), "бриф")
@@ -958,7 +1375,7 @@ def _нехватка_видео(задача: str) -> tuple[str, str, str, tupl
     return (
         "вход_задачи",
         f"для задачи «{задача}» нужно ВАШЕ видео — приложите файл (creative) или скажите, что видео есть",
-        f"the task '{задача}' works on YOUR video — attach it (creative=path) or pass spec.inputs=['video']",
+        f"the task '{задача}' works on YOUR video — attach it (creative=path) and pass spec.inputs=[{{kind: 'video', owned: true}}]",
         ("видео есть — приложу", "видео нет — сделать с нуля"),
         ("I have the video and will attach it", "there is no video — make one from scratch"),
     )
@@ -967,7 +1384,7 @@ def _нехватка_видео(задача: str) -> tuple[str, str, str, tupl
 #: Как вход задачи называется заказчику: (по-русски, spec.inputs).
 ВХОД_СЛОВАМИ: dict[str, tuple[str, str]] = {
     "video": ("ВАШЕ видео", "video"),
-    "photo": ("ВАШ снимок", "photo"),
+    "photo": ("ВАШ снимок", "image"),
     "audio": ("ВАША запись (образец голоса, дорожка)", "audio"),
 }
 
@@ -979,7 +1396,7 @@ def _нехватка_входа(задача: str, вход: str) -> tuple[str,
     return (
         "вход_задачи",
         f"для задачи «{задача}» нужен вход — {по_русски}: приложите файл",
-        f"the task '{задача}' works on YOUR {имя} — attach it or pass spec.inputs=['{имя}']",
+        f"the task '{задача}' works on YOUR {имя} — attach it and pass spec.inputs=[{{kind: '{имя}', owned: true}}]",
         ("приложу", "его нет"),
         ("I have it and will attach it", "there is none"),
     )
@@ -989,9 +1406,37 @@ def _нехватка_входа(задача: str, вход: str) -> tuple[str,
 #: по-английски, `planner._по_английски`).
 NOTE_DUB_LIPS = "перевод готового видео: губы под новый язык (лиц в кадре нет — шаг снимается)"
 NOTE_KEYFRAMES = "персонажей {n}: ключевой кадр на каждый шот, иначе лица разъезжаются от шота к шоту"
+NOTE_VIDEO_EDIT = "правка ВАШЕГО видео (стабилизация, рефрейм, замена неба, вырезка): нового ролика никто не генерирует"
+NOTE_R2V_REF = "референс персонажа делается один раз, и каждый шот строится по нему — персонаж не разъезжается"
+NOTE_R2V = "каждый шот — по одному референсу персонажа (reference-to-video)"
+NOTE_VISUALISER = "только картинка под ВАШ трек: музыка не генерируется, дорожку кладёт монтаж"
+NOTE_SING = "ВАШ снимок поёт ВАШУ дорожку: аватар, ведомый звуком; ни синтеза речи, ни генерации музыки"
+NOTE_SHORTS_TRANSCRIPT = "расшифровка с таймингами ВАШЕГО длинного видео — по ней выбираются фрагменты"
+NOTE_SHORTS_EDIT = "каждый короткий ролик вырезан и перекадрирован из ВАШЕГО видео — ничего не генерируется"
 NOTES_EN: dict[str, str] = {
     NOTE_DUB_LIPS: "translating your own video: lip sync moves the lips to the new language (no faces on screen — drop the step)",
     NOTE_CAPTIONS: "captions are burned in at assembly (ffmpeg) from the timed transcript — no model needed for that",
+    NOTE_VIDEO_EDIT: "an edit of YOUR video (stabilise, reframe, sky replacement, cut-out): no new clip is generated",
+    NOTE_R2V_REF: "the character reference is made once and every shot is built from it, so the character does not drift",
+    NOTE_R2V: "every shot from one character reference (reference-to-video)",
+    NOTE_VISUALISER: "visuals only, under YOUR track: no music is generated, the track is laid in at assembly",
+    NOTE_SING: "YOUR photo sings YOUR track: an audio-driven avatar; no speech synthesis, no music generation",
+    NOTE_SHORTS_TRANSCRIPT: "timed transcript of YOUR long video — the moments are picked from it",
+    NOTE_SHORTS_EDIT: "each short is cut and reframed from YOUR video — nothing is generated",
+}
+
+#: Причины сборки, которые называет МАРШРУТ (а не состав шагов): дорожка
+#: заказчика под картинкой, отбор фрагментов по расшифровке. Читает
+#: `planner.нужна_сборка`. Ключ — пометка, значение — (ru, en).
+ASSEMBLY_REASONS: dict[str, tuple[str, str]] = {
+    NOTE_VISUALISER: (
+        "под картинку кладётся ВАША дорожка (её длина — длина ролика)",
+        "YOUR track is laid under the visuals (its length is the clip length)",
+    ),
+    NOTE_SHORTS_EDIT: (
+        "фрагменты выбираются по расшифровке (вами или языковой моделью) и режутся ffmpeg — модель не нужна",
+        "the moments are picked from the transcript (by you or a language model) and cut with ffmpeg — no model",
+    ),
 }
 
 
@@ -1005,8 +1450,64 @@ def note_en(ru: str) -> str | None:
     return None
 
 
+#: Работа над ВИДЕО заказчика, которая делается одним шагом правки (v2v-edit).
+VIDEO_EDIT_TASKS: frozenset[str] = frozenset({"video-edit"})
+
+
+def _нехватка_двух(задача: str, нужно: tuple[str, ...], есть: set[str]) -> Маршрут | None:
+    """Первый недостающий вход задачи — вопрос; всё есть — None."""
+    for вход in нужно:
+        if вход not in есть:
+            return Маршрут(нехватка=_нехватка_входа(задача, вход))
+    return None
+
+
+def _дорожки(spec: Spec, шаги: list[str]) -> None:
+    """Речь, музыка, шумы поверх картинки — общие для генерации и r2v."""
+    выходы = set(spec.outputs)
+    if "speech" in выходы and spec.audio != "native" and "audio" not in spec.inputs:
+        шаги.append("озвучка")
+    if "music" in выходы:
+        шаги.append("музыка")
+    if "sfx" in выходы and spec.audio != "native":
+        шаги.append("звук_фон")
+
+
+def _подложка(выходы: set[str]) -> tuple[str, ...]:
+    """Музыка и шумы ПОД правленое видео заказчика (свадебный ролик «с музыкой»).
+
+    Речь сюда не входит: у принесённого видео свой звук, а новый голос — это
+    уже дубляж, другая работа.
+    """
+    return tuple(ш for в, ш in (("music", "музыка"), ("sfx", "звук_фон")) if в in выходы)
+
+
 def route(spec: Spec) -> Маршрут:
-    """Шаги по спецификации. Пусто без нехватки — спецификация ничего не заказывает.
+    """Шаги по спецификации: главная работа, затем работы цепочки (`then_tasks`).
+
+    Работа цепочки идёт над ВЫХОДОМ предыдущей: «стабилизировать, затем
+    апскейл» — апскейл видео, которое отдала правка. Нехватка любой работы —
+    вопрос всей цепочки.
+    """
+    главный = _маршрут_одной(spec)
+    if главный.нехватка is not None or not spec.then_tasks:
+        return главный
+    шаги = list(главный.шаги)
+    пометки = dict(главный.пометки)
+    выход = "video" if "video" in spec.outputs or spec.task not in (None, "generate") else "photo"
+    for задача in spec.then_tasks:
+        звено = _маршрут_одной(
+            replace(spec, task=задача, then_tasks=(), inputs=tuple(dict.fromkeys((*spec.inputs, выход))))
+        )
+        if звено.нехватка is not None:
+            return звено
+        шаги += [ш for ш in звено.шаги if ш not in шаги]
+        пометки.update({к: в for к, в in звено.пометки.items() if к not in пометки})
+    return Маршрут(tuple(шаги), пометки)
+
+
+def _маршрут_одной(spec: Spec) -> Маршрут:
+    """Шаги одной работы. Пусто без нехватки — спецификация ничего не заказывает.
 
     Маршрут называет ГЛАВНЫЕ шаги; входы, которых им не хватает (кадр для
     аватара, речь для липсинка), дописывает замыкание плановщика
@@ -1023,6 +1524,39 @@ def route(spec: Spec) -> Маршрут:
             if вход in входы:
                 return Маршрут((шаг,), {шаг: NOTE_CAPTIONS} if задача == "captions" else {})
         return Маршрут(нехватка=_нехватка_входа(задача, ROUTE_TASKS[задача][0][0]))
+    # --- шестой круг: работа над материалом заказчика -----------------------
+    if задача in VIDEO_EDIT_TASKS:
+        if "video" not in входы:
+            return Маршрут(нехватка=_нехватка_видео(задача))
+        return Маршрут(("правка_видео", *_подложка(выходы)), {"правка_видео": NOTE_VIDEO_EDIT})
+    if задача == "cut-to-shorts":
+        if "video" not in входы:
+            return Маршрут(нехватка=_нехватка_видео(задача))
+        return Маршрут(
+            ("расшифровка", "правка_видео", *_подложка(выходы)),
+            {"расшифровка": NOTE_SHORTS_TRANSCRIPT, "правка_видео": NOTE_SHORTS_EDIT},
+        )
+    if задача == "music-visualiser":
+        if (нет := _нехватка_двух(задача, ("audio",), входы)) is not None:
+            return нет
+        # Принесённый кадр оживляется, иначе картинка генерируется с нуля;
+        # музыки не генерирует никто — трек заказчика.
+        шаг = "оживление" if "photo" in входы else "генерация_видео"
+        return Маршрут((шаг,), {шаг: NOTE_VISUALISER})
+    if задача == "sing-photo":
+        if (нет := _нехватка_двух(задача, ("photo", "audio"), входы)) is not None:
+            return нет
+        return Маршрут(("говорящий_аватар",), {"говорящий_аватар": NOTE_SING})
+    if задача == "r2v":
+        if "photo" in входы:
+            шаги.append("видео_по_референсу")
+            пометки["видео_по_референсу"] = NOTE_R2V
+        else:
+            шаги += ["генерация_изображения", "видео_по_референсу"]
+            пометки["генерация_изображения"] = NOTE_R2V_REF
+            пометки["видео_по_референсу"] = NOTE_R2V
+        _дорожки(spec, шаги)
+        return Маршрут(tuple(dict.fromkeys(шаги)), пометки)
     if задача == "face-replace":
         if "video" not in входы:
             return Маршрут(нехватка=_нехватка_видео(задача))
@@ -1056,15 +1590,20 @@ def route(spec: Spec) -> Маршрут:
             return Маршрут(("апскейл_изображения",), {})
         return Маршрут(нехватка=_нехватка_видео(задача))
     elif задача == "edit":
+        # ПРАВКА ВИДЕО ЗАКАЗЧИКА (шестой круг): «edit» над принесённым видео
+        # прежде спрашивал снимок — и замену неба в своём таймлапсе нельзя
+        # было заказать вовсе. Видео на входе и видео на выходе — правка видео.
+        if "video" in входы and ("video" in выходы or "photo" not in входы):
+            return Маршрут(("правка_видео",), {"правка_видео": NOTE_VIDEO_EDIT})
         if "photo" in входы:
             return Маршрут(("редактирование_изображения",), {})
         return Маршрут(
             нехватка=(
                 "вход_задачи",
-                "правка нужна по ВАШЕМУ снимку — приложите его",
-                "editing works on YOUR image — attach it or pass spec.inputs=['photo']",
-                ("снимок есть — приложу", "снимка нет — сгенерировать"),
-                ("I have the image", "there is no image — generate one"),
+                "правка нужна по ВАШЕМУ снимку или видео — приложите его",
+                "editing works on YOUR image or video — attach it or pass spec.inputs=[{kind: 'image'|'video', owned: true}]",
+                ("снимок или видео есть — приложу", "ничего нет — сгенерировать"),
+                ("I have the image or video", "there is none — generate one"),
             )
         )
     elif "video" in выходы:
@@ -1082,12 +1621,7 @@ def route(spec: Spec) -> Маршрут:
             шаги.append("генерация_видео")
     elif "image" in выходы:
         шаги.append("генерация_изображения")
-    if "speech" in выходы and spec.audio != "native" and "audio" not in входы:
-        шаги.append("озвучка")
-    if "music" in выходы:
-        шаги.append("музыка")
-    if "sfx" in выходы and spec.audio != "native":
-        шаги.append("звук_фон")
+    _дорожки(spec, шаги)
     return Маршрут(tuple(dict.fromkeys(шаги)), пометки)
 
 
@@ -1139,18 +1673,68 @@ def with_defaults(spec: Spec, ролик: bool) -> Spec:
             "the new face/character comes from YOUR reference image — none is named in the brief; "
             "attach it, or pass spec.inputs=['video', 'photo']"
         )
+    допущения += contract_notes(spec)
     поля["source"] = источник
-    поля["assumptions"] = tuple(допущения)
+    поля["assumptions"] = tuple(dict.fromkeys(допущения))
     return Spec(**поля)
+
+
+def contract_notes(spec: Spec) -> list[str]:
+    """Оговорки, которые следуют из полей контракта шестого круга — вслух, а не молча."""
+    ноты: list[str] = []
+    for з in spec.input_items:
+        вид = INPUT_KIND_OUT.get(з["kind"], з["kind"])
+        if з.get("owned") is False:
+            ноты.append(
+                f"the {вид} is NOT the customer's own: the plan does not judge rights — licence or permission "
+                "from its owner is needed before any of it is used"
+            )
+        if з["kind"] == "model-weights":
+            ноты.append(
+                "the customer brings their own model weights: hosted endpoints rarely accept custom weights — "
+                "running them is a self-host job, and no candidate here is judged on them"
+            )
+    if spec.budget_note:
+        ноты.append(spec.budget_note)
+    sh = spec.self_host or {}
+    if sh.get("platform") == "apple-silicon":
+        память = sh.get("unified_memory_gb")
+        ноты.append(NOTE_APPLE.format(mem=f"{память:g} GB" if память else "its"))
+    вне_базы = [т for т in spec.language_tags if language_name(т) == т]
+    if вне_базы:
+        ноты.append(
+            f"language(s) {', '.join(вне_базы)}: the base records nothing about them for any model — "
+            "support is UNMEASURED for every candidate (see language_support per step), not refused"
+        )
+    return ноты
+
+
+#: Поля эха: поля контракта, кроме `budget` — он печатается суммой и валютой отдельно.
+ECHO_FIELDS: tuple[str, ...] = tuple(и for и in SPEC_FIELDS if и != "budget")
 
 
 def echo(spec: Spec, steps: list[str] | tuple[str, ...] = ()) -> dict:
     """«Понято как»: каждое поле со значением и источником, допущения и как поправить."""
     поля = {
         имя: {"value": (list(з) if isinstance(з, tuple) else з), "from": spec.source.get(имя, SOURCE_TEXT)}
-        for имя in SPEC_FIELDS
+        for имя in ECHO_FIELDS
         if spec.has(имя) and (з := getattr(spec, имя)) is not None
     }
+    if spec.then_tasks and "task" in поля:
+        поля["task"]["then"] = list(spec.then_tasks)
+    if spec.input_items and "inputs" in поля:
+        поля["inputs"]["items"] = [
+            {**з, "kind": INPUT_KIND_OUT.get(з["kind"], з["kind"])} for з in spec.input_items
+        ]
+    if spec.language_tags and "languages" in поля:
+        поля["languages"]["tags"] = list(spec.language_tags)
+    if spec.budget_currency:
+        поля["budget"] = {
+            "value": {"amount": spec.budget_amount, "currency": spec.budget_currency},
+            "from": spec.source.get("budget_currency", SOURCE_TEXT),
+            "usd": spec.budget_usd,
+            **({"note": spec.budget_note} if spec.budget_note else {}),
+        }
     не_понято = [
         имя
         for имя in ("task", "outputs", "duration_s", "resolution", "inputs", "languages")
@@ -1186,3 +1770,393 @@ def missing(spec: Spec) -> list[str]:
     if not spec.inputs:
         нет.append("what you already have (photo, video, audio, script — or nothing)")
     return нет
+
+
+# --- КОНТРАКТ ШЕСТОГО КРУГА: план строится только по ПОЛНОЙ спецификации ----------
+#
+# ЗАЧЕМ. Пять кругов подстрочных списков не сошлись: «transcribe interview»,
+# «restore 8mm», «stabilise drone», «make my cat photo sing» уходили в
+# генерацию ролика с нуля за $394–$540, хотя заказчик принёс материал. Зовёт
+# плановщика языковая модель — она и понимает язык. Поэтому план решают поля
+# спецификации, а текст брифа — только эхо и ноты. Нет решающих полей — ВОПРОС
+# (Р1) с перечнем полей, допустимыми значениями и ЧЕРНОВИКОМ, прочитанным из
+# текста прежним разборщиком: черновик помечен как неподтверждённый и НИКОГДА
+# не становится планом сам.
+
+#: РЕШАЮЩИЕ поля: без любого из них план не строится, а задаётся вопрос.
+SPEC_DECIDING: tuple[str, ...] = ("task", "inputs", "outputs", "duration_s", "languages")
+
+#: Работы, у которых в выходе есть ЯЗЫК (речь или текст) даже без `speech` в
+#: `outputs`: перевод, расшифровка, субтитры, клон голоса.
+LANGUAGE_TASKS: frozenset[str] = frozenset({"dub-translate", "transcribe", "captions", "voice-clone"})
+
+#: Выходы, у которых есть ДЛИТЕЛЬНОСТЬ: без неё цену не посчитать и шоты не нарезать.
+TIMED_OUTPUTS: frozenset[str] = frozenset({"video", "speech", "music", "sfx", "text"})
+
+#: Работы над МАТЕРИАЛОМ заказчика: их длительность может прийти из входа
+#: (`inputs[].duration_s`) — длина выхода равна длине принесённого.
+MATERIAL_TASKS: frozenset[str] = frozenset(
+    {
+        "restore",
+        "interpolate",
+        "remove-background",
+        "transcribe",
+        "captions",
+        "upscale",
+        "video-edit",
+        "edit",
+        "dub-translate",
+        "lipsync",
+        "face-replace",
+        "music-visualiser",
+        "sing-photo",
+    }
+)
+
+#: Допустимые значения решающих полей — словами для вызывающего (и для человека).
+FIELD_HELP: dict[str, str] = {
+    "task": "one of " + " | ".join(TASKS) + " — or a list for a chain, e.g. [\"video-edit\", \"upscale\"]",
+    "inputs": (
+        "what the customer ALREADY HAS: a list of {kind: video|image|audio|text|model-weights, owned: true|false, "
+        "duration_s?, count?, resolution?}; [] means nothing"
+    ),
+    "inputs[].owned": "true when the customer owns (or holds the rights to) this material, false when not",
+    "outputs": "list of " + " | ".join(OUTPUTS),
+    "duration_s": (
+        "seconds of the finished output — or shots + per_shot_s; for work on the customer's own material "
+        "inputs[].duration_s is enough"
+    ),
+    "shots": "how many images / shots / clips (for images: how many pictures)",
+    "per_shot_s": "seconds per shot / per short",
+    "languages": (
+        "BCP-47 tags of the speech or text in the output, e.g. [\"en\"], [\"kk\", \"ru\"], [\"pt-BR\"]; "
+        "[] when nothing is spoken"
+    ),
+}
+
+#: Полный пример — печатается в вопросе и в описании инструмента (Е1: один текст).
+EXAMPLE_SPEC: dict[str, Any] = {
+    "task": "dub-translate",
+    "inputs": [{"kind": "video", "owned": True, "duration_s": 90, "resolution": "1080p"}],
+    "outputs": ["video", "speech"],
+    "duration_s": 90,
+    "languages": ["pl", "tr"],
+    "aspect": "16:9",
+    "budget": {"amount": 40, "currency": "USD"},
+    "people": [{"name": "our CEO", "real": True, "public_figure": False, "consent": "stated", "claim": "none"}],
+    "conditions": ["profile face"],
+}
+
+#: Что делать вызывающему с вопросом о спецификации — одна строка на все ответы.
+SPEC_INSTRUCTION = (
+    "The plan is built ONLY from spec. Read the draft below WITH the customer (it was read from the "
+    "text by a keyword parser and is unconfirmed), correct it, fill every field in `missing`, and call "
+    "plan_pipeline again with spec=<the confirmed object>. Do not guess a field the customer did not "
+    "state — ask them."
+)
+
+
+def source_seconds(spec: Spec) -> float | None:
+    """Длина принесённого материала (самый длинный вход видео/аудио), или None."""
+    длины = [
+        float(з["duration_s"])
+        for з in spec.input_items
+        if з.get("kind") in ("video", "audio") and з.get("duration_s")
+    ]
+    return max(длины) if длины else None
+
+
+def _пробел(поле: str, почему: str) -> dict[str, str]:
+    return {"field": поле, "allowed": FIELD_HELP.get(поле, ""), "why": почему}
+
+
+def gaps(raw: Mapping[str, Any] | None) -> tuple[Spec, list[str], list[dict[str, str]]]:
+    """(spec, ошибки формы, НЕДОСТАЮЩИЕ решающие поля). Пусто в третьем — план строится.
+
+    Решающие поля: работа, входы (с владением), выходы, длительность или число
+    шотов, языки — там, где в выходе есть речь или текст. Остальные поля
+    (кадр, соотношение, бюджет, люди, условия) уточняют план, но не решают его.
+    """
+    spec, ошибки = parse_spec(raw)
+    if not isinstance(raw, Mapping):
+        raw = {}
+    нет: list[dict[str, str]] = []
+    работы = (spec.task, *spec.then_tasks) if spec.task else ()
+    if not spec.task:
+        нет.append(_пробел("task", "the job decides the steps; a text guess is how footage became a generation"))
+    if raw.get("inputs") is None:
+        нет.append(_пробел("inputs", "what the customer brings decides whether anything is generated at all"))
+    else:
+        for i, з in enumerate(spec.input_items):
+            if з.get("owned") is None:
+                нет.append(
+                    {
+                        "field": f"inputs[{i}].owned",
+                        "allowed": FIELD_HELP["inputs[].owned"],
+                        "why": f"the {INPUT_KIND_OUT.get(з['kind'], з['kind'])} is brought, but whose it is was not said",
+                    }
+                )
+    if not spec.outputs:
+        нет.append(_пробел("outputs", "what comes out decides which steps exist"))
+    выходы = set(spec.outputs)
+    if "cut-to-shorts" in работы:
+        for поле in ("shots", "per_shot_s"):
+            if not getattr(spec, поле):
+                нет.append(_пробел(поле, "how many shorts and how long each — the cut, not the source, is priced"))
+    elif выходы & TIMED_OUTPUTS:
+        от_входа = bool(set(работы) & MATERIAL_TASKS) and source_seconds(spec) is not None
+        if not (spec.duration_s or (spec.shots and spec.per_shot_s) or от_входа):
+            нет.append(_пробел("duration_s", "length decides the price and how many runs/shots are needed"))
+    elif выходы == {"image"}:
+        штук = any(з.get("count") for з in spec.input_items)
+        if not (spec.shots or штук):
+            нет.append(_пробел("shots", "how many pictures decides the price"))
+    if ("speech" in выходы or set(работы) & LANGUAGE_TASKS) and (
+        raw.get("languages") is None or not spec.languages
+    ):
+        нет.append(_пробел("languages", "speech or text is in the output, so its language decides the models"))
+    return spec, ошибки, нет
+
+
+# --- черновик спецификации из текста ----------------------------------------------
+
+#: ПОДСКАЗКИ ЧЕРНОВИКА: (работа, образец, вход, без которого её нет). Только
+#: для черновика — его подтверждает вызывающий; план по ним НЕ строится. Порядок
+#: — старшинство: «transcribe … with SRT subtitles» — расшифровка, не субтитры.
+DRAFT_TASK_CUES: tuple[tuple[str, str, str], ...] = (
+    ("transcribe", r"transcri\w*|расшифр\w*|speech[- ]to[- ]text|speaker labels|diari[sz]\w*|стенограм\w*", "video"),
+    ("captions", r"\bcaptions?\b|subtitl\w*|субтитр\w*", "video"),
+    (
+        "restore",
+        r"restor\w*|реставр\w*|scratch\w*|\b8 ?mm\b|super ?8|film grain|de-?flicker|old (?:film|footage|home movie)"
+        r"|colori[sz]\w*|раскрас\w*|оцифр\w*|старо\w* (?:плёнк|пленк|видео)",
+        "video",
+    ),
+    (
+        "remove-background",
+        r"remove (?:the )?background|background remov\w*|без фона|удал\w* фон|убра\w* фон|убери фон"
+        r"|cut ?out (?:the )?background|on (?:a )?green|green ?screen|alpha matte|matting",
+        "video",
+    ),
+    (
+        "interpolate",
+        r"slow[- ]?mo\w*|interpolat\w*|интерполяц\w*|замедл\w*|smoother motion|frame rate up|"
+        r"into (?:60|120|240) ?fps",
+        "video",
+    ),
+    (
+        "voice-clone",
+        r"clon\w* (?:\w+ ){0,3}voice|voice[- ]?clon\w*|клон\w* голос|склонир\w*|голосом наш\w*|"
+        r"in (?:his|her|my|our \w+'s) own voice",
+        "audio",
+    ),
+    (
+        "music-visualiser",
+        r"visuali[sz]er|визуализ\w*|audio[- ]reactive|reactive (?:shapes|visuals)|pulsing to the beat",
+        "audio",
+    ),
+    (
+        "video-edit",
+        r"stabili[sz]\w*|стабилиз\w*|reframe\w*|re-frame|outpaint\w*|расшир\w* кадр|sky replac\w*|"
+        r"replace (?:the )?sky|замен\w* неб\w*|remove (?:the )?(?:logo|watermark|object|person|people)"
+        r"|color[- ]?grad\w*|colou?r correct\w*|цветокор\w*|vertical .{0,40}into .{0,30}horizontal"
+        r"|horizontal .{0,40}into .{0,30}vertical|convert (?:our|my) .{0,40}(?:16:9|9:16)",
+        "video",
+    ),
+    ("turntable", r"turntable|\b360\b|оборот|вращени\w*", "photo"),
+    ("animate", r"image[- ]to[- ]video|\bi2v\b|photo[- ]to[- ]video", "photo"),
+)
+
+#: «we have the video and the audio», «у нас есть запись» — владение, сказанное
+#: глаголом «есть/have» (окно до восьми слов после него). Только черновик.
+HAVE_PHRASE = re.compile(r"\b(?:we|i)(?:'ve| have| already have| got| own)\b|у (?:нас|меня) (?:уже )?есть")
+HAVE_WINDOW = 8
+
+#: Признаки того, что заказчик говорит о СВОЁМ исходнике, а не о заказе ролика:
+#: интервью, подкаст, запись, плёнка, таймлапс, «my/our … clip». Только черновик.
+DRAFT_SOURCE_WORDS = re.compile(
+    r"interview|podcast|webinar|stream|livestream|lecture|recording|home movie|footage|timelapse|time-lapse"
+    r"|drone (?:footage|shot|video|clip)|\bvod\b|интервью|подкаст|вебинар|стрим|запис[ьи]|лекци\w*|съ[её]мк\w*"
+    r"|исходник\w*|плёнк\w*|пленк\w*|таймлапс\w*"
+)
+SHORTS = re.compile(r"\bshorts\b|\btiktoks\b|нарез\w*|нареж\w*|highlights?|коротк\w+ ролик\w*|\d+ (?:reels|clips)\b")
+SING = re.compile(r"\bsings?\b|\bsinging\b|\bsang\b|\bпе(?:ть|л|ла|ло|ли)\b|поёт|поет|поют|спо[её]т|спел\w*")
+SAME_CHARACTER = re.compile(
+    r"same character|consistent character|same (?:hero|mascot|girl|boy|man|woman)|один и тот же (?:персонаж|герой)"
+    r"|одн\w+ и т\w+ же (?:персонаж|герой|героин)"
+)
+#: «MacBook M3 Max, 128GB unified memory» — память Apple, не VRAM.
+_ЕДИНАЯ_ПАМЯТЬ = re.compile(r"(\d{2,3})\s*gb(?:\s+(?:of\s+)?unified(?:\s+memory)?)?")
+_APPLE_В_ТЕКСТЕ = re.compile(r"(?:apple\s+)?(?:macbook(?:\s+pro|\s+air)?\s+)?\bm[1-9](?:\s+(?:pro|max|ultra))?\b|mac studio|mac mini")
+
+#: Выход работы для черновика, когда текст выход не назвал.
+DRAFT_TASK_OUTPUTS: dict[str, tuple[str, ...]] = {
+    "transcribe": ("text",),
+    "captions": ("video",),
+    "restore": ("video",),
+    "interpolate": ("video",),
+    "video-edit": ("video",),
+    "cut-to-shorts": ("video",),
+    "music-visualiser": ("video",),
+    "sing-photo": ("video",),
+    "turntable": ("video",),
+    "r2v": ("video",),
+    "voice-clone": ("speech",),
+    "dub-translate": ("video", "speech"),
+    "lipsync": ("video",),
+    "avatar": ("video", "speech"),  # говорящий в кадре
+    "face-replace": ("video",),
+}
+
+DRAFT_STATUS = (
+    "DRAFT — UNCONFIRMED. Read from the brief text by the keyword parser, which misreads paraphrases; "
+    "it is NOT a plan and nothing was priced. Confirm or correct every field with the customer."
+)
+
+
+def _есть_по_глаголу(низ: str) -> set[str]:
+    """Входы, названные после «we have / у нас есть» (окно `HAVE_WINDOW` слов)."""
+    есть: set[str] = set()
+    for м in HAVE_PHRASE.finditer(низ):
+        for т in _tokens(низ[м.end() :])[:HAVE_WINDOW]:
+            # «we have nothing yet, make a video» — отрицание или заказ обрывают окно.
+            if NEGATION.match(т) or т in ("nothing", "ничего") or MAKE_WORDS.match(т):
+                break
+            if VIDEO_NOUN.match(т):
+                есть.add("video")
+            elif PHOTO_NOUN.match(т):
+                есть.add("photo")
+            elif AUDIO_NOUN.match(т) or т in ("recording", "recordings", "записи", "запись"):
+                есть.add("audio")
+            elif SCRIPT_NOUN.match(т):
+                есть.add("script")
+    return есть
+
+
+def _работа_черновика(низ: str, t: Spec, есть: set[str]) -> tuple[str | None, str | None]:
+    """(работа, вход, без которого её нет) — по подсказкам черновика, затем по разборщику."""
+    исходник = "video" in есть or bool(DRAFT_SOURCE_WORDS.search(низ))
+    if SHORTS.search(низ) and исходник:
+        return "cut-to-shorts", "video"
+    фото = "photo" in есть or bool(re.search(r"\bphoto\b|\bpicture\b|\bselfie\b|фото\w*|снимк\w*|картинк\w*", низ))
+    if SING.search(низ) and фото:
+        return "sing-photo", "photo"
+    for задача, образец, вход in DRAFT_TASK_CUES:
+        if re.search(образец, низ):
+            if задача == "remove-background" and "video" not in есть and re.search(r"photo|image|picture|фото|снимок|картинк", низ):
+                return задача, "photo"
+            if задача == "transcribe" and "audio" in есть and "video" not in есть:
+                return задача, "audio"
+            return задача, вход
+    разобрано = t.task
+    if разобрано in (None, "generate") and "video" in есть and LIPSYNC.search(низ):
+        return "lipsync", "video"
+    if разобрано in (None, "generate", "animate") and "video" in t.outputs and SAME_CHARACTER.search(низ):
+        return "r2v", None
+    if разобрано == "generate" and "video" in есть:
+        # Принесённое видео и «сгенерировать» — разборщик спутал заказ с
+        # исходником; черновик работу не называет, а не зовёт генерацию.
+        return None, None
+    if разобрано == "edit" and "video" in есть:
+        return "video-edit", "video"
+    return разобрано, None
+
+
+def draft(brief: str, raw: Mapping[str, Any] | None = None) -> dict[str, Any]:
+    """ЧЕРНОВИК спецификации из текста — для вопроса, а не для плана.
+
+    Поля, названные вызывающим в `raw`, остаются его (черновик их не трогает);
+    остальные читаются прежним разборщиком (`from_text`) и подсказками
+    черновика (`DRAFT_TASK_CUES`). Возвращает сам черновик, какие поля прочитаны
+    из текста, каких решающих не хватает и что угадано.
+    """
+    низ = _norm(brief)
+    t = from_text(brief)
+    угадано: list[str] = []
+    черновик: dict[str, Any] = {}
+    есть_входы = [в for в in INPUT_KINDS if в in set(t.inputs) | _есть_по_глаголу(низ)]
+    задача, нужный_вход = _работа_черновика(низ, t, set(есть_входы))
+    if задача:
+        # Цепочка: работа над видео заказчика И «upscale to 4K» — правка, затем апскейл.
+        черновик["task"] = (
+            [задача, "upscale"]
+            if задача in ("video-edit", "restore", "interpolate") and UPSCALE.search(низ)
+            else задача
+        )
+    входы: list[dict[str, Any]] = []
+    for вид in есть_входы:
+        входы.append({"kind": INPUT_KIND_OUT[вид], "owned": True})
+    if входы:
+        угадано.append("inputs[].owned=true read from 'my/our/attached' — confirm the customer owns the material")
+    if нужный_вход and нужный_вход not in есть_входы:
+        if not (нужный_вход == "video" and "audio" in есть_входы and задача == "transcribe"):
+            входы.append({"kind": INPUT_KIND_OUT[нужный_вход], "owned": None})
+            угадано.append(f"inputs: {INPUT_KIND_OUT[нужный_вход]} implied by the task '{задача}' — confirm it exists and whose it is")
+    if задача == "sing-photo" and "audio" not in есть_входы:
+        входы.append({"kind": "audio", "owned": None})
+        угадано.append("inputs: the song/track to sing is implied — confirm the customer has it")
+    if (
+        задача in MATERIAL_TASKS | {"cut-to-shorts"}
+        and t.duration_s
+        and входы
+        and not (задача == "cut-to-shorts" and t.duration_s == (t.shots or 0) * (t.per_shot_s or 0))
+    ):
+        главный = next((в for в in входы if в["kind"] in ("video", "audio")), None)
+        if главный is not None:
+            главный["duration_s"] = t.duration_s
+    if входы or t.absent:
+        черновик["inputs"] = входы
+    выходы = list(t.outputs)
+    if задача in DRAFT_TASK_OUTPUTS and (not выходы or задача not in ("generate", "animate")):
+        выходы = list(dict.fromkeys([*DRAFT_TASK_OUTPUTS[задача], *[в for в in выходы if в in ("speech", "music", "sfx") and задача in ("r2v",)]]))
+    if задача == "remove-background":
+        выходы = ["image"] if нужный_вход == "photo" else ["video"]
+    if выходы:
+        черновик["outputs"] = выходы
+    if задача == "cut-to-shorts":
+        штук = re.search(r"(\d{1,3})\s+(?:\w+\s+)?(?:shorts|clips|reels|tiktoks|ролик\w*|клип\w*)", низ)
+        if t.shots or штук:
+            черновик["shots"] = t.shots or int(штук.group(1))  # type: ignore[union-attr]
+        if t.per_shot_s:
+            черновик["per_shot_s"] = t.per_shot_s
+    else:
+        for поле in ("duration_s", "shots", "per_shot_s", "characters"):
+            if getattr(t, поле):
+                черновик[поле] = getattr(t, поле)
+    for поле in ("resolution", "fps", "audio", "objective"):
+        if getattr(t, поле):
+            черновик[поле] = getattr(t, поле)
+    if t.aspect:
+        черновик["aspect"] = t.aspect
+    теги = languages_in_text(низ)
+    if теги:
+        черновик["languages"] = list(теги)
+    деньги = money_in_text(brief)
+    if деньги is not None:
+        черновик["budget"] = {"amount": деньги[0], "currency": деньги[1]}
+    apple = _APPLE_В_ТЕКСТЕ.search(низ)
+    if apple and re.search(r"unified|macbook|mac studio|mac mini|apple|locally|local", низ):
+        память = _ЕДИНАЯ_ПАМЯТЬ.search(низ)
+        черновик["self_host"] = {
+            "gpu": "Apple " + apple.group(0).replace("macbook pro ", "").replace("apple ", "").upper(),
+            **({"unified_memory_gb": float(память.group(1))} if память else {}),
+        }
+    elif t.self_host:
+        черновик["self_host"] = {к: в for к, в in dict(t.self_host).items() if в is not None} or True
+    if t.jurisdiction:
+        черновик["jurisdiction"] = list(t.jurisdiction)
+    прочитано = sorted(черновик)
+    # Поля вызывающего — его; черновик их не перекрывает.
+    if isinstance(raw, Mapping):
+        for ключ, значение in raw.items():
+            if ключ in SPEC_FIELDS:
+                черновик[ключ] = значение
+    _, ошибки, нет = gaps(черновик)
+    return {
+        "status": DRAFT_STATUS,
+        "spec": черновик,
+        "read_from_text": [п for п in прочитано if not (isinstance(raw, Mapping) and п in raw)],
+        "still_missing": [н["field"] for н in нет],
+        "draft_errors": ошибки,
+        "guesses": угадано,
+    }

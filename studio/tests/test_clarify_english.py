@@ -147,7 +147,7 @@ class ЧужойРезультатСторожится(unittest.TestCase):
 
         from studio.mcp import server
 
-        спросили = [т for т in self.ЧУЖОЕ if json.loads(server.plan_pipeline(т)).get("question")]
+        спросили = [т for т in self.ЧУЖОЕ if json.loads(server.план_по_тексту(т)).get("question")]
         self.assertEqual([], спросили)
 
     def test_на_своём_вопрос_есть(self) -> None:
@@ -156,4 +156,4 @@ class ЧужойРезультатСторожится(unittest.TestCase):
 
         from studio.mcp import server
 
-        self.assertIsNotNone(json.loads(server.plan_pipeline("нужен ролик")).get("question"))
+        self.assertIsNotNone(json.loads(server.план_по_тексту("нужен ролик")).get("question"))

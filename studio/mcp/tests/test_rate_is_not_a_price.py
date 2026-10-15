@@ -96,7 +96,7 @@ class ПродуктОтвечаетТемЖеЧислом(unittest.TestCase):
         from studio.mcp import server
 
         ответ = json.loads(
-            server.plan_pipeline(
+            server.план_по_тексту(
                 "хочу чтобы человек говорил вслух 10 минут подряд в 8K, "
                 "бюджет 3 доллара, видео снимать нечего, делаем с нуля"
             )

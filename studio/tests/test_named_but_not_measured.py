@@ -73,24 +73,24 @@ class СтрокаДоходитДоЗаказчика(unittest.TestCase):
 
     def test_строка_видна_в_печати(self) -> None:
         текст = planner.render(
-            json.loads(server.plan_pipeline("Ролик 4K, вертикальный формат, нужен липсинк"))
+            json.loads(server.план_по_тексту("Ролик 4K, вертикальный формат, нужен липсинк"))
         )
         self.assertIn("НАЗВАНО В БРИФЕ, НО СТУДИЯ ЭТОГО НЕ МЕРИТ", текст)
         self.assertIn("разрешение кадра", текст)
 
     def test_на_английском_брифе_строка_английская(self) -> None:
         текст = planner.render(
-            json.loads(server.plan_pipeline("we need a talking head ad, 4K, by tomorrow"))
+            json.loads(server.план_по_тексту("we need a talking head ad, 4K, by tomorrow"))
         )
         self.assertIn("NAMED IN YOUR BRIEF, NOT MEASURED BY US", текст)
         self.assertNotIn("НАЗВАНО В БРИФЕ", текст)
 
     def test_поле_есть_всегда_даже_пустым(self) -> None:
-        итог = json.loads(server.plan_pipeline("нужен липсинк, 20 секунд"))
+        итог = json.loads(server.план_по_тексту("нужен липсинк, 20 секунд"))
         self.assertEqual([], итог["unmeasured_requirements"])
 
     def test_обычный_бриф_этой_строки_не_печатает(self) -> None:
-        текст = planner.render(json.loads(server.plan_pipeline("нужен липсинк, 20 секунд")))
+        текст = planner.render(json.loads(server.план_по_тексту("нужен липсинк, 20 секунд")))
         self.assertNotIn("НЕ МЕРИТ", текст)
 
 
@@ -103,7 +103,7 @@ class СтороныКадраНеПечатаютсяВнутренностям
 
     def test_несобравшийся_размер_называется_словами(self) -> None:
         текст = planner.render(
-            json.loads(server.plan_pipeline("нужен липсинк на фото", creative="photo.jpg"))
+            json.loads(server.план_по_тексту("нужен липсинк на фото", creative="photo.jpg"))
         )
         self.assertNotIn("None", текст)
         self.assertIn("стороны неизвестны", текст)

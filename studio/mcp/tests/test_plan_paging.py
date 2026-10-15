@@ -137,7 +137,7 @@ class ШестьШаговПодПотолком(unittest.TestCase):
             "lipsync and background music, budget $15"
         )
         for full in (False, True):
-            ответ = json.loads(S.plan_pipeline(бриф, full=full))
+            ответ = json.loads(S.план_по_тексту(бриф, full=full))
             self.assertLessEqual(len(S._dump(ответ)), S.MAX_RESPONSE_CHARS)
             self.assertEqual(6, len(ответ["steps"]), full)
             self.assertTrue(all((ш.get("chosen") or {}).get("model") for ш in ответ["steps"]))

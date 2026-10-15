@@ -36,7 +36,7 @@ from studio.planner import inputs_of
 
 
 def _план(бриф: str) -> dict:
-    return json.loads(server.plan_pipeline(бриф))
+    return json.loads(server.план_по_тексту(бриф))
 
 
 class ДогадкаНеЗакрываетВопрос(unittest.TestCase):

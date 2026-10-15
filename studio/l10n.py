@@ -156,6 +156,7 @@ TERMS_EN: dict[str, str] = {
     "изображение_без_фона": "image with background removed",
     "видео_без_фона": "video with background removed",
     "расшифровка_текст": "transcript",
+    "видео_правка": "edited video",
     "готовый_ролик": "finished clip",
     "бриф": "brief",
     "селфи": "selfie",

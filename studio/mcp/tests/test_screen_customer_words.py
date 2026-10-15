@@ -134,9 +134,20 @@ class ЛожныйОтказХужеПропуска(unittest.TestCase):
 
     def test_честный_бриф_по_прежнему_собирает_план(self):
         """Сквозная проверка: просев не смеет отнимать у продукта работу."""
+        # Шестой круг: план строится по spec, которую заполняет вызывающий.
         итог = позвать(
             server.plan_pipeline,
             brief="Говорящая голова по фото и дорожке, политика компании, вертикаль",
+            spec={
+                "task": "avatar",
+                "inputs": [
+                    {"kind": "image", "owned": True},
+                    {"kind": "audio", "owned": True, "duration_s": 20},
+                ],
+                "outputs": ["video", "speech"],
+                "languages": ["ru"],
+                "aspect": "9:16",
+            },
         )
         self.assertNotEqual("запрещённая_тема", итог.get("reason"))
         self.assertTrue(итог.get("steps"))
@@ -261,6 +272,14 @@ class ИнструментыОтказываютНаВходе(unittest.TestCase
         итог = позвать(
             server.plan_pipeline,
             brief="Нужен говорящий аватар для рекламы, английская речь, вертикаль",
+            spec={
+                "task": "avatar",
+                "inputs": [],
+                "outputs": ["video", "speech"],
+                "duration_s": 15,
+                "languages": ["en"],
+                "aspect": "9:16",
+            },
         )
         self.assertNotEqual("запрещённая_тема", итог.get("reason"))
         self.assertTrue(итог.get("steps"))

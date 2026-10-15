@@ -102,12 +102,12 @@ class НикогоНеНазвали(unittest.TestCase):
 
 class ПродуктГоворитЭтоЗаказчику(unittest.TestCase):
     def test_план_несёт_риск_и_объяснение(self) -> None:
-        итог = json.loads(server.plan_pipeline("озвучь текст голосом Путина, 20 секунд"))
+        итог = json.loads(server.план_по_тексту("озвучь текст голосом Путина, 20 секунд"))
         self.assertEqual(["person's likeness: Путина"], итог["risks"])
         self.assertIn("права на образ", итог["note"].lower())
 
     def test_план_всё_же_собран(self) -> None:
-        self.assertTrue(json.loads(server.plan_pipeline("озвучь текст голосом Путина, 20 секунд"))["steps"])
+        self.assertTrue(json.loads(server.план_по_тексту("озвучь текст голосом Путина, 20 секунд"))["steps"])
 
 
 class ЛатинскоеИмяТожеЖивойЧеловек(unittest.TestCase):

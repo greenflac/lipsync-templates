@@ -36,6 +36,8 @@ ROOT = Path(__file__).resolve().parents[1]
     "studio.tests.test_localisation.Прибор",
     # Пятый круг: реестр эндпоинтов и отбор по нему.
     "studio.tests.test_endpoints_r5",
+    # Шестой круг: план только по полной spec, черновик, новые работы.
+    "studio.tests.test_spec_contract_r6",
 )
 
 BS = "studio/brief_spec.py"
@@ -45,6 +47,7 @@ HN = "studio/hardneed.py"
 L10N = "studio/l10n.py"
 EP = "studio/endpoints.py"
 ER = "scripts/endpoint_report.py"
+SV = "studio/mcp/server.py"
 
 #: (файл, было, стало, что ломается). Каждая константа — строже и слабее.
 MUTANTS: tuple[tuple[str, str, str, str], ...] = (
@@ -150,6 +153,34 @@ MUTANTS: tuple[tuple[str, str, str, str], ...] = (
     (ER, 'BASELINE = ROOT / "studio" / "knowledge" / "endpoint_coverage.json"', 'BASELINE = ROOT / "studio" / "knowledge" / "endpoint_coverage_missing.json"', "гейт без базы"),
     (BS, '    "restore": (("video", "реставрация"),),\n', "", "реставрация снова без маршрута"),
     (BS, '                return Маршрут((шаг,), {шаг: NOTE_CAPTIONS} if задача == "captions" else {})', "                return Маршрут((шаг,), {})", "субтитры без пометки монтажа"),
+    # --- шестой круг: контракт «план только по spec», форма spec, новые работы
+    (SV, "    if not по_тексту and not ошибки_spec and нехватка:", "    if False:", "неполная spec снова план из текста"),
+    (PN, '    if spec_only:\n        brief = ""\n', "", "текст снова решает поверх полной spec"),
+    (BS, "ASPECT_LIMIT = 10.0", "ASPECT_LIMIT = 11.0", "соотношение шире 10:1 принимается"),
+    (BS, "ASPECT_LIMIT = 10.0", "ASPECT_LIMIT = 9.0", "10:1 отвергается"),
+    (BS, "RECORDED_RATES: dict[str, tuple[float, str, str]] = {}", 'RECORDED_RATES: dict[str, tuple[float, str, str]] = {"EUR": (1.0, "x", "y")}', "выдуманный курс евро"),
+    (BS, 'LANGUAGE_TASKS: frozenset[str] = frozenset({"dub-translate", "transcribe", "captions", "voice-clone"})', 'LANGUAGE_TASKS: frozenset[str] = frozenset({"dub-translate", "captions", "voice-clone"})', "расшифровка без языка"),
+    (BS, 'LANGUAGE_TASKS: frozenset[str] = frozenset({"dub-translate", "transcribe", "captions", "voice-clone"})', 'LANGUAGE_TASKS: frozenset[str] = frozenset({"dub-translate", "transcribe", "captions", "voice-clone", "restore"})', "реставрация требует языка"),
+    (BS, 'TIMED_OUTPUTS: frozenset[str] = frozenset({"video", "speech", "music", "sfx", "text"})', 'TIMED_OUTPUTS: frozenset[str] = frozenset({"video", "speech", "music", "sfx"})', "текст без длины"),
+    (BS, 'TIMED_OUTPUTS: frozenset[str] = frozenset({"video", "speech", "music", "sfx", "text"})', 'TIMED_OUTPUTS: frozenset[str] = frozenset({"video", "speech", "music", "sfx", "text", "image"})', "картинкам нужна длина"),
+    (BS, '        "restore",\n        "interpolate",\n        "remove-background",\n        "transcribe",\n', '        "interpolate",\n        "remove-background",\n        "transcribe",\n', "реставрация не берёт длину из входа"),
+    (BS, '        "music-visualiser",\n        "sing-photo",\n    }\n)', '        "music-visualiser",\n        "sing-photo",\n        "generate",\n    }\n)', "генерация берёт длину из входа"),
+    (BS, 'VIDEO_EDIT_TASKS: frozenset[str] = frozenset({"video-edit"})', "VIDEO_EDIT_TASKS: frozenset[str] = frozenset()", "правка видео без маршрута"),
+    (BS, "HAVE_WINDOW = 8", "HAVE_WINDOW = 4", "окно «we have» уже"),
+    (BS, "HAVE_WINDOW = 8", "HAVE_WINDOW = 12", "окно «we have» шире"),
+    (BS, '    r"^[a-z]{2,3}(?:-[a-z]{3}){0,3}', '    r"^[a-z]{2,8}(?:-[a-z]{3}){0,3}', "слово длиннее тега — тег"),
+    (BS, '            if з.get("owned") is None:', "            if False:", "владение входом не спрашивается"),
+    (BS, '    return tuple(ш for в, ш in (("music", "музыка"), ("sfx", "звук_фон")) if в in выходы)', "    return ()", "музыка под свой ролик теряется"),
+    (BS, '    if SING.search(низ) and фото:', "    if False:", "поющее фото снова генерация"),
+    (PN, "PER_LANGUAGE_STEPS: frozenset[str] = SPEECH_STEPS | {\"клонирование_голоса\"}", "PER_LANGUAGE_STEPS: frozenset[str] = SPEECH_STEPS", "клон голоса один на все языки"),
+    (PN, "PER_LANGUAGE_STEPS: frozenset[str] = SPEECH_STEPS | {\"клонирование_голоса\"}", "PER_LANGUAGE_STEPS: frozenset[str] = SPEECH_STEPS | {\"клонирование_голоса\", \"расшифровка\"}", "расшифровка по числу языков"),
+    (PN, '    if секунды is not None and языков > 1:', "    if False:", "цена речи не умножается на языки"),
+    (PN, 'ON_SOURCE_STEPS: frozenset[str] = frozenset({"расшифровка"})', "ON_SOURCE_STEPS: frozenset[str] = frozenset()", "расшифровка по длине шортсов"),
+    (PN, 'APPLE_RUNTIME = re.compile(r"\\bmps\\b|\\bmlx\\b|', 'APPLE_RUNTIME = re.compile(r"\\bmps\\b|', "MLX не читается запуском на Mac"),
+    (PN, "        операции = sorted(операции, key=lambda оп: порядок_маршрута.get(оп.name, -1))\n", "", "цепочка не в названном порядке"),
+    (PN, 'ORDERED_ROUTES: frozenset[str] = frozenset({"cut-to-shorts"})', "ORDERED_ROUTES: frozenset[str] = frozenset()", "нарезка не в порядке маршрута"),
+    (PN, '        сумма = f"{деньги[0]:g}" if деньги is not None and деньги[1].lower() == код else ""', '        сумма = ""', "сумма в чужой валюте не названа"),
+    (PN, '    "правка_видео": ep.V2V_EDIT,\n', "", "правка видео не из реестра"),
 )
 
 
