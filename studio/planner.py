@@ -8573,7 +8573,7 @@ def решить_частоту(
                 ),
                 "",
             )
-        if ARTEFACT_VIDEO in op.requires and i > 0:
+        if i > 0 and ARTEFACT_VIDEO in op.requires:  # частоту проносит шаг над готовым видео
             continue
         if ARTEFACT_VIDEO in op.requires:
             return "", (
