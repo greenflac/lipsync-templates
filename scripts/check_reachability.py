@@ -62,7 +62,10 @@ def свести() -> dict[str, Any]:
     имена = sorted({ф.attribute for ф in факты})
     достижимы: set[str] = set()
     for слово in list(A.СЕМЬИ) + list(A.СИНОНИМЫ):
-        достижимы |= set(A.expand(слово, имена))
+        # СМЕЖНОЕ ТОЖЕ ДОСТАЁТСЯ (5-й круг): `prompt_language` больше не ответ
+        # на «languages», но едет в том же ответе в `substitutes` с пометкой —
+        # строка видна спросившему, хоть и не считается ответом.
+        достижимы |= set(A.expand(слово, имена)) | set(A.substitutes(слово, имена))
     молчат = collections.Counter(ф.attribute for ф in факты if ф.attribute not in достижимы)
     строк = len(факты)
     недостижимо = sum(молчат.values())

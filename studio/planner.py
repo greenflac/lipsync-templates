@@ -9152,6 +9152,19 @@ _ПРОСЬБА_БЕЗ_ПРЕДМЕТА = re.compile(
 )
 
 
+#: Какие обороты продукт читает по-английски — одна строка на две ветки
+#: (Е1): «шагов нет» и «вопрос о предмете». Слова «The brief is in English»
+#: сторожит голден g64.
+ПОДСКАЗКА_АНГЛ = (
+    ". The brief is in English, and no studio operation was"
+    " recognised in it: name the job with one of the wordings we read —"
+    " `talking head`, `lip sync`, `voiceover`, `dub`,"
+    " `animate this photo`, `generate a video from"
+    " scratch`, `sound effects` — or write it in Russian"
+    " and we will read it in full"
+)
+
+
 def вопрос_что_сделать(brief: str) -> "clarify.Вопрос | None":
     """Просьба без предмета — вопрос «что сделать и с чем»; иначе None."""
     if not _ПРОСЬБА_БЕЗ_ПРЕДМЕТА.search(str(brief or "")):
@@ -9514,6 +9527,10 @@ def plan(
                 (
                     "the plan cannot be assembled until one missing detail is "
                     f"named: {вопрос.сказать(по_английски)}"
+                    # ВОПРОС О ПРЕДМЕТЕ НЕ ОТМЕНЯЕТ ОБЪЯСНЕНИЯ (5-й круг): на
+                    # «make something nice» теперь вопрос, но причина — какие
+                    # обороты мы читаем — остаётся рядом с ним.
+                    + (ПОДСКАЗКА_АНГЛ if вопрос.ось == "что_заказано" and not _есть_кириллица(brief) else "")
                     if по_английски
                     else "план не собирается, пока не назван один недостающий "
                     f"признак: {вопрос.текст}"
@@ -9540,12 +9557,7 @@ def plan(
                         # который написал по-английски намеренно. Теперь
                         # называются САМИ ОБОРОТЫ, которые продукт понимает:
                         # заказчику нужен пример, а не указание сменить язык.
-                        ". No studio operation was recognised in this brief:"
-                        " name the job with one of the wordings we read —"
-                        " `talking head`, `lip sync`, `voiceover`, `dub`,"
-                        " `animate this photo`, `generate a video from"
-                        " scratch`, `sound effects` — or write it in Russian"
-                        " and we will read it in full"
+                        ПОДСКАЗКА_АНГЛ
                         if not _есть_кириллица(brief)
                         else ""
                     )

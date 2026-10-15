@@ -1,4 +1,4 @@
-"""The MCP server the owner talks to in chat. Fifteen tools, eight of which write.
+"""The MCP server the owner talks to in chat. Sixteen tools, eight of which write.
 
 THE NUMBERS IN THIS LINE ARE GATED, NOT PROSE
 
