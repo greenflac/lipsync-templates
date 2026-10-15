@@ -339,9 +339,20 @@ class ЖивыеБрифы(unittest.TestCase):
             видео["licence_alternative"]["licence_risk"],
         )
         self.assertEqual("юрисдикция", итог["question"]["axis"])
-        # Круг 4: wan-3.0-i2v «$0.05 480p, $0.10 720p, or $0.20 1080p» — 1080p
-        # стоит 0.20 usd/с (8.00 за 40 с), а не 0.05 (было 4.16 за весь план).
-        self.assertEqual((10.16, "годно"), (итог["pipeline_price"]["смета"]["usd"], итог["pipeline_price"]["outcome"]))
+        # ЧЕТВЁРТЫЙ КРУГ (2026-10-15), цены и шоты вместе. Ролик 40 с из
+        # ключевых кадров — кадр на КАЖДЫЙ шот: у wan-3.0-i2v предел прогона не
+        # записан, шот принят 8 с (`brief_spec.ASSUMED_SHOT_S`), ⌈40/8⌉ = 5.
+        # wan-3.0-i2v «$0.05 480p, $0.10 720p, or $0.20 1080p» — тариф 1080p.
+        #   кадры           5 × 0.03612            = 0.1806
+        #   правка по реф.  5 × 3 Мп × 0.024       = 0.36
+        #   озвучка         ≈600 знаков × 0.08/1000 = 0.048
+        #   оживление       40 с × 0.20 usd/с      = 8.00 (за секунду: шоты суммы не меняют)
+        #   липсинк         40 с × 3 usd/мин ÷ 60  = 2.00
+        #   итого 10.5886 -> 10.59 (было 10.16 с одним кадром и одной правкой).
+        self.assertEqual((10.59, "годно"), (итог["pipeline_price"]["смета"]["usd"], итог["pipeline_price"]["outcome"]))
+        self.assertEqual(
+            [5, 5, None, 5, None], [ш["shots"] for ш in итог["steps"]]
+        )
         self.assertNotIn("optimised", итог["pipeline_price"])
         self.assertEqual("latentsync", итог["steps"][4]["cheaper_same_rank"]["model"])
 

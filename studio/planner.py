@@ -221,13 +221,14 @@ from __future__ import annotations
 import json
 import math
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date
 from pathlib import Path
 from typing import Any, Callable, Iterable, Mapping, Sequence
 
 from lipsync.fork_identity import FAIL, PASS, UNMEASURED
 
+from studio import brief_spec as bs
 from studio import clarify
 from studio import duration as dur
 from studio import factaxis as fa
@@ -1262,6 +1263,9 @@ REASON_PLAN_UNCONFIRMED = "план_не_подтверждён"
 REASON_PLAN_STANDS = "план_подтверждён"
 #: Потолок, названный параметром, не число: отрицательный, NaN, бесконечность.
 REASON_BAD_BUDGET = "бюджет_не_число"
+#: Структура `spec`, поданная вызывающим, не разобрана: неизвестное поле,
+#: значение вне словаря, не число. Как и бюджет — отказ до плана, с перечнем.
+REASON_BAD_SPEC = "spec_не_разобран"
 
 #: Весь словарь причин. Список — не украшение: он делает состав причин
 #: проверяемым тестом, а не памятью читающего (форма взята у
@@ -2266,6 +2270,10 @@ class Candidate:
     #: звук) — по таблице ставок вендора (`pricing.rates`), с тарифами рядом.
     #: None — посчитать нельзя: цены нет, она в кредитах или не на что умножать.
     cost: "Стоимость | None" = None
+    #: Предел ОДНОГО прогона модели в секундах, как он записан (`max_seconds` и
+    #: родня). None — не записан. Нужен для счёта шотов: ролик 40 с у модели с
+    #: пределом 10 с — четыре шота и четыре ключевых кадра (2026-10-15).
+    run_s: float | None = None
     #: Чем модель рискует для ЭТОГО заказа помимо качества: территориальные
     #: исключения лицензии, порог выручки, открытые веса против API (G8).
     licence_risk: str = ""
@@ -4348,12 +4356,17 @@ def нужда_шага(
     кадр: tuple[int, int] | None,
     кадров: int | None = None,
     fps: float | None = None,
+    клипов: int | None = None,
 ) -> pricing.Need:
     """Что шаг должен выдать на ЭТОМ брифе — от этого зависит строка таблицы цен.
 
     :param кадров: сколько картинок заказано (`кадров_заказано`); считается
         только у шага, который отдаёт КАРТИНКУ, и у него же снимаются секунды:
         длина ролика картинке не мера, а прогон картиночной модели — кадр.
+    :param клипов: на сколько ШОТОВ режется ролик (2026-10-15, четвёртый круг):
+        «animate each 5s» над тремя кадрами — три прогона по 5 с, а не один
+        прогон 5 с. `длительность` при этом — длина ВСЕГО ролика. Считается
+        только у шага, который делает видео клипами (`Operation.клипами`).
     """
     картинка = {OUTPUT_KINDS.get(а) for а in op.produces} == {"изображение"}
     секунды = длительность.секунды if длительность.разобрано and not картинка else None
@@ -4372,6 +4385,7 @@ def нужда_шага(
         megapixels=(кадр[0] * кадр[1] / 1e6) if кадр else 1.0,
         mode=РЕЖИМ_ШАГА.get(op.name, ""),
         fps=fps,
+        shots=клипов if (клипов and op.клипами and not картинка) else 1,
     )
 
 
@@ -4447,6 +4461,22 @@ def _ступень_строки(f: Fact) -> int:
     return TIERS.index(f.tier) if f.tier in TIERS else len(TIERS)
 
 
+def предел_прогона(facts: Sequence[Fact]) -> float | None:
+    """Сколько секунд даёт ОДИН прогон модели по её записям; None — не записано.
+
+    Сначала — канонические атрибуты длительности (`VIDEO_DURATION_ATTRIBUTES`),
+    и только без них — вся семья. НАЙДЕНО 2026-10-15: семья `max_seconds`
+    включает `probe_cannot_settle_duration` у kling-3.0, в чьём тексте стоит
+    отвергнутая проба `duration=1000000`, — и предел прогона выходил миллион
+    секунд: ролик 40 с считался одним шотом.
+    """
+    канон = [(f.attribute, f.value) for f in facts if f.attribute in VIDEO_DURATION_ATTRIBUTES]
+    if канон:
+        return dur.предел_из_строк(канон).секунды
+    имена = af.expand(DURATION_ASKED, sorted({f.attribute for f in facts}))
+    return dur.предел_из_строк([(f.attribute, f.value) for f in facts if f.attribute in имена]).секунды
+
+
 def стоимость(facts: Sequence[Fact], need: pricing.Need | None) -> "Стоимость | None":
     """Сколько стоит шаг по ВСЕМ ценовым строкам модели. None — посчитать нечем.
 
@@ -4469,9 +4499,7 @@ def стоимость(facts: Sequence[Fact], need: pricing.Need | None) -> "С�
     """
     if need is None:
         return None
-    имена = af.expand(DURATION_ASKED, sorted({f.attribute for f in facts}))
-    предел = dur.предел_из_строк([(f.attribute, f.value) for f in facts if f.attribute in имена])
-    need = pricing.Need(**{**need.__dict__, "max_run_seconds": предел.секунды})
+    need = pricing.Need(**{**need.__dict__, "max_run_seconds": предел_прогона(facts)})
 
     # маршрут -> тариф -> [(ступень, вариант, кто сказал, строка)]
     по_маршруту: dict[str, dict[str, list[tuple[int, pricing.Option, str, Fact]]]] = {}
@@ -6153,6 +6181,7 @@ def candidates_for(
                 hard_rank=жёсткое.ранг,
                 hard_note=жёсткое.нота,
                 cost=сколько,
+                run_s=предел_прогона(все),
                 anchored=len(свои),
                 named=any(якорь.lower() in свёрнутое for якорь in op.anchors),
                 price_state=положение if потолок.known else "",
@@ -8208,6 +8237,8 @@ def _по_английски(текст: str) -> str:
         return f"no step makes {АРТЕФАКТ_ПО_АНГЛИЙСКИ.get(м.group(1), м.group(1))} and you did not bring it"
     if t == LINKED_LIPSYNC_NOTE:
         return "voice and the animated face are not joined in the brief — lip sync joins them"
+    if (маршрута := bs.note_en(t)) is not None:
+        return маршрута
     м = re.match(r"в брифе заказан кадр (\S+), а у модели последнего шага", t)
     if м:
         return (
@@ -8996,31 +9027,179 @@ def сводка(итог: dict) -> str:
 HARD_EXCLUDED_SHOWN = 5
 
 
-def replace_hard(
-    hard: "hn.Hard",
-    юрисдикции: tuple[str, ...] | None,
-    кадр: tuple[int, int] | None,
-    дешевле: bool,
-    страны: tuple[str, ...] = (),
-) -> "hn.Hard":
-    """Дописать в требования брифа то, что читают другие разборщики (Е1):
-    юрисдикцию (`pipeline.jurisdictions_in`), кадр (`кадр_из_брифа`) и
-    «самое дешёвое» (`CHEAPEST_CUES`). Своих разборщиков для них здесь нет."""
-    from dataclasses import replace as _replace
+#: Вход спецификации -> артефакт плана. «script» артефактом не становится:
+#: текст есть всегда (`ALWAYS_AT_HAND`).
+ВХОД_В_АРТЕФАКТ: dict[str, str] = {
+    "photo": ARTEFACT_IMAGE,
+    "video": ARTEFACT_VIDEO,
+    "audio": ARTEFACT_AUDIO,
+}
 
-    источники = dict(hard.sources)
-    поля: dict = {}
-    if юрисдикции:
-        поля["jurisdiction"] = юрисдикции
-        поля["countries"] = страны
-        источники["jurisdiction"] = "бриф"
-    if кадр:
-        поля["resolution"] = min(кадр)
-        источники["resolution"] = "бриф"
-    if дешевле and not hard.objective:
-        поля["objective"] = hn.OBJECTIVE_CHEAPEST
-        источники["objective"] = "бриф"
-    return _replace(hard, **поля, sources=tuple(sorted(источники.items())))
+
+def длительности_плана(brief: str, понято: "bs.Spec") -> tuple["dur.Запрос", "dur.Запрос"]:
+    """(весь ролик, один шот). Без шота — одно и то же число."""
+    if понято.per_shot_s:
+        шот = dur.Запрос(
+            понято.per_shot_s,
+            f"шот {понято.per_shot_s:g} с ({понято.source.get('per_shot_s', bs.SOURCE_TEXT)})",
+        )
+        всего = понято.duration_s or понято.per_shot_s
+        return (
+            dur.Запрос(
+                всего,
+                f"ролик {всего:g} с"
+                + (f" = {понято.shots} шот(ов) × {понято.per_shot_s:g} с" if понято.shots else ""),
+            ),
+            шот,
+        )
+    if понято.source.get("duration_s") == bs.SOURCE_SPEC and понято.duration_s:
+        з = dur.Запрос(понято.duration_s, f"spec.duration_s = {понято.duration_s:g} с")
+        return з, з
+    з = dur.просят(brief)
+    return з, з
+
+
+def входы_плана(brief: str, creative: str, понято: "bs.Spec") -> frozenset[str]:
+    """Что у заказчика есть: входы `spec` (полный список) или текст — подсказками И окном слов."""
+    медиа = {ВХОД_В_АРТЕФАКТ[в] for в in понято.inputs if в in ВХОД_В_АРТЕФАКТ}
+    if понято.source.get("inputs") == bs.SOURCE_SPEC:
+        return frozenset(медиа | inputs_of("", creative))
+    return frozenset(set(inputs_of(brief, creative)) | медиа)
+
+
+def с_входами(понято: "bs.Spec", есть: frozenset[str]) -> "bs.Spec":
+    """Спецификация с входами, КАК ИХ ВИДИТ ПЛАН (и креатив, и подсказки) — для эха и маршрута."""
+    входы = tuple(
+        в
+        for в in bs.INPUT_KINDS
+        if (в in ВХОД_В_АРТЕФАКТ and ВХОД_В_АРТЕФАКТ[в] in есть) or (в == "script" and в in понято.inputs)
+    )
+    источник = dict(понято.source)
+    if входы and "inputs" not in источник:
+        источник["inputs"] = bs.SOURCE_TEXT
+    return replace(понято, inputs=входы, source=источник)
+
+
+def маршрут_старше(
+    понято: "bs.Spec", по_подсказкам: Sequence[Operation], brief: str = "", есть: frozenset[str] = frozenset()
+) -> bool:
+    """Строить ли план МАРШРУТОМ спецификации, а не подсказками.
+
+    Да, когда: вызывающий назвал работу или выход; задача из тех, где подсказки
+    систематически собирали чужой план (`bs.route_first`); или подсказки не
+    вывели ничего — НО только если бриф не про чужое ремесло (статья, монтаж,
+    рекламный текст: `clarify` молчит о них, и маршрут не должен их «понять») и
+    если у `clarify` нет своего вопроса: «30 second product video» без слова о
+    съёмке — вопрос «видео уже снято?», а не догадка «генерировать с нуля».
+    """
+    if понято.source.get("task") == bs.SOURCE_SPEC or понято.source.get("outputs") == bs.SOURCE_SPEC:
+        return True
+    if bs.route_first(понято):
+        return True
+    if по_подсказкам:
+        # Подсказки вывели шаги, но НИ ОДИН не делает того, что бриф заказывает
+        # глазами (видео или картинку): «мультик 10 секунд с голосом» давал
+        # одну озвучку. Тогда старше маршрут — на тех же условиях, что и при
+        # пустом выводе.
+        видно = {"video": "видео", "image": "изображение"}
+        заказано = {видно[в] for в in понято.outputs if в in видно}
+        делают = {OUTPUT_KINDS.get(а) for оп in по_подсказкам for а in оп.produces}
+        if not заказано or заказано & делают or понято.task not in (None, "generate"):
+            return False
+    # Чужое ремесло (статья, монтаж) — только пока работа не названа: «animate
+    # the banner images» — наша работа над чужим результатом.
+    if понято.task in (None, "generate") and чужое_ремесло(brief):
+        return False
+    # Генерируемый стиль (аниме, мультфильм, пластилин) — ответ на «видео уже
+    # снято?»: так не снимают, так генерируют.
+    if bs.GENERATED_STYLE.search(_norm(brief)):
+        return True
+    return вопрос_по_плану(brief, [], есть, {}) is None
+
+
+def чужое_ремесло(brief: str) -> bool:
+    """Статья, рекламный текст, монтаж готового — не наша работа, и маршрут её не «понимает»."""
+    return clarify.чужое_ремесло(brief) or bool(bs.MONTAGE.search(_norm(brief)))
+
+
+def шотов_шага(op: Operation, кадров: int, клипов: int) -> int | None:
+    """Сколько раз шаг делается: клипы у видео по шотам, кадры у картинки. 1 — не печатается."""
+    if op.клипами and клипов > 1:
+        return клипов
+    if {OUTPUT_KINDS.get(а) for а in op.produces} == {"изображение"} and кадров > 1:
+        return кадров
+    return None
+
+
+def вопрос_чего_нет(понято: "bs.Spec") -> "clarify.Вопрос | None":
+    """Шагов нет, но бриф говорит о медиа — ВОПРОС, называющий, чего не хватает (Р1).
+
+    Бриф без единого признака медиа (ни выхода, ни длительности, ни кадра, ни
+    входа) остаётся «шаги не выведены»: спрашивать «видео или картинку?» у
+    того, кто просил посчитать юнит-экономику, — не вопрос, а шум.
+    """
+    признаки = [
+        имя
+        for имя in ("outputs", "duration_s", "shots", "resolution", "aspect", "fps", "inputs", "audio")
+        if понято.has(имя)
+    ]
+    if not признаки:
+        return None
+    нет = bs.missing(понято) or ["which job to do with it (generate / animate / lip sync / dub / replace a face / avatar / upscale / edit)"]
+    return clarify.Вопрос(
+        ось="что_заказано",
+        текст="понято не всё: назовите " + "; ".join(bs.MISSING_RU.get(н, н) for н in нет),
+        почему="по брифу понятны только " + ", ".join(признаки) + " — шагов из этого не собрать",
+        варианты=("ответить словами", "передать spec={task, outputs, inputs, ...}"),
+        english=(
+            "not everything is understood — name " + "; ".join(нет),
+            "only " + ", ".join(признаки) + " could be read from the brief, and no steps follow from that alone",
+            ("answer in words", "pass spec={task, outputs, inputs, ...}"),
+        ),
+    )
+
+
+def вопрос_о_нехватке(
+    маршрут: "bs.Маршрут",
+    понято: "bs.Spec",
+    brief: str,
+    по_английски: bool,
+    creative: str,
+    бюджет: Budget,
+) -> dict:
+    """Работа названа, а вход, без которого она невозможна, не назван — вопрос, а не план из догадки."""
+    assert маршрут.нехватка is not None
+    ось, ru, en, вар_ru, вар_en = маршрут.нехватка
+    вопрос = clarify.Вопрос(
+        ось=ось,
+        текст=ru,
+        почему="без этого входа работа не начинается, а сделать его из ничего значило бы заказать другую работу",
+        варианты=вар_ru,
+        english=(
+            en,
+            "the job cannot start without this input, and making it from nothing would be a different job",
+            вар_en,
+        ),
+    )
+    return {
+        "understood_as": bs.echo(понято),
+        "outcome": UNMEASURED,
+        "reason": REASON_NEED_ANSWER,
+        "checked": 0,
+        "violations": 0,
+        "unmeasured": 1,
+        "note": (
+            f"the plan is not assembled: {en}" if по_английски else f"план не собирается: {ru}"
+        ),
+        "question": вопрос.row(по_английски),
+        "brief": brief,
+        "budget": _budget_row(бюджет),
+        "creative": _creative_row(creative, None, ""),
+        "steps": [],
+        "classes": [],
+        "validator": None,
+        "что_дальше": ответьте_на_вопрос(по_английски),
+    }
 
 
 def plan(
@@ -9034,13 +9213,18 @@ def plan(
     overrides: dict | None = None,
     index: FactIndex | None = None,
     full: bool = False,
-    spec: Mapping | None = None,
+    spec: Mapping[str, Any] | None = None,
 ) -> dict:
     """План из брифа, тут же прогнанный через валидатор-2.
 
-    :param spec: структурированная спецификация заказа (`self_host` {gpu,
-        vram_gb}, `objective`, `jurisdiction`, `resolution`) — перекрывает то,
-        что прочитано из брифа (`studio/hardneed.py`, 2026-10-15).
+    :param spec: СТРУКТУРА заказа от вызывающего (`studio/brief_spec.py`,
+        поля `brief_spec.SPEC_FIELDS`): что на выходе, сколько секунд и шотов,
+        кадр, звук, языки, что у заказчика уже есть, какая работа. Названное
+        поле СТАРШЕ разбора текста; текст — запасной путь. Что понято, с
+        источником каждого поля, печатается в `understood_as` на любом ответе.
+        Жёсткие требования отбора (`hardneed.Hard`: свой GPU, цель, юрисдикция,
+        кадр) строятся из ТОЙ ЖЕ спецификации (`brief_spec.hard`): spec или
+        текст — одно и то же поле, один и тот же отбор.
 
     :param full: полный ответ — все строки доказательства, соседи с их
         положениями, пробы валидатора по классам. По умолчанию — КРАТКИЙ ответ
@@ -9159,6 +9343,29 @@ def plan(
             },
             "что_дальше": "назовите бюджет числом не меньше нуля",
         }
+    # СТРУКТУРА ЗАКАЗА (2026-10-15, четвёртый круг): `spec` вызывающего поверх
+    # структурного разбора текста. Ошибка в `spec` — отказ ДО плана с перечнем
+    # полей: молча пропущенное поле вызывающий читал бы как принятое.
+    понято, ошибки_spec = bs.resolve(brief, spec)
+    if ошибки_spec:
+        return {
+            "outcome": FAIL,
+            "reason": REASON_BAD_SPEC,
+            "checked": 1,
+            "violations": len(ошибки_spec),
+            "unmeasured": 0,
+            "note": "spec is not understood, nothing was planned: " + "; ".join(ошибки_spec),
+            "question": None,
+            "brief": brief,
+            "steps": [],
+            "classes": [],
+            "pipeline_price": {},
+            "spec_errors": list(ошибки_spec),
+            "understood_as": bs.echo(понято),
+            "что_дальше": "fix the spec fields named in spec_errors and call again",
+        }
+    if budget_usd is None and понято.source.get("budget_usd") == bs.SOURCE_SPEC:
+        budget_usd = понято.budget_usd
     кадр, про_кадр = frame_of(creative)
     из_брифа = budget_from(brief)
     if budget_usd is not None:
@@ -9185,12 +9392,39 @@ def plan(
     операции = derive(brief)
     # Длительность ролика читается ОДИН раз на план, а не на каждый шаг:
     # заказчик называет её про весь ролик, и разбор её тут же и живёт (Е1).
-    длительность = dur.просят(brief)
-    есть = inputs_of(brief, creative)
-    # Замыкание по нехватке: заказчик называет не все шаги, потому что для
-    # него это одна работа. Добавленные шаги помечаются (см. `замкнуть`).
-    операции, дописаны = замкнуть(операции, есть, brief)
+    # Шот и весь ролик — разные числа: «animate each 5s» над тремя кадрами —
+    # шот 5 с, ролик 15 с (`длительность_шота` судит модель, `длительность` —
+    # цену и монтаж).
+    длительность, длительность_шота = длительности_плана(brief, понято)
+    есть = входы_плана(brief, creative, понято)
+    понято = с_входами(понято, есть)
+    маршрутом = маршрут_старше(понято, операции, brief, есть)
+    маршрут = bs.route(bs.with_defaults(понято, ролик=True)) if маршрутом else bs.Маршрут()
+    if маршрут.нехватка is not None:
+        return вопрос_о_нехватке(маршрут, понято, brief, по_английски, creative, budget_from(brief))
+    if маршрут.шаги:
+        # МАРШРУТ ПО СТРУКТУРЕ: шаги — из того, ЧТО заказано и ИЗ ЧЕГО, а не из
+        # подсказок. Замыкание по нехватке — то же, но без чтения брифа
+        # подсказками: голос поверх картинки или говорящий в кадре решён
+        # маршрутом, и дописывать липсинк по словам было бы вторым мнением.
+        понято = bs.with_defaults(понято, ролик=True)
+        по_имени_оп = {оп.name: оп for оп in OPERATIONS}
+        операции, дописаны = замкнуть([по_имени_оп[и] for и in маршрут.шаги], есть, "")
+        дописаны = {**дописаны, **маршрут.пометки}
+    else:
+        # Замыкание по нехватке: заказчик называет не все шаги, потому что для
+        # него это одна работа. Добавленные шаги помечаются (см. `замкнуть`).
+        операции, дописаны = замкнуть(операции, есть, brief)
     вопрос = вопрос_по_плану(brief, операции, есть, дописаны)
+    if (
+        вопрос is not None
+        and вопрос.ось == clarify.ОСЬ_ИСХОДНИК
+        and (понято.source.get("inputs") == bs.SOURCE_SPEC or bs.GENERATED_STYLE.search(_norm(brief)))
+    ):
+        # Вызывающий НАЗВАЛ входы — или бриф назвал стиль, который не снимают,
+        # а генерируют: «видео уже снято?» — вопрос, на который уже ответили.
+        вопрос = None
+    нативный = нативный_звук_заказан(brief) or понято.audio == "native"
     # НАТИВНЫЙ ЗВУК, НАЗВАННЫЙ ЗАКАЗЧИКОМ, — ОСНОВНОЙ ПУТЬ (2026-10-14, G3). Он
     # стоял «вариантом Б» под цепочкой озвучка + видео + липсинк даже тогда, когда
     # бриф говорил «нативный звук» прямо. Нативный звук бывает только у
@@ -9202,7 +9436,7 @@ def plan(
     # видеомодели со звуком (veo-3.1-lite: родной 1080p со звуком) в кандидаты
     # не попадали вовсе. Видео не принесено — шаг генерации и есть заказ.
     if (
-        нативный_звук_заказан(brief)
+        нативный
         and ARTEFACT_VIDEO not in есть
         and not any(оп.name in ("оживление", "генерация_видео") for оп in операции)
     ):
@@ -9212,12 +9446,19 @@ def plan(
         ]
         if вопрос is not None and вопрос.ось == clarify.ОСЬ_ИСХОДНИК:
             вопрос = None
-    if нативный_звук_заказан(brief):
+    if нативный:
         операции, дописаны, заменено_звуком = на_нативный_звук(операции, дописаны, есть)
         if заменено_звуком and вопрос is not None and вопрос.ось == clarify.ОСЬ_ИСХОДНИК:
             вопрос = None
+    # ШАГОВ НЕТ — ВОПРОС, А НЕ МОЛЧАНИЕ (Р1), если бриф говорит о медиа. Не
+    # спрашивается: чужое ремесло (статья, монтаж) и принесённое видео без
+    # названной работы — там совет `что_дальше` уже называет варианты, а второй
+    # вопрос вернул бы заказчика в круг, из которого он только что вышел.
+    if not операции and вопрос is None and ARTEFACT_VIDEO not in есть and not чужое_ремесло(brief):
+        вопрос = вопрос_чего_нет(понято)
     if not операции:
         return {
+            "understood_as": bs.echo(понято),
             "outcome": UNMEASURED,
             "reason": REASON_NEED_ANSWER if вопрос else REASON_NO_STEPS,
             "checked": 0,
@@ -9309,7 +9550,34 @@ def plan(
         }
 
     индекс = index if index is not None else FactIndex(facts=facts) if facts else FactIndex()
-    языки = языки_брифа(brief)
+    языки = (
+        tuple(понято.languages)
+        if понято.languages
+        and (понято.source.get("languages") == bs.SOURCE_SPEC or маршрут.шаги)
+        else языки_брифа(brief)
+    )
+    заказанный_кадр = (
+        bs.frame(понято)
+        if понято.source.get("resolution") in (bs.SOURCE_SPEC, bs.SOURCE_DEFAULT)
+        else кадр_из_брифа(brief) or bs.frame(понято)
+    )
+    кадров, клипов, основание_шотов = 1, 1, ""
+    # СВОЁ ВИДЕО БЕЗ НАЗВАННОГО КАДРА (интеграция круга 4): тариф по кадру не
+    # выбирается молча самым дешёвым (480p) — цена считается по стандарту
+    # площадок рекламы (`bs.DEFAULT_VIDEO_RESOLUTION`), и это допущение
+    # печатается в `understood_as`. Кадр ОТБОРА не меняется: апскейл чужого
+    # ролика из допущения не дописывается.
+    кадр_цены = заказанный_кадр or кадр
+    if кадр_цены is None and "video" in понято.inputs:
+        кадр_цены = bs.frame(replace(понято, resolution=bs.DEFAULT_VIDEO_RESOLUTION))
+        понято = replace(
+            понято,
+            assumptions=(
+                *понято.assumptions,
+                f"your video's resolution is not named — {bs.DEFAULT_VIDEO_RESOLUTION} assumed for "
+                "pricing (ad delivery standard), not the cheapest tier; pass spec.resolution to change",
+            ),
+        )
 
     выбор: list[tuple[Operation, Candidate | None]] = []
     строки_шагов: list[dict] = []
@@ -9333,21 +9601,11 @@ def plan(
     #: для ответа на «бюджет 0»: выбранный может быть без цены, а работа всё
     #: равно не бесплатна, и это видно по соседям.
     дешевле_всех: dict[str, float] = {}
-    юрисдикции = pl.jurisdictions_in(brief) or None
-    # ЖЁСТКИЕ ТРЕБОВАНИЯ (2026-10-15): свой GPU, цель, юрисдикция и кадр —
-    # простыми значениями; spec перекрывает бриф.
-    жёсткие = hn.from_spec(
-        spec,
-        replace_hard(
-            hn.from_brief(brief),
-            юрисдикции,
-            кадр_из_брифа(brief),
-            дешевле_всего_заказано(brief),
-            tuple(sorted(pl.countries_in(brief))),
-        ),
-    )
-    if жёсткие.jurisdiction:
-        юрисдикции = жёсткие.jurisdiction
+    # ЖЁСТКИЕ ТРЕБОВАНИЯ (2026-10-15): ОДНА спецификация — `понято` (spec
+    # поверх текста, `brief_spec.resolve`) — даёт и эхо, и `hardneed.Hard`:
+    # свой GPU, цель (quality/balanced/cheapest), юрисдикция и кадр.
+    жёсткие = bs.hard(понято, brief, spec, заказанный_кадр, дешевле_всего_заказано(brief))
+    юрисдикции = жёсткие.jurisdiction or None
 
     def _кандидаты(op: Operation) -> list[Candidate]:
         if op.name == NATIVE_AUDIO_STEP and заменено_звуком:
@@ -9370,22 +9628,48 @@ def plan(
             бюджет,
             кадр,
             today,
-            длительность,
+            длительность_шота,
             sorted(есть),
             языки if op.name in SPEECH_STEPS else (),
             use,
             нужда_шага(
                 op,
                 длительность,
-                кадр_из_брифа(brief) or кадр,
-                кадров_заказано(brief),
-                fps_из_брифа(brief),
+                кадр_цены,
+                кадров,
+                fps=понято.fps or fps_из_брифа(brief),
+                клипов=клипов,
             ),
             bool(COMMUNITY_ASKED.search(brief)),
             условия,
             юрисдикции,
-            кадр_из_брифа(brief) or кадр,
+            заказанный_кадр or кадр,
             жёсткие,
+        )
+
+    # СКОЛЬКО ШОТОВ (2026-10-15, четвёртый круг). Явное число; «each» над N;
+    # или длительность, делённая на предел прогона ВЫБРАННОЙ модели оживления,
+    # когда видео идёт из ключевых кадров — тогда кадров не меньше шотов.
+    имена_плана = {оп.name for оп in операции}
+    поштучно = "генерация_изображения" in имена_плана and "оживление" in имена_плана
+    предел_модели: float | None = None
+    if поштучно and not понято.shots and длительность.секунды:
+        оживление = next(оп for оп in операции if оп.name == "оживление")
+        первые = [c for c in _найти(оживление) if not c.foreign]
+        предел_модели = первые[0].run_s if первые else None
+    клипов, основание_шотов = bs.shots(
+        replace(понято, duration_s=длительность.секунды), предел_модели, поштучно
+    )
+    кадров = max(кадров_заказано(brief) or 0, понято.shots or 0, клипов if поштучно else 0) or 1
+    if клипов > 1 or кадров > 1:
+        понято = replace(
+            понято,
+            shots=max(клипов, кадров) if поштучно else (понято.shots or клипов),
+            shots_basis=основание_шотов,
+            source={
+                **понято.source,
+                "shots": (понято.source.get("shots") or bs.SOURCE_TEXT) if понято.shots else bs.SOURCE_DERIVED,
+            },
         )
 
     # Кандидаты шага считаются ОДИН раз на план: пересборка под бюджет
@@ -9450,6 +9734,7 @@ def plan(
                 "produces": list(op.produces),
                 "input_of_plan": подменено,
                 "duration_asked": длительность.нота,
+                "shots": шотов_шага(op, кадров, клипов),
                 "chosen": _candidate_row(лучший),
                 # Чужая работа соседом не показывается (2026-10-15): модель
                 # музыки — не «альтернатива» синтезу речи. Видна в счёте
@@ -9509,7 +9794,9 @@ def plan(
             }
         )
 
-    просят_кадр = кадр_из_брифа(brief)
+    # Кадр-ДОПУЩЕНИЕ (`brief_spec.DEFAULT_VIDEO_RESOLUTION`) ранжирует кандидатов,
+    # но платного апскейла не дописывает: апскейл заказывают названным кадром.
+    просят_кадр = None if понято.source.get("resolution") == bs.SOURCE_DEFAULT else заказанный_кадр
     условные: set[str] = set()
     пронесено = [""]
 
@@ -9687,6 +9974,11 @@ def plan(
         бюджет,
         ролик_заказан(brief),
     )
+    for строка_сметы in (цена_пайплайна.get("смета") or {}).get("steps") or []:
+        n = шотов_шага(next(оп for оп in операции if оп.name == строка_сметы["step"]), кадров, клипов) if строка_сметы["step"] in имена_плана else None
+        if n:
+            строка_сметы["shots"] = n
+            строка_сметы["usd_per_shot"] = round(float(строка_сметы["usd"]) / n, 4)
     if условные:
         цена_пайплайна["conditional_steps"] = [
             {
@@ -9826,6 +10118,7 @@ def plan(
             + ("" if длительность.разобрано else f"; ВНИМАНИЕ: {длительность.нота}")
         ),
         "brief": brief,
+        "understood_as": bs.echo(понято, [оп.name for оп, _ in выбор]),
         "languages": list(языки),
         "unmeasured_requirements": требования_без_ответа(brief, по_английски),
         "pipeline_price": цена_пайплайна,
@@ -9930,6 +10223,7 @@ def сжать(ответ: dict) -> dict:
                 "requires": ш.get("requires"),
                 "produces": ш.get("produces"),
                 "input_of_plan": ш.get("input_of_plan"),
+                "shots": ш.get("shots"),
                 "chosen": _кратко_кандидат(ш.get("chosen")),
                 "alternatives": [
                     _кратко_кандидат(а, соседи=True)
@@ -10014,6 +10308,7 @@ def сжать(ответ: dict) -> dict:
         "unmeasured": ответ.get("unmeasured"),
         "note": _коротко(ответ.get("note"), 700),
         "brief": ответ.get("brief"),
+        "understood_as": ответ.get("understood_as"),
         "languages": ответ.get("languages"),
         "unmeasured_requirements": ответ.get("unmeasured_requirements"),
         "pipeline_price": цена,

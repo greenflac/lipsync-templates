@@ -971,6 +971,9 @@ class Need:
     #: Частота кадров ролика (круг 4): нужна цене «за мегапиксель» у видео —
     #: мегапиксели кадра × кадров (fps × секунды). None — не названа.
     fps: float | None = None
+    #: На сколько ШОТОВ режется `seconds` (2026-10-15): три шота по 5 с — три
+    #: прогона, даже если прогон модели покрывает 10 с. 1 — ролик одним куском.
+    shots: int = 1
 
 
 @dataclass(frozen=True)
@@ -1067,6 +1070,14 @@ def _деньги(r: Rate, need: Need) -> tuple[float, str, str] | None:
     if r.per == "second":
         if сек is None:
             return None
+        if r.block and need.shots > 1:
+            # Шоты — отдельные прогоны, и блок округляется В КАЖДОМ шоте.
+            сумма, расчёт = _блоками(сек / need.shots, r)
+            return (
+                сумма * need.shots,
+                f"{need.shots} шот(ов) × ({сек / need.shots:g} с: {расчёт}) (блок = {r.block:g} с)",
+                "",
+            )
         if r.block:
             сумма, расчёт = _блоками(сек, r)
             return сумма, f"{сек:g} с: {расчёт} (блок = {r.block:g} с)", ""
@@ -1076,6 +1087,30 @@ def _деньги(r: Rate, need: Need) -> tuple[float, str, str] | None:
             return None
         return r.amount * сек / 60.0, f"{сек:g} с × {r.amount:g} usd/мин ÷ 60", ""
     if r.per in ("run", "generation"):
+        if сек and need.shots > 1:
+            # ШОТЫ — ОТДЕЛЬНЫЕ ПРОГОНЫ: прогон не склеивает два шота, поэтому
+            # число прогонов — шоты × прогонов на шот, а не ceil(всего / прогон).
+            на_шот = сек / need.shots
+            покрывает = r.run_seconds or need.max_run_seconds
+            if r.run_seconds and r.over_per_second is not None:
+                лишние = max(0.0, на_шот - r.run_seconds)
+                за_шот = r.amount + лишние * r.over_per_second
+                return (
+                    за_шот * need.shots,
+                    f"{need.shots} шот(ов) × ({r.amount:g} usd за первые {r.run_seconds:g} с"
+                    f" + {лишние:g} с × {r.over_per_second:g} usd/с)",
+                    "",
+                )
+            прогонов_на_шот = math.ceil(на_шот / покрывает) if покрывает else 1
+            прогонов = need.shots * прогонов_на_шот
+            return (
+                r.amount * прогонов,
+                f"{need.shots} шот(ов) по {на_шот:g} с × {прогонов_на_шот} прогон(ов) × {r.amount:g} usd"
+                + (f" (прогон = {покрывает:g} с)" if покрывает else ""),
+                # Длина прогона не записана — шот мог занять больше прогона:
+                # это НИЖНЯЯ граница, как и у ролика одним куском.
+                "" if покрывает else LOWER_BOUND_RUN,
+            )
         if r.run_seconds and r.over_per_second is not None:
             лишние = max(0.0, (сек or 0.0) - r.run_seconds)
             return (
