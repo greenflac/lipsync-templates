@@ -467,6 +467,10 @@ class АпскейлСборкаВариант(unittest.TestCase):
             факт("acme-avatar-studio", "produces_outputs", "видео", "portal"),
             факт("acme-avatar-studio", "positioning", "talking avatar video from a script"),
             факт("acme-avatar-studio", "observed_behaviour", "аватар держит лицо весь ролик", "operator"),
+            # Пятый круг: работа видеомодели должна быть УСТАНОВЛЕНА реестром
+            # (здесь — именем атрибута документации вендора), иначе она идёт
+            # после аватара, чья работа установлена (`Candidate.unclassified`).
+            факт("acme-video-9", "ratio_enum_text_to_video", "1280:720", "vendor"),
         ]
         вариант = _полный_план("нужен говорящий персонаж", facts=факты, today=СЕГОДНЯ)["native_audio_variant"]
         self.assertEqual("acme-video-9", вариант["chosen"]["model"])

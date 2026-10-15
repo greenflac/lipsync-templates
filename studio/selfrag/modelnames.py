@@ -43,7 +43,7 @@ import re
 
 from collections import defaultdict
 from functools import lru_cache
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 
 from lipsync.fork_identity import PASS, UNMEASURED
@@ -738,14 +738,20 @@ def family(name: str, known: Iterable[str]) -> list[str]:
     return out
 
 
-def parent(name: str, known: Iterable[str]) -> list[str]:
+def parent(
+    name: str, known: Iterable[str], groups: Mapping[str, list[str]] | None = None
+) -> list[str]:
     """Написания базы для СЕМЬИ, вариантом которой является `name`. Пусто — нет.
 
     Самая длинная семья побеждает: у `kling-3.0-turbo-standard-i2v` семья
     `kling-3.0`, а не `kling`. Звено-версия не отрезается: у `veo-3.1-lite`
     семья `veo-3.1`, и никогда `veo-3` (И5).
+
+    :param groups: готовый `group(known)`, когда семьи ищутся для ВСЕХ имён
+        базы разом (реестр эндпоинтов, `studio/endpoints.py`): без него каждый
+        вызов пересобирает группы, и 868 имён стоили 2.9 с (ИЗМЕРЕНО 2026-10-15).
     """
-    groups = group(known)
+    groups = group(known) if groups is None else groups
     for звенья_ in (tokens(name), _без_вендора(tokens(name))):
         for k in range(len(звенья_) - 1, 0, -1):
             if _ГОЛАЯ_ВЕРСИЯ.fullmatch(звенья_[k]):

@@ -34,6 +34,8 @@ ROOT = Path(__file__).resolve().parents[1]
     "studio.tests.test_hard_constraints_r4.ВесаИПамять",
     "studio.tests.test_hard_constraints_r4.ЦенаСвоегоЗапуска",
     "studio.tests.test_localisation.Прибор",
+    # Пятый круг: реестр эндпоинтов и отбор по нему.
+    "studio.tests.test_endpoints_r5",
 )
 
 BS = "studio/brief_spec.py"
@@ -41,6 +43,7 @@ PN = "studio/planner.py"
 PR = "studio/pricing.py"
 HN = "studio/hardneed.py"
 L10N = "studio/l10n.py"
+EP = "studio/endpoints.py"
 
 #: (файл, было, стало, что ломается). Каждая константа — строже и слабее.
 MUTANTS: tuple[tuple[str, str, str, str], ...] = (
@@ -107,6 +110,39 @@ MUTANTS: tuple[tuple[str, str, str, str], ...] = (
     (PN, '    просят_кадр = None if понято.source.get("resolution") == bs.SOURCE_DEFAULT else заказанный_кадр', "    просят_кадр = заказанный_кадр", "кадр-допущение дописывает апскейл"),
     (PR, "        if сек and need.shots > 1:", "        if False:", "шоты снова одним куском в цене"),
     (PR, "            прогонов = need.shots * прогонов_на_шот", "            прогонов = прогонов_на_шот", "цена за один шот вместо всех"),
+    # --- реестр эндпоинтов (пятый круг): работа из свидетельства, узел семьи,
+    # прогоны, «самое дешёвое», новые работы маршрута
+    (EP, '    (r"lip-?sync(?:ing)?|lipsync", (LIPSYNC,)),\n', "", "липсинк в пути больше не работа"),
+    (EP, "    if работы:\n        return _порядок(работы), EVIDENCE_ID", "    if False:\n        return _порядок(работы), EVIDENCE_ID", "работа в пути не старше режима"),
+    (EP, "AUDIO_DRIVEN: frozenset[str] = frozenset({LIPSYNC, AVATAR})", "AUDIO_DRIVEN: frozenset[str] = frozenset()", "обязательный звук не подпись работы"),
+    (EP, "AUDIO_DRIVEN: frozenset[str] = frozenset({LIPSYNC, AVATAR})", "AUDIO_DRIVEN: frozenset[str] = frozenset({LIPSYNC})", "аватар по звуку не узнаётся"),
+    (EP, 'frozenset(нужны - {"текст"})', "frozenset(нужны)", "текст рядом со звуком меняет работу"),
+    (EP, 'DOC_TIERS: frozenset[str] = frozenset({"vendor", "portal"})', 'DOC_TIERS: frozenset[str] = frozenset({"vendor", "portal", "blog"})', "блог — свидетельство работы"),
+    (EP, 'DOC_TIERS: frozenset[str] = frozenset({"vendor", "portal"})', 'DOC_TIERS: frozenset[str] = frozenset({"portal"})', "документация вендора не свидетельство"),
+    (EP, "ATTRIBUTE_MODES: frozenset[str] = frozenset({T2V, I2V, R2V})", "ATTRIBUTE_MODES: frozenset[str] = frozenset()", "имя атрибута не читается"),
+    (EP, "ATTRIBUTE_MODES: frozenset[str] = frozenset({T2V, I2V, R2V})", "ATTRIBUTE_MODES: frozenset[str] = frozenset({T2V, I2V, R2V, IMAGE_EDIT})", "правка из имени атрибута"),
+    (EP, "FAMILY_MODES: frozenset[str] = frozenset({T2V, I2V, R2V, T2I, IMAGE_EDIT})", "FAMILY_MODES: frozenset[str] = frozenset()", "семья с ценой без работы"),
+    (EP, "FAMILY_MODES: frozenset[str] = frozenset({T2V, I2V, R2V, T2I, IMAGE_EDIT})", "FAMILY_MODES: frozenset[str] = frozenset({T2V, I2V, R2V, T2I, IMAGE_EDIT, LIPSYNC})", "работа варианта становится работой семьи"),
+    (EP, "        orderable = not (мои_варианты and not свой_маршрут)", "        orderable = True", "узел семьи заказывается"),
+    (EP, "        orderable = not (мои_варианты and not свой_маршрут)", "        orderable = not мои_варианты", "семья со своей ценой не заказывается"),
+    (EP, "    if имя_курированное:\n", "    if False:\n", "курированное не перекрывает каналы"),
+    (EP, "    if IMAGE_EDIT in режимы and (", "    if False and (", "правка видео читается правкой картинки"),
+    (EP, 'if _звено("video|vsr", звенья) or', "if", "апскейл всегда видео"),
+    (EP, "CACHE_LIMIT = 8", "CACHE_LIMIT = 2", "кэш реестра мельче"),
+    (EP, "CACHE_LIMIT = 8", "CACHE_LIMIT = 100", "кэш реестра без предела"),
+    (PN, "RUN_DEFAULT_S = 5.0", "RUN_DEFAULT_S = 4.0", "допущенный прогон короче"),
+    (PN, "RUN_DEFAULT_S = 5.0", "RUN_DEFAULT_S = 6.0", "допущенный прогон длиннее"),
+    (PN, "UNCLASSIFIED_RANK = 1", "UNCLASSIFIED_RANK = 0", "неустановленная работа наравне с установленной"),
+    (PN, "FOREIGN_RANK = 2", "FOREIGN_RANK = 1", "чужая работа наравне с неустановленной"),
+    (PN, "    if c.unpriced_last and not цена_есть(c):", "    if False:", "без цены не последним при «самом дешёвом»"),
+    (PN, "    if not set(работы) & ep.FAMILY_MODES:\n        return False\n", "", "аватар берёт строки генератора"),
+    (PN, "    if семья is None or семья.orderable:", "    if семья is None:", "заказываемая семья одалживает"),
+    (PN, "            elif узел.functions and not set(узел.functions) & set(работы):", "            elif False:", "видеомодель снова кандидат на липсинк"),
+    (PN, "            if not узел.orderable and not (hard is not None and hard.self_host and узел.self_hostable):\n", "            if False:\n", "узел семьи снова кандидат"),
+    (PN, "    if not реестр.orderable_for(работа) and op.name in ЗАПАСНАЯ_РАБОТА:", "    if False:", "оборот без запасной работы"),
+    (PN, "    if предел_прогона(все) is not None:\n        return None\n", "", "допущение поверх своей записи"),
+    (BS, '    "restore": (("video", "реставрация"),),\n', "", "реставрация снова без маршрута"),
+    (BS, '                return Маршрут((шаг,), {шаг: NOTE_CAPTIONS} if задача == "captions" else {})', "                return Маршрут((шаг,), {})", "субтитры без пометки монтажа"),
 )
 
 

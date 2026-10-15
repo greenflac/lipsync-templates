@@ -1401,7 +1401,7 @@ MUTANTS = [
     ),
     (
         "studio/planner.py",
-        "        int(c.foreign),\n        кадр_стена,",
+        "        FOREIGN_RANK if c.foreign else UNCLASSIFIED_RANK if c.unclassified else 0,\n        кадр_стена,",
         "        кадр_стена,",
         "by_evidence: чужая работа (аватар на генерации видео) снова не уходит вниз",
     ),
@@ -1581,8 +1581,8 @@ MUTANTS = [
     ),
     (
         "studio/planner.py",
-        "            c.kind_rank,\n            by_evidence(c)[CONSTRAINT_KEYS:],\n",
-        "            by_evidence(c)[CONSTRAINT_KEYS:],\n",
+        "            c.kind_rank,\n            by_evidence(c)[CONSTRAINT_KEYS:-1],\n",
+        "            by_evidence(c)[CONSTRAINT_KEYS:-1],\n",
         "вариант Б: аватар-продукт снова обгоняет видеомодель с нативным звуком",
     ),
     (

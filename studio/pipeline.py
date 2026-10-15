@@ -1165,7 +1165,9 @@ def probe_contradiction(step: Step, свои: Sequence[Fact]) -> Probe:
             True,
             True,
             CLASS_OUTCOME[CLASS_CONTRADICTION],
-            f"источники расходятся в {первый}: {' / '.join(стороны)} — сторона не выбирается",
+            # Стороны — ЦИТАТЫ источников (в «»): у цены это слова площадки
+            # по-английски, и в русском ответе они цитата, а не шаблон.
+            f"источники расходятся в {первый}: {' / '.join(f'«{с}»' for с in стороны)} — сторона не выбирается",
         )
     return Probe(
         CLASS_CONTRADICTION,

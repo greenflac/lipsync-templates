@@ -315,26 +315,26 @@ class ЖивыеБрифы(unittest.TestCase):
         # кадры по референсу: кадр -> правка по референсу -> оживление.
         # Сверхразрешение (`drct-super-resolution`) правкой по референсу не
         # считается (чужая работа).
+        # Пятый круг (реестр эндпоинтов): тарифы `kling-3.0` делят измеренные
+        # доводы своей семьи и обгоняют неизмеренный `wan-3.0-i2v`; кадр 1080p у
+        # `kling-3.0-standard-i2v` не записан — апскейл дописан УСЛОВНО. Ничья
+        # правок по референсу решена ценой: `seedream-5-flash-edit`, а не
+        # `flux-3-edit` по алфавиту.
         self.assertEqual(
             [
                 ("генерация_изображения", "gpt-image-2.5-flare"),
-                ("редактирование_изображения", "flux-3-edit"),
+                ("редактирование_изображения", "seedream-5-flash-edit"),
                 ("озвучка", "eleven_v3"),
-                ("оживление", "wan-3.0-i2v"),
+                ("оживление", "kling-3.0-standard-i2v"),
                 ("липсинк", "sync-lipsync"),
+                ("апскейл", "bytedance-upscaler-upscale-video"),
             ],
             [(ш["step"], ш["chosen"]["model"]) for ш in итог["steps"]],
         )
-        # Бриф английский — и ответ целиком английский (4-й круг, `studio/l10n.py`).
-        self.assertTrue(
-            итог["resolution_carry"].startswith("frame 1080x1920 carried from step photo to video (wan-3.0-i2v:")
-        )
-        self.assertTrue(
-            итог["resolution_carry"].endswith(
-                "through lip sync (sync-lipsync): the base is silent on their output resolution, "
-                "and the pass is assumed to keep the frame — an assumption, not a measurement"
-            )
-        )
+        # Кадр 1080x1920 у `kling-3.0-standard-i2v` не записан — его не
+        # «проносят» допущением, а дописывают УСЛОВНЫЙ апскейл (вне цены ролика).
+        self.assertEqual("", итог["resolution_carry"])
+        self.assertTrue(итог["steps"][5]["conditional"])
         видео = итог["steps"][3]
         self.assertEqual("minimax-h3", видео["licence_alternative"]["model"])
         self.assertIn(
@@ -342,19 +342,18 @@ class ЖивыеБрифы(unittest.TestCase):
             видео["licence_alternative"]["licence_risk"],
         )
         self.assertEqual("юрисдикция", итог["question"]["axis"])
-        # ЧЕТВЁРТЫЙ КРУГ (2026-10-15), цены и шоты вместе. Ролик 40 с из
-        # ключевых кадров — кадр на КАЖДЫЙ шот: у wan-3.0-i2v предел прогона не
-        # записан, шот принят 8 с (`brief_spec.ASSUMED_SHOT_S`), ⌈40/8⌉ = 5.
-        # wan-3.0-i2v «$0.05 480p, $0.10 720p, or $0.20 1080p» — тариф 1080p.
-        #   кадры           5 × 0.03612            = 0.1806
-        #   правка по реф.  5 × 3 Мп × 0.024       = 0.36
+        # ЧЕТВЁРТЫЙ КРУГ (2026-10-15), цены и шоты вместе; ПЯТЫЙ — реестр. Ролик
+        # 40 с из ключевых кадров — кадр на КАЖДЫЙ шот: предел прогона
+        # `kling-3.0-standard-i2v` записан 15 с, ⌈40/15⌉ = 3.
+        #   кадры           3 × 0.03612            = 0.1084
+        #   правка по реф.  3 × 0.027              = 0.081
         #   озвучка         ≈600 знаков × 0.08/1000 = 0.048
-        #   оживление       40 с × 0.20 usd/с      = 8.00 (за секунду: шоты суммы не меняют)
+        #   оживление       40 с × 0.14 usd/с      = 5.60 (за секунду: шоты суммы не меняют)
         #   липсинк         40 с × 3 usd/мин ÷ 60  = 2.00
-        #   итого 10.5886 -> 10.59 (было 10.16 с одним кадром и одной правкой).
-        self.assertEqual((10.59, "годно"), (итог["pipeline_price"]["смета"]["usd"], итог["pipeline_price"]["outcome"]))
+        #   итого 7.8374 -> 7.84; условный апскейл в сумму не входит.
+        self.assertEqual((7.84, "годно"), (итог["pipeline_price"]["смета"]["usd"], итог["pipeline_price"]["outcome"]))
         self.assertEqual(
-            [5, 5, None, 5, None], [ш["shots"] for ш in итог["steps"]]
+            [3, 3, None, 3, None, None], [ш["shots"] for ш in итог["steps"]]
         )
         self.assertNotIn("optimised", итог["pipeline_price"])
         self.assertEqual("latentsync", итог["steps"][4]["cheaper_same_rank"]["model"])
@@ -368,28 +367,30 @@ class ЖивыеБрифы(unittest.TestCase):
         # одна замена. РАУНД 4 (2026-10-15): не липсинка — измеренный
         # `sync-lipsync` (за 2, против 1) на `latentsync` (за 1, против 3) отдавал
         # баланс доводов, — а неизмеренного видео на неизмеренное, ничьей по
-        # доводам: такая замена не отдаёт ничего измеренного.
+        # доводам: такая замена не отдаёт ничего измеренного. ПЯТЫЙ КРУГ: ничья
+        # неизмеренных генераторов решена ценой — первым `wan-3.0-t2v` (1.50), а
+        # не `wan-3.0-prime-t2v` (2.04) по алфавиту; перебор 0.04 usd.
         self.assertEqual(
-            [("генерация_видео", "wan-3.0-prime-t2v", "gemini-omni-flash-v1.1-t2v")],
+            [("генерация_видео", "wan-3.0-t2v", "xai-grok-imagine-video-v1.5-lite-t2v")],
             [(о["step"], о["from"], о["to"]) for о in оптимум["swaps"]],
         )
         self.assertEqual(
             [
                 ("озвучка", "eleven_v3"),
-                ("генерация_видео", "gemini-omni-flash-v1.1-t2v"),
+                ("генерация_видео", "xai-grok-imagine-video-v1.5-lite-t2v"),
                 ("липсинк", "sync-lipsync"),
             ],
             [(ш["step"], ш["chosen"]["model"]) for ш in итог["steps"]],
         )
-        self.assertEqual((3.576, 2.436), (оптимум["before_usd"], оптимум["after_usd"]))
-        self.assertEqual("total 3.58 usd is over the clip ceiling 3 usd", оптимум["why_en"])
+        self.assertEqual((3.036, 2.136), (оптимум["before_usd"], оптимум["after_usd"]))
+        self.assertEqual("total 3.04 usd is over the clip ceiling 3 usd", оптимум["why_en"])
         self.assertEqual("годно", итог["pipeline_price"]["outcome"])
         self.assertIn(
-            "re-selected for the budget: wan-3.0-prime-t2v 2.04 -> gemini-omni-flash-v1.1-t2v 0.90 usd",
+            "re-selected for the budget: wan-3.0-t2v 1.50 -> xai-grok-imagine-video-v1.5-lite-t2v 0.60 usd",
             итог["summary"],
         )
         self.assertNotIn("sync-lipsync 1.50 -> latentsync", итог["summary"])
-        self.assertIn("BUDGET OPTIMISED (total 3.58 usd is over the clip ceiling 3 usd): 3.58 -> 2.44 usd", итог["summary"])
+        self.assertIn("BUDGET OPTIMISED (total 3.04 usd is over the clip ceiling 3 usd): 3.04 -> 2.14 usd", итог["summary"])
 
     def test_липсинк_заказано_самое_дешёвое_меняет_всё(self) -> None:
         """Обратное направление: «cheapest» — каждый шаг к минимуму своей полосы."""
@@ -397,13 +398,16 @@ class ЖивыеБрифы(unittest.TestCase):
         оптимум = итог["pipeline_price"]["optimised"]
         self.assertEqual(
             [
-                ("озвучка", "eleven_v3", "chatterbox-multilingual"),
-                ("генерация_видео", "wan-3.0-prime-t2v", "xai-grok-imagine-video-v1.5-lite-t2v"),
+                # Пятый круг: `xai-tts-v1` (0.015 usd за 1000 знаков) — эндпоинт
+                # TTS по реестру, найденный не словом, а работой; дешевле
+                # `chatterbox-multilingual` (0.025) в той же полосе.
+                ("озвучка", "eleven_v3", "xai-tts-v1"),
+                ("генерация_видео", "wan-3.0-t2v", "xai-grok-imagine-video-v1.5-lite-t2v"),
                 ("липсинк", "sync-lipsync", "latentsync"),
             ],
             [(о["step"], о["from"], о["to"]) for о in оптимум["swaps"]],
         )
-        self.assertEqual((3.576, 0.8112), (оптимум["before_usd"], оптимум["after_usd"]))
+        self.assertEqual((3.036, 0.8067), (оптимум["before_usd"], оптимум["after_usd"]))
 
     def test_нативный_звук_1080p_самое_дешёвое(self) -> None:
         итог = pn.plan("8 second 1080p video with native audio, cheapest")
@@ -412,17 +416,22 @@ class ЖивыеБрифы(unittest.TestCase):
         # отодвинута лицензией и встала бы первой вне исключённых территорий.
         self.assertEqual("юрисдикция", итог["question"]["axis"])
         self.assertEqual("minimax-h3", итог["steps"][0]["licence_alternative"]["model"])
+        # ПЯТЫЙ КРУГ (реестр эндпоинтов): узел семьи `kling-3.0` не заказывается,
+        # его измеренные строки одалживаются тарифам семьи — и они в полосе
+        # «чисто», выше неизмеренной `veo-3.1-lite-t2v` (0.64). «Самое дешёвое»
+        # меняет выбор только ВНУТРИ полосы: ничья тарифов kling решена ценой
+        # (`standard`, 1.12, а не `4k`, 3.36). Кадр 1080p у него не записан —
+        # апскейл условный, вне сметы. `veo-3.1-lite-t2v` остаётся соседом.
         self.assertEqual(
-            [("видео_со_звуком", "veo-3.1-lite-t2v")],
+            [("видео_со_звуком", "kling-3.0-standard-t2v"), ("апскейл", "bytedance-upscaler-upscale-video")],
             [(ш["step"], ш["chosen"]["model"]) for ш in итог["steps"]],
         )
-        self.assertEqual(0.64, итог["pipeline_price"]["смета"]["usd"])
+        self.assertIn("veo-3.1-lite-t2v", [а["model"] for а in итог["steps"][0]["alternatives"]])
+        self.assertEqual(1.12, итог["pipeline_price"]["смета"]["usd"])
         оптимум = итог["pipeline_price"]["optimised"]
         self.assertEqual("the cheapest was asked", оптимум["why_en"])
-        self.assertEqual(
-            [("видео_со_звуком", "flux-3-t2v", 2.32, "veo-3.1-lite-t2v", 0.64)],
-            [(о["step"], о["from"], о["from_usd"], о["to"], о["to_usd"]) for о in оптимум["swaps"]],
-        )
+        self.assertEqual([], оптимум["swaps"])
+        self.assertEqual([], оптимум["unpriced_steps"])
 
     def test_ключевые_кадры_апскейл_условный_и_вне_вердикта(self) -> None:
         итог = pn.plan("6 фотореалистичных ключевых кадров 1080x1920, бюджет 1 доллар")

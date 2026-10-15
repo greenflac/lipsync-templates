@@ -38,7 +38,7 @@ from studio import pipeline as pl
 
 # --- словари поля `spec` ---------------------------------------------------
 
-OUTPUTS: tuple[str, ...] = ("video", "image", "speech", "music", "sfx")
+OUTPUTS: tuple[str, ...] = ("video", "image", "speech", "music", "sfx", "text")
 TASKS: tuple[str, ...] = (
     "generate",
     "animate",
@@ -48,6 +48,15 @@ TASKS: tuple[str, ...] = (
     "avatar",
     "upscale",
     "edit",
+    # Пятый круг (реестр эндпоинтов): работы, которые маршрут знает только по
+    # названию в спецификации — подсказками брифа они не выводятся (`ROUTE_TASKS`).
+    "restore",
+    "remove-background",
+    "interpolate",
+    "transcribe",
+    "voice-clone",
+    "turntable",
+    "captions",
 )
 AUDIO_MODES: tuple[str, ...] = ("none", "native", "voiceover")
 INPUT_KINDS: tuple[str, ...] = ("photo", "video", "audio", "script")
@@ -332,6 +341,24 @@ QUALITY = re.compile(
 _ТОКЕН = re.compile(r"[a-zа-яё0-9][a-zа-яё0-9'’.-]*[a-zа-яё0-9]|[a-zа-яё0-9]")
 _КЛАУЗА = re.compile(r"[,;:.!?\n]|\s—\s|\s-\s|\bthen\b|\bзатем\b|\bпотом\b")
 
+
+#: ЗАДАЧА -> (шаг, какой вход нужен, шаг при другом входе). КОНСТАНТА-РЕШЕНИЕ
+#: пятого круга: работа над ГОТОВЫМ материалом заказчика, названная задачей
+#: спецификации. Нужного входа нет — вопрос, а не выдуманный исходник. Шаги —
+#: имена операций плановщика; кандидатов на них даёт реестр эндпоинтов по
+#: работе (`planner.ФУНКЦИЯ_ОПЕРАЦИИ`), а не слова брифа.
+ROUTE_TASKS: dict[str, tuple[tuple[str, str], ...]] = {
+    "restore": (("video", "реставрация"),),
+    "interpolate": (("video", "интерполяция_кадров"),),
+    "remove-background": (("photo", "удаление_фона"), ("video", "удаление_фона_видео")),
+    "transcribe": (("audio", "расшифровка"), ("video", "расшифровка")),
+    "captions": (("video", "расшифровка"),),
+    "voice-clone": (("audio", "клонирование_голоса"),),
+    "turntable": (("photo", "оборот_360"),),
+}
+
+#: Пометки шагов маршрута пятого круга: чего модель НЕ делает и кто делает это.
+NOTE_CAPTIONS = "субтитры вжигает монтаж (ffmpeg) по расшифровке с таймингами — модели на это не нужно"
 
 #: Что выходит у работы, когда она названа (выход шире названного не бывает).
 TASK_OUTPUTS: dict[str, tuple[str, ...]] = {
@@ -937,12 +964,34 @@ def _нехватка_видео(задача: str) -> tuple[str, str, str, tupl
     )
 
 
+#: Как вход задачи называется заказчику: (по-русски, spec.inputs).
+ВХОД_СЛОВАМИ: dict[str, tuple[str, str]] = {
+    "video": ("ВАШЕ видео", "video"),
+    "photo": ("ВАШ снимок", "photo"),
+    "audio": ("ВАША запись (образец голоса, дорожка)", "audio"),
+}
+
+
+def _нехватка_входа(задача: str, вход: str) -> tuple[str, str, str, tuple[str, ...], tuple[str, ...]]:
+    if вход == "video":
+        return _нехватка_видео(задача)
+    по_русски, имя = ВХОД_СЛОВАМИ[вход]
+    return (
+        "вход_задачи",
+        f"для задачи «{задача}» нужен вход — {по_русски}: приложите файл",
+        f"the task '{задача}' works on YOUR {имя} — attach it or pass spec.inputs=['{имя}']",
+        ("приложу", "его нет"),
+        ("I have it and will attach it", "there is none"),
+    )
+
+
 #: Пометки маршрута — по-русски и по-английски (английский бриф получает план
 #: по-английски, `planner._по_английски`).
 NOTE_DUB_LIPS = "перевод готового видео: губы под новый язык (лиц в кадре нет — шаг снимается)"
 NOTE_KEYFRAMES = "персонажей {n}: ключевой кадр на каждый шот, иначе лица разъезжаются от шота к шоту"
 NOTES_EN: dict[str, str] = {
     NOTE_DUB_LIPS: "translating your own video: lip sync moves the lips to the new language (no faces on screen — drop the step)",
+    NOTE_CAPTIONS: "captions are burned in at assembly (ffmpeg) from the timed transcript — no model needed for that",
 }
 
 
@@ -969,6 +1018,11 @@ def route(spec: Spec) -> Маршрут:
     шаги: list[str] = []
     пометки: dict[str, str] = {}
 
+    if задача in ROUTE_TASKS:
+        for вход, шаг in ROUTE_TASKS[задача]:
+            if вход in входы:
+                return Маршрут((шаг,), {шаг: NOTE_CAPTIONS} if задача == "captions" else {})
+        return Маршрут(нехватка=_нехватка_входа(задача, ROUTE_TASKS[задача][0][0]))
     if задача == "face-replace":
         if "video" not in входы:
             return Маршрут(нехватка=_нехватка_видео(задача))
