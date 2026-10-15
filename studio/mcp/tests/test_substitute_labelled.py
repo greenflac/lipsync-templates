@@ -73,8 +73,9 @@ class Свойство(unittest.TestCase):
                 self.assertEqual([б], attrfamily.substitutes(а, [б]))
 
     def test_справка_помечает_заменитель(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp, mock.patch.dict(
-            source_hosts.VENDOR_SOURCES, _VENDOR, clear=False
+        with (
+            tempfile.TemporaryDirectory() as tmp,
+            mock.patch.dict(source_hosts.VENDOR_SOURCES, _VENDOR, clear=False),
         ):
             путь = Path(tmp) / "facts.jsonl"
             for семья, а, б in _пары():
@@ -116,8 +117,13 @@ class ТотЖеАтрибутУВарианта(unittest.TestCase):
             _строка("subst-fam", "prompt_skeleton", "[subject] [action] [camera]"),
             _строка("subst-fam-pro", "negative_prompt", "accepted — schema has the field"),
         ]
-        with tempfile.TemporaryDirectory() as tmp, mock.patch.dict(
-            source_hosts.VENDOR_SOURCES, {**_VENDOR, "subst-fam-pro": ("vendor.test",)}, clear=False
+        with (
+            tempfile.TemporaryDirectory() as tmp,
+            mock.patch.dict(
+                source_hosts.VENDOR_SOURCES,
+                {**_VENDOR, "subst-fam-pro": ("vendor.test",)},
+                clear=False,
+            ),
         ):
             путь = Path(tmp) / "facts.jsonl"
             путь.write_text("\n".join(json.dumps(с) for с in строки) + "\n", encoding="utf-8")

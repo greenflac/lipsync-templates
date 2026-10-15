@@ -83,15 +83,33 @@ from studio.selfrag.facts import TIERS, Fact
 #: АТРИБУТЫ-ОПИСАНИЯ: по ним модель узнаётся как модель функции.
 ОПИСАНИЯ: frozenset[str] = frozenset(
     {
-        "produces_outputs", "accepts_inputs", "modes", "modalities", "modality", "capabilities",
-        "positioning", "lipsync", "lipsync_support", "role", "endpoint_purpose", "best_for",
+        "produces_outputs",
+        "accepts_inputs",
+        "modes",
+        "modalities",
+        "modality",
+        "capabilities",
+        "positioning",
+        "lipsync",
+        "lipsync_support",
+        "role",
+        "endpoint_purpose",
+        "best_for",
     }
 )
 
 #: КОРОТКИЕ СИНОНИМЫ СЛОВ ВОПРОСА. Закрытый список, и он тут ради того, чтобы
 #: «profile» нашёл «side profiles» и «rotation», а «logo» — «trademarks».
 СИНОНИМЫ: dict[str, tuple[str, ...]] = {
-    "profile": ("profile", "side view", "side-view", "rotation", "head turn", "three-quarter", "yaw"),
+    "profile": (
+        "profile",
+        "side view",
+        "side-view",
+        "rotation",
+        "head turn",
+        "three-quarter",
+        "yaw",
+    ),
     "профиль": ("profile", "side view", "rotation", "профил", "поворот"),
     "logo": ("logo", "trademark", "lettering", "typography", "text render", "packaging text"),
     "логотип": ("logo", "trademark", "логотип", "lettering"),
@@ -105,17 +123,31 @@ from studio.selfrag.facts import TIERS, Fact
 #: не ранжируется, а считается отдельно (`excluded_by_requirement`).
 ТРЕБОВАНИЯ: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
     # слово -> (в каких строках искать: семьи атрибутов, какие подстроки значения)
-    "open": (("license",), ("apache", "mit", "open weight", "open-weight", "openrail", "bsd", "cc-by", "weights")),
+    "open": (
+        ("license",),
+        ("apache", "mit", "open weight", "open-weight", "openrail", "bsd", "cc-by", "weights"),
+    ),
     "russian": (("languages",), ("russian", " ru", "ru,", "(ru", "русск")),
     "english": (("languages",), ("english", " en", "en,", "(en")),
     "spanish": (("languages",), ("spanish", " es", "es,", "(es")),
 }
 #: Написания требований -> ключ.
 ТРЕБОВАНИЯ_СИНОНИМЫ: dict[str, str] = {
-    "open": "open", "open weights": "open", "open-weights": "open", "open source": "open",
-    "open-source": "open", "открытые веса": "open", "открытая": "open",
-    "russian": "russian", "ru": "russian", "русский": "russian", "русского": "russian",
-    "english": "english", "en": "english", "spanish": "spanish", "es": "spanish",
+    "open": "open",
+    "open weights": "open",
+    "open-weights": "open",
+    "open source": "open",
+    "open-source": "open",
+    "открытые веса": "open",
+    "открытая": "open",
+    "russian": "russian",
+    "ru": "russian",
+    "русский": "russian",
+    "русского": "russian",
+    "english": "english",
+    "en": "english",
+    "spanish": "spanish",
+    "es": "spanish",
 }
 
 #: Признаки ПЛОХОЙ новости в значении (знак строки, когда он не объявлен).
@@ -132,10 +164,50 @@ _ПЛОХО = re.compile(
 #: Слова вопроса, не несущие смысла поиска.
 _ПУСТЫЕ = frozenset(
     {
-        "which", "what", "best", "the", "a", "an", "for", "of", "and", "or", "with", "that", "is",
-        "does", "do", "can", "model", "models", "handles", "handle", "keeps", "keep", "good",
-        "какой", "какая", "какие", "лучший", "лучшая", "для", "и", "с", "что", "модель", "держит",
-        "lipsync", "i2v", "t2v", "tts", "video", "image", "open", "russian", "faces", "face",
+        "which",
+        "what",
+        "best",
+        "the",
+        "a",
+        "an",
+        "for",
+        "of",
+        "and",
+        "or",
+        "with",
+        "that",
+        "is",
+        "does",
+        "do",
+        "can",
+        "model",
+        "models",
+        "handles",
+        "handle",
+        "keeps",
+        "keep",
+        "good",
+        "какой",
+        "какая",
+        "какие",
+        "лучший",
+        "лучшая",
+        "для",
+        "и",
+        "с",
+        "что",
+        "модель",
+        "держит",
+        "lipsync",
+        "i2v",
+        "t2v",
+        "tts",
+        "video",
+        "image",
+        "open",
+        "russian",
+        "faces",
+        "face",
     }
 )
 
@@ -189,7 +261,9 @@ def _выполнено(требование: str, строки: list[Fact]) -> 
         if attrfamily.семья_имени(f.attribute) not in семьи and f.attribute not in семьи:
             continue
         низ = f" {str(f.value).lower()} "
-        if требование == "open" and re.search(r"proprietary|closed|api only|api-only|no weights", низ):
+        if требование == "open" and re.search(
+            r"proprietary|closed|api only|api-only|no weights", низ
+        ):
             continue
         if any(п in низ for п in подстроки):
             out.append(f)
@@ -206,7 +280,10 @@ def _знак(f: Fact) -> str:
     # В семье поведения плохи по ИМЕНИ провалы и пределы; сама строка
     # `observed_behaviour` бывает и хорошей («handles side profiles») — её
     # знак читается по значению.
-    if attrfamily.семья_имени(f.attribute) == "observed_behaviour" and f.attribute != "observed_behaviour":
+    if (
+        attrfamily.семья_имени(f.attribute) == "observed_behaviour"
+        and f.attribute != "observed_behaviour"
+    ):
         return "bad"
     return "bad" if _ПЛОХО.search(str(f.value)) else "good"
 
@@ -280,7 +357,9 @@ def find(
             отсеяно.append(м)
             continue
         найдено = [
-            f for f in строки if термины and any(т in f"{f.attribute} {f.value}".lower() for т in термины)
+            f
+            for f in строки
+            if термины and any(т in f"{f.attribute} {f.value}".lower() for т in термины)
         ]
         if not термины and требования:
             # Вопрос — только требования («open TTS for Russian»): свидетельство —
@@ -295,7 +374,11 @@ def find(
             {
                 "model": м,
                 "verdict": (
-                    "good_news_only" if хорошие and not плохие else "mixed" if хорошие else "bad_news_only"
+                    "good_news_only"
+                    if хорошие and not плохие
+                    else "mixed"
+                    if хорошие
+                    else "bad_news_only"
                 ),
                 "best_tier": хорошие[0].tier if хорошие else (плохие[0].tier if плохие else ""),
                 "good": [_строка(f) for f in хорошие[:СВИДЕТЕЛЬСТВ_ПОКАЗАНО]],
@@ -324,13 +407,17 @@ def find(
         {"scope": f.model, **_строка(f)}
         for f in класс
         if термины and any(т in f"{f.attribute} {f.value}".lower() for т in термины)
-    ][:СВИДЕТЕЛЬСТВ_ПОКАЗАНО * 2]
+    ][: СВИДЕТЕЛЬСТВ_ПОКАЗАНО * 2]
     показано = ранжировано[: max(1, int(top or 8))]
     итог_pass = bool(с_хорошей)
     if англ:
         нота = (
             f"{len(модели)} model(s) of function {функция!r} in the base; "
-            + (f"{len(отсеяно)} dropped for lacking a recorded {', '.join(требования)}; " if требования else "")
+            + (
+                f"{len(отсеяно)} dropped for lacking a recorded {', '.join(требования)}; "
+                if требования
+                else ""
+            )
             + f"{len(ранжировано)} have rows about {', '.join(термины[:6]) or '(no terms)'}, "
             f"{len(с_хорошей)} of them with good news; {len(без_свидетельства)} have NOTHING recorded on it. "
             + (
@@ -341,12 +428,20 @@ def find(
                 "none can: search the web and record what you find with record_model_fact."
             )
             + " Before recommending any name, call model_advice on it."
-            + (f" Not understood as a requirement (ignored): {', '.join(непонятые)}." if непонятые else "")
+            + (
+                f" Not understood as a requirement (ignored): {', '.join(непонятые)}."
+                if непонятые
+                else ""
+            )
         )
     else:
         нота = (
             f"моделей функции {функция!r} в базе: {len(модели)}; "
-            + (f"отсеяно без записанного требования ({', '.join(требования)}): {len(отсеяно)}; " if требования else "")
+            + (
+                f"отсеяно без записанного требования ({', '.join(требования)}): {len(отсеяно)}; "
+                if требования
+                else ""
+            )
             + f"со строками о {', '.join(термины[:6]) or '(слов нет)'}: {len(ранжировано)}, из них с хорошей "
             f"новостью {len(с_хорошей)}; НИЧЕГО не записано у {len(без_свидетельства)}. "
             + (
@@ -357,11 +452,17 @@ def find(
                 "что не умеет никто: поищите в сети и запишите найденное через record_model_fact."
             )
             + " Прежде чем назвать модель, спросите о ней model_advice."
-            + (f" Не понято как требование (не учтено): {', '.join(непонятые)}." if непонятые else "")
+            + (
+                f" Не понято как требование (не учтено): {', '.join(непонятые)}."
+                if непонятые
+                else ""
+            )
         )
     return {
         "outcome": PASS if итог_pass else UNMEASURED,
-        "reason": "ranked_by_evidence" if итог_pass else ("no_good_news" if ранжировано else "no_evidence"),
+        "reason": "ranked_by_evidence"
+        if итог_pass
+        else ("no_good_news" if ранжировано else "no_evidence"),
         "checked": len(модели),
         "violations": 0,
         "unmeasured": len(без_свидетельства) + (0 if итог_pass else 1),

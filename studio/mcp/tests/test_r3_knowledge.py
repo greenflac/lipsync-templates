@@ -79,7 +79,7 @@ class П11_ОпровержениеНеПровал(unittest.TestCase):
         self.assertIs(строки[0].contra, False)
 
     def test_худшая_новость_не_берёт_опровержение(self) -> None:
-        записи = [
+        записи: list[dict] = [
             {"attribute": "failure_mode", "value": self.ОПРОВЕРЖЕНИЕ, "contra": False},
             {"attribute": "failure_mode", "value": self.ПРОВАЛ, "contra": None},
         ]

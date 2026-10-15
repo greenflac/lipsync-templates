@@ -621,7 +621,9 @@ class СпрошенноеИмяСамоВСемье(unittest.TestCase):
         self.assertEqual("billing", attrfamily.семья_имени("price_relative"))
         записано = ["price_per_second", "billing_requirement"]
         self.assertEqual([], attrfamily.expand("price_relative", записано))
-        self.assertEqual(["billing_requirement"], attrfamily.substitutes("price_relative", записано))
+        self.assertEqual(
+            ["billing_requirement"], attrfamily.substitutes("price_relative", записано)
+        )
 
     def test_имя_без_семьи_остаётся_без_семьи(self):
         self.assertEqual("", attrfamily.семья_имени("zzz_attr"))

@@ -837,8 +837,8 @@ def _ставки_куска(
                 or bool(ставки and ставки[-1].conditional and до.strip() in ("–", "-", "to"))
                 # «0.196 with voice control» — доплата за функцию, не за звук.
                 or bool(
-                    re.match(r"^\s*\(?\s*with\s+(?!audio|sound)(\w+)", после, re.I)
-                    and (re.match(r"^\s*\(?\s*with\s+(\w+)", после, re.I).group(1).lower() not in TIER_WORDS)
+                    (доплата := re.match(r"^\s*\(?\s*with\s+(?!audio|sound)(\w+)", после, re.I))
+                    and доплата.group(1).lower() not in TIER_WORDS
                 ),
                 source=кусок.strip()[:120],
                 block=блок,

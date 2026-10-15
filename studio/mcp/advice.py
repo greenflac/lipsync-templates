@@ -1251,6 +1251,7 @@ def окно_свежести(attribute: str) -> int:
         return DURABLE_STALE_DAYS
     return POSSIBLY_STALE_DAYS
 
+
 #: Атрибуты, по которым модель — ВИДЕОмодель, если карточки реестра нет.
 _ВИДЕО_АТРИБУТЫ: frozenset[str] = frozenset(
     {"max_seconds", "min_seconds", "fps", "duration_enum", "max_duration_seconds"}
@@ -2250,8 +2251,11 @@ def brief(model: str, attribute: str = "", *, path: Path | None = None, lang: st
     кратко["family_claims_summary"] = _сводка_семьи(семейные)
     if полный.get("substitutes"):
         кратко["substitutes"] = {
-            k: {**v, "substitute_for": полный["substitutes"][k].get("substitute_for"),
-                "counts_as_answer": False}
+            k: {
+                **v,
+                "substitute_for": полный["substitutes"][k].get("substitute_for"),
+                "counts_as_answer": False,
+            }
             for k, v in _сжать_утверждения(полный["substitutes"]).items()
         }
         кратко["substitutes_note"] = полный.get("substitutes_note")

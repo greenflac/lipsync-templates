@@ -1032,7 +1032,9 @@ def _ключ_имени(имя: str) -> tuple[str, ...]:
     `prompt_length_limit` — разные ключи (И5), их склеил бы только словарь.
     """
     куски = [к for к in str(имя or "").strip().lower().split("_") if к and к != "usd"]
-    return tuple(к[:-1] if len(к) > 3 and к.endswith("s") and not к.endswith("ss") else к for к in куски)
+    return tuple(
+        к[:-1] if len(к) > 3 and к.endswith("s") and not к.endswith("ss") else к for к in куски
+    )
 
 
 def равнозначны(спрошено: str, записано: str) -> bool:
@@ -1050,9 +1052,7 @@ def равнозначны(спрошено: str, записано: str) -> bool
     имя_семьи = семья_имени(а)
     if not имя_семьи or имя_семьи != семья_имени(б):
         return False
-    return any(
-        п in а.lower() and п in б.lower() for п in СЕМЬИ[имя_семьи].get("подстроки") or ()
-    )
+    return any(п in а.lower() and п in б.lower() for п in СЕМЬИ[имя_семьи].get("подстроки") or ())
 
 
 #: СМЕЖНЫЕ ЧЛЕНЫ СЕМЕЙ ОДНОЙ ВЕЛИЧИНЫ — тема та же, вопрос другой (аудит
