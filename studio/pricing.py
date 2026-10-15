@@ -33,7 +33,7 @@ from __future__ import annotations
 
 import math
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 
 #: Валюты и единицы, которые встречаются в базе. Список закрытый: незнакомая
@@ -63,6 +63,10 @@ PER = (
     # поиск по вхождению, и `price_per_1000_characters` — это тысяча знаков.
     "character",
     "token",
+    # «За клон голоса» (седьмой круг): `minimax-voice-clone` — «$1.5 per clone,
+    # $0.3 per 1000 preview characters». Разовая плата шага, СКЛАДЫВАЕТСЯ с
+    # остальной ценой шага (`estimate`), а не спорит с ней.
+    "clone",
 )
 
 #: «За миллион токенов» в ТЕКСТЕ значения. Заведено 2026-09-05 по независимому
@@ -504,7 +508,9 @@ def _за_что(после: str, по_умолчанию: str) -> tuple[str, fl
         # `PER` нет; прочесть её «за секунду» значило бы потерять мегапиксели
         # (круг 4). Ставка не читается: шаг честно остаётся без цены.
         return "", 1.0, None, "skip"
-    if re.match(r"^\s*per\s+(?:clone|created voice|credit)", голова):
+    if re.match(r"^\s*per\s+(?:clone|created voice)", голова):
+        return "clone", 1.0, None, вид_доплаты(голова)
+    if re.match(r"^\s*per\s+credit", голова):
         return "", 1.0, None, "skip"
     вид = вид_доплаты(голова)
     if re.match(r"^[^$]{0,30}?(?:/|per)\s*(?:gpu\s+)?compute[\s-]+seconds?\b", голова):
@@ -1050,6 +1056,9 @@ class Need:
     compute_ratio: float | None = None
     #: Откуда частота кадров, если не из брифа: допущение печатается в расчёте.
     fps_basis: str = ""
+    #: Сколько клонов голоса делает шаг (ставка «за клон»): один голос — один
+    #: клон, сколько бы языков он ни читал.
+    clones: int = 1
 
 
 @dataclass(frozen=True)
@@ -1300,6 +1309,8 @@ def _деньги(r: Rate, need: Need) -> tuple[float, str, str] | None:
             f"{need.images:g} кадр(ов) × {мп} Мп × {r.amount:g} usd",
             "",
         )
+    if r.per == "clone":
+        return r.amount * need.clones, f"{need.clones} клон(ов) × {r.amount:g} usd", ""
     if r.per in ("1000_chars", "character"):
         if need.chars is None:
             return None
@@ -1329,6 +1340,41 @@ def estimate(ставки: list[Rate], need: Need) -> list[Option]:
     Разрешение в брифе НЕ названо — разные разрешения не неоднозначность, а
     выбор заказчика: берётся наименьшее разрешение, как и прежде, с подписью.
     """
+    # РАЗОВАЯ ПЛАТА «ЗА КЛОН» СКЛАДЫВАЕТСЯ с ценой шага (седьмой круг): клон
+    # голоса и начитка им — одна работа, и «$1.5 за клон + $0.3 за 1000 знаков»
+    # — сумма двух ставок, а не две спорящие ставки.
+    клоны = [r for r in ставки if r.per == "clone" and r.unit == "usd" and r.amount > 0 and not r.upfront]
+    if клоны:
+        прочие = [r for r in ставки if r not in клоны]
+        клон = max(клоны, key=lambda r: r.amount)
+        плата, расчёт_клона, _ = _деньги(клон, need) or (0.0, "", "")
+        варианты = estimate(прочие, need)
+        if not варианты:
+            return [
+                Option(
+                    round(плата, 4),
+                    клон.tier,
+                    None,
+                    f"{расчёт_клона} = {плата:.2f} usd",
+                    клон.conditional,
+                    lower_bound=(
+                        "посчитана только плата за клон: прочие ставки шага к брифу не привязались"
+                        if any(r.unit == "usd" and r.amount > 0 for r in прочие)
+                        else ""
+                    ),
+                    rate=клон.amount,
+                    per="clone",
+                )
+            ]
+        return [
+            replace(
+                в,
+                usd=round(в.usd + плата, 4),
+                formula=f"{расчёт_клона} + ({в.formula}) = {в.usd + плата:.2f} usd",
+                usd_min=round(в.usd_min + плата, 4) if в.usd_min is not None else None,
+            )
+            for в in варианты
+        ]
     по_тарифу: dict[str, list[tuple[tuple, Rate, int, tuple[float, str, str]]]] = {}
     for r in ставки:
         if r.unit != "usd" or r.upfront or r.amount <= 0:

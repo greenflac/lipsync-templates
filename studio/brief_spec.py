@@ -668,7 +668,8 @@ def budget_in_usd(сумма: float, валюта: str) -> tuple[float | None, s
         )
     return None, (
         f"budget named in {валюта} ({сумма:g} {валюта}); no {валюта}->USD rate is recorded and none is "
-        "invented — the plan gives NO budget verdict. Pass the budget in USD to get one"
+        "invented — the plan gives NO budget verdict. Convert it to USD yourself and pass "
+        f"budget={{amount: {сумма:g}, currency: '{валюта}', usd: <your figure>}} to get one"
     )
 
 
@@ -803,8 +804,11 @@ def _бюджет_spec(raw: Mapping[str, Any], поля: dict[str, Any], оши�
         ошибки.append("spec.budget: give budget {amount, currency} OR budget_usd, not both")
         return
     if not isinstance(б, Mapping):
-        ошибки.append("spec.budget: must be an object {amount, currency}")
+        ошибки.append("spec.budget: must be an object {amount, currency, usd?}")
         return
+    лишние = set(б) - {"amount", "currency", "usd"}
+    if лишние:
+        ошибки.append(f"spec.budget: unknown field(s) {', '.join(sorted(лишние))} (known: amount, currency, usd)")
     сумма, валюта = б.get("amount"), str(б.get("currency") or "").strip().upper()
     if (
         isinstance(сумма, bool)
@@ -819,6 +823,22 @@ def _бюджет_spec(raw: Mapping[str, Any], поля: dict[str, Any], оши�
         ошибки.append(f"spec.budget.currency={б.get('currency')!r}: an ISO 4217 code such as USD, EUR, KZT")
         return
     usd, нота = budget_in_usd(float(сумма), валюта)
+    свой = б.get("usd")
+    if свой is not None:
+        # ПЕРЕСЧЁТ ВЫЗЫВАЮЩЕГО (седьмой круг): курса у нас не записано ни
+        # одного, а вызывающий знает сегодняшний. Его число — потолок; сумма в
+        # валюте остаётся для эха. Записанный курс старше чужого пересчёта нет:
+        # вызывающий назвал число явно.
+        if isinstance(свой, bool) or not isinstance(свой, (int, float)) or math.isnan(свой) or math.isinf(свой) or свой < 0:
+            ошибки.append(f"spec.budget.usd={свой!r}: must be a finite number, 0 or more")
+            return
+        usd = float(свой)
+        нота = (
+            ""
+            if валюта == "USD"
+            else f"budget {float(сумма):g} {валюта} converted by the caller to {usd:g} USD — no {валюта}->USD rate "
+            "is recorded here; the budget verdict uses the caller's figure"
+        )
     поля["budget_amount"], поля["budget_currency"] = float(сумма), валюта
     if usd is not None:
         поля["budget_usd"] = float(usd)

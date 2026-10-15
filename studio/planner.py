@@ -4600,7 +4600,7 @@ def нужда_шага(
     # для шагов `PER_LANGUAGE_STEPS` и языков, названных в spec).
     if секунды is not None and языков > 1:
         секунды *= языков
-    речь = op.name in ("озвучка", "дубляж")
+    речь = op.name in ("озвучка", "дубляж", "клонирование_голоса")
     return pricing.Need(
         seconds=секунды,
         resolution=min(кадр) if кадр else None,
