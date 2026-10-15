@@ -256,6 +256,8 @@ EXCLUDED: dict[str, str] = {
     "seavidgen.com": "seo-clone",
     "wan2-1.com": "seo-clone",
     "wan27.org": "seo-clone",
+    "wan2-7.io": "seo-clone",
+    "seedance.tv": "seo-clone",
     "nanobanana.org": "seo-clone",
     # wrappers over other people's APIs
     "cometapi.com": "reseller-of-reseller",
