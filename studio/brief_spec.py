@@ -1866,6 +1866,27 @@ def source_seconds(spec: Spec) -> float | None:
     return max(длины) if длины else None
 
 
+#: Работы, которые ведёт ДОРОЖКА заказчика: принесённый звук и есть длина
+#: ролика (говорящая голова по своей записи), даже если работа — генерация.
+AUDIO_DRIVEN_TASKS: frozenset[str] = frozenset({"avatar"})
+
+
+def input_seconds(spec: Spec) -> float | None:
+    """Длина выхода, которую задаёт принесённое: работа над материалом — самый
+    длинный вход видео/аудио; работа под дорожку — длина своей дорожки; иначе None."""
+    работы = {spec.task, *spec.then_tasks} if spec.task else set()
+    if работы & MATERIAL_TASKS:
+        return source_seconds(spec)
+    if работы & AUDIO_DRIVEN_TASKS:
+        длины = [
+            float(з["duration_s"])
+            for з in spec.input_items
+            if з.get("kind") == "audio" and з.get("owned") and з.get("duration_s")
+        ]
+        return max(длины) if длины else None
+    return None
+
+
 def _пробел(поле: str, почему: str) -> dict[str, str]:
     return {"field": поле, "allowed": FIELD_HELP.get(поле, ""), "why": почему}
 
@@ -1904,7 +1925,7 @@ def gaps(raw: Mapping[str, Any] | None) -> tuple[Spec, list[str], list[dict[str,
             if not getattr(spec, поле):
                 нет.append(_пробел(поле, "how many shorts and how long each — the cut, not the source, is priced"))
     elif выходы & TIMED_OUTPUTS:
-        от_входа = bool(set(работы) & MATERIAL_TASKS) and source_seconds(spec) is not None
+        от_входа = input_seconds(spec) is not None
         if not (spec.duration_s or (spec.shots and spec.per_shot_s) or от_входа):
             нет.append(_пробел("duration_s", "length decides the price and how many runs/shots are needed"))
     elif выходы == {"image"}:

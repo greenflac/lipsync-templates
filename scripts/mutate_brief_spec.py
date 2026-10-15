@@ -181,6 +181,9 @@ MUTANTS: tuple[tuple[str, str, str, str], ...] = (
     (PN, 'ORDERED_ROUTES: frozenset[str] = frozenset({"cut-to-shorts"})', "ORDERED_ROUTES: frozenset[str] = frozenset()", "нарезка не в порядке маршрута"),
     (PN, '        сумма = f"{деньги[0]:g}" if деньги is not None and деньги[1].lower() == код else ""', '        сумма = ""', "сумма в чужой валюте не названа"),
     (PN, '    "правка_видео": ep.V2V_EDIT,\n', "", "правка видео не из реестра"),
+    (BS, 'AUDIO_DRIVEN_TASKS: frozenset[str] = frozenset({"avatar"})', "AUDIO_DRIVEN_TASKS: frozenset[str] = frozenset()", "аватар под свою дорожку снова без длины"),
+    (BS, 'AUDIO_DRIVEN_TASKS: frozenset[str] = frozenset({"avatar"})', 'AUDIO_DRIVEN_TASKS: frozenset[str] = frozenset({"avatar", "generate"})', "генерация берёт длину из дорожки"),
+    (L10N, '    (r"правка ВАШЕГО видео \\(стабилизация', '    (r"правка ВАШЕГО ВИДЕО \\(стабилизация', "пометка правки видео по-русски в английском плане"),
 )
 
 

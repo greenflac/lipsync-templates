@@ -209,6 +209,19 @@ class РешающиеПоля(unittest.TestCase):
         spec = {"task": "generate", "inputs": свой("audio", сек=300), "outputs": ["video"]}
         self.assertEqual(["duration_s"], self.пробелы(spec))
 
+    def test_avatar_over_the_customers_track_takes_the_tracks_length(self) -> None:
+        spec = {"task": "avatar", "inputs": [*свой("image"), *свой("audio", сек=20)],
+                "outputs": ["video"]}
+        self.assertEqual([], self.пробелы(spec))
+        без_дорожки = {"task": "avatar", "inputs": свой("image"), "outputs": ["video"]}
+        self.assertEqual(["duration_s"], self.пробелы(без_дорожки))
+
+    def test_avatar_plan_is_as_long_as_the_track(self) -> None:
+        итог = план({"task": "avatar", "inputs": [*свой("image"), *свой("audio", сек=20)],
+                     "outputs": ["video"]})
+        self.assertTrue(итог["steps"])
+        self.assertEqual({"value": 20.0, "from": "derived"}, итог["understood_as"]["fields"]["duration_s"])
+
     def test_images_need_a_count(self) -> None:
         self.assertEqual(["shots"], self.пробелы({"task": "generate", "inputs": [], "outputs": ["image"]}))
         self.assertEqual([], self.пробелы({"task": "generate", "inputs": [], "outputs": ["image"], "shots": 4}))
@@ -566,3 +579,16 @@ class Кратность(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ПометкиПоАнглийски(unittest.TestCase):
+    """Пометка маршрута доезжает до английского заказчика целиком: шаблон
+    `l10n.EN` переводит её раньше, чем термин «видео» съест её середину."""
+
+    def test_every_route_note_localises_without_cyrillic(self) -> None:
+        from studio import l10n
+
+        пометки = [*bs.NOTES_EN, *(ru for ru, _ in bs.ASSEMBLY_REASONS.values())]
+        self.assertGreaterEqual(len(пометки), 9)
+        утекли = [п for п in пометки if l10n.CYR.search(str(l10n.localise(п, "en")))]
+        self.assertEqual([], утекли)

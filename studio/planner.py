@@ -9980,8 +9980,7 @@ def plan(
     if (
         not понято.duration_s
         and not понято.per_shot_s
-        and (исходник := bs.source_seconds(понято)) is not None
-        and понято.task in bs.MATERIAL_TASKS
+        and (исходник := bs.input_seconds(понято)) is not None
     ):
         понято = replace(
             понято, duration_s=исходник, source={**понято.source, "duration_s": bs.SOURCE_DERIVED}

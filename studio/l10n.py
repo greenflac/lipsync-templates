@@ -623,6 +623,8 @@ EN: tuple[tuple[str, str], ...] = (
     (r"перевод готового видео: губы под новый язык \(лиц в кадре нет — шаг снимается\)",
      "translating the finished video: lips to the new language (no faces in frame — the step is dropped)"),
     # --- круг 6: пометки маршрутов по spec (`brief_spec.NOTES_EN` — те же слова)
+    (r"субтитры вжигает монтаж \(ffmpeg\) по расшифровке с таймингами — модели на это не нужно",
+     "captions are burned in at assembly (ffmpeg) from the timed transcript — no model needed for that"),
     (r"правка ВАШЕГО видео \(стабилизация, рефрейм, замена неба, вырезка\): нового ролика никто не генерирует",
      "an edit of YOUR video (stabilise, reframe, sky replacement, cut-out): no new clip is generated"),
     (r"референс персонажа делается один раз, и каждый шот строится по нему — персонаж не разъезжается",
