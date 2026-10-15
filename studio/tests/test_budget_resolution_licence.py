@@ -379,12 +379,14 @@ class ЖивыеБрифы(unittest.TestCase):
         #   кадры           3 × 0.03612            = 0.1084
         #   правка по реф.  3 × 0.0398             = 0.1194 (nano-banana-edit)
         #   озвучка         ≈600 знаков × 0.08/1000 = 0.048
-        #   оживление       40 с × 0.14 usd/с      = 5.60 (за секунду: шоты суммы не меняют)
+        #   оживление       40 с × 0.084 usd/с     = 3.36 (шестой круг: строка «$0.084
+        #                   (audio off)» страницы fal, а не голые $0.14 pricing API —
+        #                   оживление без звука; за секунду: шоты суммы не меняют)
         #   липсинк         40 с × 0.70 usd/мин ÷ 60 = 0.4667 (пятый круг фактов:
         #                   `fal-ai/sync-lipsync` — это Lipsync 1.9 за 0.70 usd/мин;
         #                   3 usd/мин — цена отдельного `sync-lipsync-2`)
-        #   итого 6.3425 -> 6.34.
-        self.assertEqual((6.34, "годно"), (итог["pipeline_price"]["смета"]["usd"], итог["pipeline_price"]["outcome"]))
+        #   итого 4.1025 -> 4.1.
+        self.assertEqual((4.1, "годно"), (итог["pipeline_price"]["смета"]["usd"], итог["pipeline_price"]["outcome"]))
         self.assertEqual(
             [3, 3, None, 3, None], [ш["shots"] for ш in итог["steps"]]
         )
@@ -401,15 +403,19 @@ class ЖивыеБрифы(unittest.TestCase):
         # записанному бенчмарку. Смета 0.036 + 1.50 + 0.35 = 1.886 — НИЖЕ потолка
         # 3 usd, и перевыбирать нечего: оптимизатора нет. Сам потолок
         # сторожит `test_липсинк_потолок_1_80`.
+        # ШЕСТОЙ КРУГ: кадр генерации не назван — тариф по кадру-допущению
+        # плана (1080p), а не по самому дешёвому (480p): `wan-3.0-t2v` стоит
+        # 30 × 0.20 = 6.00 — выше потолка, и цена поднимает `kling-3.0-standard-
+        # t2v` (30 × 0.084 = 2.52, без звука). Смета 0.036 + 2.52 + 0.35 = 2.906.
         self.assertEqual(
             [
                 ("озвучка", "eleven_v3"),
-                ("генерация_видео", "wan-3.0-t2v"),
+                ("генерация_видео", "kling-3.0-standard-t2v"),
                 ("липсинк", "sync-lipsync"),
             ],
             [(ш["step"], ш["chosen"]["model"]) for ш in итог["steps"]],
         )
-        self.assertEqual((1.89, "годно"), (итог["pipeline_price"]["смета"]["usd"], итог["pipeline_price"]["outcome"]))
+        self.assertEqual((2.91, "годно"), (итог["pipeline_price"]["смета"]["usd"], итог["pipeline_price"]["outcome"]))
         self.assertNotIn("optimised", итог["pipeline_price"])
 
     def test_липсинк_потолок_1_80(self) -> None:
@@ -421,16 +427,18 @@ class ЖивыеБрифы(unittest.TestCase):
         экономия 0.029, не закрывает); видео одно в своей полосе (бенчмарк);
         остаётся липсинк, с худшим балансом (`sync-lipsync` -> `latentsync`).
         """
-        итог = pn.plan("lipsync 30 s, budget $1.80")
+        # Шестой круг: смета без потолка — 2.906 (кадр-допущение 1080p), и
+        # потолок взят 2.80 usd, перебор 0.106 usd.
+        итог = pn.plan("lipsync 30 s, budget $2.80")
         оптимум = итог["pipeline_price"]["optimised"]
         self.assertEqual(
             [("озвучка", "eleven_v3", "xai-tts-v1"), ("липсинк", "sync-lipsync", "latentsync")],
             [(о["step"], о["from"], о["to"]) for о in оптимум["swaps"]],
         )
-        self.assertEqual((1.886, 1.7067), (оптимум["before_usd"], оптимум["after_usd"]))
-        self.assertEqual("total 1.89 usd is over the clip ceiling 1.8 usd", оптимум["why_en"])
+        self.assertEqual((2.906, 2.7267), (оптимум["before_usd"], оптимум["after_usd"]))
+        self.assertEqual("total 2.91 usd is over the clip ceiling 2.8 usd", оптимум["why_en"])
         self.assertEqual("годно", итог["pipeline_price"]["outcome"])
-        self.assertEqual("wan-3.0-t2v", итог["steps"][1]["chosen"]["model"])
+        self.assertEqual("kling-3.0-standard-t2v", итог["steps"][1]["chosen"]["model"])
 
     def test_липсинк_заказано_самое_дешёвое_меняет_всё(self) -> None:
         """Обратное направление: «cheapest» — каждый шаг к минимуму своей полосы."""
@@ -449,8 +457,9 @@ class ЖивыеБрифы(unittest.TestCase):
             ],
             [(о["step"], о["from"], о["to"]) for о in оптимум["swaps"]],
         )
-        # 0.036 + 1.50 + 0.35 = 1.886 (липсинк 1.9 за 0.70 usd/мин) -> 0.0067 + 1.50 + 0.20.
-        self.assertEqual((1.886, 1.7067), (оптимум["before_usd"], оптимум["after_usd"]))
+        # 0.036 + 2.52 + 0.35 = 2.906 (видео по кадру-допущению 1080p, шестой
+        # круг; липсинк 1.9 за 0.70 usd/мин) -> 0.0067 + 2.52 + 0.20.
+        self.assertEqual((2.906, 2.7267), (оптимум["before_usd"], оптимум["after_usd"]))
 
     def test_нативный_звук_1080p_самое_дешёвое(self) -> None:
         итог = pn.plan("8 second 1080p video with native audio, cheapest")
@@ -471,8 +480,13 @@ class ЖивыеБрифы(unittest.TestCase):
             [(ш["step"], ш["chosen"]["model"]) for ш in итог["steps"]],
         )
         self.assertIn("no upscale step added", итог["resolution_carry"])
-        self.assertIn("veo-3.1-lite-t2v", [а["model"] for а in итог["steps"][0]["alternatives"]])
-        self.assertEqual(1.12, итог["pipeline_price"]["смета"]["usd"])
+        # Шестой круг: со звуком — строка «$0.126 (audio on)», 8 × 0.126 = 1.008;
+        # тарифы kling делят доводы семьи (ничья, решена ценой), рядом — 4k.
+        self.assertEqual(
+            ["kling-3.0-4k-t2v", "blackforestlabs-flux-3-text-to-video-draft"],
+            [а["model"] for а in итог["steps"][0]["alternatives"]],
+        )
+        self.assertEqual(1.01, итог["pipeline_price"]["смета"]["usd"])
         оптимум = итог["pipeline_price"]["optimised"]
         self.assertEqual("the cheapest was asked", оптимум["why_en"])
         self.assertEqual([], оптимум["swaps"])

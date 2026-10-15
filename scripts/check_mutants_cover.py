@@ -41,7 +41,12 @@ ROOT = Path(__file__).resolve().parents[1]
 
 #: Где живут таблицы мутантов. Читаются как ТЕКСТ и по образцу пути: разбирать
 #: их как питон значило бы исполнять скрипт, который правит исходники.
-ТАБЛИЦЫ = ("scripts/mutate_channels.py", "scripts/mutate_planner.py", "scripts/mutate_brief_spec.py")
+ТАБЛИЦЫ = (
+    "scripts/mutate_channels.py",
+    "scripts/mutate_planner.py",
+    "scripts/mutate_brief_spec.py",
+    "scripts/mutate_registry_r6.py",
+)
 ПУТЬ_В_ТАБЛИЦЕ = re.compile(r'"((?:studio|scripts|lipsync)/[\w/]+\.py)"')
 
 #: Каталоги, которые не считаются продуктом: тесты проверяют, а не решают.

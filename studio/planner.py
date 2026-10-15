@@ -427,6 +427,8 @@ ARTEFACT_UPSCALED_IMAGE = "изображение_апскейл"
 ARTEFACT_FINAL = "готовый_ролик"
 #: Артефакты работ пятого круга (реестр эндпоинтов, `studio/endpoints.py`).
 ARTEFACT_RESTORED = "видео_реставрация"
+#: Раскраска — отдельная работа реестра (`ep.COLORIZE`, шестой круг).
+ARTEFACT_COLORIZED = "видео_раскраска"
 ARTEFACT_SMOOTH = "видео_интерполяция"
 ARTEFACT_CUTOUT = "изображение_без_фона"
 ARTEFACT_VIDEO_CUTOUT = "видео_без_фона"
@@ -1000,6 +1002,7 @@ OUTPUT_KINDS: dict[str, str] = {
     ARTEFACT_UPSCALED: "видео",
     ARTEFACT_UPSCALED_IMAGE: "изображение",
     ARTEFACT_RESTORED: "видео",
+    ARTEFACT_COLORIZED: "видео",
     ARTEFACT_SMOOTH: "видео",
     ARTEFACT_CUTOUT: "изображение",
     ARTEFACT_VIDEO_CUTOUT: "видео",
@@ -1081,6 +1084,7 @@ KEY_FIELDS: tuple[str, ...] = (
     "знак измеренного: чисто / спорно / только плохое / молчание",
     "строк применимости ЗА модель",
     "строк применимости всего",
+    "есть ли полная цена шага (при равных доводах цена записанная старше незаписанной)",
     "сколько подтверждено записью: входы, кадр, длительность",
     "утверждений по якорям операции",
     "имя модели несёт якорь",
@@ -2145,7 +2149,19 @@ OPERATIONS: tuple[Operation, ...] = (
         anchors=("colorization", "restoration"),
         requires=(ARTEFACT_VIDEO,),
         produces=(ARTEFACT_RESTORED,),
-        requirement="старое видео восстановлено (шум, царапины) и раскрашено без мерцания цвета",
+        # Реставрация — НЕ раскраска (шестой круг): `seedvr2-7b` восстанавливает,
+        # но цвета не добавляет. Раскраска — свой шаг `раскраска`.
+        requirement="старое видео восстановлено (шум, царапины, мерцание) без смены цвета",
+    ),
+    Operation(
+        name="раскраска",
+        # Подсказки — только слова самой работы: «keep it black and white» её
+        # не вызывает, «colorize the old footage» — вызывает.
+        cues=("colorize", "colourise", "colorise", "colourize", "colorization", "раскрас"),
+        anchors=("colorization", "colorize"),
+        requires=(ARTEFACT_VIDEO,),
+        produces=(ARTEFACT_COLORIZED,),
+        requirement="чёрно-белое видео раскрашено без мерцания цвета между кадрами",
     ),
     Operation(
         name="интерполяция_кадров",
@@ -2219,6 +2235,7 @@ OPERATIONS: tuple[Operation, ...] = (
     "апскейл": ep.UPSCALE_VIDEO,
     "апскейл_изображения": ep.UPSCALE_IMAGE,
     "реставрация": ep.RESTORE,
+    "раскраска": ep.COLORIZE,
     "интерполяция_кадров": ep.INTERPOLATE,
     "удаление_фона": ep.BG_REMOVE,
     "удаление_фона_видео": ep.BG_REMOVE,
@@ -2440,6 +2457,12 @@ class Candidate:
     unpriced_last: bool = False
     #: Чем реестр подтвердил работу кандидата (канал и свидетельство) — словами.
     registry_note: str = ""
+    #: Цель «качество»: родной кадр ПО ЗАПИСИ ниже заказанного — сколько он
+    #: (короткая сторона; 1 — ниже, но сколько — не записано) и почему. Такой
+    #: кандидат исключается, только если хоть кто-то отдаёт кадр родным
+    #: (`родной_кадр_или_ближайший`, шестой круг).
+    native_below_px: int = 0
+    native_below_why: str = ""
 
     @property
     def measured(self) -> bool:
@@ -4648,10 +4671,25 @@ def стоимость(
         }
     )
 
+    if need.compute_ratio is None:
+        отношение = compute_ratio(facts)
+        if отношение is not None:
+            need = pricing.Need(**{**need.__dict__, "compute_ratio": отношение})
+
     # маршрут -> тариф -> [(ступень, вариант, кто сказал, строка)]
     по_маршруту: dict[str, dict[str, list[tuple[int, pricing.Option, str, Fact]]]] = {}
-    for f in sorted(price_facts(facts), key=_ступень_строки):
-        найдено = pricing.estimate(pricing.rates(f.value, f.attribute), need)
+    строки_цены = sorted(price_facts(facts), key=_ступень_строки)
+    # «За секунду» той же суммы, что «за секунду вычисления» того же маршрута,
+    # — та же ставка в секундах GPU (`pricing.compute_twins`, шестой круг).
+    ставки_строк = pricing.compute_twins(
+        [(маршрут(f)[0], pricing.rates(f.value, f.attribute)) for f in строки_цены]
+    )
+    сдвиг = 0
+    for f in строки_цены:
+        своих = len(pricing.rates(f.value, f.attribute))
+        свои_ставки = ставки_строк[сдвиг : сдвиг + своих]
+        сдвиг += своих
+        найдено = pricing.estimate(свои_ставки, need)
         if not найдено:
             continue
         имя, сказал = маршрут(f)
@@ -4667,14 +4705,39 @@ def стоимость(
     for имя, тарифы in по_маршруту.items():
         выбранные: list[pricing.Option] = []
         откуда: Fact | None = None
-        for тариф, записи in тарифы.items():
+        for тариф, все_записи in тарифы.items():
+            # СНАЧАЛА ПРИВЯЗКА К ЗАКАЗУ, ПОТОМ СТУПЕНЬ (шестой круг): у
+            # `kling-3.0-standard-t2v` страница fal пишет $0.084 без звука /
+            # $0.126 со звуком, pricing API — голые $0.14. Шагу без звука цена
+            # — $0.084: строка, привязанная к его звуку, точнее голой суммы, и
+            # голая сумма — не «спор источников», а другая (неназванная) ступень.
+            точнейшая = min(з[1].fit for з in все_записи)
+            записи = [з for з in все_записи if з[1].fit == точнейшая]
             сильнейшая = min(з[0] for з in записи)
             свои = [з for з in записи if з[0] == сильнейшая]
             главная = max(свои, key=lambda з: з[1].usd)
             выбранные.append(главная[1])
             откуда = откуда or главная[3]
+            # СПОРЯТ ТОЛЬКО О ТОЙ ЖЕ СТУПЕНИ: тот же кадр и тот же звук. 480p
+            # против 1080p, звук против тишины — разные ступени одного прайса.
+            записи = [
+                з
+                for з in записи
+                if (з[1].resolution, з[1].audio) == (главная[1].resolution, главная[1].audio)
+            ]
             суммы = sorted({round(з[1].usd, 6) for з in записи})
-            if len(суммы) > 1 and суммы[-1] - суммы[0] > РАСХОЖДЕНИЕ * суммы[-1]:
+            # Спорят СТАВКИ, а не суммы: «$0.6 per minute» и «$0.6 per minute,
+            # rounded up to the closest minute» — одна ставка, у второй строки
+            # больше сведений о счёте. В смету идёт дороже (полнее), без спора.
+            ставки_записей = sorted(
+                {(з[1].per, round(з[1].rate, 9)) for з in записи if з[1].rate is not None}
+            )
+            одна_ставка = len(ставки_записей) == 1 and all(з[1].rate is not None for з in записи)
+            if (
+                not одна_ставка
+                and len(суммы) > 1
+                and суммы[-1] - суммы[0] > РАСХОЖДЕНИЕ * суммы[-1]
+            ):
                 голоса: list[str] = []
                 for _, o, сказал, f in sorted(записи, key=lambda з: (з[0], -з[1].usd)):
                     голос = f"{o.usd:.4g} usd ({сказал}: {f.attribute} = «{f.value[:60]}»)"
@@ -4732,6 +4795,16 @@ def стоимость(
         other_routes=tuple(другие),
         contradictions=tuple(расхождения),
     )
+
+
+def compute_ratio(facts: Sequence[Fact]) -> float | None:
+    """Секунд вычисления на секунду ролика по ЗАПИСИ модели; None — не записано."""
+    for f in facts:
+        if f.attribute == pricing.COMPUTE_RATIO_ATTRIBUTE:
+            м = re.match(r"\s*(\d+(?:\.\d+)?)", str(f.value))
+            if м and float(м.group(1)) > 0:
+                return float(м.group(1))
+    return None
 
 
 def price_stance(
@@ -4833,6 +4906,22 @@ def cheapest(facts: Sequence[Fact]) -> tuple[pricing.Price | None, str]:
     """
     свои = price_facts(facts)
     сравнимые, прочие = pl.comparable_prices(свои)
+    # Секунда той же суммы, что секунда ВЫЧИСЛЕНИЯ того же маршрута, — та же
+    # ставка (`pricing.compute_twins`): «за секунду» её не печатаем.
+    вычисления = {
+        (маршрут(ф)[0], round(ц.amount or 0.0, 9))
+        for ф, ц in сравнимые
+        if ц.per == "compute_second"
+    }
+    if вычисления:
+        from dataclasses import replace as _replace
+
+        сравнимые = [
+            (ф, _replace(ц, per="compute_second"))
+            if ц.per == "second" and (маршрут(ф)[0], round(ц.amount or 0.0, 9)) in вычисления
+            else (ф, ц)
+            for ф, ц in сравнимые
+        ]
     if not сравнимые:
         # «НЕСРАВНИМА С ПОТОЛКОМ» — ЭТО НЕ «НЕ ЗАПИСАНА», И РАЗНИЦА ВИДНА
         # ЗАКАЗЧИКУ. Найдено продуктовой проверкой 2026-09-07: один и тот же
@@ -5715,6 +5804,11 @@ def by_evidence(c: Candidate) -> tuple:
         # модель с работой.
         -c.in_favour,
         -c.applicability,
+        # ПРИ РАВНЫХ ДОВОДАХ ЦЕНА ЗАПИСАННАЯ СТАРШЕ НЕЗАПИСАННОЙ (шестой круг):
+        # `birefnet-v2-video` (цены нет) обгонял `bria-video-background-removal-v3`
+        # ($0.05/с) числом строк схемы. Заказчик, которому нечего сказать о
+        # цене, получит план «цена неизвестна» при живом соседе с ценой.
+        int(not цена_есть(c)),
         # Подтверждённые схемой оси и записанные пределы — после применимости.
         (запрет, кадр, длительность),
         -c.anchored,
@@ -5787,6 +5881,7 @@ def _поле(c: Candidate, i: int) -> str:
         SIGN_WORDS[sign_rank(c)],
         f"{c.in_favour}",
         f"{c.applicability}",
+        "цена шага записана" if цена_есть(c) else "полной цены шага нет",
         f"подтверждено осей {-blocked_rank(c)[1]} из 3; кадр: {c.fit_state or 'не считалось'}; "
         f"длительность: {c.dur_state or 'не считалось'}",
         f"{c.anchored}",
@@ -5979,6 +6074,10 @@ class Жёсткое:
     """Что жёсткие требования сказали об одном кандидате."""
 
     исключить: str = ""
+    #: Родной кадр по записи ниже заказанного при цели «качество» (см.
+    #: `Candidate.native_below_px`): исключить — только если есть родной.
+    ниже_родного: int = 0
+    почему_ниже: str = ""
     ранг: tuple = ()
     нота: str = ""
     свой_gpu: bool = False
@@ -6136,13 +6235,29 @@ def требования_заказчика(
             _кадр_родной(op, все, сколько, кадр, _семья_строк(имя, по_имени, известные)),
             сколько is not None,
         )
-        if родной == hn.NATIVE_BELOW:
-            return Жёсткое(
-                исключить=f"цель «качество»: {родной} ({min(кадр)}p) — апскейл не замена, когда цена не важна"
-            )
         # Второе число — знак доводов СЕМЬИ (ставится в `доводы_семьи`).
         ранг += [hn.NATIVE_ORDER[родной], SIGN_SILENT]
         ноты.append(f"кадр {min(кадр)}p: {родной}")
+        if родной == hn.NATIVE_BELOW:
+            # НЕ ИСКЛЮЧАЕТСЯ ЗДЕСЬ (шестой круг): исключать «ниже» можно, только
+            # когда кто-то отдаёт кадр родным. 8K родным не отдаёт никто, и
+            # исключение всех «ниже по записи» оставляло тех, о чьём кадре
+            # НЕ ЗАПИСАНО НИЧЕГО: `kling-video-v1.6-standard-text-to-video` без
+            # цены и без 4K вместо `kling-o3-4k` + апскейл. Решает
+            # `родной_кадр_или_ближайший`, когда видны все кандидаты шага.
+            return Жёсткое(
+                ранг=tuple(ранг),
+                нота="; ".join(ноты),
+                свой_gpu=свой,
+                стоимость=стоимость_gpu,
+                без_цены=без_цены,
+                ниже_родного=родной_предел(
+                    все,
+                    _семья_строк(имя, по_имени, известные),
+                    сколько.default.resolution if сколько and сколько.default.resolution else None,
+                ),
+                почему_ниже=f"цель «качество»: {родной} ({min(кадр)}p) — апскейл не замена, когда цена не важна",
+            )
     return Жёсткое(
         ранг=tuple(ранг),
         нота="; ".join(ноты),
@@ -6150,6 +6265,97 @@ def требования_заказчика(
         стоимость=стоимость_gpu,
         без_цены=без_цены,
     )
+
+
+def родной_предел(
+    все: Sequence[Fact],
+    семья: Sequence[tuple[str, Sequence[Fact]]],
+    тариф: int | None,
+) -> int:
+    """Короткая сторона РОДНОГО кадра модели по записи (1 — ниже, сколько — не записано).
+
+    Своя запись — строка о родном выходе или тариф шага — старше записи семьи;
+    предел, известный ТОЛЬКО по семье, на единицу ниже такого же своего:
+    `kling-3.0-4k-t2v` (своя строка «4K native») впереди `kling-3.0-standard-t2v`
+    (4K — у семьи, а тариф варианта кадра не называет). Запись семьи НИЖЕ
+    тарифа перепродавца — тоже предел: `seedance-2.0` продают в 2160p при
+    «480p and 720p native output» вендора (шестой круг).
+    """
+    from studio import pricing as _pricing
+
+    def пределы(строки: Sequence[Fact]) -> list[int]:
+        return [
+            max(р)
+            for f in строки
+            if f in limit_facts([f])
+            and (f.attribute == "native_resolution" or NATIVE_WORDS.search(f.value))
+            and (р := _pricing._разрешения(re.split(r"\s+—\s+|\s+\(", f.value)[0]))
+        ]
+
+    свои = [*пределы(все), *([тариф] if тариф else [])]
+    семейные = пределы([f for _, строки in семья for f in строки])
+    if свои:
+        предел = min(свои)
+        if семейные and min(семейные) < предел:
+            return max(1, min(семейные) - 1)
+        return предел
+    return max(1, min(семейные) - 1) if семейные else 1
+
+
+#: Ступень родного кадра у «ниже заказанного», когда заказанный родным не
+#: отдаёт НИКТО: между «родной без цены» и «не записано» — запись ниже
+#: заказанного и апскейл до него лучше молчания о кадре. Внутри ступени выше
+#: тот, чей родной кадр больше (`родной_кадр_или_ближайший`).
+NATIVE_NEAREST_RANK = 1.5
+#: Сторона кадра, которой нормируется «чей родной больше»: 8K, самый большой
+#: кадр словаря `pricing.RESOLUTION_WORDS`.
+NATIVE_NEAREST_SCALE = 4320.0
+
+
+def родной_кадр_или_ближайший(
+    найдены: list[Candidate], исключены: dict[str, str], op: "Operation | None" = None
+) -> list[Candidate]:
+    """Цель «качество»: «ниже по записи» исключается, только если кто-то дотягивает.
+
+    Дотягивает — родной кадр подтверждён (`NATIVE_PRICED`/`NATIVE_UNPRICED`) у
+    кандидата этой работы. Никто — «ниже по записи» остаются и встают выше
+    тех, о чьём кадре не записано ничего, ближайший родной кадр первым.
+
+    Только у шага, который кадр ДЕЛАЕТ (на входе нет видео). Шаг над готовым
+    видео (липсинк, апскейл) кадр входа несёт дальше, и модель, о чьём пределе
+    не записано, может его сохранить, — записанные «ниже» там исключаются, как
+    и прежде.
+    """
+    ниже = [c for c in найдены if c.native_below_px]
+    if not ниже:
+        return найдены
+    дотягивают = (op is not None and ARTEFACT_VIDEO in op.requires) or any(
+        len(c.hard_rank) >= 2
+        and c.hard_rank[-2] in (hn.NATIVE_ORDER[hn.NATIVE_PRICED], hn.NATIVE_ORDER[hn.NATIVE_UNPRICED])
+        and not c.foreign
+        and not c.native_below_px
+        for c in найдены
+    )
+    if дотягивают:
+        for c in ниже:
+            исключены[c.model] = c.native_below_why
+        return [c for c in найдены if not c.native_below_px]
+    итог: list[Candidate] = []
+    for c in найдены:
+        if c.native_below_px and len(c.hard_rank) >= 2:
+            ступень = NATIVE_NEAREST_RANK + max(0.0, NATIVE_NEAREST_SCALE - c.native_below_px) / (
+                NATIVE_NEAREST_SCALE * 10
+            )
+            c = Candidate(
+                **{
+                    **c.__dict__,
+                    "hard_rank": (*c.hard_rank[:-2], ступень, c.hard_rank[-1]),
+                    "hard_note": c.hard_note
+                    + "; заказанный кадр родным не отдаёт ни один кандидат — ближайший родной + апскейл",
+                }
+            )
+        итог.append(c)
+    return итог
 
 
 def доводы_семьи(найдены: Sequence[Candidate], известные: Sequence[str]) -> list[Candidate]:
@@ -6272,6 +6478,7 @@ def запасной_прогон(
 ТОЛЬКО_РЕЕСТР: frozenset[str] = frozenset(
     {
         "реставрация",
+        "раскраска",
         "интерполяция_кадров",
         "удаление_фона",
         "удаление_фона_видео",
@@ -6440,7 +6647,15 @@ def candidates_for(
             узел = реестр.by_key.get(ключ)
             if узел is None:
                 continue
-            if not узел.orderable and not (hard is not None and hard.self_host and узел.self_hostable):
+            if (
+                not узел.orderable
+                and not (hard is not None and hard.self_host and узел.self_hostable)
+                # БЕЗ МАРШРУТА, НО И НЕ СЕМЬЯ (шестой круг): отсеивается только
+                # строго — когда реестр знает заказываемые эндпоинты работы. В
+                # базе, где работу не установил никто, это та же неизвестность,
+                # что «работа не установлена», а не запрет.
+                and (узел.variants or строгий)
+            ):
                 # Узел семьи не купить через API; на СВОЁМ GPU веса семьи —
                 # маршрут (`wan-2.2-ti2v-5b`: варианты есть, цены нет, веса открыты).
                 не_заказываются[написание[ключ]] = узел.why_not_orderable
@@ -6465,7 +6680,11 @@ def candidates_for(
             у
             for р in работы
             for у in реестр.by_function.get(р, [])
-            if у.orderable or (hard is not None and hard.self_host and у.self_hostable)
+            if у.orderable
+            or (hard is not None and hard.self_host and у.self_hostable)
+            # Без маршрута, не семья, и реестр работы строго не знает — та же
+            # мягкость, что и в отсеве выше.
+            or (not у.variants and not строгий)
         ]:
             if узел.key in по_модели or not _is_model(узел.model):
                 continue
@@ -6607,6 +6826,8 @@ def candidates_for(
                 below_frame=ниже_кадра(op, все, сколько, brief_frame),
                 unclassified=ключ in неустановленные,
                 unpriced_last=hard is not None and hard.objective == hn.OBJECTIVE_CHEAPEST,
+                native_below_px=жёсткое.ниже_родного,
+                native_below_why=жёсткое.почему_ниже,
                 registry_note=(
                     f"{'/'.join(ф for ф in узел.functions if ф in работы)}: {узел.evidence} — "
                     f"{_коротко(узел.evidence_note, 120)}"
@@ -6620,6 +6841,7 @@ def candidates_for(
                 ),
             )
         )
+    найдены = родной_кадр_или_ближайший(найдены, исключены, op)
     найдены = поколения(найдены, по_имени, сообщество_просили)
     if hard is not None and hard.objective == hn.OBJECTIVE_QUALITY:
         найдены = доводы_семьи(найдены, известные)
@@ -6727,8 +6949,14 @@ def семья_и_версия(имя: str) -> tuple[str, tuple[int, ...]] | Non
     # `elevenlabs-music-v2.5` — разные продукты одного вендора, и музыка 2.5 не
     # вытесняет дубляж 2 (найдено первым же прогоном, 2026-10-14).
     семья = re.sub(r"[-_. v]+$", "", м.group(1) + хвост[: числа.start()])
+    # «-video» в имени семьи — слово о виде выхода, а не имя продукта (шестой
+    # круг): `kling-video-v1.6-…` и `kling-3.0-…` — одна семья Kling, и v1.6
+    # вытеснена 3.0. Без этого старая версия на шаге 8K шла как «текущая».
+    семья = re.sub(r"[-_]video$", "", семья)
     if len(версия) >= 4 and "." not in версия:
         return None  # 2025, 1080 — это дата или кадр, а не версия
+    if re.match(r"\s*[kp]\b", хвост[числа.end() :], re.I):
+        return None  # «4k», «1080p» — кадр, а не версия (`kling-o3-4k`)
     части = [int(ч) for ч in версия.split(".")]
     while len(части) > 1 and части[-1] == 0:
         части.pop()  # 2.0 — та же версия, что 2
@@ -7114,6 +7342,11 @@ def чужая_работа(op: Operation, имя: str, facts: Sequence[Fact]) -
         op.чужие is not ЧУЖИЕ_ДЛЯ_КАРТИНКИ
         and ARTEFACT_AUDIO not in op.requires
         and op.name != NATIVE_AUDIO_STEP
+        # Шаг, кандидатов которого даёт ТОЛЬКО реестр, уже получил их по
+        # установленной работе: «across talking heads, podcasts» в описании
+        # Bria video background removal — о материале, а не о работе (шестой
+        # круг: она уходила в «чужую работу», и выигрывал вариант без цены).
+        and op.name not in ТОЛЬКО_РЕЕСТР
     ):
         for f in facts:
             if f.attribute in DESCRIBING_ATTRIBUTES and any(
@@ -7396,7 +7629,8 @@ def _есть_кириллица(текст: str) -> bool:
     "музыка": "music",
     "апскейл": "video upscale",
     "апскейл_изображения": "image upscale",
-    "реставрация": "restore / colorize video",
+    "реставрация": "restore video",
+    "раскраска": "colorize video",
     "интерполяция_кадров": "frame interpolation",
     "удаление_фона": "background removal (image)",
     "удаление_фона_видео": "background removal (video)",
@@ -7423,7 +7657,8 @@ def _есть_кириллица(текст: str) -> bool:
     "музыка": "музыка",
     "апскейл": "апскейл видео",
     "апскейл_изображения": "апскейл кадров",
-    "реставрация": "реставрация / раскраска видео",
+    "реставрация": "реставрация видео",
+    "раскраска": "раскраска видео",
     "интерполяция_кадров": "интерполяция кадров",
     "удаление_фона": "удаление фона (кадр)",
     "удаление_фона_видео": "удаление фона (видео)",
@@ -7888,6 +8123,7 @@ def дороже_потолка(
         ARTEFACT_UPSCALED,
         ARTEFACT_UPSCALED_IMAGE,
         ARTEFACT_RESTORED,
+        ARTEFACT_COLORIZED,
         ARTEFACT_SMOOTH,
         ARTEFACT_CUTOUT,
         ARTEFACT_VIDEO_CUTOUT,
@@ -10055,7 +10291,15 @@ def plan(
     # печатается в `understood_as`. Кадр ОТБОРА не меняется: апскейл чужого
     # ролика из допущения не дописывается.
     кадр_цены = заказанный_кадр or кадр
-    кадр_цены_допущен = кадр_цены is None and "video" in понято.inputs
+    # ТО ЖЕ ДОПУЩЕНИЕ И ДЛЯ ВИДЕО, КОТОРОЕ ДЕЛАЕТ ПЛАН (шестой круг): иначе
+    # `wan-3.0-t2v` в одних планах считалась по 480p (кадр не назван — самый
+    # дешёвый тариф), в других по 1080p (кадр-допущение спецификации), и одна
+    # и та же работа стоила вчетверо по-разному в зависимости от того, как
+    # прочитан бриф. Тариф следует кадру плана, а кадр не назван — допущению.
+    кадр_цены_допущен = кадр_цены is None and (
+        "video" in понято.inputs
+        or any(OUTPUT_KINDS.get(а) == "видео" for оп in операции for а in оп.produces)
+    )
     if кадр_цены_допущен:
         кадр_цены = bs.frame(replace(понято, resolution=bs.DEFAULT_VIDEO_RESOLUTION))
 

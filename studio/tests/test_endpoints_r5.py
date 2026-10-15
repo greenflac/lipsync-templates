@@ -161,7 +161,7 @@ class Работа(unittest.TestCase):
 
     def test_новые_работы_по_пути(self) -> None:
         for имя, работа in (
-            ("ltx-2.3-quality-colorization", "restore-colorize"),
+            ("ltx-2.3-quality-colorization", "colorize"),
             ("bria-video-background-removal-v3", "bg-remove"),
             ("acme-rife-interpolation", "frame-interpolate"),
             ("elevenlabs-speech-to-text", "transcribe-diarize"),
@@ -176,7 +176,7 @@ class Работа(unittest.TestCase):
         """Интеграция пятого круга: площадка числит их «image-to-image», а работа другая."""
         for имя, ид, категория, работа in (
             ("bria-rmbg-2.0", "fal-ai/bria/background/remove", "image-to-image", "bg-remove"),
-            ("ddcolor", "fal-ai/ddcolor", "image-to-image", "restore-colorize"),
+            ("ddcolor", "fal-ai/ddcolor", "image-to-image", "colorize"),
             ("film", "fal-ai/film", "image-to-image", "frame-interpolate"),
             ("film-video", "fal-ai/film/video", "video-to-video", "frame-interpolate"),
         ):
@@ -190,7 +190,7 @@ class Работа(unittest.TestCase):
         for работа, модели in (
             ("bg-remove", {"birefnet", "bria-rmbg-2.0"}),
             ("frame-interpolate", {"rife", "film", "film-video", "topaz-interpolate-video"}),
-            ("restore-colorize", {"ddcolor"}),
+            ("colorize", {"ddcolor"}),
         ):
             with self.subTest(работа=работа):
                 есть = {e.model for e in реестр.orderable_for(работа)}
@@ -364,10 +364,17 @@ class Отбор(unittest.TestCase):
         self.assertEqual(1, вариант.applicability)
         self.assertEqual(["zeta-3.0"], [м["model"] for м in найдены.реестр["not_orderable"]])
 
+    #: Шестой круг: узел без маршрута не заказывается вовсе, поэтому у
+    #: «неустановленной» модели есть маршрут — строка цены у продавца.
+    ЦЕНА_ЗАГАДКИ = факт(
+        "mystery-model", "price_per_second_usd", "$0.10 per second", "https://mystery.example/pricing"
+    )
+
     def test_без_установленной_работы_не_кандидат_когда_реестр_знает_работу(self) -> None:
         база = [
             *self.база(),
             факт("mystery-model", "failure_mode", "lipsync drifts on long takes", tier="operator"),
+            self.ЦЕНА_ЗАГАДКИ,
         ]
         найдены = pn.candidates_for(операция("липсинк"), FactIndex(facts=база))
         self.assertNotIn("mystery-model", [c.model for c in найдены])
@@ -375,10 +382,21 @@ class Отбор(unittest.TestCase):
 
     def test_без_установленной_работы_остаётся_когда_реестр_работы_не_знает(self) -> None:
         база = [
-            факт("mystery-model", "failure_mode", "lipsync drifts on long takes", tier="operator")
+            факт("mystery-model", "failure_mode", "lipsync drifts on long takes", tier="operator"),
+            self.ЦЕНА_ЗАГАДКИ,
         ]
         найдены = pn.candidates_for(операция("липсинк"), FactIndex(facts=база))
         self.assertEqual([("mystery-model", True)], [(c.model, c.unclassified) for c in найдены])
+
+    def test_без_маршрута_не_кандидат(self) -> None:
+        """Шестой круг: та же модель без строки цены — маршрута нет, кандидата нет."""
+        база = [
+            *self.база(),
+            факт("mystery-model", "failure_mode", "lipsync drifts on long takes", tier="operator"),
+        ]
+        найдены = pn.candidates_for(операция("липсинк"), FactIndex(facts=база))
+        self.assertNotIn("mystery-model", [c.model for c in найдены])
+        self.assertIn("mystery-model", [м["model"] for м in найдены.реестр["not_orderable"]])
 
     def test_работы_пятого_круга_только_из_реестра(self) -> None:
         база = [
@@ -387,7 +405,8 @@ class Отбор(unittest.TestCase):
                 "failure_mode",
                 "frame interpolation ghosts on fast motion",
                 tier="operator",
-            )
+            ),
+            self.ЦЕНА_ЗАГАДКИ,
         ]
         найдены = pn.candidates_for(операция("интерполяция_кадров"), FactIndex(facts=база))
         self.assertEqual([], [c.model for c in найдены])
@@ -423,7 +442,9 @@ class Отбор(unittest.TestCase):
         ]
         e = ep.build(база).get("kappa-1")
         assert e is not None
-        self.assertEqual((False, True), (e.orderable, e.self_hostable))
+        # Шестой круг: веса СЕМЬИ — не маршрут узла семьи (их запускают под
+        # именами вариантов), поэтому маршрутов нет и узел не заказывается.
+        self.assertEqual((False, True, ()), (e.orderable, e.self_hostable, e.route_ids))
         op = операция("генерация_видео")
         через_api = [c.model for c in pn.candidates_for(op, FactIndex(facts=база))]
         свой_gpu = [
@@ -472,10 +493,10 @@ class Ранг(unittest.TestCase):
         if usd is not None:
             o = pricing.Option(usd, "", None, f"{usd} usd")
             цена = pn.Стоимость((o,), o, o, "test")
+        поля = {"applicability": 0, **поля}
         return pn.Candidate(
             model=имя,
             evidence=(),
-            applicability=0,
             capability=0,
             unresolved=0,
             price="",
@@ -490,8 +511,18 @@ class Ранг(unittest.TestCase):
             ["z-model", "a-model"], [c.model for c in sorted([без, с_ценой], key=pn.by_evidence)]
         )
 
-    def test_без_самого_дешёвого_цена_не_решает(self) -> None:
+    def test_при_равных_доводах_цена_старше(self) -> None:
+        """Шестой круг: и без «самого дешёвого» записанная цена при равных
+        доводах старше незаписанной (`birefnet-v2-video` против Bria $0.05/с)."""
         без = self.кандидат("a-model", None)
+        с_ценой = self.кандидат("z-model", 9.0)
+        self.assertEqual(
+            ["z-model", "a-model"], [c.model for c in sorted([без, с_ценой], key=pn.by_evidence)]
+        )
+
+    def test_доводы_старше_цены(self) -> None:
+        """…но строка применимости старше цены: цена решает только при равных доводах."""
+        без = self.кандидат("a-model", None, applicability=1)
         с_ценой = self.кандидат("z-model", 9.0)
         self.assertEqual(
             ["a-model", "z-model"], [c.model for c in sorted([без, с_ценой], key=pn.by_evidence)]

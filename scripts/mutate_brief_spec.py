@@ -114,7 +114,7 @@ MUTANTS: tuple[tuple[str, str, str, str], ...] = (
     # --- реестр эндпоинтов (пятый круг): работа из свидетельства, узел семьи,
     # прогоны, «самое дешёвое», новые работы маршрута
     (EP, '    (r"lip-?sync(?:ing)?|lipsync", (LIPSYNC,)),\n', "", "липсинк в пути больше не работа"),
-    (EP, "    if работы:\n        return _порядок(работы), EVIDENCE_ID", "    if False:\n        return _порядок(работы), EVIDENCE_ID", "работа в пути не старше режима"),
+    (EP, "    if работы:\n        yield _порядок(работы), EVIDENCE_ID", "    if False:\n        yield _порядок(работы), EVIDENCE_ID", "работа в пути не старше режима"),
     (EP, "AUDIO_DRIVEN: frozenset[str] = frozenset({LIPSYNC, AVATAR})", "AUDIO_DRIVEN: frozenset[str] = frozenset()", "обязательный звук не подпись работы"),
     (EP, "AUDIO_DRIVEN: frozenset[str] = frozenset({LIPSYNC, AVATAR})", "AUDIO_DRIVEN: frozenset[str] = frozenset({LIPSYNC})", "аватар по звуку не узнаётся"),
     (EP, 'frozenset(нужны - {"текст"})', "frozenset(нужны)", "текст рядом со звуком меняет работу"),
@@ -124,8 +124,10 @@ MUTANTS: tuple[tuple[str, str, str, str], ...] = (
     (EP, "ATTRIBUTE_MODES: frozenset[str] = frozenset({T2V, I2V, R2V})", "ATTRIBUTE_MODES: frozenset[str] = frozenset({T2V, I2V, R2V, IMAGE_EDIT})", "правка из имени атрибута"),
     (EP, "FAMILY_MODES: frozenset[str] = frozenset({T2V, I2V, R2V, T2I, IMAGE_EDIT})", "FAMILY_MODES: frozenset[str] = frozenset()", "семья с ценой без работы"),
     (EP, "FAMILY_MODES: frozenset[str] = frozenset({T2V, I2V, R2V, T2I, IMAGE_EDIT})", "FAMILY_MODES: frozenset[str] = frozenset({T2V, I2V, R2V, T2I, IMAGE_EDIT, LIPSYNC})", "работа варианта становится работой семьи"),
-    (EP, "        orderable = not (мои_варианты and not свой_маршрут)", "        orderable = True", "узел семьи заказывается"),
-    (EP, "        orderable = not (мои_варианты and not свой_маршрут)", "        orderable = not мои_варианты", "семья со своей ценой не заказывается"),
+    # Шестой круг: заказываемость — «есть маршрут» (`own_routes`), семья —
+    # параметр маршрута, а не отдельная развилка.
+    (EP, "            family=bool(мои_варианты),", "            family=False,", "узел семьи заказывается"),
+    (EP, "    for кто in price_routes:\n        if кто not in продавцы:", "    for кто in ():\n        if кто not in продавцы:", "семья со своей ценой не заказывается"),
     (EP, "    if имя_курированное:\n", "    if False:\n", "курированное не перекрывает каналы"),
     (EP, "    if IMAGE_EDIT in режимы and (", "    if False and (", "правка видео читается правкой картинки"),
     (EP, 'if _звено("video|vsr", звенья) or', "if", "апскейл всегда видео"),
@@ -144,7 +146,7 @@ MUTANTS: tuple[tuple[str, str, str, str], ...] = (
     (PN, "    if предел_прогона(все) is not None:\n        return None\n", "", "допущение поверх своей записи"),
     (PN, "        op.name in ТОЛЬКО_РЕЕСТР or any(реестр.orderable_for(р) for р in работы)", "        op.name in ТОЛЬКО_РЕЕСТР", "неустановленные остаются при известной работе"),
     (PN, "        op.name in ТОЛЬКО_РЕЕСТР or any(реестр.orderable_for(р) for р in работы)", "        any(реестр.orderable_for(р) for р in работы)", "работы пятого круга снова из слов"),
-    (PN, '        "реставрация",\n        "интерполяция_кадров",\n', '        "реставрация",\n', "интерполяция не только из реестра"),
+    (PN, '        "раскраска",\n        "интерполяция_кадров",\n', '        "раскраска",\n', "интерполяция не только из реестра"),
     (ER, 'GUARDED: tuple[str, ...] = ("orderable", "priced", "with_run_length")', 'GUARDED: tuple[str, ...] = ("orderable", "with_run_length")', "гейт не держит число с ценой"),
     (ER, 'GUARDED: tuple[str, ...] = ("orderable", "priced", "with_run_length")', 'GUARDED: tuple[str, ...] = ("orderable", "priced", "with_run_length", "video")', "гейт держит лишнее поле"),
     (ER, 'BASELINE = ROOT / "studio" / "knowledge" / "endpoint_coverage.json"', 'BASELINE = ROOT / "studio" / "knowledge" / "endpoint_coverage_missing.json"', "гейт без базы"),

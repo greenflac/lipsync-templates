@@ -46,6 +46,11 @@ UNITS = ("usd", "credits")
 #: `price_per_million_input_usd` обязано находить миллион, а не токен.
 PER = (
     "1m_tokens",
+    # «За секунду ВЫЧИСЛЕНИЯ» (шестой круг): AMT, RIFE, BiRefNet на fal берут
+    # за секунду работы GPU, а не за секунду ролика. Сколько секунд GPU уходит
+    # на секунду ролика — отдельный факт (`COMPUTE_RATIO_ATTRIBUTE`); без него
+    # цена шага не считается вовсе. СТОИТ ПЕРЕД `second`: поиск по вхождению.
+    "compute_second",
     "second",
     "image",
     "generation",
@@ -168,6 +173,12 @@ def parse(value: str, attribute: str = "") -> Price:
     # значит ошибиться в миллион раз.
     if за in ("token", "") and _ЗА_МИЛЛИОН.search(текст):
         за = "1m_tokens"
+    if _ЗА_ВЫЧИСЛЕНИЕ.search(текст):
+        # «per compute second» — секунда GPU, а не ролика (шестой круг), даже
+        # когда имя атрибута говорит «second».
+        за = "compute_second"
+    if _ЕДИНИЦА_НЕ_НАЗВАНА.search(текст):
+        return Price(None, единица, "", False, НЕ_СМОГЛИ, "единица биллинга не названа ('units')")
     условие = bool(CONDITIONAL.search(текст))
 
     if not текст:
@@ -496,10 +507,15 @@ def _за_что(после: str, по_умолчанию: str) -> tuple[str, fl
     if re.match(r"^\s*per\s+(?:clone|created voice|credit)", голова):
         return "", 1.0, None, "skip"
     вид = вид_доплаты(голова)
+    if re.match(r"^[^$]{0,30}?(?:/|per)\s*(?:gpu\s+)?compute[\s-]+seconds?\b", голова):
+        return "compute_second", 1.0, None, вид
     м = re.match(r"^\s*(?:/|per|for every|a|each)?\s*(\d+)\s*(?:seconds?|s)\b", голова)
     if м and not re.match(r"^\s*for\b", голова):
         return "second", 1.0 / float(м.group(1)), None, вид
-    м = re.match(r"^\s*(?:/|per|for every|every)?\s*(\d+)\s*(?:characters?|chars?)\b", голова)
+    # «per 1000 preview characters» — слово между числом и знаками (шестой круг).
+    м = re.match(
+        r"^\s*(?:/|per|for every|every)?\s*(\d+)\s*(?:[a-z]+\s+)?(?:characters?|chars?)\b", голова
+    )
     if м:
         return "1000_chars", 1000.0 / float(м.group(1)), None, вид
     if re.match(
@@ -569,6 +585,12 @@ def rates(value: str, attribute: str = "") -> list[Rate]:
         за_имени = "run"
     if за_имени in ("token", "1m_tokens"):
         return []
+    if _ЕДИНИЦА_НЕ_НАЗВАНА.search(текст):
+        # «$1 per unit (billing unit 'units')» — единица биллинга площадки, о
+        # которой не сказано, ЧТО она (шестой круг): у `gpt-image-2` и
+        # `nano-banana-2.1` это заглушка $1 рядом с ценой за токены. Неизвестная
+        # единица — третий исход, а не ставка.
+        return []
     легенда = bool(_ЛЕГЕНДА_ЗВУКА.search(текст))
     # Легенда «(no audio / with audio)» описывает ПАРЫ чисел, а не последнее из
     # них: вынимается из текста, чтобы её «no audio» не прилипло к соседу.
@@ -597,7 +619,50 @@ def rates(value: str, attribute: str = "") -> list[Rate]:
                     итог[прогон] = Rate(**{**итог[прогон].__dict__, "over_per_second": r.amount})
                     continue
                 итог.append(r)
+    if _ВВЕРХ_ДО_МИНУТЫ.search(текст):
+        # «The audio will be rounded up to the closest minute» (ElevenLabs Music
+        # на fal, шестой круг): 30 с платятся как минута. Блок — минута.
+        итог = [
+            Rate(**{**r.__dict__, "block": 1.0}) if r.per == "minute" and not r.block else r
+            for r in итог
+        ]
     return _привязать_повтор(итог)
+
+
+#: «per compute second» в тексте цены.
+_ЗА_ВЫЧИСЛЕНИЕ = re.compile(r"per\s+(?:gpu\s+)?compute[\s-]+seconds?\b", re.I)
+
+#: «rounded up to the closest minute» — счёт минутами, начатая минута целиком.
+_ВВЕРХ_ДО_МИНУТЫ = re.compile(r"rounded up to the (?:closest|nearest|next) (?:full )?minute", re.I)
+
+#: Цена за НЕНАЗВАННУЮ единицу биллинга площадки: ставкой не становится.
+_ЕДИНИЦА_НЕ_НАЗВАНА = re.compile(r"\bper\s+units?\b|billing unit\s*'units?'", re.I)
+
+
+def compute_twins(по_строкам: list[tuple[str, list[Rate]]]) -> list[Rate]:
+    """Ставки модели одним списком; «за секунду», равная ставке «за секунду
+    ВЫЧИСЛЕНИЯ» того же маршрута, — та же ставка (шестой круг).
+
+    `rife-video`: страница fal пишет «$0.0013 per compute second», pricing API
+    той же площадки — «$0.0013 per second». Это одна цена в одной единице, и
+    единица — секунда GPU; прочесть вторую строку «за секунду ролика» значило
+    бы посчитать шаг так, будто GPU работает ровно столько, сколько длится ролик.
+
+    :param по_строкам: (маршрут строки, её ставки) по каждой ценовой строке.
+    """
+    вычисления = {
+        (маршрут, round(r.amount, 9))
+        for маршрут, ставки in по_строкам
+        for r in ставки
+        if r.per == "compute_second"
+    }
+    итог: list[Rate] = []
+    for маршрут, ставки in по_строкам:
+        for r in ставки:
+            if r.per == "second" and (маршрут, round(r.amount, 9)) in вычисления:
+                r = Rate(**{**r.__dict__, "per": "compute_second"})
+            итог.append(r)
+    return итог
 
 
 def _привязать_повтор(ставки: list[Rate]) -> list[Rate]:
@@ -643,7 +708,8 @@ def _ставки_куска(
             mode = слово
     # «5s:» / «HDR 5s» в начале куска — цена за прогон столько-то секунд.
     # «For a 6s 480p video your request will cost $0.36» — тоже прогон (круг 4).
-    м_прогон = re.match(r"^(?:[a-z]+\s+)?(?:a\s+)?(\d+)\s*s\b\s*:?", голова)
+    # «For a 10-second 30→60 fps job, … costs $0.30» — тоже прогон (шестой круг).
+    м_прогон = re.match(r"^(?:[a-z]+\s+)?(?:a\s+)?(\d+)\s*(?:s|-\s*seconds?)\b\s*:?", голова)
     прогон_куска = float(м_прогон.group(1)) if м_прогон else None
     есть_доллар = "$" in кусок
     найдены = [
@@ -978,6 +1044,12 @@ class Need:
     #: длина прогона семьи или осторожное допущение. Печатается в расчёте цены
     #: за прогон — допущение не подставляется молча. Пусто — запись своя.
     run_basis: str = ""
+    #: Секунд вычисления на секунду ролика — ЗАПИСАННОЕ (`COMPUTE_RATIO_ATTRIBUTE`)
+    #: для этой модели. None — не записано, и ставка «за секунду вычисления»
+    #: цены шага не даёт (шестой круг).
+    compute_ratio: float | None = None
+    #: Откуда частота кадров, если не из брифа: допущение печатается в расчёте.
+    fps_basis: str = ""
 
 
 @dataclass(frozen=True)
@@ -999,6 +1071,18 @@ class Option:
     lower_bound: str = ""
     ambiguous: str = ""
     usd_min: float | None = None
+    #: Звук ставки (True / False / не сказано) — часть ступени тарифа: ставки с
+    #: разным звуком или разрешением — РАЗНЫЕ ступени, а не спор источников.
+    audio: bool | None = None
+    #: Насколько ставка ПРО ЗАКАЗ (меньше — точнее): кадр, звук, частота,
+    #: безусловность, полнота. Две строки одного маршрута сравниваются сначала
+    #: этим, и только равные по привязке спорят (шестой круг).
+    fit: tuple = ()
+    #: Ставка за единицу и единица, по которым посчитано (`usd` — уже деньги
+    #: шага). Две строки с ОДНОЙ ставкой — не спор, даже если одна знает
+    #: округление вендора, а другая нет (шестой круг).
+    rate: float | None = None
+    per: str = ""
 
     @property
     def least(self) -> float:
@@ -1014,11 +1098,26 @@ CHARS_PER_SECOND = 15.0
 #: Причина «нижней границы» у цены за прогон без записанной длины прогона.
 LOWER_BOUND_RUN = "сколько секунд даёт прогон — не записано: посчитан один прогон"
 
+#: Атрибут, где записано, сколько секунд вычисления уходит на секунду ролика.
+COMPUTE_RATIO_ATTRIBUTE = "compute_seconds_per_output_second"
+
+#: Частота кадров, которая ДОПУСКАЕТСЯ для цены видео «за мегапиксель», когда
+#: бриф её не назвал. КОНСТАНТА-РЕШЕНИЕ, ВЫБРАНО 30: генераторы отдают 24–30
+#: fps, и 30 — верхний край, то есть смета не занижена. Печатается в расчёте.
+ASSUMED_FPS = 30.0
+
 
 def _подходит_звук(r: Rate, нужно: bool | None) -> int:
-    """0 — подходит, 1 — о звуке не сказано, 2 — не тот звук."""
-    if нужно is None or r.audio is None:
-        return 0 if r.audio is None or нужно is None else 1
+    """0 — подходит, 1 — о звуке не сказано, 2 — не тот звук.
+
+    «Не сказано» при ИЗВЕСТНОЙ нужде шага — 1, а не 0 (шестой круг): прежде
+    голая $0.14 pricing API у `kling-3.0-standard-t2v` была равна по привязке
+    странице «$0.084 (audio off)», и шаг без звука платил $0.14.
+    """
+    if нужно is None:
+        return 0
+    if r.audio is None:
+        return 1
     return 0 if r.audio == нужно else 2
 
 
@@ -1094,7 +1193,21 @@ def _деньги(r: Rate, need: Need) -> tuple[float, str, str] | None:
     if r.per == "minute":
         if сек is None:
             return None
+        if r.block:
+            сумма, расчёт = _блоками(сек / 60.0, r)
+            return сумма, f"{сек:g} с = {сек / 60.0:g} мин: {расчёт} (блок = {r.block:g} мин)", ""
         return r.amount * сек / 60.0, f"{сек:g} с × {r.amount:g} usd/мин ÷ 60", ""
+    if r.per == "compute_second":
+        # Секунда GPU — не секунда ролика: без записанного отношения цены нет.
+        if сек is None or need.compute_ratio is None:
+            return None
+        вычисление = сек * need.compute_ratio
+        return (
+            r.amount * вычисление,
+            f"{сек:g} с ролика × {need.compute_ratio:g} с вычисления/с = {вычисление:g} с GPU"
+            f" × {r.amount:g} usd",
+            "",
+        )
     if r.per in ("run", "generation"):
         if сек and need.shots > 1:
             # ШОТЫ — ОТДЕЛЬНЫЕ ПРОГОНЫ: прогон не склеивает два шота, поэтому
@@ -1157,9 +1270,10 @@ def _деньги(r: Rate, need: Need) -> tuple[float, str, str] | None:
         # ВИДЕО «ЗА МЕГАПИКСЕЛЬ» (круг 4): мегапиксели кадра × кадров, а кадров
         # — fps × секунды. Чего-то из трёх нет — не на что умножать, и шаг
         # остаётся без цены, а не «0.001 usd за megapixel» рядом с «укладывается».
-        if not (сек and need.fps and need.resolution):
+        if not (сек and need.resolution):
             return None
-        кадров = math.ceil(need.fps * сек)
+        частота = need.fps or ASSUMED_FPS
+        кадров = math.ceil(частота * сек)
         мп = need.megapixels * кадров
         if r.block:
             сумма, расчёт = _блоками(мп, r)
@@ -1167,7 +1281,9 @@ def _деньги(r: Rate, need: Need) -> tuple[float, str, str] | None:
             сумма, расчёт = r.amount * math.ceil(мп), f"⌈{мп:g}⌉ Мп × {r.amount:g} usd"
         return (
             сумма,
-            f"{need.megapixels:g} Мп/кадр × {кадров} кадров ({need.fps:g} fps × {сек:g} с): {расчёт}",
+            f"{need.megapixels:g} Мп/кадр × {кадров} кадров ({частота:g} fps"
+            + ("" if need.fps else f" — {need.fps_basis or 'частота не названа, допущено'}")
+            + f" × {сек:g} с): {расчёт}",
             "",
         )
     if r.per == "image" and need.images <= 0:
@@ -1271,6 +1387,10 @@ def estimate(ставки: list[Rate], need: Need) -> list[Option]:
                 lower_bound=нижняя,
                 ambiguous=неоднозначно,
                 usd_min=round(суммы[0], 4) if неоднозначно else None,
+                audio=r.audio,
+                fit=ключ,
+                rate=r.amount,
+                per=r.per,
             )
         )
     return варианты

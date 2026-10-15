@@ -482,7 +482,9 @@ class ВопросОЮрисдикции(unittest.TestCase):
         self.assertNotIn("юрисдикц", итог["note"])
         self.assertNotIn("jurisdiction", итог["note"])
         шаг = next(ш for ш in итог["steps"] if ш["step"] == "генерация_видео")
-        self.assertEqual("wan-3.0-t2v", шаг["chosen"]["model"])
+        # Шестой круг: тариф по кадру-допущению 1080p — `wan-3.0-t2v` (6.00 usd)
+        # выше потолка, выбор — `kling-3.0-standard-t2v` (2.52 usd без звука).
+        self.assertEqual("kling-3.0-standard-t2v", шаг["chosen"]["model"])
         self.assertIsNone(шаг["licence_alternative"])
 
     def test_живой_бриф_без_потолка_вопрос_остаётся(self) -> None:
