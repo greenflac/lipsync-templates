@@ -646,7 +646,15 @@ def rates(value: str, attribute: str = "") -> list[Rate]:
 _ЗА_ВЫЧИСЛЕНИЕ = re.compile(r"per\s+(?:gpu\s+)?compute[\s-]+seconds?\b", re.I)
 
 #: «rounded up to the closest minute» — счёт минутами, начатая минута целиком.
-_ВВЕРХ_ДО_МИНУТЫ = re.compile(r"rounded up to the (?:closest|nearest|next) (?:full )?minute", re.I)
+#: Восьмой круг (x25, w24): та же строка у fal пишется и без артикля —
+#: «$0.6, rounded up to closest minute», — и словами «the closest minute after
+#: rounding upwards»; ни одна из них прежде не узнавалась, и 30 с дубляжа
+#: стоили 0.30 usd вместо 0.60.
+_ВВЕРХ_ДО_МИНУТЫ = re.compile(
+    r"rounded up to (?:the )?(?:closest|nearest|next) (?:full )?minute"
+    r"|(?:closest|nearest|next) (?:full )?minute after rounding up(?:wards?)?",
+    re.I,
+)
 
 #: Цена за НЕНАЗВАННУЮ единицу биллинга площадки: ставкой не становится.
 _ЕДИНИЦА_НЕ_НАЗВАНА = re.compile(r"\bper\s+units?\b|billing unit\s*'units?'", re.I)
@@ -1066,6 +1074,10 @@ class Need:
     #: Сколько клонов голоса делает шаг (ставка «за клон»): один голос — один
     #: клон, сколько бы языков он ни читал.
     clones: int = 1
+    #: Сколько ОТДЕЛЬНЫХ заказов делает шаг — по одному на язык (восьмой круг,
+    #: w24): счёт «начатая минута целиком» округляется в КАЖДОМ, и 90 с на два
+    #: языка — 2 × ⌈1.5⌉ = 4 минуты, а не ⌈3⌉ = 3.
+    jobs: int = 1
 
 
 @dataclass(frozen=True)
@@ -1204,9 +1216,25 @@ def _подходит_fps(r: Rate, нужно: float | None) -> int | None:
     return 1 if r.fps > нужно else None
 
 
-def _подходит_кадр(r: Rate, нужно: int | None) -> tuple[int, int] | None:
-    """(штраф, выбранное разрешение) или None, если ставка кадр не даёт."""
+#: Штраф ставки БЕЗ разрешения, когда заказанный кадр выше всех ступеней
+#: тарифа (восьмой круг, x17/w15). КОНСТАНТА-РЕШЕНИЕ: старше «выше всех
+#: ступеней» (3) — голая `$0.0072 per second` у `bytedance-upscaler` (это
+#: ставка 1080p) обгоняла верхнюю ступень 4K, и 8K считалось по цене 1080p.
+UNTIERED_ABOVE_TOP = 4
+
+
+def _подходит_кадр(
+    r: Rate, нужно: int | None, верх: int | None = None
+) -> tuple[int, int] | None:
+    """(штраф, выбранное разрешение) или None, если ставка кадр не даёт.
+
+    `верх` — наибольшая ступень разрешения среди ВСЕХ ставок шага. Заказанный
+    кадр выше неё — ставка без разрешения не обгоняет верхнюю ступень
+    (`UNTIERED_ABOVE_TOP`): о ней не известно, что она дороже 1080p.
+    """
     if not r.resolutions:
+        if нужно is not None and верх is not None and нужно > верх:
+            return (UNTIERED_ABOVE_TOP, 0)
         return (1, 0) if нужно is not None else (0, 0)
     if нужно is None:
         return (0, min(r.resolutions))
@@ -1261,6 +1289,14 @@ def _деньги(r: Rate, need: Need) -> tuple[float, str, str] | None:
     if r.per == "minute":
         if сек is None:
             return None
+        if r.block and need.jobs > 1:
+            сумма, расчёт = _блоками(сек / need.jobs / 60.0, r)
+            return (
+                сумма * need.jobs,
+                f"{need.jobs} заказ(ов) по языкам × ({сек / need.jobs:g} с = "
+                f"{сек / need.jobs / 60.0:g} мин: {расчёт}) (блок = {r.block:g} мин)",
+                "",
+            )
         if r.block:
             сумма, расчёт = _блоками(сек / 60.0, r)
             return сумма, f"{сек:g} с = {сек / 60.0:g} мин: {расчёт} (блок = {r.block:g} мин)", ""
@@ -1383,7 +1419,7 @@ def _деньги(r: Rate, need: Need) -> tuple[float, str, str] | None:
     return None
 
 
-def estimate(ставки: list[Rate], need: Need) -> list[Option]:
+def estimate(ставки: list[Rate], need: Need, top: int | None = None) -> list[Option]:
     """Сколько стоит шаг на КАЖДОМ тарифе, где ставка подходит брифу. Дешёвые первыми не ставятся:
     порядок — порядок вендора (флагман первым), чтобы тариф по умолчанию был его, а не наш.
 
@@ -1437,6 +1473,14 @@ def estimate(ставки: list[Rate], need: Need) -> list[Option]:
             for в in варианты
         ]
     по_тарифу: dict[str, list[tuple[tuple, Rate, int, tuple[float, str, str]]]] = {}
+    # `top` — верхняя ступень по ВСЕМ строкам цены модели: ставка без
+    # разрешения часто стоит отдельной строкой (`price_unit_second_usd`).
+    верх = max(
+        (р for r in ставки if r.unit == "usd" and r.amount > 0 for р in r.resolutions),
+        default=top,
+    )
+    if top is not None and верх is not None:
+        верх = max(верх, top)
     for r in ставки:
         if r.unit != "usd" or r.upfront or r.amount <= 0:
             # Ноль — не цена: бесплатным не считается ничего (запись «$0» —
@@ -1447,7 +1491,7 @@ def estimate(ставки: list[Rate], need: Need) -> list[Option]:
         звук = _подходит_звук(r, need.audio)
         if звук == 2:
             continue
-        кадр = _подходит_кадр(r, need.resolution)
+        кадр = _подходит_кадр(r, need.resolution, верх)
         if кадр is None:
             continue
         частота = _подходит_fps(r, need.fps)
@@ -1476,7 +1520,13 @@ def estimate(ставки: list[Rate], need: Need) -> list[Option]:
             for ч in (
                 тариф.capitalize() if тариф else "",
                 f"{разрешение}p" if разрешение else "",
-                (f"ниже заказанного {need.resolution}p — нужен апскейл" if ключ[0] == 3 else ""),
+                (
+                    f"ниже заказанного {need.resolution}p — нужен апскейл; "
+                    f"{разрешение}p — максимум тарифов эндпоинта: {need.resolution}p — другим "
+                    "эндпоинтом или вторым проходом"
+                    if ключ[0] == 3
+                    else ""
+                ),
                 "со звуком" if r.audio else "без звука" if r.audio is False else "",
                 f"{r.fps:g} fps" if r.fps else "",
             )

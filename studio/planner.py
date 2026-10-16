@@ -4658,6 +4658,7 @@ def нужда_шага(
         mode=РЕЖИМ_ШАГА.get(op.name, ""),
         fps=fps,
         shots=клипов if (клипов and op.клипами and not картинка) else 1,
+        jobs=языков if (секунды is not None and языков > 1) else 1,
     )
 
 
@@ -4797,12 +4798,18 @@ def стоимость(
     ставки_строк = pricing.compute_twins(
         [(маршрут(f)[0], pricing.rates(f.value, f.attribute)) for f in строки_цены]
     )
+    # ВЕРХНЯЯ СТУПЕНЬ КАДРА по всем строкам (восьмой круг, x17): голая ставка
+    # отдельной строкой не обгоняет верхнюю ступень, когда заказ выше всех.
+    верх_кадра = max(
+        (р for r in ставки_строк if r.unit == "usd" and r.amount > 0 for р in r.resolutions),
+        default=None,
+    )
     сдвиг = 0
     for f in строки_цены:
         своих = len(pricing.rates(f.value, f.attribute))
         свои_ставки = ставки_строк[сдвиг : сдвиг + своих]
         сдвиг += своих
-        найдено = pricing.estimate(свои_ставки, need)
+        найдено = pricing.estimate(свои_ставки, need, верх_кадра)
         if not найдено:
             continue
         имя, сказал = маршрут(f)
@@ -4891,6 +4898,7 @@ def стоимость(
     _, варианты, строка = итог_маршрута[выбран]
     по_тарифу = {o.tier: o for o in варианты}
     умолчание = по_тарифу.get("") or по_тарифу.get("standard") or варианты[0]
+    умолчание = тариф_по_размеру(умолчание, по_тарифу, ставки_строк, need)
     другие: list[tuple[str, pricing.Option]] = []
     for имя in порядок:
         if имя == выбран:
@@ -4908,6 +4916,35 @@ def стоимость(
         other_routes=tuple(другие),
         contradictions=tuple(расхождения),
     )
+
+
+def тариф_по_размеру(
+    умолчание: pricing.Option,
+    по_тарифу: Mapping[str, pricing.Option],
+    ставки: Sequence[pricing.Rate],
+    need: pricing.Need,
+) -> pricing.Option:
+    """Голая сумма без разрешения при ЗАКАЗАННОМ кадре — не цена заказа (восьмой круг).
+
+    `gpt-image-2.5-flare` у fal: «$0.03612; high 1024x1024 $0.05268; …» —
+    первая сумма есть цена ступени `high 1024x768`, а не 4K. Прежде она
+    становилась ценой шага при любом заказанном кадре. Теперь: та же сумма
+    найдена в таблице ступеней — берётся ЭТА ступень по заказанному кадру.
+    Ступень не нашлась, кадр не заказан, или голая сумма и есть вся цена —
+    умолчание прежнее.
+    """
+    if умолчание.tier or умолчание.resolution or not need.resolution or умолчание.rate is None:
+        return умолчание
+    for r in ставки:
+        if (
+            r.tier
+            and r.resolutions
+            and abs(r.amount - умолчание.rate) < 1e-9
+            and r.tier in по_тарифу
+            and по_тарифу[r.tier].resolution
+        ):
+            return по_тарифу[r.tier]
+    return умолчание
 
 
 def compute_ratio(facts: Sequence[Fact]) -> float | None:
