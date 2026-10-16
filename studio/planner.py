@@ -9152,15 +9152,16 @@ def кадр_шага(
     (масштаб или поля), а не платный апскейл. `wan2.2-ti2v-5b` рисует 1280x704:
     на заказе 720p он дописывал апскейл ради 16 строк.
     """
-    просят = (
+    порог = (
         math.ceil(просят[0] * (1 - FRAME_REACH_TOLERANCE)),
         math.ceil(просят[1] * (1 - FRAME_REACH_TOLERANCE)),
     )
     if кандидат.cost is not None and кандидат.cost.default.resolution:
         r = кандидат.cost.default.resolution
-        if r >= min(просят):
+        if r >= min(порог):
             return REACH_YES, f"тариф шага посчитан в {r}p"
         return REACH_NO, f"тариф шага посчитан в {r}p — ниже {min(просят)}p"
+    просят = порог
     положение, нота = fit_stance(свои, просят)
     if положение == FIT_IN:
         return REACH_YES, нота
@@ -9563,6 +9564,8 @@ def дешёвый_вне_полосы(
         and all(a <= b for a, b in zip(by_evidence(c)[:до], свой))
         and c.against <= c.in_favour
         and sign_rank(c) != SIGN_AGAINST
+        and c.kind_rank <= выбран.kind_rank
+        and not c.foreign
     ]
     if not годные:
         return None
@@ -9583,6 +9586,10 @@ def обмен_вне_полосы(шаг: str, был: Candidate, стал: Can
         + f"; выбранный был дороже в {во_сколько:.1f} раза (порог {CHEAP_OFFER_RATIO:g}x)"
     )
     строка["label"] = (
+        f"{'не измерено' if not стал.measured else 'доводов меньше'}: самый дешёвый вариант с ценой, "
+        f"в {во_сколько:.1f} раза дешевле {был.model}; {был.model} остаётся вариантом качества"
+    )
+    строка["label_en"] = (
         f"{'unmeasured' if not стал.measured else 'less evidence'}: cheapest priced option, "
         f"{во_сколько:.1f}x cheaper than {был.model}; {был.model} stays the quality option"
     )

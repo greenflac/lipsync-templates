@@ -86,7 +86,11 @@ class Таблица(unittest.TestCase):
             self.assertEqual(н.tag == rt.TAG_REGULATION, bool(н.sources), н.id)
 
     def test_русская_заметка_без_английских_оборотов(self) -> None:
-        поля = {"seconds": "600", "aspect": "2.39:1", "native": "16:9", "speakers": "2", "tags": "ar-EG"}
+        поля = {
+            "seconds": "600", "aspect": "2.39:1", "native": "16:9", "speakers": "2", "tags": "ar-EG",
+            # Десятый круг: поля нот печати и частоты кадров.
+            "dpi": "300", "size": " (A2)", "frame": "4961x7016 px", "fps": "240",
+        }
         for н in rt.NOTES_LIST:
             строка = {"says": н.ru.format(**поля)}
             self.assertEqual([], l10n.leaks(строка, "ru"), н.id)

@@ -90,7 +90,9 @@ class ЗаменаЛица(unittest.TestCase):
         self.assertEqual(("face-swap",), self.работа("fal-face-swap", "fal-ai/face-swap"))
 
     def test_animate_replace_правка_видео_а_не_лицо(self) -> None:
-        self.assertEqual(("v2v-edit",), self.работа("wan-2.2-14b-animate-replace"))
+        # Десятый круг: замена персонажа целиком — своя работа реестра, правка
+        # видео за ней сохраняется; лицом она не стала.
+        self.assertEqual(("v2v-edit", "character-replace"), self.работа("wan-2.2-14b-animate-replace"))
         self.assertEqual(frozenset({"replace-object"}), ep.edit_named("wan-2.2-14b-animate-replace"))
 
 
