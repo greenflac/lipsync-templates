@@ -303,7 +303,7 @@ class ПорядокПоДоказательству(unittest.TestCase):
 
     def test_константы_ключа(self) -> None:
         self.assertEqual(2, pn.STRICT_BLOCK)
-        self.assertEqual(5, pn.CONSTRAINT_KEYS)
+        self.assertEqual(6, pn.CONSTRAINT_KEYS)
         self.assertEqual("делает ли модель эту работу, а не соседнюю", pn.KEY_FIELDS[1])
 
     def test_аватар_на_генерации_видео_чужой(self) -> None:

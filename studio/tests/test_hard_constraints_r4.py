@@ -281,8 +281,12 @@ class ЖивоеКачество(unittest.TestCase):
 
     def test_негативный_контроль_без_цели_качество(self) -> None:
         итог = pn.plan("generate a video from scratch: cinematic 6s 4K 24fps, no audio", full=True)
+        # Без цели «качество» никто не отсеян жёстким требованием...
         self.assertEqual(0, итог["steps"][0]["hard_excluded_count"])
-        self.assertNotEqual("kling-3.0-4k-t2v", итог["steps"][0]["chosen"]["model"])
+        # ...но ВОСЬМОЙ КРУГ: 4K — требование заказа до цены при ЛЮБОЙ цели
+        # (`REQUIREMENT_KEY_FIELD`), и родной 4K-эндпоинт стоит выше тарифа,
+        # чей кадр не записан (прежде — `kling-3.0-standard-t2v` ценой).
+        self.assertEqual("kling-3.0-4k-t2v", итог["steps"][0]["chosen"]["model"])
 
     def test_родной_выход_старше_тарифа(self) -> None:
         op = next(о for о in pn.OPERATIONS if о.name == "генерация_видео")

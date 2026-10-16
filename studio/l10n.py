@@ -545,6 +545,17 @@ EN: tuple[tuple[str, str], ...] = (
     (r"\[(\d+p) ниже заказанного (\d+p) — нужен апскейл\]", r"[\1 below the ordered \2 — upscaling needed]"),
     (r"(\d+p) ниже заказанного (\d+p) — нужен апскейл; (\d+p) — максимум тарифов эндпоинта: (\d+p) — другим эндпоинтом или вторым проходом",
      r"\1 below the ordered \2 — upscaling needed; \3 is the endpoint's top tier: \4 needs another endpoint or a second pass"),
+    # --- требования заказа (planner.требования_шага, восьмой круг)
+    (r"кадр (\d+)p: родной по записи", r"frame \1p: native on record"),
+    (r"кадр (\d+)p: не записан", r"frame \1p: not recorded"),
+    (r"([\d.]+) fps: записано (\d+)", r"\1 fps: \2 recorded"),
+    (r"([\d.]+) fps: не записано", r"\1 fps: not recorded"),
+    (r"язык ([^:;]+): назван", r"language \1: listed"),
+    (r"язык ([^:;]+): исключён списком", r"language \1: excluded by an exclusive list"),
+    (r"язык ([^:;]+): не записан", r"language \1: not recorded"),
+    (r"правка ([^:;]+): названа эндпоинтом", r"edit \1: named by the endpoint"),
+    (r"правка ([^:;]+): по инструкции", r"edit \1: by instruction"),
+    (r"требований заказа нет", "no order requirements"),
     (r"(\d+) или (\d+) секунд", r"\1 or \2 seconds"),
     (r"ниже заказанного", "below the ordered"),
     (r"разрешение выхода не записано", "output resolution not recorded"),
@@ -1030,6 +1041,8 @@ LABELS_EN: dict[str, str] = {
     "принимает ли кадр": "does it accept the frame",
     "влезает ли по длительности": "does it fit the duration",
     "положение по цене": "price position",
+    "требования заказа (кадр родным, частота родной, язык, названная правка): подтверждено / не записано / против":
+        "order requirements (native frame, native frame rate, language, named edit): confirmed / not recorded / against",
     "лицензия исключает территории, а юрисдикция заказчика не названа":
         "the licence excludes territories and the customer's jurisdiction is not named",
     "отдаёт ли заказанный кадр сам, без апскейла": "does it deliver the ordered frame itself, without upscaling",
