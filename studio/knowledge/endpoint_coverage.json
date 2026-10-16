@@ -205,5 +205,14 @@
   "with_run_length": 0,
   "run_length_pct": 0.0,
   "video": true
+ },
+ {
+  "function": "image-to-3d",
+  "orderable": 0,
+  "priced": 0,
+  "priced_pct": 0.0,
+  "with_run_length": 0,
+  "run_length_pct": 0.0,
+  "video": false
  }
 ]
