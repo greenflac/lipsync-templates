@@ -132,5 +132,111 @@ class КартинкаПоЗаказанномуРазмеру(unittest.TestCase
         self.assertEqual(("", 0.0361), (сколько.default.tier, сколько.default.usd))
 
 
+def _оп(имя: str) -> pn.Operation:
+    return next(о for о in pn.OPERATIONS if о.name == имя)
+
+
+def _факт(model: str, attribute: str, value: str) -> object:
+    from studio.selfrag.facts import Fact
+
+    return Fact(model, attribute, value, f"https://{model}.test/{attribute}", "vendor", "2026-10-01")
+
+
+class ТребованияШага(unittest.TestCase):
+    """`требования_шага`: (кадр, частота, язык, правка), 0 / 1 / 2 — литералами."""
+
+    def _ранг(self, op: str, строки: list, **kw: object) -> tuple:
+        аргументы: dict = {
+            "семья": (),
+            "сколько": None,
+            "кадр": None,
+            "need": None,
+            "languages": (),
+            "edit_intents": (),
+            "узел": None,
+            "имя": "m",
+        }
+        аргументы.update(kw)
+        return pn.требования_шага(_оп(op), строки, **аргументы)[0]
+
+    def test_4k_родной_по_своей_строке(self) -> None:
+        self.assertEqual(
+            (0, 0, 0, 0),
+            self._ранг("генерация_видео", [_факт("m", "max_resolution", "4K native")], кадр=(3840, 2160)),
+        )
+        self.assertEqual((1, 0, 0, 0), self._ранг("генерация_видео", [], кадр=(3840, 2160)))
+
+    def test_кадр_4k_семьи_вариант_не_одалживает(self) -> None:
+        семья = (("kling-3.0", [_факт("kling-3.0", "max_resolution", "4K native")]),)
+        self.assertEqual((1, 0, 0, 0), self._ранг("генерация_видео", [], семья=семья, кадр=(3840, 2160)))
+
+    def test_1080p_не_требование_до_цены(self) -> None:
+        self.assertEqual((0, 0, 0, 0), self._ранг("генерация_видео", [], кадр=(1920, 1080)))
+        self.assertEqual(1440, pn.FRAME_REQUIREMENT_MIN)
+
+    def test_частота_своя_и_семьи(self) -> None:
+        need = pricing.Need(fps=60.0)
+        self.assertEqual((0, 0, 0, 0), self._ранг("генерация_видео", [_факт("m", "fps", "24, 30 or 60 fps")], need=need))
+        self.assertEqual((0, 1, 0, 0), self._ранг("генерация_видео", [_факт("m", "fps", "24 fps")], need=need))
+        семья = (("f", [_факт("f", "fps", "60 fps")]),)
+        self.assertEqual((0, 0, 0, 0), self._ранг("генерация_видео", [], семья=семья, need=need))
+        self.assertEqual((0, 1, 0, 0), self._ранг("генерация_видео", [], need=need))
+
+    def test_язык_озвучки(self) -> None:
+        self.assertEqual(
+            (0, 0, 0, 0),
+            self._ранг("озвучка", [_факт("m", "languages", "Hindi, English, Tamil")], languages=("hi",)),
+        )
+        self.assertEqual(
+            (0, 0, 2, 0),
+            self._ранг("озвучка", [_факт("m", "languages", "English only")], languages=("hi",)),
+        )
+        self.assertEqual((0, 0, 1, 0), self._ранг("озвучка", [], languages=("hi",)))
+        # Липсинк — губы под готовую речь: язык не требование к модели.
+        self.assertEqual((0, 0, 0, 0), self._ранг("липсинк", [], languages=("hi",)))
+
+    def test_правка_названа_эндпоинтом(self) -> None:
+        self.assertEqual(
+            (0, 0, 0, 0),
+            self._ранг("правка_видео", [], edit_intents=("remove-object",), имя="acme/video/object-removal"),
+        )
+        self.assertEqual(
+            (0, 0, 0, 1),
+            self._ранг("правка_видео", [], edit_intents=("remove-object",), имя="kling-video-o3-standard-v2v-edit"),
+        )
+
+    def test_ключ_до_цены(self) -> None:
+        self.assertEqual(6, pn.CONSTRAINT_KEYS)
+        self.assertEqual(pn.KEY_FIELDS.index(pn.REQUIREMENT_KEY_FIELD) + 1, pn.KEY_FIELDS.index("положение по цене"))
+
+
+class ЖивыеБрифыВосьмогоКруга(unittest.TestCase):
+    """n08 / x35: 4K при любой цели — родной 4K-эндпоинт, а не стандартный тариф."""
+
+    def _модели(self, бриф: str, spec: dict) -> list:
+        итог = pn.plan(бриф, spec=spec, spec_only=True)
+        return [(ш["step"], ш["chosen"]["model"]) for ш in итог["steps"]]
+
+    def test_n08(self) -> None:
+        self.assertEqual(
+            ("генерация_видео", "kling-3.0-4k-t2v"),
+            self._модели(
+                "Generate a 5 second 120fps 4K slow-motion shot of a hummingbird",
+                {"task": "generate", "inputs": [], "outputs": ["video"], "duration_s": 5, "fps": 120,
+                 "resolution": "4k", "people": []},
+            )[0],
+        )
+
+    def test_x35(self) -> None:
+        self.assertEqual(
+            ("видео_со_звуком", "kling-3.0-4k-t2v"),
+            self._модели(
+                "10 s 4K 60fps cinematic waterfall shot with native ambient sound",
+                {"task": "generate", "inputs": [], "outputs": ["video", "sfx"], "duration_s": 10,
+                 "resolution": "4k", "fps": 60, "audio": "native", "people": []},
+            )[0],
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

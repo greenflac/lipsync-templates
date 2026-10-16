@@ -729,8 +729,8 @@ def интимные_отказы(текст: str) -> list[str]:
     for о in СЕКСУАЛЬНОЕ:
         for м in re.finditer(о, низ):
             слово = м.group(0).split()[0]
-            места = [i for i, с in enumerate(по_порядку) if с == слово]
-            if места and all(_отменено(по_порядку, i, текст) for i in места):
+            вхождения = [i for i, с in enumerate(по_порядку) if с == слово]
+            if вхождения and all(_отменено(по_порядку, i, текст) for i in вхождения):
                 continue
             секс = секс or м.group(0).strip()
     ребёнок = _найдено(НЕСОВЕРШЕННОЛЕТНИЙ, низ)
