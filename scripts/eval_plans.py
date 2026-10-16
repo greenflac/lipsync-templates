@@ -71,6 +71,7 @@ STEP_JOB: dict[str, str] = {
     "апскейл_изображения": "upscale_image",
     "реставрация": "restore",
     "раскраска": "colorize",
+    "раскраска_изображения": "colorize",
     "интерполяция_кадров": "interpolate",
     "удаление_фона": "bg_remove_image",
     "удаление_фона_видео": "bg_remove_video",

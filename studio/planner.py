@@ -430,6 +430,8 @@ ARTEFACT_FINAL = "готовый_ролик"
 ARTEFACT_RESTORED = "видео_реставрация"
 #: Раскраска — отдельная работа реестра (`ep.COLORIZE`, шестой круг).
 ARTEFACT_COLORIZED = "видео_раскраска"
+#: Девятый круг: раскраска СНИМКА (DDColor и правки изображения), не видео.
+ARTEFACT_COLORIZED_IMAGE = "изображение_раскраска"
 ARTEFACT_SMOOTH = "видео_интерполяция"
 ARTEFACT_CUTOUT = "изображение_без_фона"
 ARTEFACT_VIDEO_CUTOUT = "видео_без_фона"
@@ -1005,6 +1007,7 @@ OUTPUT_KINDS: dict[str, str] = {
     ARTEFACT_UPSCALED_IMAGE: "изображение",
     ARTEFACT_RESTORED: "видео",
     ARTEFACT_COLORIZED: "видео",
+    ARTEFACT_COLORIZED_IMAGE: "изображение",
     ARTEFACT_SMOOTH: "видео",
     ARTEFACT_CUTOUT: "изображение",
     ARTEFACT_VIDEO_CUTOUT: "видео",
@@ -2260,6 +2263,17 @@ OPERATIONS: tuple[Operation, ...] = (
         requirement="чёрно-белое видео раскрашено без мерцания цвета между кадрами",
     ),
     Operation(
+        name="раскраска_изображения",
+        # Девятый круг: «раскрасить 40 старых семейных фото» спрашивало видео —
+        # раскраска знала только ролик. Снимок раскрашивает своя работа реестра
+        # с входом «изображение» (DDColor) — тот же `ep.COLORIZE`.
+        cues=(),
+        anchors=("colorization", "colorize"),
+        requires=(ARTEFACT_IMAGE,),
+        produces=(ARTEFACT_COLORIZED_IMAGE,),
+        requirement="чёрно-белый снимок раскрашен правдоподобно: кожа, небо, одежда без пятен цвета",
+    ),
+    Operation(
         name="интерполяция_кадров",
         cues=(),
         anchors=("interpolation",),
@@ -2332,6 +2346,7 @@ OPERATIONS: tuple[Operation, ...] = (
     "апскейл_изображения": ep.UPSCALE_IMAGE,
     "реставрация": ep.RESTORE,
     "раскраска": ep.COLORIZE,
+    "раскраска_изображения": ep.COLORIZE,
     "интерполяция_кадров": ep.INTERPOLATE,
     "удаление_фона": ep.BG_REMOVE,
     "удаление_фона_видео": ep.BG_REMOVE,
@@ -6849,6 +6864,7 @@ def запасной_прогон(
     {
         "реставрация",
         "раскраска",
+        "раскраска_изображения",
         "интерполяция_кадров",
         "удаление_фона",
         "удаление_фона_видео",
@@ -6940,8 +6956,22 @@ def хостинг_вне(узел: "ep.Endpoint | None", юрисдикции: 
     """
     if not юрисдикции or узел is None or not узел.hosting:
         return ""
-    if set(узел.hosting) & set(юрисдикции):
+    ваши = set(юрисдикции)
+    чужие = sorted(set(узел.hosting) - ваши)
+    # ДЕВЯТЫЙ КРУГ: «хоть один регион ваш» — не довод. Вендор, записавший
+    # обслуживание в нескольких юрисдикциях, сам решает, где обработать запрос
+    # (Wan 3.0: Сингапур, Пекин, Токио, Франкфурт, Вирджиния, Гонконг), и
+    # заказчик с «только US-хостинг, Китай нельзя» получал его выбранным.
+    # Годится только закрепление региона, записанное в той же строке (`pins
+    # USA`, `data residency in the EU`).
+    if not чужие or ваши & set(getattr(узел, "hosting_pinned", ()) or ()):
         return ""
+    if set(узел.hosting) & ваши:
+        return (
+            f"хостинг вендора по записи: {', '.join(узел.hosting)} — запрос может уйти в "
+            f"{', '.join(чужие)}, а закрепить регион ({', '.join(sorted(ваши))}) запись не позволяет: "
+            f"{узел.hosting_note}"
+        )
     return (
         f"хостинг/юрисдикция вендора по записи: {', '.join(узел.hosting)} — ни одна не ваша "
         f"({', '.join(юрисдикции)}): {узел.hosting_note}"
@@ -8303,6 +8333,7 @@ def _есть_кириллица(текст: str) -> bool:
     "апскейл_изображения": "image upscale",
     "реставрация": "restore video",
     "раскраска": "colorize video",
+    "раскраска_изображения": "colorize photos",
     "интерполяция_кадров": "frame interpolation",
     "удаление_фона": "background removal (image)",
     "удаление_фона_видео": "background removal (video)",
@@ -8333,6 +8364,7 @@ def _есть_кириллица(текст: str) -> bool:
     "апскейл_изображения": "апскейл кадров",
     "реставрация": "реставрация видео",
     "раскраска": "раскраска видео",
+    "раскраска_изображения": "раскраска снимков",
     "интерполяция_кадров": "интерполяция кадров",
     "удаление_фона": "удаление фона (кадр)",
     "удаление_фона_видео": "удаление фона (видео)",
@@ -8800,6 +8832,7 @@ def дороже_потолка(
         ARTEFACT_UPSCALED_IMAGE,
         ARTEFACT_RESTORED,
         ARTEFACT_COLORIZED,
+        ARTEFACT_COLORIZED_IMAGE,
         ARTEFACT_SMOOTH,
         ARTEFACT_CUTOUT,
         ARTEFACT_VIDEO_CUTOUT,
@@ -11455,6 +11488,18 @@ def plan(
     # поверх текста, `brief_spec.resolve`) — даёт и эхо, и `hardneed.Hard`:
     # свой GPU, цель (quality/balanced/cheapest), юрисдикция и кадр.
     жёсткие = bs.hard(понято, brief, spec, заказанный_кадр, дешевле_всего_заказано(brief))
+    # БЮДЖЕТ 0 — ЭТО МАРШРУТ «СВОЙ GPU», А НЕ ПЛАН API С ВЕРДИКТОМ «ДОРОЖЕ»
+    # (девятый круг). Допущение рецепта `zero_budget_self_host` говорило, что
+    # бесплатный путь — открытые веса, а отбор при этом выбирал API за $0.02 и
+    # отвечал «дороже потолка». Ноль исключает каждый платный вызов, поэтому
+    # отбор идёт по открытым весам на своём GPU; цена такого шага — железо и
+    # время, и она печатается как не измеренная, а не как ноль.
+    if рецепт.free_route and not жёсткие.self_host:
+        жёсткие = replace(
+            жёсткие,
+            self_host=True,
+            sources=tuple(sorted({**dict(жёсткие.sources), "self_host": "бюджет 0"}.items())),
+        )
     юрисдикции = жёсткие.jurisdiction or None
 
     def _кандидаты(op: Operation) -> list[Candidate]:
