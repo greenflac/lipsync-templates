@@ -955,8 +955,12 @@ EN_FRAGMENTS: tuple[tuple[str, str], ...] = (
     (r"\bимя эндпоинта \(", "endpoint name ("),
     (r"шагов выведено (\d+), из них без единого кандидата (\d+): модель по умолчанию не подставляется",
      r"steps derived \1, of them without a single candidate \2: no default model is substituted"),
-    (r"о модели в базе (\d+) утверждений при пороге (\d+): опереть шаг не на что",
+    (r"о модели +в базе (\d+) утверждений при пороге (\d+): опереть шаг не на что",
      r"the base holds \1 statements about the model, the threshold is \2: nothing to rest the step on"),
+    # Интеграция восьмого круга: шаг без кандидата (замена лица на видео) —
+    # оракулы валидатора докладывают, что опереться не на что.
+    (r"база о модели молчит — оракулу не на чем", "the base is silent about the model — nothing for the oracle"),
+    (r"база о модели молчит — расходиться нечему", "the base is silent about the model — nothing to contradict"),
     (r"реестр: работа модели не установлена, а эндпоинты этой работы известны",
      "registry: the model's job is not established, and endpoints of this job are known"),
     (r"реестр эндпоинтов", "endpoint registry"),
@@ -985,6 +989,10 @@ EN_FRAGMENTS: tuple[tuple[str, str], ...] = (
     (r"\bполной цены шага нет\b", "no full price for the step"),
     (r"\bцена шага записана\b", "the step's price is recorded"),
     (r"реестр: делает (.+?) \(([\w-]+)\), а шагу нужна (.+)$", r"registry: does \1 (\2), the step needs \3"),
+    # Интеграция восьмого круга: реестр отсекает эндпоинт по виду ВЫХОДА.
+    (r"НУЖНОГО ВИДА НЕ ОТДАЁТ \(реестр\)", "DOES NOT PRODUCE THE NEEDED KIND (registry)"),
+    (r"(?:реестр: )?выход не того вида: шагу нужно (.+?), а эндпоинт отдаёт (.+?) \(схема\)",
+     r"registry: wrong output kind: the step needs \1, and the endpoint produces \2 (schema)"),
     # --- интеграция шестого круга: что правит шаг «правка видео» (`spec.edit`)
     (
         r"реестр: эндпоинт делает НОВОЕ видео \(продление / по референсу / по движению / черновик\), "

@@ -166,7 +166,13 @@ def run(path: Path = pn.DEFAULT_BRIEFS_PATH) -> dict[str, Any]:
                 for s in итог["steps"]
                 if s.get("chosen")
             ]
-            отсечено = sum(int(s.get("wrong_output_count") or 0) for s in итог["steps"])
+            # Отсечённые РЕЕСТРОМ по виду выхода (`endpoints.output_mismatch`,
+            # интеграция восьмого круга) — то же «нужного вида НЕ отдаёт», только
+            # до списка соседей: картиночный `bria-rmbg-2.0` на шаге видео.
+            отсечено = sum(
+                int(s.get("wrong_output_count") or 0) + int(s.get("registry_wrong_output_count") or 0)
+                for s in итог["steps"]
+            )
             ждали_выход = str(row["expect_output"])
             если_выход = {
                 "подтверждён": lambda: pn.OUT_YES in выходы,
@@ -376,6 +382,9 @@ def run(path: Path = pn.DEFAULT_BRIEFS_PATH) -> dict[str, Any]:
     for c in случаи:
         for s in c["plan"]["steps"]:
             выбран = s["chosen"]
+            # Отсечённые реестром по выходу считаются и там, где кандидата не
+            # осталось вовсе (замена персонажа: только картиночные face-swap).
+            не_тот_выход += int(s.get("registry_wrong_output_count") or 0)
             if выбран is None:
                 continue
             снятых += int(s.get("retired_count") or 0)

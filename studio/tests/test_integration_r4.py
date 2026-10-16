@@ -125,13 +125,18 @@ class СквозныеБрифы(unittest.TestCase):
         итог = pn.plan(
             "replace the face in my 20s video with my character", facts=факты, spec=spec, full=True
         )
-        выбран = итог["steps"][0]["chosen"]
+        шаг = итог["steps"][0]
         # Восьмой круг (валидатор v8, n25): `animate-replace` меняет ВЕСЬ
         # персонаж — это правка видео, не замена лица, и кандидатом шага замены
         # лица больше не бывает. Из эндпоинтов face-swap на API остались
-        # картиночные — план говорит, что видео они не отдают.
-        self.assertNotIn("animate-replace", выбран["model"])
-        self.assertEqual("does NOT produce the needed kind", выбран["out_state"])
+        # картиночные. Интеграция восьмого круга: они видео не отдают, и реестр
+        # их ОТСЕКАЕТ по виду выхода (`endpoints.output_mismatch`) — шаг честно
+        # остаётся без кандидата, а отсечённые названы у шага с причиной.
+        self.assertIsNone(шаг["chosen"])
+        отсечены = {о["model"]: о["why"] for о in шаг["registry_wrong_output"]}
+        self.assertIn("easel-advanced-face-swap", отсечены)
+        self.assertIn("wrong output kind", отсечены["easel-advanced-face-swap"])
+        self.assertEqual(len(отсечены), шаг["registry_wrong_output_count"])
         # Допущение кадра для цены жило на тарифе по кадру `animate-replace`;
         # у картиночных face-swap тарифа по кадру нет — допущения нет.
         # Негативный контроль: названный кадр — без допущения.

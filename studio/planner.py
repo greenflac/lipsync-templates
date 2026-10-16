@@ -1032,6 +1032,10 @@ OUT_ORDER: dict[str, int] = {
     OUT_NO: 2,
 }
 
+#: Строка шага без кандидата: кого реестр отсёк по виду выхода (картиночная
+#: замена лица на шаге, который отдаёт видео). Честная дыра, а не молчание.
+REGISTRY_WRONG_OUTPUT_MARK = "НУЖНОГО ВИДА НЕ ОТДАЁТ (реестр)"
+
 #: Заголовок строки о кандидатах, которыми воспользоваться нельзя.
 #: КОНСТАНТА-РЕШЕНИЕ: одна на обе причины, потому что ось одна, а рядом с ней
 #: печатается ИМЕННО ТА причина, которая сработала.
@@ -7028,6 +7032,7 @@ def реестр_шага(
     неустановленных: int,
     отсеяны_без_работы: Mapping[str, str] | None = None,
     правка: Mapping[str, Any] | None = None,
+    выход_не_тот: Mapping[str, str] | None = None,
 ) -> dict[str, Any]:
     """Что реестр сделал на шаге — счётом и первыми примерами (для строки шага)."""
     if not работы:
@@ -7043,6 +7048,8 @@ def реестр_шага(
         "unclassified_count": неустановленных,
         "unclassified_dropped_count": len(отсеяны_без_работы or {}),
         "unclassified_dropped": list(отсеяны_без_работы or {})[:REGISTRY_SHOWN],
+        "wrong_output_count": len(выход_не_тот or {}),
+        "wrong_output": [{"model": м, "why": п} for м, п in list((выход_не_тот or {}).items())[:REGISTRY_SHOWN]],
     }
 
 
@@ -7174,6 +7181,10 @@ def candidates_for(
     чужая_по_реестру: dict[str, str] = {}
     неустановленные: set[str] = set()
     неустановленные_отсеяны: dict[str, str] = {}
+    #: Отсечены реестром по виду ВЫХОДА (`ep.output_mismatch`): счёт идёт в
+    #: `wrong_output_count` реестра шага — это то же «нужного вида НЕ отдаёт».
+    выход_по_реестру: dict[str, str] = {}
+    виды_выхода = {OUTPUT_KINDS.get(a, a) for a in op.produces}
     # СТРОГО, когда реестр знает хоть один заказываемый эндпоинт работы шага,
     # или шаг заведён только для реестра (`ТОЛЬКО_РЕЕСТР`). Иначе (база, где
     # работу не установил никто, — тестовая или новая) модели старых каналов
@@ -7212,6 +7223,11 @@ def candidates_for(
                     else узел.why_not_orderable
                 )
                 del по_модели[ключ]
+            elif ep.output_mismatch(узел, виды_выхода) and set(узел.functions) & set(работы):
+                # Работа та, вид ВЫХОДА не тот (интеграция восьмого круга):
+                # картиночная замена лица на шаге, который отдаёт видео.
+                выход_по_реестру[написание[ключ]] = "реестр: " + ep.output_mismatch(узел, виды_выхода)
+                del по_модели[ключ]
             elif ep.input_mismatch(узел, op.requires) and set(узел.functions) & set(работы):
                 # Работа та, вид материала не тот (восьмой круг): картиночная
                 # реставрация на реставрации видео.
@@ -7245,7 +7261,6 @@ def candidates_for(
                 *реестр.by_function.get(р, []),
                 *(у for у in реестр.flagged.get(р, []) if not ep.excluded_by_flags(у, requested_flags)),
             ]
-            if not ep.input_mismatch(у, op.requires)
             if (у.orderable and not семья_только_у_себя(у))
             or (hard is not None and hard.self_host and у.self_hostable)
             # Без маршрута, не семья, и реестр работы строго не знает — та же
@@ -7253,6 +7268,13 @@ def candidates_for(
             or (not у.variants and not строгий)
         ]:
             if узел.key in по_модели or not _is_model(узел.model):
+                continue
+            if ep.output_mismatch(узел, виды_выхода):
+                # Вид выхода не тот (интеграция восьмого круга): не кандидат,
+                # но и не молчание — счётом и причиной у шага.
+                выход_по_реестру.setdefault(узел.model, "реестр: " + ep.output_mismatch(узел, виды_выхода))
+                continue
+            if ep.input_mismatch(узел, op.requires):
                 continue
             строки_узла = по_имени.get(узел.key, [])
             опорные = [f for f in строки_узла if f.attribute in REGISTRY_ROW_ATTRIBUTES] or строки_узла[:1]
@@ -7498,6 +7520,7 @@ def candidates_for(
             len(неустановленные),
             неустановленные_отсеяны,
             правка,
+            выход_по_реестру,
         ),
     )
 
@@ -11643,6 +11666,18 @@ def plan(
                 # РЕЕСТР ЭНДПОИНТОВ (пятый круг): работа шага, запасная работа,
                 # кого реестр не пустил (узел семьи, другая работа) — счётом.
                 "registry": getattr(найдено_на_шаг[op.name], "реестр", {}),
+                # ОТСЕЧЕНЫ РЕЕСТРОМ ПО ВИДУ ВЫХОДА (интеграция восьмого круга,
+                # `ep.output_mismatch`): не соседи, поэтому не в
+                # `wrong_output_count`, но это то же «нужного вида НЕ отдаёт» —
+                # и когда кандидата не осталось, причина видна у шага.
+                **(
+                    {
+                        "registry_wrong_output_count": реестр_выход["wrong_output_count"],
+                        "registry_wrong_output": реестр_выход["wrong_output"],
+                    }
+                    if (реестр_выход := getattr(найдено_на_шаг[op.name], "реестр", {})).get("wrong_output_count")
+                    else {}
+                ),
                 **(
                     {"edit": правка_шага}
                     if (правка_шага := getattr(найдено_на_шаг[op.name], "реестр", {}).get("edit"))
@@ -12251,6 +12286,8 @@ def сжать(ответ: dict) -> dict:
                         "too_long_count",
                         "retired_count",
                         "wrong_output_count",
+                        "registry_wrong_output_count",
+                        "registry_wrong_output",
                         "announced_count",
                         "foreign_count",
                         "licence_blocked_count",
@@ -12787,6 +12824,8 @@ def render(итог: dict) -> str:
             строки.append(
                 f"  шаг {s['step']}: КАНДИДАТА НЕТ — база молчит о якорях {', '.join(s.get('anchors') or [])}"
             )
+            for отсечён in s.get("registry_wrong_output") or []:
+                строки.append(f"      {REGISTRY_WRONG_OUTPUT_MARK}: {отсечён['model']} — {отсечён['why']}")
             continue
         строки.append(f"  шаг {s['step']}: {выбран.get('model')} — {выбран.get('mark', '')}")
         # ЧЕМ ВАЛИДАТОР ОТВЕРГ ЭТОТ ШАГ — ПЕРВОЙ СТРОКОЙ ПОД ИМЕНЕМ МОДЕЛИ.
