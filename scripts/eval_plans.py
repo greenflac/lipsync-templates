@@ -84,10 +84,14 @@ STEP_JOB: dict[str, str] = {
 
 #: Job codes a reference may name although no planner operation produces them
 #: today (the reference says what an expert requires; the planner may lack it).
-EXTRA_JOBS = frozenset({"face_swap", "v2a", "captions", "relight", "inpaint_video", "sign_avatar", "3d"})
+EXTRA_JOBS = frozenset(
+    {"face_swap", "v2a", "captions", "relight", "inpaint_video", "sign_avatar", "3d"}
+)
 JOBS = frozenset(STEP_JOB.values()) | EXTRA_JOBS
 
-OUTCOMES = frozenset({"plan", "question", "refuse", "gap", "assembly_only", "over_budget", "plan_failed"})
+OUTCOMES = frozenset(
+    {"plan", "question", "refuse", "gap", "assembly_only", "over_budget", "plan_failed"}
+)
 
 DIMENSIONS = ("decomposition", "models", "price", "notes", "outcome")
 
@@ -168,7 +172,9 @@ def validate(rows: list[dict[str, Any]]) -> list[str]:
             if j not in JOBS:
                 errs.append(f"{rid}: unknown job {j!r} in forbidden/optional")
         band = ref.get("price")
-        if band is not None and not (isinstance(band, list) and len(band) == 2 and band[0] <= band[1]):
+        if band is not None and not (
+            isinstance(band, list) and len(band) == 2 and band[0] <= band[1]
+        ):
             errs.append(f"{rid}: bad price band {band!r}")
         for note in ref.get("notes") or []:
             for rx in note.get("any") or []:
@@ -294,7 +300,9 @@ def native_height(model: str) -> int:
     best = 0
     for text in e.resolutions:
         # Prose such as "1080p max, no 4K" must not read as 4K.
-        clean = re.sub(r"no\s+\d\s*k|not available[^,;]*|4k not available", "", str(text), flags=re.I)
+        clean = re.sub(
+            r"no\s+\d\s*k|not available[^,;]*|4k not available", "", str(text), flags=re.I
+        )
         for m in _RES.finditer(clean):
             if m.group(1):
                 best = max(best, int(m.group(1)))
@@ -314,7 +322,11 @@ def recorded_failure(model: str, term: str) -> bool:
     _registry()
     t = term.lower()
     for f in _FACTS or []:
-        if f.model.lower() == model.lower() and f.attribute in ("failure_mode", "degrades_when", "limitation"):
+        if f.model.lower() == model.lower() and f.attribute in (
+            "failure_mode",
+            "degrades_when",
+            "limitation",
+        ):
             if t in f"{f.value} {f.note}".lower():
                 return True
     return False
@@ -367,6 +379,7 @@ def _match_path(
     used: set[int] = set()
     pos = 0
     misses: list[str] = []
+    overshot: list[str] = []
     model_fails: list[str] = []
     for st in path:
         want = set(_alts(st["job"]))
@@ -381,7 +394,7 @@ def _match_path(
             continue
         used.add(hit)
         if st.get("shots_max") and shots[hit] > int(st["shots_max"]):
-            misses.append(f"{got[hit][0]} x{shots[hit]} (at most {st['shots_max']})")
+            overshot.append(f"{got[hit][0]} x{shots[hit]} (at most {st['shots_max']})")
         if ordered:
             pos = hit + 1
         ok, why = model_ok(got[hit][1], st.get("models"))
@@ -389,17 +402,22 @@ def _match_path(
             model_fails.append(f"{got[hit][0]}: {why}")
     extra = [got[i][0] for i in range(len(got)) if i not in used and got[i][0] not in optional]
     bad = [j for j, _ in got if j in forbidden]
-    deco_ok = not misses and not extra and not bad
-    why = []
+    deco_ok = not misses and not overshot and not extra and not bad
+    reasons: list[str] = []
     if misses:
-        why.append("missing " + ", ".join(misses))
+        reasons.append("missing " + ", ".join(misses))
+    if overshot:
+        reasons.append("too many generations: " + ", ".join(overshot))
     if extra:
-        why.append("extra " + ", ".join(extra))
+        reasons.append("extra " + ", ".join(extra))
     if bad:
-        why.append("forbidden " + ", ".join(bad))
+        reasons.append("forbidden " + ", ".join(bad))
     return {
-        "decomposition": (deco_ok, "; ".join(why)),
-        "models": (not model_fails and not misses, "; ".join(model_fails) or ("step missing" if misses else "")),
+        "decomposition": (deco_ok, "; ".join(reasons)),
+        "models": (
+            not model_fails and not misses,
+            "; ".join(model_fails) or ("step missing" if misses else ""),
+        ),
     }
 
 
@@ -484,8 +502,12 @@ def summarise(results: list[dict[str, Any]]) -> dict[str, Any]:
     c = sum(int(r["correct"]) for r in results)
     return {
         "total": {"n": n, "correct": c, "pct": round(100.0 * c / n, 1) if n else 0.0},
-        "classes": {k: {**v, "pct": round(100.0 * v["correct"] / v["n"], 1)} for k, v in sorted(per.items())},
-        "dimensions": {k: {**v, "pct": round(100.0 * v["ok"] / v["n"], 1)} for k, v in sorted(dims.items())},
+        "classes": {
+            k: {**v, "pct": round(100.0 * v["correct"] / v["n"], 1)} for k, v in sorted(per.items())
+        },
+        "dimensions": {
+            k: {**v, "pct": round(100.0 * v["ok"] / v["n"], 1)} for k, v in sorted(dims.items())
+        },
     }
 
 
@@ -496,7 +518,10 @@ def print_table(summary: dict[str, Any], title: str) -> None:
         print(f"{k:22} {v['n']:>4} {v['correct']:>8} {v['pct']:>6}")
     t = summary["total"]
     print(f"{'TOTAL':22} {t['n']:>4} {t['correct']:>8} {t['pct']:>6}")
-    print("dimension pass rate: " + ", ".join(f"{k} {v['pct']}%" for k, v in summary["dimensions"].items()))
+    print(
+        "dimension pass rate: "
+        + ", ".join(f"{k} {v['pct']}%" for k, v in summary["dimensions"].items())
+    )
 
 
 def check(summary: dict[str, Any], baseline: dict[str, Any]) -> list[str]:
@@ -516,8 +541,12 @@ def check(summary: dict[str, Any], baseline: dict[str, Any]) -> list[str]:
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--briefs", type=Path, default=BRIEFS)
-    ap.add_argument("--report", type=Path, default=Path(tempfile.gettempdir()) / "eval_plans_report.json")
-    ap.add_argument("--check", action="store_true", help="fail on a regression against the baseline")
+    ap.add_argument(
+        "--report", type=Path, default=Path(tempfile.gettempdir()) / "eval_plans_report.json"
+    )
+    ap.add_argument(
+        "--check", action="store_true", help="fail on a regression against the baseline"
+    )
     ap.add_argument("--baseline", type=Path, default=BASELINE)
     ap.add_argument("--write-baseline", action="store_true")
     ap.add_argument("--only", nargs="*", default=None)
@@ -541,7 +570,9 @@ def main(argv: list[str] | None = None) -> int:
 
     if a.write_baseline:
         base = {"briefs": a.briefs.name, "total": summary["total"], "classes": summary["classes"]}
-        a.baseline.write_text(json.dumps(base, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
+        a.baseline.write_text(
+            json.dumps(base, ensure_ascii=False, indent=1) + "\n", encoding="utf-8"
+        )
         print(f"baseline written: {a.baseline}")
     if a.check:
         if not a.baseline.is_file():
