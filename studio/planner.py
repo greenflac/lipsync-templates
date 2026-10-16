@@ -11629,6 +11629,11 @@ def plan(
         if понято.source.get("resolution") in (bs.SOURCE_SPEC, bs.SOURCE_DEFAULT)
         else кадр_из_брифа(brief) or bs.frame(понято)
     )
+    # ПЕЧАТЬ (десятый круг, `studio/recipes/delivery.py`): кадр не назван, а
+    # назван формат печати — заказанный кадр = формат x DPI печати. Названный
+    # кадр (spec.resolution) старше.
+    if заказанный_кадр is None and рецепт.print_frame is not None:
+        заказанный_кадр = рецепт.print_frame[0]
     кадров, клипов, основание_шотов = 1, 1, ""
     # СВОЁ ВИДЕО БЕЗ НАЗВАННОГО КАДРА (интеграция круга 4): тариф по кадру не
     # выбирается молча самым дешёвым (480p) — цена считается по стандарту
@@ -11999,7 +12004,9 @@ def plan(
         return rc.assumption(допущение.id, по_английски)
 
     def _допущение_кадра(имя_шага: str) -> str:
-        return _допущение(rc.frame_prior(имя_шага, просят_кадр, понято))
+        return _допущение(
+            rc.frame_prior(имя_шага, просят_кадр, понято, printed=рецепт.print_frame is not None)
+        )
 
     def _допущение_частоты(имя_шага: str) -> str:
         return _допущение(rc.fps_prior(имя_шага, fps_заказано, понято))

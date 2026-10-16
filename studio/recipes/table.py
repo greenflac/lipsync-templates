@@ -304,6 +304,16 @@ PRIORS_LIST: tuple[Prior, ...] = (
         "субтитры — оживлять обложку не нужно (чтобы оживить, назовите 'animate' в conditions)",
         TAG_ENGINEERING,
     ),
+    Prior(
+        "print_upscale",
+        "a print needs its trim size in pixels at print DPI; where the base does not record the chosen "
+        "generator's largest frame, it is taken as about 2048x2048 (4 MP), so a larger print frame gets an "
+        "upscale as the LAST step",
+        "печати нужен формат в пикселях при печатном DPI; где база не записала наибольший кадр выбранного "
+        "генератора, он принят около 2048x2048 (4 Мп), поэтому кадр печати крупнее получает апскейл ПОСЛЕДНИМ "
+        "шагом",
+        TAG_ENGINEERING,
+    ),
 )
 
 #: Tools and failure checks each prior brings (kept apart from the wording above).
@@ -325,6 +335,7 @@ _PRIOR_TOOLS_FAILURES: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
     "lyrics_alignment": (("captions_burn",), ("lyric_drift",)),
     "audiogram_static_art": (("showwaves", "captions_burn"), ()),
     "mesh_reconstruction": (("mesh_render",), ("unseen_geometry",)),
+    "print_upscale": ((), ("upscale_hallucination",)),
 }
 PRIORS_LIST = tuple(
     Prior(п.id, п.en, п.ru, п.tag, п.sources, *_PRIOR_TOOLS_FAILURES[п.id]) for п in PRIORS_LIST
@@ -414,8 +425,11 @@ RECIPES_LIST: tuple[Recipe, ...] = (
         (
             RecipeStep("генерация_изображения", "model", "always, at the model's native size"),
             RecipeStep("апскейл_изображения", "model", f"asked frame > {T2I_NATIVE_MAX_MP} MP and the base is silent"),
+            RecipeStep(
+                "апскейл_изображения", "model", "a print frame (trim size x DPI) above the generator's native frame"
+            ),
         ),
-        ("t2i_native_max",),
+        ("t2i_native_max", "print_upscale"),
         (),
         ("upscale_hallucination",),
     ),
@@ -754,6 +768,48 @@ NOTES_LIST: tuple[Note, ...] = (
         "3D-модель — это реконструкция «изображение -> 3D» (класс TRELLIS, Hunyuan3D, Tripo) с выгрузкой в GLB; "
         "видео-оборот, если нужен, рендерится из модели (Blender) при сборке, 0 usd — сверьте спину и низ "
         "модели с вашими снимками",
+        TAG_ENGINEERING,
+    ),
+    # --- round 10: delivery conditions (`studio/recipes/delivery.py`) ---------------
+    Note(
+        "print_resolution",
+        "print: pixels = trim size x {dpi} DPI{size} — {frame}; a generator renders 1-4 MP natively, so a smaller "
+        "native frame is upscaled as the last step (a faithful upscaler, not a creative one) and the file is "
+        "delivered at {dpi} DPI in the printer's colour profile (CMYK conversion and bleed at prepress)",
+        "печать: пикселей = формат x {dpi} DPI (точек на дюйм){size} — {frame}; генератор рисует родным кадром "
+        "1-4 Мп, поэтому меньший родной кадр поднимается апскейлом последним шагом (точным, не творческим), "
+        "а файл отдаётся с {dpi} DPI в профиле типографии (перевод в CMYK и вылеты — на допечатке)",
+        TAG_ENGINEERING,
+    ),
+    Note(
+        "deinterlace",
+        "tape or interlaced source: deinterlace FIRST (ffmpeg bwdif or yadif in field mode, QTGMC for the best "
+        "result), crop the head-switching noise at the bottom edge, and only then denoise, restore or upscale — "
+        "restoration and upscale models are trained on progressive frames and turn combing into jagged edges",
+        "плёнка VHS или чересстрочный источник: СНАЧАЛА деинтерлейс (ffmpeg bwdif или yadif по полям, QTGMC для "
+        "лучшего результата), срезать шум переключения головок у нижнего края, и только потом шумодав, "
+        "реставрация или апскейл — модели учились на прогрессивных кадрах и превращают гребёнку в рваные края",
+        TAG_ENGINEERING,
+    ),
+    Note(
+        "eight_k_detail",
+        "8K (7680x4320): no model renders or recovers real 8K detail — the upscaler invents plausible texture "
+        "(hallucinated detail) above what the source holds; real detail stays that of the source. Check faces, "
+        "text and fine patterns at 100 % on the target screen, and keep the native master",
+        "8K (7680x4320): настоящих деталей 8K не рисует и не восстанавливает ни одна модель — апскейл придумывает "
+        "правдоподобную текстуру сверх того, что есть в исходнике, а настоящая детализация остаётся исходной. "
+        "Проверьте лица, текст и мелкие узоры в 100 % на целевом экране и сохраните родной мастер",
+        TAG_ENGINEERING,
+    ),
+    Note(
+        "interp_artifacts",
+        "{fps} fps by interpolation: most frames are invented between real ones, so fast motion, occlusions and "
+        "thin structures (wings, spokes, hair, on-screen text) ghost, warp and morph — check the result frame "
+        "by frame; a source shot at high frame rate is the only artefact-free slow motion",
+        "{fps} кадров/с интерполяцией: большая часть кадров придумана между настоящими, поэтому быстрое движение, "
+        "перекрытия и тонкие детали (крылья, спицы, волосы, текст на экране) дают артефакты — двоение, "
+        "искажение и «плавление»; проверьте результат по кадрам — без артефактов замедление даёт только съёмка "
+        "с высокой частотой",
         TAG_ENGINEERING,
     ),
 )

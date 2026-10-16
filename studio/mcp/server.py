@@ -89,7 +89,7 @@ from typing import Any
 from mcp.server.mcpserver import MCPServer
 
 from studio import brief_spec as bs
-from studio import clarify, knowledge, l10n, planner
+from studio import claims_policy, clarify, knowledge, l10n, planner
 from studio.selfrag.facts import STALE_AFTER_DAYS  # noqa: E402
 from studio import ruwords
 from studio.mcp import (
@@ -1397,6 +1397,14 @@ def plan_pipeline(
         news|real_event + fabricated=true                -> REFUSED
         news|real_event + fabricated=false (true report) -> planned, recorded
         news|real_event, fabricated unknown              -> QUESTION
+    HEALTH AND MONEY CLAIMS IN ADVERTS — also `spec.claims`: {type:
+    health_claim (the product cures/treats/prevents/relieves a disease or
+    condition) | financial_claim (guaranteed returns, profit, "no risk"),
+    substantiated: true|false|"unknown"} — what the CUSTOMER said:
+        substantiated=false -> REFUSED; unknown -> QUESTION (evidence or
+        authorisation, or drop the claim); true -> planned, recorded.
+    Not filled, a cure verb + disease or "guaranteed" + returns in the brief
+    is a QUESTION. The decision is in `claims_policy` on every plan answer.
     Without `spec.people` / `spec.claims` the brief is screened conservatively
     (names, titles, a role with a speech verb; news words with a real event or
     a news brand) and a hit is a QUESTION asking you to fill the field — not a
@@ -1508,6 +1516,11 @@ def _план(
     # РЕАЛЬНЫЕ ЛЮДИ (валидатор 6-го круга): `spec.people` от вызывающей
     # модели — главный признак, текст — запасной (`screen.политика_людей`).
     # Отказ политики сливается с отказом просева и идёт ТЕМ ЖЕ путём.
+    # ЗАЯВЛЕНИЯ О ЗДОРОВЬЕ И ДЕНЬГАХ (десятый круг, `studio.claims_policy`):
+    # их типы в `spec.claims` решает свой модуль, а не просев — просеву
+    # отдаётся spec без них.
+    spec, свои_заявления = claims_policy.split(spec)
+    заявления = claims_policy.decide(свои_заявления, brief)
     люди_spec, spec_плана = screen.люди_из_spec(spec, bs.SPEC_FIELDS)
     просев, политика = screen.просеять_с_людьми(
         brief, люди_spec, просев, screen.события_из_spec(spec)
@@ -1516,6 +1529,13 @@ def _план(
         return _json(
             l10n.localise_payload(
                 _отказ_плана(просев, brief, политика, англ=язык == "en"),
+                язык,
+            )
+        )
+    if заявления["decision"] == claims_policy.DECISION_REFUSE:
+        return _json(
+            l10n.localise_payload(
+                _отказ_заявления(заявления, просев, политика, англ=язык == "en"),
                 язык,
             )
         )
@@ -1554,6 +1574,7 @@ def _план(
     if просев["risks"]:
         итог["note"] = f"{итог.get('note', '')}. {screen.предупреждение(просев['risks'])}"
     итог = вопрос_о_согласии(итог, политика, англ=язык == "en")
+    итог = вопрос_о_заявлении(итог, заявления, англ=язык == "en")
     if не_прочитан:
         итог = _просев_не_читал(итог)
     if пропущено:
@@ -1659,6 +1680,73 @@ def вопрос_о_согласии(итог: dict, политика: Mapping[s
         if англ
         else f"сначала ответьте на вопрос: {строка['text']}"
     ) + (f"; {подсказка}" if подсказка else "")
+    out["note"] = (
+        f"{строка['text']} — the plan below is a draft until this is answered. {out.get('note', '')}"
+        if англ
+        else f"{строка['text']} — план ниже — черновик, пока нет ответа. {out.get('note', '')}"
+    ).strip()
+    return out
+
+
+def _отказ_заявления(заявления: dict, просев: dict, политика: dict, англ: bool) -> dict:
+    """Отказ по политике заявлений (`claims_policy`): неподтверждённое заявление о здоровье или деньгах."""
+    нота = claims_policy.refusal_note(заявления, англ)
+    return {
+        "outcome": FAIL,
+        "checked": int(просев["checked"]) + 1,
+        "violations": 1,
+        "unmeasured": 0,
+        "reason": REASON_BANNED_TOPIC,
+        "risks": просев["risks"],
+        "risky": просев["risky"],
+        "classes": [],
+        "steps": [],
+        "question": None,
+        "people_policy": screen.отчёт_политики(политика),
+        "claims_policy": claims_policy.report(заявления),
+        "note": нота,
+        "summary": f"REFUSED: {нота}" if англ else f"ОТКАЗ: {нота}",
+        "что_дальше": (
+            "remove or rephrase the claim, or bring its substantiation, and call again"
+            if англ
+            else "уберите или переформулируйте заявление либо назовите его подтверждение и спросите снова"
+        ),
+    }
+
+
+def вопрос_о_заявлении(итог: dict, заявления: Mapping[str, Any], англ: bool) -> dict:
+    """Вопрос политики заявлений — в исходе и первой строкой сводки, как вопрос о согласии (Р1).
+
+    `claims_policy` — поле на КАЖДОМ ответе плана. Нарушение (`fail`) старше
+    вопроса: вопрос уходит полем `claims_question`. Вопрос о согласии, если он
+    уже задан, остаётся главным, а этот уходит в `also_question`.
+    """
+    out = dict(итог)
+    out["claims_policy"] = claims_policy.report(dict(заявления))
+    if заявления.get("decision") == claims_policy.DECISION_PLAN:
+        добавка = claims_policy.recorded_note(dict(заявления), англ)
+        if добавка:
+            out["note"] = f"{out.get('note', '')}. {добавка}".lstrip(". ")
+        return out
+    if заявления.get("decision") != claims_policy.DECISION_QUESTION:
+        return out
+    строка = claims_policy.question(dict(заявления), англ)
+    if out.get("outcome") == FAIL:
+        out["claims_question"] = строка
+        return out
+    первая = f"QUESTION: {строка['text']}" if англ else f"ВОПРОС: {строка['text']}"
+    out["summary"] = f"{первая}\n{out.get('summary') or ''}".strip()
+    if out.get("reason") == planner.REASON_NEED_ANSWER and out.get("question"):
+        out["also_question"] = строка
+        return out
+    if out.get("question"):
+        out["also_question"] = out["question"]
+    out["question"] = строка
+    out["outcome"] = UNMEASURED
+    out["reason"] = planner.REASON_NEED_ANSWER
+    out["что_дальше"] = (
+        f"answer the question first: {строка['text']}" if англ else f"сначала ответьте на вопрос: {строка['text']}"
+    )
     out["note"] = (
         f"{строка['text']} — the plan below is a draft until this is answered. {out.get('note', '')}"
         if англ

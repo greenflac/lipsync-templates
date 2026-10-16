@@ -26,6 +26,7 @@ from dataclasses import dataclass, field, replace
 from typing import Callable, Mapping, Sequence
 
 from studio import brief_spec as bs
+from studio.recipes import delivery
 from studio.recipes.table import (
     ASPECT_TOLERANCE,
     FAILURES,
@@ -205,6 +206,8 @@ class Applied:
     assembly: tuple[tuple[str, str], ...] = ()
     #: 0 budget: the plan offers the open-weights route.
     free_route: bool = False
+    #: Round 10: a printed still — ((w, h) at print DPI, size label, dpi); None — not print or no size.
+    print_frame: tuple[tuple[int, int], str, int] | None = None
 
 
 def enabled(spec: "bs.Spec", prior_id: str) -> bool:
@@ -421,6 +424,7 @@ def rewrite(spec: "bs.Spec", route: "bs.Маршрут", text: str = "") -> Appl
         avoid=avoid,
         assembly=tuple(dict.fromkeys(acc.assembly)),
         free_route=free,
+        print_frame=delivery.print_frame(spec, text),
     )
 
 
@@ -438,16 +442,23 @@ def _mp(frame: tuple[int, int]) -> float:
     return frame[0] * frame[1] / 1e6
 
 
-def frame_prior(op_name: str, asked: tuple[int, int] | None, spec: "bs.Spec") -> tuple[Prior, bool] | None:
+def frame_prior(
+    op_name: str, asked: tuple[int, int] | None, spec: "bs.Spec", printed: bool = False
+) -> tuple[Prior, bool] | None:
     """The class prior for a SILENT frame at a generator step: (prior, on) or None.
 
     Only a generator's class has a native maximum; a pass over a brought clip
     (lip sync, edit) carries its input's frame and is not judged here.
+
+    :param printed: the still is a print (round 10, `delivery.print_frame`): a
+        silent generator is taken to render `delivery.PRINT_SILENT_NATIVE_MP`.
     """
     if asked is None:
         return None
     if op_name in IMAGE_GENERATORS and _mp(asked) > T2I_NATIVE_MAX_MP:
         prior = PRIORS["t2i_native_max"]
+    elif printed and op_name in IMAGE_GENERATORS and _mp(asked) > delivery.PRINT_SILENT_NATIVE_MP:
+        prior = PRIORS["print_upscale"]
     elif op_name in VIDEO_GENERATORS and _mp(asked) > T2V_NATIVE_MAX_MP:
         prior = PRIORS["t2v_native_max"]
     else:
@@ -738,7 +749,32 @@ def note_ids(
         out.append(("waveform_layer", {}))
     if "модель_3d" in names:
         out.append(("mesh_route", {}))
+    # Round 10: delivery conditions (`delivery.py`) — one rule per class.
+    if delivery.is_print(spec, text) and names & (FRAME_MAKERS | {"апскейл_изображения"}):
+        out.append(("print_resolution", _print_fields(spec, text)))
+    if delivery.interlaced_source(spec, text) and names:
+        out.append(("deinterlace", {}))
+    if delivery.eight_k(spec) and names:
+        out.append(("eight_k_detail", {}))
+    if delivery.extreme_fps(spec) and names:
+        out.append(("interp_artifacts", {"fps": f"{spec.fps:g}"}))
     return out
+
+
+#: The print note's frame when no trim size is named, per answer language (ru, en).
+PRINT_NO_SIZE = (
+    "назовите формат, чтобы получить пиксели (8x10 дюймов = 2400x3000 px при 300 DPI)",
+    "name the trim size to get the pixels (8x10 in = 2400x3000 px at 300 DPI)",
+)
+
+
+def _print_fields(spec: "bs.Spec", text: str) -> dict[str, str]:
+    """Fields of the print note: dpi, the named size, and the pixel frame it needs ("" = no size named)."""
+    found = delivery.print_frame(spec, text)
+    if found is None:
+        return {"dpi": str(delivery.PRINT_DPI), "size": "", "frame": ""}
+    (w, h), label, dpi = found
+    return {"dpi": str(dpi), "size": f" ({label})", "frame": f"{w}x{h} px"}
 
 
 def notes(
@@ -755,6 +791,8 @@ def notes(
         n = NOTES[nid]
         if "aspect" in fields and not fields["aspect"]:
             fields = {**fields, "aspect": "the new aspect" if english else "новый формат"}
+        if nid == "print_resolution" and not fields["frame"]:
+            fields = {**fields, "frame": PRINT_NO_SIZE[1] if english else PRINT_NO_SIZE[0]}
         rows.append(
             {
                 "id": nid,
