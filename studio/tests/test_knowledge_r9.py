@@ -156,6 +156,21 @@ class ОтвергнутыйПриБюджете(unittest.TestCase):
         self.assertEqual("валидатор отвергнет", pn._поле(c, pn.KEY_FIELDS.index(pn.REFUSED_KEY_FIELD)))
 
 
+class ЗапрещённыйВход(unittest.TestCase):
+    def test_нечем_запустить(self) -> None:
+        строки = [_факт("swap", "requires_inputs", "видео, изображение")]
+        self.assertTrue(pn.нечем_запустить("swap", {"видео"}, строки))
+        self.assertFalse(pn.нечем_запустить("swap", {"видео", "изображение"}, строки))
+
+    def test_звук_принесённого_видео_доступен(self) -> None:
+        строки = [_факт("clone", "requires_inputs", "аудио")]
+        self.assertFalse(pn.нечем_запустить("clone", {"видео"}, строки))
+        self.assertTrue(pn.нечем_запустить("clone", set(), строки))
+
+    def test_без_строк_судить_не_по_чему(self) -> None:
+        self.assertFalse(pn.нечем_запустить("x", set(), []))
+
+
 class ЖивыеЗадачиДевятогоКруга(unittest.TestCase):
     """Пересказ задач, по живой базе: что выбрано и чем это доказано."""
 
