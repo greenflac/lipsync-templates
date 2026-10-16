@@ -129,6 +129,8 @@ SPEC_FIELDS: tuple[str, ...] = (
     # Седьмой круг: двигать ли губы под новую речь (дубляж). Не названо —
     # `lipsync_default`.
     "lipsync",
+    # Восьмой круг: допущения рецептов (`studio/recipes`) — {id: false} выключает.
+    "priors",
 )
 
 SOURCE_SPEC = "spec"
@@ -493,6 +495,9 @@ class Spec:
     edit: tuple[str, ...] = ()
     #: Губы под новую речь (седьмой круг): True/False — сказано; None — `lipsync_default`.
     lipsync: bool | None = None
+    #: Восьмой круг: допущения рецептов, выключенные вызывающим ({id: False});
+    #: не названо — допущение класса заполняет молчание базы (`studio/recipes`).
+    priors: Mapping[str, bool] = field(default_factory=dict)
 
     def has(self, имя: str) -> bool:
         значение = getattr(self, имя)
@@ -884,6 +889,25 @@ def _свой_запуск_spec(sh: Any, поля: dict[str, Any], ошибки:
         поля["self_host"] = {"gpu": gpu, "vram_gb": память.get("vram_gb")}
 
 
+def _допущения_spec(raw: Any, поля: dict[str, Any], ошибки: list[str]) -> None:
+    """`spec.priors`: {id: bool} — id из таблицы рецептов; иначе ошибка с перечнем."""
+    from studio.recipes.table import PRIORS  # таблица — только данные, цикла нет
+
+    if not isinstance(raw, Mapping):
+        ошибки.append("spec.priors: an object {prior_id: false} — e.g. {\"t2v_fps_native\": false}")
+        return
+    годные: dict[str, bool] = {}
+    for ключ, значение in raw.items():
+        if str(ключ) not in PRIORS:
+            ошибки.append(f"spec.priors.{ключ}: unknown prior (known: {', '.join(PRIORS)})")
+        elif not isinstance(значение, bool):
+            ошибки.append(f"spec.priors.{ключ}={значение!r}: must be true or false")
+        else:
+            годные[str(ключ)] = значение
+    if годные:
+        поля["priors"] = годные
+
+
 def parse_spec(raw: Mapping[str, Any] | None) -> tuple[Spec, list[str]]:
     """`spec` вызывающего -> (Spec, ошибки). Ошибка не роняет: поле пропускается и называется."""
     if raw is None:
@@ -1003,6 +1027,8 @@ def parse_spec(raw: Mapping[str, Any] | None) -> tuple[Spec, list[str]]:
             ошибки.append(f"spec.open_weights={raw['open_weights']!r}: must be true or false")
         else:
             поля["open_weights"] = raw["open_weights"]
+    if raw.get("priors") is not None:
+        _допущения_spec(raw["priors"], поля, ошибки)
     if поля.get("per_shot_s") and поля.get("shots") and not поля.get("duration_s"):
         поля["duration_s"] = поля["per_shot_s"] * поля["shots"]
     return Spec(**поля, source={к: SOURCE_SPEC for к in поля}), ошибки
@@ -1587,6 +1613,10 @@ def note_en(ru: str) -> str | None:
     """Пометка маршрута по-английски; None — пометка не наша."""
     if ru in NOTES_EN:
         return NOTES_EN[ru]
+    from studio.recipes.apply import NOTES_EN as RECIPE_NOTES_EN  # рецепты импортируют этот модуль
+
+    if ru in RECIPE_NOTES_EN:
+        return RECIPE_NOTES_EN[ru]
     м = re.fullmatch(NOTE_KEYFRAMES.replace("{n}", r"(\d+)"), ru)
     if м:
         return f"{м.group(1)} characters: a keyframe per shot, otherwise faces drift from shot to shot"
