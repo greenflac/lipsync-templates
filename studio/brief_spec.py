@@ -400,7 +400,7 @@ _КЛАУЗА = re.compile(r"[,;:.!?\n]|\s—\s|\s-\s|\bthen\b|\bзатем\b|\b
 #: работе (`planner.ФУНКЦИЯ_ОПЕРАЦИИ`), а не слова брифа.
 ROUTE_TASKS: dict[str, tuple[tuple[str, str], ...]] = {
     "restore": (("video", "реставрация"),),
-    "colorize": (("video", "раскраска"),),
+    "colorize": (("video", "раскраска"), ("photo", "раскраска_изображения")),
     "interpolate": (("video", "интерполяция_кадров"),),
     "remove-background": (("photo", "удаление_фона"), ("video", "удаление_фона_видео")),
     "transcribe": (("audio", "расшифровка"), ("video", "расшифровка")),
@@ -1641,6 +1641,9 @@ def note_en(ru: str) -> str | None:
 #: она строится референсом и правками по нему. КОНСТАНТЫ-РЕШЕНИЯ.
 SERIES_CHARACTERS_MIN = 1
 SERIES_IMAGES_MIN = 2
+#: Ролик из стольких шотов с одним персонажем строится от одного референса
+#: (кадр персонажа -> оживление), а не независимыми t2v. КОНСТАНТА-РЕШЕНИЕ.
+SERIES_SHOTS_MIN = 2
 
 #: Работа над ВИДЕО заказчика, которая делается одним шагом правки (v2v-edit).
 VIDEO_EDIT_TASKS: frozenset[str] = frozenset({"video-edit"})
@@ -1878,6 +1881,12 @@ def _маршрут_одной(spec: Spec, на_сборке: frozenset[str] = f
         elif (spec.characters or 0) >= MULTI_CHARACTER_MIN:
             шаги += ["генерация_изображения", "оживление"]
             пометки["генерация_изображения"] = NOTE_KEYFRAMES.format(n=spec.characters)
+        elif (spec.characters or 0) >= SERIES_CHARACTERS_MIN and (spec.shots or 0) >= SERIES_SHOTS_MIN:
+            # ОДИН ПЕРСОНАЖ В НЕСКОЛЬКИХ ШОТАХ (девятый круг): «та же женщина в
+            # двух шотах» шла двумя независимыми t2v — и лицо в них было разным.
+            # Референс персонажа делается один раз, шоты оживляются от него.
+            шаги += ["генерация_изображения", "оживление"]
+            пометки["генерация_изображения"] = NOTE_R2V_REF
         else:
             шаги.append("генерация_видео")
     elif "image" in выходы:

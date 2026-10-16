@@ -91,6 +91,9 @@ INTERPOLATE = "frame-interpolate"
 TRANSCRIBE = "transcribe-diarize"
 CAPTIONS = "captions"
 TURNTABLE = "turntable-360"
+#: Девятый круг: 3D-модель по снимкам (TRELLIS, Hunyuan3D, Tripo). Не видео:
+#: выход — сетка (GLB), а видео-оборот из неё рендерит монтаж.
+IMAGE_TO_3D = "image-to-3d"
 
 #: Управляемый словарь работ. Порядок — порядок отчёта покрытия.
 FUNCTIONS: tuple[str, ...] = (
@@ -117,6 +120,7 @@ FUNCTIONS: tuple[str, ...] = (
     TRANSCRIBE,
     CAPTIONS,
     TURNTABLE,
+    IMAGE_TO_3D,
 )
 
 #: Работы, у которых ВЫХОД — видео: им нужна длина прогона (ролик длиннее
@@ -201,6 +205,7 @@ JOB_RULES: tuple[tuple[str, tuple[str, ...]], ...] = (
     (r"speech-to-text|transcri\w*|diariz\w*|scribe|whisper|asr|stt", (TRANSCRIBE,)),
     (r"auto-caption\w*|subtitl\w*", (CAPTIONS,)),
     (r"turntable|orbit|360-?spin|multi-?view|novel-view", (TURNTABLE,)),
+    (r"image-to-3d|img-to-3d|image23d|trellis|hunyuan-?3d|tripo(?:sr|sg)?|rodin|instantmesh|sf3d|spar3d", (IMAGE_TO_3D,)),
 )
 
 #: Звено апскейла: какая из двух работ — решает выход или звено видео/картинки.
@@ -300,6 +305,7 @@ SHAPE_RULES: dict[tuple[frozenset[str], str], str] = {
 #: отсутствие вида среди принимаемых противоречием не считается. Пусто — вид
 #: не проверяется. КОНСТАНТА-РЕШЕНИЕ: сторожит свойство-тест по всему реестру.
 _ВИДЕО, _КАРТИНКА, _ЗВУК, _ТЕКСТ = "видео", "изображение", "аудио", "текст"
+_3D = "3d-модель"
 SIGNATURES: dict[str, tuple[frozenset[str], frozenset[str]]] = {
     T2V: (frozenset({_ТЕКСТ}), frozenset({_ВИДЕО})),
     I2V: (frozenset({_КАРТИНКА, _ТЕКСТ}), frozenset({_ВИДЕО})),
@@ -324,6 +330,7 @@ SIGNATURES: dict[str, tuple[frozenset[str], frozenset[str]]] = {
     TRANSCRIBE: (frozenset({_ЗВУК, _ВИДЕО}), frozenset({_ТЕКСТ})),
     CAPTIONS: (frozenset({_ВИДЕО, _ЗВУК, _ТЕКСТ}), frozenset({_ВИДЕО})),
     TURNTABLE: (frozenset({_КАРТИНКА, _ТЕКСТ}), frozenset({_ВИДЕО})),
+    IMAGE_TO_3D: (frozenset({_КАРТИНКА, _ТЕКСТ}), frozenset({_3D})),
 }
 
 
@@ -480,6 +487,44 @@ ROUTE_HOSTS: dict[str, str] = {
 HOSTING_ATTRIBUTES: frozenset[str] = frozenset(
     {"serving_regions", "data_residency", "hosting_regions", "processing_regions", "data_location"}
 )
+#: МЕСТА ОБСЛУЖИВАНИЯ -> юрисдикция (девятый круг). Строки хостинга называют
+#: не страны, а ГОРОДА и регионы облака («Global: Beijing, Tokyo, Frankfurt,
+#: Virginia, Hong Kong»): `pipeline.jurisdictions_in` (имена стран для
+#: лицензий) не находил в такой строке ничего, и записанный хостинг Wan 3.0
+#: читался как «не записан». КОНСТАНТА-ТАБЛИЦА, список закрытый: незнакомое
+#: место не распознаётся (и юрисдикцией не становится).
+HOSTING_PLACES: dict[str, str] = {
+    "CN": r"\bbeijing\b|\bshanghai\b|\bhangzhou\b|\bshenzhen\b|\bguangzhou\b|\bhong kong\b|\bcn-[a-z]",
+    "SG": r"\bsingapore\b",
+    "JP": r"\btokyo\b|\bosaka\b",
+    "KR": r"\bseoul\b",
+    "IN": r"\bmumbai\b",
+    "UK": r"\blondon\b",
+    "EU": r"\bfrankfurt\b|\bamsterdam\b|\bnetherlands\b|\bireland\b|\bdublin\b|\bparis\b|\bmilan\b"
+    r"|\bstockholm\b|\beu-[a-z]",
+    "US": r"\bvirginia\b|\boregon\b|\bohio\b|\bcalifornia\b|\biowa\b|\bus-(?:east|west|central)",
+}
+#: Как строка хостинга говорит, что регион можно ЗАКРЕПИТЬ за собой («api.us.…
+#: pins USA», «data residency in the EU»): то, что после этих слов, — регион,
+#: в котором запрос остаётся.
+HOSTING_PIN = re.compile(r"\bpins?\s+([^;,.()]+)|data residency (?:in|for) (?:the )?([^;,.()]+)", re.I)
+
+
+def hosting_of(text: str) -> tuple[str, ...]:
+    """Юрисдикции, где строка хостинга обслуживает запросы: страны и места (`HOSTING_PLACES`)."""
+    from studio import pipeline as pl  # как в `build`: модуль импортируется без pipeline
+
+    found = set(pl.jurisdictions_in(text))
+    found |= {j for j, r in HOSTING_PLACES.items() if re.search(r, str(text or ""), re.I)}
+    return tuple(sorted(found))
+
+
+def hosting_pinned_of(text: str) -> tuple[str, ...]:
+    """Юрисдикции, за которыми строка хостинга позволяет ЗАКРЕПИТЬ запрос (`HOSTING_PIN`)."""
+    found: set[str] = set()
+    for m in HOSTING_PIN.finditer(str(text or "")):
+        found |= set(hosting_of(m.group(1) or m.group(2) or ""))
+    return tuple(sorted(found))
 
 #: Хосты страниц весов: маршрут «запустить у себя».
 WEIGHTS_HOSTS: tuple[str, ...] = ("huggingface.co", "github.com", "raw.githubusercontent.com")
@@ -534,6 +579,9 @@ class Endpoint:
     #: модель запущена, молчал — без единой строки об этом.
     hosting: tuple[str, ...] = ()
     hosting_note: str = ""
+    #: Юрисдикции, за которыми запрос можно закрепить (`HOSTING_PIN`); пусто —
+    #: строка хостинга закрепления не называет.
+    hosting_pinned: tuple[str, ...] = ()
     open_weights: str = ""
     vram_gb: float | None = None
     #: ПОМЕТКИ ОТБОРА (`FLAGS`): мёрж сообщества, NSFW, стилевой LoRA. Узел в
@@ -1065,7 +1113,8 @@ def _собрать(facts: Sequence[Fact]) -> Registry:
             territories=tuple(
                 sorted({j for f in территории for j in pl.jurisdictions_in(f.value)})
             ),
-            hosting=tuple(sorted({j for f in хостинг for j in pl.jurisdictions_in(f.value)})),
+            hosting=tuple(sorted({j for f in хостинг for j in hosting_of(f.value)})),
+            hosting_pinned=tuple(sorted({j for f in хостинг for j in hosting_pinned_of(f.value)})),
             hosting_note="; ".join(
                 f"{f.attribute} = «{str(f.value)[:80]}» ({f.source_url})" for f in хостинг[:2]
             ),
@@ -1092,6 +1141,23 @@ def _собрать(facts: Sequence[Fact]) -> Registry:
                 evidence=EVIDENCE_VARIANTS,
                 evidence_note="режимы вариантов: " + ", ".join(узел.variants[:6]),
             )
+    # ТРЕТИЙ ПРОХОД (девятый круг): ХОСТИНГ СЕМЬИ у варианта, который сам о
+    # хостинге молчит и чьи веса закрыты. Закрытую модель запускает только её
+    # вендор: перепродавец (fal, Replicate) передаёт запрос в его API, и запрос
+    # обслуживается там, где записан хостинг семьи. `wan-3.0-t2v` на fal без
+    # этого читался «хостинг не записан», хотя семья `wan-3.0` его записала.
+    for к, узел in list(реестр.by_key.items()):
+        if узел.hosting or узел.self_hostable or not узел.family:
+            continue
+        семья = реестр.by_key.get(fold(узел.family))
+        if семья is None or not семья.hosting or семья.self_hostable:
+            continue
+        реестр.by_key[к] = replace(
+            узел,
+            hosting=семья.hosting,
+            hosting_pinned=семья.hosting_pinned,
+            hosting_note=f"семья {семья.model}: {семья.hosting_note}",
+        )
     for к, узел in list(реестр.by_key.items()):
         пометки = flags_of(узел, по_ключу.get(к, ()))
         if пометки:
@@ -1342,6 +1408,7 @@ JOB_WORDS: dict[str, tuple[str, ...]] = {
     ),
     CAPTIONS: ("captions", "subtitles", "субтитр"),
     TURNTABLE: ("turntable-360", "turntable", "360 spin", "оборот 360"),
+    IMAGE_TO_3D: ("image-to-3d", "3d model", "3d reconstruction", "glb", "3d-модель"),
 }
 
 #: ШИРОКИЕ СЛОВА: называют не одну работу, а несколько. Как `function` они
