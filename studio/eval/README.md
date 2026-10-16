@@ -119,15 +119,14 @@ planner.
 ## How the references were validated
 
 - **Second pass, adversarial: 20 briefs re-derived from the fact base.** The sample was w15, w23,
-  n11, n13, n30, x05, x07, x08, x17, x36, w09, n28, sh04, sh01, e02, b06, l06, d04, i03 and b02.
-  Each reference was re-derived by re-reading `model_facts.jsonl`, with the aim of breaking it.
-  Items 1–7 and 9 below are disagreements, each fixed in the reference. Items 8 and 10 are
-  confirmations:
+  n30, x05, x07, x08, x17, x36, w09, n28, sh04, sh01, e02, b06, d04, i03 and b02, plus 3 holdout
+  briefs whose ids are withheld here. Each reference was re-derived by re-reading
+  `model_facts.jsonl`, with the aim of breaking it. Items 1–7 and 9 below are disagreements, each
+  fixed in the reference. Items 8 and 10 are confirmations:
   1. The fal `seedvr2-upscale-video` endpoint caps at 2160p (`max_resolution`). The 8K upscaler
      set is now self-hosted SeedVR2 or Topaz. The ByteDance upscaler's tiers stop at 4K.
-  2. `chatterbox` has a vendor `languages` row listing 23 languages including Russian, so it was
-     wrongly excluded as English-only. CosyVoice**2** has no Russian (paper row) and CosyVoice3
-     does, so the set was narrowed to CosyVoice3.
+  2. The shared list of English-only TTS models wrongly included `chatterbox`: a vendor
+     `languages` row lists 23 languages for it.
   3. LTX-2.5 is open weights under the LTX-2.x community licence (vendor row). The registry flag
      on the `ltx-2.5-t2v-fast` endpoint said otherwise. Curated open-family regexes replaced the
      registry `open_weights` flag.
@@ -140,15 +139,14 @@ planner.
      the probe failure.
   7. MMAudio v2 *is* in the base ($0.001/s, video+text in), so the V2A briefs are a planner
      registry gap, not a knowledge gap. The tags were removed.
-  8. Eleven v3's vendor list includes kk, sw, yo, bn and th, which confirmed w09. d06 lost its
-     gap tag.
+  8. Eleven v3's vendor list includes kk, sw, yo, bn and th, which confirmed w09.
   9. b02: the base's cheapest priced t2i is $0.02/image, so 1000 images under $10 rests on
      knowledge the base lacks. The brief is tagged `knowledge_gap`.
   10. e02 was confirmed: `wan-2.7-edit-video` is a 2–10 s edit model, not an extender.
 
   w15 and w23 were also confirmed. ByteDance stops at 4K. `topaz-restore-image`'s Dust-Scratch
-  model is image-only, so scratch removal for video stays a knowledge gap. n13, n28, d04, i03,
-  b06, x36, sh01 and x05 were confirmed as well, some with no fact row either way. Fixes 3 and 5
+  model is image-only, so scratch removal for video stays a knowledge gap. n28, d04, i03, b06,
+  x36, sh01 and x05 were confirmed as well, some with no fact row either way. Fixes 3 and 5
   also changed briefs outside the sample that use the same model sets.
 - **Negative control on notes.** Every note regex was run over the answers whose reference does
   not ask for it. On the first draft, which searched the serialised JSON, key names satisfied
