@@ -10830,6 +10830,7 @@ def только_монтаж(
     по_английски: bool,
     creative: str,
     бюджет: "Budget",
+    заметки: Sequence[Mapping[str, Any]] = (),
 ) -> dict:
     """План БЕЗ модели: работа целиком монтажная (стабилизация без эндпоинта). Цена 0.
 
@@ -10896,6 +10897,7 @@ def только_монтаж(
             "за_ролик": {"usd": 0.0},
         },
         "validator": None,
+        "production_notes": [dict(з) for з in заметки],
         "что_дальше": (
             "run the assembly named in `assembly.why`; no generation is needed"
             if по_английски
@@ -11223,10 +11225,19 @@ def plan(
     # маршрут допущениями инженера — образец голоса -> клон, своё видео ->
     # липсинк на нём, логотип -> финальная карточка, один ведущий -> один
     # референс; каждое применённое допущение печатается и выключается spec.priors.
-    рецепт = rc.rewrite(понято, маршрут) if маршрутом else rc.Applied(route=маршрут)
+    рецепт = rc.rewrite(понято, маршрут, текст) if маршрутом else rc.Applied(route=маршрут)
     маршрут = рецепт.route
     if not маршрут.шаги and маршрут.сборка:
-        return только_монтаж(маршрут, bs.with_defaults(понято, ролик=True), текст, по_английски, creative, бюджет)
+        понято_монтажа = bs.with_defaults(понято, ролик=True)
+        return только_монтаж(
+            маршрут,
+            понято_монтажа,
+            текст,
+            по_английски,
+            creative,
+            бюджет,
+            заметки=rc.notes(понято_монтажа, (), по_английски, text=текст, applied=рецепт),
+        )
     if маршрут.шаги:
         # МАРШРУТ ПО СТРУКТУРЕ: шаги — из того, ЧТО заказано и ИЗ ЧЕГО, а не из
         # подсказок. Замыкание по нехватке — то же, но без чтения брифа
@@ -12156,6 +12167,11 @@ def plan(
         "resolution_carry": пронесено[0],
         "frame_rate": {"asked": fps_заказано, "note": частота[0]} if fps_заказано else None,
         "recipe": строка_рецепта,
+        # ЗАМЕТКИ ПРОИЗВОДСТВА (девятый круг, `studio/recipes`): что инженер
+        # говорит рядом с шагами — лицензия, маска, кадрирование, маркировка.
+        "production_notes": rc.notes(
+            понято, [оп.name for оп, _ in выбор], по_английски, text=текст, applied=рецепт
+        ),
         "native_audio_variant": со_звуком,
         "classes": list(отчёт["classes"]),
         "validator": отчёт,
@@ -12382,6 +12398,7 @@ def сжать(ответ: dict) -> dict:
         "resolution_carry": ответ.get("resolution_carry"),
         "frame_rate": ответ.get("frame_rate"),
         "recipe": ответ.get("recipe"),
+        "production_notes": ответ.get("production_notes") or [],
         "native_audio_variant": вариант,
         "classes": ответ.get("classes"),
         "validator": {

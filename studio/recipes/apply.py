@@ -27,7 +27,11 @@ from typing import Callable, Mapping, Sequence
 
 from studio import brief_spec as bs
 from studio.recipes.table import (
+    ASPECT_TOLERANCE,
     FAILURES,
+    LONG_FORM_S,
+    NATIVE_ASPECTS,
+    NOTES,
     PRIORS,
     RECIPES,
     SINGLE_HOST_REFERENCES,
@@ -68,6 +72,31 @@ BLUR = re.compile(r"blur|расфокус|размыт|смаз", re.I)
 DEBLUR_MODELS = r"deblur|sharpen"
 #: The planner's name of the video artefact (`planner.ARTEFACT_VIDEO`).
 ARTEFACT_VIDEO = "видео"
+#: A transparent background asked for — in `spec.conditions` or, as a delivery
+#: format, in the brief's own words (the format is not a spec field: «transparent
+#: background for our website» is what the customer says, and a caller filling
+#: the spec has nowhere else to put it).
+ALPHA = re.compile(
+    r"transparen|\balpha[- ]?channel|\bwith alpha\b|\bwebm\b|prores ?4444|прозрачн|альфа-?канал", re.I
+)
+#: The customer asks to animate the brought art itself (a visualiser, not an audiogram).
+ANIMATE_ART = re.compile(r"animat|motion|move|оживи|оживл|анимир|движени", re.I)
+#: Exact text named in `spec.conditions` (besides a logo): a wordmark, a headline, lettering.
+TEXT_EXACT = re.compile(r"\btext\b|lettering|typograph|headline|wordmark|надпис|текст", re.I)
+#: Edits of the customer's footage that are a mask and a composite (`spec.edit`).
+MASK_EDITS: frozenset[str] = frozenset({"remove-object", "replace-object", "replace-sky"})
+#: Speech-driven video steps: a long one is made in segments.
+SPEECH_VIDEO_STEPS: frozenset[str] = frozenset({"говорящий_аватар", "липсинк"})
+#: Steps that move lips on footage with several faces.
+LIP_STEPS: frozenset[str] = frozenset({"липсинк"})
+#: Steps whose output is speech in a language (a regional variety matters there).
+SPEECH_STEPS: frozenset[str] = frozenset(
+    {"озвучка", "дубляж", "клонирование_голоса", "говорящий_аватар", "видео_со_звуком"}
+)
+#: Steps that make a generated frame (an aspect outside the native set is a crop).
+FRAME_MAKERS: frozenset[str] = IMAGE_GENERATORS | VIDEO_GENERATORS | {"оборот_360"}
+#: Tasks whose deliverable carries captions burned in at assembly.
+CAPTION_TASKS: frozenset[str | None] = frozenset({"cut-to-shorts", "captions"})
 
 NOTE_CLONE = (
     "голос — клон по ВАШЕЙ записи: текст читается этим голосом",
@@ -92,6 +121,18 @@ NOTE_V2A = (
 NOTE_ONE_REFERENCE = (
     f"{SINGLE_HOST_REFERENCES} референс ведущего на все ролики",
     f"{SINGLE_HOST_REFERENCES} reference of the host for every short",
+)
+NOTE_MATTE = (
+    "фон снимается в каждом кадре в альфа-канал (видео-маттинг) — на выходе прозрачность",
+    "the background is removed per frame to an alpha channel (video matting) — the output is transparent",
+)
+NOTE_LYRICS = (
+    "вокал ВАШЕГО трека расшифровывается с метками слов — по ним выравнивается текст песни",
+    "the vocals of YOUR track are transcribed with word timestamps — the lyrics are aligned to them",
+)
+NOTE_AUDIOGRAM_CAPTIONS = (
+    "расшифровка ВАШЕЙ записи с таймингами — для субтитров аудиограммы",
+    "timed transcript of YOUR recording — for the audiogram's captions",
 )
 
 ASSEMBLY_LOGO = (
@@ -123,6 +164,18 @@ ASSEMBLY_FILM = (
 ASSEMBLY_EXTRACT = (
     "образец голоса вынимается из ВАШЕГО видео (ffmpeg -vn) — 0 usd",
     "the voice sample is taken out of YOUR video (ffmpeg -vn) — 0 usd",
+)
+ASSEMBLY_ALPHA = (
+    "ролик с альфа-каналом кодируется в WebM (VP9 с альфой) для сайта или ProRes 4444 для монтажа — 0 usd",
+    "the matted clip is encoded with alpha: WebM (VP9 alpha) for the web or ProRes 4444 for editing — 0 usd",
+)
+ASSEMBLY_LYRICS = (
+    "строки текста ставятся по меткам слов и анимируются типографикой (ffmpeg / After Effects) — 0 usd",
+    "the lyric lines are placed on the word timestamps and animated as typography (ffmpeg / After Effects) — 0 usd",
+)
+ASSEMBLY_AUDIOGRAM = (
+    "волна звука (ffmpeg showwaves) и субтитры ложатся поверх ВАШЕЙ обложки — 0 usd",
+    "the waveform (ffmpeg showwaves) and the captions are laid over YOUR cover art — 0 usd",
 )
 
 
@@ -181,8 +234,17 @@ def _replace_step(steps: list[str], old: str, new: str) -> list[str]:
     return list(dict.fromkeys(new if s == old else s for s in steps))
 
 
-def rewrite(spec: "bs.Spec", route: "bs.Маршрут") -> Applied:
-    """Recipes of the job classes this spec belongs to, applied to its route."""
+def wants_alpha(spec: "bs.Spec", text: str = "") -> bool:
+    """A transparent background asked for: `spec.conditions`, or the brief's own words."""
+    return any(ALPHA.search(str(у)) for у in (*spec.conditions, text))
+
+
+def rewrite(spec: "bs.Spec", route: "bs.Маршрут", text: str = "") -> Applied:
+    """Recipes of the job classes this spec belongs to, applied to its route.
+
+    :param text: the brief's words — read ONLY for a delivery format the spec has
+        no field for (a transparent background); every other decision is spec's.
+    """
     acc = _Acc(spec)
     steps = list(route.шаги)
     notes = dict(route.пометки)
@@ -263,6 +325,46 @@ def rewrite(spec: "bs.Spec", route: "bs.Маршрут") -> Applied:
             acc.assembly.append(ASSEMBLY_FILM)
         if len(set(steps) & set(CHAIN_RANK)) >= 2:
             acc.prior("archive_restoration", "restore_colourise_upscale_order")
+
+    # --- music visualiser: audiogram over brought art, lyrics -----------------------
+    # Round 9. A visualiser over the customer's own cover art (an audiogram) is
+    # assembly: the waveform and the captions move, the art does not — the route
+    # animated the art (image-to-video, ~$2.7 for 45 s) for what ffmpeg showwaves
+    # does at 0 usd. Animating the art stays one condition away.
+    if (
+        spec.task == "music-visualiser"
+        and "photo" in inputs
+        and "оживление" in steps
+        and not any(ANIMATE_ART.search(у) or SCENES.search(у) for у in spec.conditions)
+    ):
+        if acc.prior("audiogram", "audiogram_static_art"):
+            steps = [s for s in steps if s != "оживление"]
+            notes.pop("оживление", None)
+            if spec.language_tags and "расшифровка" not in steps:
+                steps = ["расшифровка", *steps]
+                notes["расшифровка"] = NOTE_AUDIOGRAM_CAPTIONS[0]
+            acc.assembly.append(ASSEMBLY_AUDIOGRAM)
+    # A lyric video: the customer's words (a text input) are timed to the vocals.
+    if spec.task == "music-visualiser" and "script" in inputs and "audio" in inputs and "расшифровка" not in steps:
+        if acc.prior("lyric_video", "lyrics_alignment"):
+            steps = ["расшифровка", *steps]
+            notes["расшифровка"] = NOTE_LYRICS[0]
+            acc.assembly.append(ASSEMBLY_LYRICS)
+
+    # --- transparent background ---------------------------------------------------
+    # Round 9. No generator renders alpha: «transparent background for our
+    # website» got one image-to-video step and an opaque MP4.
+    if (
+        "video" in outputs
+        and wants_alpha(spec, text)
+        and "удаление_фона_видео" not in steps
+        and any(s in VIDEO_GENERATORS for s in steps)
+    ):
+        if acc.prior("alpha_delivery", "alpha_matte"):
+            maker = max(i for i, s in enumerate(steps) if s in VIDEO_GENERATORS)
+            steps = [*steps[: maker + 1], "удаление_фона_видео", *steps[maker + 1 :]]
+            notes["удаление_фона_видео"] = NOTE_MATTE[0]
+            acc.assembly.append(ASSEMBLY_ALPHA)
 
     # --- beat-reactive visualiser -----------------------------------------------
     if spec.task == "music-visualiser" and not any(SCENES.search(у) for у in spec.conditions):
@@ -503,5 +605,139 @@ def assumption(prior_id: str, english: bool) -> str:
 
 #: Route notes of the recipes, Russian -> English (`brief_spec.note_en`).
 NOTES_EN: dict[str, str] = dict(
-    (NOTE_CLONE, NOTE_OWN_LIPSYNC, NOTE_ENDCARD_FOOTAGE, NOTE_LOOPS, NOTE_V2A, NOTE_ONE_REFERENCE)
+    (
+        NOTE_CLONE,
+        NOTE_OWN_LIPSYNC,
+        NOTE_ENDCARD_FOOTAGE,
+        NOTE_LOOPS,
+        NOTE_V2A,
+        NOTE_ONE_REFERENCE,
+        NOTE_MATTE,
+        NOTE_LYRICS,
+        NOTE_AUDIOGRAM_CAPTIONS,
+    )
 )
+
+
+# --- production notes (round 9) --------------------------------------------------------
+
+
+def _ratio(aspect: str | None) -> float | None:
+    """W:H as a number: «2.39:1» -> 2.39, «16:9» -> 1.78; None when unreadable."""
+    m = re.fullmatch(r"\s*(\d+(?:\.\d+)?)\s*[:x/]\s*(\d+(?:\.\d+)?)\s*", str(aspect or ""))
+    if not m or float(m.group(2)) == 0:
+        return None
+    return float(m.group(1)) / float(m.group(2))
+
+
+def native_aspect(aspect: str | None) -> bool | None:
+    """Is the ordered aspect one a generator renders natively? None — no aspect or unreadable."""
+    r = _ratio(aspect)
+    if r is None:
+        return None
+    return any(abs(r - n) / n <= ASPECT_TOLERANCE for n in NATIVE_ASPECTS)
+
+
+def _photo_count(spec: "bs.Spec") -> int:
+    """How many images the customer brought (an image input without a count is one)."""
+    return sum(int(з.get("count") or 1) for з in spec.input_items if з.get("kind") == "photo")
+
+
+def _speakers(spec: "bs.Spec") -> int:
+    return max(len(spec.people), spec.characters or 0)
+
+
+def _regional_tags(spec: "bs.Spec") -> list[str]:
+    """Language tags that name a region (`ar-EG`, `pt-BR`, `es-419`): a variety, not only a language."""
+    out = []
+    for тег in spec.language_tags:
+        части = str(тег).split("-")
+        if len(части) >= 2 and re.fullmatch(r"[A-Za-z]{2}|\d{3}", части[1]):
+            out.append(str(тег))
+    return out
+
+
+def note_ids(
+    spec: "bs.Spec",
+    steps: Sequence[str],
+    *,
+    text: str = "",
+    applied: "Applied | None" = None,
+) -> list[tuple[str, dict[str, str]]]:
+    """Which production notes this plan carries, with the fields of their wording.
+
+    One rule per job class or condition — never per brief. `steps` are the plan's
+    final operation names (an assembly-only plan has none).
+    """
+    names = set(steps)
+    inputs = set(spec.inputs)
+    outputs = set(spec.outputs)
+    priors = set(applied.priors) if applied is not None else set()
+    seconds = spec.duration_s or bs.source_seconds(spec)
+    out: list[tuple[str, dict[str, str]]] = []
+    if "музыка" in names:
+        out.append(("music_licence", {}))
+    if spec.open_weights or spec.self_host:
+        out.append(("weights_licence", {}))
+    if any(з.get("kind") == "audio" and з.get("owned") is False for з in spec.input_items):
+        out.append(("song_rights", {}))
+    if names & SPEECH_VIDEO_STEPS and seconds and seconds > LONG_FORM_S:
+        out.append(("long_form_segmented", {"seconds": f"{seconds:g}"}))
+    if set(spec.edit) & MASK_EDITS:
+        out.append(("mask_composite", {}))
+    if "reframe" in spec.edit:
+        out.append(("crop_track", {"aspect": str(spec.aspect or "")}))
+    if names & FRAME_MAKERS and native_aspect(spec.aspect) is False:
+        r = _ratio(spec.aspect) or 1.0
+        out.append(("aspect_crop", {"aspect": str(spec.aspect), "native": "16:9" if r >= 1 else "9:16"}))
+    if "EU" in spec.jurisdiction and names:
+        out.append(("ai_act_label", {}))
+    if names & LIP_STEPS and _speakers(spec) >= 2:
+        out.append(("multi_speaker", {"speakers": str(_speakers(spec))}))
+    if (
+        any(LOGO.search(у) or TEXT_EXACT.search(у) for у in spec.conditions)
+        and not priors & {"logo_overlay", "logo_image_is_endcard"}
+    ):
+        out.append(("logo_text_composited", {}))
+    if "оборот_360" in names and _photo_count(spec) <= 1:
+        out.append(("unseen_side", {}))
+    if spec.task in CAPTION_TASKS and ("text" in outputs or spec.task == "captions"):
+        out.append(("captions_burned", {}))
+    if names & SPEECH_STEPS and (теги := _regional_tags(spec)):
+        out.append(("regional_variety", {"tags": ", ".join(теги)}))
+    if "lyrics_alignment" in priors:
+        out.append(("lyric_alignment", {}))
+    if "alpha_matte" in priors or ("video" in outputs and wants_alpha(spec, text)):
+        out.append(("alpha_delivery", {}))
+    if applied is not None and applied.free_route:
+        out.append(("self_host_route", {}))
+    if "audiogram_static_art" in priors:
+        out.append(("waveform_layer", {}))
+    if "модель_3d" in names:
+        out.append(("mesh_route", {}))
+    return out
+
+
+def notes(
+    spec: "bs.Spec",
+    steps: Sequence[str],
+    english: bool,
+    *,
+    text: str = "",
+    applied: "Applied | None" = None,
+) -> list[dict]:
+    """The plan's `production_notes` rows in the answer's language."""
+    rows: list[dict] = []
+    for nid, fields in note_ids(spec, steps, text=text, applied=applied):
+        n = NOTES[nid]
+        if "aspect" in fields and not fields["aspect"]:
+            fields = {**fields, "aspect": "the new aspect" if english else "новый формат"}
+        rows.append(
+            {
+                "id": nid,
+                "says": (n.en if english else n.ru).format(**fields),
+                "tag": n.tag if english else TAG_RU[n.tag],
+                "sources": [{"model": s.model, "attribute": s.attribute, "url": s.url} for s in n.sources],
+            }
+        )
+    return rows

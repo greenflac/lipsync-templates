@@ -9,9 +9,13 @@ from studio.recipes.apply import (  # noqa: F401
     enabled,
     fps_prior,
     frame_prior,
+    native_aspect,
+    note_ids,
+    notes,
     order,
     requirement_frame,
     rewrite,
     unmet,
+    wants_alpha,
 )
-from studio.recipes.table import FAILURES, PRIORS, RECIPES, TOOLS  # noqa: F401
+from studio.recipes.table import FAILURES, NOTES, PRIORS, RECIPES, TOOLS  # noqa: F401

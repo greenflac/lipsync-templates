@@ -30,10 +30,13 @@ from dataclasses import dataclass
 TAG_ENGINEERING = "engineering prior"
 #: Tag of a prior generalised from recorded rows of this base (cited in `sources`).
 TAG_BASE_ROWS = "class prior from base rows"
+#: Tag of a production note that rests on a law or regulation (cited in `sources`).
+TAG_REGULATION = "regulation"
 #: The tags in Russian (a Russian answer carries no English three-word phrase).
 TAG_RU: dict[str, str] = {
     TAG_ENGINEERING: "инженерное допущение",
     TAG_BASE_ROWS: "допущение класса по строкам базы",
+    TAG_REGULATION: "норма права",
 }
 
 # --- decision constants ---------------------------------------------------------
@@ -55,6 +58,17 @@ VISUALISER_LOOP_CLIPS = 4
 VISUALISER_LOOP_CLIP_S = 8
 #: One recurring host across N shorts: how many reference images are made.
 SINGLE_HOST_REFERENCES = 1
+#: Speech-driven video (talking avatar, lip sync) longer than this many seconds
+#: is made in segments and joined at assembly: avatar and lip-sync endpoints cap
+#: one run at seconds to a few minutes (engineering prior; a recorded run limit
+#: of the chosen model is printed per step and wins).
+LONG_FORM_S = 180
+#: Frame aspects video and image generators offer natively (W:H as a ratio).
+#: Any other ordered aspect (2.39:1, 1.85:1, 4:1 banners) is generated at the
+#: nearest native one and cropped or letterboxed at assembly.
+NATIVE_ASPECTS: tuple[float, ...] = (16 / 9, 9 / 16, 1.0, 4 / 3, 3 / 4, 3 / 2, 2 / 3, 4 / 5, 5 / 4, 21 / 9, 9 / 21)
+#: How far (relative) an ordered aspect may be from a native one and still count as it.
+ASPECT_TOLERANCE = 0.02
 
 
 @dataclass(frozen=True)
@@ -258,6 +272,30 @@ PRIORS_LIST: tuple[Prior, ...] = (
         "каждый (лицо разъезжалось бы между ними)",
         TAG_ENGINEERING,
     ),
+    Prior(
+        "alpha_matte",
+        "a transparent background is not something a generator renders: the clip is generated on a plain "
+        "background and the background is removed per frame (video matting) to an alpha channel",
+        "прозрачный фон генератор не рисует: ролик генерируется на ровном фоне, а фон снимается в каждом кадре "
+        "(видео-маттинг) в альфа-канал",
+        TAG_ENGINEERING,
+    ),
+    Prior(
+        "lyrics_alignment",
+        "a lyric video needs the time of every sung word: the vocals are transcribed with word timestamps and "
+        "YOUR lyrics are aligned to them (forced alignment) before the typography is animated",
+        "клипу со словами нужно время каждого спетого слова: вокал расшифровывается с метками слов, и ВАШ текст "
+        "выравнивается по ним до анимации типографики",
+        TAG_ENGINEERING,
+    ),
+    Prior(
+        "audiogram_static_art",
+        "an audiogram over YOUR cover art is assembly: the art stays still, the waveform (ffmpeg showwaves) and "
+        "the captions move — animating the art is not needed (name 'animate' in conditions to animate it)",
+        "аудиограмма поверх ВАШЕЙ обложки — это сборка: обложка неподвижна, движутся волна (ffmpeg showwaves) и "
+        "субтитры — оживлять обложку не нужно (чтобы оживить, назовите 'animate' в conditions)",
+        TAG_ENGINEERING,
+    ),
 )
 
 #: Tools and failure checks each prior brings (kept apart from the wording above).
@@ -275,6 +313,9 @@ _PRIOR_TOOLS_FAILURES: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
     "voice_sample_clone": ((), ("clone_accent",)),
     "own_video_likeness": (("extract_audio",), ("clone_accent", "own_footage_occlusion")),
     "single_reference": ((), ("reference_drift",)),
+    "alpha_matte": (("alpha_encode",), ("matte_edge",)),
+    "lyrics_alignment": (("captions_burn",), ("lyric_drift",)),
+    "audiogram_static_art": (("showwaves", "captions_burn"), ()),
 }
 PRIORS_LIST = tuple(
     Prior(п.id, п.en, п.ru, п.tag, п.sources, *_PRIOR_TOOLS_FAILURES[п.id]) for п in PRIORS_LIST
@@ -305,6 +346,8 @@ TOOLS_LIST: tuple[Tool, ...] = (
          "убрать пыль и вертикальные царапины по кадрам"),
     Tool("extract_audio", "ffmpeg -vn", "take the voice sample out of the customer's video",
          "вынуть образец голоса из видео заказчика"),
+    Tool("alpha_encode", "ffmpeg libvpx-vp9 / prores_ks", "encode the matted clip with alpha (WebM VP9 or ProRes 4444)",
+         "закодировать ролик с альфа-каналом (WebM VP9 или ProRes 4444)"),
 )
 
 TOOLS: dict[str, Tool] = {т.id: т for т in TOOLS_LIST}
@@ -340,6 +383,10 @@ FAILURES_LIST: tuple[Failure, ...] = (
             "same reference file on every short", "один и тот же файл референса на каждом ролике"),
     Failure("self_host_vram", "open weights do not fit the free GPU", "открытые веса не помещаются в бесплатный GPU",
             "check VRAM of the weights against the card", "сверить память весов с картой"),
+    Failure("matte_edge", "the matte edge fringes or flickers (hair, motion blur)", "край маски с ореолом или мерцает (волосы, смаз)",
+            "play the alpha over black and over white", "посмотреть альфу на чёрном и на белом фоне"),
+    Failure("lyric_drift", "lyric lines drift off the sung words", "строки текста уезжают от спетых слов",
+            "check the first word of every line against the vocal", "сверить первое слово каждой строки с вокалом"),
 )
 
 FAILURES: dict[str, Failure] = {ф.id: ф for ф in FAILURES_LIST}
@@ -454,6 +501,236 @@ RECIPES_LIST: tuple[Recipe, ...] = (
         (),
         ("reference_drift",),
     ),
+    Recipe(
+        "alpha_delivery",
+        "a clip with a transparent background",
+        (
+            RecipeStep("оживление", "model", "the clip on a plain background"),
+            RecipeStep("удаление_фона_видео", "model", "video matting to an alpha channel"),
+            RecipeStep("alpha_encode", "tool", "WebM VP9 alpha / ProRes 4444"),
+        ),
+        ("alpha_matte",),
+        ("alpha_encode",),
+        ("matte_edge",),
+    ),
+    Recipe(
+        "lyric_video",
+        "lyrics animated to the customer's song",
+        (
+            RecipeStep("расшифровка", "model", "word timestamps of the vocals"),
+            RecipeStep("captions_burn", "tool", "the aligned lyrics rendered as typography"),
+        ),
+        ("lyrics_alignment",),
+        ("captions_burn",),
+        ("lyric_drift",),
+    ),
+    Recipe(
+        "audiogram",
+        "waveform and captions over the customer's cover art",
+        (
+            RecipeStep("расшифровка", "model", "captions, when a language is named"),
+            RecipeStep("showwaves", "tool", "the waveform layer"),
+        ),
+        ("audiogram_static_art",),
+        ("showwaves", "captions_burn"),
+        (),
+    ),
 )
 
 RECIPES: dict[str, Recipe] = {р.id: р for р in RECIPES_LIST}
+
+# --- production notes (round 9) -----------------------------------------------------
+#
+# WHY. A recipe prior CHANGES the plan where the base is silent; a production note
+# changes nothing in the steps but says what a senior engineer says next to them:
+# whose licence decides commercial use, that a removal is a mask and a composite,
+# that 2.39:1 is a crop, that an EU publication is labelled. The round-9 expert
+# set measured notes as the weakest dimension (22 of 44 missing): the plan was
+# right and silent. Each note has its trigger in `apply.notes` (one rule per job
+# class or condition, never per brief), its wording in both answer languages, and
+# a tag: `engineering prior`, or `regulation` with the text it rests on.
+
+
+@dataclass(frozen=True)
+class Note:
+    """A production note: what to know next to the steps. `{x}` fields are filled per plan."""
+
+    id: str
+    en: str
+    ru: str
+    tag: str
+    sources: tuple[Source, ...] = ()
+
+
+_AI_ACT = "https://eur-lex.europa.eu/eli/reg/2024/1689/oj"
+
+NOTES_LIST: tuple[Note, ...] = (
+    Note(
+        "music_licence",
+        "generated music: the licence terms of the chosen service decide commercial use — check that your plan "
+        "tier grants a royalty-free commercial licence for streaming and monetised video, and keep the licence "
+        "record with the track",
+        "сгенерированная музыка: коммерческое использование решают условия лицензии выбранного сервиса — "
+        "проверьте, что ваш тариф даёт коммерческую лицензию без роялти для стриминга и монетизированного "
+        "видео, и храните лицензию вместе с треком",
+        TAG_ENGINEERING,
+    ),
+    Note(
+        "weights_licence",
+        "open weights: the licence terms of each chosen checkpoint decide commercial use (some open weights are "
+        "non-commercial or revenue-capped) — read the licence of the exact checkpoint before you ship",
+        "открытые веса: коммерческое использование решают условия лицензии каждого выбранного чекпойнта "
+        "(часть открытых весов — только некоммерческие или с порогом выручки) — прочтите лицензию именно "
+        "этого чекпойнта до выпуска",
+        TAG_ENGINEERING,
+    ),
+    Note(
+        "song_rights",
+        "the song is not yours: publishing it needs the music rights — a licence for the composition and the "
+        "recording from the copyright holders, or a track you own or generate; platforms mute or claim "
+        "unlicensed songs",
+        "песня не ваша: для публикации нужны права на музыку — лицензия правообладателей на произведение и "
+        "запись (авторские и смежные права) либо свой или сгенерированный трек; площадки глушат или "
+        "забирают ролики с нелицензированной песней",
+        TAG_ENGINEERING,
+    ),
+    Note(
+        "long_form_segmented",
+        "long form ({seconds} s): a talking-avatar or lip-sync run is capped per call, so the script is split "
+        "into segments at sentence boundaries, each segment is generated separately and the segments are joined "
+        "at assembly (ffmpeg concat) — same reference image and same voice on every segment",
+        "длинный ролик ({seconds} с): прогон говорящего аватара или липсинка ограничен по длине, поэтому текст "
+        "делится на отрезки по границам фраз, каждый отрезок генерируется отдельно, и отрезки склеиваются при "
+        "сборке (ffmpeg concat) — один и тот же референс и один голос на всех отрезках",
+        TAG_ENGINEERING,
+    ),
+    Note(
+        "mask_composite",
+        "removal or replacement in your footage is a masked inpaint: a segmentation mask (e.g. SAM 2) tracks the "
+        "object or the sky through the shot, only the masked region is regenerated, and it is composited over "
+        "the untouched plate — check the mask edge for halo and flicker frame by frame",
+        "удаление или замена в вашем видео — это дорисовка по маске: маска сегментации (например, SAM 2) ведёт "
+        "объект или небо по всему плану, перерисовывается только область под маской, и она накладывается "
+        "поверх нетронутого кадра — край маски проверяется по кадрам на ореол и мерцание",
+        TAG_ENGINEERING,
+    ),
+    Note(
+        "crop_track",
+        "reframing to {aspect} is a crop that follows the subject (face tracking drives the crop window) at "
+        "assembly, 0 usd; generative outpainting is needed only where the crop would cut the subject",
+        "перекадрирование в {aspect} — это кадрирование, которое ведёт трекинг лица (окно кадра идёт за "
+        "человеком) при сборке, 0 usd; генеративная дорисовка нужна только там, где кадр резал бы человека",
+        TAG_ENGINEERING,
+    ),
+    Note(
+        "aspect_crop",
+        "{aspect} is not an aspect generators render natively: it is generated at {native} and cropped (or "
+        "letterboxed) to {aspect} at assembly — keep the action inside the crop's safe area in the prompt",
+        "{aspect} генераторы родным кадром не рисуют: кадр генерируется в {native} и при сборке кадрируется "
+        "(или получает чёрные поля) до {aspect} — держите действие внутри безопасной зоны кадрирования",
+        TAG_ENGINEERING,
+    ),
+    Note(
+        "ai_act_label",
+        "EU AI Act, Art. 50 (applies from 2 August 2026): AI-generated or manipulated video, image and audio must "
+        "be disclosed — label the piece as AI-generated where it is published and keep a machine-readable "
+        "marking (C2PA content credentials or a watermark)",
+        "Регламент ЕС об ИИ (AI Act), ст. 50, действует с 2 августа 2026: созданные или изменённые ИИ видео, "
+        "изображения и звук раскрываются — маркировка «создано ИИ» там, где ролик публикуется, и машиночитаемая "
+        "отметка (C2PA или водяной знак)",
+        TAG_REGULATION,
+        (Source("*", "regulation", _AI_ACT, "Regulation (EU) 2024/1689, Article 50: transparency obligations"),),
+    ),
+    Note(
+        "multi_speaker",
+        "{speakers} speakers in the shot: the audio is diarized (who speaks when) and the lip sync runs per "
+        "active speaker with a face mask, so each speaker's face moves only on their own lines — check that "
+        "the listening face stays still",
+        "в кадре говорящих {speakers}: звук размечается по говорящим (кто и когда говорит), и липсинк идёт по "
+        "активному говорящему с маской лица — каждое лицо двигает губами только на своих репликах; проверьте, "
+        "что слушающее лицо неподвижно",
+        TAG_ENGINEERING,
+    ),
+    Note(
+        "logo_text_composited",
+        "logo and exact text: generative models redraw letterforms, so the true logo or text is composited from "
+        "your vector file as an overlay at assembly (tracked onto the product where it moves) and checked "
+        "letter for letter on the final frame",
+        "логотип и точный текст: генеративные модели перерисовывают буквы, поэтому настоящий логотип или текст "
+        "накладывается поверх из вашего векторного файла при сборке (с трекингом на предмет, где он движется) "
+        "и сверяется буква в букву на финальном кадре",
+        TAG_ENGINEERING,
+    ),
+    Note(
+        "unseen_side",
+        "one photo shows one side: the back and the hidden sides are unseen, and the model invents them "
+        "(hallucinated seams, logos, buttons) — for an accurate 360° bring photos of every side or go through a "
+        "3D reconstruction",
+        "один снимок показывает одну сторону: обратная и скрытые стороны не видны, и модель их выдумывает (швы, "
+        "логотипы, кнопки) — для точного оборота на 360° нужны снимки со всех сторон или реконструкция в 3D",
+        TAG_ENGINEERING,
+    ),
+    Note(
+        "captions_burned",
+        "captions are burned in at assembly from the timed transcript (ffmpeg subtitles, styled for the "
+        "platform), 0 usd — proofread the transcript before burning",
+        "субтитры вжигаются при сборке по расшифровке с таймингами (ffmpeg subtitles, оформление под "
+        "площадку), 0 usd — вычитайте расшифровку до вжигания",
+        TAG_ENGINEERING,
+    ),
+    Note(
+        "regional_variety",
+        "{tags}: a regional variety (dialect, accent) is not the language itself — models record language "
+        "support, not the dialect; choose a voice that speaks that variety and have a native listener of it "
+        "check the result",
+        "{tags}: региональный вариант (диалект, акцент) — это не сам язык: у моделей записана поддержка языка, "
+        "а не диалекта; выберите голос, который говорит именно на нём, и дайте результат послушать носителю",
+        TAG_ENGINEERING,
+    ),
+    Note(
+        "lyric_alignment",
+        "lyrics are aligned to the vocals at word level: the transcription's word timestamps place each line of "
+        "YOUR lyrics, and the animated typography is rendered from those timestamps at assembly",
+        "слова песни выравниваются по вокалу пословно: временные метки слов из расшифровки ставят каждую строку "
+        "ВАШЕГО текста, и анимированная типографика рендерится по этим меткам при сборке",
+        TAG_ENGINEERING,
+    ),
+    Note(
+        "alpha_delivery",
+        "transparent background: generators output opaque video, so the background is removed per frame and "
+        "the clip is delivered with an alpha channel — WebM (VP9 with alpha) for the web, ProRes 4444 for "
+        "editing; MP4 / H.264 carries no alpha",
+        "прозрачный фон: генераторы отдают непрозрачное видео, поэтому фон снимается в каждом кадре, и ролик "
+        "отдаётся с альфа-каналом — WebM (VP9 с альфой) для сайта, ProRes 4444 для монтажа; MP4 / H.264 "
+        "прозрачность не несёт",
+        TAG_ENGINEERING,
+    ),
+    Note(
+        "self_host_route",
+        "a 0 budget: self-host the open weights on your own GPU (or a free one) — run it locally with ComfyUI "
+        "or diffusers; you pay in hardware and time, not per call",
+        "бюджет 0: открытые веса запускаются локально на своей видеокарте (или на бесплатной) — ComfyUI или "
+        "diffusers; платите железом и временем, а не за вызов",
+        TAG_ENGINEERING,
+    ),
+    Note(
+        "waveform_layer",
+        "the waveform (ffmpeg showwaves) and the captions are laid over YOUR cover art at assembly, 0 usd — "
+        "no generated motion is needed for an audiogram",
+        "волна звука (ffmpeg showwaves) и субтитры ложатся поверх ВАШЕЙ обложки при сборке, 0 usd — "
+        "генерируемое движение аудиограмме не нужно",
+        TAG_ENGINEERING,
+    ),
+    Note(
+        "mesh_route",
+        "a 3D model is an image-to-3D reconstruction (TRELLIS, Hunyuan3D, Tripo class) exported as GLB; a "
+        "turntable video, if wanted, is rendered from the mesh (Blender) at assembly, 0 usd — check the back "
+        "and the underside of the mesh against your photos",
+        "3D-модель — это реконструкция «изображение -> 3D» (класс TRELLIS, Hunyuan3D, Tripo) с выгрузкой в GLB; "
+        "видео-оборот, если нужен, рендерится из модели (Blender) при сборке, 0 usd — сверьте спину и низ "
+        "модели с вашими снимками",
+        TAG_ENGINEERING,
+    ),
+)
+
+NOTES: dict[str, Note] = {н.id: н for н in NOTES_LIST}
