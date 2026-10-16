@@ -22,6 +22,7 @@
 from __future__ import annotations
 
 import unittest
+from typing import Any
 
 from studio import endpoints as ep
 from studio import planner as pn
@@ -347,8 +348,14 @@ class Ранжирование(unittest.TestCase):
     """Плановщик: провал против объявленной хорошей новости, прогоны, один дубль."""
 
     @staticmethod
-    def _c(model: str, **kw) -> pn.Candidate:
-        поля = {"evidence": (), "applicability": 0, "capability": 0, "unresolved": 0, "price": ""}
+    def _c(model: str, **kw: Any) -> pn.Candidate:
+        поля: dict[str, Any] = {
+            "evidence": (),
+            "applicability": 0,
+            "capability": 0,
+            "unresolved": 0,
+            "price": "",
+        }
         поля.update(kw)
         return pn.Candidate(model=model, **поля)
 
@@ -442,6 +449,7 @@ class Юрисдикция(unittest.TestCase):
         op = next(op for op in pn.OPERATIONS if op.name == "озвучка")
         выбор = [(op, Ранжирование._c("eleven-tts")), (op, Ранжирование._c("quiet-tts"))]
         итог = pn.хостинг_плана(выбор, база, ("EU",))
+        assert итог is not None
         self.assertEqual(
             [
                 {
@@ -491,6 +499,7 @@ class ЖиваяБаза(unittest.TestCase):
     """Вопросы валидатора v7 и его планы на ЖИВОЙ базе."""
 
     база: list[Fact]
+    реестр: ep.Registry
 
     @classmethod
     def setUpClass(cls) -> None:
@@ -561,9 +570,15 @@ class ЖиваяБаза(unittest.TestCase):
 
     def test_промахи_реестра(self) -> None:
         р = self.реестр
-        self.assertEqual(("tts",), р.get("eleven_flash_v2").functions)
-        self.assertEqual(("image-edit",), р.get("flux-1-kontext-max-multi").functions)
-        klein = р.get("flux.2-klein-9b")
+
+        def узел(имя: str) -> ep.Endpoint:
+            найден = р.get(имя)
+            assert найден is not None, имя
+            return найден
+
+        self.assertEqual(("tts",), узел("eleven_flash_v2").functions)
+        self.assertEqual(("image-edit",), узел("flux-1-kontext-max-multi").functions)
+        klein = узел("flux.2-klein-9b")
         self.assertEqual(
             (True, (("self-host", "https://huggingface.co/black-forest-labs/FLUX.2-klein-9B"),)),
             (klein.orderable, klein.route_ids),

@@ -1459,7 +1459,7 @@ def estimate(ставки: list[Rate], need: Need) -> list[Option]:
         разница = abs(кадр[1] - need.resolution) if need.resolution and кадр[1] else кадр[1]
         ключ = (кадр[0], разница, звук, частота, r.conditional, bool(деньги[2]))
         по_тарифу.setdefault(r.tier, []).append((ключ, r, кадр[1], деньги))
-    варианты: list[Option] = []
+    варианты = []
     for тариф, пары in по_тарифу.items():
         лучший = min(п[0] for п in пары)
         равные = [п for п in пары if п[0] == лучший]

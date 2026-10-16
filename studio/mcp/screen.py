@@ -1630,14 +1630,61 @@ def _обычное_имя(слово: str) -> bool:
 #: Стороны света сюда НЕ входят: «Kanye West» — человек.
 ЯЗЫКИ_И_РЕГИОНЫ: frozenset[str] = frozenset(
     {
-        "english", "russian", "spanish", "portuguese", "brazilian", "latin", "american",
-        "america", "french", "german", "italian", "japanese", "chinese", "korean",
-        "arabic", "hindi", "turkish", "polish", "ukrainian", "kazakh", "hebrew",
-        "european", "europe", "asia", "asian", "africa", "african", "mandarin",
-        "cantonese", "egyptian", "mexican", "canadian", "british", "australian",
-        "indian", "tamil", "bengali", "persian", "dutch", "swedish", "norwegian",
-        "danish", "finnish", "greek", "czech", "thai", "vietnamese", "indonesian",
-        "filipino", "swahili", "castilian", "catalan", "uzbek", "georgian", "armenian",
+        "english",
+        "russian",
+        "spanish",
+        "portuguese",
+        "brazilian",
+        "latin",
+        "american",
+        "america",
+        "french",
+        "german",
+        "italian",
+        "japanese",
+        "chinese",
+        "korean",
+        "arabic",
+        "hindi",
+        "turkish",
+        "polish",
+        "ukrainian",
+        "kazakh",
+        "hebrew",
+        "european",
+        "europe",
+        "asia",
+        "asian",
+        "africa",
+        "african",
+        "mandarin",
+        "cantonese",
+        "egyptian",
+        "mexican",
+        "canadian",
+        "british",
+        "australian",
+        "indian",
+        "tamil",
+        "bengali",
+        "persian",
+        "dutch",
+        "swedish",
+        "norwegian",
+        "danish",
+        "finnish",
+        "greek",
+        "czech",
+        "thai",
+        "vietnamese",
+        "indonesian",
+        "filipino",
+        "swahili",
+        "castilian",
+        "catalan",
+        "uzbek",
+        "georgian",
+        "armenian",
     }
 )
 
@@ -2326,6 +2373,7 @@ def новости_в_тексте(текст: str) -> dict:
         "event": _РЕАЛЬНОЕ_СОБЫТИЕ.search(строка) is not None,
     }
 
+
 #: ТИТУЛЫ. Английские — целым словом; русские — основой с падежным окончанием
 #: из закрытого списка: «принцип» и «мэрия» титулами не становятся.
 _ТИТУЛ_EN = re.compile(
@@ -2584,14 +2632,15 @@ def политика_людей(
         "voice": bool(лик.get("voice")),
     }
     if люди is None:
-        источник, записи, ошибки = "text", _по_тексту(лик), []
+        ошибки: list[str] = []
+        источник, записи = "text", _по_тексту(лик)
     else:
         источник, (записи, ошибки) = "spec", _по_spec(люди, низ, bool(лик.get("commercial")))
     заявки, ошибки_заявок = _события(события, люди, строка)
     return {**_итог(источник, записи, ошибки + ошибки_заявок, заявки), **общее}
 
 
-def _итог(источник: str, люди: list[dict], ошибки: list[str], заявки: list[dict] = ()) -> dict:
+def _итог(источник: str, люди: list[dict], ошибки: list[str], заявки: Sequence[dict] = ()) -> dict:
     все = [*люди, *заявки]
     решение = max((ч["verdict"] for ч in все), key=lambda в: ТЯЖЕСТЬ[в], default="none")
     правила = {ч["rule"] for ч in все if ч["verdict"] == "question"}
@@ -2630,7 +2679,9 @@ def _по_spec(люди: object, низ: str, реклама: bool = False) -> t
     if not isinstance(люди, list):
         return (
             [{"name": "?", "verdict": "question", "rule": "spec_invalid"}],
-            ["spec.people: expected a list of {name, real, public_figure, consent, claim, deceased?}"],
+            [
+                "spec.people: expected a list of {name, real, public_figure, consent, claim, deceased?}"
+            ],
         )
     итог: list[dict] = []
     ошибки: list[str] = []
@@ -2722,7 +2773,9 @@ def _события(события: object, люди: object, строка: str)
     if not isinstance(события, list):
         return (
             [{"name": "claims", "verdict": "question", "rule": "claims_invalid"}],
-            ["spec.claims: expected a list of {type: none|news|real_event, real_brand, brand?, fabricated?}"],
+            [
+                "spec.claims: expected a list of {type: none|news|real_event, real_brand, brand?, fabricated?}"
+            ],
         )
     итог: list[dict] = []
     ошибки: list[str] = []
@@ -2743,7 +2796,12 @@ def _события(события: object, люди: object, строка: str)
             свои.append(f"{где}.real_brand: expected true or false")
         if выдумано is not None and not isinstance(выдумано, bool):
             свои.append(f"{где}.fabricated: expected true, false or absent")
-        запись = {"name": бренд or str(тип), "type": тип, "real_brand": бренд_реален, "fabricated": выдумано}
+        запись = {
+            "name": бренд or str(тип),
+            "type": тип,
+            "real_brand": бренд_реален,
+            "fabricated": выдумано,
+        }
         if свои:
             итог.append({**запись, "verdict": "question", "rule": "claims_invalid"})
             ошибки += свои
@@ -2778,7 +2836,13 @@ def _события_по_тексту(люди: object, строка: str) -> li
     if not итог and isinstance(люди, list):
         for ч in люди:
             if isinstance(ч, dict) and ч.get("real") is False and ч.get("claim") == "news":
-                итог.append({"name": str(ч.get("name") or "news"), "verdict": "question", "rule": "event_text"})
+                итог.append(
+                    {
+                        "name": str(ч.get("name") or "news"),
+                        "verdict": "question",
+                        "rule": "event_text",
+                    }
+                )
                 break
     return итог
 
@@ -3085,7 +3149,13 @@ def отчёт_политики(политика: dict) -> dict:
 
 #: Группы отказа, которые принадлежат политике людей и новостей.
 ГРУППЫ_ПОЛИТИКИ: frozenset[str] = frozenset(
-    {ЗНАМЕНИТОСТЬ_В_РЕКЛАМЕ, ЗАЯВЛЕНИЕ_ПУБЛИЧНОГО, БЕЗ_СОГЛАСИЯ_ЧЕЛОВЕКА, НОВОСТНОЙ_БРЕНД, ВЫДУМАННОЕ_СОБЫТИЕ}
+    {
+        ЗНАМЕНИТОСТЬ_В_РЕКЛАМЕ,
+        ЗАЯВЛЕНИЕ_ПУБЛИЧНОГО,
+        БЕЗ_СОГЛАСИЯ_ЧЕЛОВЕКА,
+        НОВОСТНОЙ_БРЕНД,
+        ВЫДУМАННОЕ_СОБЫТИЕ,
+    }
 )
 
 #: Префикс риска «чьё-то имя в тексте» — его снимает переданный `spec.people`.

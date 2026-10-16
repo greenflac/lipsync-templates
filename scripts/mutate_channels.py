@@ -3282,8 +3282,8 @@ MUTANTS: list[tuple[str, str, str, str, str]] = [
     ),
     (
         "studio/planner.py",
-        '        шаг["step_label"] = _имя_шага(шаг.get("step"), по_английски)',
-        '        шаг["step_label"] = шаг.get("step")',
+        '        строка_шага["step_label"] = _имя_шага(строка_шага.get("step"), по_английски)',
+        '        строка_шага["step_label"] = строка_шага.get("step")',
         "план: имя шага по-русски в английском ответе",
         "studio.tests.test_people_news_policy_r7",
     ),
