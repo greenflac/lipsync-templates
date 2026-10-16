@@ -263,6 +263,17 @@ python scripts/run_tests.py studio/mcp/tests
 step "blind control set (mcp)"
 python studio/mcp/fixtures/blind_control_set.py
 
+# The expert evaluation set (round 8): 150 briefs with a caller's spec and an
+# expert reference plan, scored on decomposition, model choice, price band,
+# notes and outcome (rubric: studio/eval/README.md). Seven fix rounds were
+# steered by one-off graders, each re-deriving "correct" in prose; this freezes
+# it. Red when any class loses a correct brief or the total drops below
+# studio/eval/baseline.json — an improvement is recorded with --write-baseline
+# in the same commit. The 50-brief holdout is kept outside the repository on
+# purpose. No network, no paid call; ~110 s.
+step "expert evaluation set: no class regressed"
+python scripts/eval_plans.py --check --report "${TMPDIR:-/tmp}/eval_plans_report.json"
+
 # The reading pass, asserted rather than trusted. Reads the fact file only --
 # no network, so this stays honest in CI: it fails if a claim scripts/read_sources.py
 # withdrew has come back, or if a reading it recorded has been edited away.
