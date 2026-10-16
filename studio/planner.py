@@ -1626,7 +1626,9 @@ CONSISTENT_PERSON_EN_AFTER = (
     r"re:\b" + _ЛЮДИ_EN + r"\s+(?:[a-z-]+\s+){0,2}?(?:consistent|identical)\b"
 )
 CONSISTENT_PERSON_RU = r"re:(?:одинаков|идентичн)[а-яё]*\s+(?:[а-яё]+\s+){0,2}?" + _ЛЮДИ_RU
-SAME_PERSON_RU = r"re:(?:тот|та|те|того|той|тех|тем|теми)\s+же\s+(?:[а-яё]+\s+){0,1}?" + _ЛЮДИ_RU
+SAME_PERSON_RU = (
+    r"re:(?:тот|та|те|того|той|тех|тем|теми)\s+же\s+(?:[а-яё]+\s+){0,1}?" + _ЛЮДИ_RU
+)
 
 #: «open-weights video model to self-host», «видеомодель с открытыми весами»:
 #: заказано видео с нуля на своей машине. Слово о видео обязательно — открытые
@@ -3199,17 +3201,7 @@ def _фото_без_движения(
 #: замены цепочки нативным звуком в плане не оставалось ни одного «видео-
 #: делателя», и условный апскейл выбирал апскейлер КАРТИНКИ поверх ролика.
 VIDEO_MAKERS: frozenset[str] = frozenset(
-    {
-        "правка_видео",
-        "видео_по_референсу",
-        "оживление",
-        "генерация_видео",
-        "липсинк",
-        "замена_персонажа",
-        "дубляж",
-        AVATAR_STEP,
-        NATIVE_AUDIO_STEP,
-    }
+    {"правка_видео", "видео_по_референсу", "оживление", "генерация_видео", "липсинк", "замена_персонажа", "дубляж", AVATAR_STEP, NATIVE_AUDIO_STEP}
 )
 
 
@@ -4661,9 +4653,7 @@ def нужда_шага(
         # выходил в смету шагом за 0.00 usd).
         images=0.0
         if {OUTPUT_KINDS.get(а) for а in op.produces} & {"видео"}
-        else float(кадров or 1)
-        if картинка
-        else 1.0,
+        else float(кадров or 1) if картинка else 1.0,
         megapixels=(кадр[0] * кадр[1] / 1e6) if кадр else 1.0,
         mode=РЕЖИМ_ШАГА.get(op.name, ""),
         fps=fps,
@@ -4756,9 +4746,7 @@ def предел_прогона(facts: Sequence[Fact]) -> float | None:
     if канон:
         return dur.предел_из_строк(канон).секунды
     имена = af.expand(DURATION_ASKED, sorted({f.attribute for f in facts}))
-    return dur.предел_из_строк(
-        [(f.attribute, f.value) for f in facts if f.attribute in имена]
-    ).секунды
+    return dur.предел_из_строк([(f.attribute, f.value) for f in facts if f.attribute in имена]).секунды
 
 
 def стоимость(
@@ -5428,9 +5416,7 @@ def смета_ролика(
     # длины прогона на ролике 120 с. Сумма с таким шагом доказывает «не влезает»,
     # но не «влезает» — как и шаг без цены вовсе.
     нижние = [
-        f"{оп.name} ({_ст(к).default.lower_bound})"
-        for оп, к in с_ценой
-        if _ст(к).default.lower_bound
+        f"{оп.name} ({_ст(к).default.lower_bound})" for оп, к in с_ценой if _ст(к).default.lower_bound
     ]
     неоднозначные = [
         f"{оп.name}: {_ст(к).default.ambiguous}" for оп, к in с_ценой if _ст(к).default.ambiguous
@@ -6289,8 +6275,7 @@ def _кадр_родной(
     родные = [
         f
         for f in [*все, *(f for _, строки in семья for f in строки)]
-        if f in limit_facts([f])
-        and (f.attribute == "native_resolution" or NATIVE_WORDS.search(f.value))
+        if f in limit_facts([f]) and (f.attribute == "native_resolution" or NATIVE_WORDS.search(f.value))
     ]
     # Оговорка после тире («— contradicts the 3840x2160 read off a reseller's
     # schema») — пересказ ЧУЖОГО числа, а не предел: читается голова строки.
@@ -6366,9 +6351,7 @@ def требования_заказчика(
             return Жёсткое(
                 исключить=f"свой GPU {hard.gpu or ''} {hard.vram_gb:g} ГБ: нужно {память:.0f} ГБ — {откуда}"
             )
-        ставка = hn.gpu_rate(
-            по_имени.get(fold(hn.RATE_MODEL_PREFIX + (hard.gpu or "")), []), hard.gpu
-        )
+        ставка = hn.gpu_rate(по_имени.get(fold(hn.RATE_MODEL_PREFIX + (hard.gpu or "")), []), hard.gpu)
         режим = need.mode if need else ""
         время = hn.gpu_time(все, режим) or next(
             (t for _, строки in семья if (t := hn.gpu_time(строки, режим)) is not None), None
@@ -6379,9 +6362,7 @@ def требования_заказчика(
                 pricing.Option(round(оценено.high, 4), "secure cloud", None, оценено.formula),
                 pricing.Option(round(оценено.low, 4), "community cloud", None, оценено.formula),
             )
-            стоимость_gpu = Стоимость(
-                варианты, варианты[0], варианты[1], ставка.source, route="свой GPU"
-            )
+            стоимость_gpu = Стоимость(варианты, варианты[0], варианты[1], ставка.source, route="свой GPU")
         else:
             без_цены = (
                 "свой GPU: цена — время GPU × ставка аренды; "
@@ -6502,8 +6483,7 @@ def родной_кадр_или_ближайший(
         return найдены
     дотягивают = (op is not None and ARTEFACT_VIDEO in op.requires) or any(
         len(c.hard_rank) >= 2
-        and c.hard_rank[-2]
-        in (hn.NATIVE_ORDER[hn.NATIVE_PRICED], hn.NATIVE_ORDER[hn.NATIVE_UNPRICED])
+        and c.hard_rank[-2] in (hn.NATIVE_ORDER[hn.NATIVE_PRICED], hn.NATIVE_ORDER[hn.NATIVE_UNPRICED])
         and not c.foreign
         and not c.native_below_px
         for c in найдены
@@ -6560,11 +6540,7 @@ def доводы_семьи(найдены: Sequence[Candidate], известн�
                     **c.__dict__,
                     "hard_rank": (*c.hard_rank[:-1], знак),
                     "hard_note": c.hard_note
-                    + (
-                        f"; доводы семьи {чей}: {SIGN_WORDS[знак]} (перенос, не замер варианта)"
-                        if чей
-                        else ""
-                    ),
+                    + (f"; доводы семьи {чей}: {SIGN_WORDS[знак]} (перенос, не замер варианта)" if чей else ""),
                 }
             )
         )
@@ -6665,9 +6641,7 @@ def запасной_прогон(
         "видео_по_референсу",
     }
 )
-REGISTRY_UNCLASSIFIED_NOTE = (
-    "реестр: работа модели не установлена, а эндпоинты этой работы известны"
-)
+REGISTRY_UNCLASSIFIED_NOTE = "реестр: работа модели не установлена, а эндпоинты этой работы известны"
 
 #: Сколько отсеянных реестром моделей печатается примером на шаг.
 REGISTRY_SHOWN = 3
@@ -6728,18 +6702,14 @@ def отбор_правки(
     не_измерено = [п for п, кто in покрытие.items() if not кто]
     return {
         "asked": list(нужно),
-        "asked_from": "spec.edit"
-        if названы
-        else "default (spec.edit not named): edit by instruction",
+        "asked_from": "spec.edit" if названы else "default (spec.edit not named): edit by instruction",
         "endpoints": {п: кто[:REGISTRY_SHOWN] for п, кто in покрытие.items()},
         "endpoints_count": {п: len(кто) for п, кто in покрытие.items()},
         "not_measured": не_измерено,
         "not_an_edit_count": len(отсеяно_не_правка),
         "not_an_edit": list(отсеяно_не_правка)[:REGISTRY_SHOWN],
         "other_edit_count": len(отсеяно_не_та),
-        "other_edit": [
-            {"model": м, "why": п} for м, п in list(отсеяно_не_та.items())[:REGISTRY_SHOWN]
-        ],
+        "other_edit": [{"model": м, "why": п} for м, п in list(отсеяно_не_та.items())[:REGISTRY_SHOWN]],
     }
 
 
@@ -6784,12 +6754,7 @@ def хостинг_плана(
         узел = реестр.get(к.model)
         if узел is not None and узел.hosting:
             шаги.append(
-                {
-                    "step": op.name,
-                    "model": к.model,
-                    "state": "recorded",
-                    "hosting": list(узел.hosting),
-                }
+                {"step": op.name, "model": к.model, "state": "recorded", "hosting": list(узел.hosting)}
             )
         else:
             шаги.append({"step": op.name, "model": к.model, "state": HOSTING_NOT_MEASURED})
@@ -6858,9 +6823,7 @@ def реестр_шага(
         "function": list(работы),
         "fallback": запасная_нота,
         "not_orderable_count": len(не_заказываются),
-        "not_orderable": [
-            {"model": м, "why": п} for м, п in list(не_заказываются.items())[:REGISTRY_SHOWN]
-        ],
+        "not_orderable": [{"model": м, "why": п} for м, п in list(не_заказываются.items())[:REGISTRY_SHOWN]],
         "other_job_count": len(чужая),
         "other_job": [{"model": м, "why": п} for м, п in list(чужая.items())[:REGISTRY_SHOWN]],
         "unclassified_count": неустановленных,
@@ -7061,9 +7024,7 @@ def candidates_for(
             if узел.key in по_модели or not _is_model(узел.model):
                 continue
             строки_узла = по_имени.get(узел.key, [])
-            опорные = [
-                f for f in строки_узла if f.attribute in REGISTRY_ROW_ATTRIBUTES
-            ] or строки_узла[:1]
+            опорные = [f for f in строки_узла if f.attribute in REGISTRY_ROW_ATTRIBUTES] or строки_узла[:1]
             по_модели[узел.key] = list(опорные)
             написание.setdefault(узел.key, узел.model)
             for f in опорные:
@@ -7094,10 +7055,8 @@ def candidates_for(
             if id(f) not in {id(x) for x in свои} and fa.mark(f, overrides).kind in fa.APPLICABILITY
         ]
         узел = реестр.by_key.get(ключ)
-        if (
-            узел is not None
-            and одалживает_семья(реестр.get(узел.family), работы, hard)
-            and not any(fa.mark(f, overrides).kind in fa.APPLICABILITY for f in свои_плюс)
+        if узел is not None and одалживает_семья(реестр.get(узел.family), работы, hard) and not any(
+            fa.mark(f, overrides).kind in fa.APPLICABILITY for f in свои_плюс
         ):
             # СЕМЬЯ ОДАЛЖИВАЕТ ПРИМЕНИМОСТЬ, НО НЕ ЦЕНУ (пятый круг): строки
             # наблюдений о `kling-3.0` — о той же модели, что и её тариф
@@ -7127,9 +7086,7 @@ def candidates_for(
         свёрнутое = имя.lower()
         все = по_имени.get(fold(имя), [])
         сколько = стоимость(все, need, запасной_прогон(op, узел, все))
-        жёсткое = требования_заказчика(
-            op, имя, все, сколько, hard, по_имени, известные, need, brief_frame
-        )
+        жёсткое = требования_заказчика(op, имя, все, сколько, hard, по_имени, известные, need, brief_frame)
         if жёсткое.исключить:
             исключены[имя] = жёсткое.исключить
             continue
@@ -7215,7 +7172,9 @@ def candidates_for(
                 # Вариант без своей лицензии при семье с исключениями
                 # отодвигается и при НАЗВАННОЙ исключённой юрисдикции: стеной
                 # (`licence_blocked`) его делать нечем — запись не о нём.
-                territory_unasked=(юрисдикции is None and bool(pl.licence_reservations(все)[0]))
+                territory_unasked=(
+                    юрисдикции is None and bool(pl.licence_reservations(все)[0])
+                )
                 or (
                     bool(семья)
                     and (
@@ -7502,7 +7461,9 @@ def отодвинутая_не_выиграет(
             return f"цены нет, а потолок ролика {потолок_ролика:g} usd назван"
         с_ней = сумма - выбран.cost.default.usd + вне.cost.default.usd
         if с_ней > потолок_ролика + 1e-9:
-            return f"с ней план стоит {с_ней:.2f} usd — выше потолка ролика {потолок_ролика:g} usd"
+            return (
+                f"с ней план стоит {с_ней:.2f} usd — выше потолка ролика {потолок_ролика:g} usd"
+            )
     if дешевле_просят:
         дешевле = дешевле_в_полосе(свободна, [свободна, *[c for c in найдены if c is not вне]])
         if дешевле is not None:
@@ -8745,11 +8706,7 @@ def _частоты_строки(значение: str) -> list[str]:
     низ = re.sub(r"\([^)]*\)", " ", значение.lower())
     if "fps" not in низ:
         return _ЧАСТОТА.findall(низ)
-    return [
-        ч
-        for м in re.finditer(r"((?:\d{2,3}\s*(?:or|/|,)\s*)*\d{2,3})\s*fps", низ)
-        for ч in _ЧАСТОТА.findall(м.group(1))
-    ]
+    return [ч for м in re.finditer(r"((?:\d{2,3}\s*(?:or|/|,)\s*)*\d{2,3})\s*fps", низ) for ч in _ЧАСТОТА.findall(м.group(1))]
 
 
 def частота_записана(модель: str, facts: Sequence[Fact]) -> float | None:
@@ -8758,10 +8715,7 @@ def частота_записана(модель: str, facts: Sequence[Fact]) ->
     for f in facts:
         по_имени[fold(f.model)].append(f)
     известные = sorted({f.model for f in facts})
-    for строки in (
-        pl.facts_for(модель, facts),
-        *(с for _, с in _семья_строк(модель, по_имени, известные)),
-    ):
+    for строки in (pl.facts_for(модель, facts), *(с for _, с in _семья_строк(модель, по_имени, известные))):
         частоты = [
             int(ч)
             for f in строки
@@ -9402,10 +9356,7 @@ def годные_со_звуком(
     # «чужая работа» в общем ключе: аватар-продукт — пресет говорящей головы
     # (у MultiTalk записано 480p/720p), а видеомодель со звуком снимает сцену
     # целиком. Внутри рода решает прежний ключ.
-    годные = [
-        Candidate(**{**c.__dict__, "kind_rank": int(fold(c.model) not in со_звуком)})
-        for c in годные
-    ]
+    годные = [Candidate(**{**c.__dict__, "kind_rank": int(fold(c.model) not in со_звуком)}) for c in годные]
     годные.sort(
         key=lambda c: (
             by_evidence(c)[:CONSTRAINT_KEYS],
@@ -9752,11 +9703,7 @@ def _смета_словами(итог: dict, смета: dict, англ: bool)
         )
     if нижние:
         части.append(
-            (
-                "LOWER BOUND ONLY (run length not recorded) for: "
-                if англ
-                else "ТОЛЬКО НИЖНЯЯ ГРАНИЦА (длина прогона не записана): "
-            )
+            ("LOWER BOUND ONLY (run length not recorded) for: " if англ else "ТОЛЬКО НИЖНЯЯ ГРАНИЦА (длина прогона не записана): ")
             + ", ".join(_имя_шага(н, англ) for н in нижние)
         )
     if смета.get("steps_ambiguous"):
@@ -9880,13 +9827,7 @@ def противоречия(brief: str, шаги: Sequence[dict]) -> list[dict]
         if any(re.search(о, низ) for о in а) and any(re.search(о, низ) for о in б):
             ру, en, вар_ру, вар_en = _ПРОТИВОРЕЧИЕ_СЛОВАМИ[метка]
             итог.append(
-                {
-                    "kind": метка,
-                    "text": ру,
-                    "text_en": en,
-                    "options": list(вар_ру),
-                    "options_en": list(вар_en),
-                }
+                {"kind": метка, "text": ру, "text_en": en, "options": list(вар_ру), "options_en": list(вар_en)}
             )
     for шаг in шаги:
         if шаг.get("step") in UPSCALE_STEPS and шаг.get("inferred"):
@@ -9948,19 +9889,14 @@ def _требования_словами(итог: dict, англ: bool) -> str:
         gpu = f"{т.get('gpu') or ('GPU not named' if англ else 'GPU не назван')}"
         память = f" {т['vram_gb']:g} GB" if т.get("vram_gb") else ""
         части.append(
-            (
-                f"own GPU ({gpu}{память}): open weights required, price = GPU time × rental rate (estimate)"
-            )
+            (f"own GPU ({gpu}{память}): open weights required, price = GPU time × rental rate (estimate)")
             if англ
             else f"свой GPU ({gpu}{память}): нужны открытые веса, цена — время GPU × ставка аренды (оценка)"
         )
     if т.get("objective") == hn.OBJECTIVE_QUALITY:
         части.append(
-            (
-                "quality over price: native frame required, price does not rank"
-                if англ
-                else "качество важнее цены: нужен родной кадр, цена порядка не решает"
-            )
+            ("quality over price: native frame required, price does not rank" if англ
+             else "качество важнее цены: нужен родной кадр, цена порядка не решает")
             + (f" ({т['resolution']}p)" if т.get("resolution") else "")
         )
     отсеяно = [
@@ -10160,20 +10096,14 @@ def сводка(итог: dict) -> str:
                     + f"{вне.get('model')} "
                     + f"({_коротко(_форма_по_английски(вне.get('price')) if англ else вне.get('price'), 48)}) — "
                     + _коротко(
-                        _форма_по_английски(вне.get("licence_risk"))
-                        if англ
-                        else вне.get("licence_risk"),
+                        _форма_по_английски(вне.get("licence_risk")) if англ else вне.get("licence_risk"),
                         260,
                     )
                 )
             дешевле_шага = шаг.get("cheaper_same_rank") or {}
             if дешевле_шага and not обмен_шага:
                 хвост.append(
-                    (
-                        "cheaper at the same evidence rank: "
-                        if англ
-                        else "дешевле при тех же доводах: "
-                    )
+                    ("cheaper at the same evidence rank: " if англ else "дешевле при тех же доводах: ")
                     + f"{дешевле_шага.get('model')} "
                     + f"({_коротко(_форма_по_английски(дешевле_шага.get('price')) if англ else дешевле_шага.get('price'), SUMMARY_PRICE)})"
                 )
@@ -10241,10 +10171,7 @@ def сводка(итог: dict) -> str:
             )
         )
     if (итог.get("frame_rate") or {}).get("note"):
-        строки.append(
-            ("FRAME RATE: " if англ else "ЧАСТОТА КАДРОВ: ")
-            + _коротко(итог["frame_rate"]["note"], 300)
-        )
+        строки.append(("FRAME RATE: " if англ else "ЧАСТОТА КАДРОВ: ") + _коротко(итог["frame_rate"]["note"], 300))
     строки.append(("PRICE: " if англ else "ЦЕНА: ") + _цена_словами(итог, англ))
     строка_требований = _требования_словами(итог, англ)
     if строка_требований:
@@ -10388,10 +10315,7 @@ def с_входами(понято: "bs.Spec", есть: frozenset[str]) -> "bs.
 
 
 def маршрут_старше(
-    понято: "bs.Spec",
-    по_подсказкам: Sequence[Operation],
-    brief: str = "",
-    есть: frozenset[str] = frozenset(),
+    понято: "bs.Spec", по_подсказкам: Sequence[Operation], brief: str = "", есть: frozenset[str] = frozenset()
 ) -> bool:
     """Строить ли план МАРШРУТОМ спецификации, а не подсказками.
 
@@ -10402,10 +10326,7 @@ def маршрут_старше(
     если у `clarify` нет своего вопроса: «30 second product video» без слова о
     съёмке — вопрос «видео уже снято?», а не догадка «генерировать с нуля».
     """
-    if (
-        понято.source.get("task") == bs.SOURCE_SPEC
-        or понято.source.get("outputs") == bs.SOURCE_SPEC
-    ):
+    if понято.source.get("task") == bs.SOURCE_SPEC or понято.source.get("outputs") == bs.SOURCE_SPEC:
         return True
     if bs.route_first(понято):
         return True
@@ -10453,23 +10374,12 @@ def вопрос_чего_нет(понято: "bs.Spec") -> "clarify.Вопро
     """
     признаки = [
         имя
-        for имя in (
-            "outputs",
-            "duration_s",
-            "shots",
-            "resolution",
-            "aspect",
-            "fps",
-            "inputs",
-            "audio",
-        )
+        for имя in ("outputs", "duration_s", "shots", "resolution", "aspect", "fps", "inputs", "audio")
         if понято.has(имя)
     ]
     if not признаки:
         return None
-    нет = bs.missing(понято) or [
-        "which job to do with it (generate / animate / lip sync / dub / replace a face / avatar / upscale / edit)"
-    ]
+    нет = bs.missing(понято) or ["which job to do with it (generate / animate / lip sync / dub / replace a face / avatar / upscale / edit)"]
     return clarify.Вопрос(
         ось="что_заказано",
         текст="понято не всё: назовите " + "; ".join(bs.MISSING_RU.get(н, н) for н in нет),
@@ -10477,9 +10387,7 @@ def вопрос_чего_нет(понято: "bs.Spec") -> "clarify.Вопро
         варианты=("ответить словами", "передать spec={task, outputs, inputs, ...}"),
         english=(
             "not everything is understood — name " + "; ".join(нет),
-            "only "
-            + ", ".join(признаки)
-            + " could be read from the brief, and no steps follow from that alone",
+            "only " + ", ".join(признаки) + " could be read from the brief, and no steps follow from that alone",
             ("answer in words", "pass spec={task, outputs, inputs, ...}"),
         ),
     )
@@ -10515,9 +10423,7 @@ def вопрос_что_сделать(brief: str) -> "clarify.Вопрос | No
     """Просьба без предмета — вопрос «что сделать и с чем»; иначе None."""
     if not _ПРОСЬБА_БЕЗ_ПРЕДМЕТА.search(str(brief or "")):
         return None
-    работы = (
-        "generate a clip / animate a photo / lip sync / voiceover / dub / avatar / upscale / edit"
-    )
+    работы = "generate a clip / animate a photo / lip sync / voiceover / dub / avatar / upscale / edit"
     return clarify.Вопрос(
         ось="что_заказано",
         текст="что именно сделать и с чем: снять ролик с нуля, оживить фото, попасть в губы, "
@@ -10597,9 +10503,7 @@ def только_монтаж(
     она сравнивается.
     """
     почему = [
-        bs.ASSEMBLY_REASONS[н][1 if по_английски else 0]
-        for н in маршрут.сборка
-        if н in bs.ASSEMBLY_REASONS
+        bs.ASSEMBLY_REASONS[н][1 if по_английски else 0] for н in маршрут.сборка if н in bs.ASSEMBLY_REASONS
     ]
     сборка = {
         "step": ASSEMBLY_STEP,
@@ -10612,9 +10516,7 @@ def только_монтаж(
     строка_бюджета = _budget_row(бюджет)
     if бюджет.known and бюджет.amount is not None:
         строка_бюджета["outcome"] = PASS
-        строка_бюджета["note"] = (
-            f"{строка_бюджета['note']}; цена плана 0 usd (шагов-моделей нет) — в потолок укладывается"
-        )
+        строка_бюджета["note"] = f"{строка_бюджета['note']}; цена плана 0 usd (шагов-моделей нет) — в потолок укладывается"
         строка_бюджета["verdict"] = "в потолок укладывается"
     инструмент = (
         "edit / assembly -> ffmpeg or an editing app (not a model), 0 usd"
@@ -10630,11 +10532,7 @@ def только_монтаж(
             )
             + инструмент
             + "".join(f"\n      {п}" for п in почему)
-            + (
-                "\nPRICE: 0 usd (no model step)"
-                if по_английски
-                else "\nЦЕНА: 0 usd (шагов-моделей нет)"
-            )
+            + ("\nPRICE: 0 usd (no model step)" if по_английски else "\nЦЕНА: 0 usd (шагов-моделей нет)")
         ),
         "understood_as": bs.echo(понято),
         "outcome": UNMEASURED,
@@ -10982,9 +10880,7 @@ def plan(
     if маршрут.пробел is not None:
         return пробел_работы(понято, текст, по_английски, creative, бюджет)
     if not маршрут.шаги and маршрут.сборка:
-        return только_монтаж(
-            маршрут, bs.with_defaults(понято, ролик=True), текст, по_английски, creative, бюджет
-        )
+        return только_монтаж(маршрут, bs.with_defaults(понято, ролик=True), текст, по_английски, creative, бюджет)
     if маршрут.шаги:
         # МАРШРУТ ПО СТРУКТУРЕ: шаги — из того, ЧТО заказано и ИЗ ЧЕГО, а не из
         # подсказок. Замыкание по нехватке — то же, но без чтения брифа
@@ -11010,9 +10906,7 @@ def plan(
     if (
         вопрос is not None
         and вопрос.ось == clarify.ОСЬ_ИСХОДНИК
-        and (
-            понято.source.get("inputs") == bs.SOURCE_SPEC or bs.GENERATED_STYLE.search(_norm(brief))
-        )
+        and (понято.source.get("inputs") == bs.SOURCE_SPEC or bs.GENERATED_STYLE.search(_norm(brief)))
     ):
         # Вызывающий НАЗВАЛ входы — или бриф назвал стиль, который не снимают,
         # а генерируют: «видео уже снято?» — вопрос, на который уже ответили.
@@ -11035,11 +10929,7 @@ def plan(
     ):
         операции = [
             *операции,
-            next(
-                оп
-                for оп in OPERATIONS
-                if оп.name == ("оживление" if ARTEFACT_IMAGE in есть else "генерация_видео")
-            ),
+            next(оп for оп in OPERATIONS if оп.name == ("оживление" if ARTEFACT_IMAGE in есть else "генерация_видео")),
         ]
         if вопрос is not None and вопрос.ось == clarify.ОСЬ_ИСХОДНИК:
             вопрос = None
@@ -11102,11 +10992,7 @@ def plan(
                     # ВОПРОС О ПРЕДМЕТЕ НЕ ОТМЕНЯЕТ ОБЪЯСНЕНИЯ (5-й круг): на
                     # «make something nice» теперь вопрос, но причина — какие
                     # обороты мы читаем — остаётся рядом с ним.
-                    + (
-                        ПОДСКАЗКА_АНГЛ
-                        if вопрос.ось == "что_заказано" and not _есть_кириллица(текст)
-                        else ""
-                    )
+                    + (ПОДСКАЗКА_АНГЛ if вопрос.ось == "что_заказано" and not _есть_кириллица(текст) else "")
                     if по_английски
                     else "план не собирается, пока не назван один недостающий "
                     f"признак: {вопрос.текст}"
@@ -11133,7 +11019,9 @@ def plan(
                         # который написал по-английски намеренно. Теперь
                         # называются САМИ ОБОРОТЫ, которые продукт понимает:
                         # заказчику нужен пример, а не указание сменить язык.
-                        ПОДСКАЗКА_АНГЛ if not _есть_кириллица(текст) else ""
+                        ПОДСКАЗКА_АНГЛ
+                        if not _есть_кириллица(текст)
+                        else ""
                     )
                 )
             ),
@@ -11148,7 +11036,8 @@ def plan(
 
     языки = (
         tuple(понято.languages)
-        if понято.languages and (понято.source.get("languages") == bs.SOURCE_SPEC or маршрут.шаги)
+        if понято.languages
+        and (понято.source.get("languages") == bs.SOURCE_SPEC or маршрут.шаги)
         else языки_брифа(brief)
     )
     заказанный_кадр = (
@@ -11194,8 +11083,7 @@ def plan(
     # face», «logo legible», «hands») читаются тем же словарём тем, что и бриф;
     # сами слова уходят в ответ (`conditions_terms`) для отбора по условию.
     условия = pl.conditions_of_brief(
-        " ; ".join((brief, *понято.conditions)),
-        длительность.секунды if длительность.разобрано else None,
+        " ; ".join((brief, *понято.conditions)), длительность.секунды if длительность.разобрано else None
     )
     заявленные_условия, условия_не_поняты = заявленные(понято, spec, brief)
     #: Самая дешёвая записанная стоимость шага среди ВСЕХ его кандидатов —
@@ -11266,9 +11154,7 @@ def plan(
             use,
             нужда_шага(
                 op,
-                длительность_исходника
-                if (op.name in ON_SOURCE_STEPS and длительность_исходника)
-                else длительность,
+                длительность_исходника if (op.name in ON_SOURCE_STEPS and длительность_исходника) else длительность,
                 кадр_цены_шага(op),
                 кадров,
                 fps=понято.fps or fps_из_брифа(brief),
@@ -11307,9 +11193,7 @@ def plan(
             shots_basis=основание_шотов,
             source={
                 **понято.source,
-                "shots": (понято.source.get("shots") or bs.SOURCE_TEXT)
-                if понято.shots
-                else bs.SOURCE_DERIVED,
+                "shots": (понято.source.get("shots") or bs.SOURCE_TEXT) if понято.shots else bs.SOURCE_DERIVED,
             },
         )
 
@@ -11437,10 +11321,7 @@ def plan(
                     if лучший is not None
                     and op.name in SPEECH_STEPS
                     and op.name != "озвучка"
-                    and (
-                        говорящих_несколько(brief)
-                        or (spec_only and (понято.characters or 0) >= bs.MULTI_CHARACTER_MIN)
-                    )
+                    and (говорящих_несколько(brief) or (spec_only and (понято.characters or 0) >= bs.MULTI_CHARACTER_MIN))
                     else ""
                 ),
             }
@@ -11486,14 +11367,9 @@ def plan(
         # шаг интерполяции; не записано — нота `frame_rate`.
         частота[0] = ""
         if not any(op.name == "интерполяция_кадров" for op, _ in выбор):
-            почему_частота, частота[0] = решить_частоту(
-                выбор, fps_заказано, индекс.facts, по_английски
-            )
+            почему_частота, частота[0] = решить_частоту(выбор, fps_заказано, индекс.facts, по_английски)
             if почему_частота:
-                _шаг(
-                    next(оп for оп in OPERATIONS if оп.name == "интерполяция_кадров"),
-                    почему_частота,
-                )
+                _шаг(next(оп for оп in OPERATIONS if оп.name == "интерполяция_кадров"), почему_частота)
 
     _собрать()
 
@@ -11541,9 +11417,7 @@ def plan(
 
     # ВАЛИДАТОРУ ПОТОЛОК ШАГА — только когда он назван на шаг или на прогон
     # (2026-10-14, G7). Бюджет ролика — это сумма, и судит её `смета_ролика`.
-    пошаговый = бюджет.known and bool(
-        set(бюджет.per or DEFAULT_PER) & (set(DEFAULT_PER) | {PER_STEP})
-    )
+    пошаговый = бюджет.known and bool(set(бюджет.per or DEFAULT_PER) & (set(DEFAULT_PER) | {PER_STEP}))
     трубa = to_pipeline(
         текст.strip()[:80] or "план",
         выбор,
@@ -11651,22 +11525,11 @@ def plan(
         # собирает монтаж (ffmpeg), и шага-модели, делающего ролик, нет.
         # СЕДЬМОЙ КРУГ: то же у любой работы, где ролик собирает МОНТАЖ,
         # названный маршрутом (нарезка, стабилизация, дорожка дубляжа).
-        (
-            ролик_заказан(brief)
-            or (spec_only and "video" in понято.outputs and понято.task != "captions")
-        )
+        (ролик_заказан(brief) or (spec_only and "video" in понято.outputs and понято.task != "captions"))
         and not маршрут.сборка,
     )
     for строка_сметы in (цена_пайплайна.get("смета") or {}).get("steps") or []:
-        n = (
-            шотов_шага(
-                next(оп for оп in операции if оп.name == строка_сметы["step"]),
-                маршрут.штук.get(строка_сметы["step"], кадров),
-                клипов,
-            )
-            if строка_сметы["step"] in имена_плана
-            else None
-        )
+        n = шотов_шага(next(оп for оп in операции if оп.name == строка_сметы["step"]), маршрут.штук.get(строка_сметы["step"], кадров), клипов) if строка_сметы["step"] in имена_плана else None
         if n:
             строка_сметы["shots"] = n
             строка_сметы["usd_per_shot"] = round(float(строка_сметы["usd"]) / n, 4)
@@ -11772,9 +11635,7 @@ def plan(
         if оп_шага is not None and (n_языков := языков_на_шаг(оп_шага)) > 1:
             строка["languages_multiplier"] = n_языков
         if выбран is not None and строка["step"] in PER_LANGUAGE_STEPS and понято.language_tags:
-            строка["language_support"] = поддержка_языков(
-                выбран.model, индекс.facts, понято.language_tags
-            )
+            строка["language_support"] = поддержка_языков(выбран.model, индекс.facts, понято.language_tags)
         if выбран is not None and apple:
             строка["apple_silicon"] = поддержка_apple(выбран.model, индекс.facts)
     со_звуком = вариант_со_звуком(
@@ -11843,9 +11704,7 @@ def plan(
             # выбранного шага привязан к кадру. Иначе оно — шум.
             replace(понято, assumptions=(*понято.assumptions, ASSUMED_PRICE_FRAME))
             if кадр_цены_допущен
-            and any(
-                к is not None and к.cost is not None and к.cost.default.resolution for _, к in выбор
-            )
+            and any(к is not None and к.cost is not None and к.cost.default.resolution for _, к in выбор)
             else понято,
             [оп.name for оп, _ in выбор],
         ),
@@ -12229,8 +12088,7 @@ def _candidate_row(c: Candidate | None) -> dict | None:
         "unresolved": c.unresolved,
         "price": c.price,
         "price_flags": флаги_цены(c),
-        "registry": c.registry_note
-        or ("job not established by the endpoint registry" if c.unclassified else ""),
+        "registry": c.registry_note or ("job not established by the endpoint registry" if c.unclassified else ""),
         "licence_risk": c.licence_risk,
         "superseded": c.superseded,
         "community": c.community,
