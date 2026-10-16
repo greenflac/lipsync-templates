@@ -1,0 +1,268 @@
+ЗАЯВКА НА РАСШИРЕНИЕ WHITELIST
+источник: denied_hosts.jsonl, только строки в состоянии `refused`
+хостов отказано: 206
+регистрируемых доменов: 185
+
+--- ТИР 1: VENDOR — the model owner's own pages  (27 доменов)
+  *.alibabacloud.com
+       зачем: Wan and Qwen on Alibaba's own cloud docs
+       упирались в: alibabacloud.com, www.alibabacloud.com
+  *.aliyun.com
+       зачем: the same, Chinese-language docs
+       упирались в: help.aliyun.com
+  *.anthropic.com
+       зачем: Claude models — limits, pricing, tool use
+       упирались в: docs.anthropic.com
+  *.bfl.ml
+       зачем: Black Forest Labs, older domain (bfl.ai already answers)
+       упирались в: bfl.ml, docs.bfl.ml
+  *.blog.google
+       зачем: Google model announcements with stated limits
+       упирались в: blog.google
+  *.bytedance.com
+       зачем: Seedance and OmniHuman — the lab's own pages
+       упирались в: bytedance.com, seed.bytedance.com
+  *.cohere.com
+       зачем: Cohere — embed and rerank, context and dimensions
+       упирались в: api.cohere.com, cohere.com, docs.cohere.com
+  *.comfy.org
+       зачем: ComfyUI itself (api.comfy.org answers, the site does not)
+       упирались в: comfy.org
+  *.deepgram.com
+       зачем: Deepgram speech models
+       упирались в: deepgram.com
+  *.deepmind.google
+       зачем: Veo and Imagen — Google's own model pages
+       упирались в: deepmind.google
+  *.deepseek.com
+       зачем: DeepSeek — API docs and pricing
+       упирались в: api-docs.deepseek.com, api.deepseek.com
+  *.dingtalk.com
+       зачем: Alibaba doc hosting — Wan pages the base went looking for
+       упирались в: alidocs.dingtalk.com
+  *.google.dev
+       зачем: Gemini API reference
+       упирались в: google.dev
+  *.googleblog.com
+       зачем: Google developer announcements
+       упирались в: developers.googleblog.com
+  *.hailuoai.video
+       зачем: Hailuo product pages
+       упирались в: hailuoai.video
+  *.hedra.com
+       зачем: Hedra Character — audio-driven avatar
+       упирались в: docs.hedra.com, hedra.com, www.hedra.com
+  *.ideogram.ai
+       зачем: Ideogram — typography-focused image model
+       упирались в: about.ideogram.ai, developer.ideogram.ai
+  *.kimi.ai
+       зачем: Moonshot Kimi — platform docs
+       упирались в: platform.kimi.ai
+  *.leonardo.ai
+       зачем: Leonardo image models
+       упирались в: leonardo.ai
+  *.minimax.io
+       зачем: MiniMax / Hailuo — video and speech models
+       упирались в: minimax.io, platform.minimax.io, www.minimax.io
+  *.mistral.ai
+       зачем: Mistral — model cards, API reference
+       упирались в: api.mistral.ai, docs.mistral.ai, mistral.ai
+  *.qwen.ai
+       зачем: Qwen — Alibaba's model line
+       упирались в: qwen.ai
+  *.skywork.ai
+       зачем: Skywork models
+       упирались в: skywork.ai
+  *.sync.so
+       зачем: sync.so lipsync API
+       упирались в: docs.sync.so, sync.so
+  *.voyageai.com
+       зачем: voyage-multimodal-3 — dimension, image payload limits
+       упирались в: blog.voyageai.com, docs.voyageai.com, voyageai.com, www.voyageai.com
+  *.x.ai
+       зачем: Grok — the vendor's only stated specification
+       упирались в: docs.x.ai, x.ai
+  *.z.ai
+       зачем: Zhipu GLM
+       упирались в: z.ai
+
+--- ТИР 2: PORTAL — platforms that run the models  (13 доменов)
+  *.aimlapi.com
+       зачем: reseller catalogue
+       упирались в: aimlapi.com
+  *.apiframe.ai
+       зачем: reseller catalogue
+       упирались в: apiframe.ai
+  *.eachlabs.ai
+       зачем: hosted video and avatar models
+       упирались в: eachlabs.ai
+  *.fal.run
+       зачем: fal's API host (fal.ai pages already answer)
+       упирались в: fal.run
+  *.kie.ai
+       зачем: reseller catalogue
+       упирались в: kie.ai
+  *.openrouter.ai
+       зачем: a paged CATALOGUE of closed LLMs — ids, context, price
+       упирались в: openrouter.ai
+  *.piapi.ai
+       зачем: reseller with published enums
+       упирались в: piapi.ai
+  *.replicate.com
+       зачем: the largest model-running platform; schemas and prices
+       упирались в: api.replicate.com, replicate.com
+  *.runcomfy.com
+       зачем: hosted ComfyUI — node and workflow compatibility
+       упирались в: runcomfy.com
+  *.rundiffusion.com
+       зачем: hosted diffusion tooling
+       упирались в: rundiffusion.com
+  *.runware.ai
+       зачем: hosted inference, published rates
+       упирались в: runware.ai
+  *.segmind.com
+       зачем: hosted diffusion endpoints
+       упирались в: segmind.com
+  *.together.xyz
+       зачем: the same shape, second source
+       упирались в: api.together.xyz
+
+--- ТИР 3: BENCHMARK — published independent evaluation  (17 доменов)
+  *.agents-last-exam.org
+       зачем: agent benchmark
+       упирались в: agents-last-exam.org
+  *.alphaxiv.org
+       зачем: arXiv discussion layer
+       упирались в: alphaxiv.org
+  *.artificialanalysis.ai
+       зачем: cross-vendor latency, price and quality index
+       упирались в: artificialanalysis.ai
+  *.benchlm.ai
+       зачем: LLM benchmark aggregation
+       упирались в: benchlm.ai
+  *.datacurve.ai
+       зачем: DeepSWE evaluation
+       упирались в: deepswe.datacurve.ai
+  *.epoch.ai
+       зачем: compute and capability trend data
+       упирались в: epoch.ai
+  *.frontierswe.com
+       зачем: agent benchmark
+       упирались в: www.frontierswe.com
+  *.llm-stats.com
+       зачем: aggregated LLM specifications and scores
+       упирались в: llm-stats.com
+  *.lmarena.ai
+       зачем: human preference arena for LLMs and image models
+       упирались в: lmarena.ai
+  *.models.dev
+       зачем: model specification catalogue
+       упирались в: models.dev
+  *.myphysicslab.com
+       зачем: physics reference for evaluating physical plausibility
+       упирались в: myphysicslab.com
+  *.physion.net
+       зачем: physical-reasoning benchmark
+       упирались в: physion.net
+  *.posttrainbench.com
+       зачем: post-training benchmark
+       упирались в: posttrainbench.com
+  *.semanticscholar.org
+       зачем: paper metadata and citations
+       упирались в: semanticscholar.org
+  *.swe-marathon.org
+       зачем: agent benchmark
+       упирались в: swe-marathon.org
+  *.swebench.com
+       зачем: SWE-bench leaderboards
+       упирались в: swebench.com, www.swebench.com
+  *.vals.ai
+       зачем: independent model evaluations
+       упирались в: vals.ai
+
+--- ТИР 4: REFERENCE — general technical documentation  (19 доменов)
+  *.ai-sdk.dev
+       зачем: Vercel AI SDK — provider capability matrix
+       упирались в: ai-sdk.dev
+  *.amazon.com
+       зачем: AWS Bedrock model documentation
+       упирались в: docs.aws.amazon.com
+  *.apidog.com
+       зачем: API reference mirrors
+       упирались в: apidog.com
+  *.cloudflare.com
+       зачем: Workers AI model catalogue
+       упирались в: cloudflare.com
+  *.datacamp.com
+       зачем: tutorials
+       упирались в: datacamp.com
+  *.deepset.ai
+       зачем: RAG tooling documentation
+       упирались в: deepset.ai
+  *.github.io
+       зачем: project pages of research repositories
+       упирались в: github.io, omnihuman-lab.github.io
+  *.kili-technology.com
+       зачем: annotation tooling
+       упирались в: kili-technology.com
+  *.labellerr.com
+       зачем: annotation tooling
+       упирались в: labellerr.com
+  *.learnprompting.org
+       зачем: prompting reference
+       упирались в: learnprompting.org
+  *.microsoft.com
+       зачем: Azure-hosted model documentation (learn.microsoft.com)
+       упирались в: learn.microsoft.com
+  *.mongodb.com
+       зачем: vector search documentation
+       упирались в: mongodb.com
+  *.mozilla.org
+       зачем: web standards, for the creative-analysis side
+       упирались в: mozilla.org
+  *.ntnu.no
+       зачем: academic hosting
+       упирались в: ntnu.no
+  *.scale.com
+       зачем: evaluation vendor
+       упирались в: scale.com
+  *.takara.ai
+       зачем: research index
+       упирались в: takara.ai
+  *.union.ai
+       зачем: orchestration documentation
+       упирались в: union.ai
+  *.vellum.ai
+       зачем: prompt tooling
+       упирались в: vellum.ai
+  *.wikipedia.org
+       зачем: definitions and background
+       упирались в: wikipedia.org
+
+--- ТИР 5: ЦИТИРУЕТСЯ БАЗОЙ, НО НЕ ПРОЧИТАНО  (4 доменов)
+     самая сильная строка заявки: под этими URL стоят утверждения,
+     которые никто не смог проверить.
+  *.aivid.video
+       упирались в: aivid.video
+  *.aividpipeline.com
+       упирались в: aividpipeline.com
+  *.alici.ai
+       упирались в: alici.ai
+  *.gaga.art
+       упирались в: gaga.art
+
+--- НЕ ЗАПРАШИВАЕТСЯ НАМЕРЕННО (62 доменов)
+  media: social, news or blog platform; blog tier at best
+       andlukyane.com, andreaskuhr.com, chatpaper.ai, christytuckerlearning.com, commandlinux.com, dev.to, emergentmind.com, facebook.com, filmthreat.com, forbes.com, jonathanmast.com, medium.com, morphic.com, new3jcn.com, ourcodeworld.com, redditinc.com, scmp.com, substack.com, swfte.com, the-decoder.com, vultr.com, youtube.com
+  reseller-of-reseller: wraps another API; documents nothing first-hand
+       apimart.ai, apiyi.com, apob.ai, cometapi.com, evolink.ai, glbgpt.com, gptproto.com, puter.com, unifuncs.com
+  seo-clone: a domain squatting on a model name; not the vendor
+       acttwo.cv, kling-motion-control.com, kling2-6.com, kling3.ai, kling3.io, kling3api.com, klingaimotioncontrol.com, klingmotion.com, motioncontrolai.com, nanobanana.org, seavidgen.com, seedance2-video.com, seedance20.com, seedance2ai.io, seedance2pro.io, seedanceapi.org, wan2-1.com, wan27.org
+  tool-directory: aggregated listings with no primary source
+       ai-compare-hub.com, aibase.com, aitooltier.com, flaq.ai, imagebattle.ai, kingy.ai, lmcouncil.ai, localaimaster.com, modelhunter.ai, theaibuilders.dev, themoonlight.io, toolcenter.ai, vibedex.ai
+  incidental (43): открыт один раз как результат поиска,
+       ни одного факта на него не опирается — в заявке только ослабил бы её
+       anotherwrapper.com, artlist.io, atlabs.ai, atlascloud.ai, bloomway.ai, clickrank.ai, cliprise.app, deeka.ai, deevid.ai, dreamega.ai, flashloop.app, flowith.io, flyne.ai, forzebras.ai, futurebeeai.com, genmix.ai, getimg.ai, goenhance.ai, gradium.ai, higgsfield.ai, invideo.io, layer.ai, layer3labs.io, lovegen.ai, lumeflow.ai, magichour.ai, magnific.com, minionarts.com, phygital.plus, piclumen.com, picsart.com, pollo.ai, qingque.cn, renderful.ai, scenario.com, scenetra.com, seevio.ai, soku.ai, stensyl.ai, veed.io, videoweb.ai, viggle.ai, visualizee.ai
+
+итого запрошено: 80 доменов
+не разобрано: 0

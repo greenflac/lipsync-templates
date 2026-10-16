@@ -1,0 +1,240 @@
+"""Интеграция седьмого круга: то, что ломалось на СТЫКЕ веток knowledge/safety/routes."""
+
+from __future__ import annotations
+
+import unittest
+from datetime import date
+
+import studio.planner as pn
+from studio import duration as dur
+from studio import pricing
+from studio.pricing import rates
+from studio.selfrag.facts import Fact
+
+
+def _ставки(текст: str, атрибут: str = "") -> list[tuple[float, str]]:
+    return [(round(r.amount, 6), r.per) for r in rates(текст, атрибут)]
+
+
+class ЗаМиллионЗнаков(unittest.TestCase):
+    """«$30 per 1 million characters» — это $0.03 за 1000 знаков, не $30000."""
+
+    def test_один_миллион_словом(self) -> None:
+        self.assertEqual([(0.03, "1000_chars")], _ставки("$30 per 1 million characters"))
+
+    def test_миллион_без_единицы(self) -> None:
+        self.assertEqual([(0.03, "1000_chars")], _ставки("$30 per million characters"))
+
+    def test_миллион_цифрами(self) -> None:
+        self.assertEqual([(0.011, "1000_chars")], _ставки("about $11.00 per 1,000,000 characters"))
+
+    def test_1m_как_было(self) -> None:
+        self.assertEqual([(0.015, "1000_chars")], _ставки("$15.00 / 1M characters"))
+
+    def test_тысяча_не_задета(self) -> None:
+        self.assertEqual([(0.08, "1000_chars")], _ставки("$0.08 per 1K characters (API)"))
+        self.assertEqual([(2.4, "1000_chars")], _ставки("$0.24 per 100 characters"))
+
+    def test_миллион_токенов_по_прежнему_не_ставка(self) -> None:
+        self.assertEqual([], _ставки("$1.25 per 1 million tokens"))
+
+    def test_записанная_цена_chirp(self) -> None:
+        """Запись базы, на которой ошибка была видна: вторая запись числа не дублирует первую."""
+        текст = (
+            "$0.03 per 1,000 characters (US$0.00003 per character, US$30 per 1 million "
+            "characters; first 1 million characters per month free)"
+        )
+        for сумма, за in _ставки(текст, "price_per_1000_chars"):
+            self.assertEqual("1000_chars", за)
+            self.assertLess(сумма, 1.0)
+
+
+def _факт(model: str, attribute: str, value: str, url: str = "") -> Fact:
+    return Fact(
+        model=model,
+        attribute=attribute,
+        value=value,
+        source_url=url or f"https://fal.ai/models/fal-ai/{model}",
+        tier="vendor",
+        stated_on="2026-10-01",
+    )
+
+
+#: Синтетика по образу живой базы (n29): `deoldify` — открытые веса, маршрут
+#: один (self-host), цены нет; fal-раскраска — с ценой, но кадр до 720p.
+РАСКРАСКА: tuple[Fact, ...] = (
+    _факт(
+        "deoldify-mini",
+        "license",
+        "MIT",
+        "https://raw.githubusercontent.com/x/deoldify-mini/master/LICENSE",
+    ),
+    _факт(
+        "x-colorize",
+        "availability",
+        "on fal.ai as fal-ai/x-colorize/colorization (video-to-video); listing status public",
+    ),
+    _факт("x-colorize", "price_unit_second_usd", "$0.01 per second"),
+    _факт("x-colorize", "resolution_enum", "480p, 720p"),
+    _факт("x-vsr", "architecture", "video upscaler (super-resolution) model"),
+    _факт("x-vsr", "price_per_second_usd", "$0.02 per second"),
+    _факт("x-isr", "architecture", "image upscaler (super-resolution) model"),
+    _факт("x-isr", "price_per_image_usd", "$0.02 per image"),
+)
+
+
+def _шаги(self_host: bool) -> list[tuple[str, str | None]]:
+    spec: dict = {
+        "task": "colorize",
+        "inputs": [{"kind": "video", "owned": True, "duration_s": 60}],
+        "outputs": ["video"],
+        "resolution": "1080p",
+    }
+    if self_host:
+        spec["self_host"] = True
+    d = pn.plan(
+        "spec-only call",
+        facts=list(РАСКРАСКА),
+        today=date(2026, 10, 15),
+        full=True,
+        spec=spec,
+        spec_only=True,
+    )
+    return [(ш["step"], (ш.get("chosen") or {}).get("model")) for ш in d["steps"]]
+
+
+class РаскраскаТолькоСвоиВеса(unittest.TestCase):
+    """n29: узел «только у себя» — кандидат лишь в плане `self_host`."""
+
+    def test_api_план_берёт_оценённую_раскраску_и_апскейл_видео(self) -> None:
+        self.assertEqual([("раскраска", "x-colorize"), ("апскейл", "x-vsr")], _шаги(False))
+
+    def test_план_своего_gpu_берёт_свои_веса(self) -> None:
+        self.assertEqual([("раскраска", "deoldify-mini")], _шаги(True))
+
+    def test_правило_общее_а_не_только_семья(self) -> None:
+        from studio import endpoints as ep
+
+        узел = ep.Endpoint(model="m", key="m", routes=(ep.ROUTE_SELF_HOST,))
+        self.assertTrue(pn.семья_только_у_себя(узел))
+        self.assertFalse(
+            pn.семья_только_у_себя(
+                ep.Endpoint(model="m", key="m", routes=("fal", ep.ROUTE_SELF_HOST))
+            )
+        )
+        self.assertFalse(pn.семья_только_у_себя(ep.Endpoint(model="m", key="m")))
+
+
+class СкоростьРечиПоПисьму(unittest.TestCase):
+    """CJK — не 15 знаков в секунду: иероглиф или слог хангыля — это слог речи."""
+
+    def test_таблица(self) -> None:
+        self.assertEqual(15.0, pricing.speech_chars_per_second("en"))
+        self.assertEqual(15.0, pricing.speech_chars_per_second("ru"))
+        self.assertEqual(5.0, pricing.speech_chars_per_second("zh"))
+        self.assertEqual(5.0, pricing.speech_chars_per_second("zh-Hans-CN"))
+        self.assertEqual(6.0, pricing.speech_chars_per_second("ja"))
+        self.assertEqual(6.0, pricing.speech_chars_per_second("ko-KR"))
+        self.assertEqual(6.0, pricing.speech_chars_per_second("japanese"))
+        self.assertEqual(5.0, pricing.speech_chars_per_second("chinese"))
+
+    def test_по_языку_и_по_сумме_языков(self) -> None:
+        self.assertEqual(360.0, pricing.speech_chars(60.0, ("ja",)))
+        self.assertEqual(900.0, pricing.speech_chars(60.0, ()))
+        # Разные скорости без разбивки по языкам — латинская.
+        self.assertEqual(900.0, pricing.speech_chars(60.0, ("ja", "en")))
+        self.assertEqual(1560.0, pricing.speech_chars(180.0, ("ja", "zh", "en"), per_language=True))
+
+    def test_шаг_озвучки_на_японском(self) -> None:
+        оп = next(о for о in pn.OPERATIONS if о.name == "озвучка")
+        нужда = pn.нужда_шага(оп, dur.Запрос(60.0, "1 min"), None, языки=("japanese",))
+        self.assertEqual(360.0, нужда.chars)
+        нужда = pn.нужда_шага(
+            оп, dur.Запрос(60.0, "1 min"), None, языков=2, языки=("japanese", "english")
+        )
+        self.assertEqual(60.0 * 6 + 60.0 * 15, нужда.chars)
+
+
+class ОбрезкаНеПосредиСлова(unittest.TestCase):
+    """`find_models` печатает значения строк через `l10n.clip`, а не срезом."""
+
+    def test_capability_режет_по_слову(self) -> None:
+        from studio.mcp import capability as cap
+
+        текст = "keeps identity well (no faces on screen are rejected) across long clips"
+        короче = cap._коротко(текст, 40)
+        self.assertEqual("keeps identity well (no faces on screen…", короче)
+        self.assertLessEqual(len(короче), 40)
+        self.assertEqual(текст, cap._коротко(текст, 200))
+
+
+class КраткийОтветG11(unittest.TestCase):
+    """G11: краткий ответ несёт одну строку доказательств и счёт опущенных.
+
+    Мутант `COMPACT_EVIDENCE = 3` молчал на базе: ни один тест не смотрел,
+    СКОЛЬКО строк в кратком ответе. Проверка — через `plan` без `full`.
+    """
+
+    БАЗА = (
+        *РАСКРАСКА,
+        _факт("x-colorize", "architecture", "video colorization model, temporally consistent"),
+        _факт("x-colorize", "observed_quality", "colorized 1940s film without colour flicker"),
+    )
+    SPEC = {
+        "task": "colorize",
+        "inputs": [{"kind": "video", "owned": True, "duration_s": 60}],
+        "outputs": ["video"],
+    }
+
+    def test_одна_строка_и_счёт_опущенных(self) -> None:
+        полный = pn.plan(
+            "spec-only call",
+            facts=list(self.БАЗА),
+            today=date(2026, 10, 15),
+            spec=self.SPEC,
+            spec_only=True,
+            full=True,
+        )
+        всего = len(полный["steps"][0]["chosen"]["evidence"])
+        self.assertGreaterEqual(всего, 2)
+        краткий = pn.plan(
+            "spec-only call",
+            facts=list(self.БАЗА),
+            today=date(2026, 10, 15),
+            spec=self.SPEC,
+            spec_only=True,
+        )
+        выбран = краткий["steps"][0]["chosen"]
+        self.assertEqual(1, len(выбран["evidence"]))
+        self.assertEqual(всего - 1, выбран["evidence_omitted"])
+
+
+def _живой_план(spec: dict) -> list[tuple[str, str | None]]:
+    d = pn.plan("spec-only call", today=date(2026, 10, 16), full=True, spec=spec, spec_only=True)
+    return [(ш["step"], (ш.get("chosen") or {}).get("model")) for ш in d["steps"]]
+
+
+class ДубляжИГубыНаЖивойБазе(unittest.TestCase):
+    """Валидатор v7: n16 «no lipsync» — без шага липсинка; w24/n15 — липсинк sync-3."""
+
+    ВИДЕО = {"kind": "video", "owned": True, "duration_s": 120}
+
+    def test_n16_без_липсинка(self) -> None:
+        шаги = _живой_план(
+            {"task": "dub-translate", "inputs": [self.ВИДЕО], "outputs": ["video", "speech"],
+             "duration_s": 120, "languages": ["hi", "ta", "bn"], "lipsync": False}
+        )  # fmt: skip
+        self.assertEqual(["дубляж"], [ш for ш, _ in шаги])
+
+    def test_n15_липсинк_sync_3(self) -> None:
+        шаги = dict(
+            _живой_план(
+                {"task": "dub-translate", "inputs": [self.ВИДЕО], "outputs": ["video", "speech"],
+                 "duration_s": 120, "languages": ["es-419", "pt-BR"], "lipsync": True}
+            )
+        )  # fmt: skip
+        self.assertEqual("sync-lipsync-v3", шаги.get("липсинк"))
+
+
+if __name__ == "__main__":
+    unittest.main()

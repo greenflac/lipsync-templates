@@ -1,0 +1,608 @@
+{
+ "title": "MAIN EVENT — Побединский против Фрибетова",
+ "look": "Real live pay-per-view MMA broadcast footage, not a commercial: bright even overhead TV lighting, a white octagon canvas, black padded posts, black chain-link cage fence, a dark packed arena beyond with phone lights in the crowd. Broadcast-camera image with natural motion blur and slight lens breathing.",
+ "league": "SECURITY ARENA",
+ "width": 768,
+ "height": 1344,
+ "reveal_from": "S09_windup_freeze",
+ "secret_words": [
+  "vpn",
+  "впн*",
+  "free connection",
+  "бесплатн*",
+  "connection",
+  "соединени*",
+  "buffering",
+  "буфер*",
+  "disconnect*",
+  "отключ*",
+  "lag",
+  "lagged",
+  "лаг*",
+  "wifi",
+  "internet",
+  "интернет*",
+  "сигнал*"
+ ],
+ "round_from": "S06_bell_charge",
+ "round_to": "S10_disconnect",
+ "extra_brands": [],
+ "set_refs": [
+  {
+   "file": "refs/ref_canvas_security_arena.png",
+   "what": "the white octagon canvas with the black shield emblem and the words SECURITY ARENA in its center",
+   "scenes": [
+    "announce",
+    "octagon"
+   ]
+  },
+  {
+   "file": "refs/ref_padding_security_arena.png",
+   "what": "the black padding on top of the cage fence and on the posts, printed only with this repeating SECURITY ARENA pattern",
+   "scenes": [
+    "announce",
+    "octagon"
+   ]
+  }
+ ],
+ "characters": {
+  "august": {
+   "name": "AUGUST",
+   "face": "refs/august_face.png",
+   "refs": [
+    {
+     "file": "refs/print_august.png",
+     "what": "one large yellow sponsor wordmark printed flat across the center of his jersey chest, the only print on the jersey"
+    }
+   ],
+   "height_m": 1.78,
+   "weight_kg": 77,
+   "description": "a lean athletic blond fighter with a very short buzzcut and pale blue eyes; wearing a fitted black short-sleeve fight jersey with a subtle dark grey geometric pattern and a thin yellow trim, black fight shorts with a yellow waistband, plain black fingerless MMA gloves; calm, focused, economical in every movement"
+  },
+  "adgar": {
+   "name": "ADGAR",
+   "face": "refs/adgar_face.png",
+   "refs": [
+    {
+     "file": "refs/print_freevpn.png",
+     "what": "one large white sponsor logo (a shield mark above a lowercase word) printed flat across the center of his jersey chest, the only print on the jersey"
+    }
+   ],
+   "height_m": 2.05,
+   "weight_kg": 150,
+   "description": "a giant super-heavyweight with a thick dark beard, massive shoulders and a heavy frame; wearing a fitted dark red and black short-sleeve fight jersey with an angular camouflage pattern, black fight shorts with a dark red waistband, plain black fingerless MMA gloves; intimidating, aggressive, sure of himself"
+  },
+  "announcer": {
+   "name": "THE ANNOUNCER",
+   "face": "refs/announcer_face.png",
+   "description": "a charismatic ring announcer with slicked back silver hair in a black tuxedo with a black bow tie, holding a silver handheld microphone"
+  },
+  "referee": {
+   "name": "THE REFEREE",
+   "face": "refs/referee_face.png",
+   "height_m": 1.8,
+   "weight_kg": 85,
+   "description": "a bald referee in a plain black short-sleeve shirt and black trousers, wearing thin black latex gloves"
+  },
+  "caster_a": {
+   "name": "THE PLAY-BY-PLAY COMMENTATOR",
+   "description": "a middle-aged commentator in a dark suit with a broadcast headset microphone"
+  },
+  "caster_b": {
+   "name": "THE COLOR COMMENTATOR",
+   "description": "a retired fighter turned commentator with a shaved head and a tight black polo shirt, wearing a broadcast headset microphone"
+  }
+ },
+ "shots": [
+  {
+   "id": "S01_hook_lookup",
+   "scene": "octagon",
+   "seconds": 6,
+   "seed": 102,
+   "rig": "in_cage_handheld",
+   "framing": "extreme close-up that starts with nothing in the frame but August's eyes and eyebrows, then becomes a vertical handheld tilt up to Adgar's face",
+   "purpose": "Hook: a small calm fighter looks up, the camera follows his eyeline up to a giant. Question for the viewer: how will he survive this?",
+   "blocking": [
+    {
+     "who": "august",
+     "screen": "left",
+     "faces": "right"
+    },
+    {
+     "who": "adgar",
+     "screen": "right",
+     "faces": "left"
+    }
+   ],
+   "beats": [
+    {
+     "t": 0,
+     "kind": "camera",
+     "text": "At the first frame only {august}'s calm pale blue eyes and eyebrows fill the frame edge to edge, looking steeply upward; the operator holds them with a slight handheld sway."
+    },
+    {
+     "t": 0,
+     "kind": "action",
+     "text": "{august} breathes slowly through his nose, completely calm, not blinking."
+    },
+    {
+     "t": 1.2,
+     "kind": "camera",
+     "text": "The operator tilts straight up along his eyeline, past the top of his head, with a brief focus hunt, until {adgar}'s bearded face fills the top of the frame, a full head above, glaring straight down; the tilt overshoots a little and the operator corrects."
+    },
+    {
+     "t": 3.5,
+     "kind": "action",
+     "text": "{adgar} leans in a little and flares his nostrils; {august} does not move."
+    }
+   ],
+   "soundscape": "Near silence at first: slow breathing close to the microphone and the muffled hum of the arena. At 00:02.000 the crowd erupts into a roar and a commentator's voice in the broadcast mix says: 'Seventy-three kilos. That is the difference tonight.'",
+   "music": "None."
+  },
+  {
+   "id": "S02_announce",
+   "scene": "announce",
+   "seconds": 6,
+   "seed": 13,
+   "rig": "steadicam_orbit",
+   "framing": "medium close-up of the announcer in the center of the octagon, the cage and the dark crowd behind him",
+   "purpose": "The event is real and big: the voice of a title fight.",
+   "blocking": [
+    {
+     "who": "announcer",
+     "screen": "center",
+     "faces": "camera"
+    }
+   ],
+   "beats": [
+    {
+     "t": 0,
+     "kind": "camera",
+     "text": "The Steadicam operator arcs slowly to the left around him, keeping his face framed, the cage lights flaring behind his head."
+    },
+    {
+     "t": 0.5,
+     "kind": "action",
+     "text": "He lifts the microphone to his lips and fills his chest."
+    },
+    {
+     "t": 4.0,
+     "kind": "action",
+     "text": "He pumps his free fist once at shoulder height, elbow bent, then points it toward the crowd."
+    }
+   ],
+   "dialogue": [
+    {
+     "t": 1.0,
+     "who": "announcer",
+     "line": "Ladies and gentlemen... this is the main event!",
+     "delivery": "in a booming, perfectly clear arena voice, stretching the last words"
+    }
+   ],
+   "soundscape": "His voice through the arena PA with light natural reverb; the crowd erupts into a roar on the last word.",
+   "music": "None."
+  },
+  {
+   "id": "S03_walkout_adgar",
+   "scene": "octagon",
+   "seconds": 6,
+   "seed": 33,
+   "rig": "steadicam_orbit",
+   "framing": "medium shot of Adgar standing in his corner of the octagon while he is introduced, the cage and the dark crowd behind him",
+   "purpose": "Introduction of the giant in his corner: the crowd is afraid for the other guy.",
+   "blocking": [
+    {
+     "who": "adgar",
+     "screen": "center",
+     "faces": "camera"
+    }
+   ],
+   "beats": [
+    {
+     "t": 0,
+     "kind": "camera",
+     "text": "The Steadicam operator arcs slowly around {adgar} in his corner, keeping his face framed, with a light bob from the footsteps."
+    },
+    {
+     "t": 1.0,
+     "kind": "action",
+     "text": "{adgar} stands still with his heavy arms hanging loose, breathing deeply through his nose, his chest rising and falling, and stares across the octagon without blinking."
+    },
+    {
+     "t": 4.0,
+     "kind": "action",
+     "text": "He tilts his head slightly to one side and cracks his neck once."
+    }
+   ],
+   "soundscape": "The crowd booing and roaring. The arena PA: 'Fighting out of the red corner... Adgar... Fribetov!'",
+   "music": "None."
+  },
+  {
+   "id": "S04_walkout_august",
+   "scene": "octagon",
+   "seconds": 6,
+   "seed": 42,
+   "rig": "steadicam_orbit",
+   "framing": "medium shot of August standing in the opposite corner of the octagon while he is introduced, the cage and the dark crowd behind him",
+   "purpose": "Introduction of August: no show, total calm; the contrast keeps the viewer curious.",
+   "blocking": [
+    {
+     "who": "august",
+     "screen": "center",
+     "faces": "camera"
+    }
+   ],
+   "beats": [
+    {
+     "t": 0,
+     "kind": "camera",
+     "text": "The Steadicam operator arcs slowly around {august} in his corner, with a gentle bob and a slight horizon drift that is corrected."
+    },
+    {
+     "t": 2.0,
+     "kind": "action",
+     "text": "{august} bounces lightly on his toes, hands loose, and gives a small nod toward the opposite corner."
+    },
+    {
+     "t": 4.0,
+     "kind": "action",
+     "text": "He exhales and touches his gloves together once."
+    }
+   ],
+   "soundscape": "A warm cheer from the crowd. The arena PA: 'And fighting out of the blue corner... August... Pobedinsky!'",
+   "music": "None."
+  },
+  {
+   "id": "S05_faceoff",
+   "scene": "octagon",
+   "seconds": 8,
+   "seed": 52,
+   "rig": "cage_side_tele",
+   "framing": "tight telephoto shot from the waist up through the cage fence: the three of them in profile, the floor out of frame",
+   "purpose": "Scale and tension: the referee's instructions, the giant refuses to touch gloves.",
+   "blocking": [
+    {
+     "who": "august",
+     "screen": "left",
+     "faces": "right"
+    },
+    {
+     "who": "referee",
+     "screen": "center",
+     "faces": "camera"
+    },
+    {
+     "who": "adgar",
+     "screen": "right",
+     "faces": "left"
+    }
+   ],
+   "beats": [
+    {
+     "t": 0,
+     "kind": "action",
+     "text": "{august} and {adgar} stand nose to nose; {august} tilts his chin up to hold eye contact while {adgar} glares down at him; {referee} stands between them, one hand raised."
+    },
+    {
+     "t": 3.0,
+     "kind": "camera",
+     "text": "The cage-side operator follows {adgar} leaning in, the black fence mesh drifting soft in the foreground, and makes a small zoom adjustment to hold both heads in frame."
+    },
+    {
+     "t": 5.0,
+     "kind": "action",
+     "text": "{august} offers his glove for a touch; {adgar} slaps it away and turns to his corner."
+    }
+   ],
+   "dialogue": [
+    {
+     "t": 1.0,
+     "who": "referee",
+     "line": "Protect yourselves at all times. Touch gloves.",
+     "delivery": "flatly, in a firm low voice"
+    }
+   ],
+   "soundscape": "A tense crowd murmur, the referee's voice close and dry, the slap of gloves and a loud 'ooh' from the crowd.",
+   "music": "None."
+  },
+  {
+   "id": "S06_bell_charge",
+   "scene": "octagon",
+   "seconds": 7,
+   "seed": 61,
+   "rig": "cage_side_tele",
+   "framing": "wide shot of the whole octagon as the round starts",
+   "purpose": "The fight starts: the giant charges, the small guy moves.",
+   "blocking": [
+    {
+     "who": "august",
+     "screen": "left",
+     "faces": "right"
+    },
+    {
+     "who": "adgar",
+     "screen": "right",
+     "faces": "left"
+    }
+   ],
+   "beats": [
+    {
+     "t": 0,
+     "kind": "action",
+     "text": "{adgar} charges across the canvas throwing wide, heavy hooks; {august} circles away on light feet and slips out of range every time, nothing touches him."
+    },
+    {
+     "t": 0.5,
+     "kind": "camera",
+     "text": "The operator pans with the action, the frame lagging behind {adgar}'s charge and catching up."
+    },
+    {
+     "t": 4.0,
+     "kind": "action",
+     "text": "{adgar} swings and misses so hard that he stumbles a half step past {august}."
+    }
+   ],
+   "soundscape": "A single ring of the bell, then a rising roar; heavy footsteps on the canvas and the whoosh of missed punches.",
+   "music": "None."
+  },
+  {
+   "id": "S07_pressure",
+   "scene": "octagon",
+   "seconds": 7,
+   "seed": 72,
+   "rig": "high_wide_tele",
+   "framing": "wide shot from above the fence: both fighters head to toe against the cage, the referee a few steps behind them",
+   "purpose": "Danger peaks: August is trapped against the cage under a giant's weight, but his guard holds.",
+   "blocking": [
+    {
+     "who": "august",
+     "screen": "left",
+     "faces": "right"
+    },
+    {
+     "who": "adgar",
+     "screen": "right",
+     "faces": "left"
+    },
+    {
+     "who": "referee",
+     "screen": "right",
+     "faces": "left"
+    }
+   ],
+   "beats": [
+    {
+     "t": 0,
+     "kind": "action",
+     "text": "{adgar} pins {august} against the fence in a clinch and leans all his weight on him, heavy and tired, digging short punches into {august}'s high guard and forearms; {august} keeps his elbows tight, his face covered and calm."
+    },
+    {
+     "t": 0.3,
+     "kind": "camera",
+     "text": "The operator pans and zooms in slightly to keep both fighters and the referee in frame, the frame lagging behind each shove and catching up."
+    },
+    {
+     "t": 2.0,
+     "kind": "action",
+     "text": "{referee} steps closer behind {adgar}, watching, ready to separate them."
+    },
+    {
+     "t": 4.0,
+     "kind": "action",
+     "text": "{august} pushes off the fence with his forearm, turns out under {adgar}'s arm and circles back to the center, untouched; {adgar} turns after him, breathing hard."
+    }
+   ],
+   "soundscape": "The fence rattling, short dull thuds of gloves on forearms, the crowd roaring; a commentator in the broadcast mix, fast and excited: 'He's leaning all hundred and fifty kilos on him!'",
+   "music": "None."
+  },
+  {
+   "id": "S08_booth",
+   "scene": "booth",
+   "seconds": 6,
+   "seed": 81,
+   "rig": "booth_locked",
+   "framing": "medium two-shot of the commentators at their desk",
+   "purpose": "The broadcast confirms what we see; tension for the finish.",
+   "blocking": [
+    {
+     "who": "caster_a",
+     "screen": "left",
+     "faces": "camera"
+    },
+    {
+     "who": "caster_b",
+     "screen": "right",
+     "faces": "camera"
+    }
+   ],
+   "beats": [
+    {
+     "t": 0,
+     "kind": "camera",
+     "text": "The locked-off camera holds on both of them as they lean toward their monitors."
+    },
+    {
+     "t": 3.0,
+     "kind": "action",
+     "text": "{caster_b} half rises from his chair, pointing at the monitor."
+    }
+   ],
+   "dialogue": [
+    {
+     "t": 0.5,
+     "who": "caster_a",
+     "line": "Fribetov is throwing everything he's got!",
+     "delivery": "fast, excited"
+    },
+    {
+     "t": 2.8,
+     "who": "caster_b",
+     "line": "And none of it is landing.",
+     "delivery": "low, amazed"
+    }
+   ],
+   "soundscape": "Booth room tone, the crowd muffled through the glass.",
+   "music": "None."
+  },
+  {
+   "id": "S09_windup_freeze",
+   "scene": "octagon",
+   "seconds": 7,
+   "seed": 92,
+   "rig": "cage_side_tele",
+   "framing": "tight telephoto two-shot from outside the cage: both fighters from the waist up in the center of the octagon",
+   "purpose": "The turn: the giant winds up the finishing blow and freezes in mid-air like a paused video.",
+   "blocking": [
+    {
+     "who": "august",
+     "screen": "left",
+     "faces": "right"
+    },
+    {
+     "who": "adgar",
+     "screen": "right",
+     "faces": "left"
+    }
+   ],
+   "beats": [
+    {
+     "t": 0,
+     "kind": "action",
+     "text": "{adgar} roars and winds up a huge overhand punch, far away from {august}, who waits with his guard up."
+    },
+    {
+     "t": 1.5,
+     "kind": "action",
+     "text": "In the middle of the swing {adgar} stops dead and stays perfectly still, like a paused video, one foot lifted, mouth open, completely frozen until the end of the shot, while everything around him keeps moving."
+    },
+    {
+     "t": 2.0,
+     "kind": "camera",
+     "text": "The operator holds the two-shot, then slowly reframes and zooms in a little on the frozen {adgar}'s face, the focus breathing for a moment."
+    },
+    {
+     "t": 3.5,
+     "kind": "action",
+     "text": "{august} lowers his guard, steps closer and slowly waves one glove up and down in front of {adgar}'s frozen face without touching him; {adgar} does not react at all."
+    }
+   ],
+   "soundscape": "The roar cuts out to a stunned near silence; a faint high electronic whine. A commentator in the broadcast mix says quietly: 'He's... frozen.'",
+   "music": "None."
+  },
+  {
+   "id": "S10_disconnect",
+   "scene": "octagon",
+   "seconds": 7,
+   "seed": 111,
+   "rig": "cage_side_tele",
+   "framing": "medium-wide shot of the center of the octagon",
+   "purpose": "The reveal begins: the giant goes limp like a cable was pulled and topples flat; the referee waves it off.",
+   "blocking": [
+    {
+     "who": "august",
+     "screen": "left",
+     "faces": "right"
+    },
+    {
+     "who": "referee",
+     "screen": "center",
+     "faces": "camera"
+    },
+    {
+     "who": "adgar",
+     "screen": "right",
+     "faces": "left"
+    }
+   ],
+   "beats": [
+    {
+     "t": 0,
+     "kind": "action",
+     "text": "{adgar}, still frozen mid-swing, suddenly goes completely limp as if his power cable was pulled and topples forward stiff as a plank, landing flat on the soft canvas without touching anyone."
+    },
+    {
+     "t": 0.3,
+     "kind": "camera",
+     "text": "The operator follows the fall with a quick tilt down and a small overshoot, then corrects."
+    },
+    {
+     "t": 2.0,
+     "kind": "action",
+     "text": "{referee} rushes in and waves both arms over his head to stop the fight; {august} steps back, untouched."
+    }
+   ],
+   "soundscape": "A falling electronic power-down tone, a soft thud on the canvas, a beat of silence, then the crowd explodes. A commentator in the broadcast mix: 'He's gone! It's over!'",
+   "music": "None."
+  },
+  {
+   "id": "S11_logo_reveal",
+   "scene": "octagon",
+   "seconds": 6,
+   "seed": 121,
+   "rig": "in_cage_handheld",
+   "framing": "high angle close-up looking down at Adgar lying on his back on the canvas",
+   "purpose": "The cards are on the table: the camera finds the sponsor on the fallen giant's chest.",
+   "blocking": [
+    {
+     "who": "adgar",
+     "screen": "center",
+     "faces": "camera"
+    }
+   ],
+   "beats": [
+    {
+     "t": 0,
+     "kind": "action",
+     "text": "{adgar} lies flat on his back, eyes open, blinking slowly at the ceiling, completely still."
+    },
+    {
+     "t": 0.5,
+     "kind": "camera",
+     "text": "The operator leans over him and tilts down from his face to his chest, racking focus onto the white sponsor logo printed on his jersey until it fills the frame, sharp."
+    }
+   ],
+   "soundscape": "The crowd roar muffled as if far away, a slow electronic flatline tone fading out.",
+   "music": "None."
+  },
+  {
+   "id": "S12_winner",
+   "scene": "octagon",
+   "seconds": 6,
+   "seed": 131,
+   "rig": "steadicam_orbit",
+   "framing": "medium shot of the referee raising August's hand",
+   "purpose": "Payoff: the winner, with his sponsor on his chest. Hands over to the packshot.",
+   "blocking": [
+    {
+     "who": "august",
+     "screen": "center",
+     "faces": "camera"
+    },
+    {
+     "who": "referee",
+     "screen": "right",
+     "faces": "left"
+    }
+   ],
+   "beats": [
+    {
+     "t": 0,
+     "kind": "action",
+     "text": "{referee} raises {august}'s arm high; gold confetti falls through the cage lights."
+    },
+    {
+     "t": 0.5,
+     "kind": "camera",
+     "text": "The Steadicam operator arcs slowly around them toward {august}'s face and chest, the horizon drifting slightly and being corrected."
+    },
+    {
+     "t": 3.0,
+     "kind": "action",
+     "text": "{august} looks into the lens with a calm, satisfied half smile."
+    }
+   ],
+   "soundscape": "The crowd roaring and chanting, confetti cannons popping.",
+   "music": "A short triumphant brass-and-drums sting starting at 00:02.000."
+  }
+ ]
+}
