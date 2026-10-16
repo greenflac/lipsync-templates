@@ -68,6 +68,7 @@ from studio import brief_spec as bs
 from studio import endpoints as ep
 from studio import factaxis as fa
 from studio import hardneed as hn
+from studio import l10n
 from studio import pipeline as pl
 from studio.selfrag import attrfamily
 from studio.selfrag.facts import TIERS, Fact
@@ -846,8 +847,8 @@ def _требование(
 
 
 def _коротко(значение: object, n: int) -> str:
-    текст = " ".join(str(значение).split())
-    return текст if len(текст) <= n else текст[: n - 1] + "…"
+    """Не длиннее `n` знаков — по фразе или слову (`l10n.clip`), а не посреди слова."""
+    return l10n.clip(значение, n)
 
 
 def _строка(f: Fact, sign: str, polarity: str, why: str = "") -> dict:

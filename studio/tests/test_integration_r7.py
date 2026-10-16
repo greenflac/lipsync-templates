@@ -155,5 +155,18 @@ class СкоростьРечиПоПисьму(unittest.TestCase):
         self.assertEqual(60.0 * 6 + 60.0 * 15, нужда.chars)
 
 
+class ОбрезкаНеПосредиСлова(unittest.TestCase):
+    """`find_models` печатает значения строк через `l10n.clip`, а не срезом."""
+
+    def test_capability_режет_по_слову(self) -> None:
+        from studio.mcp import capability as cap
+
+        текст = "keeps identity well (no faces on screen are rejected) across long clips"
+        короче = cap._коротко(текст, 40)
+        self.assertEqual("keeps identity well (no faces on screen…", короче)
+        self.assertLessEqual(len(короче), 40)
+        self.assertEqual(текст, cap._коротко(текст, 200))
+
+
 if __name__ == "__main__":
     unittest.main()
