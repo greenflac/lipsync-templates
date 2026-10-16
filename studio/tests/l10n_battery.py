@@ -85,6 +85,9 @@ EN_PLANS: list[tuple[str, dict]] = [
     ("Transcribe our 10-minute podcast with speaker labels", {"spec": {"task": "transcribe", "outputs": ["text"], "duration_s": 600, "inputs": ["audio"]}}),
     ("Clone my voice from my sample and read 5 minutes of my script", {"spec": {"task": "voice-clone", "outputs": ["speech"], "duration_s": 300, "inputs": ["audio", "script"]}}),
     ("A 360 turntable of my sneaker photo, 6 seconds", {"spec": {"task": "turntable", "outputs": ["video"], "duration_s": 6, "inputs": ["photo"]}, "full": True}),
+    # Девятый круг: раскраска снимков и 3D-модель по снимкам — свои шаги.
+    ("Colorize 12 old black-and-white family photos", {"spec": {"task": "colorize", "outputs": ["image"], "shots": 12, "inputs": ["photo"]}, "full": True}),
+    ("A GLB 3D model of our lamp from 5 photos", {"spec": {"task": "turntable", "outputs": ["image"], "inputs": ["photo"], "conditions": ["glb"]}, "full": True}),
     # Пятый круг: просьба без предмета, смета дороже потолка, чужой образ.
     ("make it look good", {}),
     (
