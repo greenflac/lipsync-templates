@@ -66,6 +66,9 @@ TASKS: tuple[str, ...] = (
     "music-visualiser",
     "sing-photo",
     "cut-to-shorts",
+    # Седьмой круг: раскраска — НЕ реставрация (`seedvr2` чистит, но цвета не
+    # добавляет); «отреставрировать и раскрасить» — цепочка ["restore", "colorize"].
+    "colorize",
 )
 AUDIO_MODES: tuple[str, ...] = ("none", "native", "voiceover")
 INPUT_KINDS: tuple[str, ...] = ("photo", "video", "audio", "script", "model-weights")
@@ -123,6 +126,9 @@ SPEC_FIELDS: tuple[str, ...] = (
     "edit",
     # Седьмой круг: новость или реальное событие (читает и проверяет `screen`).
     "claims",
+    # Седьмой круг: двигать ли губы под новую речь (дубляж). Не названо —
+    # `lipsync_default`.
+    "lipsync",
 )
 
 SOURCE_SPEC = "spec"
@@ -392,6 +398,7 @@ _КЛАУЗА = re.compile(r"[,;:.!?\n]|\s—\s|\s-\s|\bthen\b|\bзатем\b|\b
 #: работе (`planner.ФУНКЦИЯ_ОПЕРАЦИИ`), а не слова брифа.
 ROUTE_TASKS: dict[str, tuple[tuple[str, str], ...]] = {
     "restore": (("video", "реставрация"),),
+    "colorize": (("video", "раскраска"),),
     "interpolate": (("video", "интерполяция_кадров"),),
     "remove-background": (("photo", "удаление_фона"), ("video", "удаление_фона_видео")),
     "transcribe": (("audio", "расшифровка"), ("video", "расшифровка")),
@@ -484,6 +491,8 @@ class Spec:
     #: Что правится в `video-edit`: reframe | replace-object | remove-object |
     #: replace-sky | stabilise | relight | restyle (`endpoints.EDIT_INTENTS`).
     edit: tuple[str, ...] = ()
+    #: Губы под новую речь (седьмой круг): True/False — сказано; None — `lipsync_default`.
+    lipsync: bool | None = None
 
     def has(self, имя: str) -> bool:
         значение = getattr(self, имя)
@@ -664,7 +673,8 @@ def budget_in_usd(сумма: float, валюта: str) -> tuple[float | None, s
         )
     return None, (
         f"budget named in {валюта} ({сумма:g} {валюта}); no {валюта}->USD rate is recorded and none is "
-        "invented — the plan gives NO budget verdict. Pass the budget in USD to get one"
+        "invented — the plan gives NO budget verdict. Convert it to USD yourself and pass "
+        f"budget={{amount: {сумма:g}, currency: '{валюта}', usd: <your figure>}} to get one"
     )
 
 
@@ -799,8 +809,11 @@ def _бюджет_spec(raw: Mapping[str, Any], поля: dict[str, Any], оши�
         ошибки.append("spec.budget: give budget {amount, currency} OR budget_usd, not both")
         return
     if not isinstance(б, Mapping):
-        ошибки.append("spec.budget: must be an object {amount, currency}")
+        ошибки.append("spec.budget: must be an object {amount, currency, usd?}")
         return
+    лишние = set(б) - {"amount", "currency", "usd"}
+    if лишние:
+        ошибки.append(f"spec.budget: unknown field(s) {', '.join(sorted(лишние))} (known: amount, currency, usd)")
     сумма, валюта = б.get("amount"), str(б.get("currency") or "").strip().upper()
     if (
         isinstance(сумма, bool)
@@ -815,6 +828,22 @@ def _бюджет_spec(raw: Mapping[str, Any], поля: dict[str, Any], оши�
         ошибки.append(f"spec.budget.currency={б.get('currency')!r}: an ISO 4217 code such as USD, EUR, KZT")
         return
     usd, нота = budget_in_usd(float(сумма), валюта)
+    свой = б.get("usd")
+    if свой is not None:
+        # ПЕРЕСЧЁТ ВЫЗЫВАЮЩЕГО (седьмой круг): курса у нас не записано ни
+        # одного, а вызывающий знает сегодняшний. Его число — потолок; сумма в
+        # валюте остаётся для эха. Записанный курс старше чужого пересчёта нет:
+        # вызывающий назвал число явно.
+        if isinstance(свой, bool) or not isinstance(свой, (int, float)) or math.isnan(свой) or math.isinf(свой) or свой < 0:
+            ошибки.append(f"spec.budget.usd={свой!r}: must be a finite number, 0 or more")
+            return
+        usd = float(свой)
+        нота = (
+            ""
+            if валюта == "USD"
+            else f"budget {float(сумма):g} {валюта} converted by the caller to {usd:g} USD — no {валюта}->USD rate "
+            "is recorded here; the budget verdict uses the caller's figure"
+        )
     поля["budget_amount"], поля["budget_currency"] = float(сумма), валюта
     if usd is not None:
         поля["budget_usd"] = float(usd)
@@ -964,6 +993,11 @@ def parse_spec(raw: Mapping[str, Any] | None) -> tuple[Spec, list[str]]:
                 f"spec.edit: {', '.join(map(repr, чужие))} — allowed: {', '.join(ep.EDIT_INTENTS)}"
             )
         поля["edit"] = tuple(dict.fromkeys(п for п in правки if п in ep.EDIT_INTENTS))
+    if raw.get("lipsync") is not None:
+        if not isinstance(raw["lipsync"], bool):
+            ошибки.append(f"spec.lipsync={raw['lipsync']!r}: must be true or false")
+        else:
+            поля["lipsync"] = raw["lipsync"]
     if raw.get("open_weights") is not None:
         if not isinstance(raw["open_weights"], bool):
             ошибки.append(f"spec.open_weights={raw['open_weights']!r}: must be true or false")
@@ -1390,6 +1424,19 @@ class Маршрут:
     пометки: Mapping[str, str] = field(default_factory=dict)
     #: (ось, текст ru, текст en, варианты ru, варианты en) — чего не хватает.
     нехватка: tuple[str, str, str, tuple[str, ...], tuple[str, ...]] | None = None
+    #: Седьмой круг. Работа МОНТАЖА (ffmpeg, vidstab, синхронизация по долям),
+    #: которую маршрут называет сам, — ключи `ASSEMBLY_REASONS`. Модели в ней
+    #: нет, цена 0; шагов-моделей при этом может не быть вовсе.
+    сборка: tuple[str, ...] = ()
+    #: Работа, которую генеративные модели НЕ делают (язык жестов): (ru, en).
+    #: План не строится, а говорится, что это пробел, — никогда не подмена.
+    пробел: tuple[str, str] | None = None
+    #: Правки (`spec.edit`), которые делает ШАГ-МОДЕЛЬ `правка_видео`; None —
+    #: как названо в spec. Правки монтажа (`ASSEMBLY_EDITS`) сюда не входят.
+    правки: tuple[str, ...] | None = None
+    #: Сколько штук делает шаг, если не столько, сколько заказано кадров:
+    #: референс серии — один, правок по нему — N (седьмой круг).
+    штук: Mapping[str, int] = field(default_factory=dict)
 
 
 def _нехватка_видео(задача: str) -> tuple[str, str, str, tuple[str, ...], tuple[str, ...]]:
@@ -1434,6 +1481,16 @@ NOTE_VISUALISER = "только картинка под ВАШ трек: муз�
 NOTE_SING = "ВАШ снимок поёт ВАШУ дорожку: аватар, ведомый звуком; ни синтеза речи, ни генерации музыки"
 NOTE_SHORTS_TRANSCRIPT = "расшифровка с таймингами ВАШЕГО длинного видео — по ней выбираются фрагменты"
 NOTE_SHORTS_EDIT = "каждый короткий ролик вырезан и перекадрирован из ВАШЕГО видео — ничего не генерируется"
+NOTE_DUB_MUX = "новая дорожка кладётся в ВАШЕ видео при сборке; губы не двигаются (spec.lipsync=false)"
+NOTE_DUB_AUDIO = "отдаётся дорожка на новом языке; видео не трогается и губ не двигает никто"
+NOTE_STABILISE = "стабилизация — монтажный инструмент (ffmpeg vidstab или Gyroflow по гироскопу), не модель"
+NOTE_VISUALISER_SYNC = "реакция на звук делается при сборке; генерируемое видео трек не слышит"
+NOTE_SERIES_REF = "один референс персонажа, и каждая картинка серии — правка по нему"
+NOTE_SERIES_EDIT = "{n} картинок — правки по референсу (а не {n} независимых генераций); вариант — обучить LoRA"
+NOTE_SIGN = (
+    "язык жестов генеративные модели не делают: липсинк и говорящие аватары двигают губы, а не руки — "
+    "пробел записан, план не строится"
+)
 NOTES_EN: dict[str, str] = {
     NOTE_DUB_LIPS: "translating your own video: lip sync moves the lips to the new language (no faces on screen — drop the step)",
     NOTE_CAPTIONS: "captions are burned in at assembly (ffmpeg) from the timed transcript — no model needed for that",
@@ -1444,6 +1501,15 @@ NOTES_EN: dict[str, str] = {
     NOTE_SING: "YOUR photo sings YOUR track: an audio-driven avatar; no speech synthesis, no music generation",
     NOTE_SHORTS_TRANSCRIPT: "timed transcript of YOUR long video — the moments are picked from it",
     NOTE_SHORTS_EDIT: "each short is cut and reframed from YOUR video — nothing is generated",
+    NOTE_DUB_MUX: "the new track is laid into YOUR video at assembly; the lips do not move (spec.lipsync=false)",
+    NOTE_DUB_AUDIO: "the new-language track is delivered as audio; the video is not touched and no lips are moved",
+    NOTE_STABILISE: "stabilisation is an assembly tool (ffmpeg vidstab, or Gyroflow from gyro data), not a model",
+    NOTE_VISUALISER_SYNC: "audio reactivity is made at assembly; the generated video does not hear the track",
+    NOTE_SERIES_REF: "one character reference, and every picture of the series is an edit from it",
+    NOTE_SIGN: (
+        "sign language is not something generative models do: lip sync and talking avatars move lips, not "
+        "hands — a recorded gap, no plan is built"
+    ),
 }
 
 #: Причины сборки, которые называет МАРШРУТ (а не состав шагов): дорожка
@@ -1455,10 +1521,66 @@ ASSEMBLY_REASONS: dict[str, tuple[str, str]] = {
         "YOUR track is laid under the visuals (its length is the clip length)",
     ),
     NOTE_SHORTS_EDIT: (
-        "фрагменты выбираются по расшифровке (вами или языковой моделью) и режутся ffmpeg — модель не нужна",
-        "the moments are picked from the transcript (by you or a language model) and cut with ffmpeg — no model",
+        "фрагменты выбираются по расшифровке (вами или языковой моделью), режутся, перекадрируются и "
+        "склеиваются ffmpeg — 0 usd, модель не нужна",
+        "the moments are picked from the transcript (by you or a language model), then cut, reframed and "
+        "joined with ffmpeg — 0 usd, no model",
+    ),
+    NOTE_CAPTIONS: (
+        "субтитры вжигаются ffmpeg по расшифровке с таймингами — 0 usd",
+        "captions are burned in with ffmpeg from the timed transcript — 0 usd",
+    ),
+    NOTE_DUB_MUX: (
+        "переведённая дорожка заменяет звук ВАШЕГО видео (ffmpeg) — 0 usd, липсинка нет",
+        "the dubbed track replaces the audio of YOUR video (ffmpeg) — 0 usd, no lip sync",
+    ),
+    NOTE_STABILISE: (
+        "стабилизация: ffmpeg vidstab (vidstabdetect + vidstabtransform) или Gyroflow по данным гироскопа — "
+        "0 usd, первой, на исходнике до шагов-моделей; генеративной модели стабилизации с записанным "
+        "свидетельством в реестре нет",
+        "stabilisation: ffmpeg vidstab (vidstabdetect + vidstabtransform) or Gyroflow from gyro data — 0 usd, "
+        "first, on the source before any model step; no generative stabilisation endpoint with recorded "
+        "evidence is in the registry",
+    ),
+    NOTE_VISUALISER_SYNC: (
+        "реакция на звук — при сборке: доли и атаки ВАШЕГО трека (librosa / aubio) ведут склейки и пульсацию, "
+        "слой волны или спектра — ffmpeg showwaves / showspectrum (или аудио-ключи After Effects / "
+        "TouchDesigner); генерируемое t2v-видео трек НЕ слышит и само в такт не попадает",
+        "audio reactivity is made at assembly: the beats and onsets of YOUR track (librosa / aubio) drive cuts "
+        "and pulses, a waveform or spectrum layer comes from ffmpeg showwaves / showspectrum (or After Effects / "
+        "TouchDesigner audio keyframes); generated t2v footage does NOT hear the track and is not audio-reactive",
     ),
 }
+
+#: Правки ролика, которые делает МОНТАЖ, а не модель, — когда ни один
+#: эндпоинт реестра не делает их с записанным свидетельством (седьмой круг:
+#: стабилизация уходила в генеративную правку за $25 или оставалась без
+#: кандидата). Правка -> пометка сборки. КОНСТАНТА-РЕШЕНИЕ.
+ASSEMBLY_EDITS: dict[str, str] = {ep.EDIT_STABILISE: NOTE_STABILISE}
+
+#: Коды языков жестов (ISO 639-3) и общий `sgn` — `spec.languages`.
+SIGN_LANGUAGE_CODES: frozenset[str] = frozenset(
+    {"sgn", "ase", "bfi", "fsl", "gsg", "jsl", "rsl", "csl", "ins", "asf", "lsf", "ssp", "ise", "bzs", "kvk"}
+)
+#: Язык жестов словами (`spec.conditions`, текст брифа).
+SIGN_WORDS = re.compile(
+    r"sign[- ]language|signing avatar|\basl\b|\bbsl\b|язык\w* жестов|жестов\w* язык\w*|сурдоперев\w*"
+)
+
+
+def sign_language(spec: Spec, текст: str = "") -> bool:
+    """Заказан ли язык жестов: тег языка, условие или слова брифа."""
+    if any(т.split("-")[0] in SIGN_LANGUAGE_CODES for т in spec.language_tags):
+        return True
+    return any(SIGN_WORDS.search(_norm(у)) for у in (*spec.conditions, текст))
+
+
+def lipsync_default(spec: Spec) -> bool:
+    """Двигать ли губы под новую речь: названо — как названо; иначе — да, когда
+    на выходе видео (или выход не назван) и речь не закадровая (`audio` != voiceover)."""
+    if spec.lipsync is not None:
+        return spec.lipsync
+    return ("video" in spec.outputs or not spec.outputs) and spec.audio != "voiceover"
 
 
 def note_en(ru: str) -> str | None:
@@ -1468,8 +1590,19 @@ def note_en(ru: str) -> str | None:
     м = re.fullmatch(NOTE_KEYFRAMES.replace("{n}", r"(\d+)"), ru)
     if м:
         return f"{м.group(1)} characters: a keyframe per shot, otherwise faces drift from shot to shot"
+    м = re.fullmatch(re.escape(NOTE_SERIES_EDIT).replace(re.escape("{n}"), r"(\d+)"), ru)
+    if м:
+        return (
+            f"{м.group(1)} pictures are edits from the reference (not {м.group(1)} independent generations); "
+            "the alternative is training a LoRA on the character"
+        )
     return None
 
+
+#: Серия картинок с ОДНИМ персонажем: с какого числа персонажей и картинок
+#: она строится референсом и правками по нему. КОНСТАНТЫ-РЕШЕНИЯ.
+SERIES_CHARACTERS_MIN = 1
+SERIES_IMAGES_MIN = 2
 
 #: Работа над ВИДЕО заказчика, которая делается одним шагом правки (v2v-edit).
 VIDEO_EDIT_TASKS: frozenset[str] = frozenset({"video-edit"})
@@ -1503,31 +1636,62 @@ def _подложка(выходы: set[str]) -> tuple[str, ...]:
     return tuple(ш for в, ш in (("music", "музыка"), ("sfx", "звук_фон")) if в in выходы)
 
 
-def route(spec: Spec) -> Маршрут:
+def route(spec: Spec, на_сборке: frozenset[str] | None = None) -> Маршрут:
     """Шаги по спецификации: главная работа, затем работы цепочки (`then_tasks`).
 
     Работа цепочки идёт над ВЫХОДОМ предыдущей: «стабилизировать, затем
     апскейл» — апскейл видео, которое отдала правка. Нехватка любой работы —
     вопрос всей цепочки.
+
+    :param на_сборке: правки `spec.edit`, которые делает монтаж, потому что
+        ни один эндпоинт реестра их не делает (`ASSEMBLY_EDITS`; решает
+        плановщик по реестру). None — все `ASSEMBLY_EDITS`.
     """
-    главный = _маршрут_одной(spec)
+    if sign_language(spec):
+        return Маршрут(пробел=(NOTE_SIGN, NOTES_EN[NOTE_SIGN]))
+    сборочные = frozenset(ASSEMBLY_EDITS) if на_сборке is None else на_сборке
+    главный = _маршрут_одной(spec, сборочные)
     if главный.нехватка is not None or not spec.then_tasks:
         return главный
     шаги = list(главный.шаги)
     пометки = dict(главный.пометки)
+    сборка = list(главный.сборка)
+    правки = главный.правки
+    штук = dict(главный.штук)
     выход = "video" if "video" in spec.outputs or spec.task not in (None, "generate") else "photo"
     for задача in spec.then_tasks:
         звено = _маршрут_одной(
-            replace(spec, task=задача, then_tasks=(), inputs=tuple(dict.fromkeys((*spec.inputs, выход))))
+            replace(spec, task=задача, then_tasks=(), inputs=tuple(dict.fromkeys((*spec.inputs, выход)))),
+            сборочные,
         )
         if звено.нехватка is not None:
             return звено
         шаги += [ш for ш in звено.шаги if ш not in шаги]
         пометки.update({к: в for к, в in звено.пометки.items() if к not in пометки})
-    return Маршрут(tuple(шаги), пометки)
+        сборка += [с for с in звено.сборка if с not in сборка]
+        правки = правки if правки is not None else звено.правки
+        штук.update({к: в for к, в in звено.штук.items() if к not in штук})
+    return Маршрут(tuple(шаги), пометки, сборка=tuple(сборка), правки=правки, штук=штук)
 
 
-def _маршрут_одной(spec: Spec) -> Маршрут:
+def _правка_своего(spec: Spec, на_сборке: frozenset[str]) -> Маршрут:
+    """Правка ВИДЕО заказчика: модель — на правки, которые делает реестр; монтаж — на прочие."""
+    выходы = set(spec.outputs)
+    монтаж = tuple(п for п in spec.edit if п in на_сборке and п in ASSEMBLY_EDITS)
+    модельные = tuple(п for п in spec.edit if п not in монтаж)
+    сборка = tuple(ASSEMBLY_EDITS[п] for п in монтаж)
+    if монтаж and not модельные:
+        # Только монтажная правка: шага-модели нет, а музыка/шумы под ролик — есть.
+        return Маршрут(_подложка(выходы), {}, сборка=сборка, правки=())
+    return Маршрут(
+        ("правка_видео", *_подложка(выходы)),
+        {"правка_видео": NOTE_VIDEO_EDIT},
+        сборка=сборка,
+        правки=модельные if монтаж else None,
+    )
+
+
+def _маршрут_одной(spec: Spec, на_сборке: frozenset[str] = frozenset(ASSEMBLY_EDITS)) -> Маршрут:
     """Шаги одной работы. Пусто без нехватки — спецификация ничего не заказывает.
 
     Маршрут называет ГЛАВНЫЕ шаги; входы, которых им не хватает (кадр для
@@ -1543,19 +1707,26 @@ def _маршрут_одной(spec: Spec) -> Маршрут:
     if задача in ROUTE_TASKS:
         for вход, шаг in ROUTE_TASKS[задача]:
             if вход in входы:
-                return Маршрут((шаг,), {шаг: NOTE_CAPTIONS} if задача == "captions" else {})
+                if задача == "captions":
+                    return Маршрут((шаг,), {шаг: NOTE_CAPTIONS}, сборка=(NOTE_CAPTIONS,))
+                return Маршрут((шаг,), {})
         return Маршрут(нехватка=_нехватка_входа(задача, ROUTE_TASKS[задача][0][0]))
     # --- шестой круг: работа над материалом заказчика -----------------------
     if задача in VIDEO_EDIT_TASKS:
         if "video" not in входы:
             return Маршрут(нехватка=_нехватка_видео(задача))
-        return Маршрут(("правка_видео", *_подложка(выходы)), {"правка_видео": NOTE_VIDEO_EDIT})
+        return _правка_своего(spec, на_сборке)
     if задача == "cut-to-shorts":
         if "video" not in входы:
             return Маршрут(нехватка=_нехватка_видео(задача))
+        # СЕДЬМОЙ КРУГ: вырезать, перекадрировать, склеить, вжечь субтитры —
+        # МОНТАЖ (ffmpeg, 0 usd). Модель здесь одна — расшифровка; прежде
+        # каждую нарезку «правила» генеративная v2v-правка ($179 за 8 шортсов)
+        # при пометке «ничего не генерируется».
         return Маршрут(
-            ("расшифровка", "правка_видео", *_подложка(выходы)),
-            {"расшифровка": NOTE_SHORTS_TRANSCRIPT, "правка_видео": NOTE_SHORTS_EDIT},
+            ("расшифровка", *_подложка(выходы)),
+            {"расшифровка": NOTE_SHORTS_TRANSCRIPT},
+            сборка=(NOTE_SHORTS_EDIT,),
         )
     if задача == "music-visualiser":
         if (нет := _нехватка_двух(задача, ("audio",), входы)) is not None:
@@ -1563,7 +1734,7 @@ def _маршрут_одной(spec: Spec) -> Маршрут:
         # Принесённый кадр оживляется, иначе картинка генерируется с нуля;
         # музыки не генерирует никто — трек заказчика.
         шаг = "оживление" if "photo" in входы else "генерация_видео"
-        return Маршрут((шаг,), {шаг: NOTE_VISUALISER})
+        return Маршрут((шаг,), {шаг: NOTE_VISUALISER}, сборка=(NOTE_VISUALISER, NOTE_VISUALISER_SYNC))
     if задача == "sing-photo":
         if (нет := _нехватка_двух(задача, ("photo", "audio"), входы)) is not None:
             return нет
@@ -1588,7 +1759,13 @@ def _маршрут_одной(spec: Spec) -> Маршрут:
         if "video" in входы:
             # Перевод готового ролика: речь переводится, губы под новый язык
             # двигает липсинк. Генерации видео нет — видео принесено.
-            return Маршрут(("дубляж", "липсинк"), {"липсинк": NOTE_DUB_LIPS})
+            # СЕДЬМОЙ КРУГ: губы — только когда их просят (`lipsync_default`):
+            # «voice-over is fine» и выход-дорожка липсинка не заказывают.
+            if lipsync_default(spec):
+                return Маршрут(("дубляж", "липсинк"), {"липсинк": NOTE_DUB_LIPS})
+            if "video" in выходы:
+                return Маршрут(("дубляж",), {"дубляж": NOTE_DUB_MUX}, сборка=(NOTE_DUB_MUX,))
+            return Маршрут(("дубляж",), {"дубляж": NOTE_DUB_AUDIO})
         if "audio" in входы:
             return Маршрут(("дубляж",), {})
         return Маршрут(нехватка=_нехватка_видео(задача))
@@ -1615,7 +1792,7 @@ def _маршрут_одной(spec: Spec) -> Маршрут:
         # прежде спрашивал снимок — и замену неба в своём таймлапсе нельзя
         # было заказать вовсе. Видео на входе и видео на выходе — правка видео.
         if "video" in входы and ("video" in выходы or "photo" not in входы):
-            return Маршрут(("правка_видео",), {"правка_видео": NOTE_VIDEO_EDIT})
+            return _правка_своего(replace(spec, outputs=()), на_сборке)
         if "photo" in входы:
             return Маршрут(("редактирование_изображения",), {})
         return Маршрут(
@@ -1641,6 +1818,19 @@ def _маршрут_одной(spec: Spec) -> Маршрут:
         else:
             шаги.append("генерация_видео")
     elif "image" in выходы:
+        n = spec.shots or 0
+        if (spec.characters or 0) >= SERIES_CHARACTERS_MIN and n >= SERIES_IMAGES_MIN:
+            # СЕРИЯ С ОДНИМ ПЕРСОНАЖЕМ (седьмой круг): «24 иллюстрации с тем же
+            # ёжиком» — это референс и N правок по нему, а не N независимых
+            # генераций, где ёжик каждый раз другой.
+            if "photo" not in входы:
+                шаги.append("генерация_изображения")
+                пометки["генерация_изображения"] = NOTE_SERIES_REF
+            шаги.append("редактирование_изображения")
+            пометки["редактирование_изображения"] = NOTE_SERIES_EDIT.format(n=n)
+            return Маршрут(
+                tuple(шаги), пометки, штук={"генерация_изображения": 1, "редактирование_изображения": n}
+            )
         шаги.append("генерация_изображения")
     _дорожки(spec, шаги)
     return Маршрут(tuple(dict.fromkeys(шаги)), пометки)
@@ -1831,6 +2021,7 @@ MATERIAL_TASKS: frozenset[str] = frozenset(
         "face-replace",
         "music-visualiser",
         "sing-photo",
+        "colorize",
     }
 )
 
@@ -1855,6 +2046,25 @@ FIELD_HELP: dict[str, str] = {
     ),
 }
 
+#: НЕРЕШАЮЩИЕ поля с допустимыми значениями — в `spec_needed.allowed` (седьмой
+#: круг: о `spec.edit` вызывающий не знал, и «убрать прохожего» уходило в правку
+#: по умолчанию). Е1: тот же текст в описании инструмента.
+OPTIONAL_HELP: dict[str, str] = {
+    "edit": (
+        "for video-edit — WHAT is edited: a list of " + " | ".join(ep.EDIT_INTENTS)
+        + "; stabilise is done at assembly (ffmpeg vidstab / Gyroflow, 0 usd) when no endpoint does it"
+    ),
+    "lipsync": (
+        "for dub-translate — move the lips to the new speech: true | false; default true when outputs include "
+        "video (or are not named) and audio is not voiceover, else false (voice-over-only dubs get no lip sync)"
+    ),
+    "characters": "how many recurring characters; 1 + shots N over images = one reference and N edits from it",
+    "fps": "output frames per second; above the model's recorded rate a frame-interpolation step is added",
+    "audio": "none | native | voiceover",
+    "budget": "{amount, currency: ISO 4217}; convert to USD yourself (no FX rates are recorded) and keep the original for echo",
+    "conditions": "short phrases the customer actually said, e.g. [\"profile face\", \"hands\"] (ranking only)",
+}
+
 #: Полный пример — печатается в вопросе и в описании инструмента (Е1: один текст).
 EXAMPLE_SPEC: dict[str, Any] = {
     "task": "dub-translate",
@@ -1865,7 +2075,7 @@ EXAMPLE_SPEC: dict[str, Any] = {
     "aspect": "16:9",
     "budget": {"amount": 40, "currency": "USD"},
     "people": [{"name": "our CEO", "real": True, "public_figure": False, "consent": "stated", "claim": "none"}],
-    "conditions": ["profile face"],
+    "lipsync": True,
 }
 
 #: Что делать вызывающему с вопросом о спецификации — одна строка на все ответы.
@@ -1958,9 +2168,18 @@ def gaps(raw: Mapping[str, Any] | None) -> tuple[Spec, list[str], list[dict[str,
         нет.append(_пробел("outputs", "what comes out decides which steps exist"))
     выходы = set(spec.outputs)
     if "cut-to-shorts" in работы:
-        for поле in ("shots", "per_shot_s"):
-            if not getattr(spec, поле):
-                нет.append(_пробел(поле, "how many shorts and how long each — the cut, not the source, is priced"))
+        # Седьмой круг: «3-минутный хайлайт из двух часов» — одна нарезка
+        # длиной duration_s; шортсы — shots × per_shot_s.
+        if not spec.duration_s:
+            for поле in ("shots", "per_shot_s"):
+                if not getattr(spec, поле):
+                    нет.append(
+                        _пробел(
+                            поле,
+                            "how many shorts and how long each (or duration_s for one cut) — the cut, not the "
+                            "source, is priced",
+                        )
+                    )
     elif выходы & TIMED_OUTPUTS:
         от_входа = input_seconds(spec) is not None
         if not (spec.duration_s or (spec.shots and spec.per_shot_s) or от_входа):
@@ -1981,15 +2200,31 @@ def gaps(raw: Mapping[str, Any] | None) -> tuple[Spec, list[str], list[dict[str,
 #: ПОДСКАЗКИ ЧЕРНОВИКА: (работа, образец, вход, без которого её нет). Только
 #: для черновика — его подтверждает вызывающий; план по ним НЕ строится. Порядок
 #: — старшинство: «transcribe … with SRT subtitles» — расшифровка, не субтитры.
+#: Раскраска словами (черновик): «colorize», «раскрасить», «black-and-white … in colour».
+COLORIZE_CUE = r"colou?ri[sz]\w*|раскрас\w*"
+
+#: Правки ролика словами (черновик `spec.edit`): правка -> образец.
+DRAFT_EDIT_CUES: tuple[tuple[str, str], ...] = (
+    (ep.EDIT_STABILISE, r"stabili[sz]\w*|стабилиз\w*|shaky|трясущ\w*|дрожащ\w*"),
+    (ep.EDIT_REFRAME, r"reframe\w*|re-frame|outpaint\w*|расшир\w* кадр|vertical .{0,40}into .{0,30}horizontal"
+     r"|horizontal .{0,40}into .{0,30}vertical|convert (?:our|my) .{0,40}(?:16:9|9:16)"),
+    (ep.EDIT_REPLACE_SKY, r"sky replac\w*|replace (?:the )?sky|замен\w* неб\w*"),
+    (ep.EDIT_REMOVE_OBJECT, r"remove (?:a |the )?(?:logo|watermark|object|person|people|passer)|(?:убра|удал)\w* (?:объект|прохож|человек|логотип)"),
+    (ep.EDIT_REPLACE_OBJECT, r"replace (?:the |a )?(?!sky)\w+|замен\w* (?!неб)"),
+    (ep.EDIT_RELIGHT, r"relight\w*|day[- ]to[- ]night|переосвет\w*"),
+    (ep.EDIT_RESTYLE, r"restyl\w*|style transfer|color[- ]?grad\w*|colou?r correct\w*|цветокор\w*"),
+)
+
 DRAFT_TASK_CUES: tuple[tuple[str, str, str], ...] = (
     ("transcribe", r"transcri\w*|расшифр\w*|speech[- ]to[- ]text|speaker labels|diari[sz]\w*|стенограм\w*", "video"),
     ("captions", r"\bcaptions?\b|subtitl\w*|субтитр\w*", "video"),
     (
         "restore",
         r"restor\w*|реставр\w*|scratch\w*|\b8 ?mm\b|super ?8|film grain|de-?flicker|old (?:film|footage|home movie)"
-        r"|colori[sz]\w*|раскрас\w*|оцифр\w*|старо\w* (?:плёнк|пленк|видео)",
+        r"|оцифр\w*|старо\w* (?:плёнк|пленк|видео)",
         "video",
     ),
+    ("colorize", COLORIZE_CUE, "video"),
     (
         "remove-background",
         r"remove (?:the )?background|background remov\w*|без фона|удал\w* фон|убра\w* фон|убери фон"
@@ -2016,7 +2251,7 @@ DRAFT_TASK_CUES: tuple[tuple[str, str, str], ...] = (
     (
         "video-edit",
         r"stabili[sz]\w*|стабилиз\w*|reframe\w*|re-frame|outpaint\w*|расшир\w* кадр|sky replac\w*|"
-        r"replace (?:the )?sky|замен\w* неб\w*|remove (?:the )?(?:logo|watermark|object|person|people)"
+        r"replace (?:the )?sky|замен\w* неб\w*|remove (?:a |the )?(?:logo|watermark|object|person|people|passer)"
         r"|color[- ]?grad\w*|colou?r correct\w*|цветокор\w*|vertical .{0,40}into .{0,30}horizontal"
         r"|horizontal .{0,40}into .{0,30}vertical|convert (?:our|my) .{0,40}(?:16:9|9:16)",
         "video",
@@ -2136,11 +2371,25 @@ def draft(brief: str, raw: Mapping[str, Any] | None = None) -> dict[str, Any]:
     задача, нужный_вход = _работа_черновика(низ, t, set(есть_входы))
     if задача:
         # Цепочка: работа над видео заказчика И «upscale to 4K» — правка, затем апскейл.
-        черновик["task"] = (
-            [задача, "upscale"]
-            if задача in ("video-edit", "restore", "interpolate") and UPSCALE.search(низ)
-            else задача
-        )
+        цепочка = [задача]
+        if задача == "restore" and re.search(COLORIZE_CUE, низ):
+            # «отреставрировать и раскрасить» — две работы (седьмой круг).
+            цепочка.append("colorize")
+        if задача == "cut-to-shorts" and re.search(r"\bcaptions?\b|subtitl\w*|субтитр\w*", низ):
+            цепочка.append("captions")
+        if задача in ("video-edit", "restore", "interpolate", "colorize") and UPSCALE.search(низ):
+            цепочка.append("upscale")
+        черновик["task"] = цепочка if len(цепочка) > 1 else задача
+        if задача == "video-edit":
+            правки = [п for п, образец in DRAFT_EDIT_CUES if re.search(образец, низ)]
+            if правки:
+                черновик["edit"] = правки
+                угадано.append("edit read from the brief's words — confirm what exactly is edited")
+        if задача == "dub-translate":
+            if re.search(r"no lip[- ]?sync|without lip[- ]?sync|lip[- ]?sync (?:is )?not needed|voice[- ]?over is fine|без липсинк", низ):
+                черновик["lipsync"] = False
+            elif LIPSYNC.search(низ) or re.search(r"lips? (?:must |should )?match", низ):
+                черновик["lipsync"] = True
     входы: list[dict[str, Any]] = []
     for вид in есть_входы:
         входы.append({"kind": INPUT_KIND_OUT[вид], "owned": True})
@@ -2153,12 +2402,8 @@ def draft(brief: str, raw: Mapping[str, Any] | None = None) -> dict[str, Any]:
     if задача == "sing-photo" and "audio" not in есть_входы:
         входы.append({"kind": "audio", "owned": None})
         угадано.append("inputs: the song/track to sing is implied — confirm the customer has it")
-    if (
-        задача in MATERIAL_TASKS | {"cut-to-shorts"}
-        and t.duration_s
-        and входы
-        and not (задача == "cut-to-shorts" and t.duration_s == (t.shots or 0) * (t.per_shot_s or 0))
-    ):
+    if задача in MATERIAL_TASKS and t.duration_s and входы:
+        # Не у нарезки: «3-minute reel from 2 hours» — 3 минуты это выход, а не исходник.
         главный = next((в for в in входы if в["kind"] in ("video", "audio")), None)
         if главный is not None:
             главный["duration_s"] = t.duration_s
@@ -2166,7 +2411,7 @@ def draft(brief: str, raw: Mapping[str, Any] | None = None) -> dict[str, Any]:
         черновик["inputs"] = входы
     выходы = list(t.outputs)
     if задача in DRAFT_TASK_OUTPUTS and (not выходы or задача not in ("generate", "animate")):
-        выходы = list(dict.fromkeys([*DRAFT_TASK_OUTPUTS[задача], *[в for в in выходы if в in ("speech", "music", "sfx") and задача in ("r2v",)]]))
+        выходы = list(dict.fromkeys([*DRAFT_TASK_OUTPUTS[задача], *[в for в in выходы if в in ("speech", "music", "sfx") and задача in ("r2v", "cut-to-shorts", "video-edit")]]))
     if задача == "remove-background":
         выходы = ["image"] if нужный_вход == "photo" else ["video"]
     if выходы:
@@ -2175,8 +2420,14 @@ def draft(brief: str, raw: Mapping[str, Any] | None = None) -> dict[str, Any]:
         штук = re.search(r"(\d{1,3})\s+(?:\w+\s+)?(?:shorts|clips|reels|tiktoks|ролик\w*|клип\w*)", низ)
         if t.shots or штук:
             черновик["shots"] = t.shots or int(штук.group(1))  # type: ignore[union-attr]
-        if t.per_shot_s:
-            черновик["per_shot_s"] = t.per_shot_s
+        каждый = re.search(
+            r"(?:shorts|clips|reels|tiktoks)\s+(?:of\s+)?(?:about\s+|around\s+|~)?(\d{1,3})\s*(?:s\b|sec|seconds)", низ
+        )
+        if t.per_shot_s or каждый:
+            черновик["per_shot_s"] = t.per_shot_s or float(каждый.group(1))  # type: ignore[union-attr]
+        if "shots" not in черновик and t.duration_s:
+            # Одна нарезка («3-minute highlight reel») — длина выхода (седьмой круг).
+            черновик["duration_s"] = t.duration_s
     else:
         for поле in ("duration_s", "shots", "per_shot_s", "characters"):
             if getattr(t, поле):

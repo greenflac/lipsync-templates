@@ -384,8 +384,10 @@ class Единицы(unittest.TestCase):
         )
 
     def test_знаки_превью(self) -> None:
-        (r,) = pricing.rates("$1.5 per clone, $0.3 per 1000 preview characters", "price")
-        self.assertEqual(("1000_chars", 0.3), (r.per, r.amount))
+        # Седьмой круг: плата «за клон» — своя ставка (`clone`), она складывается
+        # с ценой знаков в `estimate`, а не пропадает.
+        клон, знаки = pricing.rates("$1.5 per clone, $0.3 per 1000 preview characters", "price")
+        self.assertEqual((("clone", 1.5), ("1000_chars", 0.3)), ((клон.per, клон.amount), (знаки.per, знаки.amount)))
 
 
 # --------------------------------------------------------------------------

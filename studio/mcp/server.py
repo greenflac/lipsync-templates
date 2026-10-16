@@ -1265,6 +1265,7 @@ def spec_question(brief: str, spec: Any, нехватка: list[dict[str, str]],
             "missing": нехватка,
             "instruction": bs.SPEC_INSTRUCTION,
             "draft": черновик,
+            "allowed": dict(bs.OPTIONAL_HELP),
             "example": bs.EXAMPLE_SPEC,
         },
         "brief": brief,
@@ -1305,14 +1306,22 @@ def plan_pipeline(
                   avatar | upscale | edit | video-edit | restore |
                   remove-background | interpolate | transcribe | voice-clone |
                   turntable | captions | r2v | music-visualiser | sing-photo |
-                  cut-to-shorts — or a chain list ["video-edit", "upscale"].
-                  video-edit: stabilise / reframe / sky replace / object removal
-                  on the customer's video. r2v: one consistent character across
-                  shots. music-visualiser: visuals under the customer's track
-                  (no music generated). sing-photo: customer photo + audio ->
+                  cut-to-shorts | colorize — or a chain list ["video-edit",
+                  "upscale"], ["restore", "colorize"].
+                  video-edit: an edit of the customer's video — say WHAT in
+                  `edit`. restore: noise/scratches/flicker, adds NO colour;
+                  colorize: black-and-white -> colour (both asked = the chain).
+                  r2v: one consistent character across shots. music-visualiser:
+                  generated visuals under the customer's track; audio reactivity
+                  (beat sync, waveform) is made at assembly — generated t2v does
+                  not hear the track. sing-photo: customer photo + audio ->
                   singing/talking avatar. cut-to-shorts: customer's long video ->
-                  transcript -> picked moments -> cut/reframed shorts (nothing
-                  generated).
+                  transcript (the only model step) -> picked moments -> cut,
+                  reframe, join, burn captions at assembly (ffmpeg, 0 usd);
+                  shots + per_shot_s for N shorts, or duration_s for one cut
+                  (a 3-minute highlight reel). Sign language (ASL, BSL…) is NOT
+                  done by any generative model: put the tag ("ase") in
+                  languages and the answer is a recorded gap, never an avatar.
         inputs    what the customer ALREADY HAS: [{kind: video|image|audio|text|
                   model-weights, owned: true|false, duration_s?, count?,
                   resolution?}]; [] = nothing.
@@ -1323,15 +1332,32 @@ def plan_pipeline(
         languages BCP-47 tags of output speech/text (any tag: "kk", "pl", "he",
                   "pt-BR"); required when speech/text is output. Support per
                   model is reported as recorded / unmeasured, never refused.
-    OPTIONAL: shots, per_shot_s, characters, resolution (480p..8k or WxH),
-    aspect (any W:H, "2.39:1"), fps, audio (none|native|voiceover), objective
-    (cheapest|balanced|quality), budget {amount, currency: ISO 4217} (non-USD
-    converts only at a recorded rate, else no verdict), self_host {gpu,
-    vram_gb | unified_memory_gb} (Apple silicon memory is not CUDA VRAM),
-    open_weights, jurisdiction, people [{name, real, public_figure, consent:
-    stated|none|unknown, claim: none|endorsement|political|news|other}],
-    conditions ["profile face", "logo legible", "hands"] (passed to ranking).
-    Speech steps are priced × languages; clip steps × shots.
+    OPTIONAL (also listed with values in `spec_needed.allowed`):
+        edit      for video-edit: [reframe | replace-object | remove-object |
+                  replace-sky | stabilise | relight | restyle]; unnamed = edit
+                  by instruction. stabilise goes to assembly (ffmpeg vidstab /
+                  Gyroflow, 0 usd) while no endpoint records it.
+        lipsync   for dub-translate: true | false. Default: true when outputs
+                  include video and audio is not "voiceover", else false — a
+                  voice-over-only dub, or outputs ["speech"], gets no lip sync.
+        characters  recurring characters; characters >= 1 with outputs
+                  ["image"] and shots N = one reference + N edits from it (a
+                  LoRA is the alternative), not N independent generations.
+        fps       output frame rate; above the chosen model's recorded rate a
+                  frame-interpolation step (RIFE / FILM / AMT) is added and
+                  priced; unrecorded rate = a note.
+        budget    {amount, currency: ISO 4217, usd?}. NO exchange rates are
+                  recorded: for a non-USD budget convert it yourself and pass
+                  usd (the amount and currency stay for echo); without usd a
+                  non-USD budget gets no verdict. 0 = must be free.
+    Also: shots, per_shot_s, resolution (480p..8k or WxH), aspect (any W:H,
+    "2.39:1"), audio (none|native|voiceover), objective (cheapest|balanced|
+    quality), self_host {gpu, vram_gb | unified_memory_gb} (Apple silicon
+    memory is not CUDA VRAM), open_weights, jurisdiction, people [{name, real,
+    public_figure, consent: stated|none|unknown, claim: none|endorsement|
+    political|news|other}], conditions — only what the customer said, e.g.
+    ["hands"] (ranking only). Speech steps are priced × languages; clip steps
+    × shots; a per-clone fee once per voice.
 
     REAL PEOPLE — FILL `spec.people`; YOU KNOW WHO IS REAL AND PUBLIC, A WORD
     LIST DOES NOT. `consent` is what the CUSTOMER said ("stated" only when they
@@ -1380,7 +1406,7 @@ def plan_pipeline(
               "budget": {"amount": 40, "currency": "USD"},
               "people": [{"name": "our CEO", "real": true, "public_figure": false,
                           "consent": "stated", "claim": "none"}],
-              "conditions": ["profile face"]}
+              "lipsync": true}
 
     READ IN THE ANSWER: `understood_as` (every field and its source),
     `question` (ask it verbatim, do not answer it yourself), per step `chosen`
@@ -1388,9 +1414,15 @@ def plan_pipeline(
     result), `proven_rival`, `language_support`, `apple_silicon`, and
     `pipeline_price` — a sum only over steps priced in the same unit; any
     unpriced step makes it "could not measure", so quote the bound AND the
-    missing steps. Three outcomes: pass / fail (plan + the validator's class) /
-    could not measure (a question, a step without candidates, or an
-    unpriced/unconfirmed plan). An invalid spec field is `fail` with
+    missing steps. `assembly` is the 0-usd ffmpeg/editing work (cuts, reframe,
+    captions burn, stabilisation, audio mux, beat sync); `frame_rate` says
+    whether the fps is reached; `budget.outcome` is the budget verdict
+    (fail = over the ceiling). Three outcomes: pass / fail (plan + the
+    validator's class) / could not measure (a question, a step without
+    candidates, an unpriced/unconfirmed plan, `только_монтаж` = assembly only,
+    no model to validate, `работа_не_поддерживается` = a recorded gap, see
+    `gap`). A brief in any script is read; one the topic screen cannot read
+    (CJK, Thai…) is planned from spec and marked. An invalid spec field is `fail` with
     `spec_errors`. `budget_usd` (the parameter) is a ceiling for the whole clip
     and wins over spec.budget. `creative`: a file of the customer's; its frame
     is measured and checked against each model's recorded limit. `full=True`
@@ -1440,6 +1472,15 @@ def _план(
     if ошибка_бюджета is not None:
         return _json(l10n.localise_payload(ошибка_бюджета, язык))
     просев = screen.просеять(brief)
+    не_прочитан = False
+    if просев["outcome"] == UNMEASURED and (есть_слова(brief) or spec_полна(spec)):
+        # СЕДЬМОЙ КРУГ: японский и китайский бриф с ПОЛНОЙ spec получал
+        # «бриф пуст» — просев читает слова латиницей и кириллицей, а иероглиф,
+        # тайская или арабская буква словом для него не были. Текст есть (или
+        # spec решает всё сама) — план строится, а то, что просев этот текст
+        # НЕ ЧИТАЛ, печатается и снимает `pass` (Р1).
+        не_прочитан = True
+        просев = {**просев, "outcome": PASS}
     if просев["outcome"] == UNMEASURED:
         # БЕССЛОВЕСНЫЙ БРИФ — ТРЕТИЙ ИСХОД, А НЕ ОТКАЗ (восьмая приёмка 2026-09-07).
         return _json(
@@ -1480,6 +1521,8 @@ def _план(
         итог["checked"] = int(итог["checked"]) + просев["checked"]
         if просев.get("risks"):
             итог["note"] = f"{итог['note']}. {screen.предупреждение(просев['risks'])}"
+        if не_прочитан:
+            итог = _просев_не_читал(итог)
         return _json(l10n.localise_payload(итог, язык), tool="plan_pipeline")
 
     итог, пропущено = plan_call(
@@ -1501,6 +1544,8 @@ def _план(
     if просев["risks"]:
         итог["note"] = f"{итог.get('note', '')}. {screen.предупреждение(просев['risks'])}"
     итог = вопрос_о_согласии(итог, политика, англ=язык == "en")
+    if не_прочитан:
+        итог = _просев_не_читал(итог)
     if пропущено:
         итог["ignored_params"] = пропущено
         итог["note"] = (
@@ -1514,6 +1559,36 @@ def _план(
 
 #: Ось вопроса о согласии: образ или голос реального человека в заказе.
 ОСЬ_СОГЛАСИЕ = screen.ОСЬ_СОГЛАСИЕ
+
+#: Нота: просев не читал текст брифа (письменность вне латиницы и кириллицы).
+NOTE_SCRIPT_NOT_SCREENED = (
+    "the topic screen reads Latin and Cyrillic words only: this brief's script (e.g. CJK, Thai, Arabic) was "
+    "NOT screened for banned topics — the plan stands on spec, and spec.people still decides the likeness policy"
+)
+
+
+def есть_слова(текст: Any) -> bool:
+    """Есть ли в тексте хоть одна буква ЛЮБОЙ письменности (иероглиф, кана, тайская — тоже)."""
+    return any(ch.isalpha() for ch in str(текст or ""))
+
+
+def spec_полна(spec: Any) -> bool:
+    """Полна ли spec: разобрана без ошибок и решающих полей хватает — план по ней строится и без текста."""
+    if not isinstance(spec, Mapping):
+        return False
+    _, ошибки, нехватка = bs.gaps(spec)
+    return not ошибки and not нехватка
+
+
+def _просев_не_читал(итог: dict) -> dict:
+    """Просев текста не читал: +1 к непроверенному, нота, и `pass` — не `pass` (Р1)."""
+    out = dict(итог)
+    out["unmeasured"] = int(out.get("unmeasured") or 0) + 1
+    out["note"] = f"{out.get('note') or ''}. {NOTE_SCRIPT_NOT_SCREENED}".lstrip(". ")
+    out["brief_screened"] = False
+    if out.get("outcome") == PASS:
+        out["outcome"] = UNMEASURED
+    return out
 
 
 def _отказ_плана(просев: dict, brief: str, политика: dict, англ: bool) -> dict:

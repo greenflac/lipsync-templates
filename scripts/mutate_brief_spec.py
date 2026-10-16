@@ -38,6 +38,8 @@ ROOT = Path(__file__).resolve().parents[1]
     "studio.tests.test_endpoints_r5",
     # Шестой круг: план только по полной spec, черновик, новые работы.
     "studio.tests.test_spec_contract_r6",
+    # Седьмой круг: словарь spec и маршруты (монтаж, пробелы, частота, бюджет).
+    "studio.tests.test_routes_r7",
 )
 
 BS = "studio/brief_spec.py"
@@ -154,7 +156,7 @@ MUTANTS: tuple[tuple[str, str, str, str], ...] = (
     (ER, 'GUARDED: tuple[str, ...] = ("orderable", "priced", "with_run_length")', 'GUARDED: tuple[str, ...] = ("orderable", "priced", "with_run_length", "video")', "гейт держит лишнее поле"),
     (ER, 'BASELINE = ROOT / "studio" / "knowledge" / "endpoint_coverage.json"', 'BASELINE = ROOT / "studio" / "knowledge" / "endpoint_coverage_missing.json"', "гейт без базы"),
     (BS, '    "restore": (("video", "реставрация"),),\n', "", "реставрация снова без маршрута"),
-    (BS, '                return Маршрут((шаг,), {шаг: NOTE_CAPTIONS} if задача == "captions" else {})', "                return Маршрут((шаг,), {})", "субтитры без пометки монтажа"),
+    (BS, "                    return Маршрут((шаг,), {шаг: NOTE_CAPTIONS}, сборка=(NOTE_CAPTIONS,))", "                    return Маршрут((шаг,), {шаг: NOTE_CAPTIONS})", "субтитры без пометки монтажа"),
     # --- шестой круг: контракт «план только по spec», форма spec, новые работы
     (SV, "    if not по_тексту and not ошибки_spec and нехватка:", "    if False:", "неполная spec снова план из текста"),
     (PN, '    if spec_only:\n        brief = ""\n', "", "текст снова решает поверх полной spec"),
@@ -166,7 +168,7 @@ MUTANTS: tuple[tuple[str, str, str, str], ...] = (
     (BS, 'TIMED_OUTPUTS: frozenset[str] = frozenset({"video", "speech", "music", "sfx", "text"})', 'TIMED_OUTPUTS: frozenset[str] = frozenset({"video", "speech", "music", "sfx"})', "текст без длины"),
     (BS, 'TIMED_OUTPUTS: frozenset[str] = frozenset({"video", "speech", "music", "sfx", "text"})', 'TIMED_OUTPUTS: frozenset[str] = frozenset({"video", "speech", "music", "sfx", "text", "image"})', "картинкам нужна длина"),
     (BS, '        "restore",\n        "interpolate",\n        "remove-background",\n        "transcribe",\n', '        "interpolate",\n        "remove-background",\n        "transcribe",\n', "реставрация не берёт длину из входа"),
-    (BS, '        "music-visualiser",\n        "sing-photo",\n    }\n)', '        "music-visualiser",\n        "sing-photo",\n        "generate",\n    }\n)', "генерация берёт длину из входа"),
+    (BS, '        "sing-photo",\n        "colorize",\n    }\n)', '        "sing-photo",\n        "colorize",\n        "generate",\n    }\n)', "генерация берёт длину из входа"),
     (BS, 'VIDEO_EDIT_TASKS: frozenset[str] = frozenset({"video-edit"})', "VIDEO_EDIT_TASKS: frozenset[str] = frozenset()", "правка видео без маршрута"),
     (BS, "HAVE_WINDOW = 8", "HAVE_WINDOW = 4", "окно «we have» уже"),
     (BS, "HAVE_WINDOW = 8", "HAVE_WINDOW = 12", "окно «we have» шире"),
@@ -186,6 +188,33 @@ MUTANTS: tuple[tuple[str, str, str, str], ...] = (
     (BS, 'AUDIO_DRIVEN_TASKS: frozenset[str] = frozenset({"avatar"})', "AUDIO_DRIVEN_TASKS: frozenset[str] = frozenset()", "аватар под свою дорожку снова без длины"),
     (BS, 'AUDIO_DRIVEN_TASKS: frozenset[str] = frozenset({"avatar"})', 'AUDIO_DRIVEN_TASKS: frozenset[str] = frozenset({"avatar", "generate"})', "генерация берёт длину из дорожки"),
     (L10N, '    (r"правка ВАШЕГО видео \\(стабилизация', '    (r"правка ВАШЕГО ВИДЕО \\(стабилизация', "пометка правки видео по-русски в английском плане"),
+    # --- седьмой круг: словарь spec и маршруты как модель пространства работ
+    (BS, "SERIES_CHARACTERS_MIN = 1", "SERIES_CHARACTERS_MIN = 0", "серия без персонажа — тоже референс и правки"),
+    (BS, "SERIES_CHARACTERS_MIN = 1", "SERIES_CHARACTERS_MIN = 2", "серия с одним персонажем — снова N генераций"),
+    (BS, "SERIES_IMAGES_MIN = 2", "SERIES_IMAGES_MIN = 1", "одна картинка — референс и правка"),
+    (BS, "SERIES_IMAGES_MIN = 2", "SERIES_IMAGES_MIN = 3", "две картинки персонажа — независимые генерации"),
+    (BS, "ASSEMBLY_EDITS: dict[str, str] = {ep.EDIT_STABILISE: NOTE_STABILISE}", "ASSEMBLY_EDITS: dict[str, str] = {}", "стабилизация снова генеративной правкой"),
+    (BS, "ASSEMBLY_EDITS: dict[str, str] = {ep.EDIT_STABILISE: NOTE_STABILISE}", "ASSEMBLY_EDITS: dict[str, str] = {ep.EDIT_STABILISE: NOTE_STABILISE, ep.EDIT_REMOVE_OBJECT: NOTE_STABILISE}", "удаление объекта уходит в монтаж"),
+    (BS, '{"sgn", "ase", "bfi",', '{"sgn", "bfi",', "ASL тегом снова говорящий аватар"),
+    (BS, 'r"sign[- ]language|signing avatar|', 'r"signing avatar|', "«sign language» словами снова аватар"),
+    (BS, '    return ("video" in spec.outputs or not spec.outputs) and spec.audio != "voiceover"', "    return True", "каждый дубляж снова с липсинком"),
+    (BS, '    return ("video" in spec.outputs or not spec.outputs) and spec.audio != "voiceover"', "    return False", "дубляж видео по умолчанию без губ"),
+    (BS, "        if not spec.duration_s:\n            for поле in (\"shots\", \"per_shot_s\"):", "        if True:\n            for поле in (\"shots\", \"per_shot_s\"):", "нарезка снова не берёт duration_s"),
+    (BS, '            ("расшифровка", *_подложка(выходы)),\n            {"расшифровка": NOTE_SHORTS_TRANSCRIPT},', '            ("расшифровка", "правка_видео", *_подложка(выходы)),\n            {"расшифровка": NOTE_SHORTS_TRANSCRIPT},', "нарезка снова генеративной правкой"),
+    (BS, '    "colorize": (("video", "раскраска"),),\n', "", "раскраска без маршрута"),
+    (BS, "        return Маршрут((шаг,), {шаг: NOTE_VISUALISER}, сборка=(NOTE_VISUALISER, NOTE_VISUALISER_SYNC))", "        return Маршрут((шаг,), {шаг: NOTE_VISUALISER})", "визуализатор молчит, что t2v не слышит трек"),
+    (BS, '    свой = б.get("usd")', '    свой = None', "пересчёт бюджета вызывающим не читается"),
+    (PN, "FPS_RANGE: tuple[int, int] = (8, 240)", "FPS_RANGE: tuple[int, int] = (25, 240)", "24 fps не считается частотой"),
+    (PN, "FPS_RANGE: tuple[int, int] = (8, 240)", "FPS_RANGE: tuple[int, int] = (8, 23)", "частоты выше 23 не читаются"),
+    (PN, "            if просят <= записано:\n", "            if True:\n", "частота выше записанной без интерполяции"),
+    (PN, "        and not маршрут.сборка,\n    )", "    )", "нарезка снова «цены ролика нет»"),
+    (PN, '    if цена.get("over_ceiling"):\n        out["outcome"] = FAIL', '    if False:\n        out["outcome"] = FAIL', "строка бюджета снова pass при превышении"),
+    (PN, '            цена["over_ceiling"] = {"least_known_usd": round(минимум, 4), "ceiling_usd": потолок}\n            цена["note"] += (\n                f" — ПОТОЛОК {потолок:g}: работа столько не стоит, "\n                f"дешевле всего выходит {минимум:.2f} {pl.BUDGET_UNIT}"', '            цена["note"] += (\n                f" — ПОТОЛОК {потолок:g}: работа столько не стоит, "\n                f"дешевле всего выходит {минимум:.2f} {pl.BUDGET_UNIT}"', "бюджет 0 снова не валит план"),
+    (PN, "    if bs.sign_language(понято, текст):\n", "    if False:\n", "язык жестов словами брифа снова план"),
+    (PN, "    if not маршрут.шаги and маршрут.сборка:\n", "    if False:\n", "монтажная работа снова «шагов нет»"),
+    (PR, "    if клоны:\n", "    if False:\n", "плата за клон снова спорит с ценой знаков"),
+    (SV, '    if просев["outcome"] == UNMEASURED and (есть_слова(brief) or spec_полна(spec)):', '    if просев["outcome"] == UNMEASURED and spec_полна(spec) and False:', "японский бриф снова «пуст»"),
+    (SV, '    if out.get("outcome") == PASS:\n        out["outcome"] = UNMEASURED', '    if False:\n        out["outcome"] = UNMEASURED', "непрочитанный бриф снова pass"),
 )
 
 

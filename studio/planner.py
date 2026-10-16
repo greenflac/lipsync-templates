@@ -1336,6 +1336,11 @@ REASON_BAD_BUDGET = "бюджет_не_число"
 #: Структура `spec`, поданная вызывающим, не разобрана: неизвестное поле,
 #: значение вне словаря, не число. Как и бюджет — отказ до плана, с перечнем.
 REASON_BAD_SPEC = "spec_не_разобран"
+#: Седьмой круг. Работа целиком монтажная (стабилизация без эндпоинта):
+#: модели нет, цена 0, валидатору проверять нечего — третий исход, не `pass`.
+REASON_ASSEMBLY_ONLY = "только_монтаж"
+#: Работа, которой генеративные модели не делают (язык жестов): пробел, а не подмена.
+REASON_NOT_SUPPORTED = "работа_не_поддерживается"
 
 #: Весь словарь причин. Список — не украшение: он делает состав причин
 #: проверяемым тестом, а не памятью читающего (форма взята у
@@ -1348,6 +1353,8 @@ REASONS: tuple[str, ...] = (
     REASON_PLAN_UNCONFIRMED,
     REASON_PLAN_STANDS,
     REASON_OVER_BUDGET,
+    REASON_ASSEMBLY_ONLY,
+    REASON_NOT_SUPPORTED,
 )
 
 
@@ -4606,6 +4613,7 @@ def нужда_шага(
     fps: float | None = None,
     клипов: int | None = None,
     языков: int = 1,
+    штук: int | None = None,
 ) -> pricing.Need:
     """Что шаг должен выдать на ЭТОМ брифе — от этого зависит строка таблицы цен.
 
@@ -4616,7 +4624,11 @@ def нужда_шага(
         «animate each 5s» над тремя кадрами — три прогона по 5 с, а не один
         прогон 5 с. `длительность` при этом — длина ВСЕГО ролика. Считается
         только у шага, который делает видео клипами (`Operation.клипами`).
+    :param штук: сколько картинок делает ИМЕННО этот шаг, когда маршрут назвал
+        (`brief_spec.Маршрут.штук`: референс серии — 1, правок по нему — N).
     """
+    if штук is not None:
+        кадров = штук
     картинка = {OUTPUT_KINDS.get(а) for а in op.produces} == {"изображение"}
     секунды = длительность.секунды if длительность.разобрано and not картинка else None
     # ПО ЯЗЫКАМ (шестой круг): речевой шаг делается на каждый язык заново —
@@ -4625,7 +4637,7 @@ def нужда_шага(
     # для шагов `PER_LANGUAGE_STEPS` и языков, названных в spec).
     if секунды is not None and языков > 1:
         секунды *= языков
-    речь = op.name in ("озвучка", "дубляж")
+    речь = op.name in ("озвучка", "дубляж", "клонирование_голоса")
     return pricing.Need(
         seconds=секунды,
         resolution=min(кадр) if кадр else None,
@@ -5493,6 +5505,9 @@ def смета_ролика(
     if потолок <= 0:
         if итого > 0:
             цена["outcome"] = "не годно"
+            # СЕДЬМОЙ КРУГ (w33): без `over_ceiling` исход плана не узнавал о
+            # превышении, и «бюджет 0» печатал `pass` рядом с ценой 0.02 usd.
+            цена["over_ceiling"] = {"least_known_usd": round(минимум, 4), "ceiling_usd": потолок}
             цена["note"] += (
                 f" — ПОТОЛОК {потолок:g}: работа столько не стоит, "
                 f"дешевле всего выходит {минимум:.2f} {pl.BUDGET_UNIT}"
@@ -8656,6 +8671,100 @@ def решить_апскейл(
     return "", False, ""
 
 
+#: Атрибуты, где база записывает частоту кадров выхода модели.
+FPS_ATTRIBUTES: tuple[str, ...] = ("fps", "frame_rate")
+#: Частота числом: «24 fps», «30fps fixed», «25 or 50». Скобки отброшены до
+#: поиска: «24 fps (… contradicts the 30/60 fps in blogs)» — это 24.
+_ЧАСТОТА = re.compile(r"(?<![\d.])(\d{2,3})(?![\d.])")
+#: Частоты вне этого диапазона — не частота кадров (секунды, разрешения).
+FPS_RANGE: tuple[int, int] = (8, 240)
+
+
+def _частоты_строки(значение: str) -> list[str]:
+    """Числа частоты в строке: при слове fps — только стоящие при нём («24 / 30 fps»), иначе все."""
+    низ = re.sub(r"\([^)]*\)", " ", значение.lower())
+    if "fps" not in низ:
+        return _ЧАСТОТА.findall(низ)
+    return [ч for м in re.finditer(r"((?:\d{2,3}\s*(?:or|/|,)\s*)*\d{2,3})\s*fps", низ) for ч in _ЧАСТОТА.findall(м.group(1))]
+
+
+def частота_записана(модель: str, facts: Sequence[Fact]) -> float | None:
+    """Наибольшая ЗАПИСАННАЯ частота кадров выхода модели (своя строка, иначе семья) или None."""
+    по_имени: dict[str, list[Fact]] = defaultdict(list)
+    for f in facts:
+        по_имени[fold(f.model)].append(f)
+    известные = sorted({f.model for f in facts})
+    for строки in (pl.facts_for(модель, facts), *(с for _, с in _семья_строк(модель, по_имени, известные))):
+        частоты = [
+            int(ч)
+            for f in строки
+            if f.attribute in FPS_ATTRIBUTES
+            for ч in _частоты_строки(str(f.value))
+            if FPS_RANGE[0] <= int(ч) <= FPS_RANGE[1]
+        ]
+        if частоты:
+            return float(max(частоты))
+    return None
+
+
+def решить_частоту(
+    выбор: Sequence[tuple[Operation, Candidate | None]],
+    просят: float | None,
+    facts: Sequence[Fact],
+    англ: bool,
+) -> tuple[str, str]:
+    """Нужна ли интерполяция кадров до заказанной частоты: (почему шаг, нота).
+
+    Седьмой круг (n08: «120 fps» отдавался моделью с записанными 24 fps без
+    слова). Смотрит шаги, отдающие ВИДЕО, с конца; шаг над готовым видео
+    (апскейл, правка) частоту проносит — решает шаг до него. Записано ниже
+    заказа — шаг интерполяции (RIFE / FILM / AMT). Не записано — нота, не шаг:
+    молчание базы не повод платить.
+    """
+    if not просят:
+        return "", ""
+    видео = [(op, к) for op, к in выбор if any(OUTPUT_KINDS.get(а) == "видео" for а in op.produces)]
+    for i in range(len(видео) - 1, -1, -1):
+        op, кандидат = видео[i]
+        if кандидат is None:
+            return "", ""
+        записано = частота_записана(кандидат.model, facts)
+        if записано is not None:
+            if просят <= записано:
+                return "", ""
+            return (
+                (
+                    f"{просят:g} fps asked, and {кандидат.model} ({_имя_шага(op.name, True)}) records "
+                    f"{записано:g} fps at most — frame interpolation (RIFE / FILM / AMT) lifts it"
+                    if англ
+                    else f"заказано {просят:g} fps, а у {кандидат.model} (шаг {op.name}) записано не больше "
+                    f"{записано:g} fps — частоту поднимает интерполяция кадров (RIFE / FILM / AMT)"
+                ),
+                "",
+            )
+        if i > 0 and ARTEFACT_VIDEO in op.requires:  # частоту проносит шаг над готовым видео
+            continue
+        if ARTEFACT_VIDEO in op.requires:
+            return "", (
+                f"{просят:g} fps asked: the frame rate of YOUR video is not stated and the base records none for "
+                f"{кандидат.model} — if the source is below {просят:g} fps, add frame interpolation (RIFE / FILM)"
+                if англ
+                else f"заказано {просят:g} fps: частота ВАШЕГО видео не названа, и о {кандидат.model} база молчит — "
+                f"если исходник ниже {просят:g} fps, нужна интерполяция кадров (RIFE / FILM)"
+            )
+        break
+    if not видео:
+        return "", ""
+    op, кандидат = видео[-1]
+    return "", (
+        f"{просят:g} fps asked: the base records no frame rate for {кандидат.model if кандидат else op.name} — "
+        "if it outputs 24–30 fps, a frame-interpolation step (RIFE / FILM) is needed; not added on silence"
+        if англ
+        else f"заказано {просят:g} fps: частота выхода {кандидат.model if кандидат else op.name} в базе не "
+        "записана — если она 24–30 fps, нужен шаг интерполяции (RIFE / FILM); по молчанию не дописан"
+    )
+
+
 def нужен_апскейл(
     выбор: Sequence[tuple[Operation, Candidate | None]],
     просят: tuple[int, int] | None,
@@ -8901,6 +9010,7 @@ def нужна_сборка(
     длительность: dur.Запрос,
     пометки: Mapping[str, str] | None = None,
     англ: bool = False,
+    сборка: Sequence[str] = (),
 ) -> dict | None:
     """Нужен ли МОНТАЖ, и почему. Это не модель: ffmpeg или монтажная программа.
 
@@ -8913,7 +9023,9 @@ def нужна_сборка(
     """
     имена = [op.name for op, _ in выбор]
     видео = [op.name for op, _ in выбор if op.name in VIDEO_MAKERS]
-    if not видео:
+    # Монтаж, названный МАРШРУТОМ (седьмой круг: нарезка шортсов, вжигание
+    # субтитров, стабилизация, дорожка дубляжа), нужен и без шага-видео.
+    if not видео and not сборка:
         return None
     причины: list[str] = []
     дорожки = [и for и in имена if и in ("музыка", "звук_фон")]
@@ -8929,7 +9041,7 @@ def нужна_сборка(
             )
     # Причины, которые называет МАРШРУТ (шестой круг): дорожка заказчика под
     # визуализацией, отбор фрагментов по расшифровке перед нарезкой.
-    for пометка in dict.fromkeys((пометки or {}).values()):
+    for пометка in dict.fromkeys((*(пометки or {}).values(), *сборка)):
         if пометка in bs.ASSEMBLY_REASONS:
             причины.append(bs.ASSEMBLY_REASONS[пометка][1 if англ else 0])
     if not причины:
@@ -10037,6 +10149,8 @@ def сводка(итог: dict) -> str:
                 300,
             )
         )
+    if (итог.get("frame_rate") or {}).get("note"):
+        строки.append(("FRAME RATE: " if англ else "ЧАСТОТА КАДРОВ: ") + _коротко(итог["frame_rate"]["note"], 300))
     строки.append(("PRICE: " if англ else "ЦЕНА: ") + _цена_словами(итог, англ))
     строка_требований = _требования_словами(итог, англ)
     if строка_требований:
@@ -10301,6 +10415,137 @@ def вопрос_что_сделать(brief: str) -> "clarify.Вопрос | No
             ("answer in words", "pass spec={task, outputs, inputs, ...}"),
         ),
     )
+
+
+def правки_на_сборке(индекс: "FactIndex") -> frozenset[str]:
+    """Правки `bs.ASSEMBLY_EDITS`, которых не делает НИ ОДИН заказываемый эндпоинт
+    правки реестра: их делает монтаж (vidstab / Gyroflow, 0 usd), а не модель."""
+    реестр = ep.build(индекс.facts)
+    узлы = [у for у in реестр.orderable_for(ep.V2V_EDIT) if not ep.not_an_edit(у)]
+    return frozenset(п for п in bs.ASSEMBLY_EDITS if not any(п in ep.edit_intents(у) for у in узлы))
+
+
+#: Что делать вместо языка жестов — (ru, en).
+SIGN_INSTEAD: tuple[str, str] = (
+    "нужен живой переводчик жестового языка (съёмка) или специализированный сервис аватаров жестового "
+    "языка с носителями языка в контуре проверки; субтитры (ffmpeg) — дополнение, а не замена",
+    "use a human sign-language interpreter (filmed), or a specialised sign-language avatar service with "
+    "Deaf native signers reviewing the output; burned-in captions (ffmpeg) are an addition, not a substitute",
+)
+
+
+def пробел_работы(
+    понято: "bs.Spec", brief: str, по_английски: bool, creative: str, бюджет: "Budget"
+) -> dict:
+    """Работа, которой генеративные модели не делают (язык жестов): ПРОБЕЛ словами, без плана.
+
+    Третий исход: «не годно» сказало бы, что что-то проверено и провалено, а
+    проверять нечего — в базе нет модели этой работы. Никакой подмены
+    говорящим аватаром: он двигает губы, а язык жестов — это руки, лицо и тело.
+    """
+    почему = bs.NOTES_EN[bs.NOTE_SIGN] if по_английски else bs.NOTE_SIGN
+    вместо = SIGN_INSTEAD[1 if по_английски else 0]
+    return {
+        "summary": f"{'NOT SUPPORTED' if по_английски else 'НЕ ПОДДЕРЖИВАЕТСЯ'}: {почему}. {вместо}",
+        "understood_as": bs.echo(понято),
+        "outcome": UNMEASURED,
+        "reason": REASON_NOT_SUPPORTED,
+        "checked": 0,
+        "violations": 0,
+        "unmeasured": 1,
+        "note": почему,
+        "gap": {"job": "sign-language", "recorded": True, "why": почему, "instead": вместо},
+        "question": None,
+        "brief": brief,
+        "budget": _budget_row(бюджет),
+        "creative": _creative_row(creative, None, ""),
+        "steps": [],
+        "classes": [],
+        "pipeline_price": {},
+        "validator": None,
+        "что_дальше": вместо,
+    }
+
+
+def только_монтаж(
+    маршрут: "bs.Маршрут",
+    понято: "bs.Spec",
+    brief: str,
+    по_английски: bool,
+    creative: str,
+    бюджет: "Budget",
+) -> dict:
+    """План БЕЗ модели: работа целиком монтажная (стабилизация без эндпоинта). Цена 0.
+
+    Исход — третий (`только_монтаж`): валидатору проверять нечего, а ноль
+    проверок не бывает `pass` (Р1). Цена известна точно — 0 usd, и с потолком
+    она сравнивается.
+    """
+    почему = [
+        bs.ASSEMBLY_REASONS[н][1 if по_английски else 0] for н in маршрут.сборка if н in bs.ASSEMBLY_REASONS
+    ]
+    сборка = {
+        "step": ASSEMBLY_STEP,
+        "tool": ASSEMBLY_TOOL,
+        "model": None,
+        "price": "0 usd (не модель)",
+        "why": почему,
+        "seconds": понято.duration_s or bs.source_seconds(понято),
+    }
+    строка_бюджета = _budget_row(бюджет)
+    if бюджет.known and бюджет.amount is not None:
+        строка_бюджета["outcome"] = PASS
+        строка_бюджета["note"] = f"{строка_бюджета['note']}; цена плана 0 usd (шагов-моделей нет) — в потолок укладывается"
+        строка_бюджета["verdict"] = "в потолок укладывается"
+    инструмент = (
+        "edit / assembly -> ffmpeg or an editing app (not a model), 0 usd"
+        if по_английски
+        else "монтаж -> ffmpeg или монтажная программа (не модель), 0 usd"
+    )
+    return {
+        "summary": (
+            (
+                "PLAN IN SHORT: no model step — assembly only; check: nothing to validate.\n 1. "
+                if по_английски
+                else "КРАТКО: шагов-моделей нет — только монтаж; проверка: проверять нечего.\n 1. "
+            )
+            + инструмент
+            + "".join(f"\n      {п}" for п in почему)
+            + ("\nPRICE: 0 usd (no model step)" if по_английски else "\nЦЕНА: 0 usd (шагов-моделей нет)")
+        ),
+        "understood_as": bs.echo(понято),
+        "outcome": UNMEASURED,
+        "reason": REASON_ASSEMBLY_ONLY,
+        "checked": 0,
+        "violations": 0,
+        "unmeasured": 1,
+        "note": (
+            "no model step: the job is done at assembly, 0 usd; nothing for the validator to check"
+            if по_английски
+            else "шагов-моделей нет: работа делается монтажом, 0 usd; валидатору проверять нечего"
+        ),
+        "question": None,
+        "brief": brief,
+        "budget": строка_бюджета,
+        "creative": _creative_row(creative, None, ""),
+        "steps": [],
+        "assembly": сборка,
+        "classes": [],
+        "pipeline_price": {
+            "outcome": pricing.ГОДНО,
+            "note": "0 usd: no model step, assembly tools only",
+            "steps_without_price": [],
+            "steps_priced": 0,
+            "смета": {"usd": 0.0, "usd_cheapest_tiers": 0.0, "usd_min_known": 0.0, "steps": []},
+            "за_ролик": {"usd": 0.0},
+        },
+        "validator": None,
+        "что_дальше": (
+            "run the assembly named in `assembly.why`; no generation is needed"
+            if по_английски
+            else "выполните монтаж по `assembly.why`; генерация не нужна"
+        ),
+    }
 
 
 def вопрос_о_нехватке(
@@ -10599,9 +10844,22 @@ def plan(
     есть = входы_плана(brief, creative, понято)
     понято = с_входами(понято, есть)
     маршрутом = маршрут_старше(понято, операции, brief, есть)
-    маршрут = bs.route(bs.with_defaults(понято, ролик=True)) if маршрутом else bs.Маршрут()
+    индекс = index if index is not None else FactIndex(facts=facts) if facts else FactIndex()
+    if bs.sign_language(понято, текст):
+        # ЯЗЫК ЖЕСТОВ (седьмой круг): ни липсинк, ни говорящий аватар его не
+        # делают — план из них был бы подменой работы. Пробел, а не план.
+        return пробел_работы(понято, текст, по_английски, creative, бюджет)
+    маршрут = (
+        bs.route(bs.with_defaults(понято, ролик=True), правки_на_сборке(индекс))
+        if маршрутом
+        else bs.Маршрут()
+    )
     if маршрут.нехватка is not None:
         return вопрос_о_нехватке(маршрут, понято, brief, по_английски, creative, budget_from(brief))
+    if маршрут.пробел is not None:
+        return пробел_работы(понято, текст, по_английски, creative, бюджет)
+    if not маршрут.шаги and маршрут.сборка:
+        return только_монтаж(маршрут, bs.with_defaults(понято, ролик=True), текст, по_английски, creative, бюджет)
     if маршрут.шаги:
         # МАРШРУТ ПО СТРУКТУРЕ: шаги — из того, ЧТО заказано и ИЗ ЧЕГО, а не из
         # подсказок. Замыкание по нехватке — то же, но без чтения брифа
@@ -10755,7 +11013,6 @@ def plan(
             "validator": None,
         }
 
-    индекс = index if index is not None else FactIndex(facts=facts) if facts else FactIndex()
     языки = (
         tuple(понято.languages)
         if понято.languages
@@ -10882,6 +11139,7 @@ def plan(
                 fps=понято.fps or fps_из_брифа(brief),
                 клипов=клипов,
                 языков=языков_на_шаг(op),
+                штук=маршрут.штук.get(op.name),
             ),
             bool(COMMUNITY_ASKED.search(brief)),
             условия,
@@ -10889,7 +11147,7 @@ def plan(
             заказанный_кадр or кадр,
             жёсткие,
             stated_conditions=заявленные_условия,
-            edit_intents=понято.edit,
+            edit_intents=маршрут.правки if маршрут.правки is not None else понято.edit,
         )
 
     # СКОЛЬКО ШОТОВ (2026-10-15, четвёртый круг). Явное число; «each» над N;
@@ -10979,7 +11237,7 @@ def plan(
                 "produces": list(op.produces),
                 "input_of_plan": подменено,
                 "duration_asked": длительность.нота,
-                "shots": шотов_шага(op, кадров, клипов),
+                "shots": шотов_шага(op, маршрут.штук.get(op.name, кадров), клипов),
                 "chosen": _candidate_row(лучший),
                 # Чужая работа соседом не показывается (2026-10-15): модель
                 # музыки — не «альтернатива» синтезу речи. Видна в счёте
@@ -11052,6 +11310,8 @@ def plan(
     просят_кадр = None if понято.source.get("resolution") == bs.SOURCE_DEFAULT else заказанный_кадр
     условные: set[str] = set()
     пронесено = [""]
+    частота = [""]
+    fps_заказано = float(понято.fps) if понято.fps else fps_из_брифа(brief)
 
     def _собрать() -> None:
         выбор.clear()
@@ -11074,6 +11334,13 @@ def plan(
                 if условно:
                     условные.add(имя_апскейла)
                     строки_шагов[-1]["conditional"] = True
+        # ЧАСТОТА КАДРОВ (седьмой круг): заказано больше записанного у модели —
+        # шаг интерполяции; не записано — нота `frame_rate`.
+        частота[0] = ""
+        if not any(op.name == "интерполяция_кадров" for op, _ in выбор):
+            почему_частота, частота[0] = решить_частоту(выбор, fps_заказано, индекс.facts, по_английски)
+            if почему_частота:
+                _шаг(next(оп for оп in OPERATIONS if оп.name == "интерполяция_кадров"), почему_частота)
 
     _собрать()
 
@@ -11227,10 +11494,13 @@ def plan(
         бюджет,
         # По spec ролик заказан, когда видео в выходе; у субтитров видео
         # собирает монтаж (ffmpeg), и шага-модели, делающего ролик, нет.
-        ролик_заказан(brief) or (spec_only and "video" in понято.outputs and понято.task != "captions"),
+        # СЕДЬМОЙ КРУГ: то же у любой работы, где ролик собирает МОНТАЖ,
+        # названный маршрутом (нарезка, стабилизация, дорожка дубляжа).
+        (ролик_заказан(brief) or (spec_only and "video" in понято.outputs and понято.task != "captions"))
+        and not маршрут.сборка,
     )
     for строка_сметы in (цена_пайплайна.get("смета") or {}).get("steps") or []:
-        n = шотов_шага(next(оп for оп in операции if оп.name == строка_сметы["step"]), кадров, клипов) if строка_сметы["step"] in имена_плана else None
+        n = шотов_шага(next(оп for оп in операции if оп.name == строка_сметы["step"]), маршрут.штук.get(строка_сметы["step"], кадров), клипов) if строка_сметы["step"] in имена_плана else None
         if n:
             строка_сметы["shots"] = n
             строка_сметы["usd_per_shot"] = round(float(строка_сметы["usd"]) / n, 4)
@@ -11324,7 +11594,7 @@ def plan(
             f"самый дешёвый записанный кандидат шага {шаг} стоит {сколько:.2f} {BUDGET_UNIT}"
         )
     исход, причина, нота = дороже_потолка(исход, причина, нота, цена_пайплайна, видео_из_догадки)
-    сборка = нужна_сборка(выбор, длительность, маршрут.пометки, по_английски)
+    сборка = нужна_сборка(выбор, длительность, маршрут.пометки, по_английски, маршрут.сборка)
     # СТРОКИ ШЕСТОГО КРУГА на шаге: сколько раз по языкам, поддержка каждого
     # языка выбранной моделью (записано / не измерено) и, на своём Mac, запуск
     # на MPS/MLX — не измерено, пока база не записала обратное.
@@ -11364,7 +11634,7 @@ def plan(
         длительность,
         бюджет,
     )
-    строка_бюджета = _budget_row(бюджет)
+    строка_бюджета = сверить_бюджет(_budget_row(бюджет), бюджет, цена_пайплайна)
     if бюджет.known and not пошаговый:
         строка_бюджета["note"] += (
             f". Валидатору потолок НЕ передан: его поле — бюджет ШАГА "
@@ -11422,6 +11692,7 @@ def plan(
         "steps": строки_шагов,
         "assembly": сборка,
         "resolution_carry": пронесено[0],
+        "frame_rate": {"asked": fps_заказано, "note": частота[0]} if fps_заказано else None,
         "native_audio_variant": со_звуком,
         "classes": list(отчёт["classes"]),
         "validator": отчёт,
@@ -11644,6 +11915,7 @@ def сжать(ответ: dict) -> dict:
         "steps": шаги,
         "assembly": ответ.get("assembly"),
         "resolution_carry": ответ.get("resolution_carry"),
+        "frame_rate": ответ.get("frame_rate"),
         "native_audio_variant": вариант,
         "classes": ответ.get("classes"),
         "validator": {
@@ -11677,6 +11949,29 @@ def сжать(ответ: dict) -> dict:
         "full": False,
         "omitted": COMPACT_OMITTED,
     }
+
+
+def сверить_бюджет(строка: dict, бюджет: "Budget", цена: Mapping[str, Any]) -> dict:
+    """Исход строки бюджета = вердикт сметы по потолку (седьмой круг, n05).
+
+    `Budget.outcome` говорит, что потолок РАЗОБРАН; строка же читается как «в
+    бюджет укладывается». n05 печатал `budget: pass` рядом с `fail
+    дороже_потолка` (508 usd против 5). Теперь: превышение — `fail`; смета
+    сравнена и годна — `pass`; не сравнено — третий исход.
+    """
+    if not бюджет.known or бюджет.amount is None:
+        return строка
+    out = dict(строка)
+    if цена.get("over_ceiling"):
+        out["outcome"] = FAIL
+        out["verdict"] = "дороже потолка"
+    elif цена.get("outcome") == pricing.ГОДНО:
+        out["outcome"] = PASS
+        out["verdict"] = "в потолок укладывается"
+    else:
+        out["outcome"] = UNMEASURED
+        out["verdict"] = "с потолком не сравнено: цена плана неполна"
+    return out
 
 
 def _budget_row(b: Budget) -> dict:
