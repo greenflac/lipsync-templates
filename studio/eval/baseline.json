@@ -2,8 +2,8 @@
  "briefs": "briefs.jsonl",
  "total": {
   "n": 150,
-  "correct": 112,
-  "pct": 74.7
+  "correct": 110,
+  "pct": 73.3
  },
  "classes": {
   "animate": {
@@ -43,8 +43,8 @@
   },
   "faceswap": {
    "n": 3,
-   "correct": 3,
-   "pct": 100.0
+   "correct": 1,
+   "pct": 33.3
   },
   "fps": {
    "n": 6,
