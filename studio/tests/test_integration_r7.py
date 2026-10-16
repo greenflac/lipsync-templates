@@ -168,5 +168,32 @@ class ОбрезкаНеПосредиСлова(unittest.TestCase):
         self.assertEqual(текст, cap._коротко(текст, 200))
 
 
+def _живой_план(spec: dict) -> list[tuple[str, str | None]]:
+    d = pn.plan("spec-only call", today=date(2026, 10, 16), full=True, spec=spec, spec_only=True)
+    return [(ш["step"], (ш.get("chosen") or {}).get("model")) for ш in d["steps"]]
+
+
+class ДубляжИГубыНаЖивойБазе(unittest.TestCase):
+    """Валидатор v7: n16 «no lipsync» — без шага липсинка; w24/n15 — липсинк sync-3."""
+
+    ВИДЕО = {"kind": "video", "owned": True, "duration_s": 120}
+
+    def test_n16_без_липсинка(self) -> None:
+        шаги = _живой_план(
+            {"task": "dub-translate", "inputs": [self.ВИДЕО], "outputs": ["video", "speech"],
+             "duration_s": 120, "languages": ["hi", "ta", "bn"], "lipsync": False}
+        )  # fmt: skip
+        self.assertEqual(["дубляж"], [ш for ш, _ in шаги])
+
+    def test_n15_липсинк_sync_3(self) -> None:
+        шаги = dict(
+            _живой_план(
+                {"task": "dub-translate", "inputs": [self.ВИДЕО], "outputs": ["video", "speech"],
+                 "duration_s": 120, "languages": ["es-419", "pt-BR"], "lipsync": True}
+            )
+        )  # fmt: skip
+        self.assertEqual("sync-lipsync-v3", шаги.get("липсинк"))
+
+
 if __name__ == "__main__":
     unittest.main()
