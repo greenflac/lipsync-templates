@@ -4214,6 +4214,29 @@ REQUIRED_LIST_ATTRIBUTE = "requires_inputs"
 #: — это и есть `бриф`, объявленный входом почти всех операций.
 ALWAYS_AT_HAND = frozenset({"текст"})
 
+#: Обязательный вход, который студия ГОТОВИТ САМА из слов брифа, без модели и
+#: без принесённого файла. Девятый круг, интеграция (2026-10-16): у
+#: `minimax-h3-max-relight` в схеме `required: [video_url, reference_image_url]`,
+#: а `reference_image_url` — «Sphere render showing the target lighting»:
+#: рендер серой сферы под описанным светом (Blender, три источника — работа
+#: монтажёра, не генерация). Правило запрещённого входа снимало выбор, и шаг
+#: «переосветить ролик» оставался без единственного кандидата, хотя заказчику
+#: приносить нечего: свет он уже описал словами. Строка `prepared_inputs`
+#: перечисляет такие виды; они считаются доступными шагу, а строка печатается
+#: опорой кандидата — чтобы заготовку не забыли.
+PREPARED_LIST_ATTRIBUTE = "prepared_inputs"
+
+
+def prepared_kinds(facts: Sequence[Fact]) -> set[str]:
+    """Виды обязательного входа, которые студия готовит сама (`prepared_inputs`)."""
+    return {
+        к.strip().lower()
+        for f in facts
+        if f.attribute == PREPARED_LIST_ATTRIBUTE
+        for к in str(f.value).split(",")
+        if к.strip()
+    }
+
 
 def required_stance(
     facts: Sequence[Fact], declared: Sequence[str], have: Sequence[str] = ()
@@ -4233,7 +4256,7 @@ def required_stance(
     строки = [f for f in facts if f.attribute == REQUIRED_LIST_ATTRIBUTE]
     if not строки:
         return BAN_UNKNOWN, ""
-    доступно = set(ALWAYS_AT_HAND)
+    доступно = set(ALWAYS_AT_HAND) | prepared_kinds(facts)
     for артефакт in list(declared) + list(have):
         слово = INPUT_LIST_WORDS.get(артефакт)
         if слово:
@@ -6860,7 +6883,7 @@ FAMILY_LENT_LABEL = "применимость семьи"
 #: Какие строки кандидата, добавленного реестром, печатаются его опорой: то,
 #: чем установлена его работа (каталог, схема), а не всё, что о нём записано.
 REGISTRY_ROW_ATTRIBUTES: frozenset[str] = frozenset(
-    {"availability", "requires_inputs", "accepts_inputs", "produces_outputs", "positioning"}
+    {"availability", "requires_inputs", "accepts_inputs", "produces_outputs", "positioning", "prepared_inputs"}
 )
 
 #: Длина ОДНОГО прогона видео, когда её не записали ни модель, ни её семья.
@@ -7009,7 +7032,9 @@ def нечем_запустить(модель: str, есть: Iterable[str], fa
     if "видео" in доступно:
         доступно.add("аудио")
     ключ = fold(модель)
-    строки = [f for f in facts if f.attribute == REQUIRED_LIST_ATTRIBUTE and fold(f.model) == ключ]
+    свои = [f for f in facts if fold(f.model) == ключ]
+    доступно |= prepared_kinds(свои)
+    строки = [f for f in свои if f.attribute == REQUIRED_LIST_ATTRIBUTE]
     return any(
         {к.strip().lower() for к in str(f.value).split(",") if к.strip()} - доступно for f in строки
     )

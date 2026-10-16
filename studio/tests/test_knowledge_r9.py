@@ -170,6 +170,36 @@ class ЗапрещённыйВход(unittest.TestCase):
     def test_без_строк_судить_не_по_чему(self) -> None:
         self.assertFalse(pn.нечем_запустить("x", set(), []))
 
+    def test_заготовка_студии_не_запрет(self) -> None:
+        # Интеграция девятого круга: обязательная сфера-референс света готовится
+        # из слов брифа — её не приносят, и запрет выбор не снимает.
+        строки = [
+            _факт("relight", "requires_inputs", "видео, изображение"),
+            _факт("relight", "prepared_inputs", "изображение"),
+        ]
+        self.assertFalse(pn.нечем_запустить("relight", {"видео"}, строки))
+        self.assertTrue(pn.нечем_запустить("relight", set(), строки))
+        self.assertEqual(("вход ЗАПРЕЩЁН", ""), (pn.required_stance(строки[:1], ["видео"])[0], ""))
+        self.assertEqual(pn.BAN_UNKNOWN, pn.required_stance(строки, ["видео"])[0])
+
+    def test_переосветить_свой_ролик_живая_база(self) -> None:
+        итог = pn.plan(
+            "Relight a 15 s product shot to warm evening light",
+            spec={
+                "task": "video-edit",
+                "edit": ["relight"],
+                "inputs": [{"kind": "video", "owned": True, "duration_s": 15}],
+                "outputs": ["video"],
+                "duration_s": 15,
+                "people": [],
+            },
+            spec_only=True,
+        )
+        self.assertEqual(
+            [("правка_видео", "minimax-h3-max-relight")],
+            [(ш["step"], (ш.get("chosen") or {}).get("model", "")) for ш in итог["steps"]],
+        )
+
 
 class ЖивыеЗадачиДевятогоКруга(unittest.TestCase):
     """Пересказ задач, по живой базе: что выбрано и чем это доказано."""
