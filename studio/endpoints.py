@@ -184,6 +184,14 @@ JOB_RULES: tuple[tuple[str, tuple[str, ...]], ...] = (
     # `ddcolor`/`deoldify` — модели раскраски, названные по себе, без слова «colorize».
     (r"coloriz\w*|colouriz\w*|colorization|ddcolor|deoldify", (COLORIZE,)),
     (r"restor\w*", (RESTORE,)),
+    # Шумодав, удаление смаза и артефактов сжатия — реставрация (седьмой
+    # круг): `topaz/denoise/video`, `fal-ai/ltx-2.3-quality/deblur` и
+    # `…/decompression` площадка числит «video-to-video», и работа
+    # `restore` оставалась без единого эндпоинта с ценой. Работа `v2v-edit`
+    # за ними СОХРАНЯЕТСЯ (полка площадки — правка видео; шаг правки сам
+    # отбирает по под-работе, `edit_intents`), у картиночных её снимает
+    # подпись (`consistent`: выход — картинка).
+    (r"denois\w*|deblur\w*|decompression", (RESTORE, V2V_EDIT)),
     (r"interpolat\w*|rife", (INTERPOLATE,)),
     (r"speech-to-text|transcri\w*|diariz\w*|scribe|whisper|asr|stt", (TRANSCRIBE,)),
     (r"auto-caption\w*|subtitl\w*", (CAPTIONS,)),
@@ -386,6 +394,31 @@ CURATED: dict[str, tuple[tuple[str, ...], str, str]] = {
         "fal.ai lists fal-ai/film/video: the FILM frame-interpolation model applied to a video",
         "https://fal.ai/models/fal-ai/film/video",
     ),
+    # Седьмой круг (валидатор v7, «промахи реестра»): заказываемые узлы без
+    # работы. Имена ElevenLabs и Google работу не называют.
+    "eleven_flash_v2": (
+        (TTS,),
+        "ElevenLabs models page: Flash v2 — text-to-speech, English only, ~30 minutes of audio per request",
+        "https://elevenlabs.io/docs/models.md",
+    ),
+    "eleven_flash_v2_5": (
+        (TTS,),
+        "ElevenLabs models page: Flash v2.5 — low-latency text-to-speech (~75 ms), 40,000 characters per request",
+        "https://elevenlabs.io/docs/models.md",
+    ),
+    "chirp-3-hd": (
+        (TTS,),
+        "Google Cloud Text-to-Speech pricing: Chirp 3: HD voices, billed per character of synthesised text",
+        "https://cloud.google.com/text-to-speech/pricing",
+    ),
+    # FLUX.1 Kontext [max] multi — правка картинки по НЕСКОЛЬКИМ опорным
+    # снимкам (`image_urls`); категории у эндпоинта на площадке нет.
+    "flux-1-kontext-max-multi": (
+        (IMAGE_EDIT,),
+        "fal.ai OpenAPI of fal-ai/flux-pro/kontext/max/multi: image edit from several reference images "
+        "(image_urls array) — multi-reference",
+        "https://fal.ai/api/openapi/queue/openapi.json?endpoint_id=fal-ai/flux-pro/kontext/max/multi",
+    ),
     "seedvr2-3b": (
         (UPSCALE_VIDEO, UPSCALE_IMAGE, RESTORE),
         "SeedVR2-3B README: one-step diffusion video restoration and super-resolution",
@@ -401,6 +434,11 @@ ROUTE_HOSTS: dict[str, str] = {
     "fal.run": "fal",
     "replicate.com": "replicate",
 }
+#: Атрибуты, где записано, ГДЕ вендор обслуживает запросы (`Endpoint.hosting`).
+HOSTING_ATTRIBUTES: frozenset[str] = frozenset(
+    {"serving_regions", "data_residency", "hosting_regions", "processing_regions", "data_location"}
+)
+
 #: Хосты страниц весов: маршрут «запустить у себя».
 WEIGHTS_HOSTS: tuple[str, ...] = ("huggingface.co", "github.com")
 ROUTE_SELF_HOST = "self-host"
@@ -446,7 +484,14 @@ class Endpoint:
     resolutions: tuple[str, ...] = ()
     native_audio: bool | None = None
     licence: str = ""
+    #: Территории, которые ЛИЦЕНЗИЯ исключает (`pipeline.licence_reservations`).
     territories: tuple[str, ...] = ()
+    #: Где вендор ОБСЛУЖИВАЕТ запросы (хостинг, регионы данных) — юрисдикции из
+    #: строк `HOSTING_ATTRIBUTES`; пусто — не записано. Седьмой круг
+    #: (валидатор v7): `spec.jurisdiction` судил только лицензию, а о том, где
+    #: модель запущена, молчал — без единой строки об этом.
+    hosting: tuple[str, ...] = ()
+    hosting_note: str = ""
     open_weights: str = ""
     vram_gb: float | None = None
 
@@ -891,9 +936,17 @@ def _собрать(facts: Sequence[Fact]) -> Registry:
             price_routes=list(dict.fromkeys(pn.маршрут(f)[0] for f in цены)),
             vendor_hosts=pn.МАРШРУТ_ХОСТА,
             # Веса СЕМЬИ запускают под именами вариантов: маршрутом узла семьи
-            # страница весов не становится (на своём GPU он кандидат по
-            # `self_hostable`, как и прежде).
-            weights_page=(страница_весов or "weights") if свои_веса and not мои_варианты else "",
+            # страница весов не становится — КРОМЕ узла, у которого СВОЯ
+            # страница весов с лицензией (седьмой круг, валидатор v7):
+            # `flux.2-klein-9b` — опубликованный чекпойнт black-forest-labs/
+            # FLUX.2-klein-9B, а числился «узлом семьи без маршрута».
+            weights_page=(
+                страница_весов
+                if страница_весов
+                else "weights"
+                if свои_веса and not мои_варианты
+                else ""
+            ),
         )
         маршруты = list(dict.fromkeys(кто for кто, _ in маршруты_ид))
         ids = tuple(dict.fromkeys(ид for кто, ид in маршруты_ид if кто in ROUTE_HOSTS.values()))
@@ -907,6 +960,7 @@ def _собрать(facts: Sequence[Fact]) -> Registry:
             if прогон_семьи is not None:
                 прогон, основание = прогон_семьи, f"семья {написание[семья]}"
         территории, _ = pl.licence_reservations(rows)
+        хостинг = [f for f in rows if f.attribute in HOSTING_ATTRIBUTES]
         vram, _, оценка = hn.vram_need(rows)
         звук = [f for f in rows if f.attribute == "audio_output"]
         узел = Endpoint(
@@ -957,6 +1011,10 @@ def _собрать(facts: Sequence[Fact]) -> Registry:
             )[:200],
             territories=tuple(
                 sorted({j for f in территории for j in pl.jurisdictions_in(f.value)})
+            ),
+            hosting=tuple(sorted({j for f in хостинг for j in pl.jurisdictions_in(f.value)})),
+            hosting_note="; ".join(
+                f"{f.attribute} = «{str(f.value)[:80]}» ({f.source_url})" for f in хостинг[:2]
             ),
             open_weights=веса,
             vram_gb=None if оценка else vram,
@@ -1102,6 +1160,31 @@ EDIT_RULES: dict[str, str] = {
     EDIT_RELIGHT: r"relight\w*|day-to-night|hdr",
     EDIT_RESTYLE: r"recast|render-to-real|restyle|style-transfer",
 }
+
+#: Под-работа, НАЗВАННАЯ идентификатором прямо (седьмой круг): без звена
+#: правки по инструкции (`edit`), которое `EDIT_RULES` засчитывает каждой
+#: замене и удалению. `fal-ai/ltx-2.3-quality/clean-plate` называет удаление
+#: объекта; `kling-video/o3/.../video-to-video/edit` — только правку словами.
+#: `find_models` различает эти два свидетельства (способность по каталогу
+#: против «может, если попросить»).
+EDIT_NAMED: dict[str, str] = {
+    # Правила без звена правки по инструкции — те же (Е1: выводятся, не копируются).
+    **{п: о for п, о in EDIT_RULES.items() if not о.startswith(_ПРАВКА_ПО_ИНСТРУКЦИИ)},
+    EDIT_REPLACE_OBJECT: r"replace-object|object-replace\w*",
+    # `inpaint` в правиле по инструкции общий; прямо названное удаление — здесь.
+    EDIT_REMOVE_OBJECT: EDIT_RULES[EDIT_REMOVE_OBJECT].removeprefix(_ПРАВКА_ПО_ИНСТРУКЦИИ + "|")
+    + r"|object-remov\w*|inpaint\w*",
+    EDIT_REPLACE_SKY: EDIT_RULES[EDIT_REPLACE_SKY].removeprefix(_ПРАВКА_ПО_ИНСТРУКЦИИ + "|"),
+}
+
+
+def edit_named(endpoint: "Endpoint | str") -> frozenset[str]:
+    """Правки, которые идентификатор НАЗЫВАЕТ прямо (`EDIT_NAMED`); пусто — не названо."""
+    тексты = (endpoint,) if isinstance(endpoint, str) else (endpoint.model, *endpoint.ids)
+    return frozenset(
+        п for п, образец in EDIT_NAMED.items() for т in тексты if _звено(образец, _звенья(т))
+    )
+
 
 #: Звенья, при которых эндпоинт работы `v2v-edit` — НЕ правка ролика
 #: заказчика: он делает новое видео (продление, по референсу, по движению,

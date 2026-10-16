@@ -410,6 +410,9 @@ import re
             "frames_and_fps",
             "num_frames_range",
             "max_frames",
+            # Множитель частоты интерполятора («up to 4x input fps», седьмой
+            # круг): `find_models` судит его против спрошенной частоты.
+            "frame_multiplier",
         ),
         "подстроки": (),
         "кроме": (),

@@ -159,13 +159,31 @@ VENDOR_SOURCES: dict[str, tuple[str, ...]] = {
     "seedance": ("docs.byteplus.com", "byteplus.com", "seed.bytedance.com"),
     "omnihuman": ("docs.byteplus.com", "byteplus.com", "seed.bytedance.com"),
     "veo": ("cloud.google.com", "docs.cloud.google.com", "ai.google.dev", "deepmind.google"),
-    "sora": ("openai.com", "platform.openai.com", "help.openai.com", "cookbook.openai.com"),
+    # `developers.openai.com` (2026-10-15): platform.openai.com/docs now
+    # redirects there, so the vendor's own model and pricing pages live on it.
+    "sora": (
+        "openai.com",
+        "platform.openai.com",
+        "developers.openai.com",
+        "help.openai.com",
+        "cookbook.openai.com",
+    ),
+    # OpenAI's speech models (`tts-1`, `tts-1-hd`) are named by neither key above.
+    "tts-1": ("openai.com", "platform.openai.com", "developers.openai.com"),
+    # `openai-tts-1`: OpenAI's `tts-1` under a name that does not merge with
+    # `xai-tts-v1` (the name layer reads bare `tts-1` as xAI's model).
+    "openai-tts": ("openai.com", "platform.openai.com", "developers.openai.com"),
+    # …but Kyutai's `tts-1.6b-en_fr` is not OpenAI's: the longer key wins.
+    "tts-1.6b": ("huggingface.co/kyutai/",),
+    # Google Cloud Text-to-Speech voices (`chirp-3-hd`).
+    "chirp": ("cloud.google.com", "docs.cloud.google.com"),
     # OpenAI's other families, added 2026-08-27 when a harvest produced 16 facts
     # from platform.openai.com that the ladder could only call `blog` because
     # nothing declared OpenAI the vendor of anything but Sora.
     "gpt": (
         "openai.com",
         "platform.openai.com",
+        "developers.openai.com",
         "help.openai.com",
         "cdn.openai.com",
         "cookbook.openai.com",

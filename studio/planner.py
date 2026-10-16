@@ -1083,6 +1083,33 @@ CONDITION_WORDS: dict[int, str] = {
     2: "против на заявленном условии",
 }
 
+#: Поле ключа ЗАПИСАННОГО ПРОВАЛА ПРОТИВ ОБЪЯВЛЕННОЙ ХОРОШЕЙ НОВОСТИ (седьмой
+#: круг, валидатор v7: w24, n15, n16, w04). Стоит после заявленного условия и
+#: ПЕРЕД знаком измеренного. На дубляже выбиралась `sync-lipsync` (v2: провал
+#: рта на крупном плане, probe) мимо `sync-lipsync-v3` (вендор: «Native» на
+#: крайних ракурсах, провалов не записано) — и план тут же валился валидатором.
+#: На 8-минутном аватаре `omnihuman-1.5` (2 строки из 2 — провалы, 30 с за
+#: прогон) обгоняла `hedra-character-3` (вендор: 600 с одним прогоном).
+#: Правило: кандидат БЕЗ записанного провала, о котором есть объявленная
+#: хорошая новость (`contra=false`, похвала на заявленном условии, длина ролика
+#: одним прогоном там, где соседям нужны куски), или чистое измерение, — выше
+#: любого кандидата с провалом. Молчание по-прежнему не лучше провала: без
+#: хорошей новости кандидат остаётся во второй ступени, и там решает знак.
+FAILURE_KEY_FIELD = "записанный провал против объявленной хорошей новости без провалов"
+FAILURE_CLEAR = 0
+FAILURE_OTHER = 1
+FAILURE_WORDS: dict[int, str] = {
+    FAILURE_CLEAR: "провалов не записано, и есть хорошая новость (объявленная или чистое измерение)",
+    FAILURE_OTHER: "записан провал, или хорошей новости нет",
+}
+#: Поле ключа ЧИСЛА ПРОГОНОВ на ролик (седьмой круг): куски — это швы, сборка
+#: и цена; при равных доводах модель, делающая ролик меньшим числом прогонов,
+#: старше. Предел не записан — один прогон (не наказывается за молчание).
+RUNS_KEY_FIELD = "сколько прогонов (кусков) нужно на ролик"
+#: Шаги, чей ролик — ОДИН непрерывный дубль (монолог аватара): там «один
+#: прогон покрывает ролик» — хорошая новость о длине, когда соседям нужны куски.
+ONE_TAKE_STEPS: frozenset[str] = frozenset({"говорящий_аватар"})
+
 KEY_FIELDS: tuple[str, ...] = (
     "нельзя ли этим воспользоваться",
     "делает ли модель эту работу, а не соседнюю",
@@ -1095,9 +1122,11 @@ KEY_FIELDS: tuple[str, ...] = (
     "модель сообщества (воркфлоу, LoRA, мёрж), а не продукт",
     "вытеснена более новым поколением",
     CONDITION_KEY_FIELD,
+    FAILURE_KEY_FIELD,
     "знак измеренного: чисто / спорно / только плохое / молчание",
     "строк применимости ЗА модель",
     "строк применимости всего",
+    RUNS_KEY_FIELD,
     "есть ли полная цена шага (при равных доводах цена записанная старше незаписанной)",
     "сколько подтверждено записью: входы, кадр, длительность",
     "утверждений по якорям операции",
@@ -2513,6 +2542,14 @@ class Candidate:
     #: (`родной_кадр_или_ближайший`, шестой круг).
     native_below_px: int = 0
     native_below_why: str = ""
+    #: Сколько ОБЪЯВЛЕННЫХ хороших новостей о модели (`contra=false`, не цена)
+    #: плюс похвала на заявленном условии — см. `FAILURE_KEY_FIELD`.
+    declared_good: int = 0
+    #: Один прогон покрывает весь ролик там, где соседям нужны куски
+    #: (`ONE_TAKE_STEPS`) — хорошая новость о длине.
+    one_take: bool = False
+    #: Сколько прогонов нужно на ролик (предел записан); 1 — один или не записан.
+    runs: int = 1
 
     @property
     def measured(self) -> bool:
@@ -4363,7 +4400,7 @@ def life_stance(facts: Sequence[Fact], today: date | None = None) -> tuple[str, 
         объявлено.append((f, снятие))
         if снятие.outcome == life.НЕ_ГОДНО:
             return LIFE_RETIRED, (
-                f"{снятие.note}: {f.attribute}={f.value[:80]} "
+                f"{снятие.note}: {f.attribute}=«{f.value[:80]}» "
                 f"[{f.tier}, {f.stated_on or 'даты нет'}] ({f.source_url})"
             )
     # СРОКИ ПО МАРШРУТАМ (`deprecation_date_via_<маршрут>`) сводятся вместе,
@@ -4376,7 +4413,7 @@ def life_stance(facts: Sequence[Fact], today: date | None = None) -> tuple[str, 
     if объявлено:
         f, снятие = объявлено[0]
         return LIFE_ANNOUNCED, (
-            f"{снятие.note}: {f.attribute}={f.value[:80]} ({f.source_url}); "
+            f"{снятие.note}: {f.attribute}=«{f.value[:80]}» ({f.source_url}); "
             "модель ещё отвечает — это предупреждение, а не отказ"
             + (f"; {маршруты.note}" if маршруты.outcome == life.НЕ_СМОГЛИ else "")
         )
@@ -5725,6 +5762,29 @@ UNCLASSIFIED_RANK = 1
 FOREIGN_RANK = 2
 
 
+def failure_rank(c: "Candidate") -> int:
+    """Ступень «записанный провал против объявленной хорошей новости» (`FAILURE_KEY_FIELD`)."""
+    if c.against == 0 and (sign_rank(c) == SIGN_CLEAN or c.declared_good > 0 or c.one_take):
+        return FAILURE_CLEAR
+    return FAILURE_OTHER
+
+
+def declared_good(rows: Sequence[Fact]) -> int:
+    """Сколько строк ОБЪЯВЛЕНЫ хорошей новостью (`contra=false`), без цены."""
+    return sum(
+        1
+        for f in rows
+        if f.contra is False and not f.attribute.startswith("price") and not fa.is_contra(f)
+    )
+
+
+def прогонов(секунды: float | None, предел: float | None) -> int:
+    """Сколько прогонов нужно на ролик; 1 — помещается или не записано."""
+    if not секунды or not предел or предел <= 0:
+        return 1
+    return max(1, math.ceil(секунды / предел - 1e-9))
+
+
 def цена_есть(c: Candidate) -> bool:
     """Есть ли у кандидата ЦЕНА ШАГА целиком: посчитана, больше нуля, не нижняя граница."""
     return (
@@ -5851,6 +5911,7 @@ def by_evidence(c: Candidate) -> tuple:
         # тех, о ком на этом условии записана похвала или не записано ничего;
         # похвала — выше молчания. Без названных условий поле у всех одно.
         c.condition_rank,
+        failure_rank(c),
         sign_rank(c),
         # СЧИТАЕТСЯ ТО, ЧТО ГОВОРИТ ЗА МОДЕЛЬ, А НЕ ОБЪЁМ НАПИСАННОГО О НЕЙ.
         # ИЗМЕРЕНО 2026-09-05 на брифе «есть готовое видео и своя дорожка —
@@ -5868,6 +5929,8 @@ def by_evidence(c: Candidate) -> tuple:
         # модель с работой.
         -c.in_favour,
         -c.applicability,
+        # ЧИСЛО ПРОГОНОВ (седьмой круг): куски — швы, сборка и цена.
+        c.runs,
         # ПРИ РАВНЫХ ДОВОДАХ ЦЕНА ЗАПИСАННАЯ СТАРШЕ НЕЗАПИСАННОЙ (шестой круг):
         # `birefnet-v2-video` (цены нет) обгонял `bria-video-background-removal-v3`
         # ($0.05/с) числом строк схемы. Заказчик, которому нечего сказать о
@@ -5943,9 +6006,13 @@ def _поле(c: Candidate, i: int) -> str:
         "сообщество" if c.community else "продукт",
         f"вытеснена: {c.superseded}" if c.superseded else "текущее поколение",
         c.condition_note or CONDITION_WORDS.get(c.condition_rank, "?"),
+        FAILURE_WORDS[failure_rank(c)]
+        + (f" (объявлено хорошего: {c.declared_good})" if c.declared_good else "")
+        + (" (один прогон покрывает ролик)" if c.one_take else ""),
         SIGN_WORDS[sign_rank(c)],
         f"{c.in_favour}",
         f"{c.applicability}",
+        f"{c.runs}",
         "цена шага записана" if цена_есть(c) else "полной цены шага нет",
         f"подтверждено осей {-blocked_rank(c)[1]} из 3; кадр: {c.fit_state or 'не считалось'}; "
         f"длительность: {c.dur_state or 'не считалось'}",
@@ -6626,6 +6693,87 @@ def отбор_правки(
     }
 
 
+def хостинг_вне(узел: "ep.Endpoint | None", юрисдикции: Sequence[str] | None) -> str:
+    """Причина отсеять: хостинг ЗАПИСАН, и ни одна его юрисдикция не ваша; иначе пусто.
+
+    Седьмой круг (валидатор v7): `spec.jurisdiction` судил только территории
+    лицензии. Хостинг не записан — не отсеивается (это «не измерено», и оно
+    печатается строкой плана, `хостинг_плана`), а не «можно».
+    """
+    if not юрисдикции or узел is None or not узел.hosting:
+        return ""
+    if set(узел.hosting) & set(юрисдикции):
+        return ""
+    return (
+        f"хостинг/юрисдикция вендора по записи: {', '.join(узел.hosting)} — ни одна не ваша "
+        f"({', '.join(юрисдикции)}): {узел.hosting_note}"
+    )
+
+
+#: Строка плана, когда хостинг выбранной модели не записан. КОНСТАНТА-СЛОВО.
+HOSTING_NOT_MEASURED = "hosting/vendor jurisdiction not measured"
+
+
+def хостинг_плана(
+    выбор: Sequence[tuple["Operation", "Candidate | None"]],
+    facts: Sequence[Fact],
+    юрисдикции: Sequence[str] | None,
+) -> dict | None:
+    """Где обслуживают выбранные модели — против юрисдикции заказчика. None — не названа.
+
+    Никогда не молчит: по каждой выбранной модели — «записано: …» или
+    `HOSTING_NOT_MEASURED`; лицензия судится отдельно (`риск_лицензии`).
+    """
+    if not юрисдикции:
+        return None
+    реестр = ep.build(facts)
+    шаги = []
+    for op, к in выбор:
+        if к is None:
+            continue
+        узел = реестр.get(к.model)
+        if узел is not None and узел.hosting:
+            шаги.append(
+                {"step": op.name, "model": к.model, "state": "recorded", "hosting": list(узел.hosting)}
+            )
+        else:
+            шаги.append({"step": op.name, "model": к.model, "state": HOSTING_NOT_MEASURED})
+    не_мерено = [ш["model"] for ш in шаги if ш["state"] == HOSTING_NOT_MEASURED]
+    return {
+        "jurisdiction": list(юрисдикции),
+        "steps": шаги,
+        "note": (
+            f"jurisdiction {', '.join(юрисдикции)}: licence territories checked per model; "
+            + (
+                f"{HOSTING_NOT_MEASURED} for {', '.join(не_мерено)}"
+                if не_мерено
+                else "hosting/vendor jurisdiction recorded for every chosen model"
+            )
+        ),
+    }
+
+
+def один_дубль(найдены: list[Candidate], op: Operation) -> list[Candidate]:
+    """На шаге одного дубля (`ONE_TAKE_STEPS`) пометить тех, кто делает ролик одним прогоном.
+
+    Только когда хоть одному соседу нужны куски: иначе «один прогон» — у всех,
+    и это не довод. Предел должен быть ЗАПИСАН и покрывать ролик (`DUR_IN`).
+    """
+    if op.name not in ONE_TAKE_STEPS or not any(c.runs > 1 for c in найдены):
+        return найдены
+    return [
+        Candidate(**{**c.__dict__, "one_take": True})
+        if c.run_s is not None and c.runs == 1 and c.dur_state == dur.DUR_IN
+        else c
+        for c in найдены
+    ]
+
+
+def семья_только_у_себя(узел: ep.Endpoint) -> bool:
+    """Узел семьи, чей единственный маршрут — свои веса: в API-плане не кандидат."""
+    return bool(узел.variants) and bool(узел.routes) and set(узел.routes) == {ep.ROUTE_SELF_HOST}
+
+
 def реестр_шага(
     работы: Sequence[str],
     запасная_нота: str,
@@ -6782,15 +6930,20 @@ def candidates_for(
     # работу не установил никто, — тестовая или новая) модели старых каналов
     # остаются кандидатами, но после установленных (`UNCLASSIFIED_RANK`).
     строгий = bool(работы) and (
-        op.name in ТОЛЬКО_РЕЕСТР or any(реестр.orderable_for(р) for р in работы)
+        op.name in ТОЛЬКО_РЕЕСТР
+        or any(not семья_только_у_себя(у) for р in работы for у in реестр.orderable_for(р))
     )
     if работы:
         for ключ in list(по_модели):
             узел = реестр.by_key.get(ключ)
             if узел is None:
                 continue
+            # УЗЕЛ СЕМЬИ СО СВОИМИ ВЕСАМИ (седьмой круг, `flux.2-klein-9b`):
+            # заказывается — но только «запустить у себя». Через API его не
+            # купить, и в API-плане он не кандидат (`семья_только_у_себя`).
+            только_у_себя = семья_только_у_себя(узел)
             if (
-                not узел.orderable
+                (not узел.orderable or только_у_себя)
                 and not (hard is not None and hard.self_host and узел.self_hostable)
                 # БЕЗ МАРШРУТА, НО И НЕ СЕМЬЯ (шестой круг): отсеивается только
                 # строго — когда реестр знает заказываемые эндпоинты работы. В
@@ -6800,7 +6953,11 @@ def candidates_for(
             ):
                 # Узел семьи не купить через API; на СВОЁМ GPU веса семьи —
                 # маршрут (`wan-2.2-ti2v-5b`: варианты есть, цены нет, веса открыты).
-                не_заказываются[написание[ключ]] = узел.why_not_orderable
+                не_заказываются[написание[ключ]] = (
+                    "узел семьи: через API не купить — только свои веса (self-host)"
+                    if только_у_себя and узел.orderable
+                    else узел.why_not_orderable
+                )
                 del по_модели[ключ]
             elif узел.functions and not set(узел.functions) & set(работы):
                 чужая_по_реестру[написание[ключ]] = (
@@ -6822,7 +6979,7 @@ def candidates_for(
             у
             for р in работы
             for у in реестр.by_function.get(р, [])
-            if у.orderable
+            if (у.orderable and not семья_только_у_себя(у))
             or (hard is not None and hard.self_host and у.self_hostable)
             # Без маршрута, не семья, и реестр работы строго не знает — та же
             # мягкость, что и в отсеве выше.
@@ -6897,6 +7054,10 @@ def candidates_for(
         if жёсткое.исключить:
             исключены[имя] = жёсткое.исключить
             continue
+        хостинг_мимо = хостинг_вне(узел, юрисдикции)
+        if хостинг_мимо:
+            исключены[имя] = хостинг_мимо
+            continue
         if жёсткое.свой_gpu:
             # СВОЙ GPU — ЦЕНА ВРЕМЕНЕМ GPU, А НЕ ТАРИФОМ API: тариф площадки
             # платит тот, кто запускает у неё, а не на своей карте.
@@ -6924,6 +7085,11 @@ def candidates_for(
             ступень_условия, нота_условия, _ = cap.condition_state(
                 list(все) + list(строки_семьи), stated_conditions
             )
+        # Только СВОИ строки: провал семьи варианту не одалживается, значит и
+        # её похвала — тоже (иначе `sync-lipsync-react-1` брал «хорошее» у
+        # `sync-lipsync`, чей же провал на нём не числится).
+        хорошего = declared_good(все) + int(ступень_условия == 0)
+        предел = предел_прогона(все)
         найдены.append(
             Candidate(
                 model=имя,
@@ -6942,8 +7108,10 @@ def candidates_for(
                 hard_note=жёсткое.нота,
                 condition_rank=ступень_условия,
                 condition_note=нота_условия,
+                declared_good=хорошего,
+                runs=прогонов(wanted.секунды, предел),
                 cost=сколько,
-                run_s=предел_прогона(все),
+                run_s=предел,
                 anchored=len(свои),
                 named=any(якорь.lower() in свёрнутое for якорь in op.anchors),
                 price_state=положение if потолок.known else "",
@@ -6999,6 +7167,7 @@ def candidates_for(
                 ),
             )
         )
+    найдены = один_дубль(найдены, op)
     найдены = родной_кадр_или_ближайший(найдены, исключены, op)
     найдены = поколения(найдены, по_имени, сообщество_просили)
     if hard is not None and hard.objective == hn.OBJECTIVE_QUALITY:
@@ -9562,9 +9731,27 @@ def вопрос_о_противоречии(п: dict) -> clarify.Вопрос:
 def _требования_словами(итог: dict, англ: bool) -> str:
     """Строка сводки о жёстких требованиях: что требовалось и сколько отсеяно."""
     т = итог.get("hard") or {}
-    if not (т.get("self_host") or т.get("objective") == hn.OBJECTIVE_QUALITY):
+    хостинг = итог.get("hosting_jurisdiction") or {}
+    if not (т.get("self_host") or т.get("objective") == hn.OBJECTIVE_QUALITY or хостинг):
         return ""
     части: list[str] = []
+    if хостинг:
+        # Юрисдикция названа: лицензия судится по модели, а хостинг — по записи
+        # или строкой «не измерено» (седьмой круг; никогда не молчит).
+        не_мерено = [
+            ш["model"] for ш in хостинг.get("steps") or [] if ш.get("state") == HOSTING_NOT_MEASURED
+        ]
+        части.append(
+            хостинг["note"]
+            if англ
+            else f"юрисдикция {', '.join(хостинг.get('jurisdiction') or [])}: территории лицензии "
+            "проверены по каждой модели; "
+            + (
+                f"хостинг/юрисдикция вендора не измерены для {', '.join(не_мерено)}"
+                if не_мерено
+                else "хостинг/юрисдикция вендора записаны у каждой выбранной модели"
+            )
+        )
     if т.get("self_host"):
         gpu = f"{т.get('gpu') or ('GPU not named' if англ else 'GPU не назван')}"
         память = f" {т['vram_gb']:g} GB" if т.get("vram_gb") else ""
@@ -11193,6 +11380,7 @@ def plan(
     ответ = {
         "summary": "",
         "hard": жёсткие.row(),
+        "hosting_jurisdiction": хостинг_плана(выбор, индекс.facts, юрисдикции),
         "outcome": исход,
         "reason": причина,
         "checked": отчёт["checked"],
@@ -11415,6 +11603,7 @@ def сжать(ответ: dict) -> dict:
     return {
         "summary": ответ.get("summary"),
         "hard": ответ.get("hard"),
+        "hosting_jurisdiction": ответ.get("hosting_jurisdiction"),
         "outcome": ответ.get("outcome"),
         "reason": ответ.get("reason"),
         "checked": ответ.get("checked"),

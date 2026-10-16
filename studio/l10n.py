@@ -532,6 +532,16 @@ EN: tuple[tuple[str, str], ...] = (
     (r"вне условий брифа отброшено: (\d+) строк\(и\) о провале при условиях, которых в брифе нет \(([^)]*)\)",
      r"dropped as outside the brief's conditions: \1 row(s) about failure under conditions the brief does not have (\2)"),
     # --- значения полей ключа отбора (planner._поле, SIGN_WORDS)
+    # седьмой круг: провал против объявленной хорошей новости, хостинг, узел семьи со своими весами
+    (r"провалов не записано, и есть хорошая новость \(объявленная или чистое измерение\)",
+     "no failure recorded, and there is good news (declared, or a clean measurement)"),
+    (r"записан провал, или хорошей новости нет", "a failure is recorded, or there is no good news"),
+    (r" \(объявлено хорошего: (\d+)\)", r" (declared good: \1)"),
+    (r" \(один прогон покрывает ролик\)", " (one run covers the clip)"),
+    (r"узел семьи: через API не купить — только свои веса \(self-host\)",
+     "a family node: not purchasable via API — own weights only (self-host)"),
+    (r"хостинг/юрисдикция вендора по записи: ([^—]*) — ни одна не ваша \(([^)]*)\): ",
+     r"hosting/vendor jurisdiction on record: \1 — none is yours (\2): "),
     (r"измерено, плохих новостей нет", "measured, no bad news"),
     (r"измерено, и всё измеренное — плохое", "measured, and everything measured is bad"),
     (r"по записи ниже заказанного кадра", "below the ordered frame on record"),
@@ -958,6 +968,12 @@ LABELS_EN: dict[str, str] = {
     "за на заявленном условии": "for, on your stated condition",
     "на заявленном условии не записано": "nothing recorded on your stated condition",
     "против на заявленном условии": "against, on your stated condition",
+    "записанный провал против объявленной хорошей новости без провалов":
+        "a recorded failure against declared good news with no failures",
+    "провалов не записано, и есть хорошая новость (объявленная или чистое измерение)":
+        "no failure recorded, and there is good news (declared, or a clean measurement)",
+    "записан провал, или хорошей новости нет": "a failure is recorded, or there is no good news",
+    "сколько прогонов (кусков) нужно на ролик": "how many runs (chunks) the clip needs",
     "знак измеренного: чисто / спорно / только плохое / молчание":
         "sign of what was measured: clean / disputed / only bad / silence",
     "строк применимости ЗА модель": "applicability rows FOR the model",

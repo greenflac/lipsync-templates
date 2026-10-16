@@ -239,14 +239,16 @@ def _верх(итог: dict, n: int = 3) -> list[str]:
         ["eps-lipsync", "zeta-lipsync"],
         ["alpha-lipsync", "beta-lipsync", "delta-lipsync", "gamma-lipsync"],
     ),
-    # Веса не записаны — не «закрыта», а пробел.
+    # Веса не записаны — не «закрыта» и не «прошла»: седьмой круг (валидатор
+    # v7) отсеивает их в `excluded_unknown` (см. `ТребованиеНеЗаписано`), и
+    # пробелов «без свидетельства» не остаётся.
     (
         "open-weights lipsync",
         "lipsync",
         "",
         "open",
         ["delta-lipsync", "zeta-lipsync"],
-        ["alpha-lipsync", "beta-lipsync", "eps-lipsync", "gamma-lipsync"],
+        [],
     ),
     # 11-15: TTS. CC BY-NC — открытые веса (nc-tts первой: свежесть равна, имя).
     # nolang-tts: веса открыты, язык не записан — после подтвердивших оба.
@@ -625,8 +627,14 @@ class Условия(unittest.TestCase):
             },
             {к: к for к in pn.CONDITION_WORDS},
         )
+        # Седьмой круг: между условием и знаком — «провал против объявленной
+        # хорошей новости» (`FAILURE_KEY_FIELD`).
         self.assertEqual(
             pn.KEY_FIELDS.index(pn.CONDITION_KEY_FIELD) + 1,
+            pn.KEY_FIELDS.index(pn.FAILURE_KEY_FIELD),
+        )
+        self.assertEqual(
+            pn.KEY_FIELDS.index(pn.CONDITION_KEY_FIELD) + 2,
             pn.KEY_FIELDS.index("знак измеренного: чисто / спорно / только плохое / молчание"),
         )
 

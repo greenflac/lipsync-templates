@@ -351,7 +351,11 @@ class ЖивыеБрифы(unittest.TestCase):
                 ("редактирование_изображения", "nano-banana-edit"),
                 ("озвучка", "eleven_v3"),
                 ("оживление", "kling-3.0-standard-i2v"),
-                ("липсинк", "sync-lipsync"),
+                # СЕДЬМОЙ КРУГ (валидатор v7): у `sync-lipsync` записан провал
+                # рта (probe), у `sync-lipsync-v3` — объявленная похвала вендора
+                # и ни одного провала: запись провала больше не обгоняет её
+                # (`FAILURE_KEY_FIELD`), а потолок 15 usd её вмещает.
+                ("липсинк", "sync-lipsync-v3"),
             ],
             [(ш["step"], ш["chosen"]["model"]) for ш in итог["steps"]],
         )
@@ -386,12 +390,16 @@ class ЖивыеБрифы(unittest.TestCase):
         #                   `fal-ai/sync-lipsync` — это Lipsync 1.9 за 0.70 usd/мин;
         #                   3 usd/мин — цена отдельного `sync-lipsync-2`)
         #   итого 4.1025 -> 4.1.
-        self.assertEqual((4.1, "годно"), (итог["pipeline_price"]["смета"]["usd"], итог["pipeline_price"]["outcome"]))
+        # СЕДЬМОЙ КРУГ: липсинк — `sync-lipsync-v3`, 40 с × 0.133 usd/с = 5.32
+        # (ставка неоднозначна — взята наибольшая): 0.1084 + 0.1194 + 0.048 +
+        # 3.36 + 5.32 = 8.9558 -> 8.96, под потолком 15.
+        self.assertEqual((8.96, "годно"), (итог["pipeline_price"]["смета"]["usd"], итог["pipeline_price"]["outcome"]))
         self.assertEqual(
             [3, 3, None, 3, None], [ш["shots"] for ш in итог["steps"]]
         )
         self.assertNotIn("optimised", итог["pipeline_price"])
-        self.assertEqual("latentsync", итог["steps"][4]["cheaper_same_rank"]["model"])
+        # Дешевле при тех же доводах — никого: `latentsync` с провалами ниже.
+        self.assertIsNone(итог["steps"][4].get("cheaper_same_rank"))
 
     def test_липсинк_3_доллара(self) -> None:
         итог = pn.plan("lipsync 30 s, budget $3")
@@ -432,7 +440,9 @@ class ЖивыеБрифы(unittest.TestCase):
         итог = pn.plan("lipsync 30 s, budget $2.80")
         оптимум = итог["pipeline_price"]["optimised"]
         self.assertEqual(
-            [("озвучка", "eleven_v3", "xai-tts-v1"), ("липсинк", "sync-lipsync", "latentsync")],
+            # Седьмой круг: `openai-tts-1` (0.015 usd за 1000 знаков, вендор)
+            # равен `xai-tts-v1` ценой; ничья решена именем.
+            [("озвучка", "eleven_v3", "openai-tts-1"), ("липсинк", "sync-lipsync", "latentsync")],
             [(о["step"], о["from"], о["to"]) for о in оптимум["swaps"]],
         )
         self.assertEqual((2.906, 2.7267), (оптимум["before_usd"], оптимум["after_usd"]))
@@ -449,7 +459,9 @@ class ЖивыеБрифы(unittest.TestCase):
                 # Пятый круг: `xai-tts-v1` (0.015 usd за 1000 знаков) — эндпоинт
                 # TTS по реестру, найденный не словом, а работой; дешевле
                 # `chatterbox-multilingual` (0.025) в той же полосе.
-                ("озвучка", "eleven_v3", "xai-tts-v1"),
+                # Седьмой круг: `openai-tts-1` (OpenAI, 0.015 usd за 1000 знаков,
+                # страница цен вендора) — ничья ценой с `xai-tts-v1`, решена именем.
+                ("озвучка", "eleven_v3", "openai-tts-1"),
                 # Интеграция пятого круга: `wan-3.0-t2v` один в своей полосе
                 # (записанный бенчмарк) — «самое дешёвое» его не меняет: дешевле
                 # можно только ниже по доводам.
