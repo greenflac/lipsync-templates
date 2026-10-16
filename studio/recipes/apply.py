@@ -337,6 +337,43 @@ def fps_prior(op_name: str, asked: float | None, spec: "bs.Spec") -> tuple[Prior
     return prior, enabled(spec, prior.id)
 
 
+def requirement_frame(
+    op_name: str, asked: tuple[int, int] | None, spec: "bs.Spec"
+) -> tuple[int, int] | None:
+    """The frame a generator is RANKED against when its class prior applies.
+
+    Round-8 integration: the planner's order-requirement key ("frame native")
+    asks every candidate for the ordered frame. Above the class maximum (8K
+    video, 8K stills) no generator can meet it, so every candidate tied at
+    "unknown" and price alone decided -- a 1080p generator beat a native-4K
+    one, and the upscale step then started from 1080p. With the prior on, the
+    requirement is the class maximum at the ordered aspect: the generator is
+    chosen for the largest native frame, and the upscale (added by the same
+    prior) covers the rest. Prior off, or the frame within the class: the
+    ordered frame, unchanged.
+    """
+    found = frame_prior(op_name, asked, spec)
+    if asked is None or found is None or not found[1]:
+        return asked
+    cap = T2I_NATIVE_MAX_MP if found[0].id == "t2i_native_max" else T2V_NATIVE_MAX_MP
+    k = (cap / _mp(asked)) ** 0.5
+    return (int(asked[0] * k), int(asked[1] * k))
+
+
+def requirement_fps(op_name: str, asked: float | None, spec: "bs.Spec") -> float | None:
+    """The frame rate a generator is RANKED against when the fps prior applies.
+
+    Above the class maximum (60/120 fps from a 24-30 fps class) interpolation
+    reaches the ordered rate; the generator is asked for the class maximum, so
+    a recorded 30 fps meets the requirement and a recorded 24 does not. Prior
+    off, or a rate within the class: the ordered rate, unchanged.
+    """
+    found = fps_prior(op_name, asked, spec)
+    if not asked or found is None or not found[1]:
+        return asked
+    return float(T2V_NATIVE_FPS_MAX)
+
+
 def order(names: Sequence[str]) -> list[str]:
     """Order of operations: `FIRST_STEPS` in front; the chain steps re-sorted in their own slots.
 

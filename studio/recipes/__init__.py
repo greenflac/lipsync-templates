@@ -10,6 +10,8 @@ from studio.recipes.apply import (  # noqa: F401
     fps_prior,
     frame_prior,
     order,
+    requirement_fps,
+    requirement_frame,
     rewrite,
     unmet,
 )

@@ -7030,6 +7030,8 @@ def candidates_for(
     edit_intents: Sequence[str] = (),
     requested_flags: Sequence[str] = (),
     languages_named: bool = True,
+    requirement_frame: tuple[int, int] | None = None,
+    requirement_fps: float | None = None,
 ) -> "Кандидаты":
     """Кандидаты на операцию: модели, о которых база говорит СЛОВАМИ ОПЕРАЦИИ.
 
@@ -7323,8 +7325,10 @@ def candidates_for(
             все,
             _семья_строк(имя, по_имени, известные),
             сколько,
-            brief_frame,
-            need,
+            # Кадр и частота ТРЕБОВАНИЯ — по допущению класса, когда оно
+            # действует (`rc.requirement_frame`, интеграция восьмого круга).
+            requirement_frame or brief_frame,
+            replace(need, fps=requirement_fps) if need is not None and requirement_fps else need,
             languages if languages_named else (),
             edit_intents,
             узел,
@@ -11476,6 +11480,11 @@ def plan(
                 (понято.languages and понято.source.get("languages") in (bs.SOURCE_SPEC, bs.SOURCE_TEXT))
                 or pl.languages_in(brief)
             ),
+            # ДОПУЩЕНИЯ РЕЦЕПТА -> КЛЮЧ ТРЕБОВАНИЙ (интеграция восьмого круга):
+            # 8K/120 fps выше родного предела класса — генератор выбирается по
+            # пределу класса, остальное добирают апскейл и интерполяция.
+            requirement_frame=rc.requirement_frame(op.name, заказанный_кадр or кадр, понято),
+            requirement_fps=rc.requirement_fps(op.name, понято.fps or fps_из_брифа(brief), понято),
         )
 
     # СКОЛЬКО ШОТОВ (2026-10-15, четвёртый круг). Явное число; «each» над N;
