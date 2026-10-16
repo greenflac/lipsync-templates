@@ -541,9 +541,7 @@ def _за_что(после: str, по_умолчанию: str) -> tuple[str, fl
         return "second", 1.0, None, вид
     if re.match(r"^[^$]{0,30}?(?:/\s*min\b|per\s+(?:\w+\s+){0,2}minutes?)", голова):
         return "minute", 1.0, None, вид
-    м = re.match(
-        r"^[^$]{0,20}?per\s+(?:started\s+)?(\d+(?:\.\d+)?)\s*(?:megapixels?|mp)\b", голова
-    )
+    м = re.match(r"^[^$]{0,20}?per\s+(?:started\s+)?(\d+(?:\.\d+)?)\s*(?:megapixels?|mp)\b", голова)
     if м:
         return "megapixel", 1.0 / float(м.group(1)), None, вид
     if re.match(r"^[^$]{0,20}?per\s+(?:\w+\s+)?(?:processed\s+)?megapixel", голова):
@@ -575,9 +573,7 @@ def _блок(после: str) -> float | None:
     м = re.match(r"^\s*(?:/|per|for every|every|each)\s*(\d+)\s*(?:seconds?|secs?|s)\b", голова)
     if м and float(м.group(1)) > 1:
         return float(м.group(1))
-    м = re.match(
-        r"^[^$]{0,20}?per\s+(?:started\s+)?(\d+(?:\.\d+)?)\s*(?:megapixels?|mp)\b", голова
-    )
+    м = re.match(r"^[^$]{0,20}?per\s+(?:started\s+)?(\d+(?:\.\d+)?)\s*(?:megapixels?|mp)\b", голова)
     if м and float(м.group(1)) > 1:
         return float(м.group(1))
     return None
@@ -1353,7 +1349,9 @@ def estimate(ставки: list[Rate], need: Need) -> list[Option]:
     # РАЗОВАЯ ПЛАТА «ЗА КЛОН» СКЛАДЫВАЕТСЯ с ценой шага (седьмой круг): клон
     # голоса и начитка им — одна работа, и «$1.5 за клон + $0.3 за 1000 знаков»
     # — сумма двух ставок, а не две спорящие ставки.
-    клоны = [r for r in ставки if r.per == "clone" and r.unit == "usd" and r.amount > 0 and not r.upfront]
+    клоны = [
+        r for r in ставки if r.per == "clone" and r.unit == "usd" and r.amount > 0 and not r.upfront
+    ]
     if клоны:
         прочие = [r for r in ставки if r not in клоны]
         клон = max(клоны, key=lambda r: r.amount)
