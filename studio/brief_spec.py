@@ -2359,6 +2359,352 @@ def _работа_черновика(низ: str, t: Spec, есть: set[str]) -
     return разобрано, None
 
 
+# --- доводка черновика (восьмой круг) ----------------------------------------------
+#
+# ВАЛИДАТОР v8 (103 черновика на брифах круга): пусто у CJK/арабского/хинди/
+# тайского/испанского (8), `inputs` почти никогда (план «как есть» строился у
+# 14 из 103). Доводка читает то, чего прежний разборщик не видел, — и только
+# там, где поле ОТСУТСТВУЕТ или прочитано заведомо не так (`animate` без
+# картинки, `interpolate` у «сгенерируй 120fps»). Незнакомое остаётся
+# отсутствующим: каждая догадка пишется в `guesses`.
+
+#: Медиа-существительные черновика сверх `VIDEO_NOUN`/`PHOTO_NOUN`/`AUDIO_NOUN`:
+#: то, чем заказчик называет СВОЙ материал («documentary», «newsreel», «logo»).
+DRAFT_MEDIA_EXTRA: dict[str, str] = {
+    "video": r"documentar\w*|movies?|newsreels?|timelapses?|time-lapses?|interviews?|podcasts?|lectures?"
+    r"|tiktoks?|talking-heads?|meetings?",
+    "photo": r"logos?|drawings?|packshots?|portraits?|illustrations?|renders?|faces?",
+    "audio": r"songs?|tracks?|voice samples?|samples?",
+}
+#: Работы над МАТЕРИАЛОМ заказчика: названный материал здесь — его вход, и
+#: «свой» по умолчанию (с догадкой в `guesses`), пока нет признака чужого.
+OWNED_ON_MENTION_TASKS: frozenset[str] = frozenset(
+    {
+        "video-edit",
+        "restore",
+        "colorize",
+        "interpolate",
+        "upscale",
+        "remove-background",
+        "transcribe",
+        "captions",
+        "dub-translate",
+        "lipsync",
+        "turntable",
+        "cut-to-shorts",
+        "edit",
+    }
+)
+#: Признак ЧУЖОГО материала: тогда владение не угадывается.
+NOT_OWNED_CUE = re.compile(
+    r"\bfrom (?:a |the )?(?:movie|film|tv show|series)\b|someone else|stock footage|downloaded|found online"
+    r"|not (?:mine|ours)|чуж\w*|скачанн\w*"
+)
+#: Притяжательное ПОСЛЕ существительного: «photos of our sneakers», «photo of me».
+_ЧЬЁ_ПОСЛЕ = r"(?:\s+of\s+(?:our|my|me|us)\b)"
+#: Окно притяжательного черновика: «my silent 30 s short film» — пять слов.
+DRAFT_POSSESSIVE_WINDOW = 5
+#: Материал, ПРИНЕСЁННЫЙ без «моего»: «use her webcam recording», «from his photo».
+BROUGHT_CUE = re.compile(
+    r"\b(?:use|using|from|based on|with|her|his|their)\b (?:[\w'’-]+ ){0,3}"
+    r"(?:videos?|recordings?|footage|clips?|webcam|photos?|pictures?|portraits?|selfies?)\b"
+)
+#: Музыка БЕЗ картинки: «lo-fi instrumental for streaming».
+MUSIC_ONLY = re.compile(r"instrumental|\blo-?fi\b|\bbeat\b|backing track|\bjingle\b")
+VISUAL_CUE = re.compile(
+    r"\bvideo|\bclip|\bshots?\b|\bscenes?\b|\bcuts?\b|footage|visual|animat\w*|anime|\bstyle\b|opening|видео|ролик|клип"
+)
+#: Языки жестов словами -> тег (ISO 639-3).
+SIGN_TAGS: tuple[tuple[str, str], ...] = (
+    (r"\basl\b|american sign", "ase"),
+    (r"\bbsl\b|british sign", "bfi"),
+)
+
+
+def _материал_черновика(низ: str) -> dict[str, bool | None]:
+    """Виды медиа, НАЗВАННЫЕ в тексте (латиница/кириллица): True — со своим притяжательным."""
+    итог: dict[str, bool | None] = {}
+    токены = _tokens(низ)
+    for i, т in enumerate(токены):
+        for вид, образец in (("video", VIDEO_NOUN), ("photo", PHOTO_NOUN), ("audio", AUDIO_NOUN)):
+            if not (образец.match(т) or re.fullmatch(DRAFT_MEDIA_EXTRA[вид], т)):
+                continue
+            if _в_окне(токены, i, NEGATION, 2) >= 0:
+                break
+            хвост = " ".join(токены[i : i + 4])
+            # «of our sneakers» владеет снимком, а не заказанным роликом («spin
+            # video of our sneaker»); у видео — только «video of me/us».
+            после = _ЧЬЁ_ПОСЛЕ if вид != "video" else r"(?:\s+of\s+(?:me|us)\b)"
+            p = _в_окне(токены, i, POSSESSIVE, DRAFT_POSSESSIVE_WINDOW)
+            # В клаузе заказа («make our video») притяжательное — заказ, кроме
+            # предлога материала перед ним («from our video»).
+            клауза_заказа = bool(MAKE_WORDS.search(" ".join(токены[max(0, i - 6) : i])))
+            if (p >= 0 and (not клауза_заказа or (p > 0 and MATERIAL_PREP.match(токены[p - 1])))) or (
+                re.match(rf"\S+{после}", хвост) and not клауза_заказа
+            ):
+                итог[вид] = True
+            else:
+                итог.setdefault(вид, None)
+            break
+    return итог
+
+
+def _вход(черновик: dict[str, Any], вид: str, owned: bool | None, угадано: list[str], почему: str) -> None:
+    """Добавить (или уточнить владение) вход вида `вид` в черновике."""
+    вид_out = INPUT_KIND_OUT[вид]
+    входы = черновик.setdefault("inputs", [])
+    for в in входы:
+        if в["kind"] == вид_out:
+            if в.get("owned") is None and owned is not None:
+                в["owned"] = owned
+                угадано.append(почему)
+            return
+    входы.append({"kind": вид_out, "owned": owned})
+    угадано.append(почему)
+
+
+def _доводка_черновика(brief: str, низ: str, t: Spec, черновик: dict[str, Any], угадано: list[str]) -> None:
+    from studio import draft_lexicon as lx
+
+    мл = lx.normalise(brief)
+    письмо = lx.script_language(brief)
+    материал = _материал_черновика(низ)
+    for вид, своё in lx.owned_media(мл).items():
+        if материал.get(вид) is not True:
+            материал[вид] = True if своё else материал.get(вид)
+    есть_глаголом = _есть_по_глаголу(низ)
+    for вид in есть_глаголом:
+        материал[вид] = True
+    задача = черновик.get("task")
+    if isinstance(задача, list):
+        задача = задача[0]
+    заказ = bool(MAKE_WORDS.search(низ)) or lx.mentions(мл, lx.MAKE)
+
+    # 1. РАБОТА: многоязычная, затем английские поправки.
+    if задача is None:
+        задача = lx.task(мл)
+        if задача:
+            угадано.append(f"task '{задача}' read from the brief's words — confirm the job")
+    if задача in (None, "generate", "animate") and re.search(r"\bupscal\w*|апскейл\w*", низ):
+        вид = "photo" if "photo" in материал and "video" not in материал else "video"
+        if вид in материал or вид in есть_глаголом:
+            задача = "upscale"
+    if задача in (None, "generate") and re.search(
+        r"(?:convert|turn) .{0,50}\b(?:to|into) (?:smooth )?(?:60|120|240) ?fps|smooth (?:60|120|240) ?fps", низ
+    ) and "video" in материал:
+        задача = "interpolate"
+    if задача == "interpolate" and заказ and not any(материал.values()) and "inputs" in черновик:
+        # «Generate a 120fps slow-motion shot» — заказ ролика, не интерполяция исходника.
+        задача = "generate"
+        черновик.pop("inputs", None)
+    if задача in (None, "generate") and re.search(r"restyl\w*|\binto an? [\w -]{0,30}(?:look|style)\b", низ) and "video" in материал:
+        задача = "video-edit"
+        черновик["edit"] = ["restyle"]
+    if задача in (None, "generate") and "video" in материал and re.search(
+        r"voice-?over translation|translat\w* (?:\w+ ){0,6}(?:video|clip|webinar|demo)|\bdub\w*", низ
+    ):
+        задача = "dub-translate"
+        if re.search(r"no lip[- ]?sync|without lip[- ]?sync|lip[- ]?sync (?:is )?not needed", низ):
+            черновик["lipsync"] = False
+    if (
+        задача in (None, "generate", "avatar")
+        and LIPSYNC.search(низ)
+        and "audio" in материал
+        and "photo" not in материал
+        and "video" in материал
+    ):
+        задача = "lipsync"
+    if задача in (None, "generate") and re.search(r"music video for (?:our|my) (?:own )?", низ) and материал.get("audio"):
+        задача = "music-visualiser"
+    if задача in (None, "generate") and re.search(r"clon\w* (?:[\w'’]+ ){0,3}voice", низ):
+        задача = "voice-clone"
+    if задача in (None, "generate") and re.search(
+        r"\bfaces? (?:on|onto|into)\b|swap (?:my|our|his|her) face|face[- ]?swap", низ
+    ):
+        задача = "face-replace"
+    if задача in (None, "generate") and "photo" in материал and re.search(r"rotat\w*|\bspin\w*|\b360\b", низ):
+        задача = "turntable"
+    if задача in (None, "generate") and re.search(r"try-?on|\bput (?:our|my) (?:\w+ ){0,3}on\b", низ):
+        задача = "edit"
+        материал["photo"] = True
+    if задача in (None, "generate") and re.search(
+        r"talking (?:host|presenter|person)|presenter avatar|\brecit\w*|\bspeaks? to (?:the )?camera", низ
+    ):
+        задача = "avatar"
+    if задача in (None, "generate", "animate") and re.search(r"same (?:[\w-]+ ){0,3}characters?", низ) and "video" in черновик.get("outputs", []):
+        задача = "r2v"
+    картинки_выход = "image" in черновик.get("outputs", []) or bool(
+        re.search(r"\bcomic\b|\bpanels?\b|illustrations?|posters?|thumbnails?", низ)
+    )
+    if задача in (None, "generate") and картинки_выход and материал.get("photo") is True:
+        # Свои снимки и картинки на выходе — правка по ним (серия по референсу,
+        # «убери провода с 30 фото»), а не генерация с нуля.
+        задача = "edit"
+    if задача in (None, "generate") and картинки_выход and "photo" in материал and re.search(
+        r"\b(?:remove|replace|retouch|erase|clean)\b", низ
+    ):
+        задача = "edit"
+    if задача == "animate" and "photo" not in материал and not re.search(r"\blogo|\bimage|\bphoto|\bpicture", низ):
+        # «animated explainer» — стиль ролика, а не оживление снимка.
+        задача = "generate"
+    if задача is None and (черновик.get("outputs") or lx.outputs(мл) or картинки_выход):
+        # Как у основного разборщика: назван выход, работы нет — заказ генерации.
+        задача = "generate"
+    исходная = черновик.get("task")
+    if задача and not isinstance(исходная, list):
+        черновик["task"] = задача
+
+    # 2. ВЫХОДЫ.
+    выходы = list(черновик.get("outputs", []))
+    if not выходы:
+        выходы = [в for в in lx.outputs(мл) if в in OUTPUTS]
+        if "video" in выходы and "image" in выходы:
+            выходы.remove("image")
+    if задача in DRAFT_TASK_OUTPUTS and (not выходы or задача != исходная):
+        выходы = list(DRAFT_TASK_OUTPUTS[задача])
+    if задача == "upscale":
+        выходы = ["image"] if "photo" in материал and "video" not in материал else ["video"]
+    if задача == "edit":
+        выходы = ["image"]
+    if картинки_выход and not выходы:
+        выходы = ["image"]
+    if SIGN_WORDS.search(низ):
+        выходы = [в for в in выходы if в != "speech"]
+        for образец, тег in SIGN_TAGS:
+            if re.search(образец, низ):
+                черновик["languages"] = [тег]
+                break
+        else:
+            черновик.pop("languages", None)
+    if (not выходы or выходы == ["video"]) and MUSIC_ONLY.search(низ) and not VISUAL_CUE.search(низ):
+        выходы = ["music"]
+    if re.search(r"\bsounds\b|sound design|\bfoley\b", низ) and "sfx" not in выходы and выходы:
+        выходы.append("sfx")
+    if выходы:
+        черновик["outputs"] = [в for в in OUTPUTS if в in выходы]
+    if задача is None and выходы and заказ:
+        задача = черновик["task"] = "generate"
+
+    # 3. ВХОДЫ.
+    чужое = bool(NOT_OWNED_CUE.search(низ))
+    нужен = {
+        "upscale": "photo" if "image" in выходы else "video",
+        "interpolate": "video",
+        "video-edit": "video",
+        "restore": "video",
+        "colorize": "video",
+        "dub-translate": "video",
+        "lipsync": "video",
+        "music-visualiser": "audio",
+        "voice-clone": "audio",
+        "turntable": "photo",
+        "edit": "photo",
+        "face-replace": "video",
+        "transcribe": "video" if re.search(r"\bvideos?\b|footage|\bclips?\b|видео|视频|動画|영상|فيديو|वीडियो|วิดีโอ", низ) else "audio",
+        "avatar": "photo" if "photo" in материал else None,
+        "remove-background": "photo" if "photo" in материал and "video" not in материал else "video",
+    }.get(задача or "")
+    if нужен:
+        своё = материал.get(нужен)
+        if своё is None and задача in OWNED_ON_MENTION_TASKS and материал and not чужое:
+            своё = True
+            угадано.append(
+                f"inputs: the {INPUT_KIND_OUT[нужен]} the brief names is taken as the customer's own (the job works "
+                "on their material) — confirm they own it"
+            )
+        if задача == "transcribe" and черновик.get("inputs"):
+            # «interview» — разговор; видео ли это, сказано не было: вход — звук.
+            черновик["inputs"] = [в for в in черновик["inputs"] if в["kind"] != "video" or нужен == "video"]
+        _вход(черновик, нужен, своё, угадано, f"inputs: {INPUT_KIND_OUT[нужен]} implied by the task '{задача}'")
+    if задача == "lipsync" and "audio" in материал:
+        _вход(черновик, "audio", True if материал.get("audio") is not False else None, угадано,
+              "inputs: the new audio named in a lipsync brief is taken as the customer's — confirm")
+    if задача == "face-replace":
+        лицо = True if re.search(r"\b(?:my|our) faces?\b", низ) else None
+        _вход(черновик, "photo", лицо, угадано, "inputs: a face image is needed for face replacement")
+    for вид, своё in материал.items():
+        if своё is True and вид in INPUT_KIND_OUT:
+            _вход(черновик, вид, True, угадано, f"inputs: {INPUT_KIND_OUT[вид]} named as the customer's own")
+    if (м := BROUGHT_CUE.search(низ)) and задача in ("avatar", "generate", "animate", "lipsync"):
+        вид = "photo" if re.search(r"photo|picture|portrait|selfie", м.group(0)) else "video"
+        _вход(черновик, вид, материал.get(вид) if материал.get(вид) else None, угадано,
+              f"inputs: a {INPUT_KIND_OUT[вид]} the customer brings («{м.group(0)}») — whose it is was not said")
+    if (
+        задача == "generate"
+        and any(в["kind"] == "video" and в.get("owned") for в in черновик.get("inputs", []))
+        and re.search(r"\badd\b .{0,80}\bto (?:my|our)\b", низ)
+        and set(выходы) - {"video"}
+    ):
+        # «Add foley to my silent film»: выход — дорожка, видео — вход.
+        выходы = [в for в in выходы if в != "video"]
+        черновик["outputs"] = [в for в in OUTPUTS if в in выходы]
+    # Названное без «своего» в заказе генерации — обычно заказанное (ролик,
+    # озвучка, картинка), а не вход. Принесённым считается: своё; снимок, когда
+    # картинка не заказана; материал после «use/from/her…».
+    принесено = {
+        в for в, своё in материал.items() if своё is True or (в == "photo" and "image" not in выходы)
+    }
+    if BROUGHT_CUE.search(низ):
+        принесено.add("brought")
+    if "inputs" not in черновик and задача in ("generate", "r2v", "avatar") and not принесено:
+        # Видео без «своего» в заказе генерации — это заказанный ролик, а не вход.
+        черновик["inputs"] = []
+        угадано.append("inputs: [] — the brief names no photo, video, audio or script to bring; confirm nothing is brought")
+    if "image" in черновик.get("outputs", []) and "shots" not in черновик and not any(
+        в.get("count") for в in черновик.get("inputs", [])
+    ):
+        м = re.search(
+            r"\b(\d{1,3})[- ](?:[\w-]+ ){0,2}(?:illustrations?|images?|pictures?|panels?|thumbnails?|posters?)\b", низ
+        )
+        if м:
+            черновик["shots"] = int(м.group(1))
+        elif re.search(r"\b(?:a|an|one|1)\s+(?:[\w-]+\s+){0,2}(?:image|picture|poster|still|illustration)\b", низ):
+            черновик["shots"] = 1
+    if черновик.get("inputs"):
+        n = lx.count(мл)
+        штук = re.search(r"(\d{1,3})\s+(?:[\w-]+\s+){0,2}(?:photos?|pictures?|images?|dresses|packshot photos?)", низ)
+        for в in черновик["inputs"]:
+            if в["kind"] == "image" and not в.get("count") and (n or штук) and задача in ("edit", "remove-background", "upscale", "turntable"):
+                в["count"] = n or int(штук.group(1))  # type: ignore[union-attr]
+        if задача in ("edit", "remove-background", "upscale") and "shots" not in черновик:
+            штуки = [в.get("count") for в in черновик["inputs"] if в.get("count")]
+            if штуки:
+                черновик["shots"] = штуки[0]
+
+    # 4. ПОЛЯ МНОГОЯЗЫЧНОГО БРИФА: длительность, кадр, деньги, языки.
+    if "duration_s" not in черновик and "shots" not in черновик and (д := lx.duration_s(мл)):
+        if задача in MATERIAL_TASKS and черновик.get("inputs"):
+            главный = next((в for в in черновик["inputs"] if в["kind"] in ("video", "audio")), None)
+            if главный is not None:
+                главный.setdefault("duration_s", д)
+        черновик["duration_s"] = д
+    if "aspect" not in черновик and (а := lx.aspect(мл)):
+        черновик["aspect"] = а
+    if "budget" not in черновик and (деньги := lx.money(мл)):
+        черновик["budget"] = {"amount": деньги[0], "currency": деньги[1]}
+    if "languages" not in черновик and not SIGN_WORDS.search(низ):
+        названы = lx.languages(мл)
+        if названы:
+            черновик["languages"] = названы
+        elif письмо and ("speech" in выходы or задача in LANGUAGE_TASKS):
+            черновик["languages"] = [письмо]
+            угадано.append(f"languages: '{письмо}' read from the script the brief is written in — confirm")
+    if задача == "dub-translate" and черновик.get("languages"):
+        исходные = set(lx.source_languages(мл))
+        for тег, формы in pl.LANGUAGE_FORMS.items():
+            код = LANGUAGE_TO_CODE.get(тег)
+            if код and any(
+                re.search(rf"\bfrom {re.escape(ф)}|(?<![a-zа-яё]){re.escape(ф)}\w* (?:[\w-]+ ){{0,2}}(?:video|webinar|demo|clip)", низ)
+                for ф in формы
+            ):
+                исходные.add(код)
+        цели = [я for я in черновик["languages"] if я.split("-")[0] not in исходные]
+        if цели:
+            черновик["languages"] = цели
+        if lx.mentions(мл, lx.LIPSYNC) and "lipsync" not in черновик:
+            черновик["lipsync"] = True
+
+
 def draft(brief: str, raw: Mapping[str, Any] | None = None) -> dict[str, Any]:
     """ЧЕРНОВИК спецификации из текста — для вопроса, а не для плана.
 
@@ -2458,6 +2804,7 @@ def draft(brief: str, raw: Mapping[str, Any] | None = None) -> dict[str, Any]:
         черновик["self_host"] = {к: в for к, в in dict(t.self_host).items() if в is not None} or True
     if t.jurisdiction:
         черновик["jurisdiction"] = list(t.jurisdiction)
+    _доводка_черновика(brief, низ, t, черновик, угадано)
     прочитано = sorted(черновик)
     # Поля вызывающего — его; черновик их не перекрывает.
     if isinstance(raw, Mapping):

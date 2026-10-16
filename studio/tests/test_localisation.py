@@ -244,5 +244,76 @@ class ТаблицаПолна(unittest.TestCase):
         )
 
 
+class ВосьмойКруг(unittest.TestCase):
+    """Утечки, найденные валидатором v8: код шага без ярлыка, «годно», «брифа нет»."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        прежнее = _без_журнала()
+        try:
+            cls.по_spec = json.loads(
+                server.plan_pipeline(
+                    "15-second 1080p product teaser for a coffee machine, 9:16",
+                    spec={
+                        "task": "generate",
+                        "inputs": [],
+                        "outputs": ["video"],
+                        "duration_s": 15,
+                        "aspect": "9:16",
+                        "people": [],
+                    },
+                )
+            )
+        finally:
+            _вернуть(прежнее)
+
+    def _коды_без_ярлыка(self, obj, путь="") -> list[str]:
+        найдено: list[str] = []
+        if isinstance(obj, dict):
+            шаг = obj.get("step")
+            if isinstance(шаг, str) and l10n.CYR.search(шаг) and "step_label" not in obj:
+                найдено.append(путь)
+            for k, v in obj.items():
+                найдено += self._коды_без_ярлыка(v, f"{путь}.{k}")
+        elif isinstance(obj, list):
+            for i, v in enumerate(obj):
+                найдено += self._коды_без_ярлыка(v, f"{путь}[{i}]")
+        return найдено
+
+    def test_у_кода_шага_есть_ярлык(self) -> None:
+        self.assertEqual([], self._коды_без_ярлыка(self.по_spec))
+
+    def test_исход_сметы_по_английски(self) -> None:
+        self.assertIn(self.по_spec["pipeline_price"].get("outcome"), ("pass", "fail", "could not measure"))
+
+    def test_бриф_есть_и_нота_бюджета_это_знает(self) -> None:
+        нота = self.по_spec["budget"]["note"]
+        self.assertEqual(
+            "no budget in the spec — with a spec, the brief text is only echoed and sets the language", нота
+        )
+
+    def test_литералы(self) -> None:
+        """Т2: литералы на входе и выходе."""
+        self.assertEqual("pass", l10n.localise_payload({"outcome": "годно"}, "en")["outcome"])
+        self.assertEqual("годно", l10n.localise_payload({"outcome": "годно"}, "ru")["outcome"])
+        self.assertEqual(
+            {"step": "генерация_видео", "step_label": "video from scratch"},
+            l10n.localise_payload({"step": "генерация_видео"}, "en"),
+        )
+        self.assertEqual(
+            {"steps_without_price": ["озвучка"], "steps_without_price_labels": ["voiceover"]},
+            l10n.localise_payload({"steps_without_price": ["озвучка"]}, "en"),
+        )
+        self.assertEqual({"step": "генерация_видео"}, l10n.localise_payload({"step": "генерация_видео"}, "ru"))
+        self.assertEqual(
+            "weights licence openrail++ — declared in the card on the weights page",
+            l10n.localise("лицензия весов openrail++ — declared in the card на странице весов", "en"),
+        )
+        self.assertEqual(
+            "own GPU: price = GPU time × rental rate; rental rate not recorded; …",
+            l10n.localise("свой GPU: цена — время GPU × ставка аренды; ставка не записана; время…", "en"),
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

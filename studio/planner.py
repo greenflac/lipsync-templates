@@ -3901,6 +3901,10 @@ def evidence_for(
     return строки, применимость, способность, не_смогли, против
 
 
+#: Нота бюджета плана по spec без бюджета (бриф есть, но в решения не идёт).
+NOTE_NO_SPEC_BUDGET = "бюджет в spec не назван — бриф при плане по spec читается только для эха и языка"
+
+
 def budget_from(brief: str) -> Budget:
     """Потолок из слов заказчика. Не назван — не выдумывается (И5).
 
@@ -10828,7 +10832,12 @@ def plan(
     if budget_usd is None and понято.source.get("budget_usd") == bs.SOURCE_SPEC:
         budget_usd = понято.budget_usd
     кадр, про_кадр = frame_of(creative)
-    из_брифа = budget_from(brief)
+    # План по spec (`spec_only`): решения берут пустую строку вместо брифа, и
+    # «брифа нет» здесь — неправда (восьмой круг, валидатор v8): бриф есть,
+    # просто бюджет не назван в spec.
+    из_брифа = budget_from(brief) if brief or not текст.strip() else Budget(
+        None, "", (), UNMEASURED, NOTE_NO_SPEC_BUDGET
+    )
     if budget_usd is not None:
         бюджет = Budget(
             float(budget_usd),
@@ -10885,7 +10894,7 @@ def plan(
         else bs.Маршрут()
     )
     if маршрут.нехватка is not None:
-        return вопрос_о_нехватке(маршрут, понято, brief, по_английски, creative, budget_from(brief))
+        return вопрос_о_нехватке(маршрут, понято, brief, по_английски, creative, из_брифа)
     if маршрут.пробел is not None:
         return пробел_работы(понято, текст, по_английски, creative, бюджет)
     if not маршрут.шаги and маршрут.сборка:

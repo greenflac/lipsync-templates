@@ -38,6 +38,7 @@ __all__ = [
     "EN",
     "EN_FRAGMENTS",
     "FACT_KEYS",
+    "OUTCOME_EN",
     "RU",
     "TERMS_EN",
     "clip",
@@ -47,6 +48,7 @@ __all__ = [
     "localise",
     "localise_payload",
     "quote_fact",
+    "step_label_en",
 ]
 
 CYR = re.compile(r"[А-Яа-яЁё]")
@@ -717,6 +719,8 @@ EN: tuple[tuple[str, str], ...] = (
     (r"\(весь ваш материал\)", "(all of your material)"),
     (r"брифа нет — бюджета в нём тоже нет", "no brief — so no budget in it either"),
     (r"брифа нет — длительности в нём тоже нет", "no brief — so no duration in it either"),
+    (r"бюджет в spec не назван — бриф при плане по spec читается только для эха и языка",
+     "no budget in the spec — with a spec, the brief text is only echoed and sets the language"),
     (r"потолок ([\d.]+) usd назван параметром вызова", r"a ceiling of \1 usd was named as a call parameter"),
     (r"один и тот же персонаж во всех шотах — по референсу, без дрейфа лица и одежды",
      "one and the same character in every shot — from the reference, no drift of face or clothes"),
@@ -772,7 +776,8 @@ EN: tuple[tuple[str, str], ...] = (
     (r"о весах не записано", "nothing recorded about weights"),
     (r"веса открыты", "weights open"),
     (r"веса: ", "weights: "),
-    (r"лицензия весов (\S+) на странице весов", r"weights licence \1 on the weights page"),
+    # Восьмой круг: лицензия бывает фразой («openrail++ — так объявлено…»), не словом.
+    (r"лицензия весов (.+?) на странице весов", r"weights licence \1 on the weights page"),
     (r"ни лицензии на странице весов, ни строки open_weights", "neither a licence on the weights page nor an open_weights row"),
     (r"НЕ влезает в память GPU", "does NOT fit the GPU memory"),
     (r"влезает в память GPU", "fits the GPU memory"),
@@ -1009,6 +1014,10 @@ EN_FRAGMENTS: tuple[tuple[str, str], ...] = (
     (r" ВЫШЕ потолка ", " ABOVE the ceiling "),
     (r" на весь ролик", " for the whole clip"),
     (r"\bи\b", "and"),
+    # ОБРЫВОК ШАБЛОНА В КОНЦЕ ОБРЕЗАННОЙ СТРОКИ (восьмой круг: «…; время…»):
+    # обрезка `clip` прошла по русской форме ДО перевода, и целый оборот
+    # таблицы уже не совпадает. Обрывок своей формы — не цитата: снимается.
+    (r"; [а-яё][а-яё ]*…", "; …"),
 )
 
 
@@ -1418,6 +1427,27 @@ def localise(текст: object, lang: str) -> object:
     return текст
 
 
+#: ТРИ ИСХОДА (П1) русскими словами -> те же исходы, какими говорит английский
+#: ответ (`outcome` верхнего уровня). Восьмой круг: «годно» в
+#: `pipeline_price.outcome` английского ответа рядом с «pass» наверху.
+OUTCOME_EN: dict[str, str] = {"годно": "pass", "не годно": "fail", "не смогли": "could not measure"}
+
+#: Поля-КОДЫ с именем шага: по-английски рядом кладётся читаемое имя
+#: (`step_label`, `<поле>_labels`), сам код не трогается. Восьмой круг:
+#: «генерация_видео» без ярлыка в `validator.steps[]`, смете, сборке.
+STEP_CODE_KEY = "step"
+STEP_LABEL_KEY = "step_label"
+STEP_LIST_KEYS: frozenset[str] = frozenset({"steps_without_price", "steps_without_cost"})
+
+
+def step_label_en(код: str) -> str:
+    """Имя шага по-английски: термин `TERMS_EN`, иначе — код словами через таблицу."""
+    if код in TERMS_EN:
+        return TERMS_EN[код]
+    текст = localise(код.replace("_", " "), "en")
+    return текст if isinstance(текст, str) and not CYR.search(текст) else код.replace("_", " ")
+
+
 def localise_payload(
     obj: Any, lang: str, *, _key: str = "", _in_sources: bool = False, _fact: bool = False
 ) -> Any:
@@ -1447,6 +1477,14 @@ def localise_payload(
                 _in_sources=_in_sources or ks == "sources",
                 _fact=_fact or ks in FACT_SUBTREES,
             )
+        if lang == "en" and not _fact and not _in_sources:
+            код = obj.get(STEP_CODE_KEY)
+            if isinstance(код, str) and CYR.search(код) and STEP_LABEL_KEY not in obj:
+                out[STEP_LABEL_KEY] = step_label_en(код)
+            for ks in STEP_LIST_KEYS & {str(k) for k in obj}:
+                коды = obj[ks]
+                if isinstance(коды, list) and any(isinstance(к, str) and CYR.search(к) for к in коды):
+                    out.setdefault(ks + "_labels", [step_label_en(str(к)) for к in коды])
         return out
     if isinstance(obj, (list, tuple)):
         готово = [
@@ -1455,6 +1493,8 @@ def localise_payload(
         return готово if isinstance(obj, list) else tuple(готово)
     if not isinstance(obj, str):
         return obj
+    if _key == "outcome" and lang == "en" and obj in OUTCOME_EN:
+        return OUTCOME_EN[obj]
     if _key in CODE_KEYS:
         return obj
     if _fact:

@@ -74,9 +74,10 @@ def шаги(итог: dict) -> list[str]:
 #: Черновик бывает неточен — но работу над материалом заказчика он не зовёт
 #: генерацией, а принесённый материал не теряет.
 ПЕРЕФРАЗЫ: tuple[tuple[str, str, str], ...] = (
-    ("Transcribe a 45-minute two-person interview in Russian with speaker labels", "transcribe", "video"),
+    # Восьмой круг: интервью и созвон без слова «видео» — разговор; вход — звук.
+    ("Transcribe a 45-minute two-person interview in Russian with speaker labels", "transcribe", "audio"),
     ("transcribe my 45 minute interview with speaker labels", "transcribe", "video"),
-    ("Расшифруй запись созвона на 40 минут", "transcribe", "video"),
+    ("Расшифруй запись созвона на 40 минут", "transcribe", "audio"),
     ("Restore a scratched 1970s 8mm home movie, 5 minutes, keep it black and white", "restore", "video"),
     ("restore my grandfather's 8mm reels, 5 minutes", "restore", "video"),
     ("stabilise my shaky drone clip (90s)", "video-edit", "video"),
@@ -138,10 +139,11 @@ class СвободныйТекст(unittest.TestCase):
                 self.assertNotEqual("generate", главная)
 
     def test_draft_is_a_valid_spec_once_the_customer_confirms_it(self) -> None:
+        # Восьмой круг: «my interview» — свой материал, владение прочитано (с догадкой).
         черновик = bs.draft("my 30-min interview → 10 shorts for TikTok, 60s each")
-        self.assertEqual(["inputs[0].owned"], черновик["still_missing"])
+        self.assertEqual([], черновик["still_missing"])
+        self.assertEqual([{"kind": "video", "owned": True}], черновик["spec"]["inputs"])
         подтверждён = dict(черновик["spec"])
-        подтверждён["inputs"] = [{**подтверждён["inputs"][0], "owned": True}]
         _, ошибки, нет = bs.gaps(подтверждён)
         self.assertEqual([], ошибки)
         self.assertEqual([], нет)
@@ -156,11 +158,12 @@ class СвободныйТекст(unittest.TestCase):
         self.assertEqual(["video", "audio"], [в["kind"] for в in черновик["inputs"]])
 
     def test_have_phrase_window_stops_where_the_thing_is_far(self) -> None:
+        # Восьмой круг: ничего не названо — `inputs: []` (с догадкой), но не вход из «have».
         черновик = bs.draft("we have a lot of ideas for the brand, and want a new video")["spec"]
-        self.assertNotIn("inputs", черновик)
+        self.assertEqual([], черновик["inputs"])
 
     def test_have_phrase_stops_at_nothing_and_at_make(self) -> None:
-        self.assertNotIn("inputs", bs.draft("we have nothing yet, make a promo video")["spec"])
+        self.assertEqual([], bs.draft("we have nothing yet, make a promo video")["spec"]["inputs"])
 
     def test_fields_the_caller_named_stay_the_callers(self) -> None:
         черновик = bs.draft("generate a 10s clip", {"task": "restore"})
