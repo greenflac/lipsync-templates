@@ -24,11 +24,13 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 
-НАБОРЫ = ("studio.tests.test_recipes_r8",)
+НАБОРЫ = ("studio.tests.test_recipes_r8", "studio.tests.test_notes_routes_r9")
 
 RT = "studio/recipes/table.py"
 RA = "studio/recipes/apply.py"
 PN = "studio/planner.py"
+BS = "studio/brief_spec.py"
+EP = "studio/endpoints.py"
 
 #: (file, was, becomes, what breaks). Each constant — stricter and looser.
 MUTANTS: tuple[tuple[str, str, str, str], ...] = (
@@ -89,6 +91,37 @@ MUTANTS: tuple[tuple[str, str, str, str], ...] = (
         "    if False:",
         "silent frame rate read as neutral again",
     ),
+    # --- round 9: production notes and routes -------------------------------------
+    (RT, "LONG_FORM_S = 180", "LONG_FORM_S = 400", "a 5-minute avatar not segmented"),
+    (RT, "LONG_FORM_S = 180", "LONG_FORM_S = 100", "a 2-minute avatar segmented"),
+    (RT, "ASPECT_TOLERANCE = 0.02", "ASPECT_TOLERANCE = 0.05", "2.39:1 read as native 21:9"),
+    (RT, "ASPECT_TOLERANCE = 0.02", "ASPECT_TOLERANCE = 0.0", "1.78:1 not read as 16:9"),
+    (RT, "4 / 5, 5 / 4, 21 / 9, 9 / 21)", "4 / 5, 5 / 4, 9 / 21)", "21:9 cropped although native"),
+    (
+        RA,
+        'MASK_EDITS: frozenset[str] = frozenset({"remove-object", "replace-object", "replace-sky"})',
+        'MASK_EDITS: frozenset[str] = frozenset({"remove-object", "replace-object"})',
+        "sky replacement without a mask note",
+    ),
+    (RA, '    r"transparen|', '    r"transparenx|', "transparent background not read"),
+    (RA, '|\\bwebm\\b|', '|', "WebM with alpha not read as a format"),
+    (RA, 'MESH = re.compile(r"\\bglb\\b|', 'MESH = re.compile(r"\\bglbx\\b|', "GLB not read as a 3D deliverable"),
+    (RA, "    if names & LIP_STEPS and _speakers(spec) >= 2:", "    if names & LIP_STEPS and _speakers(spec) >= 3:", "two speakers without diarization"),
+    (RA, '    if "оборот_360" in names and _photo_count(spec) <= 1:', '    if "оборот_360" in names and _photo_count(spec) <= 4:', "four photos still warned about the unseen side"),
+    (RA, 'ANIMATE_ART = re.compile(r"animat|', 'ANIMATE_ART = re.compile(r"animatx|', "asked animation of the art ignored"),
+    (RA, '            if spec.language_tags and "расшифровка" not in steps:', '            if "расшифровка" not in steps:', "audiogram transcript without a language"),
+    (RA, '    if "EU" in spec.jurisdiction and names:', '    if "US" in spec.jurisdiction and names:', "AI Act label outside the EU"),
+    (BS, "SERIES_SHOTS_MIN = 2", "SERIES_SHOTS_MIN = 1", "one shot made from a reference"),
+    (BS, "SERIES_SHOTS_MIN = 2", "SERIES_SHOTS_MIN = 4", "three shots of one character independent again"),
+    (BS, '("photo", "раскраска_изображения")', '("audio", "раскраска_изображения")', "photo colourisation asks for video again"),
+    (EP, '    "SG": r"\\bsingapore\\b",\n', "", "Singapore hosting not read"),
+    (
+        PN,
+        '    if not чужие or ваши & set(getattr(узел, "hosting_pinned", ()) or ()):',
+        "    if set(узел.hosting) & ваши:",
+        "any one region of yours admits a multi-region vendor again",
+    ),
+    (PN, "        рецепт.free_route\n        and not жёсткие.self_host\n", "        False\n        and not жёсткие.self_host\n", "zero budget planned on a paid API again"),
 )
 
 
