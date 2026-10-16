@@ -473,7 +473,13 @@ class Юрисдикция(unittest.TestCase):
 class Реестр(unittest.TestCase):
     def test_названная_правка(self) -> None:
         self.assertEqual(
-            [frozenset({ep.EDIT_REMOVE_OBJECT}), frozenset(), frozenset({ep.EDIT_REMOVE_OBJECT})],
+            # Девятый круг: инпейнт называет и замену неба (маска неба +
+            # перерисовка только внутри неё, `endpoints.EDIT_NAMED`).
+            [
+                frozenset({ep.EDIT_REMOVE_OBJECT}),
+                frozenset(),
+                frozenset({ep.EDIT_REMOVE_OBJECT, ep.EDIT_REPLACE_SKY}),
+            ],
             [
                 ep.edit_named("fal-ai/ltx-2.3-quality/clean-plate"),
                 ep.edit_named("fal-ai/kling-video/o3/standard/video-to-video/edit"),
