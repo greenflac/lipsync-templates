@@ -367,7 +367,10 @@ class Отбор(unittest.TestCase):
     #: Шестой круг: узел без маршрута не заказывается вовсе, поэтому у
     #: «неустановленной» модели есть маршрут — строка цены у продавца.
     ЦЕНА_ЗАГАДКИ = факт(
-        "mystery-model", "price_per_second_usd", "$0.10 per second", "https://mystery.example/pricing"
+        "mystery-model",
+        "price_per_second_usd",
+        "$0.10 per second",
+        "https://mystery.example/pricing",
     )
 
     def test_без_установленной_работы_не_кандидат_когда_реестр_знает_работу(self) -> None:
@@ -510,6 +513,16 @@ class Ранг(unittest.TestCase):
 
     def test_самое_дешёвое_без_цены_последним(self) -> None:
         без = self.кандидат("a-model", None, unpriced_last=True)
+        с_ценой = self.кандидат("z-model", 9.0, unpriced_last=True)
+        self.assertEqual(
+            ["z-model", "a-model"], [c.model for c in sorted([без, с_ценой], key=pn.by_evidence)]
+        )
+
+    def test_самое_дешёвое_без_цены_последним_и_при_лучших_доводах(self) -> None:
+        """Интеграция седьмого круга: тест выше не отличал правило от «при
+        равных доводах цена старше» (мутант «без цены не последним» молчал).
+        Здесь у кандидата без цены строка применимости — и всё равно он после."""
+        без = self.кандидат("a-model", None, applicability=1, unpriced_last=True)
         с_ценой = self.кандидат("z-model", 9.0, unpriced_last=True)
         self.assertEqual(
             ["z-model", "a-model"], [c.model for c in sorted([без, с_ценой], key=pn.by_evidence)]

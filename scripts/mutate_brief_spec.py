@@ -40,6 +40,9 @@ ROOT = Path(__file__).resolve().parents[1]
     "studio.tests.test_spec_contract_r6",
     # Седьмой круг: словарь spec и маршруты (монтаж, пробелы, частота, бюджет).
     "studio.tests.test_routes_r7",
+    # Интеграция седьмого круга: цена за миллион знаков, «только свои веса»,
+    # скорость речи по письму, краткий ответ (G11).
+    "studio.tests.test_integration_r7",
 )
 
 BS = "studio/brief_spec.py"
@@ -215,6 +218,14 @@ MUTANTS: tuple[tuple[str, str, str, str], ...] = (
     (PR, "    if клоны:\n", "    if False:\n", "плата за клон снова спорит с ценой знаков"),
     (SV, '    if просев["outcome"] == UNMEASURED and (есть_слова(brief) or spec_полна(spec)):', '    if просев["outcome"] == UNMEASURED and spec_полна(spec) and False:', "японский бриф снова «пуст»"),
     (SV, '    if out.get("outcome") == PASS:\n        out["outcome"] = UNMEASURED', '    if False:\n        out["outcome"] = UNMEASURED', "непрочитанный бриф снова pass"),
+    # --- интеграция седьмого круга
+    (PR, '        return "1000_chars", 0.001, None, вид_доплаты(голова)\n    м = re.match(r"^\\s*(?:/|per)\\s*1\\s*([km])', '        return "1000_chars", 1.0, None, вид_доплаты(голова)\n    м = re.match(r"^\\s*(?:/|per)\\s*1\\s*([km])', "миллион знаков снова как тысяча"),
+    (PR, '    "ja": 6.0,\n    "ko": 6.0,\n', '    "ko": 6.0,\n', "японский снова 15 знаков в секунду"),
+    (PR, '    "zh": 5.0,\n', '    "zh": 15.0,\n', "китайский снова латинской скоростью"),
+    (PR, "        return sum(доля * speech_chars_per_second(я) for я in languages)", "        return seconds * CHARS_PER_SECOND", "языки разной скорости снова одной"),
+    (PN, "    return bool(узел.routes) and set(узел.routes) == {ep.ROUTE_SELF_HOST}", "    return bool(узел.variants) and bool(узел.routes) and set(узел.routes) == {ep.ROUTE_SELF_HOST}", "узел «только у себя» снова кандидат API-плана"),
+    (PN, '                    op.name in VIDEO_MAKERS\n                    or {OUTPUT_KINDS.get(а) for а in op.produces} & {"видео"}\n', "                    op.name in VIDEO_MAKERS\n", "после раскраски снова апскейл картинки"),
+    (PN, "COMPACT_EVIDENCE = 1", "COMPACT_EVIDENCE = 3", "G11: краткий ответ снова несёт простыню доказательств"),
 )
 
 

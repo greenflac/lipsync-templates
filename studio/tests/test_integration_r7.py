@@ -168,6 +168,47 @@ class ОбрезкаНеПосредиСлова(unittest.TestCase):
         self.assertEqual(текст, cap._коротко(текст, 200))
 
 
+class КраткийОтветG11(unittest.TestCase):
+    """G11: краткий ответ несёт одну строку доказательств и счёт опущенных.
+
+    Мутант `COMPACT_EVIDENCE = 3` молчал на базе: ни один тест не смотрел,
+    СКОЛЬКО строк в кратком ответе. Проверка — через `plan` без `full`.
+    """
+
+    БАЗА = (
+        *РАСКРАСКА,
+        _факт("x-colorize", "architecture", "video colorization model, temporally consistent"),
+        _факт("x-colorize", "observed_quality", "colorized 1940s film without colour flicker"),
+    )
+    SPEC = {
+        "task": "colorize",
+        "inputs": [{"kind": "video", "owned": True, "duration_s": 60}],
+        "outputs": ["video"],
+    }
+
+    def test_одна_строка_и_счёт_опущенных(self) -> None:
+        полный = pn.plan(
+            "spec-only call",
+            facts=list(self.БАЗА),
+            today=date(2026, 10, 15),
+            spec=self.SPEC,
+            spec_only=True,
+            full=True,
+        )
+        всего = len(полный["steps"][0]["chosen"]["evidence"])
+        self.assertGreaterEqual(всего, 2)
+        краткий = pn.plan(
+            "spec-only call",
+            facts=list(self.БАЗА),
+            today=date(2026, 10, 15),
+            spec=self.SPEC,
+            spec_only=True,
+        )
+        выбран = краткий["steps"][0]["chosen"]
+        self.assertEqual(1, len(выбран["evidence"]))
+        self.assertEqual(всего - 1, выбран["evidence_omitted"])
+
+
 def _живой_план(spec: dict) -> list[tuple[str, str | None]]:
     d = pn.plan("spec-only call", today=date(2026, 10, 16), full=True, spec=spec, spec_only=True)
     return [(ш["step"], (ш.get("chosen") or {}).get("model")) for ш in d["steps"]]
