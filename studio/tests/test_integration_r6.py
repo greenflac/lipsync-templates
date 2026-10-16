@@ -64,7 +64,11 @@ class ПодработыПравки(unittest.TestCase):
         ):
             with self.subTest(ид=ид):
                 self.assertTrue(ep.not_an_edit(ид))
-                self.assertEqual(frozenset(), ep.edit_intents(ид))
+                # Девятый круг: продление — своя правка (`EDIT_EXTEND`), и
+                # эндпоинт `…/extend` её называет; любой другой правкой он
+                # по-прежнему не бывает (`not_an_edit`).
+                ждём = frozenset({"extend"}) if "extend" in ид else frozenset()
+                self.assertEqual(ждём, ep.edit_intents(ид))
         self.assertFalse(ep.not_an_edit("fal-ai/kling-video/o3/standard/video-to-video/edit"))
 
     def test_spec_edit_разбирается_и_ругается(self) -> None:

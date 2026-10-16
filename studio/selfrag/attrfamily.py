@@ -377,6 +377,8 @@ import re
             "gpu_price_per_hour_usd",
             "tested_gpus",
             "apple_silicon",
+            # Девятый круг: сколько памяти занимает запуск (RAM/VRAM, whisper.cpp).
+            "memory_footprint",
         ),
         "подстроки": ("vram", "runs_on", "parameter_count"),
     },
@@ -532,6 +534,8 @@ import re
             "probe_discloses_limits",
             "unsupported_params",
             "reasoning_effort_levels",
+            # Девятый круг: как модель берёт длинный вход (окно 30 с и нарезка).
+            "long_form",
         ),
         "подстроки": (),
         "кроме": (),
@@ -593,6 +597,11 @@ import re
             "lipsync_support",
             "lipsync_model_selection",
             "capabilities",
+            # Девятый круг: во сколько раз апскейлер увеличивает и в каком
+            # множителе он рассчитан. НЕ в семье `resolution`: множитель — не
+            # предел кадра, и `planner.limit_facts` не должен читать его так.
+            "upscale_factor_max",
+            "recommended_scale",
             # Переехали 2026-09-05 из «как её позвать» и «лимиты»: это про то,
             # ЧТО отдаёт эндпоинт и что модель умеет, а не про строку в запросе.
             "images_endpoint_metadata",

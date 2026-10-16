@@ -1385,6 +1385,14 @@ def hard(
             gpu=gpu,
             vram_gb=float(vram) if vram is not None else (hn.GPU_VRAM_GB.get(gpu) if gpu else None),
         )
+        # СВОЙ MAC (девятый круг): единая память — не видеопамять CUDA, но
+        # потолок: модель, чьи веса больше всей памяти машины, не запустится.
+        # Платформа решает и порядок: запуск на MPS/MLX/Core ML по записи
+        # старше молчания (`hardneed.apple_state`).
+        if свой.get("platform") == "apple-silicon":
+            поля["apple_silicon"] = True
+            единая = свой.get("unified_memory_gb")
+            поля["unified_memory_gb"] = float(единая) if единая is not None else None
         for имя in ("self_host", "gpu", "vram_gb"):
             if поля[имя]:
                 источники[имя] = _от("self_host")
@@ -1704,9 +1712,34 @@ def route(spec: Spec, на_сборке: frozenset[str] | None = None) -> Мар
     return Маршрут(tuple(шаги), пометки, сборка=tuple(сборка), правки=правки, штук=штук)
 
 
+#: Во сколько раз выход должен быть длиннее принесённого видео, чтобы правка
+#: без названия читалась продлением. КОНСТАНТА-РЕШЕНИЕ, ВЫБРАНО 1.2: округление
+#: длины («5 s» ролика в 5.4 с) продлением не считается, 6 с из 5 — считается.
+EXTEND_RATIO = 1.2
+
+
+def продление_по_длине(spec: Spec) -> bool:
+    """Заказанный выход заметно длиннее принесённого видео: правка — продление."""
+    видео = [
+        float(з["duration_s"])
+        for з in spec.input_items
+        if з.get("kind") == "video" and з.get("duration_s")
+    ]
+    return bool(видео and spec.duration_s and spec.duration_s >= max(видео) * EXTEND_RATIO)
+
+
 def _правка_своего(spec: Spec, на_сборке: frozenset[str]) -> Маршрут:
     """Правка ВИДЕО заказчика: модель — на правки, которые делает реестр; монтаж — на прочие."""
     выходы = set(spec.outputs)
+    if not spec.edit and продление_по_длине(spec):
+        # ДЛИНА ВЫХОДА БОЛЬШЕ ПРИНЕСЁННОГО — ЭТО ПРОДЛЕНИЕ (девятый круг, e02):
+        # правка не названа, а заказано 10 с из 5 с. Правка по инструкции длины
+        # не меняет; продление называют эндпоинты `…/extend`.
+        return Маршрут(
+            ("правка_видео", *_подложка(выходы)),
+            {"правка_видео": NOTE_VIDEO_EDIT},
+            правки=(ep.EDIT_EXTEND,),
+        )
     монтаж = tuple(п for п in spec.edit if п in на_сборке and п in ASSEMBLY_EDITS)
     модельные = tuple(п for п in spec.edit if п not in монтаж)
     сборка = tuple(ASSEMBLY_EDITS[п] for п in монтаж)
@@ -2240,6 +2273,7 @@ DRAFT_EDIT_CUES: tuple[tuple[str, str], ...] = (
      r"|horizontal .{0,40}into .{0,30}vertical|convert (?:our|my) .{0,40}(?:16:9|9:16)"),
     (ep.EDIT_REPLACE_SKY, r"sky replac\w*|replace (?:the )?sky|замен\w* неб\w*"),
     (ep.EDIT_REMOVE_OBJECT, r"remove (?:a |the )?(?:logo|watermark|object|person|people|passer)|(?:убра|удал)\w* (?:объект|прохож|человек|логотип)"),
+    (ep.EDIT_EXTEND, r"\bextend\w* (?:the |our |my )?(?:\w+ )?(?:clip|video|shot|footage)|продл\w* (?:ролик|видео|клип)"),
     (ep.EDIT_REPLACE_OBJECT, r"replace (?:the |a )?(?!sky)\w+|замен\w* (?!неб)"),
     # Свет на объекте и экспозиция — переосвещение; смена времени суток — своя
     # правка (восьмой круг, валидатор v8 n13).

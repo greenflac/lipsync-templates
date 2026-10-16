@@ -1382,6 +1382,11 @@ EDIT_RELIGHT = "relight"
 #: недоэкспонировано» выбирался `day-to-night`.
 EDIT_DAY_TO_NIGHT = "day-to-night"
 EDIT_RESTYLE = "restyle"
+#: ПРОДЛЕНИЕ ролика заказчика (девятый круг, валидатор e02): «5 с -> 10 с,
+#: продолжить движение камеры». Эндпоинты `…/extend` делают ровно это, но
+#: правкой не считались вовсе (`NOT_AN_EDIT`), и шаг правки брал правку по
+#: инструкции, которая длину ролика не меняет.
+EDIT_EXTEND = "extend"
 
 #: Допустимые значения `spec.edit`. КОНСТАНТА-РЕШЕНИЕ.
 EDIT_INTENTS: tuple[str, ...] = (
@@ -1393,6 +1398,7 @@ EDIT_INTENTS: tuple[str, ...] = (
     EDIT_RELIGHT,
     EDIT_DAY_TO_NIGHT,
     EDIT_RESTYLE,
+    EDIT_EXTEND,
 )
 
 #: Звено ПРАВКИ ПО ИНСТРУКЦИИ: модель правит кадр заказчика словами
@@ -1412,6 +1418,7 @@ EDIT_RULES: dict[str, str] = {
     EDIT_RELIGHT: r"relight\w*|exposure|light-migration|anylight",
     EDIT_DAY_TO_NIGHT: r"day-to-night|night-to-day|time-of-day",
     EDIT_RESTYLE: r"recast|render-to-real|restyle|style-transfer",
+    EDIT_EXTEND: r"extend\w*|extension",
 }
 
 #: Под-работа, НАЗВАННАЯ идентификатором прямо (седьмой круг): без звена
@@ -1427,7 +1434,12 @@ EDIT_NAMED: dict[str, str] = {
     # `inpaint` в правиле по инструкции общий; прямо названное удаление — здесь.
     EDIT_REMOVE_OBJECT: EDIT_RULES[EDIT_REMOVE_OBJECT].removeprefix(_ПРАВКА_ПО_ИНСТРУКЦИИ + "|")
     + r"|object-remov\w*|inpaint\w*",
-    EDIT_REPLACE_SKY: EDIT_RULES[EDIT_REPLACE_SKY].removeprefix(_ПРАВКА_ПО_ИНСТРУКЦИИ + "|"),
+    # ЗАМЕНА НЕБА — ЛОКАЛЬНАЯ ПРАВКА ПО МАСКЕ (девятый круг, валидатор w34):
+    # «всё остальное не трогать» = маска неба и новое небо ТОЛЬКО внутри неё.
+    # Эндпоинт, который называет инпейнт (перерисовку внутри маски), делает
+    # именно это; правка по инструкции перерисовывает весь кадр.
+    EDIT_REPLACE_SKY: EDIT_RULES[EDIT_REPLACE_SKY].removeprefix(_ПРАВКА_ПО_ИНСТРУКЦИИ + "|")
+    + r"|inpaint\w*",
 }
 
 

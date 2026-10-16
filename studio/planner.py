@@ -1115,6 +1115,15 @@ CONDITION_WORDS: dict[int, str] = {
 #: любого кандидата с провалом. Молчание по-прежнему не лучше провала: без
 #: хорошей новости кандидат остаётся во второй ступени, и там решает знак.
 FAILURE_KEY_FIELD = "записанный провал против объявленной хорошей новости без провалов"
+#: ДЕВЯТЫЙ КРУГ (валидатор b07: «липсинк 5 минут за $5»). При НАЗВАННОМ
+#: бюджете кандидат, которого валидатор ОТВЕРГНЕТ (относящаяся к требованию
+#: шага строка применимости отрицательна, `factaxis.step_verdict`), стоит ниже
+#: кандидатов в той же ценовой полосе, которых он не отвергнет. Без бюджета
+#: прежнее решение модуля в силе: молчание не лучше плохой новости (см.
+#: `SIGN_SILENT`). С бюджетом заказчик платит за прогон: план, который
+#: собственный валидатор объявит «не годно», — это деньги на заведомо
+#: отвергнутый прогон при живом соседе, о провале которого не записано.
+REFUSED_KEY_FIELD = "при названном бюджете: валидатор отвергнет шаг по записанному провалу на его требовании"
 FAILURE_CLEAR = 0
 FAILURE_OTHER = 1
 FAILURE_WORDS: dict[int, str] = {
@@ -1141,6 +1150,7 @@ KEY_FIELDS: tuple[str, ...] = (
     "отдаёт ли заказанный кадр сам, без апскейла",
     "модель сообщества (воркфлоу, LoRA, мёрж), а не продукт",
     "вытеснена более новым поколением",
+    REFUSED_KEY_FIELD,
     CONDITION_KEY_FIELD,
     FAILURE_KEY_FIELD,
     "знак измеренного: чисто / спорно / только плохое / молчание",
@@ -2535,6 +2545,9 @@ class Candidate:
     #: ниже — у неё не было строк применимости.
     condition_rank: int = 1
     condition_note: str = ""
+    #: Валидатор отвергнет шаг с этим кандидатом (`REFUSED_KEY_FIELD`); ставится
+    #: только при названном бюджете.
+    refused: bool = False
     #: Цена в порядке НЕ участвует: никто с записанной ценой в потолок не влез.
     price_rank_off: bool = False
     #: Лицензия модели ИСКЛЮЧАЕТ территории, а юрисдикция заказчика в брифе НЕ
@@ -6000,6 +6013,8 @@ def by_evidence(c: Candidate) -> tuple:
         # нашего мнения о брендах.
         int(c.community),
         int(bool(c.superseded)),
+        # ОТВЕРГНЕТ ЛИ ВАЛИДАТОР — только при названном бюджете (`REFUSED_KEY_FIELD`).
+        int(c.refused),
         # ЗАЯВЛЕННОЕ УСЛОВИЕ — ДО ЗНАКА ИЗМЕРЕННОГО (2026-10-15, шестой круг,
         # валидатор w19). Провал на условии заказа отодвигает кандидата ниже
         # тех, о ком на этом условии записана похвала или не записано ничего;
@@ -6100,6 +6115,7 @@ def _поле(c: Candidate, i: int) -> str:
         "по записи ниже заказанного кадра" if c.below_frame else "не ниже по записи",
         "сообщество" if c.community else "продукт",
         f"вытеснена: {c.superseded}" if c.superseded else "текущее поколение",
+        "валидатор отвергнет" if c.refused else "не отвергнет или бюджет не назван",
         c.condition_note or CONDITION_WORDS.get(c.condition_rank, "?"),
         FAILURE_WORDS[failure_rank(c)]
         + (f" (объявлено хорошего: {c.declared_good})" if c.declared_good else "")
@@ -6432,6 +6448,30 @@ def требования_заказчика(
             return Жёсткое(
                 исключить=f"свой GPU {hard.gpu or ''} {hard.vram_gb:g} ГБ: нужно {память:.0f} ГБ — {откуда}"
             )
+        # СВОЙ MAC (девятый круг): единая память — потолок для отсева, но не
+        # подтверждение «влезает» (это не видеопамять CUDA, её делит система).
+        if (
+            hard.apple_silicon
+            and hard.unified_memory_gb
+            and память is not None
+            and память > hard.unified_memory_gb
+        ):
+            return Жёсткое(
+                исключить=(
+                    f"свой Mac {hard.gpu or ''}: единой памяти {hard.unified_memory_gb:g} ГБ, "
+                    f"а нужно {память:.0f} ГБ — {откуда}"
+                )
+            )
+        if hard.apple_silicon:
+            мак, нота_мака = hn.apple_state(все)
+            if мак == hn.APPLE_UNKNOWN:
+                for р, строки in семья:
+                    мак, нота_мака = hn.apple_state(строки)
+                    if мак != hn.APPLE_UNKNOWN:
+                        нота_мака = f"по семье {р}: {нота_мака}"
+                        break
+            ранг.append(hn.APPLE_ORDER[мак])
+            ноты.append(f"Mac: {мак} ({нота_мака})")
         ставка = hn.gpu_rate(по_имени.get(fold(hn.RATE_MODEL_PREFIX + (hard.gpu or "")), []), hard.gpu)
         режим = need.mode if need else ""
         время = hn.gpu_time(все, режим) or next(
@@ -6620,6 +6660,23 @@ def требования_шага(
             + ("названа эндпоинтом" if правка == REQ_MET else "по инструкции")
         )
     return (рамка, частота, язык, правка), "; ".join(ноты)
+
+
+def порядок_требований(ранг: tuple) -> tuple:
+    """Порядок требований заказа В КЛЮЧЕ: правка, затем кадр, частота, язык.
+
+    Девятый круг (валидатор n14, w34). `требования_шага` отдаёт (кадр, частота,
+    язык, правка), и при сравнении первым решал КАДР: на «убрать прохожего, 4K»
+    `gemini-omni-flash-v1.1-edit` (родной 4K, правка по инструкции) обгонял
+    `ltx-2.3-quality-clean-plate` (удаление названо, кадр 1440p). Названная
+    правка — сама работа шага; кадр правки по маске сводится в 4K-оригинал
+    (патч композитится поверх), а апскейл и интерполяция — после. Работа
+    старше кадра. Вне шага правки поле правки у всех 0 — порядок не меняется.
+    """
+    if len(ранг) != 4:
+        return ранг
+    рамка, частота, язык, правка = ранг
+    return (правка, рамка, частота, язык)
 
 
 def сколько_отвергают(все: Sequence[Fact], кадр: tuple[int, int]) -> int:
@@ -6876,6 +6933,81 @@ EDIT_NOT_AN_EDIT_NOTE = (
 )
 
 
+#: КАК делается правка, которую эндпоинт делает ЛОКАЛЬНО (девятый круг,
+#: валидатор n14/w34): «убрать прохожего», «заменить небо, остальное не
+#: трогать» — маска области, генерация только внутри неё и композит патча
+#: поверх ОРИГИНАЛА. Без этого план читался как перерисовка всего ролика, а
+#: 4K-оригинал терял качество там, где его не трогали.
+EDIT_METHOD_NOTES: dict[str, str] = {
+    ep.EDIT_REMOVE_OBJECT: (
+        "local edit: track and mask (segmentation matte) the object, inpaint a clean plate only inside "
+        "the mask, composite the patch back over the original frames — pixels outside the mask stay untouched"
+    ),
+    ep.EDIT_REPLACE_SKY: (
+        "local edit: segment the sky into a mask (matte), generate the new sky only inside it, composite it "
+        "back over the original frames — the landscape outside the mask stays untouched"
+    ),
+}
+
+
+def продление_в(нужно: Sequence[str]) -> bool:
+    return ep.EDIT_EXTEND in нужно
+
+
+def продление_годится(что: "ep.Endpoint | str", нужно: Sequence[str]) -> bool:
+    """Продление заказано, и эндпоинт его называет: «новое видео» здесь и есть работа.
+
+    Девятый круг (валидатор e02): `NOT_AN_EDIT` снимал `…/extend` с шага правки
+    всегда — и «продлить ролик с 5 до 10 с» уходило в правку по инструкции,
+    которая длины не меняет. Продление по-прежнему НЕ правка для любой другой
+    правки: на «замени небо» `…/extend` не кандидат.
+    """
+    return ep.EDIT_EXTEND in нужно and ep.EDIT_EXTEND in ep.edit_intents(что)
+
+
+def нечем_запустить(модель: str, есть: Iterable[str], facts: Sequence[Fact]) -> bool:
+    """Обязательный вход модели (`requires_inputs`), которого нет у заказчика.
+
+    Доступно: текст задания, принесённые артефакты (`INPUT_LIST_WORDS`) и звук
+    принесённого видео — дорожка извлекается из файла, это не генерация.
+    Строк `requires_inputs` нет — False: судить не по чему (фразовый запрет
+    решается стеной в ключе, как и прежде).
+    """
+    доступно = set(ALWAYS_AT_HAND) | {INPUT_LIST_WORDS[а] for а in есть if а in INPUT_LIST_WORDS}
+    if "видео" in доступно:
+        доступно.add("аудио")
+    ключ = fold(модель)
+    строки = [f for f in facts if f.attribute == REQUIRED_LIST_ATTRIBUTE and fold(f.model) == ключ]
+    return any(
+        {к.strip().lower() for к in str(f.value).split(",") if к.strip()} - доступно for f in строки
+    )
+
+
+def отвергнет_валидатор(
+    op: "Operation",
+    имя: str,
+    все: Sequence[Fact],
+    overrides: dict | None,
+    languages: Sequence[str],
+    conditions: Sequence[str] | None,
+) -> bool:
+    """Скажет ли валидатор «не годно» шагу с этим кандидатом (`REFUSED_KEY_FIELD`).
+
+    Тот же шаг, что соберёт `to_pipeline`, и та же проба `pipeline.
+    probe_applicability` (Е1): второго правила «что считается провалом» здесь нет.
+    """
+    шаг = pl.Step(
+        name=op.name,
+        model=имя,
+        requirement=op.requirement,
+        requires=op.requires,
+        produces=op.produces,
+        languages=tuple(languages) if op.name in SPEECH_STEPS else (),
+        conditions=tuple(conditions) if conditions is not None else None,
+    )
+    return pl.probe_applicability(шаг, все, overrides).outcome == FAIL
+
+
 def отбор_правки(
     op: "Operation",
     по_модели: dict[str, list],
@@ -6901,7 +7033,7 @@ def отбор_правки(
     for ключ in list(по_модели):
         узел = реестр.by_key.get(ключ)
         что: "ep.Endpoint | str" = узел if узел is not None else написание.get(ключ, ключ)
-        if ep.not_an_edit(что):
+        if ep.not_an_edit(что) and not продление_годится(что, нужно):
             отсеяно_не_правка[написание.get(ключ, ключ)] = EDIT_NOT_AN_EDIT_NOTE
             del по_модели[ключ]
             continue
@@ -6913,14 +7045,24 @@ def отбор_правки(
             del по_модели[ключ]
     # Кто из реестра делает каждую названную правку (по всей работе, не только
     # по найденным словами): ноль — правка не измерена, и это печатается.
-    узлы = [у for у in реестр.orderable_for(ep.V2V_EDIT) if not ep.not_an_edit(у)]
+    узлы = [
+        у for у in реестр.orderable_for(ep.V2V_EDIT) if not ep.not_an_edit(у) or продление_годится(у, нужно)
+    ]
     покрытие = {п: sorted(у.model for у in узлы if п in ep.edit_intents(у)) for п in нужно}
     # Правки, которой не называет никто, нет и у оставшихся кандидатов (отбор
     # выше требует ВСЕ названные правки) — шаг остаётся без кандидата.
     не_измерено = [п for п, кто in покрытие.items() if not кто]
+    метод = EDIT_METHOD_NOTES.get(next((п for п in нужно if п in EDIT_METHOD_NOTES), ""), "")
     return {
         "asked": list(нужно),
-        "asked_from": "spec.edit" if названы else "default (spec.edit not named): edit by instruction",
+        "asked_from": (
+            "spec.edit"
+            if названы
+            else "default (spec.edit not named): edit by instruction"
+            if not продление_в(нужно)
+            else "spec: the ordered duration is longer than the owned video — extension"
+        ),
+        **({"method": метод} if метод else {}),
         "endpoints": {п: кто[:REGISTRY_SHOWN] for п, кто in покрытие.items()},
         "endpoints_count": {п: len(кто) for п, кто in покрытие.items()},
         "not_measured": не_измерено,
@@ -7378,6 +7520,9 @@ def candidates_for(
         # её похвала — тоже (иначе `sync-lipsync-react-1` брал «хорошее» у
         # `sync-lipsync`, чей же провал на нём не числится).
         хорошего = declared_good(все) + int(ступень_условия == 0)
+        отвергнет = потолок.known and против > 0 and отвергнет_валидатор(
+            op, имя, все, overrides, languages, conditions
+        )
         треб_ранг, треб_нота = требования_шага(
             op,
             все,
@@ -7411,6 +7556,7 @@ def candidates_for(
                 hard_note=жёсткое.нота,
                 condition_rank=ступень_условия,
                 condition_note=нота_условия,
+                refused=отвергнет,
                 declared_good=хорошего,
                 runs=прогонов(wanted.секунды, предел),
                 cost=сколько,
@@ -7453,7 +7599,7 @@ def candidates_for(
                     )
                 ),
                 below_frame=ниже_кадра(op, все, сколько, brief_frame),
-                requirement_rank=треб_ранг,
+                requirement_rank=порядок_требований(треб_ранг),
                 requirement_note=треб_нота,
                 unclassified=ключ in неустановленные,
                 unpriced_last=hard is not None and hard.objective == hn.OBJECTIVE_CHEAPEST,
@@ -11587,6 +11733,14 @@ def plan(
         if цены_кандидатов:
             дешевле_всех[op.name] = min(цены_кандидатов)
         лучший = предложены[0] if предложены else None
+        # ЗАПРЕЩЁННЫЙ ВХОД, КОТОРОГО ЗАКАЗЧИК НЕ ПРИНЁС, — НЕ ВЫБОР (девятый
+        # круг). Стена (`by_evidence`) ставит такого кандидата последним, но
+        # когда других нет, он вставал первым: на «заменить персонажа» без
+        # снимка лица выбирался face-swap, который без него не запускается.
+        # Шаг остаётся без кандидата, кандидат — в списке с причиной. Запрет,
+        # который закрывает принесённое (`нечем_запустить`), выбор не снимает.
+        if лучший is not None and лучший.ban_state == BAN_FORBIDS and нечем_запустить(лучший.model, есть, индекс.facts):
+            лучший = None
         # ПЕРЕВЫБОР ПОД БЮДЖЕТ: выбранный внутри полосы встаёт первым, прежний
         # — первым соседом, так что «почему не сосед» и соседи читаются от него.
         if лучший is not None and op.name in принудительно:

@@ -2,8 +2,8 @@
  "briefs": "briefs.jsonl",
  "total": {
   "n": 150,
-  "correct": 110,
-  "pct": 73.3
+  "correct": 121,
+  "pct": 80.7
  },
  "classes": {
   "animate": {
@@ -23,8 +23,8 @@
   },
   "budget": {
    "n": 13,
-   "correct": 10,
-   "pct": 76.9
+   "correct": 11,
+   "pct": 84.6
   },
   "dub": {
    "n": 8,
@@ -38,13 +38,13 @@
   },
   "edit_video": {
    "n": 9,
-   "correct": 4,
-   "pct": 44.4
+   "correct": 8,
+   "pct": 88.9
   },
   "faceswap": {
    "n": 3,
-   "correct": 1,
-   "pct": 33.3
+   "correct": 3,
+   "pct": 100.0
   },
   "fps": {
    "n": 6,
@@ -88,8 +88,8 @@
   },
   "self_host": {
    "n": 11,
-   "correct": 5,
-   "pct": 45.5
+   "correct": 9,
+   "pct": 81.8
   },
   "series": {
    "n": 5,
