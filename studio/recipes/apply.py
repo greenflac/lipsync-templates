@@ -389,10 +389,13 @@ def rewrite(spec: "bs.Spec", route: "bs.Маршрут", text: str = "") -> Appl
 
     # --- beat-reactive visualiser -----------------------------------------------
     if spec.task == "music-visualiser" and not any(SCENES.search(у) for у in spec.conditions):
-        maker = next((s for s in steps if s in VIDEO_GENERATORS), None)
-        if maker is not None and acc.prior("music_visualiser", "visualiser_loops"):
-            step_seconds[maker] = (float(VISUALISER_LOOP_CLIPS * VISUALISER_LOOP_CLIP_S), float(VISUALISER_LOOP_CLIP_S))
-            notes[maker] = NOTE_LOOPS[0]
+        loop_maker = next((s for s in steps if s in VIDEO_GENERATORS), None)
+        if loop_maker is not None and acc.prior("music_visualiser", "visualiser_loops"):
+            step_seconds[loop_maker] = (
+                float(VISUALISER_LOOP_CLIPS * VISUALISER_LOOP_CLIP_S),
+                float(VISUALISER_LOOP_CLIP_S),
+            )
+            notes[loop_maker] = NOTE_LOOPS[0]
             acc.assembly.append(ASSEMBLY_LOOPS)
 
     # --- zero budget ------------------------------------------------------------------
@@ -691,7 +694,6 @@ def note_ids(
     final operation names (an assembly-only plan has none).
     """
     names = set(steps)
-    inputs = set(spec.inputs)
     outputs = set(spec.outputs)
     priors = set(applied.priors) if applied is not None else set()
     seconds = spec.duration_s or bs.source_seconds(spec)

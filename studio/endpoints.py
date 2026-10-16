@@ -1149,14 +1149,14 @@ def _собрать(facts: Sequence[Fact]) -> Registry:
     for к, узел in list(реестр.by_key.items()):
         if узел.hosting or узел.self_hostable or not узел.family:
             continue
-        семья = реестр.by_key.get(fold(узел.family))
-        if семья is None or not семья.hosting or семья.self_hostable:
+        узел_семьи = реестр.by_key.get(fold(узел.family))
+        if узел_семьи is None or not узел_семьи.hosting or узел_семьи.self_hostable:
             continue
         реестр.by_key[к] = replace(
             узел,
-            hosting=семья.hosting,
-            hosting_pinned=семья.hosting_pinned,
-            hosting_note=f"семья {семья.model}: {семья.hosting_note}",
+            hosting=узел_семьи.hosting,
+            hosting_pinned=узел_семьи.hosting_pinned,
+            hosting_note=f"семья {узел_семьи.model}: {узел_семьи.hosting_note}",
         )
     for к, узел in list(реестр.by_key.items()):
         пометки = flags_of(узел, по_ключу.get(к, ()))

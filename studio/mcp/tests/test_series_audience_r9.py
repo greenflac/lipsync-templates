@@ -22,10 +22,10 @@ from studio.mcp import server as s  # noqa: E402
 
 
 def строка(префикс: str) -> dict:
-    for l in НАБОР.read_text(encoding="utf-8").splitlines():
-        if l.startswith("//") or not l.strip():
+    for строка_набора in НАБОР.read_text(encoding="utf-8").splitlines():
+        if строка_набора.startswith("//") or not строка_набора.strip():
             continue
-        d = json.loads(l)
+        d = json.loads(строка_набора)
         if d["id"].startswith(префикс):
             return d
     raise AssertionError(f"{префикс} нет в наборе")
