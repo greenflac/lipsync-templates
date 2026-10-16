@@ -574,6 +574,8 @@ EN: tuple[tuple[str, str], ...] = (
     (r" \(один прогон покрывает ролик\)", " (one run covers the clip)"),
     (r"узел семьи: через API не купить — только свои веса \(self-host\)",
      "a family node: not purchasable via API — own weights only (self-host)"),
+    (r"только свои веса \(self-host\): через API не купить, а план без своего GPU",
+     "own weights only (self-host): not purchasable via API, and the plan has no own GPU"),
     (r"хостинг/юрисдикция вендора по записи: ([^—]*) — ни одна не ваша \(([^)]*)\): ",
      r"hosting/vendor jurisdiction on record: \1 — none is yours (\2): "),
     (r"измерено, плохих новостей нет", "measured, no bad news"),
@@ -960,7 +962,7 @@ EN_FRAGMENTS: tuple[tuple[str, str], ...] = (
     ),
     (r"\bполной цены шага нет\b", "no full price for the step"),
     (r"\bцена шага записана\b", "the step's price is recorded"),
-    (r"реестр: делает (.+?) \((\w+)\), а шагу нужна (.+)$", r"registry: does \1 (\2), the step needs \3"),
+    (r"реестр: делает (.+?) \(([\w-]+)\), а шагу нужна (.+)$", r"registry: does \1 (\2), the step needs \3"),
     # --- интеграция шестого круга: что правит шаг «правка видео» (`spec.edit`)
     (
         r"реестр: эндпоинт делает НОВОЕ видео \(продление / по референсу / по движению / черновик\), "
