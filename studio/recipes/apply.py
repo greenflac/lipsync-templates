@@ -360,20 +360,6 @@ def requirement_frame(
     return (int(asked[0] * k), int(asked[1] * k))
 
 
-def requirement_fps(op_name: str, asked: float | None, spec: "bs.Spec") -> float | None:
-    """The frame rate a generator is RANKED against when the fps prior applies.
-
-    Above the class maximum (60/120 fps from a 24-30 fps class) interpolation
-    reaches the ordered rate; the generator is asked for the class maximum, so
-    a recorded 30 fps meets the requirement and a recorded 24 does not. Prior
-    off, or a rate within the class: the ordered rate, unchanged.
-    """
-    found = fps_prior(op_name, asked, spec)
-    if not asked or found is None or not found[1]:
-        return asked
-    return float(T2V_NATIVE_FPS_MAX)
-
-
 def order(names: Sequence[str]) -> list[str]:
     """Order of operations: `FIRST_STEPS` in front; the chain steps re-sorted in their own slots.
 
