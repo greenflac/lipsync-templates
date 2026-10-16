@@ -32,6 +32,8 @@ ROOT = Path(__file__).resolve().parents[1]
     "studio.tests.test_selection_r8",
     "studio.mcp.tests.test_selection_r8",
     "studio.tests.test_budget_resolution_licence",
+    "studio.tests.test_registry_r6",
+    "studio.tests.test_integration_r8",
 )
 
 PN = "studio/planner.py"
@@ -45,6 +47,24 @@ MUTANTS: tuple[tuple[str, str, str, str], ...] = (
     # --- планировщик: требования заказа
     (PN, "        c.requirement_rank,\n        цена,\n", "        цена,\n", "требования заказа уходят из ключа"),
     (PN, "FRAME_REQUIREMENT_MIN = 1440", "FRAME_REQUIREMENT_MIN = 720", "1080p — требование до цены (строже)"),
+    (
+        PN,
+        "    родные = _родные(все) or _родные([f for _, строки in семья for f in строки])",
+        "    родные = _родные([*все, *(f for _, строки in семья for f in строки)])",
+        "строка семьи опускает вариант со своей строкой о родном выходе",
+    ),
+    (
+        PN,
+        "        if строки_свои and min(строки_свои) >= предел:\n            return предел\n",
+        "",
+        "предел семьи ниже своей строки снова решает",
+    ),
+    (
+        "studio/recipes/apply.py",
+        "    return (int(round(asked[0] * k / 8)) * 8, int(round(asked[1] * k / 8)) * 8)",
+        "    return (int(asked[0] * k) + 1, int(asked[1] * k))",
+        "кадр допущения на пиксель шире 4K",
+    ),
     (PN, "FRAME_REQUIREMENT_MIN = 1440", "FRAME_REQUIREMENT_MIN = 4321", "4K — не требование (слабее)"),
     (
         PN,

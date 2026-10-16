@@ -357,7 +357,10 @@ def requirement_frame(
         return asked
     cap = T2I_NATIVE_MAX_MP if found[0].id == "t2i_native_max" else T2V_NATIVE_MAX_MP
     k = (cap / _mp(asked)) ** 0.5
-    return (int(asked[0] * k), int(asked[1] * k))
+    # Snap to a multiple of 8, the way real frames are sized: T2V_NATIVE_MAX_MP
+    # is a rounded megapixel figure, and 8K scaled by it came out 3841x2160 —
+    # one pixel wider than 4K, so every native-4K generator read as "below".
+    return (int(round(asked[0] * k / 8)) * 8, int(round(asked[1] * k / 8)) * 8)
 
 
 def order(names: Sequence[str]) -> list[str]:
