@@ -1115,6 +1115,15 @@ CONDITION_WORDS: dict[int, str] = {
 #: любого кандидата с провалом. Молчание по-прежнему не лучше провала: без
 #: хорошей новости кандидат остаётся во второй ступени, и там решает знак.
 FAILURE_KEY_FIELD = "записанный провал против объявленной хорошей новости без провалов"
+#: ДЕВЯТЫЙ КРУГ (валидатор b07: «липсинк 5 минут за $5»). При НАЗВАННОМ
+#: бюджете кандидат, которого валидатор ОТВЕРГНЕТ (относящаяся к требованию
+#: шага строка применимости отрицательна, `factaxis.step_verdict`), стоит ниже
+#: кандидатов в той же ценовой полосе, которых он не отвергнет. Без бюджета
+#: прежнее решение модуля в силе: молчание не лучше плохой новости (см.
+#: `SIGN_SILENT`). С бюджетом заказчик платит за прогон: план, который
+#: собственный валидатор объявит «не годно», — это деньги на заведомо
+#: отвергнутый прогон при живом соседе, о провале которого не записано.
+REFUSED_KEY_FIELD = "при названном бюджете: валидатор отвергнет шаг по записанному провалу на его требовании"
 FAILURE_CLEAR = 0
 FAILURE_OTHER = 1
 FAILURE_WORDS: dict[int, str] = {
@@ -1141,6 +1150,7 @@ KEY_FIELDS: tuple[str, ...] = (
     "отдаёт ли заказанный кадр сам, без апскейла",
     "модель сообщества (воркфлоу, LoRA, мёрж), а не продукт",
     "вытеснена более новым поколением",
+    REFUSED_KEY_FIELD,
     CONDITION_KEY_FIELD,
     FAILURE_KEY_FIELD,
     "знак измеренного: чисто / спорно / только плохое / молчание",
@@ -2535,6 +2545,9 @@ class Candidate:
     #: ниже — у неё не было строк применимости.
     condition_rank: int = 1
     condition_note: str = ""
+    #: Валидатор отвергнет шаг с этим кандидатом (`REFUSED_KEY_FIELD`); ставится
+    #: только при названном бюджете.
+    refused: bool = False
     #: Цена в порядке НЕ участвует: никто с записанной ценой в потолок не влез.
     price_rank_off: bool = False
     #: Лицензия модели ИСКЛЮЧАЕТ территории, а юрисдикция заказчика в брифе НЕ
@@ -6000,6 +6013,8 @@ def by_evidence(c: Candidate) -> tuple:
         # нашего мнения о брендах.
         int(c.community),
         int(bool(c.superseded)),
+        # ОТВЕРГНЕТ ЛИ ВАЛИДАТОР — только при названном бюджете (`REFUSED_KEY_FIELD`).
+        int(c.refused),
         # ЗАЯВЛЕННОЕ УСЛОВИЕ — ДО ЗНАКА ИЗМЕРЕННОГО (2026-10-15, шестой круг,
         # валидатор w19). Провал на условии заказа отодвигает кандидата ниже
         # тех, о ком на этом условии записана похвала или не записано ничего;
@@ -6100,6 +6115,7 @@ def _поле(c: Candidate, i: int) -> str:
         "по записи ниже заказанного кадра" if c.below_frame else "не ниже по записи",
         "сообщество" if c.community else "продукт",
         f"вытеснена: {c.superseded}" if c.superseded else "текущее поколение",
+        "валидатор отвергнет" if c.refused else "не отвергнет или бюджет не назван",
         c.condition_note or CONDITION_WORDS.get(c.condition_rank, "?"),
         FAILURE_WORDS[failure_rank(c)]
         + (f" (объявлено хорошего: {c.declared_good})" if c.declared_good else "")
@@ -6949,6 +6965,31 @@ def продление_годится(что: "ep.Endpoint | str", нужно: S
     return ep.EDIT_EXTEND in нужно and ep.EDIT_EXTEND in ep.edit_intents(что)
 
 
+def отвергнет_валидатор(
+    op: "Operation",
+    имя: str,
+    все: Sequence[Fact],
+    overrides: dict | None,
+    languages: Sequence[str],
+    conditions: Sequence[str] | None,
+) -> bool:
+    """Скажет ли валидатор «не годно» шагу с этим кандидатом (`REFUSED_KEY_FIELD`).
+
+    Тот же шаг, что соберёт `to_pipeline`, и та же проба `pipeline.
+    probe_applicability` (Е1): второго правила «что считается провалом» здесь нет.
+    """
+    шаг = pl.Step(
+        name=op.name,
+        model=имя,
+        requirement=op.requirement,
+        requires=op.requires,
+        produces=op.produces,
+        languages=tuple(languages) if op.name in SPEECH_STEPS else (),
+        conditions=tuple(conditions) if conditions is not None else None,
+    )
+    return pl.probe_applicability(шаг, все, overrides).outcome == FAIL
+
+
 def отбор_правки(
     op: "Operation",
     по_модели: dict[str, list],
@@ -7461,6 +7502,9 @@ def candidates_for(
         # её похвала — тоже (иначе `sync-lipsync-react-1` брал «хорошее» у
         # `sync-lipsync`, чей же провал на нём не числится).
         хорошего = declared_good(все) + int(ступень_условия == 0)
+        отвергнет = потолок.known and против > 0 and отвергнет_валидатор(
+            op, имя, все, overrides, languages, conditions
+        )
         треб_ранг, треб_нота = требования_шага(
             op,
             все,
@@ -7494,6 +7538,7 @@ def candidates_for(
                 hard_note=жёсткое.нота,
                 condition_rank=ступень_условия,
                 condition_note=нота_условия,
+                refused=отвергнет,
                 declared_good=хорошего,
                 runs=прогонов(wanted.секунды, предел),
                 cost=сколько,

@@ -605,6 +605,8 @@ EN: tuple[tuple[str, str], ...] = (
     (r"не считалось", "not counted"),
     (r"исключает территории, юрисдикция не названа", "excludes territories, jurisdiction not named"),
     (r"текущее поколение", "current generation"),
+    (r"не отвергнет или бюджет не назван", "not rejected, or no budget named"),
+    (r"валидатор отвергнет", "the validator will reject"),
     (r"вытеснена: ", "superseded: "),
     (r"не измерено", "not measured"),
     # --- бюджет за не-ролик (planner.смета)
@@ -1068,6 +1070,8 @@ LABELS_EN: dict[str, str] = {
     "отдаёт ли заказанный кадр сам, без апскейла": "does it deliver the ordered frame itself, without upscaling",
     "модель сообщества (воркфлоу, LoRA, мёрж), а не продукт": "a community model (workflow, LoRA, merge), not a product",
     "вытеснена более новым поколением": "superseded by a newer generation",
+    "при названном бюджете: валидатор отвергнет шаг по записанному провалу на его требовании":
+        "with a named budget: the validator will reject the step on a recorded failure on its requirement",
     "свидетельство на заявленном условии: за / не записано / против":
         "evidence on your stated condition: for / not recorded / against",
     "за на заявленном условии": "for, on your stated condition",
