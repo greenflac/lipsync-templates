@@ -1337,28 +1337,39 @@ def plan_pipeline(
     LIST DOES NOT. `consent` is what the CUSTOMER said ("stated" only when they
     said so); `claim` is what the person is made to say: an advert or promo
     code -> endorsement; politics, war, elections, borders, health, laws, any
-    announcement or statement they did not make -> political or news. The
-    server applies a fixed policy, worst person wins:
+    announcement or statement they did not make -> political or news.
+    `deceased: true` for a person who has died (historical figures). `people:
+    []` means "no real people in the clip" — then no name in the text is
+    treated as a person. The server applies a fixed policy, worst wins:
         real=false (fictional, generated)                -> planned
         real public figure + political|news              -> REFUSED, whatever
             consent is claimed (the studio cannot verify it; a realistic
             statement a public figure never made is disinformation — a
-            "parody" label does not survive re-sharing). Deceased/historical
-            figures likewise.
+            "parody" label does not survive re-sharing). Deceased too.
         real public figure + endorsement                 -> REFUSED (licensed
-            endorsements: an owner decision, off by default — when enabled,
-            consent=stated plus rights named in the brief becomes a question
-            asking for the licence document reference)
-        real person otherwise: consent=stated            -> planned, the consent
-            is recorded in `people_policy` and the note as the customer's word;
-            none|unknown                                 -> QUESTION about consent
-    Without `spec.people` the brief is screened conservatively (names,
-    titles such as President / Pope / CEO of / министр / президент, a role with
-    a speech verb) and a person found is a QUESTION asking you to fill
-    `spec.people` — not a guessed verdict. Two text pairs refuse regardless of
-    `spec`: a public figure + advert words, and a public figure + political or
-    news words. The decision is in `outcome`, the first `summary` line
-    (REFUSED: / QUESTION:) and `people_policy` on every answer.
+            endorsements: an owner decision, off by default)
+        deceased: advert (endorsement or advert words)   -> QUESTION: estate
+            licence; educational, documentary, personal  -> planned, with a
+            note on post-mortem rights by jurisdiction (no consent asked)
+        real living person: consent=stated               -> planned, consent
+            recorded as the customer's word; consent=none -> REFUSED;
+            unknown                                      -> QUESTION
+    NEWS AND REAL EVENTS — FILL `spec.claims` even with no person in the clip:
+    [{type: none|news|real_event, real_brand, brand?, fabricated?}].
+    real_event = disasters, elections, wars, health emergencies, market
+    events; real_brand=true when it imitates a real broadcaster or news brand
+    that is not the customer's own (BBC, CNN, ТАСС, NHK…).
+        real_brand=true                                  -> REFUSED
+        news|real_event + fabricated=true                -> REFUSED
+        news|real_event + fabricated=false (true report) -> planned, recorded
+        news|real_event, fabricated unknown              -> QUESTION
+    Without `spec.people` / `spec.claims` the brief is screened conservatively
+    (names, titles, a role with a speech verb; news words with a real event or
+    a news brand) and a hit is a QUESTION asking you to fill the field — not a
+    guessed verdict. Three text pairs refuse regardless of `spec`: a public
+    figure + advert words, a public figure + political or news words, a news
+    brand + "fake". The decision is in `outcome`, the first `summary` line
+    (REFUSED: / QUESTION:) and `people_policy` (people, claims) on every answer.
 
     Example — "translate our 90 s product video into Polish and Turkish, keep
     the CEO's voice, lips must match, $40":
@@ -1447,7 +1458,9 @@ def _план(
     # модели — главный признак, текст — запасной (`screen.политика_людей`).
     # Отказ политики сливается с отказом просева и идёт ТЕМ ЖЕ путём.
     люди_spec, spec_плана = screen.люди_из_spec(spec, bs.SPEC_FIELDS)
-    просев, политика = screen.просеять_с_людьми(brief, люди_spec, просев)
+    просев, политика = screen.просеять_с_людьми(
+        brief, люди_spec, просев, screen.события_из_spec(spec)
+    )
     if просев["outcome"] != PASS:
         return _json(
             l10n.localise_payload(
@@ -1555,7 +1568,7 @@ def вопрос_о_согласии(итог: dict, политика: Mapping[s
     out["question"] = строка
     out["outcome"] = UNMEASURED
     out["reason"] = planner.REASON_NEED_ANSWER
-    подсказка = screen.ПОДСКАЗКА_SPEC[1 if англ else 0] if ось == screen.ОСЬ_КТО else ""
+    подсказка = screen.подсказка_оси(ось, англ)
     out["что_дальше"] = (
         f"answer the question first: {строка['text']}"
         if англ

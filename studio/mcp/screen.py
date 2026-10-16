@@ -1624,13 +1624,31 @@ def _обычное_имя(слово: str) -> bool:
 )
 
 
+#: ЯЗЫКИ, НАРОДЫ, КОНТИНЕНТЫ — серия с ними не имя человека. НАЙДЕНО
+#: валидатором 7-го круга: «Run Russian TTS offline» объявляло человека «Run
+#: Russian», «Spanish (Latin America) and Brazilian Portuguese» — двоих.
+#: Стороны света сюда НЕ входят: «Kanye West» — человек.
+ЯЗЫКИ_И_РЕГИОНЫ: frozenset[str] = frozenset(
+    {
+        "english", "russian", "spanish", "portuguese", "brazilian", "latin", "american",
+        "america", "french", "german", "italian", "japanese", "chinese", "korean",
+        "arabic", "hindi", "turkish", "polish", "ukrainian", "kazakh", "hebrew",
+        "european", "europe", "asia", "asian", "africa", "african", "mandarin",
+        "cantonese", "egyptian", "mexican", "canadian", "british", "australian",
+        "indian", "tamil", "bengali", "persian", "dutch", "swedish", "norwegian",
+        "danish", "finnish", "greek", "czech", "thai", "vietnamese", "indonesian",
+        "filipino", "swahili", "castilian", "catalan", "uzbek", "georgian", "armenian",
+    }
+)
+
+
 def _не_человек_по_имени(имя: str) -> bool:
     низ = привести(имя)
     return (
         низ in ВЫДУМАННЫЕ
         or низ in БРЕНДЫ
         or any(низ.startswith(б + " ") or низ.endswith(" " + б) for б in БРЕНДЫ)
-        or any(с in СЛОВА_ЗАГОЛОВКОВ for с in низ.split())
+        or any(с in СЛОВА_ЗАГОЛОВКОВ or с in ЯЗЫКИ_И_РЕГИОНЫ for с in низ.split())
     )
 
 
@@ -1836,6 +1854,12 @@ except Exception:  # pragma: no cover
 #: Метка отказа: заявление (политика, новости), вложенное в уста реального
 #: публичного человека (валидатор 6-го круга; политика — в конце модуля).
 ЗАЯВЛЕНИЕ_ПУБЛИЧНОГО = "public figure statement"
+#: Метки отказа 7-го круга (политика — в конце модуля): живой реальный
+#: человек, о котором заказчик сказал «согласия нет»; подделка под реальное
+#: СМИ; выдуманная новость о реальном событии.
+БЕЗ_СОГЛАСИЯ_ЧЕЛОВЕКА = "real person without consent"
+НОВОСТНОЙ_БРЕНД = "real news brand imitation"
+ВЫДУМАННОЕ_СОБЫТИЕ = "fabricated news or real event"
 
 
 def _заявления(текст: str) -> list[str]:
@@ -1928,6 +1952,11 @@ def предупреждение(риски: Sequence[str]) -> str:
     "public figure statement": (
         "заявление от имени реального публичного человека (политика, новости, война, выборы)"
     ),
+    "real person without consent": "образ реального человека, который согласия не давал",
+    "real news brand imitation": "подделка под реальное СМИ или новостной бренд",
+    "fabricated news or real event": (
+        "выдуманная новость о реальном событии (катастрофа, выборы, война, здоровье, рынки)"
+    ),
 }
 
 
@@ -1948,6 +1977,11 @@ def предупреждение(риски: Sequence[str]) -> str:
     "celebrity endorsement": "an advert put in the mouth of a real celebrity",
     "public figure statement": (
         "a statement put in the mouth of a real public figure (politics, news, war, elections)"
+    ),
+    "real person without consent": "the likeness of a real person who has not consented",
+    "real news brand imitation": "imitating a real broadcaster or news brand",
+    "fabricated news or real event": (
+        "a fabricated report of a real-world event (disaster, election, war, health, markets)"
     ),
 }
 
@@ -2081,6 +2115,13 @@ def просеять(текст: str) -> dict:
     if лик["public_statement"]:
         темы = темы + [f"{ЗАЯВЛЕНИЕ_ПУБЛИЧНОГО}: {и}" for и in лик["public"]]
         беды = len(темы) + len(указания)
+    # ПОДДЕЛКА ПОД РЕАЛЬНОЕ СМИ — ОТКАЗ (валидатор 7-го круга: «Fake BBC news
+    # segment … earthquake in Lisbon today» получал план). Два признака сразу,
+    # как у пар выше: бренд из курируемого списка И слово о подделке.
+    новости = новости_в_тексте(строка)
+    if новости["brands"] and новости["fake"]:
+        темы = темы + [f"{НОВОСТНОЙ_БРЕНД}: {б}" for б in новости["brands"]]
+        беды = len(темы) + len(указания)
     return {
         "outcome": FAIL if беды else PASS,
         # Три проверки: запрещённые темы студии, русские темы и обороты, чужие
@@ -2143,10 +2184,37 @@ def чисто(текст: str) -> bool:
 #       `ЛИЦЕНЗИЯ_ОТКРЫВАЕТ_РЕКЛАМУ` (РЕШЕНИЕ ВЛАДЕЛЬЦА, по умолчанию выключено)
 #       и consent=stated и словах о правах/лицензии в брифе -> question:
 #       реквизиты лицензионного договора.
+#   умерший (deceased=true, 7-й круг), кроме political|news выше:
+#       реклама (claim endorsement или слова рекламы в брифе) -> question:
+#       лицензия наследников/правообладателя;
+#       иначе (обучение, документалистика, личное) -> proceed с нотой о
+#       посмертных правах на образ, которые зависят от юрисдикции. Письменного
+#       согласия умершего не спрашиваем — его не бывает (Линкольн, 7-й круг).
 #   публичный + claim none|other, частный + любой claim:
 #       consent=stated -> proceed, согласие записывается в план
-#       none|unknown   -> question о согласии (для умершего — наследников)
+#       consent=none   -> refuse (7-й круг: «согласия нет» — это ответ, а не
+#                         повод спросить ещё раз; Taylor Swift на чужом видео)
+#       unknown        -> question о согласии
 #   поле не заполнено или значение вне списка          -> question: какое поле
+#
+# НОВОСТИ И РЕАЛЬНЫЕ СОБЫТИЯ (7-й круг) — `spec.claims`, НЕ ЗАВИСИТ ОТ ЛЮДЕЙ:
+# «Fake BBC news: generated anchor reports an earthquake in Lisbon today» —
+# ведущий вымышлен, а вред — в новости. [{type: none|news|real_event,
+# real_brand, brand?, fabricated?}]:
+#   real_brand=true (чужое реальное СМИ: BBC, CNN, ТАСС…)  -> refuse
+#   news|real_event + fabricated=true                     -> refuse
+#   news|real_event + fabricated=false (правдивый отчёт)  -> proceed, записано
+#       со слов заказчика
+#   news|real_event, fabricated не назван                 -> question
+# Без `spec.claims` — текст: бренд СМИ + слово о подделке -> отказ (в
+# `просеять`, при любом spec); бренд или новостной формат + реальное событие
+# (катастрофа, выборы, война, эпидемия, обвал рынка) -> вопрос; вымышленный
+# человек с claim=news -> вопрос.
+#
+# `spec.people` ПЕРЕДАН (и `[]` — «реальных людей нет») -> сторож имён по
+# тексту не работает вовсе: ни вопроса, ни «person's likeness» в рисках. Две
+# текстовые пары отказа (публичный + реклама, публичный + заявление) и пара
+# «бренд СМИ + подделка» держатся при любом spec.
 #
 # ЗАПАСНОЙ ПУТЬ — `spec.people` не передан. Сторож на тексте ОСТОРОЖЕН: имена
 # (серия заглавных, кириллица с падежами), титулы с именем («President
@@ -2177,6 +2245,10 @@ def чисто(текст: str) -> bool:
 ЗАЯВКИ: frozenset[str] = frozenset({"none", "endorsement", "political", "news", "other"})
 #: Заявки, при которых публичный человек — отказ при любом согласии.
 ЗАЯВКИ_ОТКАЗА: frozenset[str] = frozenset({"political", "news"})
+#: Типы `spec.claims[].type`. `none` — нет утверждения о реальном мире.
+ТИПЫ_СОБЫТИЙ: frozenset[str] = frozenset({"none", "news", "real_event"})
+#: Типы, которым нужно решение: новость или реальное событие.
+ТИПЫ_С_РЕШЕНИЕМ: frozenset[str] = frozenset({"news", "real_event"})
 
 #: Порядок исходов: худший у человека — исход заказа.
 ТЯЖЕСТЬ: dict[str, int] = {"none": 0, "proceed": 1, "question": 2, "refuse": 3}
@@ -2185,6 +2257,74 @@ def чисто(текст: str) -> bool:
 ОСЬ_СОГЛАСИЕ = "согласие_на_образ"
 ОСЬ_КТО = "люди_в_заказе"
 ОСЬ_ЛИЦЕНЗИЯ = "лицензия_на_рекламу"
+ОСЬ_СОБЫТИЕ = "новость_или_событие"
+ОСЬ_НАСЛЕДНИКИ = "лицензия_наследников"
+ОСЬ_УМЕР = "жив_ли_человек"
+#: Какая ось у вопроса — по правилам, давшим вопрос; первая совпавшая побеждает.
+ОСИ_ПО_ПРАВИЛАМ: tuple[tuple[str, frozenset[str]], ...] = (
+    (ОСЬ_КТО, frozenset({"text_unidentified", "spec_invalid"})),
+    (ОСЬ_СОБЫТИЕ, frozenset({"event_unverified", "event_text", "claims_invalid"})),
+    (ОСЬ_ЛИЦЕНЗИЯ, frozenset({"public_endorsement_licence"})),
+    (ОСЬ_УМЕР, frozenset({"deceased_unknown"})),
+    (ОСЬ_НАСЛЕДНИКИ, frozenset({"deceased_commercial"})),
+    (ОСЬ_СОГЛАСИЕ, frozenset({"consent_missing"})),
+)
+
+#: Граница названия — латиница и кириллица, НЕ любая `\w`: «BBC風» по-японски
+#: пишется слитно, и `\w` (иероглиф — тоже буква) прятал бренд.
+_НЕ_БУКВА_ДО = r"(?<![A-Za-zА-Яа-яЁё0-9-])"
+_НЕ_БУКВА_ПОСЛЕ = r"(?![A-Za-zА-Яа-яЁё0-9-])"
+
+#: НОВОСТНЫЕ БРЕНДЫ — курируемый список реальных СМИ (7-й круг). Аббревиатуры
+#: — с учётом регистра и целым словом («cnn» в нике — не CNN); названия —
+#: без регистра. Список — один признак из двух, никогда не единственный.
+_БРЕНДЫ_СМИ_РЕГИСТР = re.compile(
+    rf"{_НЕ_БУКВА_ДО}(BBC|CNN|MSNBC|CNBC|NHK|CCTV|TASS|ТАСС|РИА|РБК|НТВ|ZDF|ARD|DW|AFP|AP News){_НЕ_БУКВА_ПОСЛЕ}"
+)
+_БРЕНДЫ_СМИ = re.compile(
+    rf"{_НЕ_БУКВА_ДО}(fox news|sky news|nbc news|cbs news|abc news|reuters|associated press|"
+    r"bloomberg|al jazeera|euronews|deutsche welle|france 24|le monde|new york times|"
+    r"washington post|the guardian|tagesschau|xinhua|ria novosti|interfax|интерфакс|"
+    rf"первый канал|россия[- ]24|риа новости|медуза|meduza|新华社|朝日新聞|読売新聞){_НЕ_БУКВА_ПОСЛЕ}",
+    re.IGNORECASE,
+)
+#: Слова о ПОДДЕЛКЕ (вторая половина пары «бренд + подделка»).
+_ПОДДЕЛКА_СМИ = re.compile(
+    r"(?<![\w-])(fake|faked|hoax|fabricated|counterfeit|bogus|фейк\w*|поддел\w*|фальшив\w*|"
+    r"ненастоящ\w*)(?![\w-])|フェイク|偽|ニセ|捏造",
+    re.IGNORECASE,
+)
+#: НОВОСТНОЙ ФОРМАТ: выпуск, ведущий, срочное сообщение.
+_НОВОСТНОЙ_ФОРМАТ = re.compile(
+    r"(?<![\w-])(news|newscast|news ?anchor|anchor|breaking|bulletin|news segment|"
+    r"новост\w*|репортаж\w*|выпуск\w* новостей|срочн\w*|ведущ\w* новостей)(?![\w-])"
+    r"|ニュース|速報|報道|キャスター",
+    re.IGNORECASE,
+)
+#: РЕАЛЬНОЕ СОБЫТИЕ: катастрофы, выборы, войны, здоровье, рынки.
+_РЕАЛЬНОЕ_СОБЫТИЕ = re.compile(
+    r"(?<![\w-])(earthquakes?|tsunami|floods?|wildfires?|hurricanes?|explosions?|"
+    r"terror(?:ist)? attacks?|plane crash|elections?|vote rigging|wars?|invasion|missile strikes?|"
+    r"pandemic|epidemic|outbreak|health emergency|stock market crash|market crash|"
+    r"bank collapse|default|землетрясени\w*|цунами|наводнени\w*|взрыв\w*|теракт\w*|"
+    r"катастроф\w*|выбор(?:ы|ах|ов)|войн\w*|вторжени\w*|эпидеми\w*|пандеми\w*|"
+    r"обвал\w*|крах\w*|дефолт\w*)(?![\w-])"
+    r"|地震|津波|洪水|爆発|テロ|選挙|戦争|侵攻|パンデミック|感染拡大|暴落|破綻",
+    re.IGNORECASE,
+)
+
+
+def новости_в_тексте(текст: str) -> dict:
+    """Признаки новости в тексте: бренды СМИ, слово о подделке, формат, событие."""
+    строка = str(текст or "")
+    бренды = [м.group(1) for м in _БРЕНДЫ_СМИ_РЕГИСТР.finditer(строка)]
+    бренды += [м.group(1) for м in _БРЕНДЫ_СМИ.finditer(строка)]
+    return {
+        "brands": list(dict.fromkeys(бренды)),
+        "fake": _ПОДДЕЛКА_СМИ.search(строка) is not None,
+        "news": _НОВОСТНОЙ_ФОРМАТ.search(строка) is not None,
+        "event": _РЕАЛЬНОЕ_СОБЫТИЕ.search(строка) is not None,
+    }
 
 #: ТИТУЛЫ. Английские — целым словом; русские — основой с падежным окончанием
 #: из закрытого списка: «принцип» и «мэрия» титулами не становятся.
@@ -2313,8 +2453,10 @@ _ЗАЯВЛЕНИЕ_RU = re.compile(
     "archive",
     "historical",
     "historic",
+    "history",
     "deceased",
     "the late",
+    "歴史",
     "архивн",
     "архив",
     "историческ",
@@ -2423,12 +2565,15 @@ def _в_тексте(низ: str, основы: Sequence[str]) -> bool:
     return any(о in низ for о in основы)
 
 
-def политика_людей(текст: str, люди: object = None, лик: dict | None = None) -> dict:
-    """Решение о реальных людях в заказе: none | proceed | question | refuse.
+def политика_людей(
+    текст: str, люди: object = None, лик: dict | None = None, события: object = None
+) -> dict:
+    """Решение о реальных людях и новостях в заказе: none | proceed | question | refuse.
 
     `люди` — `spec.people` от вызывающей модели (главный признак); None —
     не передан, и решает осторожный сторож текста (вопрос, а не вердикт).
-    Политика целиком — в комментарии над разделом.
+    `события` — `spec.claims` (новость, реальное событие); None — не передан,
+    и решает текст. Политика целиком — в комментарии над разделом.
     """
     строка = str(текст or "")
     лик = лик if лик is not None else сходство(строка)
@@ -2438,32 +2583,38 @@ def политика_людей(текст: str, люди: object = None, лик
         "historical": _в_тексте(низ, ИСТОРИЯ),
         "voice": bool(лик.get("voice")),
     }
-    итог = _по_тексту(лик) if люди is None else _по_spec(люди, низ)
-    return {**итог, **общее}
+    if люди is None:
+        источник, записи, ошибки = "text", _по_тексту(лик), []
+    else:
+        источник, (записи, ошибки) = "spec", _по_spec(люди, низ, bool(лик.get("commercial")))
+    заявки, ошибки_заявок = _события(события, люди, строка)
+    return {**_итог(источник, записи, ошибки + ошибки_заявок, заявки), **общее}
 
 
-def _итог(источник: str, люди: list[dict], ошибки: list[str]) -> dict:
-    решение = max((ч["verdict"] for ч in люди), key=lambda в: ТЯЖЕСТЬ[в], default="none")
-    правила = {ч["rule"] for ч in люди if ч["verdict"] == "question"}
+def _итог(источник: str, люди: list[dict], ошибки: list[str], заявки: list[dict] = ()) -> dict:
+    все = [*люди, *заявки]
+    решение = max((ч["verdict"] for ч in все), key=lambda в: ТЯЖЕСТЬ[в], default="none")
+    правила = {ч["rule"] for ч in все if ч["verdict"] == "question"}
     ось = None
-    if правила & {"text_unidentified", "spec_invalid"}:
-        ось = ОСЬ_КТО
-    elif "public_endorsement_licence" in правила:
-        ось = ОСЬ_ЛИЦЕНЗИЯ
-    elif правила:
-        ось = ОСЬ_СОГЛАСИЕ
+    for оси, правила_оси in ОСИ_ПО_ПРАВИЛАМ:
+        if правила & правила_оси:
+            ось = оси
+            break
     return {
         "source": источник,
         "decision": решение,
         "people": люди,
-        "banned": [ч["label"] for ч in люди if ч.get("label")],
+        "claims": list(заявки),
+        "banned": [ч["label"] for ч in все if ч.get("label")],
         "question_axis": ось,
         "consent_recorded": [ч["name"] for ч in люди if ч["rule"] in СОГЛАСИЕ_ЗАПИСАНО],
+        "deceased_noted": [ч["name"] for ч in люди if ч["rule"] == "deceased_noncommercial"],
+        "report_recorded": any(з["rule"] == "event_true_stated" for з in заявки),
         "errors": ошибки,
     }
 
 
-def _по_тексту(лик: dict) -> dict:
+def _по_тексту(лик: dict) -> list[dict]:
     """Запасной путь: найденный человек — вопрос, кроме частного с согласием."""
     люди: list[dict] = []
     for имя in лик.get("people") or []:
@@ -2472,27 +2623,30 @@ def _по_тексту(лик: dict) -> dict:
             люди.append({"name": имя, "verdict": "question", "rule": "text_unidentified"})
         else:
             люди.append({"name": имя, "verdict": "proceed", "rule": "text_consent_stated"})
-    return _итог("text", люди, [])
+    return люди
 
 
-def _по_spec(люди: object, низ: str) -> dict:
+def _по_spec(люди: object, низ: str, реклама: bool = False) -> tuple[list[dict], list[str]]:
     if not isinstance(люди, list):
-        return _итог(
-            "spec",
+        return (
             [{"name": "?", "verdict": "question", "rule": "spec_invalid"}],
-            ["spec.people: expected a list of {name, real, public_figure, consent, claim}"],
+            ["spec.people: expected a list of {name, real, public_figure, consent, claim, deceased?}"],
         )
     итог: list[dict] = []
     ошибки: list[str] = []
     for i, запись in enumerate(люди):
-        ч, о = _решить(i, запись, низ)
+        ч, о = _решить(i, запись, низ, реклама)
         итог.append(ч)
         ошибки += о
-    return _итог("spec", итог, ошибки)
+    return итог, ошибки
 
 
-def _решить(i: int, запись: object, низ: str) -> tuple[dict, list[str]]:
-    """Один человек из `spec.people` -> вердикт по политике."""
+def _решить(i: int, запись: object, низ: str, реклама: bool = False) -> tuple[dict, list[str]]:
+    """Один человек из `spec.people` -> вердикт по политике.
+
+    `реклама` — слова рекламы в брифе (`сходство(...)["commercial"]`): для
+    умершего это граница между нотой и вопросом о лицензии наследников.
+    """
     где = f"spec.people[{i}]"
     if not isinstance(запись, dict):
         return (
@@ -2508,17 +2662,22 @@ def _решить(i: int, запись: object, низ: str) -> tuple[dict, list
         ошибки.append(f"{где}.real: expected true or false")
     ч: dict = {"name": имя or "?", "real": реальный}
     if реальный is False and not ошибки:
-        return {**ч, "verdict": "proceed", "rule": "fictional"}, []
+        return {**ч, "claim": запись.get("claim"), "verdict": "proceed", "rule": "fictional"}, []
     публичный = запись.get("public_figure")
     согласие = запись.get("consent", "unknown")
     заявка = запись.get("claim")
+    умер = запись.get("deceased", False)
     if not isinstance(публичный, bool):
         ошибки.append(f"{где}.public_figure: expected true or false")
     if согласие not in СОГЛАСИЯ:
         ошибки.append(f"{где}.consent: expected one of {', '.join(sorted(СОГЛАСИЯ))}")
     if заявка not in ЗАЯВКИ:
         ошибки.append(f"{где}.claim: expected one of {', '.join(sorted(ЗАЯВКИ))}")
+    if not isinstance(умер, bool):
+        ошибки.append(f"{где}.deceased: expected true or false")
     ч = {**ч, "public_figure": публичный, "consent": согласие, "claim": заявка}
+    if умер is True:
+        ч["deceased"] = True
     if ошибки:
         return {**ч, "verdict": "question", "rule": "spec_invalid"}, ошибки
     # ТЕКСТ «БЕЗ СОГЛАСИЯ» СИЛЬНЕЕ ПОЛЯ «stated»: противоречие — вопрос.
@@ -2527,6 +2686,14 @@ def _решить(i: int, запись: object, низ: str) -> tuple[dict, list
     if публичный and заявка in ЗАЯВКИ_ОТКАЗА:
         метка = f"{ЗАЯВЛЕНИЕ_ПУБЛИЧНОГО}: {имя}"
         return {**ч, "verdict": "refuse", "rule": "public_statement", "label": метка}, []
+    if умер:
+        # УМЕРШИЙ: согласия самого человека не бывает. Реклама — лицензия
+        # наследников (вопрос), остальное — план с нотой о юрисдикции.
+        if заявка == "endorsement" or реклама:
+            return {**ч, "verdict": "question", "rule": "deceased_commercial"}, []
+        if согласие == "stated":
+            return {**ч, "verdict": "proceed", "rule": "consent_stated"}, []
+        return {**ч, "verdict": "proceed", "rule": "deceased_noncommercial"}, []
     if публичный and заявка == "endorsement":
         if ЛИЦЕНЗИЯ_ОТКРЫВАЕТ_РЕКЛАМУ and согласие == "stated" and _в_тексте(низ, ПРАВА_НА_РЕКЛАМУ):
             return {**ч, "verdict": "question", "rule": "public_endorsement_licence"}, []
@@ -2534,7 +2701,86 @@ def _решить(i: int, запись: object, низ: str) -> tuple[dict, list
         return {**ч, "verdict": "refuse", "rule": "public_endorsement", "label": метка}, []
     if согласие == "stated":
         return {**ч, "verdict": "proceed", "rule": "consent_stated"}, []
+    if согласие == "none" and "deceased" not in запись and _в_тексте(низ, ИСТОРИЯ):
+        # «Согласия нет» об историческом лице чаще значит «умер, спросить
+        # некого» (Линкольн, 7-й круг): спрашиваем, жив ли, а не отказываем.
+        return {**ч, "verdict": "question", "rule": "deceased_unknown"}, []
+    if согласие == "none":
+        метка = f"{БЕЗ_СОГЛАСИЯ_ЧЕЛОВЕКА}: {имя}"
+        return {**ч, "verdict": "refuse", "rule": "consent_refused", "label": метка}, []
     return {**ч, "verdict": "question", "rule": "consent_missing"}, []
+
+
+def _события(события: object, люди: object, строка: str) -> tuple[list[dict], list[str]]:
+    """Новости и реальные события: `spec.claims`, а без него — текст и `claim=news`.
+
+    Пара «бренд СМИ + подделка» здесь не повторяется: она — отказ просева при
+    любом spec (`просеять`), и `с_политикой` её не теряет.
+    """
+    if события is None:
+        return _события_по_тексту(люди, строка), []
+    if not isinstance(события, list):
+        return (
+            [{"name": "claims", "verdict": "question", "rule": "claims_invalid"}],
+            ["spec.claims: expected a list of {type: none|news|real_event, real_brand, brand?, fabricated?}"],
+        )
+    итог: list[dict] = []
+    ошибки: list[str] = []
+    for i, з in enumerate(события):
+        где = f"spec.claims[{i}]"
+        if not isinstance(з, dict):
+            итог.append({"name": где, "verdict": "question", "rule": "claims_invalid"})
+            ошибки.append(f"{где}: expected an object {{type, real_brand, brand?, fabricated?}}")
+            continue
+        тип = з.get("type")
+        бренд_реален = з.get("real_brand", False)
+        выдумано = з.get("fabricated")
+        бренд = str(з.get("brand") or "").strip()
+        свои: list[str] = []
+        if тип not in ТИПЫ_СОБЫТИЙ:
+            свои.append(f"{где}.type: expected one of {', '.join(sorted(ТИПЫ_СОБЫТИЙ))}")
+        if not isinstance(бренд_реален, bool):
+            свои.append(f"{где}.real_brand: expected true or false")
+        if выдумано is not None and not isinstance(выдумано, bool):
+            свои.append(f"{где}.fabricated: expected true, false or absent")
+        запись = {"name": бренд or str(тип), "type": тип, "real_brand": бренд_реален, "fabricated": выдумано}
+        if свои:
+            итог.append({**запись, "verdict": "question", "rule": "claims_invalid"})
+            ошибки += свои
+            continue
+        if бренд_реален:
+            метка = f"{НОВОСТНОЙ_БРЕНД}: {бренд or 'a real broadcaster'}"
+            итог.append({**запись, "verdict": "refuse", "rule": "news_brand", "label": метка})
+        elif тип in ТИПЫ_С_РЕШЕНИЕМ and выдумано is True:
+            метка = f"{ВЫДУМАННОЕ_СОБЫТИЕ}: {тип}"
+            итог.append({**запись, "verdict": "refuse", "rule": "event_fabricated", "label": метка})
+        elif тип in ТИПЫ_С_РЕШЕНИЕМ and выдумано is False:
+            итог.append({**запись, "verdict": "proceed", "rule": "event_true_stated"})
+        elif тип in ТИПЫ_С_РЕШЕНИЕМ:
+            итог.append({**запись, "verdict": "question", "rule": "event_unverified"})
+        else:
+            итог.append({**запись, "verdict": "none", "rule": "no_claim"})
+    return итог, ошибки
+
+
+def _события_по_тексту(люди: object, строка: str) -> list[dict]:
+    """Запасной путь: бренд СМИ или новостной формат с реальным событием — вопрос.
+
+    Вымышленный человек с `claim=news` из `spec.people` — тоже вопрос: новость
+    вредна сама по себе, кто бы её ни читал.
+    """
+    н = новости_в_тексте(строка)
+    итог: list[dict] = []
+    if н["brands"] and (н["news"] or н["event"]):
+        итог.append({"name": ", ".join(н["brands"]), "verdict": "question", "rule": "event_text"})
+    elif н["news"] and н["event"]:
+        итог.append({"name": "news", "verdict": "question", "rule": "event_text"})
+    if not итог and isinstance(люди, list):
+        for ч in люди:
+            if isinstance(ч, dict) and ч.get("real") is False and ч.get("claim") == "news":
+                итог.append({"name": str(ч.get("name") or "news"), "verdict": "question", "rule": "event_text"})
+                break
+    return итог
 
 
 def с_политикой(просев: dict, политика: dict) -> dict:
@@ -2576,15 +2822,87 @@ def с_политикой(просев: dict, политика: dict) -> dict:
 def вопрос_людей(политика: dict) -> tuple[str, Строки, Строки]:
     """(ось, по-русски, по-английски) вопроса политики: (текст, почему, варианты)."""
     ось = политика.get("question_axis") or ОСЬ_СОГЛАСИЕ
-    правила_оси = {
-        ОСЬ_КТО: {"text_unidentified", "spec_invalid"},
-        ОСЬ_ЛИЦЕНЗИЯ: {"public_endorsement_licence"},
-        ОСЬ_СОГЛАСИЕ: {"consent_missing"},
-    }[ось]
-    кто = ", ".join(ч["name"] for ч in политика.get("people") or [] if ч.get("rule") in правила_оси)
+    правила_оси = dict(ОСИ_ПО_ПРАВИЛАМ)[ось]
+    кто = ", ".join(
+        ч["name"]
+        for ч in [*(политика.get("people") or []), *(политика.get("claims") or [])]
+        if ч.get("rule") in правила_оси
+    )
     история = bool(политика.get("historical"))
     наследники_ru = " (для умершего — его наследников или правообладателя)" if история else ""
     наследники_en = " (for a deceased person — their estate or rights holder)" if история else ""
+    if ось == ОСЬ_СОБЫТИЕ:
+        return (
+            ось,
+            (
+                f"в заказе новость или реальное событие ({кто}). Это отчёт о том, что "
+                "действительно произошло, со ссылкой на источник, или выдуманное событие? "
+                "Выдуманный выпуск о реальной катастрофе, выборах, войне, эпидемии или рынке "
+                "студия не делает, как и ролик под маркой реального СМИ",
+                "реалистичный выпуск новостей после пересылки читается как настоящий, а "
+                "проверить событие студия не может — она спрашивает",
+                (
+                    "правдивый отчёт о реальном событии, источник есть",
+                    "вымышленный мир: выдуманное место и событие, без реальных СМИ",
+                    "выдуманная новость о реальном событии — не делать",
+                ),
+            ),
+            (
+                f"the order contains news or a real-world event ({кто}). Is it a report of "
+                "something that really happened, with a source, or an invented event? The studio "
+                "does not make a fabricated bulletin about a real disaster, election, war, health "
+                "emergency or market event, nor a clip under a real broadcaster's brand",
+                "a realistic news bulletin reads as real once it is shared, and the studio cannot "
+                "check the event — so it asks",
+                (
+                    "a true report of a real event, we have a source",
+                    "a fictional world: invented place and event, no real news brand",
+                    "a fabricated report of a real event — do not make it",
+                ),
+            ),
+        )
+    if ось == ОСЬ_УМЕР:
+        return (
+            ось,
+            (
+                f"согласия человека ({кто}) нет, а бриф исторический: этот человек умер? "
+                "Если умер — для обучения и документалистики план строится с нотой о "
+                "посмертных правах, для рекламы нужна лицензия наследников; если жив — без "
+                "его согласия ролик не делается",
+                "у умершего согласия не спрашивают, у живого без согласия образ не берут — "
+                "по одному имени студия не знает, кто перед ней",
+                ("умер (deceased: true)", "жив — согласия нет, заменить на своего актёра"),
+            ),
+            (
+                f"there is no consent from the person ({кто}) and the brief is historical: is "
+                "this person deceased? If so — educational or documentary use is planned with a "
+                "note on post-mortem rights, an advert needs an estate licence; if alive — the "
+                "clip is not made without their consent",
+                "a deceased person cannot be asked for consent, a living one's likeness is not "
+                "used without it — a name alone does not tell the studio which",
+                ("deceased (deceased: true)", "alive — no consent, use our own actor"),
+            ),
+        )
+    if ось == ОСЬ_НАСЛЕДНИКИ:
+        return (
+            ось,
+            (
+                f"реклама с образом умершего человека ({кто}) делается по лицензии его "
+                "наследников или правообладателя: укажите реквизиты лицензии",
+                "посмертные права на образ в рекламе охраняются во многих юрисдикциях; "
+                "студия не может проверить лицензию — она записывает, на какой документ "
+                "сослался заказчик",
+                ("реквизиты лицензии", "лицензии нет — убрать человека из рекламы"),
+            ),
+            (
+                f"an advert using the likeness of a deceased person ({кто}) needs a licence "
+                "from their estate or rights holder: give the licence reference",
+                "post-mortem publicity rights protect commercial use in many jurisdictions; the "
+                "studio cannot verify the licence — it records which document the customer "
+                "referred to",
+                ("the licence reference", "no licence — remove the person from the advert"),
+            ),
+        )
     if ось == ОСЬ_КТО:
         return (
             ось,
@@ -2666,16 +2984,18 @@ def вопрос_людей(политика: dict) -> tuple[str, Строки, 
 #: Подсказка ВЫЗЫВАЮЩЕМУ на оси `люди_в_заказе`: он заполняет `spec.people`.
 ПОДСКАЗКА_SPEC = (
     "заполните spec.people — для каждого человека name, real, public_figure, "
-    "consent (stated|none|unknown), claim (none|endorsement|political|news|other) — "
-    "и вызовите снова; если не знаете, задайте вопрос заказчику",
+    "consent (stated|none|unknown), claim (none|endorsement|political|news|other), "
+    "deceased (true для умершего) — и вызовите снова; people: [] — реальных людей нет; "
+    "если не знаете, задайте вопрос заказчику",
     "fill spec.people — for each person name, real, public_figure, consent "
-    "(stated|none|unknown), claim (none|endorsement|political|news|other) — and call "
-    "again; if you do not know, put the question to the customer",
+    "(stated|none|unknown), claim (none|endorsement|political|news|other), deceased "
+    "(true for a deceased person) — and call again; people: [] means no real people; "
+    "if you do not know, put the question to the customer",
 )
 
 
 def нота_людей(политика: dict, англ: bool) -> str:
-    """Что дописать к ноте: пародия при отказе, записанное согласие. Пусто — нечего."""
+    """Что дописать к ноте: пародия при отказе, записанное согласие, умершие. Пусто — нечего."""
     куски: list[str] = []
     if политика.get("decision") == "refuse" and политика.get("parody"):
         куски.append(
@@ -2685,12 +3005,42 @@ def нота_людей(политика: dict, англ: bool) -> str:
             else "пародия этого не меняет: реалистичный ролик, где реальный публичный человек "
             "говорит то, чего не говорил, после пересылки читается как настоящая запись"
         )
+    отказ_без_согласия = [
+        ч["name"] for ч in политика.get("people") or [] if ч.get("rule") == "consent_refused"
+    ]
+    if отказ_без_согласия:
+        куски.append(
+            "the customer said there is no consent; if the person is deceased, set "
+            "deceased: true in spec.people"
+            if англ
+            else "заказчик сказал, что согласия нет; если человек умер, укажите deceased: true "
+            "в spec.people"
+        )
     записано = ", ".join(политика.get("consent_recorded") or [])
     if записано:
         куски.append(
             f"consent recorded as stated by the customer, not verified by the studio: {записано}"
             if англ
             else f"согласие записано со слов заказчика, студия его не проверяла: {записано}"
+        )
+    умершие = ", ".join(политика.get("deceased_noted") or [])
+    if умершие:
+        куски.append(
+            f"deceased person, non-commercial use ({умершие}): no personal consent is asked; "
+            "post-mortem personality and publicity rights differ by jurisdiction (some protect "
+            "a likeness for decades after death, mostly for commercial use) — check where the "
+            "clip will be published, and label it as a reconstruction"
+            if англ
+            else f"умерший человек, некоммерческое использование ({умершие}): личного согласия "
+            "не спрашиваем; посмертные права на образ различаются по юрисдикциям (где-то они "
+            "охраняются десятилетиями после смерти, в основном от рекламы) — проверьте, где "
+            "ролик будет опубликован, и пометьте его как реконструкцию"
+        )
+    if политика.get("report_recorded"):
+        куски.append(
+            "the report is recorded as true by the customer's word, not verified by the studio"
+            if англ
+            else "отчёт о событии записан как правдивый со слов заказчика, студия его не проверяла"
         )
     return ". ".join(куски)
 
@@ -2702,6 +3052,16 @@ def нота_людей(политика: dict, англ: bool) -> str:
     "public_figure",
     "consent",
     "claim",
+    "deceased",
+    "verdict",
+    "rule",
+)
+#: Поля утверждения о новости или событии в `people_policy.claims`.
+ПОЛЯ_ОТЧЁТА_СОБЫТИЙ: tuple[str, ...] = (
+    "name",
+    "type",
+    "real_brand",
+    "fabricated",
     "verdict",
     "rule",
 )
@@ -2713,6 +3073,9 @@ def отчёт_политики(политика: dict) -> dict:
         "source": политика.get("source"),
         "decision": политика.get("decision"),
         "people": [{к: ч[к] for к in ПОЛЯ_ОТЧЁТА if к in ч} for ч in политика.get("people") or []],
+        "claims": [
+            {к: з[к] for к in ПОЛЯ_ОТЧЁТА_СОБЫТИЙ if к in з} for з in политика.get("claims") or []
+        ],
         "consent_recorded": list(политика.get("consent_recorded") or []),
         "parody": bool(политика.get("parody")),
         "historical": bool(политика.get("historical")),
@@ -2720,14 +3083,72 @@ def отчёт_политики(политика: dict) -> dict:
     }
 
 
+#: Группы отказа, которые принадлежат политике людей и новостей.
+ГРУППЫ_ПОЛИТИКИ: frozenset[str] = frozenset(
+    {ЗНАМЕНИТОСТЬ_В_РЕКЛАМЕ, ЗАЯВЛЕНИЕ_ПУБЛИЧНОГО, БЕЗ_СОГЛАСИЯ_ЧЕЛОВЕКА, НОВОСТНОЙ_БРЕНД, ВЫДУМАННОЕ_СОБЫТИЕ}
+)
+
+#: Префикс риска «чьё-то имя в тексте» — его снимает переданный `spec.people`.
+РИСК_ИМЕНИ = "person's likeness: "
+
+
+def без_сторожа_имён(просев: dict) -> dict:
+    """Просев без находок сторожа имён: `spec.people` передан (и `[]`), он решает.
+
+    НАЙДЕНО валидатором 7-го круга: при `people: []` в рисках стояло
+    «person's likeness: Run Russian», а «Latin America, Brazilian Portuguese»
+    становились живыми людьми. Отказы просева (пары с публичным человеком и
+    бренд СМИ + подделка) не трогаются.
+    """
+    риски = list(просев.get("risks") or [])
+    оставить = [р for р in риски if not р.startswith(РИСК_ИМЕНИ)]
+    if оставить == риски:
+        return просев
+    нота = str(просев.get("note") or "")
+    старое = f". {предупреждение(риски)}"
+    if нота.endswith(старое):
+        нота = нота[: -len(старое)] + (f". {предупреждение(оставить)}" if оставить else "")
+    лик = {**(просев.get("likeness") or {}), "people": []}
+    return {**просев, "risks": оставить, "risky": len(оставить), "note": нота, "likeness": лик}
+
+
 def просеять_с_людьми(
-    текст: str, люди: object = None, просев: dict | None = None
+    текст: str, люди: object = None, просев: dict | None = None, события: object = None
 ) -> tuple[dict, dict]:
     """(просев с отказами политики, политика людей) — ОДНО место сборки (Е1).
 
     Им пользуются `plan_pipeline` и тесты политики: исход заказа по людям —
-    `fail` у просева (отказ) или `decision` политики.
+    `fail` у просева (отказ) или `decision` политики. `события` — `spec.claims`.
     """
     просев = просев if просев is not None else просеять(текст)
-    политика = политика_людей(текст, люди, просев.get("likeness"))
-    return с_политикой(просев, политика), политика
+    if люди is not None:
+        просев = без_сторожа_имён(просев)
+    политика = политика_людей(текст, люди, просев.get("likeness"), события)
+    итог = с_политикой(просев, политика)
+    # ОТКАЗ ТЕКСТОВОЙ ПАРЫ — ТОЖЕ РЕШЕНИЕ ПОЛИТИКИ: `people_policy.decision` не
+    # должен говорить «question», когда ответ — отказ по человеку или СМИ.
+    if any(м.partition(": ")[0] in ГРУППЫ_ПОЛИТИКИ for м in итог.get("banned") or []):
+        политика = {**политика, "decision": "refuse"}
+    return итог, политика
+
+
+def события_из_spec(spec: object) -> object:
+    """`spec.claims` или None, если поле не передано."""
+    if not isinstance(spec, dict) or "claims" not in spec:
+        return None
+    return spec.get("claims")
+
+
+#: Подсказка ВЫЗЫВАЮЩЕМУ на оси `новость_или_событие`: он заполняет `spec.claims`.
+ПОДСКАЗКА_СОБЫТИЯ = (
+    "заполните spec.claims — [{type: none|news|real_event, real_brand: true, если это "
+    "чужое реальное СМИ, brand, fabricated: true|false}] — и вызовите снова",
+    "fill spec.claims — [{type: none|news|real_event, real_brand: true when it imitates a "
+    "real broadcaster, brand, fabricated: true|false}] — and call again",
+)
+
+
+def подсказка_оси(ось: str | None, англ: bool) -> str:
+    """Что заполнить вызывающему после вопроса этой оси. Пусто — нечего."""
+    пара = {ОСЬ_КТО: ПОДСКАЗКА_SPEC, ОСЬ_СОБЫТИЕ: ПОДСКАЗКА_СОБЫТИЯ}.get(str(ось))
+    return пара[1 if англ else 0] if пара else ""

@@ -121,6 +121,8 @@ SPEC_FIELDS: tuple[str, ...] = (
     "open_weights",
     # Интеграция шестого круга: ЧТО правится в `video-edit` (`endpoints.EDIT_INTENTS`).
     "edit",
+    # Седьмой круг: новость или реальное событие (читает и проверяет `screen`).
+    "claims",
 )
 
 SOURCE_SPEC = "spec"
@@ -472,6 +474,9 @@ class Spec:
     budget_note: str = ""
     #: Люди в кадре: {name, real, public_figure, consent, claim} (читает `screen`).
     people: tuple[Mapping[str, Any], ...] = ()
+    #: Новости и реальные события {type, real_brand, brand, fabricated} — форму
+    #: проверяет и решает `screen` (политика новостей), здесь поле только есть.
+    claims: tuple[Mapping[str, Any], ...] = ()
     #: Условия кадра свободными словами («profile face», «hands») — в отбор.
     conditions: tuple[str, ...] = ()
     #: Требуются открытые веса (без своего запуска тоже).
@@ -747,7 +752,7 @@ def _входы_spec(raw: Any, ошибки: list[str]) -> tuple[tuple[str, ...]
     return tuple(dict.fromkeys(виды)), tuple(подробно)
 
 
-_PEOPLE_FIELDS = frozenset({"name", "real", "public_figure", "consent", "claim"})
+_PEOPLE_FIELDS = frozenset({"name", "real", "public_figure", "consent", "claim", "deceased"})
 
 
 def _люди_spec(raw: Any, ошибки: list[str]) -> tuple[dict[str, Any], ...]:
@@ -761,7 +766,7 @@ def _люди_spec(raw: Any, ошибки: list[str]) -> tuple[dict[str, Any], .
         if лишние:
             ошибки.append(f"spec.people[{i}]: unknown field(s) {', '.join(sorted(лишние))}")
         запись: dict[str, Any] = {"name": str(ч.get("name") or "").strip()}
-        for ключ in ("real", "public_figure"):
+        for ключ in ("real", "public_figure", "deceased"):
             if ч.get(ключ) is not None and not isinstance(ч[ключ], bool):
                 ошибки.append(f"spec.people[{i}].{ключ}={ч[ключ]!r}: must be true or false")
             запись[ключ] = ч[ключ] if isinstance(ч.get(ключ), bool) else None

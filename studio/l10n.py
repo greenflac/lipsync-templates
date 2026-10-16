@@ -40,6 +40,7 @@ __all__ = [
     "FACT_KEYS",
     "RU",
     "TERMS_EN",
+    "clip",
     "gloss",
     "lang_of",
     "leaks",
@@ -60,6 +61,39 @@ def lang_of(*texts: object) -> str:
     текст свободно несёт латиницу, английский кириллицы не несёт.
     """
     return "ru" if any(CYR.search(str(t or "")) for t in texts) else "en"
+
+
+#: КОНСТАНТЫ-РЕШЕНИЯ ОБРЕЗКИ (`clip`). Конец предложения ищется в последних
+#: 40 % отрезка, граница слова — в последней половине: дальше назад — и
+#: обрезка съедает больше смысла, чем спасает.
+CLIP_SENTENCE_SHARE = 0.6
+CLIP_WORD_SHARE = 0.5
+_КОНЕЦ_ФРАЗЫ = re.compile(r"[.;!?](?=\s)")
+
+
+def clip(текст: object, n: int) -> str:
+    """Текст не длиннее `n` знаков, обрезанный по фразе или слову, с «…».
+
+    НАЙДЕНО валидатором 7-го круга: «(no faces on scre…» — обрезка посреди
+    слова. Правило: конец фразы в последних 40 % — режем там; иначе последний
+    пробел в последней половине; слово длиннее половины (URL) — режем как есть.
+    Хвостовая пунктуация снимается; открытая «цитата» закрывается «…»».
+    """
+    t = " ".join(str(текст or "").split())
+    if len(t) <= n:
+        return t
+    кусок = t[: max(n - 1, 1)]
+    if not t[len(кусок)].isspace():
+        фразы = [м.end() for м in _КОНЕЦ_ФРАЗЫ.finditer(кусок)]
+        пробел = кусок.rfind(" ")
+        if фразы and фразы[-1] >= len(кусок) * CLIP_SENTENCE_SHARE:
+            кусок = кусок[: фразы[-1]]
+        elif пробел >= len(кусок) * CLIP_WORD_SHARE:
+            кусок = кусок[:пробел]
+    кусок = кусок.rstrip(" ,;:—–-(«\"'")
+    if кусок.count("«") > кусок.count("»"):
+        return кусок[: n - 2].rstrip(" ,;:—–-(«\"'") + "…»"
+    return кусок + "…"
 
 
 #: КОДЫ: значения этих полей сравнивают программы, а не читают люди. Их
@@ -503,8 +537,8 @@ EN: tuple[tuple[str, str], ...] = (
     (r"; прочие единицы — поштучные и сюда не входят\): длительность в брифе не разобрана, умножать не на что",
      "; other units are per item and not included): the brief's duration was not parsed, nothing to multiply by"),
     # --- краткий ответ плана (planner.сжать)
-    (r"строки доказательства сверх одной на шаг, ноты положений \(цена, длительность\), положения соседей \(кадр, вход, служба, выход\), пробы валидатора по классам и ноты к ним — всё это в ответе с full=true",
-     "evidence rows beyond one per step, position notes (price, duration), the neighbours' positions (frame, input, service, output), the validator's probes by class and their notes — all of it is in the answer with full=true"),
+    (r"строки доказательства сверх одной на шаг, ноты положений \(цена, длительность\), положения соседей \(кадр, вход, служба, выход\), пробы валидатора по классам и ноты к ним, пустые поля сметы — всё это в ответе с full=true",
+     "evidence rows beyond one per step, position notes (price, duration), the neighbours' positions (frame, input, service, output), the validator's probes by class and their notes, empty estimate fields — all of it is in the answer with full=true"),
     (r"объявленные вход и выход", "declared input and output"),
     (r"профиль модели", "model profile"),
     (r"кадр подтверждён", "frame confirmed"),

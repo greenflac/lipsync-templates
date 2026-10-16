@@ -8261,7 +8261,7 @@ def что_дальше(итог: dict) -> str:
             # обобщён (Т3).
             запись = худшая_новость(выбран.get("evidence") or [])
             что = " ".join(str(запись.get("value") or "").split())
-            коротко = (что[:160] + "…") if len(что) > 160 else что
+            коротко = l10n.clip(что, 161)
             # ЦИТАТА ИЗ БАЗЫ БЕРЁТСЯ В КАВЫЧКИ И НЕ ПЕРЕВОДИТСЯ. Она написана
             # тем, кто её записал, и на его языке; переписать её значило бы
             # подменить свидетельство пересказом — то же правило, по которому
@@ -9307,8 +9307,8 @@ SUMMARY_PRICE = 80
 
 
 def _коротко(текст: object, n: int = SUMMARY_QUOTE) -> str:
-    t = " ".join(str(текст or "").split())
-    return t if len(t) <= n else t[: n - 1] + "…"
+    # По фразе или слову, не посреди слова (`l10n.clip`, 7-й круг).
+    return l10n.clip(текст, n)
 
 
 #: Где в ноте цены начинается ВЕРДИКТ против потолка (`смета_ролика`,
@@ -11431,6 +11431,10 @@ def plan(
     ответ["conflicts"] = противоречия(текст, строки_шагов)
     if ответ["conflicts"] and not ответ["question"]:
         ответ["question"] = вопрос_о_противоречии(ответ["conflicts"][0]).row(по_английски)
+    # ИМЯ ШАГА ДЛЯ ЧЕЛОВЕКА рядом с кодом (7-й круг: `генерация_видео` посреди
+    # английского ответа). Код `step` остаётся — его сравнивают программы.
+    for шаг in [*строки_шагов, *([со_звуком] if со_звуком else [])]:
+        шаг["step_label"] = _имя_шага(шаг.get("step"), по_английски)
     ответ["по_английски"] = по_английски
     ответ["что_дальше"] = что_дальше(ответ)
     ответ["summary"] = сводка(ответ)
@@ -11451,8 +11455,14 @@ COMPACT_ALTERNATIVES = 2
 #: читалось как «нечего сказать».
 COMPACT_OMITTED = (
     "строки доказательства сверх одной на шаг, ноты положений (цена, длительность), положения соседей (кадр, вход, служба, выход), "
-    "пробы валидатора по классам и ноты к ним — всё это в ответе с full=true"
+    "пробы валидатора по классам и ноты к ним, пустые поля сметы — всё это в ответе с full=true"
 )
+
+#: ПОЛЯ СМЕТЫ, КОТОРЫЕ КРАТКИЙ ОТВЕТ НЕ НЕСЁТ ПУСТЫМИ (7-й круг: ответ до 22
+#: тысяч знаков). Непустые остаются: противоречие цен или нижняя граница —
+#: причина, а не простыня. Пустое поле в полном ответе (full=true) — на месте.
+COMPACT_EMPTY_ESTIMATE_STEP = ("other_routes", "contradictions", "lower_bound", "ambiguous")
+COMPACT_EMPTY_ESTIMATE = ("steps_without_cost", "steps_lower_bound", "steps_ambiguous")
 
 
 def _кратко_кандидат(c: dict | None, соседи: bool = False) -> dict | None:
@@ -11514,6 +11524,7 @@ def сжать(ответ: dict) -> dict:
         шаги.append(
             {
                 "step": ш.get("step"),
+                "step_label": ш.get("step_label"),
                 "inferred": ш.get("inferred"),
                 "requires": ш.get("requires"),
                 "produces": ш.get("produces"),
@@ -11578,6 +11589,15 @@ def сжать(ответ: dict) -> dict:
         )
     цена = dict(ответ.get("pipeline_price") or {})
     цена["note"] = _коротко_с_вердиктом(цена.get("note"), 600)
+    смета = цена.get("смета")
+    if isinstance(смета, dict):
+        смета = цена["смета"] = {
+            к: з for к, з in смета.items() if к not in COMPACT_EMPTY_ESTIMATE or з
+        }
+        смета["steps"] = [
+            {к: з for к, з in ш.items() if к not in COMPACT_EMPTY_ESTIMATE_STEP or з}
+            for ш in смета.get("steps") or []
+        ]
     for ш in (цена.get("смета") or {}).get("steps") or []:
         ш["formula"] = _коротко(ш.get("formula"), 160)
     цена.pop("steps_price_not_summable", None)
@@ -11585,6 +11605,7 @@ def сжать(ответ: dict) -> dict:
     if вариант:
         вариант = {
             "step": вариант.get("step"),
+            "step_label": вариант.get("step_label"),
             "replaces": вариант.get("replaces"),
             "chosen": _кратко_кандидат(вариант.get("chosen"), соседи=True),
             "outcome": вариант.get("outcome"),

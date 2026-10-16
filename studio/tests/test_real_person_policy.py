@@ -84,7 +84,8 @@ CEO = "Our CEO, she consented, says welcome to new employees, 30s talking head l
     (
         "Мой сосед Пётр Смирнов рекламирует нашу пекарню",
         [_ч("Пётр Смирнов", public=False, consent="none", claim="endorsement")],
-        "question",
+        # 7-й круг: «согласия нет» — ответ, а не повод спросить ещё раз.
+        "refuse",
     ),
     # частный «stated», но текст говорит «без согласия» — противоречие, вопрос
     (

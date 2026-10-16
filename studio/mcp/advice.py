@@ -2183,7 +2183,8 @@ BRIEF_MAX_BYTES = 6144
 
 def _коротко(текст: object, n: int = КРАТКО_ЗНАЧЕНИЕ) -> str:
     строка = str(текст if текст is not None else "")
-    return строка if len(строка) <= n else строка[: n - 1] + "…"
+    # По фразе или слову, не посреди слова (`l10n.clip`, 7-й круг).
+    return строка if len(строка) <= n else l10n.clip(строка, n)
 
 
 def размер(ответ: object) -> int:
