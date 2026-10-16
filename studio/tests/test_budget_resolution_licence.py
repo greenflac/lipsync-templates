@@ -406,8 +406,12 @@ class ЖивыеБрифы(unittest.TestCase):
 
     def test_липсинк_3_доллара(self) -> None:
         итог = pn.plan("lipsync 30 s, budget $3")
-        # Провал НАСТОЯЩЕГО шага (липсинк) старше открытого вопроса о видео.
-        self.assertEqual(("fail", "валидатор_отверг"), (итог["outcome"], итог["reason"]))
+        # ДЕВЯТЫЙ КРУГ (`planner.REFUSED_KEY_FIELD`): при названном бюджете
+        # `sync-lipsync` (записанный провал на требовании шага — валидатор его
+        # отвергнет) встаёт ниже `kling-video-lipsync-audio-to-video` в той же
+        # ценовой полосе. Шаг больше не «не годно»; остаётся открытый вопрос о
+        # видео. Прежде здесь стояло ("fail", "валидатор_отверг").
+        self.assertEqual(("could not measure", "нужен_ответ_заказчика"), (итог["outcome"], итог["reason"]))
         # ИНТЕГРАЦИЯ ПЯТОГО КРУГА (2026-10-15), проверено как верное для продукта:
         # `fal-ai/sync-lipsync` — это Lipsync 1.9 за 0.70 usd/мин (3 usd/мин —
         # отдельный `sync-lipsync-2`), и `wan-3.0-t2v` выигрывает генерацию по
@@ -422,11 +426,12 @@ class ЖивыеБрифы(unittest.TestCase):
             [
                 ("озвучка", "eleven_v3"),
                 ("генерация_видео", "kling-3.0-standard-t2v"),
-                ("липсинк", "sync-lipsync"),
+                ("липсинк", "kling-video-lipsync-audio-to-video"),
             ],
             [(ш["step"], ш["chosen"]["model"]) for ш in итог["steps"]],
         )
-        self.assertEqual((2.91, "pass"), (итог["pipeline_price"]["смета"]["usd"], итог["pipeline_price"]["outcome"]))
+        # 0.036 + 2.52 + 30 × 0.014 = 2.976 -> 2.98, под потолком 3.
+        self.assertEqual((2.98, "pass"), (итог["pipeline_price"]["смета"]["usd"], итог["pipeline_price"]["outcome"]))
         self.assertNotIn("optimised", итог["pipeline_price"])
 
     def test_липсинк_потолок_1_80(self) -> None:
@@ -445,12 +450,16 @@ class ЖивыеБрифы(unittest.TestCase):
         self.assertEqual(
             # Седьмой круг: `openai-tts-1` (0.015 usd за 1000 знаков, вендор)
             # равен `xai-tts-v1` ценой; ничья решена именем.
-            [("озвучка", "eleven_v3", "openai-tts-1"), ("липсинк", "sync-lipsync", "latentsync")],
+            # Девятый круг: липсинк уже `kling-video-lipsync-audio-to-video`
+            # (0.42); `latentsync` (0.35) валидатор отвергнет — он в другой
+            # полосе, и замены под потолок на него больше нет. Перебор 0.147
+            # не закрывается ничьей TTS — потолок честно не выдержан.
+            [("озвучка", "eleven_v3", "openai-tts-1")],
             [(о["step"], о["from"], о["to"]) for о in оптимум["swaps"]],
         )
-        self.assertEqual((2.906, 2.7267), (оптимум["before_usd"], оптимум["after_usd"]))
-        self.assertEqual("total 2.91 usd is over the clip ceiling 2.8 usd", оптимум["why_en"])
-        self.assertEqual("pass", итог["pipeline_price"]["outcome"])
+        self.assertEqual((2.976, 2.9467), (оптимум["before_usd"], оптимум["after_usd"]))
+        self.assertEqual("total 2.98 usd is over the clip ceiling 2.8 usd", оптимум["why_en"])
+        self.assertEqual("fail", итог["pipeline_price"]["outcome"])
         self.assertEqual("kling-3.0-standard-t2v", итог["steps"][1]["chosen"]["model"])
 
     def test_липсинк_заказано_самое_дешёвое_меняет_всё(self) -> None:
@@ -468,13 +477,13 @@ class ЖивыеБрифы(unittest.TestCase):
                 # Интеграция пятого круга: `wan-3.0-t2v` один в своей полосе
                 # (записанный бенчмарк) — «самое дешёвое» его не меняет: дешевле
                 # можно только ниже по доводам.
-                ("липсинк", "sync-lipsync", "latentsync"),
+                # Девятый круг: липсинк сразу `veed-lipsync` (0.20) — самый
+                # дешёвый в полосе тех, кого валидатор не отвергнет; замены нет.
             ],
             [(о["step"], о["from"], о["to"]) for о in оптимум["swaps"]],
         )
-        # 0.036 + 2.52 + 0.35 = 2.906 (видео по кадру-допущению 1080p, шестой
-        # круг; липсинк 1.9 за 0.70 usd/мин) -> 0.0067 + 2.52 + 0.20.
-        self.assertEqual((2.906, 2.7267), (оптимум["before_usd"], оптимум["after_usd"]))
+        # 0.036 + 2.52 + 0.20 = 2.756 -> 0.0067 + 2.52 + 0.20.
+        self.assertEqual((2.756, 2.7267), (оптимум["before_usd"], оптимум["after_usd"]))
 
     def test_нативный_звук_1080p_самое_дешёвое(self) -> None:
         итог = pn.plan("8 second 1080p video with native audio, cheapest")

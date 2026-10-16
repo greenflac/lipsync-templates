@@ -119,7 +119,10 @@ class СквозныеБрифы(unittest.TestCase):
         # первым встаёт `bfs-best-face-swap` БЕЗ цены, и допущения кадра для
         # цены тогда нет; оно проверяется на базе, где из эндпоинтов face-swap
         # остался продаваемый с тарифом по кадру, а снимок для лица принесён.
-        без = {"bfs-best-face-swap", "inswapper_128", "wan-animate-replace"}
+        # Девятый круг: в базе есть face-swap с ВИДЕО на выходе
+        # (`wavespeed-video-face-swap`); ветка «отсечены по виду выхода»
+        # проверяется на базе без него.
+        без = {"bfs-best-face-swap", "inswapper_128", "wan-animate-replace", "wavespeed-video-face-swap"}
         факты = [f for f in pn.FactIndex().facts if f.model not in без]
         spec = {"task": "face-replace", "inputs": ["video", "photo"], "duration_s": 20}
         итог = pn.plan(
