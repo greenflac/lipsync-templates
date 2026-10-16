@@ -97,7 +97,7 @@ def V(sec: float | None = None, **k) -> dict:
     return {"kind": "video", "owned": True, **({"duration_s": sec} if sec else {}), **k}
 
 
-def I() -> dict:
+def IMG() -> dict:
     return {"kind": "image", "owned": True}
 
 
@@ -264,7 +264,7 @@ class СвоёУЗаказчика(unittest.TestCase):
     def test_x04_образец_голоса_клонируется(self) -> None:
         spec = {
             "task": "avatar",
-            "inputs": [I(), A(60), T],
+            "inputs": [IMG(), A(60), T],
             "outputs": ["video", "speech"],
             "duration_s": 20,
             "languages": ["es"],
@@ -278,7 +278,7 @@ class СвоёУЗаказчика(unittest.TestCase):
         self.assertEqual([("говорящий_аватар", "x-avatar")], шаги(выкл))
 
     def test_запись_без_текста_это_дорожка(self) -> None:
-        п = план({"task": "avatar", "inputs": [I(), A(20)], "outputs": ["video"], "duration_s": 20, "people": []})
+        п = план({"task": "avatar", "inputs": [IMG(), A(20)], "outputs": ["video"], "duration_s": 20, "people": []})
         self.assertEqual([("говорящий_аватар", "x-avatar")], шаги(п))
         self.assertIsNone(п["recipe"])
 
@@ -317,10 +317,10 @@ class СвоёУЗаказчика(unittest.TestCase):
 class Логотип(unittest.TestCase):
     """w18 и x20: логотип — из файла заказчика при сборке, не сгенерированные буквы."""
 
-    W18 = {"task": "animate", "inputs": [I()], "outputs": ["video"], "duration_s": 4, "resolution": "4k", "conditions": ["logo legible"], "people": []}
+    W18 = {"task": "animate", "inputs": [IMG()], "outputs": ["video"], "duration_s": 4, "resolution": "4k", "conditions": ["logo legible"], "people": []}
     X20 = {
         "task": "generate",
-        "inputs": [I()],
+        "inputs": [IMG()],
         "outputs": ["video"],
         "duration_s": 15,
         "aspect": "16:9",
