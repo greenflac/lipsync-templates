@@ -36,6 +36,19 @@ class Scorer(unittest.TestCase):
         self.assertEqual(E.observed_outcome(answer([("апскейл", "x")])), "plan")
         self.assertEqual(E.observed_outcome(answer([("апскейл", "x")], outcome="fail")), "plan_failed")
 
+    def test_outcome_is_read_as_a_machine_code_in_either_language(self) -> None:
+        # Round 8: an English answer says pass/fail, a Russian one годно/не годно.
+        for fail in ("fail", "не годно"):
+            self.assertEqual(E.observed_outcome(answer([("апскейл", "x")], outcome=fail)), "plan_failed")
+            self.assertEqual(
+                E.observed_outcome(answer([("апскейл", "x")], budget={"outcome": fail})), "over_budget"
+            )
+        for ok in ("pass", "годно", "could not measure", "не смогли"):
+            self.assertEqual(E.observed_outcome(answer([("апскейл", "x")], outcome=ok)), "plan")
+            self.assertEqual(E.observed_outcome(answer([("апскейл", "x")], budget={"outcome": ok})), "plan")
+        self.assertEqual(E.outcome_code("годно"), "pass")
+        self.assertEqual(E.outcome_code("не смогли"), "unmeasured")
+
     def test_order_and_alternative_paths(self) -> None:
         ref = {"outcome": "plan", "paths": [[{"job": "t2v"}, {"job": "interpolate"}], [{"job": "t2v_audio"}]]}
         ok = E.score(row(ref), answer([("генерация_видео", "a"), ("интерполяция_кадров", "b")]))

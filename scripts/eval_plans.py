@@ -201,6 +201,24 @@ def _paths(ref: dict[str, Any]) -> list[list[dict[str, Any]]]:
 # --- the answer ---------------------------------------------------------------------
 
 
+#: An outcome VALUE as a machine code. Since round 8 an English answer says
+#: `pass`/`fail` where a Russian one says `годно`/`не годно` (`l10n.OUTCOME_EN`);
+#: the scorer must not depend on the language of the answer.
+OUTCOME_CODE: dict[str, str] = {
+    "pass": "pass",
+    "годно": "pass",
+    "fail": "fail",
+    "не годно": "fail",
+    "could not measure": "unmeasured",
+    "не смогли": "unmeasured",
+}
+
+
+def outcome_code(v: object) -> str:
+    """`pass` / `fail` / `unmeasured` for an outcome value in either language."""
+    return OUTCOME_CODE.get(str(v or "").strip().lower(), str(v or ""))
+
+
 def observed_outcome(d: dict[str, Any]) -> str:
     reason = str(d.get("reason") or "")
     pp = d.get("people_policy") or {}
@@ -213,11 +231,13 @@ def observed_outcome(d: dict[str, Any]) -> str:
         return "gap"
     if reason in ("нужен_ответ_заказчика", "нужна_спецификация") or decision == "question":
         return "question"
-    if reason == "дороже_потолка" or (isinstance(budget, dict) and budget.get("outcome") == "fail"):
+    if reason == "дороже_потолка" or (
+        isinstance(budget, dict) and outcome_code(budget.get("outcome")) == "fail"
+    ):
         return "over_budget"
     if reason == "только_монтаж":
         return "assembly_only"
-    if steps and d.get("outcome") == "fail":
+    if steps and outcome_code(d.get("outcome")) == "fail":
         return "plan_failed"
     if steps:
         return "plan"
