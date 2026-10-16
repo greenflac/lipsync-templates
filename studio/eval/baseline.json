@@ -2,8 +2,8 @@
  "briefs": "briefs.jsonl",
  "total": {
   "n": 150,
-  "correct": 89,
-  "pct": 59.3
+  "correct": 112,
+  "pct": 74.7
  },
  "classes": {
   "animate": {
@@ -13,18 +13,18 @@
   },
   "audio": {
    "n": 5,
-   "correct": 0,
-   "pct": 0.0
+   "correct": 3,
+   "pct": 60.0
   },
   "avatar": {
    "n": 10,
-   "correct": 5,
-   "pct": 50.0
+   "correct": 8,
+   "pct": 80.0
   },
   "budget": {
    "n": 13,
-   "correct": 9,
-   "pct": 69.2
+   "correct": 10,
+   "pct": 76.9
   },
   "dub": {
    "n": 8,
@@ -43,13 +43,13 @@
   },
   "faceswap": {
    "n": 3,
-   "correct": 1,
-   "pct": 33.3
+   "correct": 3,
+   "pct": 100.0
   },
   "fps": {
    "n": 6,
-   "correct": 2,
-   "pct": 33.3
+   "correct": 6,
+   "pct": 100.0
   },
   "generate_image": {
    "n": 2,
@@ -68,8 +68,8 @@
   },
   "logo_text": {
    "n": 6,
-   "correct": 2,
-   "pct": 33.3
+   "correct": 5,
+   "pct": 83.3
   },
   "product360": {
    "n": 4,
@@ -78,18 +78,18 @@
   },
   "restore": {
    "n": 5,
-   "correct": 2,
-   "pct": 40.0
+   "correct": 4,
+   "pct": 80.0
   },
   "safety": {
    "n": 16,
-   "correct": 14,
-   "pct": 87.5
+   "correct": 16,
+   "pct": 100.0
   },
   "self_host": {
    "n": 11,
-   "correct": 4,
-   "pct": 36.4
+   "correct": 5,
+   "pct": 45.5
   },
   "series": {
    "n": 5,
@@ -108,8 +108,8 @@
   },
   "upscale": {
    "n": 6,
-   "correct": 3,
-   "pct": 50.0
+   "correct": 4,
+   "pct": 66.7
   },
   "utility": {
    "n": 5,
@@ -118,8 +118,8 @@
   },
   "visualiser": {
    "n": 4,
-   "correct": 1,
-   "pct": 25.0
+   "correct": 2,
+   "pct": 50.0
   }
  }
 }
