@@ -70,6 +70,10 @@ class Hard:
     #: блоку (`jurisdiction`), а печатается страна рядом с ним.
     countries: tuple[str, ...] = ()
     resolution: int | None = None
+    #: Свой Mac (Apple silicon): `vram_gb` у него нет — есть единая память
+    #: (`unified_memory_gb`), и запуск идёт не на CUDA (девятый круг).
+    apple_silicon: bool = False
+    unified_memory_gb: float | None = None
     #: Откуда взято каждое значение: «бриф» / «spec» — печатается рядом.
     sources: tuple[tuple[str, str], ...] = field(default=())
 
@@ -91,6 +95,11 @@ class Hard:
             "jurisdiction": list(self.jurisdiction) if self.jurisdiction else None,
             "countries": list(self.countries),
             "resolution": self.resolution,
+            **(
+                {"apple_silicon": True, "unified_memory_gb": self.unified_memory_gb}
+                if self.apple_silicon
+                else {}
+            ),
             "sources": dict(self.sources),
         }
 
@@ -416,6 +425,45 @@ def vram_state(need: float | None, estimate: bool, have: float | None) -> str:
     if need > have:
         return VRAM_OVER
     return VRAM_UNKNOWN if estimate else VRAM_FITS
+
+
+# --------------------------------------------------------------------------
+# СВОЙ MAC: ЗАПУСК НА APPLE SILICON
+# --------------------------------------------------------------------------
+
+APPLE_GPU = "запуск на GPU Mac (MPS / MLX / Metal / Core ML) записан"
+APPLE_CPU = "на Mac записан только запуск на CPU"
+APPLE_UNKNOWN = "запуск на Mac не записан"
+APPLE_ORDER: dict[str, int] = {APPLE_GPU: 0, APPLE_CPU: 1, APPLE_UNKNOWN: 2}
+
+#: Слова, которыми запись называет ускоренный запуск на Mac. Тот же словарь,
+#: что `planner.APPLE_RUNTIME` (строка `apple_silicon` в выдаче шага).
+_APPLE_GPU_WORDS = re.compile(r"\bmps\b|\bmlx\b|\bmetal\b|core ?ml|apple neural engine", re.I)
+#: Запись о Mac, где сказан запуск на процессоре (официальный скрипт без ветки
+#: `mps`: `cuda if available else cpu`). Медленно, но запускается.
+_APPLE_CPU_WORDS = re.compile(r"\bcpu\b", re.I)
+_APPLE_ATTR = re.compile(r"apple|mac|mps|mlx|metal|coreml", re.I)
+
+
+def apple_state(rows: Sequence[Fact]) -> tuple[str, str]:
+    """Запускается ли модель на своём Mac — по СВОИМ строкам. Три исхода (Р1).
+
+    ДЕВЯТЫЙ КРУГ. На «M1 MacBook Air 8 GB» выбиралась `qwen-image` (20B), на
+    «M2 Pro, липсинк» — модель, о запуске которой на Mac не записано ничего,
+    хотя у соседей записан MPS или хотя бы CPU. Ускоренный запуск (MPS, MLX,
+    Metal, Core ML) по записи старше записанного CPU, тот — старше молчания.
+    Строка о CPU считается только в атрибуте о Mac: «CPU int8» в описании
+    CUDA-модели — не про Mac.
+    """
+    for f in rows:
+        if _APPLE_GPU_WORDS.search(f"{f.attribute} {f.value}") and not re.search(
+            r"no mps|без mps|not supported", f.value, re.I
+        ):
+            return APPLE_GPU, f"{f.attribute} = «{f.value[:90]}» ({f.source_url})"
+    for f in rows:
+        if _APPLE_ATTR.search(f.attribute) and _APPLE_CPU_WORDS.search(f.value):
+            return APPLE_CPU, f"{f.attribute} = «{f.value[:90]}» ({f.source_url})"
+    return APPLE_UNKNOWN, "ни MPS/MLX/Metal/Core ML, ни CPU-запуска на Mac не записано"
 
 
 # --------------------------------------------------------------------------

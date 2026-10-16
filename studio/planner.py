@@ -6432,6 +6432,30 @@ def требования_заказчика(
             return Жёсткое(
                 исключить=f"свой GPU {hard.gpu or ''} {hard.vram_gb:g} ГБ: нужно {память:.0f} ГБ — {откуда}"
             )
+        # СВОЙ MAC (девятый круг): единая память — потолок для отсева, но не
+        # подтверждение «влезает» (это не видеопамять CUDA, её делит система).
+        if (
+            hard.apple_silicon
+            and hard.unified_memory_gb
+            and память is not None
+            and память > hard.unified_memory_gb
+        ):
+            return Жёсткое(
+                исключить=(
+                    f"свой Mac {hard.gpu or ''}: единой памяти {hard.unified_memory_gb:g} ГБ, "
+                    f"а нужно {память:.0f} ГБ — {откуда}"
+                )
+            )
+        if hard.apple_silicon:
+            мак, нота_мака = hn.apple_state(все)
+            if мак == hn.APPLE_UNKNOWN:
+                for р, строки in семья:
+                    мак, нота_мака = hn.apple_state(строки)
+                    if мак != hn.APPLE_UNKNOWN:
+                        нота_мака = f"по семье {р}: {нота_мака}"
+                        break
+            ранг.append(hn.APPLE_ORDER[мак])
+            ноты.append(f"Mac: {мак} ({нота_мака})")
         ставка = hn.gpu_rate(по_имени.get(fold(hn.RATE_MODEL_PREFIX + (hard.gpu or "")), []), hard.gpu)
         режим = need.mode if need else ""
         время = hn.gpu_time(все, режим) or next(

@@ -1385,6 +1385,14 @@ def hard(
             gpu=gpu,
             vram_gb=float(vram) if vram is not None else (hn.GPU_VRAM_GB.get(gpu) if gpu else None),
         )
+        # СВОЙ MAC (девятый круг): единая память — не видеопамять CUDA, но
+        # потолок: модель, чьи веса больше всей памяти машины, не запустится.
+        # Платформа решает и порядок: запуск на MPS/MLX/Core ML по записи
+        # старше молчания (`hardneed.apple_state`).
+        if свой.get("platform") == "apple-silicon":
+            поля["apple_silicon"] = True
+            единая = свой.get("unified_memory_gb")
+            поля["unified_memory_gb"] = float(единая) if единая is not None else None
         for имя in ("self_host", "gpu", "vram_gb"):
             if поля[имя]:
                 источники[имя] = _от("self_host")
