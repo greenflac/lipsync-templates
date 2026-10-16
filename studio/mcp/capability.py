@@ -312,7 +312,14 @@ CAP_NATIVE_AUDIO = "native_audio"
     ep.EDIT_DAY_TO_NIGHT: ("day to night", "day-to-night", "night to day", "день в ночь"),
     ep.EDIT_STABILISE: ("stabilise", "stabilize", "stabilization", "stabilisation", "стабилиз"),
     ep.EDIT_REFRAME: ("reframe", "reframing", "outpaint", "outpainting"),
-    ep.EDIT_EXTEND: ("extend video", "extend a video", "extend the video", "video extension", "продлить видео", "продление видео"),
+    ep.EDIT_EXTEND: (
+        "extend video",
+        "extend a video",
+        "extend the video",
+        "video extension",
+        "продлить видео",
+        "продление видео",
+    ),
 }
 POLARITY_CATALOG = "catalog"
 
