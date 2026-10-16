@@ -354,6 +354,23 @@ class Логотип(unittest.TestCase):
         self.assertEqual(["logo_image_is_endcard", "logo_overlay"], выключены(выкл))
         self.assertIsNone(выкл["assembly"])
 
+    def test_n19_логотип_на_товаре_не_накладывается(self) -> None:
+        база = (*БАЗА, факт("x-turntable", "architecture", "360 turntable orbit video model"))
+        п = план(
+            {
+                "task": "turntable",
+                "inputs": [{"kind": "image", "owned": True, "count": 5}],
+                "outputs": ["video"],
+                "shots": 5,
+                "per_shot_s": 5,
+                "aspect": "1:1",
+                "conditions": ["logo legible"],
+                "people": [],
+            },
+            база,
+        )
+        self.assertIsNone(п["recipe"])
+
 
 class Шумы(unittest.TestCase):
     N30 = {"task": "generate", "inputs": [V(30)], "outputs": ["sfx"], "duration_s": 30, "people": []}
@@ -421,6 +438,11 @@ class Визуализатор(unittest.TestCase):
         выкл = план({**self.W06, "priors": {"visualiser_loops": False}})
         self.assertEqual(24.0, выкл["pipeline_price"]["за_ролик"]["usd"])
 
+    def test_x27_клип_из_сцен_не_петли(self) -> None:
+        п = план({**self.W06, "duration_s": 180, "conditions": ["distinct dreamy scenes cut to the beat"]})
+        self.assertIsNone(п["recipe"])
+        self.assertEqual(18.0, п["pipeline_price"]["за_ролик"]["usd"])
+
 
 class БюджетНоль(unittest.TestCase):
     def test_w33_бесплатный_путь_назван(self) -> None:
@@ -430,6 +452,20 @@ class БюджетНоль(unittest.TestCase):
         путь = п["recipe"]["free_route"]
         self.assertEqual("генерация_изображения", путь["open_weights"][0]["step"])
         self.assertTrue(путь["note"].startswith("0 usd per call on your own or a free GPU"))
+
+    def test_свой_gpu_уже_назван(self) -> None:
+        п = план(
+            {
+                "task": "generate",
+                "inputs": [],
+                "outputs": ["image"],
+                "shots": 1,
+                "budget": {"amount": 0, "currency": "USD"},
+                "self_host": {"gpu": "RTX 4090", "vram_gb": 24},
+                "people": [],
+            }
+        )
+        self.assertNotIn("zero_budget_self_host", допущения(п))
 
 
 class Язык(unittest.TestCase):

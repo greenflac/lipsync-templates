@@ -58,6 +58,10 @@ CHAIN_RANK: dict[str, int] = {
 FIRST_STEPS: tuple[str, ...] = ("клонирование_голоса",)
 #: A logo / wordmark named in `spec.conditions`.
 LOGO = re.compile(r"\blogo|wordmark|brand[ -]?mark|логотип", re.I)
+#: Tasks where a logo condition means «the brand mark is composited»: the piece is made here.
+LOGO_TASKS: frozenset[str | None] = frozenset({None, "generate", "animate"})
+#: A music video of distinct scenes named in `spec.conditions`: not a loop visualiser.
+SCENES = re.compile(r"scene|story|narrative|music video|сцен|сюжет|клип", re.I)
 #: Blur named by the caller: then a deblur model IS the tool.
 BLUR = re.compile(r"blur|расфокус|размыт|смаз", re.I)
 #: Restoration models ranked last on archive film unless blur is named.
@@ -225,7 +229,9 @@ def rewrite(spec: "bs.Spec", route: "bs.Маршрут") -> Applied:
             notes.setdefault("генерация_изображения", NOTE_ONE_REFERENCE[0])
 
     # --- logo / wordmark ----------------------------------------------------------
-    if "video" in outputs and any(LOGO.search(у) for у in spec.conditions):
+    # Only where the piece is MADE (generate / animate): a logo printed on a brought
+    # product (turntable of packshots) stays on the product and is not overlaid.
+    if spec.task in LOGO_TASKS and "video" in outputs and any(LOGO.search(у) for у in spec.conditions):
         if (
             spec.task in (None, "generate")
             and "photo" in inputs
@@ -259,7 +265,7 @@ def rewrite(spec: "bs.Spec", route: "bs.Маршрут") -> Applied:
             acc.prior("archive_restoration", "restore_colourise_upscale_order")
 
     # --- beat-reactive visualiser -----------------------------------------------
-    if spec.task == "music-visualiser":
+    if spec.task == "music-visualiser" and not any(SCENES.search(у) for у in spec.conditions):
         maker = next((s for s in steps if s in VIDEO_GENERATORS), None)
         if maker is not None and acc.prior("music_visualiser", "visualiser_loops"):
             step_seconds[maker] = (float(VISUALISER_LOOP_CLIPS * VISUALISER_LOOP_CLIP_S), float(VISUALISER_LOOP_CLIP_S))
@@ -267,8 +273,10 @@ def rewrite(spec: "bs.Spec", route: "bs.Маршрут") -> Applied:
             acc.assembly.append(ASSEMBLY_LOOPS)
 
     # --- zero budget ------------------------------------------------------------------
-    if (spec.budget_amount is not None and spec.budget_amount <= 0) or (
-        spec.budget_amount is None and spec.budget_usd is not None and spec.budget_usd <= 0
+    # Own GPU already named — the plan is on the free route; nothing to add.
+    if not spec.self_host and (
+        (spec.budget_amount is not None and spec.budget_amount <= 0)
+        or (spec.budget_amount is None and spec.budget_usd is not None and spec.budget_usd <= 0)
     ):
         free = acc.prior("zero_budget", "zero_budget_self_host")
 

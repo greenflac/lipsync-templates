@@ -1314,7 +1314,8 @@ def plan_pipeline(
                   r2v: one consistent character across shots. music-visualiser:
                   generated visuals under the customer's track; audio reactivity
                   (beat sync, waveform) is made at assembly — generated t2v does
-                  not hear the track. sing-photo: customer photo + audio ->
+                  not hear the track; made as short loops unless conditions
+                  name "scenes" (a music video). sing-photo: photo + audio ->
                   singing/talking avatar. cut-to-shorts: customer's long video ->
                   transcript (the only model step) -> picked moments -> cut,
                   reframe, join, burn captions at assembly (ffmpeg, 0 usd);

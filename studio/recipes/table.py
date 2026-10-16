@@ -217,10 +217,12 @@ PRIORS_LIST: tuple[Prior, ...] = (
         "visualiser_loops",
         f"a beat-reactive visualiser is made at assembly: the track's beats (librosa / aubio) drive cuts and "
         f"pulses over {VISUALISER_LOOP_CLIPS} short loopable generated clips of {VISUALISER_LOOP_CLIP_S} s, "
-        "looped to the track's length — not minutes of text-to-video, which does not hear the track anyway",
+        "looped to the track's length — not minutes of text-to-video, which does not hear the track anyway "
+        "(a music video of distinct scenes: name 'scenes' in conditions)",
         f"визуализатор «в такт» собирается при сборке: доли трека (librosa / aubio) ведут склейки и пульсацию "
         f"поверх {VISUALISER_LOOP_CLIPS} коротких зацикленных клипов по {VISUALISER_LOOP_CLIP_S} с, повторённых "
-        "на длину трека — а не минуты t2v, которое трек всё равно не слышит",
+        "на длину трека — а не минуты t2v, которое трек всё равно не слышит "
+        "(клип из разных сцен: «сцены» в conditions)",
         TAG_ENGINEERING,
     ),
     Prior(

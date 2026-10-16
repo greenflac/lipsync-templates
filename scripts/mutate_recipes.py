@@ -58,6 +58,20 @@ MUTANTS: tuple[tuple[str, str, str, str], ...] = (
     (RA, '    return (spec.priors or {}).get(prior_id, True) is not False', "    return True", "spec cannot switch a prior off"),
     (RA, '        and "script" in inputs\n', "", "a recording without text cloned"),
     (
+        RA,
+        'LOGO_TASKS: frozenset[str | None] = frozenset({None, "generate", "animate"})',
+        'LOGO_TASKS: frozenset[str | None] = frozenset({None, "generate", "animate", "turntable"})',
+        "logo on a brought product overlaid",
+    ),
+    (
+        RA,
+        'LOGO_TASKS: frozenset[str | None] = frozenset({None, "generate", "animate"})',
+        'LOGO_TASKS: frozenset[str | None] = frozenset({None, "generate"})',
+        "animated logo sting not overlaid",
+    ),
+    (RA, 'SCENES = re.compile(r"scene|', 'SCENES = re.compile(r"scenex|', "music video of scenes made as loops"),
+    (RA, "    if not spec.self_host and (\n", "    if (\n", "own GPU named, free route offered again"),
+    (
         PN,
         '    {"правка_видео", "реставрация", "раскраска", "удаление_фона_видео", "интерполяция_кадров"}',
         '    {"правка_видео", "реставрация", "удаление_фона_видео", "интерполяция_кадров"}',
