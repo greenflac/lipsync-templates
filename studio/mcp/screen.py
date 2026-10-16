@@ -684,6 +684,44 @@ def _свой_человек(метка: str, текст: str) -> bool:
     r"\bdespi(?:r|da|do)\b|\bpelad[ao]\b",
 )
 
+#: НЕ ЧЕЛОВЕК (интеграция восьмого круга): «undress the mannequin» отклонялось
+#: как раздевание человека. Раздевание — отказ, когда раздевают ЧЕЛОВЕКА
+#: (снятого, реального, изображённого); манекен, кукла, портновский
+#: манекен, 3D-одежда для моды — не человек. КОНСТАНТА-РЕШЕНИЕ: список закрытый.
+НЕ_ЧЕЛОВЕК_РАЗДЕТЬ: tuple[str, ...] = (
+    r"\bman+[ie]quins?\b|\bmanikins?\b|\bmannikins?\b",
+    r"\bdress ?forms?\b|\btailor'?s dumm(?:y|ies)\b|\bdisplay dumm(?:y|ies)\b",
+    r"\bdolls?\b|\bfigurines?\b|\baction figures?\b",
+    r"\b3d (?:garments?|clothes|clothing|outfits?|dress(?:es)?)\b",
+    r"\bманекен\w*|\bкукл\w*|\bфигурк\w*",
+    r"\bmaniqu[ií]\w*|\bschaufensterpupp\w*|\bpuppe\b",
+)
+#: Признак ЧЕЛОВЕКА рядом: тогда «не человек» исключением не служит
+#: («a doll and the woman next to it»). Местоимения и слова о людях.
+ЧЕЛОВЕК_РЯДОМ: tuple[str, ...] = (
+    r"\b(?:she|her|hers|him|his|he|they|them|their)\b",
+    r"\b(?:wom[ae]n|m[ae]n|girls?|boys?|guys?|lady|ladies|person|people|wife|girlfriend|boyfriend|husband|"
+    r"actress\w*|actors?|celebrit\w*|classmates?|colleagues?|neighbou?rs?|teachers?|students?|"
+    r"coworkers?|crush|ex|sister|brother|mother|mom|mum|friend\w*|selfie\w*|influencers?|streamers?)\b",
+    r"\b(?:девушк|женщин|мужчин|парн|подруг|жен[аыу]\b|сестр|брат|одноклассни|коллег|соседк|актрис|селфи)\w*",
+    r"\b(?:е[её]|его|их|она|он|они)\b",
+)
+#: Обороты раздевания, которые сами называют человека (её / его / их): им
+#: «не человек» рядом не помогает.
+_РАЗДЕТЬ_ФРАНЦ = r"\bd[ée]shabill\w*|\benl[eè]ve (?:ses|tes) v[êe]tements"
+
+
+def раздевают_не_человека(низ: str, оборот: str) -> bool:
+    """Раздевают манекен / куклу / 3D-одежду, и человека в заказе нет.
+
+    Французское `mannequin` — это модель-человек, поэтому французский оборот
+    исключением не пользуется.
+    """
+    if re.search(_РАЗДЕТЬ_ФРАНЦ, оборот):
+        return False
+    return bool(_найдено(НЕ_ЧЕЛОВЕК_РАЗДЕТЬ, низ)) and not _найдено(ЧЕЛОВЕК_РЯДОМ, низ)
+
+
 #: Сексуальные слова (для пары с несовершеннолетним). Свои, не `style.py`:
 #: тот список — про кадр студии, а здесь нужен признак заказа.
 СЕКСУАЛЬНОЕ: tuple[str, ...] = (
@@ -722,6 +760,8 @@ def интимные_отказы(текст: str) -> list[str]:
     низ = привести(текст)
     метки: list[str] = []
     раздеть = _найдено(РАЗДЕТЬ, низ)
+    if раздеть and раздевают_не_человека(низ, раздеть):
+        раздеть = ""
     if раздеть:
         метки.append(f"{ИНТИМ_БЕЗ_СОГЛАСИЯ}: {раздеть}")
     секс = ""
@@ -743,20 +783,65 @@ def интимные_отказы(текст: str) -> list[str]:
 #: слова группы `minors`: «kids series», «children's channel» — зритель, не кадр.
 ДЕТСКИЙ_ПРОДУКТ: frozenset[str] = frozenset(
     {
-        "series", "show", "shows", "channel", "cartoon", "cartoons", "animation", "programme",
-        "program", "tv", "content", "audience", "app", "book", "books", "song", "songs",
-        "story", "stories", "episode", "episodes", "brand", "market", "education", "learning",
+        "series",
+        "show",
+        "shows",
+        "channel",
+        "cartoon",
+        "cartoons",
+        "animation",
+        "programme",
+        "program",
+        "tv",
+        "content",
+        "audience",
+        "app",
+        "book",
+        "books",
+        "song",
+        "songs",
+        "story",
+        "stories",
+        "episode",
+        "episodes",
+        "brand",
+        "market",
+        "education",
+        "learning",
     }
 )
 #: Признаки РИСОВАННОГО ролика: персонажи-дети в нём не реальные дети.
 АНИМАЦИЯ: tuple[str, ...] = (
-    "cartoon", "animated", "animation", "anime", "мульт", "анимаци", "рисованн",
+    "cartoon",
+    "animated",
+    "animation",
+    "anime",
+    "мульт",
+    "анимаци",
+    "рисованн",
 )
 #: Признаки РЕАЛЬНОГО ребёнка в кадре: тогда послабление не действует.
 РЕАЛЬНЫЙ_РЕБЁНОК: tuple[str, ...] = (
-    "my son", "my daughter", "my child", "my kid", "our son", "our daughter", "our child",
-    "our kids", "photo of", "footage of", "real child", "real kids", "сын", "дочь", "дочк",
-    "нашего реб", "моего реб", "фото реб", "фото дет", "real children",
+    "my son",
+    "my daughter",
+    "my child",
+    "my kid",
+    "our son",
+    "our daughter",
+    "our child",
+    "our kids",
+    "photo of",
+    "footage of",
+    "real child",
+    "real kids",
+    "сын",
+    "дочь",
+    "дочк",
+    "нашего реб",
+    "моего реб",
+    "фото реб",
+    "фото дет",
+    "real children",
 )
 
 
@@ -3020,12 +3105,8 @@ def с_политикой(просев: dict, политика: dict) -> dict:
     # лучше пары слов (`ПОЛИТИКА_ЛЮДЕЙ`). Отказ остаётся, когда имя — из
     # курируемого списка реальных людей (`знаменитость` без слов текста), когда
     # заявлена новость или реальное событие, и для имён, которых в spec.people нет.
-    выдуманные = [
-        ч["name"] for ч in политика.get("people") or [] if ч.get("rule") == "fictional"
-    ]
-    без_событий = all(
-        з.get("verdict") in (None, "none") for з in политика.get("claims") or []
-    )
+    выдуманные = [ч["name"] for ч in политика.get("people") or [] if ч.get("rule") == "fictional"]
+    без_событий = all(з.get("verdict") in (None, "none") for з in политика.get("claims") or [])
     if выдуманные and без_событий:
         banned = [
             м
