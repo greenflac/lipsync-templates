@@ -313,6 +313,7 @@ class ВосьмойКруг(unittest.TestCase):
             "own GPU: price = GPU time × rental rate; rental rate not recorded; …",
             l10n.localise("свой GPU: цена — время GPU × ставка аренды; ставка не записана; время…", "en"),
         )
+        self.assertEqual("own GPU: …", l10n.localise("свой GPU: цена — время GPU × ставка аренды…", "en"))
 
 
 if __name__ == "__main__":

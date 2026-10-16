@@ -32,6 +32,7 @@ from dataclasses import dataclass, field, replace
 from typing import Mapping, Sequence
 
 from studio.selfrag.facts import Fact
+from studio.l10n import clip
 
 # --------------------------------------------------------------------------
 # ЗНАЧЕНИЯ ТРЕБОВАНИЙ
@@ -317,7 +318,7 @@ def weights_own(rows: Sequence[Fact]) -> tuple[str, str]:
             return WEIGHTS_YES, f"{f.attribute} = «{f.value[:80]}» ({f.source_url})"
     for f in rows:
         if _LICENCE_ATTR.search(f.attribute) and _repo_page(f.source_url):
-            return WEIGHTS_YES, f"лицензия весов {f.value[:60]} на странице весов ({f.source_url})"
+            return WEIGHTS_YES, f"лицензия весов «{clip(f.value, 60)}» на странице весов ({f.source_url})"
     return WEIGHTS_UNKNOWN, "ни лицензии на странице весов, ни строки open_weights"
 
 

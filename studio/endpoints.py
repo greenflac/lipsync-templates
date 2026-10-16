@@ -447,6 +447,14 @@ CURATED: dict[str, tuple[tuple[str, ...], str, str]] = {
         "FLOAT README (DeepBrain AI): audio-driven talking portrait video from a single image",
         "https://raw.githubusercontent.com/deepbrainai-research/float/main/README.md",
     ),
+    # Восьмой круг (агент рецептов): MMAudio — звук по видео (foley), а схема
+    # площадки числит его «video-to-video» и отдаёт ВИДЕО со звуком.
+    "mmaudio-v2": (
+        (SFX,),
+        "fal OpenAPI of fal-ai/mmaudio-v2: requires video_url and prompt — 'The URL of the video to generate "
+        "the audio for' — and returns the video with the generated audio (video-to-audio / foley)",
+        "https://fal.ai/api/openapi/queue/openapi.json?endpoint_id=fal-ai/mmaudio-v2",
+    ),
     "image-apps-v2-headshot-photo": (
         (IMAGE_EDIT,),
         "fal OpenAPI of fal-ai/image-apps-v2/headshot-photo: requires one image, returns an image (a headshot "
@@ -1091,6 +1099,38 @@ def _собрать(facts: Sequence[Fact]) -> Registry:
         for ф in узел.functions:
             (реестр.flagged if пометки else реестр.by_function).setdefault(ф, []).append(узел)
     return реестр
+
+
+# --- вид входа шага против вида входа эндпоинта ------------------------------------
+#
+# ВОСЬМОЙ КРУГ (агент рецептов): `topaz-restore-image` (берёт и отдаёт
+# КАРТИНКУ) стоял кандидатом на реставрацию ВИДЕО — работа `restore` одна на
+# оба вида. Работа совпала, вид материала — нет. Сверка по ОБЪЯВЛЕННЫМ входам
+# эндпоинта и по артефактам, которые шаг подаёт.
+
+
+def step_media(артефакты: Iterable[str]) -> frozenset[str]:
+    """Виды медиа, которые шаг подаёт на вход: видео / изображение (по именам артефактов)."""
+    виды: set[str] = set()
+    for а in артефакты:
+        а = str(а)
+        if а.startswith(_ВИДЕО) or а == "готовый_ролик":
+            виды.add(_ВИДЕО)
+        elif а.startswith(_КАРТИНКА) or а in ("селфи", "референс"):
+            виды.add(_КАРТИНКА)
+    return frozenset(виды)
+
+
+def input_mismatch(узел: "Endpoint", артефакты: Iterable[str]) -> str:
+    """Почему эндпоинт не берёт материал шага (вид входа); пусто — берёт или не записано."""
+    шаг = step_media(артефакты)
+    берёт = set(узел.inputs) & {_ВИДЕО, _КАРТИНКА}
+    if not шаг or not берёт or берёт & шаг:
+        return ""
+    return (
+        f"вход не того вида: шаг подаёт {', '.join(sorted(шаг))}, а эндпоинт берёт "
+        f"{', '.join(sorted(берёт))} (схема)"
+    )
 
 
 # --- пометки отбора: сообщество, NSFW, стилевой LoRA -----------------------------

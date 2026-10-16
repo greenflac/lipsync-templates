@@ -190,6 +190,22 @@ class ЖиваяБаза(unittest.TestCase):
         self.assertIn("community_checkpoint", self.р.get("wan2.2_strangenames").flags)
         self.assertIn("nsfw", self.р.get("pornmasterpro_noobv3vae").flags)
 
+    def test_mmaudio_звук_по_видео(self) -> None:
+        self.assertEqual(("sfx",), self.р.get("mmaudio-v2").functions)
+
+    def test_цена_шумодава_разбирается(self) -> None:
+        узел = self.р.get("topaz-denoise-video")
+        self.assertEqual((True, ("second",)), (узел.priced, узел.price_units))
+
+    def test_картиночная_реставрация_не_берёт_видео(self) -> None:
+        узел = self.р.get("topaz-restore-image")
+        self.assertEqual(
+            "вход не того вида: шаг подаёт видео, а эндпоинт берёт изображение (схема)",
+            ep.input_mismatch(узел, ("видео",)),
+        )
+        self.assertEqual("", ep.input_mismatch(узел, ("изображение",)))
+        self.assertEqual("", ep.input_mismatch(self.р.get("topaz-denoise-video"), ("видео",)))
+
     def test_открытые_веса_липсинка_с_памятью(self) -> None:
         self.assertEqual(8.0, self.р.get("latentsync-1.5").vram_gb)
         self.assertEqual(18.0, self.р.get("latentsync-1.6").vram_gb)

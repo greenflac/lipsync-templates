@@ -7000,6 +7000,11 @@ def candidates_for(
                     else узел.why_not_orderable
                 )
                 del по_модели[ключ]
+            elif ep.input_mismatch(узел, op.requires) and set(узел.functions) & set(работы):
+                # Работа та, вид материала не тот (восьмой круг): картиночная
+                # реставрация на реставрации видео.
+                чужая_по_реестру[написание[ключ]] = "реестр: " + ep.input_mismatch(узел, op.requires)
+                del по_модели[ключ]
             elif ep.excluded_by_flags(узел, requested_flags):
                 # Мёрж сообщества, NSFW, стилевой LoRA (восьмой круг,
                 # `endpoints.flags_of`): кандидат только по явной просьбе.
@@ -7028,6 +7033,7 @@ def candidates_for(
                 *реестр.by_function.get(р, []),
                 *(у for у in реестр.flagged.get(р, []) if not ep.excluded_by_flags(у, requested_flags)),
             ]
+            if not ep.input_mismatch(у, op.requires)
             if (у.orderable and not семья_только_у_себя(у))
             or (hard is not None and hard.self_host and у.self_hostable)
             # Без маршрута, не семья, и реестр работы строго не знает — та же

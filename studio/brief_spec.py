@@ -2373,7 +2373,7 @@ def _работа_черновика(низ: str, t: Spec, есть: set[str]) -
 DRAFT_MEDIA_EXTRA: dict[str, str] = {
     "video": r"documentar\w*|movies?|newsreels?|timelapses?|time-lapses?|interviews?|podcasts?|lectures?"
     r"|tiktoks?|talking-heads?|meetings?",
-    "photo": r"logos?|drawings?|packshots?|portraits?|illustrations?|renders?|faces?",
+    "photo": r"logos?|drawings?|packshots?|portraits?|illustrations?|renders?",
     "audio": r"songs?|tracks?|voice samples?|samples?",
 }
 #: Работы над МАТЕРИАЛОМ заказчика: названный материал здесь — его вход, и
@@ -2436,6 +2436,10 @@ def _материал_черновика(низ: str) -> dict[str, bool | None]:
             # video of our sneaker»); у видео — только «video of me/us».
             после = _ЧЬЁ_ПОСЛЕ if вид != "video" else r"(?:\s+of\s+(?:me|us)\b)"
             p = _в_окне(токены, i, POSSESSIVE, DRAFT_POSSESSIVE_WINDOW)
+            # «photos of our sneakers INTO rotating videos»: между «нашим» и
+            # существительным стоит «into» — существительное уже заказ.
+            if p >= 0 and any(т_ in ("into", "в", "во") for т_ in токены[p + 1 : i]):
+                p = -1
             # В клаузе заказа («make our video») притяжательное — заказ, кроме
             # предлога материала перед ним («from our video»).
             клауза_заказа = bool(MAKE_WORDS.search(" ".join(токены[max(0, i - 6) : i])))
