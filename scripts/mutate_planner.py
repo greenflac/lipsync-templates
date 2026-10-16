@@ -414,8 +414,8 @@ MUTANTS = [
     ),
     (
         "studio/planner.py",
-        "        длительность_стена,\n        цена,\n",
-        "        длительность_стена,\n",
+        "        c.requirement_rank,\n        цена,\n",
+        "        c.requirement_rank,\n",
         "by_evidence: цена перестаёт быть старшим ключом при названном потолке",
     ),
     (
@@ -618,20 +618,20 @@ MUTANTS = [
     ),
     (
         "studio/planner.py",
-        "CONSTRAINT_KEYS = 5",
-        "CONSTRAINT_KEYS = 4",
-        "CONSTRAINT_KEYS 5 -> 4 (цена возвращается в выбор вытесненного)",
-    ),
-    (
-        "studio/planner.py",
-        "CONSTRAINT_KEYS = 5",
         "CONSTRAINT_KEYS = 6",
-        "CONSTRAINT_KEYS 5 -> 6 (знак измеренного выключается из выбора вытесненного)",
+        "CONSTRAINT_KEYS = 5",
+        "CONSTRAINT_KEYS 6 -> 5 (цена возвращается в выбор вытесненного)",
     ),
     (
         "studio/planner.py",
-        "        кадр_стена,\n        длительность_стена,\n        цена,",
-        "        длительность_стена,\n        цена,\n        кадр_стена,",
+        "CONSTRAINT_KEYS = 6",
+        "CONSTRAINT_KEYS = 7",
+        "CONSTRAINT_KEYS 6 -> 7 (знак измеренного выключается из выбора вытесненного)",
+    ),
+    (
+        "studio/planner.py",
+        "        кадр_стена,\n        длительность_стена,\n",
+        "        0,\n        длительность_стена,\n",
         "by_evidence: кадр перестаёт быть старше цены",
     ),
     (

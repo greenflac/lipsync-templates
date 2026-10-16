@@ -3527,8 +3527,8 @@ MUTANTS: list[tuple[str, str, str, str, str]] = [
     ),
     (
         "studio/pipeline.py",
-        "    return bool(свои & {str(я).lower() for я in languages})",
-        "    return True",
+        "    if not свои & шага:\n        return False",
+        "    if False:\n        return False",
         "язык: строка о хинди снова судит английскую озвучку",
         "studio.mcp.tests.test_pipeline",
     ),

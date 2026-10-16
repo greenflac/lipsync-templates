@@ -148,6 +148,7 @@ __all__ = [
     "exclusive_language",
     "OUT_OF_SCOPE_NOTE",
     "split_by_scope",
+    "language_clause_clear",
     "load_controls",
     "outcome_of",
     "parse_pipeline",
@@ -510,7 +511,54 @@ def in_scope(fact: Fact, languages: Sequence[str]) -> bool:
         # как «про английский» значило бы потерять ровно ту плохую новость,
         # ради которой его записали.
         return True
-    return bool(свои & {str(я).lower() for я in languages})
+    шага = {str(я).lower() for я in languages}
+    if not свои & шага:
+        return False
+    # СТРОКА О НЕСКОЛЬКИХ ЯЗЫКАХ СУДИТ ЯЗЫК ШАГА ТОЛЬКО СВОЕЙ ЧАСТЬЮ (восьмой
+    # круг, x22): «на хинди 0 срывов ретрофлексов, на телугу срыв 40%» валила
+    # `eleven_v3` на хинди-брифе — провал о телугу читался как провал о хинди.
+    return not language_clause_clear(str(fact.value), шага)
+
+
+#: Провал словами — в части строки о языке.
+_ПРОВАЛ_СЛОВАМИ = re.compile(
+    r"срыв|деград|ошиб|хуже|ломает|коллапс|fail|degrad|collaps|error|worse|break|mispronoun",
+    re.I,
+)
+#: «0 срывов», «0 retroflex failures», «no failures», «без срывов» — НЕ провал.
+_НОЛЬ_ПРОВАЛОВ = re.compile(
+    r"(?<![\d.])0(?:\.0+)?\s*%?\s+(?:[\w-]+\s+){0,2}?"
+    r"(?:срыв\w*|ошиб\w*|failures?|errors?|collapses?)"
+    r"|\bno\s+(?:[\w-]+\s+)?(?:failures?|errors?|collapses?)|без\s+(?:срыв|ошиб)\w*",
+    re.I,
+)
+
+
+def language_clause_clear(value: str, languages: set[str] | frozenset[str]) -> bool:
+    """Строка называет НЕСКОЛЬКО языков, и провал записан только о чужих.
+
+    Строка режется на части (`;`, `,`); части, называющие язык шага, после
+    вычёркивания «0 срывов» провала словами не несут, а часть о другом языке
+    несёт. Тогда строка — о провале на ДРУГОМ языке, и шаг она не судит.
+    Строка одного языка, или без провала о чужом, — по-прежнему судит.
+    """
+    # Скобки — перечень или оговорка («(хинди, телугу, тамильский)»), а не
+    # части о разных языках: вычёркиваются до резки.
+    value = re.sub(r"\([^)]*\)?", " ", value)
+    if len(languages_in(value)) < 2:
+        return False
+    части = [ч for ч in re.split(r"[;,]", value) if ч.strip()]
+    свои = [ч for ч in части if languages_in(ч) & languages]
+    чужие = [ч for ч in части if languages_in(ч) and not languages_in(ч) & languages]
+    if not свои or not чужие:
+        return False
+    # Своя часть должна НЕСТИ значение (число или «0 срывов»), а не быть
+    # именем в перечне: «Hindi, Telugu and Tamil all degrade» судит хинди.
+    if not all(_НОЛЬ_ПРОВАЛОВ.search(ч) or re.search(r"\d", ч) for ч in свои):
+        return False
+    if any(_ПРОВАЛ_СЛОВАМИ.search(_НОЛЬ_ПРОВАЛОВ.sub(" ", ч)) for ч in свои):
+        return False
+    return any(_ПРОВАЛ_СЛОВАМИ.search(_НОЛЬ_ПРОВАЛОВ.sub(" ", ч)) or re.search(r"\d+\s*%", ч) for ч in чужие)
 
 
 def split_by_scope(facts: Sequence[Fact], languages: Sequence[str]) -> tuple[list[Fact], list[Fact]]:

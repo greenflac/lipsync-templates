@@ -393,7 +393,10 @@ class ЖивыеБрифы(unittest.TestCase):
         # СЕДЬМОЙ КРУГ: липсинк — `sync-lipsync-v3`, 40 с × 0.133 usd/с = 5.32
         # (ставка неоднозначна — взята наибольшая): 0.1084 + 0.1194 + 0.048 +
         # 3.36 + 5.32 = 8.9558 -> 8.96, под потолком 15.
-        self.assertEqual((8.96, "pass"), (итог["pipeline_price"]["смета"]["usd"], итог["pipeline_price"]["outcome"]))
+        # ВОСЬМОЙ КРУГ: кадры — по заказанному размеру (`тариф_по_размеру`):
+        # голые 0.03612 — ступень `high 1024x768`, а кадр 1080x1920 — `high
+        # 1920x1080` за 0.0396: 3 × 0.0396 = 0.1188, итого 8.9662 -> 8.97.
+        self.assertEqual((8.97, "pass"), (итог["pipeline_price"]["смета"]["usd"], итог["pipeline_price"]["outcome"]))
         self.assertEqual(
             [3, 3, None, 3, None], [ш["shots"] for ш in итог["steps"]]
         )
@@ -494,8 +497,12 @@ class ЖивыеБрифы(unittest.TestCase):
         self.assertIn("no upscale step added", итог["resolution_carry"])
         # Шестой круг: со звуком — строка «$0.126 (audio on)», 8 × 0.126 = 1.008;
         # тарифы kling делят доводы семьи (ничья, решена ценой), рядом — 4k.
+        # ВОСЬМОЙ КРУГ: у `blackforestlabs-flux-3-text-to-video-draft` тариф
+        # «0.06 $ per second … (720p)» — верхняя ступень, а голые «$0.03 per
+        # second» больше её не обгоняют при заказе 1080p (`UNTIERED_ABOVE_TOP`):
+        # 0.48 usd «ниже заказанного 1080p» — и соседом встаёт `veo-3.1-lite-t2v`.
         self.assertEqual(
-            ["kling-3.0-4k-t2v", "blackforestlabs-flux-3-text-to-video-draft"],
+            ["kling-3.0-4k-t2v", "veo-3.1-lite-t2v"],
             [а["model"] for а in итог["steps"][0]["alternatives"]],
         )
         self.assertEqual(1.01, итог["pipeline_price"]["смета"]["usd"])
@@ -514,15 +521,13 @@ class ЖивыеБрифы(unittest.TestCase):
             [(ш["step"], ш.get("conditional")) for ш in итог["steps"]],
         )
         self.assertEqual("годно", итог["pipeline_price"]["outcome"])
-        # Цена ролика — шесть кадров (6 × 0.03612).
-        self.assertEqual(0.22, итог["pipeline_price"]["смета"]["usd"])
+        # Цена ролика — шесть кадров; восьмой круг — по заказанному размеру:
+        # 6 × 0.0396 (`high 1920x1080`) = 0.2376, а не 6 × 0.03612 (`1024x768`).
+        self.assertEqual(0.24, итог["pipeline_price"]["смета"]["usd"])
         self.assertEqual([], итог["pipeline_price"].get("conditional_steps") or [])
-        self.assertTrue(
-            итог["resolution_carry"].startswith(
-                "кадр 1080x1920 не подтверждён: модель шага генерация_изображения (gpt-image-2.5-flare)"
-            ),
-            итог["resolution_carry"],
-        )
+        # ВОСЬМОЙ КРУГ: кадр теперь подтверждён ТАРИФОМ — `high 1920x1080`
+        # (`тариф_по_размеру`), и ноты «не подтверждён» больше нет.
+        self.assertEqual("", итог["resolution_carry"])
 
 if __name__ == "__main__":
     unittest.main()
