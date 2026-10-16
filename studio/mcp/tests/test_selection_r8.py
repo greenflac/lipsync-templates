@@ -128,5 +128,58 @@ class СтрокаОНесколькихЯзыках(unittest.TestCase):
         self.assertTrue(pl.in_scope(_f("x", "degrades_when", "Hindi 40% failures"), ["hindi"]))
 
 
+VEX = (
+    "Campaign-style 15 s video for Senator Vex, a fictional candidate in our board game, "
+    "announcing border closures on planet Zorg"
+)
+
+
+def _человек(имя: str, real: bool = False) -> dict:
+    return {"name": имя, "real": real, "public_figure": False, "consent": "unknown", "claim": "none"}
+
+
+class ВыдуманныйПоSpecСтаршеПарыСлов(unittest.TestCase):
+    """x30: spec.people real=false и claims none — пара «титул + политика» не отказ."""
+
+    def _исход(self, люди: object, события: object, текст: str = VEX) -> tuple:
+        from studio.mcp import screen
+
+        итог, политика = screen.просеять_с_людьми(текст, люди, None, события)
+        return итог["outcome"], итог["banned"], политика["decision"]
+
+    def test_x30_план_строится(self) -> None:
+        self.assertEqual(
+            ("pass", [], "proceed"),
+            self._исход([_человек("Senator Vex")], [{"type": "none", "real_brand": False}]),
+        )
+
+    def test_без_spec_отказ_как_был(self) -> None:
+        self.assertEqual(
+            ("fail", ["public figure statement: Senator Vex"], "refuse"), self._исход(None, None)
+        )
+
+    def test_имени_нет_в_spec_отказ(self) -> None:
+        self.assertEqual(
+            ("fail", ["public figure statement: Senator Vex"], "refuse"),
+            self._исход([_человек("Someone Else")], [{"type": "none", "real_brand": False}]),
+        )
+
+    def test_заявлено_реальное_событие_отказ(self) -> None:
+        self.assertEqual(
+            ("fail", ["public figure statement: Senator Vex"], "refuse"),
+            self._исход([_человек("Senator Vex")], [{"type": "real_event", "real_brand": False}]),
+        )
+
+    def test_реальное_имя_из_списка_выдуманным_не_становится(self) -> None:
+        self.assertEqual(
+            ("fail", ["public figure statement: Emmanuel Macron"], "refuse"),
+            self._исход(
+                [_человек("Emmanuel Macron")],
+                [{"type": "none", "real_brand": False}],
+                "Video of Emmanuel Macron announcing border closures",
+            ),
+        )
+
+
 if __name__ == "__main__":
     unittest.main()
