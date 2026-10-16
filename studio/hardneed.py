@@ -74,6 +74,10 @@ class Hard:
     #: (`unified_memory_gb`), и запуск идёт не на CUDA (девятый круг).
     apple_silicon: bool = False
     unified_memory_gb: float | None = None
+    #: Своя машина БЕЗ GPU (десятый круг): Raspberry Pi, мини-ПК, сервер на CPU.
+    #: Видеопамяти нет — отбор ранжирует по записанному запуску на ARM / CPU
+    #: (`cpu_state`), а не по VRAM.
+    cpu_only: bool = False
     #: Откуда взято каждое значение: «бриф» / «spec» — печатается рядом.
     sources: tuple[tuple[str, str], ...] = field(default=())
 
@@ -100,6 +104,7 @@ class Hard:
                 if self.apple_silicon
                 else {}
             ),
+            **({"cpu_only": True} if self.cpu_only else {}),
             "sources": dict(self.sources),
         }
 
@@ -220,6 +225,8 @@ def from_spec(spec: Mapping | None, base: Hard | None = None) -> Hard:
     свой = spec.get("self_host")
     if isinstance(свой, Mapping):
         поля["self_host"] = True
+        if свой.get("cpu_only") or (свой.get("gpu") and CPU_ONLY.search(str(свой["gpu"]))):
+            поля["cpu_only"] = True
         if свой.get("gpu"):
             поля["gpu"] = gpu_key(str(свой["gpu"]))
         if свой.get("vram_gb") is not None:
@@ -464,6 +471,50 @@ def apple_state(rows: Sequence[Fact]) -> tuple[str, str]:
         if _APPLE_ATTR.search(f.attribute) and _APPLE_CPU_WORDS.search(f.value):
             return APPLE_CPU, f"{f.attribute} = «{f.value[:90]}» ({f.source_url})"
     return APPLE_UNKNOWN, "ни MPS/MLX/Metal/Core ML, ни CPU-запуска на Mac не записано"
+
+
+# --------------------------------------------------------------------------
+# СВОЯ МАШИНА БЕЗ GPU: RASPBERRY PI, МИНИ-ПК (десятый круг)
+# --------------------------------------------------------------------------
+
+#: Признак машины без GPU в имени «GPU» из spec или брифа. КОНСТАНТА-РЕШЕНИЕ:
+#: одноплатники (Raspberry Pi, Orange Pi), «CPU only», «no GPU», мини-ПК. Jetson
+#: сюда НЕ входит — у него CUDA.
+CPU_ONLY = re.compile(
+    r"raspberry|\b(?:rpi|pi ?[2-5]|orange ?pi|rock ?pi)\b|\bcpu[- ]?only\b|\bonly cpu\b|\bno gpu\b|\bwithout (?:a )?gpu\b"
+    r"|\bnone\b.*\bcpu\b|\bcpu\b.*\bnone\b|^\s*cpu\s*$|\bmini ?pc\b|\bintel nuc\b|без (?:gpu|видеокарт\w*)"
+    r"|только (?:на )?(?:cpu|процессор\w*)|одноплат\w*|малин\w*",
+    re.I,
+)
+
+CPU_ARM = "запуск на ARM (Raspberry Pi и т.п.) записан"
+CPU_YES = "запуск на CPU записан"
+CPU_UNKNOWN = "запуск без GPU не записан"
+CPU_NO = "записано: без GPU не запускается (или не для CPU)"
+#: Порядок: записанный ARM старше записанного CPU, тот — старше молчания;
+#: запись «не для CPU» — последней (не отсев: заказчик может взять ПК с GPU).
+CPU_ORDER: dict[str, int] = {CPU_ARM: 0, CPU_YES: 1, CPU_UNKNOWN: 2, CPU_NO: 3}
+
+#: Атрибуты, которыми база записывает запуск без GPU: `arm_inference`,
+#: `cpu_inference`. Значение начинается с «yes» / «no» (или «not»), дальше —
+#: подробности источника.
+_CPU_ATTRS = ("arm_inference", "cpu_inference")
+_YES = re.compile(r"\s*(?:yes|да)\b", re.I)
+_NO = re.compile(r"\s*(?:no|not|нет|не)\b", re.I)
+
+
+def cpu_state(rows: Sequence[Fact]) -> tuple[str, str]:
+    """Запускается ли модель без GPU — по СВОИМ строкам `arm_inference` / `cpu_inference`."""
+    for f in rows:
+        if f.attribute == "arm_inference" and _YES.match(f.value):
+            return CPU_ARM, f"{f.attribute} = «{f.value[:90]}» ({f.source_url})"
+    for f in rows:
+        if f.attribute == "cpu_inference" and _YES.match(f.value):
+            return CPU_YES, f"{f.attribute} = «{f.value[:90]}» ({f.source_url})"
+    for f in rows:
+        if f.attribute in _CPU_ATTRS and _NO.match(f.value):
+            return CPU_NO, f"{f.attribute} = «{f.value[:90]}» ({f.source_url})"
+    return CPU_UNKNOWN, "ни запуска на ARM, ни на CPU не записано"
 
 
 # --------------------------------------------------------------------------

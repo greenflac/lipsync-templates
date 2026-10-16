@@ -862,9 +862,9 @@ def _свой_запуск_spec(sh: Any, поля: dict[str, Any], ошибки:
         поля["self_host"] = {"gpu": None, "vram_gb": None} if sh else {"enabled": False}
         return
     if not isinstance(sh, Mapping):
-        ошибки.append("spec.self_host: must be an object {gpu, vram_gb, unified_memory_gb} or true/false")
+        ошибки.append("spec.self_host: must be an object {gpu, vram_gb, unified_memory_gb, cpu_only} or true/false")
         return
-    лишние = set(sh) - {"gpu", "vram_gb", "unified_memory_gb"}
+    лишние = set(sh) - {"gpu", "vram_gb", "unified_memory_gb", "cpu_only"}
     if лишние:
         ошибки.append(f"spec.self_host: unknown field(s) {', '.join(sorted(лишние))}")
     память: dict[str, Any] = {}
@@ -885,6 +885,10 @@ def _свой_запуск_spec(sh: Any, поля: dict[str, Any], ошибки:
             "unified_memory_gb": память.get("unified_memory_gb") or память.get("vram_gb"),
             "platform": "apple-silicon",
         }
+    elif sh.get("cpu_only") is True or (gpu and hn.CPU_ONLY.search(str(gpu))):
+        # БЕЗ GPU (десятый круг): Raspberry Pi, мини-ПК, «CPU only» — видеопамяти
+        # нет, отбор идёт по записанному запуску на ARM / CPU (`hn.cpu_state`).
+        поля["self_host"] = {"gpu": gpu, "vram_gb": None, "platform": "cpu"}
     else:
         поля["self_host"] = {"gpu": gpu, "vram_gb": память.get("vram_gb")}
 
@@ -1389,6 +1393,9 @@ def hard(
         # потолок: модель, чьи веса больше всей памяти машины, не запустится.
         # Платформа решает и порядок: запуск на MPS/MLX/Core ML по записи
         # старше молчания (`hardneed.apple_state`).
+        if свой.get("platform") == "cpu":
+            поля["cpu_only"] = True
+            поля["vram_gb"] = None
         if свой.get("platform") == "apple-silicon":
             поля["apple_silicon"] = True
             единая = свой.get("unified_memory_gb")

@@ -301,7 +301,8 @@ VENDOR_SOURCES: dict[str, tuple[str, ...]] = {
     "anima": ("huggingface.co/circlestone-labs/",),
     "pocket": ("huggingface.co/kyutai/",),
     "gemma": ("huggingface.co/google/", "ai.google.dev", "deepmind.google"),
-    "chatterbox": ("huggingface.co/ResembleAI/",),
+    # Round 10: Resemble AI's own GitHub organisation (the Chatterbox README).
+    "chatterbox": ("huggingface.co/ResembleAI/", "github.com/resemble-ai/", "raw.githubusercontent.com/resemble-ai/"),
     "indextts": ("huggingface.co/IndexTeam/",),
     "supertonic": ("huggingface.co/Supertone/",),
     "sensenova": ("huggingface.co/sensenova/",),
@@ -468,6 +469,17 @@ for _семья, _хосты in ОТКРЫЛИСЬ_2026_09_02.items():
     # `huggingface.co/api/models/<org>/` — метаданные той же карточки (лицензия,
     # языки), отдаваемые JSON-ом; прочитаны 2026-10-15, 200.
     "silero": ("raw.githubusercontent.com/snakers4/", "github.com/snakers4/"),
+    # Round 10: lightweight CPU / ARM speech. Piper's author organisation
+    # (`rhasspy`, then the Open Home Foundation's `OHF-Voice` where development
+    # moved) and eSpeak NG's own organisation; paths only, as above.
+    "piper": (
+        "github.com/rhasspy/",
+        "raw.githubusercontent.com/rhasspy/",
+        "huggingface.co/rhasspy/",
+        "github.com/OHF-Voice/",
+        "raw.githubusercontent.com/OHF-Voice/",
+    ),
+    "espeak": ("github.com/espeak-ng/", "raw.githubusercontent.com/espeak-ng/"),
     "f5-tts-russian": ("huggingface.co/Misha24-10/",),
     "openaudio": ("huggingface.co/fishaudio/", "huggingface.co/api/models/fishaudio/"),
     "fun-cosyvoice": ("huggingface.co/FunAudioLLM/", "huggingface.co/api/models/FunAudioLLM/"),

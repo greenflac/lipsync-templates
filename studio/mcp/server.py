@@ -1360,8 +1360,10 @@ def plan_pipeline(
                   non-USD budget gets no verdict. 0 = must be free.
     Also: shots, per_shot_s, resolution (480p..8k or WxH), aspect (any W:H,
     "2.39:1"), audio (none|native|voiceover), objective (cheapest|balanced|
-    quality), self_host {gpu, vram_gb | unified_memory_gb} (Apple silicon
-    memory is not CUDA VRAM), open_weights, jurisdiction, people [{name, real,
+    quality), self_host {gpu, vram_gb | unified_memory_gb | cpu_only: true}
+    (Apple silicon memory is not CUDA VRAM; a Raspberry Pi / CPU-only box is
+    cpu_only — ranked by recorded ARM/CPU runs), open_weights, jurisdiction,
+    people [{name, real,
     public_figure, deceased, consent: stated|none|unknown, claim: none|
     endorsement|political|news|other}], claims (below), conditions — only what the customer said, e.g.
     ["hands"] (ranking only). Speech steps are priced × languages; clip steps
