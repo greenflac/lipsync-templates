@@ -51,6 +51,18 @@ class ЗапускНаMac(unittest.TestCase):
             hn.APPLE_ORDER,
         )
 
+    def test_единая_память_отсеивает_веса_больше_машины(self) -> None:
+        оп = next(o for o in pn.OPERATIONS if o.name == "генерация_изображения")
+        строки = [
+            Fact("big", "license", "apache-2.0", "https://huggingface.co/acme/big", "portal", "2026-10-01"),
+            _факт("big", "parameter_count", "20B parameters"),
+        ]
+        mac = hn.Hard(self_host=True, gpu="applem1", apple_silicon=True, unified_memory_gb=8.0)
+        итог = pn.требования_заказчика(оп, "big", строки, None, mac, {}, [], None, None)
+        self.assertIn("единой памяти 8 ГБ, а нужно 20 ГБ", итог.исключить)
+        большой = hn.Hard(self_host=True, gpu="applem1", apple_silicon=True, unified_memory_gb=64.0)
+        self.assertEqual("", pn.требования_заказчика(оп, "big", строки, None, большой, {}, [], None, None).исключить)
+
     def test_spec_mac_доходит_до_жёстких_требований(self) -> None:
         итог = pn.plan(
             "Generate images locally on an Apple laptop with 8 GB",
