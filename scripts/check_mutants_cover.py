@@ -47,6 +47,12 @@ ROOT = Path(__file__).resolve().parents[1]
     "scripts/mutate_brief_spec.py",
     "scripts/mutate_registry_r6.py",
     "scripts/mutate_knowledge_r7.py",
+    # Восьмой круг: таблицы рецептов и ключей отбора существовали, но сюда не
+    # были вписаны — их мутанты не считались покрытием; `mutate_round8.py` —
+    # новые модули круга (черновик на любом письме, оценщик, выход реестра).
+    "scripts/mutate_recipes.py",
+    "scripts/mutate_selection_r8.py",
+    "scripts/mutate_round8.py",
 )
 ПУТЬ_В_ТАБЛИЦЕ = re.compile(r'"((?:studio|scripts|lipsync)/[\w/]+\.py)"')
 

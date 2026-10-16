@@ -68,8 +68,8 @@ MUTANTS: tuple[tuple[str, str, str, str], ...] = (
     (PN, "FRAME_REQUIREMENT_MIN = 1440", "FRAME_REQUIREMENT_MIN = 4321", "4K — не требование (слабее)"),
     (
         PN,
-        "        рамка = REQ_MET if родной is True else REQ_UNKNOWN",
-        "        рамка = REQ_MET",
+        "        рамка = REQ_MET if родной is True and not оспорен else REQ_UNKNOWN",
+        "        рамка = REQ_MET if родной is not False and not оспорен else REQ_UNKNOWN",
         "кадр: молчание равно родному",
     ),
     (
@@ -197,12 +197,10 @@ MUTANTS: tuple[tuple[str, str, str, str], ...] = (
         "",
         "реальное имя из списка становится выдуманным по spec",
     ),
-    (
-        SC,
-        '        з.get("verdict") in (None, "none") for з in политика.get("claims") or []',
-        "        True for з in политика.get(\"claims\") or []",
-        "реальное событие не мешает снять отказ",
-    ),
+    # Мутант «реальное событие не мешает снять отказ» снят на интеграции
+    # восьмого круга: коммит 41f6e5d переписал строку-цель, и мутант бил в
+    # пустоту (`check_mutants_clean`: цель исчезла). Вывести его заново — дело
+    # того, кто читает экран; здесь он ничего не проверял.
     (
         SC,
         "    темы += [м for м in интимные_отказы(строка) if м not in темы]",

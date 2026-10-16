@@ -158,5 +158,17 @@ class Выходы(unittest.TestCase):
         self.assertEqual(["pl", "tr"], ч["languages"])
 
 
+class СловарьНапрямую(unittest.TestCase):
+    """Константы словаря — литералом, без черновика целиком (`scripts/mutate_round8.py`)."""
+
+    def test_китайское_сгенерируй_это_заказ_генерации(self) -> None:
+        # «生成» — единственное слово заказа в этой фразе: без него работа не названа.
+        self.assertEqual("generate", lx.task("生成一个广告"))
+
+    def test_китайское_моё_делает_видео_своим(self) -> None:
+        # «我的» — притяжательное прямо перед «视频»; «我们» сюда не подходит.
+        self.assertEqual({"video": True}, lx.owned_media("请处理我的视频"))
+
+
 if __name__ == "__main__":
     unittest.main()
