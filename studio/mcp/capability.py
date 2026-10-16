@@ -312,6 +312,7 @@ CAP_NATIVE_AUDIO = "native_audio"
     ep.EDIT_DAY_TO_NIGHT: ("day to night", "day-to-night", "night to day", "день в ночь"),
     ep.EDIT_STABILISE: ("stabilise", "stabilize", "stabilization", "stabilisation", "стабилиз"),
     ep.EDIT_REFRAME: ("reframe", "reframing", "outpaint", "outpainting"),
+    ep.EDIT_EXTEND: ("extend video", "extend a video", "extend the video", "video extension", "продлить видео", "продление видео"),
 }
 POLARITY_CATALOG = "catalog"
 
@@ -1050,7 +1051,7 @@ def find(
             уже.add(id(f))
         # Правка, НАЗВАННАЯ идентификатором эндпоинта, — способность по каталогу.
         for п in вопрос.правки:
-            if ep.not_an_edit(у):
+            if ep.not_an_edit(у) and not (п == ep.EDIT_EXTEND and п in ep.edit_intents(у)):
                 continue
             опора = _строка_каталога(у, свои)
             if опора is None:

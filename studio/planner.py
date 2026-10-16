@@ -6646,6 +6646,23 @@ def требования_шага(
     return (рамка, частота, язык, правка), "; ".join(ноты)
 
 
+def порядок_требований(ранг: tuple) -> tuple:
+    """Порядок требований заказа В КЛЮЧЕ: правка, затем кадр, частота, язык.
+
+    Девятый круг (валидатор n14, w34). `требования_шага` отдаёт (кадр, частота,
+    язык, правка), и при сравнении первым решал КАДР: на «убрать прохожего, 4K»
+    `gemini-omni-flash-v1.1-edit` (родной 4K, правка по инструкции) обгонял
+    `ltx-2.3-quality-clean-plate` (удаление названо, кадр 1440p). Названная
+    правка — сама работа шага; кадр правки по маске сводится в 4K-оригинал
+    (патч композитится поверх), а апскейл и интерполяция — после. Работа
+    старше кадра. Вне шага правки поле правки у всех 0 — порядок не меняется.
+    """
+    if len(ранг) != 4:
+        return ранг
+    рамка, частота, язык, правка = ранг
+    return (правка, рамка, частота, язык)
+
+
 def сколько_отвергают(все: Sequence[Fact], кадр: tuple[int, int]) -> int:
     """Сколько СВОИХ строк о пределе кадра заказанный кадр отвергают (`resolution.влезает`)."""
     return sum(
@@ -6900,6 +6917,38 @@ EDIT_NOT_AN_EDIT_NOTE = (
 )
 
 
+#: КАК делается правка, которую эндпоинт делает ЛОКАЛЬНО (девятый круг,
+#: валидатор n14/w34): «убрать прохожего», «заменить небо, остальное не
+#: трогать» — маска области, генерация только внутри неё и композит патча
+#: поверх ОРИГИНАЛА. Без этого план читался как перерисовка всего ролика, а
+#: 4K-оригинал терял качество там, где его не трогали.
+EDIT_METHOD_NOTES: dict[str, str] = {
+    ep.EDIT_REMOVE_OBJECT: (
+        "local edit: track and mask (segmentation matte) the object, inpaint a clean plate only inside "
+        "the mask, composite the patch back over the original frames — pixels outside the mask stay untouched"
+    ),
+    ep.EDIT_REPLACE_SKY: (
+        "local edit: segment the sky into a mask (matte), generate the new sky only inside it, composite it "
+        "back over the original frames — the landscape outside the mask stays untouched"
+    ),
+}
+
+
+def продление_в(нужно: Sequence[str]) -> bool:
+    return ep.EDIT_EXTEND in нужно
+
+
+def продление_годится(что: "ep.Endpoint | str", нужно: Sequence[str]) -> bool:
+    """Продление заказано, и эндпоинт его называет: «новое видео» здесь и есть работа.
+
+    Девятый круг (валидатор e02): `NOT_AN_EDIT` снимал `…/extend` с шага правки
+    всегда — и «продлить ролик с 5 до 10 с» уходило в правку по инструкции,
+    которая длины не меняет. Продление по-прежнему НЕ правка для любой другой
+    правки: на «замени небо» `…/extend` не кандидат.
+    """
+    return ep.EDIT_EXTEND in нужно and ep.EDIT_EXTEND in ep.edit_intents(что)
+
+
 def отбор_правки(
     op: "Operation",
     по_модели: dict[str, list],
@@ -6925,7 +6974,7 @@ def отбор_правки(
     for ключ in list(по_модели):
         узел = реестр.by_key.get(ключ)
         что: "ep.Endpoint | str" = узел if узел is not None else написание.get(ключ, ключ)
-        if ep.not_an_edit(что):
+        if ep.not_an_edit(что) and not продление_годится(что, нужно):
             отсеяно_не_правка[написание.get(ключ, ключ)] = EDIT_NOT_AN_EDIT_NOTE
             del по_модели[ключ]
             continue
@@ -6937,14 +6986,24 @@ def отбор_правки(
             del по_модели[ключ]
     # Кто из реестра делает каждую названную правку (по всей работе, не только
     # по найденным словами): ноль — правка не измерена, и это печатается.
-    узлы = [у for у in реестр.orderable_for(ep.V2V_EDIT) if not ep.not_an_edit(у)]
+    узлы = [
+        у for у in реестр.orderable_for(ep.V2V_EDIT) if not ep.not_an_edit(у) or продление_годится(у, нужно)
+    ]
     покрытие = {п: sorted(у.model for у in узлы if п in ep.edit_intents(у)) for п in нужно}
     # Правки, которой не называет никто, нет и у оставшихся кандидатов (отбор
     # выше требует ВСЕ названные правки) — шаг остаётся без кандидата.
     не_измерено = [п for п, кто in покрытие.items() if not кто]
+    метод = EDIT_METHOD_NOTES.get(next((п for п in нужно if п in EDIT_METHOD_NOTES), ""), "")
     return {
         "asked": list(нужно),
-        "asked_from": "spec.edit" if названы else "default (spec.edit not named): edit by instruction",
+        "asked_from": (
+            "spec.edit"
+            if названы
+            else "default (spec.edit not named): edit by instruction"
+            if not продление_в(нужно)
+            else "spec: the ordered duration is longer than the owned video — extension"
+        ),
+        **({"method": метод} if метод else {}),
         "endpoints": {п: кто[:REGISTRY_SHOWN] for п, кто in покрытие.items()},
         "endpoints_count": {п: len(кто) for п, кто in покрытие.items()},
         "not_measured": не_измерено,
@@ -7477,7 +7536,7 @@ def candidates_for(
                     )
                 ),
                 below_frame=ниже_кадра(op, все, сколько, brief_frame),
-                requirement_rank=треб_ранг,
+                requirement_rank=порядок_требований(треб_ранг),
                 requirement_note=треб_нота,
                 unclassified=ключ in неустановленные,
                 unpriced_last=hard is not None and hard.objective == hn.OBJECTIVE_CHEAPEST,
