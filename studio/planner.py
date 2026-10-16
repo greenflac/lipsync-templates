@@ -4622,6 +4622,7 @@ def нужда_шага(
     клипов: int | None = None,
     языков: int = 1,
     штук: int | None = None,
+    языки: Sequence[str] = (),
 ) -> pricing.Need:
     """Что шаг должен выдать на ЭТОМ брифе — от этого зависит строка таблицы цен.
 
@@ -4634,6 +4635,8 @@ def нужда_шага(
         только у шага, который делает видео клипами (`Operation.клипами`).
     :param штук: сколько картинок делает ИМЕННО этот шаг, когда маршрут назвал
         (`brief_spec.Маршрут.штук`: референс серии — 1, правок по нему — N).
+    :param языки: языки речи (BCP-47) — знаки текста считаются по скорости
+        письма (`pricing.speech_chars`): японский — не 15 знаков в секунду.
     """
     if штук is not None:
         кадров = штук
@@ -4650,7 +4653,9 @@ def нужда_шага(
         seconds=секунды,
         resolution=min(кадр) if кадр else None,
         audio=True if op.name == NATIVE_AUDIO_STEP else False if op.name in РЕЖИМ_ШАГА else None,
-        chars=секунды * pricing.CHARS_PER_SECOND if (речь and секунды) else None,
+        chars=pricing.speech_chars(секунды, языки, per_language=языков > 1 and len(языки) == языков)
+        if (речь and секунды)
+        else None,
         # Шагу, который отдаёт ВИДЕО, цена «за картинку / мегапиксель» не цена:
         # сколько кадров в ролике, вендор так не считает (`ltx` с ценой за Мп
         # выходил в смету шагом за 0.00 usd).
@@ -11270,6 +11275,7 @@ def plan(
                 клипов=клипов,
                 языков=языков_на_шаг(op),
                 штук=маршрут.штук.get(op.name),
+                языки=tuple(понято.languages) if op.name in SPEECH_STEPS else (),
             ),
             bool(COMMUNITY_ASKED.search(brief)),
             условия,

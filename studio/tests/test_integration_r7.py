@@ -6,6 +6,8 @@ import unittest
 from datetime import date
 
 import studio.planner as pn
+from studio import duration as dur
+from studio import pricing
 from studio.pricing import rates
 from studio.selfrag.facts import Fact
 
@@ -121,6 +123,36 @@ class РаскраскаТолькоСвоиВеса(unittest.TestCase):
             )
         )
         self.assertFalse(pn.семья_только_у_себя(ep.Endpoint(model="m", key="m")))
+
+
+class СкоростьРечиПоПисьму(unittest.TestCase):
+    """CJK — не 15 знаков в секунду: иероглиф или слог хангыля — это слог речи."""
+
+    def test_таблица(self) -> None:
+        self.assertEqual(15.0, pricing.speech_chars_per_second("en"))
+        self.assertEqual(15.0, pricing.speech_chars_per_second("ru"))
+        self.assertEqual(5.0, pricing.speech_chars_per_second("zh"))
+        self.assertEqual(5.0, pricing.speech_chars_per_second("zh-Hans-CN"))
+        self.assertEqual(6.0, pricing.speech_chars_per_second("ja"))
+        self.assertEqual(6.0, pricing.speech_chars_per_second("ko-KR"))
+        self.assertEqual(6.0, pricing.speech_chars_per_second("japanese"))
+        self.assertEqual(5.0, pricing.speech_chars_per_second("chinese"))
+
+    def test_по_языку_и_по_сумме_языков(self) -> None:
+        self.assertEqual(360.0, pricing.speech_chars(60.0, ("ja",)))
+        self.assertEqual(900.0, pricing.speech_chars(60.0, ()))
+        # Разные скорости без разбивки по языкам — латинская.
+        self.assertEqual(900.0, pricing.speech_chars(60.0, ("ja", "en")))
+        self.assertEqual(1560.0, pricing.speech_chars(180.0, ("ja", "zh", "en"), per_language=True))
+
+    def test_шаг_озвучки_на_японском(self) -> None:
+        оп = next(о for о in pn.OPERATIONS if о.name == "озвучка")
+        нужда = pn.нужда_шага(оп, dur.Запрос(60.0, "1 min"), None, языки=("japanese",))
+        self.assertEqual(360.0, нужда.chars)
+        нужда = pn.нужда_шага(
+            оп, dur.Запрос(60.0, "1 min"), None, языков=2, языки=("japanese", "english")
+        )
+        self.assertEqual(60.0 * 6 + 60.0 * 15, нужда.chars)
 
 
 if __name__ == "__main__":

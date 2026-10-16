@@ -34,6 +34,7 @@ from __future__ import annotations
 import math
 import re
 from dataclasses import dataclass, replace
+from collections.abc import Sequence
 from typing import Any
 
 #: Валюты и единицы, которые встречаются в базе. Список закрытый: незнакомая
@@ -1109,6 +1110,58 @@ class Option:
 #: речь 140–160 слов в минуту по ~6 знаков с пробелом. Это ОЦЕНКА объёма
 #: текста, а не цена: она печатается в расчёте, чтобы её можно было оспорить.
 CHARS_PER_SECOND = 15.0
+
+#: Знаков в секунде речи для письма БЕЗ пробелов, где знак — слог или морфема
+#: (интеграция седьмого круга: японский и китайский бриф считались латинскими
+#: 15 зн/с, то есть текста выходило в ~3 раза больше, чем вендор возьмёт).
+#: ОЦЕНКИ, а не измерения этого проекта. Опора: Pellegrino, Coupé, Marsico,
+#: «A cross-language perspective on speech information rate», Language 87(3),
+#: 2011 — средняя скорость чтения: мандаринский 5.18 слога/с (иероглиф = слог,
+#: отсюда 5), японский 7.84 моры/с (кандзи покрывает в среднем больше моры,
+#: отсюда 6 знаков смешанного письма). Корейский (слог хангыля = знак) в той
+#: работе не мерился: 6 — оценка по соседям, не цитата.
+SPEECH_CHARS_PER_SECOND: dict[str, float] = {
+    "zh": 5.0,
+    "yue": 5.0,
+    "cmn": 5.0,
+    "ja": 6.0,
+    "ko": 6.0,
+    # Плановщик держит языки ИМЕНАМИ базы (`brief_spec.CODE_TO_LANGUAGE`).
+    "chinese": 5.0,
+    "japanese": 6.0,
+    "korean": 6.0,
+}
+
+
+def speech_chars_per_second(language: str) -> float:
+    """Знаков в секунде речи: тег BCP-47 (`ja`, `zh-Hans`, `ko-KR`) или имя базы (`japanese`); иначе `CHARS_PER_SECOND`."""
+    звенья = re.split(r"[-_]", str(language or "").strip().lower())
+    for звено in звенья[1:]:
+        if звено in ("hans", "hant", "hani"):
+            return SPEECH_CHARS_PER_SECOND["zh"]
+        if звено in ("jpan", "hira", "kana"):
+            return SPEECH_CHARS_PER_SECOND["ja"]
+        if звено in ("kore", "hang"):
+            return SPEECH_CHARS_PER_SECOND["ko"]
+    return SPEECH_CHARS_PER_SECOND.get(звенья[0], CHARS_PER_SECOND) if звенья else CHARS_PER_SECOND
+
+
+def speech_chars(
+    seconds: float, languages: Sequence[str] = (), per_language: bool = False
+) -> float:
+    """Сколько знаков текста в `seconds` речи.
+
+    `per_language` — шаг делается заново на КАЖДЫЙ язык, и `seconds` уже
+    умножены на их число: знаки складываются по языкам, каждый по своей
+    скорости. Иначе — скорость единственного языка (или общая для всех
+    названных); языки разной скорости без разбивки — латинская.
+    """
+    if per_language and languages:
+        доля = seconds / len(languages)
+        return sum(доля * speech_chars_per_second(я) for я in languages)
+    скорости = {speech_chars_per_second(я) for я in languages}
+    return seconds * (скорости.pop() if len(скорости) == 1 else CHARS_PER_SECOND)
+
 
 #: Причина «нижней границы» у цены за прогон без записанной длины прогона.
 LOWER_BOUND_RUN = "сколько секунд даёт прогон — не записано: посчитан один прогон"
