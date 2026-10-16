@@ -1345,7 +1345,14 @@ def plan_pipeline(
                   LoRA is the alternative), not N independent generations.
         fps       output frame rate; above the chosen model's recorded rate a
                   frame-interpolation step (RIFE / FILM / AMT) is added and
-                  priced; unrecorded rate = a note.
+                  priced; a generator that records no rate gets the class
+                  prior (24-30 fps) and the step too.
+        priors    {prior_id: false} switches off a recipe prior (engineering
+                  defaults per job class that fill the base's silence: 8K
+                  still -> upscale last, logo -> overlay end card, audio +
+                  text inputs = a voice SAMPLE to clone, the customer's video
+                  of the person -> lip sync on it, one host -> one reference).
+                  Each applied prior is in `recipe` and `understood_as`.
         budget    {amount, currency: ISO 4217, usd?}. NO exchange rates are
                   recorded: for a non-USD budget convert it yourself and pass
                   usd (the amount and currency stay for echo); without usd a
@@ -1416,7 +1423,9 @@ def plan_pipeline(
     unpriced step makes it "could not measure", so quote the bound AND the
     missing steps. `assembly` is the 0-usd ffmpeg/editing work (cuts, reframe,
     captions burn, stabilisation, audio mux, beat sync); `frame_rate` says
-    whether the fps is reached; `budget.outcome` is the budget verdict
+    whether the fps is reached; `recipe` lists the priors applied (tag and
+    sources), free tools, order of operations and what to check on the
+    output — quote it as assumptions; `budget.outcome` is the budget verdict
     (fail = over the ceiling). Three outcomes: pass / fail (plan + the
     validator's class) / could not measure (a question, a step without
     candidates, an unpriced/unconfirmed plan, `только_монтаж` = assembly only,
