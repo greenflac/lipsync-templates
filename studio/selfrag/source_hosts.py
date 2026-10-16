@@ -273,6 +273,10 @@ VENDOR_SOURCES: dict[str, tuple[str, ...]] = {
         "github.com/deepbrainai-research/",
         "raw.githubusercontent.com/deepbrainai-research/",
     ),
+    # Восьмой круг: открытые веса липсинка и замены лица — README в орге автора.
+    "sadtalker": ("github.com/OpenTalker/", "raw.githubusercontent.com/OpenTalker/"),
+    "facefusion": ("github.com/facefusion/", "raw.githubusercontent.com/facefusion/"),
+    "roop": ("github.com/s0md3v/", "raw.githubusercontent.com/s0md3v/"),
     "multitalk": ("github.com/MeiGen-AI/", "raw.githubusercontent.com/MeiGen-AI/"),
     "infinitetalk": ("github.com/MeiGen-AI/", "raw.githubusercontent.com/MeiGen-AI/"),
     "qwen-image": (

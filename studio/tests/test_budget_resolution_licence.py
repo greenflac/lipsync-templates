@@ -393,7 +393,7 @@ class ЖивыеБрифы(unittest.TestCase):
         # СЕДЬМОЙ КРУГ: липсинк — `sync-lipsync-v3`, 40 с × 0.133 usd/с = 5.32
         # (ставка неоднозначна — взята наибольшая): 0.1084 + 0.1194 + 0.048 +
         # 3.36 + 5.32 = 8.9558 -> 8.96, под потолком 15.
-        self.assertEqual((8.96, "годно"), (итог["pipeline_price"]["смета"]["usd"], итог["pipeline_price"]["outcome"]))
+        self.assertEqual((8.96, "pass"), (итог["pipeline_price"]["смета"]["usd"], итог["pipeline_price"]["outcome"]))
         self.assertEqual(
             [3, 3, None, 3, None], [ш["shots"] for ш in итог["steps"]]
         )
@@ -423,7 +423,7 @@ class ЖивыеБрифы(unittest.TestCase):
             ],
             [(ш["step"], ш["chosen"]["model"]) for ш in итог["steps"]],
         )
-        self.assertEqual((2.91, "годно"), (итог["pipeline_price"]["смета"]["usd"], итог["pipeline_price"]["outcome"]))
+        self.assertEqual((2.91, "pass"), (итог["pipeline_price"]["смета"]["usd"], итог["pipeline_price"]["outcome"]))
         self.assertNotIn("optimised", итог["pipeline_price"])
 
     def test_липсинк_потолок_1_80(self) -> None:
@@ -447,7 +447,7 @@ class ЖивыеБрифы(unittest.TestCase):
         )
         self.assertEqual((2.906, 2.7267), (оптимум["before_usd"], оптимум["after_usd"]))
         self.assertEqual("total 2.91 usd is over the clip ceiling 2.8 usd", оптимум["why_en"])
-        self.assertEqual("годно", итог["pipeline_price"]["outcome"])
+        self.assertEqual("pass", итог["pipeline_price"]["outcome"])
         self.assertEqual("kling-3.0-standard-t2v", итог["steps"][1]["chosen"]["model"])
 
     def test_липсинк_заказано_самое_дешёвое_меняет_всё(self) -> None:

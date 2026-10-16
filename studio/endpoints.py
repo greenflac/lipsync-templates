@@ -169,7 +169,12 @@ JOB_RULES: tuple[tuple[str, tuple[str, ...]], ...] = (
         r"|audio-driven",
         (AVATAR,),
     ),
-    (r"face-?swap|faceswap|inswapper(?:-\d+)?|animate-replace|character-replace", (FACE_SWAP,)),
+    # ЗАМЕНА ЛИЦА — только лицо (восьмой круг): FaceFusion, roop и его
+    # inswapper_128, `fal-ai/face-swap`. `animate-replace` (Wan Animate) меняет
+    # ВЕСЬ персонаж в кадре — это правка видео (замена объекта), а не замена
+    # лица: валидатор v8 (n25) получил на «вставь моё лицо» замену фигуры.
+    (r"face-?swap|faceswap|inswapper(?:-\d+)?|facefusion|roop", (FACE_SWAP,)),
+    (r"animate-replace|character-replace", (V2V_EDIT,)),
     (r"dub|dubbing", (DUB,)),
     (r"tts|text-to-speech|(?<!to-)speech(?!-to)", (TTS,)),
     (r"voice-?clon\w*", (VOICE_CLONE,)),
@@ -215,7 +220,9 @@ MODE_RULES: tuple[tuple[str, tuple[str, ...]], ...] = (
         (V2V_EDIT,),
     ),
     (r"text-to-image|t2i|txt2img|text2image", (T2I,)),
-    (r"image-to-image|i2i|img2img|edit-image|image-edit|edit|inpaint|outpaint", (IMAGE_EDIT,)),
+    # `style-transfer` (Stability) — перенос стиля на ДАННУЮ картинку: правка,
+    # а не генерация по тексту (восьмой круг: читался t2i по «price_per_image»).
+    (r"image-to-image|i2i|img2img|edit-image|image-edit|edit|inpaint|outpaint|style-transfer", (IMAGE_EDIT,)),
 )
 
 #: Категория каталога площадки -> работы, когда идентификатор молчит.
@@ -419,6 +426,41 @@ CURATED: dict[str, tuple[tuple[str, ...], str, str]] = {
         "(image_urls array) — multi-reference",
         "https://fal.ai/api/openapi/queue/openapi.json?endpoint_id=fal-ai/flux-pro/kontext/max/multi",
     ),
+    # Восьмой круг (валидатор v8, реестр 40 строк): заказываемые без работы.
+    "facefusion": (
+        (FACE_SWAP,),
+        "FaceFusion README: face manipulation platform — face swap on video and images, self-hosted CLI/UI",
+        "https://raw.githubusercontent.com/facefusion/facefusion/master/README.md",
+    ),
+    "gpt-image-1": (
+        (T2I, IMAGE_EDIT),
+        "OpenAI image-generation guide: generates images from a prompt and edits images (masked edits)",
+        "https://platform.openai.com/docs/guides/image-generation",
+    ),
+    "hallo": (
+        (AVATAR,),
+        "Hallo README (Fudan): audio-driven portrait image animation — one portrait + speech audio -> talking video",
+        "https://raw.githubusercontent.com/fudan-generative-vision/hallo/main/README.md",
+    ),
+    "float": (
+        (AVATAR,),
+        "FLOAT README (DeepBrain AI): audio-driven talking portrait video from a single image",
+        "https://raw.githubusercontent.com/deepbrainai-research/float/main/README.md",
+    ),
+    # Восьмой круг (агент рецептов): MMAudio — звук по видео (foley), а схема
+    # площадки числит его «video-to-video» и отдаёт ВИДЕО со звуком.
+    "mmaudio-v2": (
+        (SFX,),
+        "fal OpenAPI of fal-ai/mmaudio-v2: requires video_url and prompt — 'The URL of the video to generate "
+        "the audio for' — and returns the video with the generated audio (video-to-audio / foley)",
+        "https://fal.ai/api/openapi/queue/openapi.json?endpoint_id=fal-ai/mmaudio-v2",
+    ),
+    "image-apps-v2-headshot-photo": (
+        (IMAGE_EDIT,),
+        "fal OpenAPI of fal-ai/image-apps-v2/headshot-photo: requires one image, returns an image (a headshot "
+        "made from the customer's photo)",
+        "https://fal.ai/api/openapi/queue/openapi.json?endpoint_id=fal-ai/image-apps-v2/headshot-photo",
+    ),
     "seedvr2-3b": (
         (UPSCALE_VIDEO, UPSCALE_IMAGE, RESTORE),
         "SeedVR2-3B README: one-step diffusion video restoration and super-resolution",
@@ -440,7 +482,7 @@ HOSTING_ATTRIBUTES: frozenset[str] = frozenset(
 )
 
 #: Хосты страниц весов: маршрут «запустить у себя».
-WEIGHTS_HOSTS: tuple[str, ...] = ("huggingface.co", "github.com")
+WEIGHTS_HOSTS: tuple[str, ...] = ("huggingface.co", "github.com", "raw.githubusercontent.com")
 ROUTE_SELF_HOST = "self-host"
 
 _AVAILABILITY = re.compile(r"\bon ([\w.]+) as (\S+) \(([^)]*)\)")
@@ -494,6 +536,10 @@ class Endpoint:
     hosting_note: str = ""
     open_weights: str = ""
     vram_gb: float | None = None
+    #: ПОМЕТКИ ОТБОРА (`FLAGS`): мёрж сообщества, NSFW, стилевой LoRA. Узел в
+    #: базе остаётся, но в `Registry.by_function` (откуда плановщик и
+    #: `find_models` берут кандидатов) не попадает — только в `flagged`.
+    flags: tuple[str, ...] = ()
 
     def does(self, function: str) -> bool:
         return function in self.functions
@@ -505,12 +551,19 @@ class Registry:
 
     by_key: dict[str, Endpoint] = field(default_factory=dict)
     by_function: dict[str, list[Endpoint]] = field(default_factory=dict)
+    #: Узлы с пометками (`Endpoint.flags`): та же работа, но кандидатами их
+    #: делает только явная просьба заказчика (`requested_flags`).
+    flagged: dict[str, list[Endpoint]] = field(default_factory=dict)
 
     def get(self, model: str) -> Endpoint | None:
         return self.by_key.get(fold(model))
 
     def orderable_for(self, function: str) -> list[Endpoint]:
         return [e for e in self.by_function.get(function, []) if e.orderable]
+
+    def all_for(self, function: str) -> list[Endpoint]:
+        """Все узлы работы, помеченные (`flagged`) тоже — для отчёта покрытия."""
+        return [*self.by_function.get(function, []), *self.flagged.get(function, [])]
 
 
 # --- разбор ---------------------------------------------------------------------
@@ -1039,10 +1092,167 @@ def _собрать(facts: Sequence[Fact]) -> Registry:
                 evidence=EVIDENCE_VARIANTS,
                 evidence_note="режимы вариантов: " + ", ".join(узел.variants[:6]),
             )
-    for узел in реестр.by_key.values():
+    for к, узел in list(реестр.by_key.items()):
+        пометки = flags_of(узел, по_ключу.get(к, ()))
+        if пометки:
+            узел = реестр.by_key[к] = replace(узел, flags=пометки)
         for ф in узел.functions:
-            реестр.by_function.setdefault(ф, []).append(узел)
+            (реестр.flagged if пометки else реестр.by_function).setdefault(ф, []).append(узел)
     return реестр
+
+
+# --- вид входа шага против вида входа эндпоинта ------------------------------------
+#
+# ВОСЬМОЙ КРУГ (агент рецептов): `topaz-restore-image` (берёт и отдаёт
+# КАРТИНКУ) стоял кандидатом на реставрацию ВИДЕО — работа `restore` одна на
+# оба вида. Работа совпала, вид материала — нет. Сверка по ОБЪЯВЛЕННЫМ входам
+# эндпоинта и по артефактам, которые шаг подаёт.
+
+
+def step_media(артефакты: Iterable[str]) -> frozenset[str]:
+    """Виды медиа, которые шаг подаёт на вход: видео / изображение (по именам артефактов)."""
+    виды: set[str] = set()
+    for а in артефакты:
+        а = str(а)
+        if а.startswith(_ВИДЕО) or а == "готовый_ролик":
+            виды.add(_ВИДЕО)
+        elif а.startswith(_КАРТИНКА) or а in ("селфи", "референс"):
+            виды.add(_КАРТИНКА)
+    return frozenset(виды)
+
+
+def input_mismatch(узел: "Endpoint", артефакты: Iterable[str]) -> str:
+    """Почему эндпоинт не берёт материал шага (вид входа); пусто — берёт или не записано."""
+    шаг = step_media(артефакты)
+    берёт = set(узел.inputs) & {_ВИДЕО, _КАРТИНКА}
+    if not шаг or not берёт or берёт & шаг:
+        return ""
+    return (
+        f"вход не того вида: шаг подаёт {', '.join(sorted(шаг))}, а эндпоинт берёт "
+        f"{', '.join(sorted(берёт))} (схема)"
+    )
+
+
+# --- пометки отбора: сообщество, NSFW, стилевой LoRA -----------------------------
+#
+# ВОСЬМОЙ КРУГ (валидатор v8, x05: «text-to-image на GTX 1070 8GB» выбрал
+# `wan2.2_strangenames` — чужой набор с хаба, о котором база знает три строки
+# метаданных; в выборке реестра 40 строк — `pornmasterpro_noobv3vae`,
+# `girlslike-krea2`, `diving-illustrious-real-asian-v50-sdxl` кандидатами t2i).
+# Это не модели вендора, а мёржи, NSFW-чекпойнты и стилевые LoRA: из базы они
+# не удаляются (о них спрашивают), но кандидатами на общий t2i/t2v становятся
+# только по явной просьбе.
+
+FLAG_NSFW = "nsfw"
+FLAG_COMMUNITY = "community_checkpoint"
+FLAG_STYLE_LORA = "style_lora"
+FLAGS: tuple[str, ...] = (FLAG_NSFW, FLAG_COMMUNITY, FLAG_STYLE_LORA)
+
+#: Звенья имени/страницы весов, которые ставят NSFW. Целым звеном:
+#: `illustrious` не `lust…`. КОНСТАНТА-РЕШЕНИЕ.
+NSFW_LINKS = r"nsfw|porn\w*|lust\w*|uncensored|nudes?|nude\w*|hentai|xxx|erotic\w*|sexgod|unfiltered|sexy|lewd"
+#: Звенья стилевого LoRA/адаптера: не самостоятельный генератор.
+STYLE_LORA_LINKS = r"\w*loras?|lycoris|\w*adapter|style-transfer"
+#: Работы генерации, где мёрж сообщества — помеха общему заказу. На TTS/ASR
+#: дообучения сообщества (`f5-tts-russian`) остаются кандидатами.
+GENERATION_FUNCTIONS: frozenset[str] = frozenset({T2I, T2V, I2V, R2V, IMAGE_EDIT, V2V_EDIT})
+#: Атрибуты, которые хаб весов отдаёт о ЛЮБОМ репозитории: по ним одним не
+#: сказать, что это за модель (`wan2.2_strangenames`: лицензия, загрузки, задача).
+HUB_METADATA_ATTRIBUTES: frozenset[str] = frozenset(
+    {"license", "licence", "adoption", "pipeline_tag", "failure_mode", "base_model", "tags", "library_name"}
+)
+#: Хосты порталов сообщества (тот же список, что `planner.COMMUNITY_HOSTS`).
+COMMUNITY_SOURCE_HOSTS: tuple[str, ...] = ("civitai.com", "civitai.green", "openart.ai", "tensor.art")
+#: ОРГИ-АВТОРЫ базовых моделей на хабе: страница весов в такой орге — выпуск
+#: лаборатории, а не мёрж. Остальные владельцы страниц весов узла «только у
+#: себя» на работах генерации — сообщество. КОНСТАНТА-РЕШЕНИЕ (сторожит тест).
+FIRST_PARTY_ORGS: frozenset[str] = frozenset(
+    o.lower()
+    for o in (
+        "Wan-AI", "stabilityai", "black-forest-labs", "Lightricks", "ByteDance", "ByteDance-Seed",
+        "nvidia", "tencent", "Tencent-Hunyuan", "Qwen", "Tongyi-MAI", "zai-org", "THUDM", "genmo",
+        "CompVis", "stable-diffusion-v1-5", "runwayml", "diffusers", "playgroundai", "HiDream-ai",
+        "OnomaAIResearch", "briaai", "ali-vilab", "segmind", "tianweiy", "alimama-creative",
+        "FireRedTeam", "meituan-longcat", "jdopensource", "krea", "lodestones", "FastVideo",
+        "timbrooks", "xinsir", "lllyasviel", "InstantX", "OpenMOSS-Team", "facebook", "microsoft",
+        "google", "openai", "MeiGen-AI", "fudan-generative-vision", "deepbrainai-research",
+        "TMElyralab", "OpenTalker", "Rudrabha", "hpcai-tech", "rhymes-ai", "Skywork", "SkyworkAI",
+        "Kwai-Kolors", "Kwai-Kling", "deepseek-ai", "baidu", "inclusionAI", "moonshotai",
+        "StepFun", "stepfun-ai", "Alpha-VLLM", "PixArt-alpha", "Efficient-Large-Model",
+        "HunyuanVideo", "cerspense", "caidas", "OmniGen2", "Shitao", "VectorSpaceLab",
+    )
+)
+
+
+def _владелец_весов(узел: "Endpoint") -> str:
+    """Орг страницы весов узла (`huggingface.co/<орг>/…`, `github.com/<орг>/…`); пусто — не страница."""
+    for кто, ид in узел.route_ids:
+        if кто != ROUTE_SELF_HOST:
+            continue
+        u = urlparse(ид)
+        хост = (u.hostname or "").lower()
+        части = [ч for ч in u.path.split("/") if ч]
+        if хост.endswith(("huggingface.co", "github.com", "githubusercontent.com")) and части:
+            return части[1].lower() if части[0] in ("api", "models", "spaces") and len(части) > 1 else части[0].lower()
+    return ""
+
+
+def flags_of(узел: "Endpoint", rows: Sequence[Fact] = ()) -> tuple[str, ...]:
+    """Пометки отбора узла (`FLAGS`) по имени, странице весов и хостам источников."""
+    тексты = [узел.model, *узел.ids, *(ид for кто, ид in узел.route_ids if кто == ROUTE_SELF_HOST)]
+    звенья = [_звенья(urlparse(т).path if "://" in т else т) for т in тексты]
+    пометки: list[str] = []
+    if any(_звено(NSFW_LINKS, з) for з in звенья):
+        пометки.append(FLAG_NSFW)
+    только_у_себя = bool(узел.routes) and set(узел.routes) == {ROUTE_SELF_HOST}
+    генерация = bool(узел.functions) and set(узел.functions) <= GENERATION_FUNCTIONS
+    if только_у_себя and генерация and any(_звено(STYLE_LORA_LINKS, з) for з in звенья):
+        пометки.append(FLAG_STYLE_LORA)
+    хосты = {(urlparse(f.source_url or "").hostname or "").lower() for f in rows} - {""}
+    с_портала = bool(хосты) and all(х.endswith(COMMUNITY_SOURCE_HOSTS) for х in хосты)
+    орг = _владелец_весов(узел)
+    # О чужом чекпойнте база знает только МЕТАДАННЫЕ ХАБА (лицензия, загрузки,
+    # задача, обсуждения): ни строки вендора о том, что модель делает, ни
+    # числа параметров. Узел с описанием — не «мёрж неизвестно чего».
+    # И пришёл он ОБХОДОМ ХАБА (строка задачи или загрузок): лицензия одна —
+    # это запись человека о весах, а не карточка из листинга.
+    только_метаданные = all(f.attribute in HUB_METADATA_ATTRIBUTES for f in rows) and any(
+        f.attribute in ("pipeline_tag", "adoption") for f in rows
+    )
+    if генерация and (
+        с_портала or (только_у_себя and орг and орг not in FIRST_PARTY_ORGS and только_метаданные)
+    ):
+        пометки.append(FLAG_COMMUNITY)
+    return tuple(п for п in FLAGS if п in пометки)
+
+
+#: Слова, которыми заказчик ЯВНО просит помеченное. NSFW — только своими
+#: словами; сообщество и LoRA — словами о сообществе (`planner.COMMUNITY_ASKED`).
+NSFW_ASKED = re.compile(r"\bnsfw\b|\badult\b|18\+|\bnude|\berotic|\bporn|для взрослых|эротик|\bню\b", re.I)
+COMMUNITY_ASKED = re.compile(
+    r"lora|civitai|comfy|workflow|воркфлоу|сообществ|community|checkpoint|чекпоинт|merge|мёрж|мерж", re.I
+)
+
+
+def requested_flags(text: str) -> frozenset[str]:
+    """Какие пометки заказчик снял своими словами: пусто — ни одной."""
+    снято: set[str] = set()
+    if COMMUNITY_ASKED.search(text or ""):
+        снято |= {FLAG_COMMUNITY, FLAG_STYLE_LORA}
+    if NSFW_ASKED.search(text or ""):
+        снято.add(FLAG_NSFW)
+    return frozenset(снято)
+
+
+def excluded_by_flags(узел: "Endpoint", снято: Iterable[str] = ()) -> str:
+    """Почему узел не кандидат (пометки, не снятые просьбой); пусто — кандидат."""
+    остались = [п for п in узел.flags if п not in set(снято)]
+    if not остались:
+        return ""
+    return (
+        f"помечен: {', '.join(остались)} — в базе остаётся, кандидатом становится только по явной "
+        "просьбе (LoRA/civitai/community/checkpoint; NSFW — своими словами)"
+    )
 
 
 # --- словарь вопроса: как человек называет работу --------------------------------
@@ -1133,6 +1343,11 @@ EDIT_REMOVE_OBJECT = "remove-object"
 EDIT_REPLACE_SKY = "replace-sky"
 EDIT_STABILISE = "stabilise"
 EDIT_RELIGHT = "relight"
+#: Смена времени суток (восьмой круг) — ОТДЕЛЬНАЯ правка: переосвещение меняет
+#: свет на объекте (недоэкспонированное лицо, ключевой свет слева), а
+#: «день -> ночь» перерисовывает всю сцену. Валидатор v8 (n13): на «лицо
+#: недоэкспонировано» выбирался `day-to-night`.
+EDIT_DAY_TO_NIGHT = "day-to-night"
 EDIT_RESTYLE = "restyle"
 
 #: Допустимые значения `spec.edit`. КОНСТАНТА-РЕШЕНИЕ.
@@ -1143,6 +1358,7 @@ EDIT_INTENTS: tuple[str, ...] = (
     EDIT_REPLACE_SKY,
     EDIT_STABILISE,
     EDIT_RELIGHT,
+    EDIT_DAY_TO_NIGHT,
     EDIT_RESTYLE,
 )
 
@@ -1153,11 +1369,15 @@ _ПРАВКА_ПО_ИНСТРУКЦИИ = r"edit|edit-video|video-edit|v2v-edit|
 #: Под-работа -> звенья идентификатора, которые её называют.
 EDIT_RULES: dict[str, str] = {
     EDIT_REFRAME: r"reframe|outpaint",
-    EDIT_REPLACE_OBJECT: _ПРАВКА_ПО_ИНСТРУКЦИИ,
+    EDIT_REPLACE_OBJECT: _ПРАВКА_ПО_ИНСТРУКЦИИ + r"|animate-replace|character-replace",
     EDIT_REMOVE_OBJECT: _ПРАВКА_ПО_ИНСТРУКЦИИ + r"|clean-plate|object-removal|remove-object",
     EDIT_REPLACE_SKY: _ПРАВКА_ПО_ИНСТРУКЦИИ + r"|sky-replace\w*|replace-sky",
     EDIT_STABILISE: r"stabili[sz]\w*",
-    EDIT_RELIGHT: r"relight\w*|day-to-night|hdr",
+    # Свет на объекте и экспозиция: `minimax-h3-max-relight`, `qwen-edit-2509-
+    # light-migration`, `qie-2511-mp-anylight`. `hdr` — динамический диапазон
+    # кадра, а не свет на объекте; `day-to-night` — своя правка.
+    EDIT_RELIGHT: r"relight\w*|exposure|light-migration|anylight",
+    EDIT_DAY_TO_NIGHT: r"day-to-night|night-to-day|time-of-day",
     EDIT_RESTYLE: r"recast|render-to-real|restyle|style-transfer",
 }
 
@@ -1170,7 +1390,7 @@ EDIT_RULES: dict[str, str] = {
 EDIT_NAMED: dict[str, str] = {
     # Правила без звена правки по инструкции — те же (Е1: выводятся, не копируются).
     **{п: о for п, о in EDIT_RULES.items() if not о.startswith(_ПРАВКА_ПО_ИНСТРУКЦИИ)},
-    EDIT_REPLACE_OBJECT: r"replace-object|object-replace\w*",
+    EDIT_REPLACE_OBJECT: r"replace-object|object-replace\w*|animate-replace|character-replace",
     # `inpaint` в правиле по инструкции общий; прямо названное удаление — здесь.
     EDIT_REMOVE_OBJECT: EDIT_RULES[EDIT_REMOVE_OBJECT].removeprefix(_ПРАВКА_ПО_ИНСТРУКЦИИ + "|")
     + r"|object-remov\w*|inpaint\w*",
@@ -1258,7 +1478,9 @@ def coverage(реестр: Registry) -> list[dict]:
     """По работе: заказываемых узлов, с ценой, с длиной прогона (доли — проценты)."""
     строки = []
     for ф in FUNCTIONS:
-        узлы = реестр.orderable_for(ф)
+        # Помеченные (`flags`) считаются: они заказываемы, просто кандидатами
+        # становятся по просьбе. Гейт покрытия меряет «можно заказать».
+        узлы = [e for e in реестр.all_for(ф) if e.orderable]
         n = len(узлы)
         с_ценой = sum(1 for e in узлы if e.priced)
         с_прогоном = sum(1 for e in узлы if e.run_s is not None)

@@ -3901,6 +3901,10 @@ def evidence_for(
     return строки, применимость, способность, не_смогли, против
 
 
+#: Нота бюджета плана по spec без бюджета (бриф есть, но в решения не идёт).
+NOTE_NO_SPEC_BUDGET = "бюджет в spec не назван — бриф при плане по spec читается только для эха и языка"
+
+
 def budget_from(brief: str) -> Budget:
     """Потолок из слов заказчика. Не назван — не выдумывается (И5).
 
@@ -6851,6 +6855,7 @@ def candidates_for(
     hard: "hn.Hard | None" = None,
     stated_conditions: Sequence[str] = (),
     edit_intents: Sequence[str] = (),
+    requested_flags: Sequence[str] = (),
 ) -> "Кандидаты":
     """Кандидаты на операцию: модели, о которых база говорит СЛОВАМИ ОПЕРАЦИИ.
 
@@ -6995,6 +7000,16 @@ def candidates_for(
                     else узел.why_not_orderable
                 )
                 del по_модели[ключ]
+            elif ep.input_mismatch(узел, op.requires) and set(узел.functions) & set(работы):
+                # Работа та, вид материала не тот (восьмой круг): картиночная
+                # реставрация на реставрации видео.
+                чужая_по_реестру[написание[ключ]] = "реестр: " + ep.input_mismatch(узел, op.requires)
+                del по_модели[ключ]
+            elif ep.excluded_by_flags(узел, requested_flags):
+                # Мёрж сообщества, NSFW, стилевой LoRA (восьмой круг,
+                # `endpoints.flags_of`): кандидат только по явной просьбе.
+                не_заказываются[написание[ключ]] = ep.excluded_by_flags(узел, requested_flags)
+                del по_модели[ключ]
             elif узел.functions and not set(узел.functions) & set(работы):
                 чужая_по_реестру[написание[ключ]] = (
                     f"реестр: делает {', '.join(узел.functions)} ({узел.evidence}), "
@@ -7014,7 +7029,11 @@ def candidates_for(
         for узел in [
             у
             for р in работы
-            for у in реестр.by_function.get(р, [])
+            for у in [
+                *реестр.by_function.get(р, []),
+                *(у for у in реестр.flagged.get(р, []) if not ep.excluded_by_flags(у, requested_flags)),
+            ]
+            if not ep.input_mismatch(у, op.requires)
             if (у.orderable and not семья_только_у_себя(у))
             or (hard is not None and hard.self_host and у.self_hostable)
             # Без маршрута, не семья, и реестр работы строго не знает — та же
@@ -10819,7 +10838,12 @@ def plan(
     if budget_usd is None and понято.source.get("budget_usd") == bs.SOURCE_SPEC:
         budget_usd = понято.budget_usd
     кадр, про_кадр = frame_of(creative)
-    из_брифа = budget_from(brief)
+    # План по spec (`spec_only`): решения берут пустую строку вместо брифа, и
+    # «брифа нет» здесь — неправда (восьмой круг, валидатор v8): бриф есть,
+    # просто бюджет не назван в spec.
+    из_брифа = budget_from(brief) if brief or not текст.strip() else Budget(
+        None, "", (), UNMEASURED, NOTE_NO_SPEC_BUDGET
+    )
     if budget_usd is not None:
         бюджет = Budget(
             float(budget_usd),
@@ -10876,7 +10900,7 @@ def plan(
         else bs.Маршрут()
     )
     if маршрут.нехватка is not None:
-        return вопрос_о_нехватке(маршрут, понято, brief, по_английски, creative, budget_from(brief))
+        return вопрос_о_нехватке(маршрут, понято, brief, по_английски, creative, из_брифа)
     if маршрут.пробел is not None:
         return пробел_работы(понято, текст, по_английски, creative, бюджет)
     if not маршрут.шаги and маршрут.сборка:
@@ -11170,6 +11194,7 @@ def plan(
             жёсткие,
             stated_conditions=заявленные_условия,
             edit_intents=маршрут.правки if маршрут.правки is not None else понято.edit,
+            requested_flags=tuple(ep.requested_flags(brief)),
         )
 
     # СКОЛЬКО ШОТОВ (2026-10-15, четвёртый круг). Явное число; «each» над N;

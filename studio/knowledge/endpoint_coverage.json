@@ -28,11 +28,11 @@
  },
  {
   "function": "v2v-edit",
-  "orderable": 51,
-  "priced": 48,
-  "priced_pct": 94.1,
+  "orderable": 53,
+  "priced": 50,
+  "priced_pct": 94.3,
   "with_run_length": 17,
-  "run_length_pct": 33.3,
+  "run_length_pct": 32.1,
   "video": true
  },
  {
@@ -46,18 +46,18 @@
  },
  {
   "function": "talking-avatar",
-  "orderable": 43,
-  "priced": 27,
-  "priced_pct": 62.8,
+  "orderable": 46,
+  "priced": 29,
+  "priced_pct": 63.0,
   "with_run_length": 3,
-  "run_length_pct": 7.0,
+  "run_length_pct": 6.5,
   "video": true
  },
  {
   "function": "face-swap",
-  "orderable": 4,
+  "orderable": 5,
   "priced": 1,
-  "priced_pct": 25.0,
+  "priced_pct": 20.0,
   "with_run_length": 0,
   "run_length_pct": 0.0,
   "video": true
@@ -100,29 +100,29 @@
  },
  {
   "function": "sfx",
-  "orderable": 2,
-  "priced": 2,
+  "orderable": 3,
+  "priced": 3,
   "priced_pct": 100.0,
-  "with_run_length": 1,
-  "run_length_pct": 50.0,
+  "with_run_length": 2,
+  "run_length_pct": 66.7,
   "video": false
  },
  {
   "function": "t2i",
   "orderable": 127,
-  "priced": 35,
-  "priced_pct": 27.6,
+  "priced": 36,
+  "priced_pct": 28.3,
   "with_run_length": 1,
   "run_length_pct": 0.8,
   "video": false
  },
  {
   "function": "image-edit",
-  "orderable": 58,
-  "priced": 24,
-  "priced_pct": 41.4,
+  "orderable": 61,
+  "priced": 27,
+  "priced_pct": 44.3,
   "with_run_length": 1,
-  "run_length_pct": 1.7,
+  "run_length_pct": 1.6,
   "video": false
  },
  {
@@ -155,8 +155,8 @@
  {
   "function": "restore",
   "orderable": 8,
-  "priced": 5,
-  "priced_pct": 62.5,
+  "priced": 6,
+  "priced_pct": 75.0,
   "with_run_length": 0,
   "run_length_pct": 0.0,
   "video": true

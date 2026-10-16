@@ -369,7 +369,15 @@ import re
         # `gpu_count_recommended` (сколько карт в рецепте вендора) и
         # `gpu_price_per_hour_usd` (ставка аренды карты) — 2026-10-15: оба
         # отвечают на «пойдёт ли на моей карте и во что встанет её час».
-        "exact": ("storage_cost", "gpu_count_recommended", "gpu_price_per_hour_usd"),
+        # `tested_gpus` (на каких картах вендор проверял) и `apple_silicon`
+        # (запуск на Mac) — восьмой круг, открытые веса липсинка.
+        "exact": (
+            "storage_cost",
+            "gpu_count_recommended",
+            "gpu_price_per_hour_usd",
+            "tested_gpus",
+            "apple_silicon",
+        ),
         "подстроки": ("vram", "runs_on", "parameter_count"),
     },
     # НА КАКИХ ЯЗЫКАХ. Подстрока «language» ловит `languages`,

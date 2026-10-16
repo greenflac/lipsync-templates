@@ -126,11 +126,14 @@ class СквозныеБрифы(unittest.TestCase):
             "replace the face in my 20s video with my character", facts=факты, spec=spec, full=True
         )
         выбран = итог["steps"][0]["chosen"]
-        self.assertEqual("wan-2.2-14b-animate-replace", выбран["model"])
-        self.assertIn("[720p below the ordered 1080p", выбран["price"])
-        self.assertTrue(
-            any("1080p assumed for pricing" in д for д in итог["understood_as"]["assumptions"])
-        )
+        # Восьмой круг (валидатор v8, n25): `animate-replace` меняет ВЕСЬ
+        # персонаж — это правка видео, не замена лица, и кандидатом шага замены
+        # лица больше не бывает. Из эндпоинтов face-swap на API остались
+        # картиночные — план говорит, что видео они не отдают.
+        self.assertNotIn("animate-replace", выбран["model"])
+        self.assertEqual("does NOT produce the needed kind", выбран["out_state"])
+        # Допущение кадра для цены жило на тарифе по кадру `animate-replace`;
+        # у картиночных face-swap тарифа по кадру нет — допущения нет.
         # Негативный контроль: названный кадр — без допущения.
         итог = pn.plan(
             "replace the face in my 20s 720p video with my character",

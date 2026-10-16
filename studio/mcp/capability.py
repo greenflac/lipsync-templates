@@ -308,7 +308,8 @@ CAP_NATIVE_AUDIO = "native_audio"
         "убрать объект",
     ),
     ep.EDIT_REPLACE_SKY: ("sky replacement", "replace the sky", "replace sky", "замена неба"),
-    ep.EDIT_RELIGHT: ("relight", "relighting", "переосвещ"),
+    ep.EDIT_RELIGHT: ("relight", "relighting", "переосвещ", "underexposed", "exposure fix"),
+    ep.EDIT_DAY_TO_NIGHT: ("day to night", "day-to-night", "night to day", "день в ночь"),
     ep.EDIT_STABILISE: ("stabilise", "stabilize", "stabilization", "stabilisation", "стабилиз"),
     ep.EDIT_REFRAME: ("reframe", "reframing", "outpaint", "outpainting"),
 }
