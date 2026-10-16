@@ -179,7 +179,8 @@ MUTANTS: tuple[tuple[str, str, str, str], ...] = (
     ),
     (
         PN,
-        "    return bool(узел.variants) and bool(узел.routes) and set(узел.routes) == {ep.ROUTE_SELF_HOST}",
+        # Интеграция седьмого круга: правило стало общим (не только семья).
+        "    return bool(узел.routes) and set(узел.routes) == {ep.ROUTE_SELF_HOST}",
         "    return False",
         "узел семьи «только у себя» — кандидат API-плана",
     ),
