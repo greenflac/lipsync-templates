@@ -94,6 +94,13 @@ TURNTABLE = "turntable-360"
 #: Девятый круг: 3D-модель по снимкам (TRELLIS, Hunyuan3D, Tripo). Не видео:
 #: выход — сетка (GLB), а видео-оборот из неё рендерит монтаж.
 IMAGE_TO_3D = "image-to-3d"
+#: Десятый круг: замена ПЕРСОНАЖА ЦЕЛИКОМ (маскот, ростовая кукла, мультперсонаж
+#: вместо человека в кадре) — фигура, силуэт и движение, а не лицо: Wan Animate
+#: replace / mix. Работа `face-swap` — только лицо человека.
+CHARACTER_REPLACE = "character-replace"
+#: Десятый круг: виртуальная примерка — одежда с фото товара на фото человека
+#: (вход: снимок человека + снимок вещи, выход: снимок).
+TRY_ON = "virtual-try-on"
 
 #: Управляемый словарь работ. Порядок — порядок отчёта покрытия.
 FUNCTIONS: tuple[str, ...] = (
@@ -121,6 +128,8 @@ FUNCTIONS: tuple[str, ...] = (
     CAPTIONS,
     TURNTABLE,
     IMAGE_TO_3D,
+    CHARACTER_REPLACE,
+    TRY_ON,
 )
 
 #: Работы, у которых ВЫХОД — видео: им нужна длина прогона (ролик длиннее
@@ -134,6 +143,7 @@ VIDEO_FUNCTIONS: frozenset[str] = frozenset(
         LIPSYNC,
         AVATAR,
         FACE_SWAP,
+        CHARACTER_REPLACE,
         UPSCALE_VIDEO,
         RESTORE,
         COLORIZE,
@@ -178,7 +188,10 @@ JOB_RULES: tuple[tuple[str, tuple[str, ...]], ...] = (
     # ВЕСЬ персонаж в кадре — это правка видео (замена объекта), а не замена
     # лица: валидатор v8 (n25) получил на «вставь моё лицо» замену фигуры.
     (r"face-?swap|faceswap|inswapper(?:-\d+)?|facefusion|roop", (FACE_SWAP,)),
-    (r"animate-replace|character-replace", (V2V_EDIT,)),
+    # Десятый круг: замена персонажа целиком — своя работа (и прежняя правка видео).
+    (r"animate-replace|character-replace|animate-mix", (CHARACTER_REPLACE, V2V_EDIT)),
+    # Десятый круг: виртуальная примерка — своя работа (и правка картинки, её род).
+    (r"try-?on|tryon|vton?|virtual-fitting", (TRY_ON, IMAGE_EDIT)),
     (r"dub|dubbing", (DUB,)),
     (r"tts|text-to-speech|(?<!to-)speech(?!-to)", (TTS,)),
     (r"voice-?clon\w*", (VOICE_CLONE,)),
@@ -331,6 +344,8 @@ SIGNATURES: dict[str, tuple[frozenset[str], frozenset[str]]] = {
     CAPTIONS: (frozenset({_ВИДЕО, _ЗВУК, _ТЕКСТ}), frozenset({_ВИДЕО})),
     TURNTABLE: (frozenset({_КАРТИНКА, _ТЕКСТ}), frozenset({_ВИДЕО})),
     IMAGE_TO_3D: (frozenset({_КАРТИНКА, _ТЕКСТ}), frozenset({_3D})),
+    CHARACTER_REPLACE: (frozenset({_КАРТИНКА, _ВИДЕО, _ТЕКСТ}), frozenset({_ВИДЕО})),
+    TRY_ON: (frozenset({_КАРТИНКА, _ТЕКСТ}), frozenset({_КАРТИНКА})),
 }
 
 
@@ -1375,6 +1390,8 @@ JOB_WORDS: dict[str, tuple[str, ...]] = {
     LIPSYNC: ("lipsync", "lip-sync", "lip sync", "липсинк", "синхронизация губ"),
     AVATAR: ("talking avatar", "talking-avatar", "talking head", "talking-head", "avatar", "аватар"),
     FACE_SWAP: ("face-swap", "face swap", "faceswap", "замена лица"),
+    CHARACTER_REPLACE: ("character-replace", "character replacement", "replace the character", "замена персонажа целиком"),
+    TRY_ON: ("virtual-try-on", "virtual try-on", "try-on", "примерк"),
     DUB: ("dub-translate", "dubbing", "dub", "дубляж"),
     TTS: ("tts", "text-to-speech", "text to speech", "speech synthesis", "voiceover", "озвучк", "синтез речи"),
     VOICE_CLONE: ("voice-clone", "voice clone", "voice cloning", "клон голоса", "клонирование голоса"),

@@ -305,6 +305,40 @@ PRIORS_LIST: tuple[Prior, ...] = (
         TAG_ENGINEERING,
     ),
     Prior(
+        "whole_character_replace",
+        "a mascot, costumed or cartoon character in place of a person replaces the whole figure (silhouette, body, "
+        "motion) from the character reference — a whole-character replacement model (Wan Animate replace class), "
+        "not a face swap, which only moves a human face",
+        "маскот, ростовая кукла или мультперсонаж вместо человека — замена всей фигуры (силуэт, тело, движение) "
+        "по референсу персонажа моделью замены персонажа (класс Wan Animate replace), а не замена лица, которая "
+        "переносит только человеческое лицо",
+        TAG_BASE_ROWS,
+        (
+            Source(
+                "wan-animate-replace",
+                "architecture",
+                "https://fal.ai/models/fal-ai/wan/v2.2-14b/animate/replace/api",
+                "replaces the character in a reference video, keeping the scene",
+            ),
+        ),
+    ),
+    Prior(
+        "virtual_try_on",
+        "a garment from the customer's product photo worn by a model that does not exist yet: text-to-image makes "
+        "the model photo, then a virtual try-on (person image + garment image) puts the garment on it",
+        "вещь с фото товара на модели, которой ещё нет: «текст -> картинка» делает снимок модели, затем "
+        "виртуальная примерка (снимок человека + снимок вещи) надевает вещь",
+        TAG_BASE_ROWS,
+        (
+            Source(
+                "kolors-virtual-try-on",
+                "requires_inputs",
+                _FAL_OPENAPI + "fal-ai/kling/v1-5/kolors-virtual-try-on",
+                "human_image_url and garment_image_url required",
+            ),
+        ),
+    ),
+    Prior(
         "print_upscale",
         "a print needs its trim size in pixels at print DPI; where the base does not record the chosen "
         "generator's largest frame, it is taken as about 2048x2048 (4 MP), so a larger print frame gets an "
@@ -336,6 +370,8 @@ _PRIOR_TOOLS_FAILURES: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
     "audiogram_static_art": (("showwaves", "captions_burn"), ()),
     "mesh_reconstruction": (("mesh_render",), ("unseen_geometry",)),
     "print_upscale": ((), ("upscale_hallucination",)),
+    "whole_character_replace": ((), ("character_motion_drift",)),
+    "virtual_try_on": ((), ("garment_detail_lost",)),
 }
 PRIORS_LIST = tuple(
     Prior(п.id, п.en, п.ru, п.tag, п.sources, *_PRIOR_TOOLS_FAILURES[п.id]) for п in PRIORS_LIST
@@ -377,6 +413,12 @@ TOOLS: dict[str, Tool] = {т.id: т for т in TOOLS_LIST}
 # --- failure modes ----------------------------------------------------------------
 
 FAILURES_LIST: tuple[Failure, ...] = (
+    Failure("character_motion_drift", "the replaced character slips off the actor's motion (limbs, feet) or the "
+            "scene lighting", "заменённый персонаж отстаёт от движения актёра (руки, ноги) или от света сцены",
+            "step through the fastest move and the contact points", "пройти по кадрам самое быстрое движение и касания"),
+    Failure("garment_detail_lost", "try-on redraws the garment: print, logo, buttons or cut drift from the product",
+            "примерка перерисовывает вещь: принт, логотип, пуговицы или крой уходят от товара",
+            "compare print and logo with the product photo at 100%", "сверить принт и логотип с фото товара в 100%"),
     Failure("upscale_hallucination", "generative upscalers invent texture (waxy skin, fake foliage detail)",
             "генеративный апскейл выдумывает фактуру (восковая кожа, лишние детали листвы)",
             "compare a 100% crop against the native render", "сравнить кроп 100% с родным кадром"),
@@ -573,6 +615,29 @@ RECIPES_LIST: tuple[Recipe, ...] = (
         ("audiogram_static_art",),
         ("showwaves", "captions_burn"),
         (),
+    ),
+)
+
+RECIPES_LIST = (
+    *RECIPES_LIST,
+    Recipe(
+        "character_replacement",
+        "a mascot or costumed character replaces a person in the customer's video",
+        (RecipeStep("замена_фигуры", "model", "the character reference is not a human face"),),
+        ("whole_character_replace",),
+        (),
+        ("character_motion_drift",),
+    ),
+    Recipe(
+        "virtual_try_on",
+        "the customer's garment on a generated model",
+        (
+            RecipeStep("генерация_изображения", "model", "the model photo, when the customer brings only the garment"),
+            RecipeStep("примерка", "model", "model photo + garment photo"),
+        ),
+        ("virtual_try_on",),
+        (),
+        ("garment_detail_lost",),
     ),
 )
 

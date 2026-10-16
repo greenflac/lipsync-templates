@@ -62,6 +62,10 @@ STEP_JOB: dict[str, str] = {
     "генерация_видео": "t2v",
     "видео_со_звуком": "t2v_audio",
     "замена_персонажа": "char_replace",
+    # Round 10: whole-character replacement (mascot, costume) is the char_replace
+    # job proper; a virtual try-on is an image edit with a garment reference.
+    "замена_фигуры": "char_replace",
+    "примерка": "image_edit",
     "звук_фон": "sfx",
     "липсинк": "lipsync",
     "генерация_изображения": "t2i",

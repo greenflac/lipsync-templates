@@ -86,6 +86,52 @@ MESH = re.compile(r"\bglb\b|\bgltf\b|\busdz\b|\b3d[- ]?(?:model|mesh|asset)|\bme
 ANIMATE_ART = re.compile(r"animat|motion|move|оживи|оживл|анимир|движени", re.I)
 #: Exact text named in `spec.conditions` (besides a logo): a wordmark, a headline, lettering.
 TEXT_EXACT = re.compile(r"\btext\b|lettering|typograph|headline|wordmark|надпис|текст", re.I)
+#: Round 10: a NON-HUMAN character stands in the replacement — a mascot, a costumed
+#: character, a cartoon or an animal. Read in `spec.people[].name` of a person with
+#: `real: false`, in `spec.conditions`, and in the brief's words.
+CHARACTER = re.compile(
+    r"mascot|costume|\b\w+ suit\b|plush|cartoon|animated character|anime character|creature|robot|\bfox\b|\bbear\b"
+    r"|bunny|rabbit|penguin|маскот|талисман|ростов\w*|костюм\w*|мульт\w*|кукл\w*|зверь|медвед\w*|лис[аы]?\b|заяц|кролик",
+    re.I,
+)
+#: Words that keep it a FACE swap even when the line above fires ("business suit" is a person's clothes).
+FACE_ONLY = re.compile(r"\bface\b|лицо|лица\b|business suit|деловой костюм", re.I)
+#: Round 10: a garment put on a person — a virtual try-on.
+TRY_ON = re.compile(
+    r"try-?on|virtual fitting|\bworn by\b|\bwearing\b|\bwears?\b|\bdressed in\b|\bon (?:a|an|the|our) (?:generated |ai |virtual )?"
+    r"(?:fashion )?model\b|примерк\w*|надет\w*|наден\w*|надень\w*|на (?:сгенерированн\w+ |виртуальн\w+ )?модел\w*",
+    re.I,
+)
+#: A garment named — what the try-on puts on.
+GARMENT = re.compile(
+    r"dress|shirt|t-?shirt|tee\b|jacket|coat|hoodie|sweater|jeans|trousers|pants|skirt|blouse|suit|garment|apparel"
+    r"|clothing|outfit|sneakers|shoes|плать\w*|рубаш\w*|футболк\w*|куртк\w*|пальто|худи|свитер\w*|джинс\w*|брюк\w*"
+    r"|юбк\w*|блуз\w*|одежд\w*|обув\w*|кроссовк\w*|пиджак\w*",
+    re.I,
+)
+
+
+def whole_character(spec: "bs.Spec", text: str = "") -> bool:
+    """A face-replace order whose replacement is a non-human character (mascot, costume): the whole figure goes.
+
+    `spec.people` first: a person with `real: false` named as a character. Then
+    `spec.conditions` and the brief's words — the brief is read only for this
+    role, which the spec has no field for. A face named ("put my face on the
+    mascot") keeps it a face swap.
+    """
+    named = [str(п.get("name") or "") for п in spec.people if п.get("real") is False]
+    if any(CHARACTER.search(n) for n in named):
+        return True
+    said = [str(у) for у in (*spec.conditions, text) if у]
+    return any(CHARACTER.search(у) for у in said) and not any(FACE_ONLY.search(у) for у in said)
+
+
+def wants_try_on(spec: "bs.Spec", text: str = "") -> bool:
+    """A garment from the customer's photo put on a model: an image edit order that names a garment and wearing it."""
+    said = [str(у) for у in (*spec.conditions, text) if у]
+    return any(TRY_ON.search(у) for у in said) and any(GARMENT.search(у) for у in said)
+
+
 #: Edits of the customer's footage that are a mask and a composite (`spec.edit`).
 MASK_EDITS: frozenset[str] = frozenset({"remove-object", "replace-object", "replace-sky"})
 #: Speech-driven video steps: a long one is made in segments.
@@ -136,6 +182,19 @@ NOTE_LYRICS = (
 NOTE_AUDIOGRAM_CAPTIONS = (
     "расшифровка ВАШЕЙ записи с таймингами — для субтитров аудиограммы",
     "timed transcript of YOUR recording — for the audiogram's captions",
+)
+NOTE_WHOLE_CHARACTER = (
+    "персонаж заменяется ЦЕЛИКОМ (фигура, силуэт, движение) по референсу маскота — это не замена лица",
+    "the whole character is replaced (figure, silhouette, motion) from the mascot reference — not a face swap",
+)
+NOTE_TRY_ON = (
+    "виртуальная примерка: снимок модели + снимок вещи -> вещь на модели (крой, принт и логотип сверяются с фото товара)",
+    "virtual try-on: model photo + garment photo -> the garment on the model (check cut, print and logo against "
+    "the product photo)",
+)
+NOTE_TRY_ON_MODEL = (
+    "снимок модели (человека нет на ваших фото): поза в полный рост, простой фон, одежда близкого кроя",
+    "the model photo (no person on your photos): full-length pose, plain background, clothing of a similar cut",
 )
 
 ASSEMBLY_LOGO = (
@@ -303,6 +362,36 @@ def rewrite(spec: "bs.Spec", route: "bs.Маршрут", text: str = "") -> Appl
         if acc.prior("single_host_series", "single_reference"):
             counts["генерация_изображения"] = SINGLE_HOST_REFERENCES
             notes.setdefault("генерация_изображения", NOTE_ONE_REFERENCE[0])
+
+    # --- round 10: a mascot or costumed character replaces the person --------------
+    # Face swap is for a HUMAN face; a mascot replaces the whole figure (silhouette,
+    # body, motion) — the Wan Animate replace class, not inswapper / FaceFusion.
+    if spec.task == "face-replace" and "замена_персонажа" in steps and whole_character(spec, text):
+        if acc.prior("character_replacement", "whole_character_replace"):
+            steps = _replace_step(steps, "замена_персонажа", "замена_фигуры")
+            notes.pop("замена_персонажа", None)
+            notes["замена_фигуры"] = NOTE_WHOLE_CHARACTER[0]
+
+    # --- round 10: virtual try-on on a generated model -------------------------------
+    # The customer brings the garment; the person wearing it does not exist yet:
+    # text-to-image makes the model photo, then a try-on puts the garment on it.
+    # With two or more photos brought, the model photo is the customer's.
+    if (
+        spec.task in ("edit", "generate", None)
+        and "image" in outputs
+        and "video" not in outputs
+        and "photo" in inputs
+        and "редактирование_изображения" in steps
+        and wants_try_on(spec, text)
+    ):
+        if acc.prior("virtual_try_on", "virtual_try_on"):
+            made = ["генерация_изображения"] if _photo_count(spec) <= 1 else []
+            steps = [s for s in steps if s not in ("редактирование_изображения", "генерация_изображения")]
+            steps = [*made, "примерка", *steps]
+            notes.pop("редактирование_изображения", None)
+            notes["примерка"] = NOTE_TRY_ON[0]
+            if made:
+                notes["генерация_изображения"] = NOTE_TRY_ON_MODEL[0]
 
     # --- logo / wordmark ----------------------------------------------------------
     # Only where the piece is MADE (generate / animate): a logo printed on a brought
@@ -650,6 +739,9 @@ NOTES_EN: dict[str, str] = dict(
         NOTE_MATTE,
         NOTE_LYRICS,
         NOTE_AUDIOGRAM_CAPTIONS,
+        NOTE_WHOLE_CHARACTER,
+        NOTE_TRY_ON,
+        NOTE_TRY_ON_MODEL,
     )
 )
 

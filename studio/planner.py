@@ -1758,6 +1758,21 @@ OPERATIONS: tuple[Operation, ...] = (
         чужие=ЧУЖИЕ_ДЛЯ_КАРТИНКИ,
     ),
     Operation(
+        name="примерка",
+        # Десятый круг: одежда с фото товара — на сгенерированную модель.
+        # Подсказок нет: шаг ставит рецепт (`virtual_try_on`), кандидатов даёт
+        # реестр (`ep.TRY_ON`), а без единого эндпоинта примерки — правка
+        # картинки (`ЗАПАСНАЯ_РАБОТА`).
+        cues=(),
+        anchors=("try-on", "virtual-try-on"),
+        requires=(ARTEFACT_IMAGE,),
+        produces=(ARTEFACT_IMAGE,),
+        requirement=(
+            "вещь с фото товара надета на модель: крой, ткань, принт и логотип сохранены, поза и лицо модели "
+            "не тронуты; virtual try-on keeping garment pattern, print and fit"
+        ),
+    ),
+    Operation(
         name="озвучка",
         # `речь` и `закадров` добавлены 2026-09-03: тот, у кого нет ничего,
         # называет РЕЗУЛЬТАТ («английская речь», «закадровый текст»), а не
@@ -2069,6 +2084,21 @@ OPERATIONS: tuple[Operation, ...] = (
         ),
     ),
     Operation(
+        name="замена_фигуры",
+        # Десятый круг: маскот, ростовая кукла, мультперсонаж вместо человека в
+        # кадре — замена ВСЕЙ фигуры (силуэт, тело, движение), а не лица.
+        # Подсказок нет: шаг ставит рецепт (`whole_character_replace`), а
+        # кандидатов даёт только реестр (`ep.CHARACTER_REPLACE`).
+        cues=(),
+        anchors=("animate-replace", "character-replace"),
+        requires=(ARTEFACT_REFERENCE,),
+        produces=(ARTEFACT_VIDEO,),
+        requirement=(
+            "персонаж заменён целиком: фигура, силуэт и движение исходного кадра, свет и цвет сцены сохранены; "
+            "whole-character replacement preserving motion, lighting and colour"
+        ),
+    ),
+    Operation(
         name="звук_фон",
         cues=(
             "фоновые звук",
@@ -2363,6 +2393,8 @@ OPERATIONS: tuple[Operation, ...] = (
     "говорящий_аватар": ep.AVATAR,
     "генерация_видео": ep.T2V,
     "замена_персонажа": ep.FACE_SWAP,
+    "замена_фигуры": ep.CHARACTER_REPLACE,
+    "примерка": ep.TRY_ON,
     "звук_фон": ep.SFX,
     "музыка": ep.MUSIC,
     "липсинк": ep.LIPSYNC,
@@ -2387,6 +2419,16 @@ OPERATIONS: tuple[Operation, ...] = (
 #: Оборот 360° без эндпоинта «turntable» делается оживлением снимка с
 #: облётом камеры: та же работа i2v, только промпт о движении камеры.
 ЗАПАСНАЯ_РАБОТА: dict[str, tuple[str, str]] = {
+    "примерка": (
+        ep.IMAGE_EDIT,
+        "no orderable endpoint records a virtual try-on function — the garment is put on the model by a "
+        "multi-reference image edit (model photo + garment photo) instead",
+    ),
+    "замена_фигуры": (
+        ep.V2V_EDIT,
+        "no orderable endpoint records whole-character replacement — a video edit that replaces the subject "
+        "from the character reference is used instead",
+    ),
     "оборот_360": (
         ep.I2V,
         "no orderable endpoint records a turntable function — the photo is animated "
@@ -3270,7 +3312,7 @@ def _фото_без_движения(
 #: замены цепочки нативным звуком в плане не оставалось ни одного «видео-
 #: делателя», и условный апскейл выбирал апскейлер КАРТИНКИ поверх ролика.
 VIDEO_MAKERS: frozenset[str] = frozenset(
-    {"правка_видео", "видео_по_референсу", "оживление", "генерация_видео", "липсинк", "замена_персонажа", "дубляж", AVATAR_STEP, NATIVE_AUDIO_STEP}
+    {"правка_видео", "видео_по_референсу", "оживление", "генерация_видео", "липсинк", "замена_персонажа", "замена_фигуры", "дубляж", AVATAR_STEP, NATIVE_AUDIO_STEP}
 )
 
 
@@ -4697,6 +4739,7 @@ class Стоимость:
     "оживление": "i2v",
     "апскейл": "v2v",
     "замена_персонажа": "v2v",
+    "замена_фигуры": "v2v",
     "правка_видео": "v2v",
 }
 
@@ -6969,6 +7012,8 @@ def запасной_прогон(
         "модель_3d",
         "правка_видео",
         "видео_по_референсу",
+        "замена_фигуры",
+        "примерка",
     }
 )
 REGISTRY_UNCLASSIFIED_NOTE = "реестр: работа модели не установлена, а эндпоинты этой работы известны"
@@ -8511,6 +8556,8 @@ def _есть_кириллица(текст: str) -> bool:
     "оживление": "photo to video",
     "генерация_видео": "video from scratch",
     "замена_персонажа": "character replacement",
+    "замена_фигуры": "whole-character replacement (mascot, costume)",
+    "примерка": "virtual try-on (garment on the model)",
     "звук_фон": "background sound",
     "липсинк": "lip sync",
     "генерация_изображения": "keyframe images",
@@ -8543,6 +8590,8 @@ def _есть_кириллица(текст: str) -> bool:
     "оживление": "оживление кадра (image-to-video)",
     "генерация_видео": "видео по тексту (text-to-video)",
     "замена_персонажа": "замена персонажа",
+    "замена_фигуры": "замена персонажа целиком (маскот, ростовая кукла)",
+    "примерка": "виртуальная примерка (вещь на модели)",
     "звук_фон": "звуковые эффекты",
     "липсинк": "липсинк",
     "генерация_изображения": "ключевые кадры (text-to-image)",
