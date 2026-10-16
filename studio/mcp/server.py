@@ -1354,8 +1354,8 @@ def plan_pipeline(
     "2.39:1"), audio (none|native|voiceover), objective (cheapest|balanced|
     quality), self_host {gpu, vram_gb | unified_memory_gb} (Apple silicon
     memory is not CUDA VRAM), open_weights, jurisdiction, people [{name, real,
-    public_figure, consent: stated|none|unknown, claim: none|endorsement|
-    political|news|other}], conditions — only what the customer said, e.g.
+    public_figure, deceased, consent: stated|none|unknown, claim: none|
+    endorsement|political|news|other}], claims (below), conditions — only what the customer said, e.g.
     ["hands"] (ranking only). Speech steps are priced × languages; clip steps
     × shots; a per-clone fee once per voice.
 
