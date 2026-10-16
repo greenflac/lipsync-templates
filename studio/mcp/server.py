@@ -945,7 +945,8 @@ def find_models(
         v2v-edit | lipsync | talking-avatar | face-swap | dub-translate | tts |
         voice-clone | music | sfx | t2i | image-edit | bg-remove | upscale-image
         | upscale-video | restore | colorize | frame-interpolate |
-        transcribe-diarize | captions | turntable-360 | image-to-3d — or a word for one
+        transcribe-diarize | captions | turntable-360 | image-to-3d | character-replace |
+        virtual-try-on — or a word for one
         ("faceswap", "background removal"). Restoration (noise, scratches,
         blur) and colorization are separate jobs. Broad words (video, image,
         upscale, audio) are narrowed by the job the question names.

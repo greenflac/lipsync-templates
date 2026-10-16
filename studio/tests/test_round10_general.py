@@ -62,6 +62,13 @@ class Печать(unittest.TestCase):
         self.assertIn("4961x7016 px", says)
         self.assertIn("300 DPI", says)
 
+    def test_апскейл_печати_на_молчании(self) -> None:
+        spec = _spec(task="generate", inputs=[], outputs=["image"], shots=1)
+        found = ra.frame_prior("генерация_изображения", (2400, 3000), spec, printed=True)
+        self.assertEqual("print_upscale", found[0].id)
+        self.assertIsNone(ra.frame_prior("генерация_изображения", (2000, 2000), spec, printed=True))
+        self.assertIsNone(ra.frame_prior("генерация_изображения", (2400, 3000), spec, printed=False))
+
     def test_нота_печати_без_формата_просит_формат(self) -> None:
         spec = _spec(task="generate", inputs=[], outputs=["image"], shots=1)
         rows = ra.notes(spec, ["генерация_изображения"], english=False, text="постер для печати")
@@ -101,6 +108,17 @@ class ЗаявленияВРекламе(unittest.TestCase):
         self.assertEqual(["financial_claim"], cp.text_claims("guaranteed 30% monthly returns"))
         self.assertEqual(["financial_claim"], cp.text_claims("гарантированная доходность 40% годовых"))
 
+    def test_окно_между_глаголом_и_болезнью(self) -> None:
+        self.assertEqual(["health_claim"], cp.text_claims("it cures your chronic insomnia"))
+        self.assertEqual(
+            [], cp.text_claims("our bakery treats guests to fresh warm bread and coffee in the cold season")
+        )
+
+    def test_худшее_решение_побеждает(self) -> None:
+        both = [{"type": "health_claim", "substantiated": False}, {"type": "financial_claim"}]
+        self.assertEqual("refuse", cp.decide(both, "")["decision"])
+        self.assertEqual([0, 1, 2], [cp.DECISION_RANK[d] for d in ("plan", "question", "refuse")])
+
     def test_негативный_контроль(self) -> None:
         for text in (
             "a 30 s ad for sparkling water",
@@ -133,6 +151,14 @@ class ЗаменаПерсонажаИПримерка(unittest.TestCase):
             people=[{"name": "orange fox mascot", "real": False, "public_figure": False, "consent": "unknown", "claim": "none"}],
         )
         self.assertTrue(ra.whole_character(spec))
+        одно_слово = _spec(
+            task="face-replace",
+            inputs=[{"kind": "video", "owned": True, "duration_s": 10}],
+            outputs=["video"],
+            duration_s=10,
+            people=[{"name": "the company mascot", "real": False, "public_figure": False, "consent": "unknown", "claim": "none"}],
+        )
+        self.assertTrue(ra.whole_character(одно_слово))
 
     def test_лицо_остаётся_лицом(self) -> None:
         spec = _spec(task="face-replace", inputs=[{"kind": "video", "owned": True, "duration_s": 10}], outputs=["video"], duration_s=10)
@@ -144,12 +170,26 @@ class ЗаменаПерсонажаИПримерка(unittest.TestCase):
         spec = _spec(task="edit", inputs=[{"kind": "image", "owned": True}], outputs=["image"], shots=2)
         self.assertTrue(ra.wants_try_on(spec, "our dress worn by a generated model"))
         self.assertTrue(ra.wants_try_on(spec, "наденьте куртку на модель"))
+        self.assertTrue(ra.wants_try_on(spec, "virtual try-on of our shirt"))
         self.assertFalse(ra.wants_try_on(spec, "remove the power lines from the photo"))
+        self.assertFalse(ra.wants_try_on(spec, "a woman wearing sunglasses on the beach, change the sky"))
+
+
+class РаботыРеестра(unittest.TestCase):
+    def test_примерка_и_замена_персонажа_по_имени(self) -> None:
+        from studio import endpoints as ep
+
+        def работы(model: str) -> tuple[str, ...]:
+            return tuple(sorted(ep.classify(model, [_fact("summary_line", "x")])[0]))
+
+        self.assertEqual(("image-edit", "virtual-try-on"), работы("kolors-virtual-try-on"))
+        self.assertEqual(("image-edit", "virtual-try-on"), работы("flux-pro-v1-vto"))
+        self.assertEqual(("character-replace", "v2v-edit"), работы("wan-2.2-animate-mix"))
 
 
 class СвояМашина(unittest.TestCase):
     def test_без_gpu_по_имени(self) -> None:
-        for name in ("Raspberry Pi 5", "none (CPU only)", "Intel NUC mini PC", "без видеокарты"):
+        for name in ("Raspberry Pi 5", "Raspberry Pi Zero 2 W", "none (CPU only)", "Intel NUC mini PC", "без видеокарты"):
             self.assertTrue(hn.CPU_ONLY.search(name), name)
         for name in ("RTX 3060", "Jetson Orin", "Apple M2 Pro"):
             self.assertFalse(hn.CPU_ONLY.search(name), name)

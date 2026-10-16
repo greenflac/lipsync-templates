@@ -55,6 +55,9 @@ ROOT = Path(__file__).resolve().parents[1]
     "scripts/mutate_round8.py",
     # Девятый круг: Mac, продление, порядок требований, отвергнутый при бюджете.
     "scripts/mutate_knowledge_r9.py",
+    # Десятый круг: печать и доставка, заявления в рекламе, машина без GPU,
+    # допуск кадра, «самое дешёвое» вне полосы, замена фигуры и примерка.
+    "scripts/mutate_round10.py",
 )
 ПУТЬ_В_ТАБЛИЦЕ = re.compile(r'"((?:studio|scripts|lipsync)/[\w/]+\.py)"')
 

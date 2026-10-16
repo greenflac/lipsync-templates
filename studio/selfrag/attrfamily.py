@@ -379,6 +379,11 @@ import re
             "apple_silicon",
             # Девятый круг: сколько памяти занимает запуск (RAM/VRAM, whisper.cpp).
             "memory_footprint",
+            # Десятый круг: запуск без GPU (Raspberry Pi, CPU) и размер
+            # квантованных весов — «пойдёт ли на моей машине».
+            "cpu_inference",
+            "arm_inference",
+            "gguf_weights_gb",
         ),
         "подстроки": ("vram", "runs_on", "parameter_count"),
     },

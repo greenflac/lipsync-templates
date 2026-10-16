@@ -554,10 +554,11 @@ class ЖиваяБаза(unittest.TestCase):
         отсеяны = {e["model"]: e["why"] for e in итог["gaps"]["excluded_examples"]}
         self.assertTrue(отсеяны["minimax-h3"].startswith("vram: needs >= 33.1 GB, asked 12 GB"))
         self.assertNotIn("minimax-h3", [r["model"] for r in итог["ranked"]])
-        # Ни одна i2v не записала VRAM <= 12 ГБ: честное «не смогли», а наверху —
-        # LTX-2.5 со строками «runs on RTX 3060 12GB» (blog: информация, не довод).
+        # Десятый круг: записан запуск Wan2.2-TI2V-5B на 8 ГБ с выгрузкой
+        # ComfyUI (документация ComfyUI, portal) — у i2v есть VRAM <= 12 ГБ по
+        # записи, и она наверху.
         self.assertEqual(
-            ("could not measure", "ltx-2.5", "informational_only"),
+            ("pass", "wan-2.2-ti2v-5b", "good_news_only"),
             (итог["outcome"], итог["ranked"][0]["model"], итог["ranked"][0]["verdict"]),
         )
         self.assertGreater(итог["gaps"]["excluded_unknown"], 0)
@@ -576,8 +577,10 @@ class ЖиваяБаза(unittest.TestCase):
                 he["require"],
             ),
         )
-        self.assertEqual("eleven_v3", kk["ranked"][0]["model"])
-        self.assertEqual("pass", kk["ranked"][0]["requirements"]["kk"]["outcome"])
+        # Десятый круг: Piper записал казахский голос (kk_KZ, README вендора) —
+        # открытая лёгкая модель встала рядом с eleven_v3; обе с «kk» по записи.
+        первые = {r["model"]: r["requirements"]["kk"]["outcome"] for r in kk["ranked"][:2]}
+        self.assertEqual({"piper-tts": "pass", "eleven_v3": "pass"}, первые)
 
     def test_промахи_реестра(self) -> None:
         р = self.реестр
