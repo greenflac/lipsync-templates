@@ -432,6 +432,8 @@ ARTEFACT_RESTORED = "видео_реставрация"
 ARTEFACT_COLORIZED = "видео_раскраска"
 #: Девятый круг: раскраска СНИМКА (DDColor и правки изображения), не видео.
 ARTEFACT_COLORIZED_IMAGE = "изображение_раскраска"
+#: Девятый круг: 3D-модель (сетка, GLB) по снимкам предмета.
+ARTEFACT_MESH = "3d_модель"
 ARTEFACT_SMOOTH = "видео_интерполяция"
 ARTEFACT_CUTOUT = "изображение_без_фона"
 ARTEFACT_VIDEO_CUTOUT = "видео_без_фона"
@@ -1008,6 +1010,7 @@ OUTPUT_KINDS: dict[str, str] = {
     ARTEFACT_RESTORED: "видео",
     ARTEFACT_COLORIZED: "видео",
     ARTEFACT_COLORIZED_IMAGE: "изображение",
+    ARTEFACT_MESH: "3d-модель",
     ARTEFACT_SMOOTH: "видео",
     ARTEFACT_CUTOUT: "изображение",
     ARTEFACT_VIDEO_CUTOUT: "видео",
@@ -2325,6 +2328,17 @@ OPERATIONS: tuple[Operation, ...] = (
         requirement="предмет поворачивается на 360° без искажения формы, петля без шва",
         клипами=True,
     ),
+    Operation(
+        name="модель_3d",
+        # Девятый круг: «интерактивная 3D-модель стула (GLB) по 6 фото» шла
+        # видео-оборотом — а ролик не сетка. Кандидатов даёт только реестр
+        # (`ep.IMAGE_TO_3D`); нет ни одного — шаг честно без кандидата.
+        cues=(),
+        anchors=("image-to-3d",),
+        requires=(ARTEFACT_IMAGE,),
+        produces=(ARTEFACT_MESH,),
+        requirement="сетка предмета по снимкам: форма и текстура сходятся со всеми сторонами снимков",
+    ),
 )
 
 #: ШАГ -> РАБОТА РЕЕСТРА (`studio/endpoints.py`). КОНСТАНТА-РЕШЕНИЕ пятого
@@ -2353,6 +2367,7 @@ OPERATIONS: tuple[Operation, ...] = (
     "расшифровка": ep.TRANSCRIBE,
     "клонирование_голоса": ep.VOICE_CLONE,
     "оборот_360": ep.TURNTABLE,
+    "модель_3d": ep.IMAGE_TO_3D,
     "правка_видео": ep.V2V_EDIT,
     "видео_по_референсу": ep.R2V,
 }
@@ -6871,6 +6886,7 @@ def запасной_прогон(
         "расшифровка",
         "клонирование_голоса",
         "оборот_360",
+        "модель_3d",
         "правка_видео",
         "видео_по_референсу",
     }
@@ -8340,6 +8356,7 @@ def _есть_кириллица(текст: str) -> bool:
     "расшифровка": "transcription with speaker labels",
     "клонирование_голоса": "voice clone + narration",
     "оборот_360": "360° turntable",
+    "модель_3d": "3D model from photos (image-to-3D)",
     "правка_видео": "video edit (your footage)",
     "видео_по_референсу": "reference-to-video (consistent character)",
     AVATAR_STEP: "talking avatar (photo + voice)",
@@ -8371,6 +8388,7 @@ def _есть_кириллица(текст: str) -> bool:
     "расшифровка": "расшифровка с метками говорящих",
     "клонирование_голоса": "клон голоса + начитка",
     "оборот_360": "оборот 360°",
+    "модель_3d": "3D-модель по снимкам (image-to-3D)",
     "правка_видео": "правка видео (ваш материал)",
     "видео_по_референсу": "видео по референсу (один персонаж)",
     AVATAR_STEP: "говорящий аватар (снимок + голос)",
@@ -8833,6 +8851,7 @@ def дороже_потолка(
         ARTEFACT_RESTORED,
         ARTEFACT_COLORIZED,
         ARTEFACT_COLORIZED_IMAGE,
+        ARTEFACT_MESH,
         ARTEFACT_SMOOTH,
         ARTEFACT_CUTOUT,
         ARTEFACT_VIDEO_CUTOUT,

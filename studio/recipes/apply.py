@@ -79,6 +79,8 @@ ARTEFACT_VIDEO = "видео"
 ALPHA = re.compile(
     r"transparen|\balpha[- ]?channel|\bwith alpha\b|\bwebm\b|prores ?4444|прозрачн|альфа-?канал", re.I
 )
+#: A 3D deliverable named — in `spec.conditions` or, as a delivery format, in the brief's words.
+MESH = re.compile(r"\bglb\b|\bgltf\b|\busdz\b|\b3d[- ]?(?:model|mesh|asset)|\bmesh\b|3d-модел|3d модел|\bсетк", re.I)
 #: The customer asks to animate the brought art itself (a visualiser, not an audiogram).
 ANIMATE_ART = re.compile(r"animat|motion|move|оживи|оживл|анимир|движени", re.I)
 #: Exact text named in `spec.conditions` (besides a logo): a wordmark, a headline, lettering.
@@ -173,6 +175,10 @@ ASSEMBLY_LYRICS = (
     "строки текста ставятся по меткам слов и анимируются типографикой (ffmpeg / After Effects) — 0 usd",
     "the lyric lines are placed on the word timestamps and animated as typography (ffmpeg / After Effects) — 0 usd",
 )
+ASSEMBLY_MESH_RENDER = (
+    "ролик-оборот рендерится из 3D-модели (Blender) — 0 usd",
+    "the turntable clip is rendered from the 3D model (Blender) — 0 usd",
+)
 ASSEMBLY_AUDIOGRAM = (
     "волна звука (ffmpeg showwaves) и субтитры ложатся поверх ВАШЕЙ обложки — 0 usd",
     "the waveform (ffmpeg showwaves) and the captions are laid over YOUR cover art — 0 usd",
@@ -237,6 +243,11 @@ def _replace_step(steps: list[str], old: str, new: str) -> list[str]:
 def wants_alpha(spec: "bs.Spec", text: str = "") -> bool:
     """A transparent background asked for: `spec.conditions`, or the brief's own words."""
     return any(ALPHA.search(str(у)) for у in (*spec.conditions, text))
+
+
+def wants_mesh(spec: "bs.Spec", text: str = "") -> bool:
+    """A 3D model asked for: `spec.conditions`, or the brief's own words."""
+    return any(MESH.search(str(у)) for у in (*spec.conditions, text))
 
 
 def rewrite(spec: "bs.Spec", route: "bs.Маршрут", text: str = "") -> Applied:
@@ -350,6 +361,16 @@ def rewrite(spec: "bs.Spec", route: "bs.Маршрут", text: str = "") -> Appl
             steps = ["расшифровка", *steps]
             notes["расшифровка"] = NOTE_LYRICS[0]
             acc.assembly.append(ASSEMBLY_LYRICS)
+
+    # --- 3D model of a product -----------------------------------------------------
+    # Round 9: «interactive 3D model of our chair (GLB) from 6 photos» was planned
+    # as a turntable VIDEO — a clip is not a mesh.
+    if spec.task == "turntable" and "оборот_360" in steps and wants_mesh(spec, text):
+        if acc.prior("product_3d", "mesh_reconstruction"):
+            steps = _replace_step(steps, "оборот_360", "модель_3d")
+            notes.pop("оборот_360", None)
+            if "video" in outputs:
+                acc.assembly.append(ASSEMBLY_MESH_RENDER)
 
     # --- transparent background ---------------------------------------------------
     # Round 9. No generator renders alpha: «transparent background for our

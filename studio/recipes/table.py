@@ -289,6 +289,14 @@ PRIORS_LIST: tuple[Prior, ...] = (
         TAG_ENGINEERING,
     ),
     Prior(
+        "mesh_reconstruction",
+        "a 3D model (GLB / USDZ / mesh) is an image-to-3D reconstruction from YOUR photos, not a turntable video; "
+        "a turntable clip, if wanted, is rendered from the mesh at assembly",
+        "3D-модель (GLB / USDZ / сетка) — это реконструкция по ВАШИМ снимкам (image-to-3D), а не видео-оборот; "
+        "ролик-оборот, если нужен, рендерится из модели при сборке",
+        TAG_ENGINEERING,
+    ),
+    Prior(
         "audiogram_static_art",
         "an audiogram over YOUR cover art is assembly: the art stays still, the waveform (ffmpeg showwaves) and "
         "the captions move — animating the art is not needed (name 'animate' in conditions to animate it)",
@@ -316,6 +324,7 @@ _PRIOR_TOOLS_FAILURES: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
     "alpha_matte": (("alpha_encode",), ("matte_edge",)),
     "lyrics_alignment": (("captions_burn",), ("lyric_drift",)),
     "audiogram_static_art": (("showwaves", "captions_burn"), ()),
+    "mesh_reconstruction": (("mesh_render",), ("unseen_geometry",)),
 }
 PRIORS_LIST = tuple(
     Prior(п.id, п.en, п.ru, п.tag, п.sources, *_PRIOR_TOOLS_FAILURES[п.id]) for п in PRIORS_LIST
@@ -346,6 +355,8 @@ TOOLS_LIST: tuple[Tool, ...] = (
          "убрать пыль и вертикальные царапины по кадрам"),
     Tool("extract_audio", "ffmpeg -vn", "take the voice sample out of the customer's video",
          "вынуть образец голоса из видео заказчика"),
+    Tool("mesh_render", "Blender (Cycles / Eevee)", "render a turntable clip from the mesh",
+         "отрендерить ролик-оборот из 3D-модели"),
     Tool("alpha_encode", "ffmpeg libvpx-vp9 / prores_ks", "encode the matted clip with alpha (WebM VP9 or ProRes 4444)",
          "закодировать ролик с альфа-каналом (WebM VP9 или ProRes 4444)"),
 )
@@ -385,6 +396,9 @@ FAILURES_LIST: tuple[Failure, ...] = (
             "check VRAM of the weights against the card", "сверить память весов с картой"),
     Failure("matte_edge", "the matte edge fringes or flickers (hair, motion blur)", "край маски с ореолом или мерцает (волосы, смаз)",
             "play the alpha over black and over white", "посмотреть альфу на чёрном и на белом фоне"),
+    Failure("unseen_geometry", "geometry the photos never showed is invented (underside, back)",
+            "геометрия, которой нет на снимках, выдумана (низ, спина)",
+            "turn the mesh to every side the photos did not cover", "повернуть модель всеми сторонами, которых нет на снимках"),
     Failure("lyric_drift", "lyric lines drift off the sung words", "строки текста уезжают от спетых слов",
             "check the first word of every line against the vocal", "сверить первое слово каждой строки с вокалом"),
 )
@@ -523,6 +537,17 @@ RECIPES_LIST: tuple[Recipe, ...] = (
         ("lyrics_alignment",),
         ("captions_burn",),
         ("lyric_drift",),
+    ),
+    Recipe(
+        "product_3d",
+        "a 3D model of the customer's product from photos",
+        (
+            RecipeStep("модель_3d", "model", "image-to-3D from every photo"),
+            RecipeStep("mesh_render", "tool", "turntable clip from the mesh, when a video is wanted"),
+        ),
+        ("mesh_reconstruction",),
+        ("mesh_render",),
+        ("unseen_geometry",),
     ),
     Recipe(
         "audiogram",

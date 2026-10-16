@@ -91,6 +91,9 @@ INTERPOLATE = "frame-interpolate"
 TRANSCRIBE = "transcribe-diarize"
 CAPTIONS = "captions"
 TURNTABLE = "turntable-360"
+#: Девятый круг: 3D-модель по снимкам (TRELLIS, Hunyuan3D, Tripo). Не видео:
+#: выход — сетка (GLB), а видео-оборот из неё рендерит монтаж.
+IMAGE_TO_3D = "image-to-3d"
 
 #: Управляемый словарь работ. Порядок — порядок отчёта покрытия.
 FUNCTIONS: tuple[str, ...] = (
@@ -117,6 +120,7 @@ FUNCTIONS: tuple[str, ...] = (
     TRANSCRIBE,
     CAPTIONS,
     TURNTABLE,
+    IMAGE_TO_3D,
 )
 
 #: Работы, у которых ВЫХОД — видео: им нужна длина прогона (ролик длиннее
@@ -201,6 +205,7 @@ JOB_RULES: tuple[tuple[str, tuple[str, ...]], ...] = (
     (r"speech-to-text|transcri\w*|diariz\w*|scribe|whisper|asr|stt", (TRANSCRIBE,)),
     (r"auto-caption\w*|subtitl\w*", (CAPTIONS,)),
     (r"turntable|orbit|360-?spin|multi-?view|novel-view", (TURNTABLE,)),
+    (r"image-to-3d|img-to-3d|image23d|trellis|hunyuan-?3d|tripo(?:sr|sg)?|rodin|instantmesh|sf3d|spar3d", (IMAGE_TO_3D,)),
 )
 
 #: Звено апскейла: какая из двух работ — решает выход или звено видео/картинки.
@@ -300,6 +305,7 @@ SHAPE_RULES: dict[tuple[frozenset[str], str], str] = {
 #: отсутствие вида среди принимаемых противоречием не считается. Пусто — вид
 #: не проверяется. КОНСТАНТА-РЕШЕНИЕ: сторожит свойство-тест по всему реестру.
 _ВИДЕО, _КАРТИНКА, _ЗВУК, _ТЕКСТ = "видео", "изображение", "аудио", "текст"
+_3D = "3d-модель"
 SIGNATURES: dict[str, tuple[frozenset[str], frozenset[str]]] = {
     T2V: (frozenset({_ТЕКСТ}), frozenset({_ВИДЕО})),
     I2V: (frozenset({_КАРТИНКА, _ТЕКСТ}), frozenset({_ВИДЕО})),
@@ -324,6 +330,7 @@ SIGNATURES: dict[str, tuple[frozenset[str], frozenset[str]]] = {
     TRANSCRIBE: (frozenset({_ЗВУК, _ВИДЕО}), frozenset({_ТЕКСТ})),
     CAPTIONS: (frozenset({_ВИДЕО, _ЗВУК, _ТЕКСТ}), frozenset({_ВИДЕО})),
     TURNTABLE: (frozenset({_КАРТИНКА, _ТЕКСТ}), frozenset({_ВИДЕО})),
+    IMAGE_TO_3D: (frozenset({_КАРТИНКА, _ТЕКСТ}), frozenset({_3D})),
 }
 
 
@@ -1401,6 +1408,7 @@ JOB_WORDS: dict[str, tuple[str, ...]] = {
     ),
     CAPTIONS: ("captions", "subtitles", "субтитр"),
     TURNTABLE: ("turntable-360", "turntable", "360 spin", "оборот 360"),
+    IMAGE_TO_3D: ("image-to-3d", "3d model", "3d reconstruction", "glb", "3d-модель"),
 }
 
 #: ШИРОКИЕ СЛОВА: называют не одну работу, а несколько. Как `function` они
