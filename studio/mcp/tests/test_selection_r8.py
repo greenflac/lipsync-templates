@@ -44,6 +44,7 @@ class ЧастотаПоЗаявленному(unittest.TestCase):
         self.assertEqual([60.0], capability._fps_строки("up to 60 fps, not 120 fps", "fps"))
         self.assertEqual([50.0], capability._fps_строки("50 fps — not the 120 fps some blogs claim", "fps"))
         self.assertEqual([30.0], capability._fps_строки("30", "frame_rate"))
+        self.assertEqual([30.0], capability._fps_строки("30 fps (some blogs claim 60 fps)", "fps"))
 
     def test_знак_e05(self) -> None:
         вопрос = capability.Вопрос("video generation at 60 fps natively", "fps, 60fps", "")
@@ -250,6 +251,7 @@ class ДетскийСериалНеНесовершеннолетние(unittes
         self.assertEqual(
             ["minors: kids"], self._метки("video of my son and his kids friends playing football")
         )
+        self.assertEqual(["minors: kids"], self._метки("a kids series about my daughter"))
 
     def test_план_детского_сериала_строится(self) -> None:
         import json
