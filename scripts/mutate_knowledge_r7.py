@@ -167,7 +167,7 @@ MUTANTS: tuple[tuple[str, str, str, str], ...] = (
     ),
     (
         PN,
-        '    if set(узел.hosting) & set(юрисдикции):\n        return ""',
+        '    if not чужие or ваши & set(getattr(узел, "hosting_pinned", ()) or ()):\n        return ""',
         '    if False:\n        return ""',
         "хостинг в вашей юрисдикции всё равно отсеивает",
     ),
