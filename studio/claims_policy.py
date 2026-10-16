@@ -83,7 +83,13 @@ _DISEASE = (
     r"|бессонниц\w*|ожирени\w*|болезн\w*|заболевани\w*|инфекц\w*|холестерин\w*|мигрен\w*|простуд\w*"
     r"|грипп\w*|псориаз\w*|экзем\w*|облысени\w*|выпадени\w* волос)"
 )
-HEALTH_TEXT = re.compile(r"\b" + _HEALTH_VERB + r"\s+" + _W + _DISEASE + r"(?![\w])", re.I)
+HEALTH_TEXT = re.compile(
+    r"\b(?:" + _HEALTH_VERB + r"|protects? (?:you )?(?:from|against)|защищает от)\s+" + _W + _DISEASE + r"(?![\w])"
+    # Weight-loss promises with a number and immunity boosts are health claims too.
+    r"|\blose \d+\s*(?:kg|kilos?|lbs?|pounds)\b|\bпохуде\w* на \d+|\bсброс\w* \d+\s*кг"
+    r"|\bboosts? (?:your )?immun\w*|\bукрепля\w* иммунитет",
+    re.I,
+)
 
 _GUARANTEE = (
     r"(?:guarantee[sd]?|guaranteeing|risk[- ]free|no risk|zero risk|without risk|sure[- ]fire|can'?t lose"

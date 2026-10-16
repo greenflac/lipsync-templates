@@ -104,6 +104,11 @@ class ЗаявленияВРекламе(unittest.TestCase):
         self.assertEqual(["health_claim"], cp.text_claims("our tea cures anxiety and lowers blood pressure"))
         self.assertEqual(["health_claim"], cp.text_claims("наша добавка излечивает диабет за месяц"))
 
+    def test_похудение_и_иммунитет(self) -> None:
+        self.assertEqual(["health_claim"], cp.text_claims("lose 10 kg in two weeks with our tea"))
+        self.assertEqual(["health_claim"], cp.text_claims("сироп укрепляет иммунитет"))
+        self.assertEqual(["health_claim"], cp.text_claims("it protects you against the flu"))
+
     def test_текст_деньги_en_ru(self) -> None:
         self.assertEqual(["financial_claim"], cp.text_claims("guaranteed 30% monthly returns"))
         self.assertEqual(["financial_claim"], cp.text_claims("гарантированная доходность 40% годовых"))
