@@ -205,6 +205,10 @@ class ЖиваяБаза(unittest.TestCase):
         )
         self.assertEqual("", ep.input_mismatch(узел, ("изображение",)))
         self.assertEqual("", ep.input_mismatch(self.р.get("topaz-denoise-video"), ("видео",)))
+        # Интеграция: `референс` — вход плана без вида; дубляж не снимает
+        # эндпоинт, берущий видео/аудио (негативный контроль — картинка выше).
+        self.assertEqual("", ep.input_mismatch(self.р.get("elevenlabs-dubbing"), ("референс",)))
+        self.assertTrue(ep.input_mismatch(self.р.get("elevenlabs-dubbing"), ("селфи",)))
 
     def test_открытые_веса_липсинка_с_памятью(self) -> None:
         self.assertEqual(8.0, self.р.get("latentsync-1.5").vram_gb)
