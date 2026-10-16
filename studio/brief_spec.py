@@ -2211,7 +2211,10 @@ DRAFT_EDIT_CUES: tuple[tuple[str, str], ...] = (
     (ep.EDIT_REPLACE_SKY, r"sky replac\w*|replace (?:the )?sky|замен\w* неб\w*"),
     (ep.EDIT_REMOVE_OBJECT, r"remove (?:a |the )?(?:logo|watermark|object|person|people|passer)|(?:убра|удал)\w* (?:объект|прохож|человек|логотип)"),
     (ep.EDIT_REPLACE_OBJECT, r"replace (?:the |a )?(?!sky)\w+|замен\w* (?!неб)"),
-    (ep.EDIT_RELIGHT, r"relight\w*|day[- ]to[- ]night|переосвет\w*"),
+    # Свет на объекте и экспозиция — переосвещение; смена времени суток — своя
+    # правка (восьмой круг, валидатор v8 n13).
+    (ep.EDIT_RELIGHT, r"relight\w*|under-?expos\w*|over-?expos\w*|key light|переосвет\w*|недоэкспон\w*|пересвеч\w*"),
+    (ep.EDIT_DAY_TO_NIGHT, r"day[- ]to[- ]night|night[- ]to[- ]day|день в ночь|ночь в день"),
     (ep.EDIT_RESTYLE, r"restyl\w*|style transfer|color[- ]?grad\w*|colou?r correct\w*|цветокор\w*"),
 )
 
@@ -2252,6 +2255,7 @@ DRAFT_TASK_CUES: tuple[tuple[str, str, str], ...] = (
         "video-edit",
         r"stabili[sz]\w*|стабилиз\w*|reframe\w*|re-frame|outpaint\w*|расшир\w* кадр|sky replac\w*|"
         r"replace (?:the )?sky|замен\w* неб\w*|remove (?:a |the )?(?:logo|watermark|object|person|people|passer)"
+        r"|relight\w*|under-?expos\w*|переосвет\w*|day[- ]to[- ]night"
         r"|color[- ]?grad\w*|colou?r correct\w*|цветокор\w*|vertical .{0,40}into .{0,30}horizontal"
         r"|horizontal .{0,40}into .{0,30}vertical|convert (?:our|my) .{0,40}(?:16:9|9:16)",
         "video",

@@ -6851,6 +6851,7 @@ def candidates_for(
     hard: "hn.Hard | None" = None,
     stated_conditions: Sequence[str] = (),
     edit_intents: Sequence[str] = (),
+    requested_flags: Sequence[str] = (),
 ) -> "Кандидаты":
     """Кандидаты на операцию: модели, о которых база говорит СЛОВАМИ ОПЕРАЦИИ.
 
@@ -6995,6 +6996,11 @@ def candidates_for(
                     else узел.why_not_orderable
                 )
                 del по_модели[ключ]
+            elif ep.excluded_by_flags(узел, requested_flags):
+                # Мёрж сообщества, NSFW, стилевой LoRA (восьмой круг,
+                # `endpoints.flags_of`): кандидат только по явной просьбе.
+                не_заказываются[написание[ключ]] = ep.excluded_by_flags(узел, requested_flags)
+                del по_модели[ключ]
             elif узел.functions and not set(узел.functions) & set(работы):
                 чужая_по_реестру[написание[ключ]] = (
                     f"реестр: делает {', '.join(узел.functions)} ({узел.evidence}), "
@@ -7014,7 +7020,10 @@ def candidates_for(
         for узел in [
             у
             for р in работы
-            for у in реестр.by_function.get(р, [])
+            for у in [
+                *реестр.by_function.get(р, []),
+                *(у for у in реестр.flagged.get(р, []) if not ep.excluded_by_flags(у, requested_flags)),
+            ]
             if (у.orderable and not семья_только_у_себя(у))
             or (hard is not None and hard.self_host and у.self_hostable)
             # Без маршрута, не семья, и реестр работы строго не знает — та же
@@ -11170,6 +11179,7 @@ def plan(
             жёсткие,
             stated_conditions=заявленные_условия,
             edit_intents=маршрут.правки if маршрут.правки is not None else понято.edit,
+            requested_flags=tuple(ep.requested_flags(brief)),
         )
 
     # СКОЛЬКО ШОТОВ (2026-10-15, четвёртый круг). Явное число; «each» над N;

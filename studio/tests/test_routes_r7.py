@@ -116,7 +116,7 @@ class ПравкаОписана(unittest.TestCase):
         self.assertTrue(
             bs.OPTIONAL_HELP["edit"].startswith(
                 "for video-edit — WHAT is edited: a list of reframe | replace-object | remove-object | "
-                "replace-sky | stabilise | relight | restyle"
+                "replace-sky | stabilise | relight | day-to-night | restyle"
             )
         )
 
