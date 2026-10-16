@@ -136,7 +136,9 @@ def print_frame(spec: "bs.Spec", text: str = "") -> tuple[tuple[int, int], str, 
 
 def _landscape(aspect: str | None) -> bool:
     м = re.fullmatch(r"\s*(\d+(?:\.\d+)?)\s*[:x/]\s*(\d+(?:\.\d+)?)\s*", str(aspect or ""))
-    return bool(м) and float(м.group(1)) > float(м.group(2))
+    if м is None:
+        return False
+    return float(м.group(1)) > float(м.group(2))
 
 
 # --- interlaced tape ---------------------------------------------------------------

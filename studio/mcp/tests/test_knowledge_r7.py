@@ -433,7 +433,9 @@ class Юрисдикция(unittest.TestCase):
         молчит = ep.Endpoint(model="quiet-tts", key="quiet-tts")
         # Девятый круг: регион вне вашей юрисдикции без записанного закрепления
         # отсеивает — вендор сам решает, где обработать запрос.
-        eu_pinned = ep.Endpoint(model="pin-tts", key="pin-tts", hosting=("EU", "US"), hosting_pinned=("EU",))
+        eu_pinned = ep.Endpoint(
+            model="pin-tts", key="pin-tts", hosting=("EU", "US"), hosting_pinned=("EU",)
+        )
         self.assertEqual(
             [
                 "хостинг/юрисдикция вендора по записи: US — ни одна не ваша (EU): serving_regions = «USA»",

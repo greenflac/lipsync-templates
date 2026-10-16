@@ -1522,7 +1522,8 @@ def _план(
     # ЗАЯВЛЕНИЯ О ЗДОРОВЬЕ И ДЕНЬГАХ (десятый круг, `studio.claims_policy`):
     # их типы в `spec.claims` решает свой модуль, а не просев — просеву
     # отдаётся spec без них.
-    spec, свои_заявления = claims_policy.split(spec)
+    без_заявлений, свои_заявления = claims_policy.split(spec)
+    spec = dict(без_заявлений) if без_заявлений is not None else None
     заявления = claims_policy.decide(свои_заявления, brief)
     люди_spec, spec_плана = screen.люди_из_spec(spec, bs.SPEC_FIELDS)
     просев, политика = screen.просеять_с_людьми(
@@ -1748,7 +1749,9 @@ def вопрос_о_заявлении(итог: dict, заявления: Mappi
     out["outcome"] = UNMEASURED
     out["reason"] = planner.REASON_NEED_ANSWER
     out["что_дальше"] = (
-        f"answer the question first: {строка['text']}" if англ else f"сначала ответьте на вопрос: {строка['text']}"
+        f"answer the question first: {строка['text']}"
+        if англ
+        else f"сначала ответьте на вопрос: {строка['text']}"
     )
     out["note"] = (
         f"{строка['text']} — the plan below is a draft until this is answered. {out.get('note', '')}"

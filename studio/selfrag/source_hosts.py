@@ -302,7 +302,11 @@ VENDOR_SOURCES: dict[str, tuple[str, ...]] = {
     "pocket": ("huggingface.co/kyutai/",),
     "gemma": ("huggingface.co/google/", "ai.google.dev", "deepmind.google"),
     # Round 10: Resemble AI's own GitHub organisation (the Chatterbox README).
-    "chatterbox": ("huggingface.co/ResembleAI/", "github.com/resemble-ai/", "raw.githubusercontent.com/resemble-ai/"),
+    "chatterbox": (
+        "huggingface.co/ResembleAI/",
+        "github.com/resemble-ai/",
+        "raw.githubusercontent.com/resemble-ai/",
+    ),
     "indextts": ("huggingface.co/IndexTeam/",),
     "supertonic": ("huggingface.co/Supertone/",),
     "sensenova": ("huggingface.co/sensenova/",),
