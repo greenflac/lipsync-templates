@@ -28,11 +28,11 @@
  },
  {
   "function": "v2v-edit",
-  "orderable": 55,
+  "orderable": 57,
   "priced": 51,
-  "priced_pct": 92.7,
-  "with_run_length": 18,
-  "run_length_pct": 32.7,
+  "priced_pct": 89.5,
+  "with_run_length": 20,
+  "run_length_pct": 35.1,
   "video": true
  },
  {
@@ -232,5 +232,14 @@
   "with_run_length": 0,
   "run_length_pct": 0.0,
   "video": false
+ },
+ {
+  "function": "motion-transfer",
+  "orderable": 4,
+  "priced": 2,
+  "priced_pct": 50.0,
+  "with_run_length": 4,
+  "run_length_pct": 100.0,
+  "video": true
  }
 ]
