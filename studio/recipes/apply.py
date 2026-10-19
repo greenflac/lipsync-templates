@@ -707,15 +707,15 @@ def rewrite(spec: "bs.Spec", route: "bs.Маршрут", text: str = "") -> Appl
         and not set(steps) & SPEECH_CONSUMERS
         and (spec.characters or 0) < 2
     ):
-        maker = next((s for s in steps if s in LOOP_MAKERS), None)
-        if maker is not None and acc.prior("shared_loop", "loop_reuse"):
-            step_seconds[maker] = (loop_s, loop_s)
-            counts[maker] = 1
+        loop_step = next((s for s in steps if s in LOOP_MAKERS), None)
+        if loop_step is not None and acc.prior("shared_loop", "loop_reuse"):
+            step_seconds[loop_step] = (loop_s, loop_s)
+            counts[loop_step] = 1
             if "генерация_изображения" in steps:
                 counts["генерация_изображения"] = 1
-            notes[maker] = NOTE_LOOP_ONCE[0].format(s=f"{loop_s:g}")
+            notes[loop_step] = NOTE_LOOP_ONCE[0].format(s=f"{loop_s:g}")
             acc.assembly.append(ASSEMBLY_LOOP_VERSIONS)
-            shared.append(maker)
+            shared.append(loop_step)
     if counts.get("генерация_изображения") == SINGLE_HOST_REFERENCES and "генерация_изображения" in steps:
         shared.append("генерация_изображения")
 

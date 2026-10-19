@@ -84,7 +84,7 @@ MUTANTS: tuple[tuple[str, str, str, str], ...] = (
      "        elif (spec.characters or 0) >= MULTI_CHARACTER_MIN:", "один шот двух персонажей — референсы и правка"),
     (TB, "LOOP_CLIP_S = VISUALISER_LOOP_CLIP_S", "LOOP_CLIP_S = 4", "петля без названной длины вдвое короче"),
     (TB, "LOOP_CLIP_S = VISUALISER_LOOP_CLIP_S", "LOOP_CLIP_S = 16", "петля без названной длины вдвое длиннее"),
-    (AP, "            counts[maker] = 1", "            pass", "петля генерируется на каждую версию"),
+    (AP, "            counts[loop_step] = 1", "            pass", "петля генерируется на каждую версию"),
     (PN, '    if штук is not None and {OUTPUT_KINDS.get(а) for а in op.produces} != {"изображение"}:', "    if False:",
      "счёт маршрута у видео-шага не печатается"),
     (PN, '        общий = шаг in отмечены or шаг == "клонирование_голоса" or (шаг in SHARED_ASSET_STEPS and берут > сделано)',

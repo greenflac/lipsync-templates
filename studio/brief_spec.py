@@ -2903,8 +2903,11 @@ FIELD_HELP: dict[str, str] = {
 #: по умолчанию). Е1: тот же текст в описании инструмента.
 OPTIONAL_HELP: dict[str, str] = {
     "edit": (
-        "for video-edit — WHAT is edited: a list of " + " | ".join(ep.EDIT_INTENTS)
-        + "; stabilise is done at assembly (ffmpeg vidstab / Gyroflow, 0 usd) when no endpoint does it"
+        "for video-edit — WHAT is edited: a list of " + " | ".join(EDIT_VALUES)
+        + "; stabilise is done at assembly (ffmpeg vidstab / Gyroflow, 0 usd) when no endpoint does it; "
+        + ", ".join(ASSEMBLY_ONLY_EDITS)
+        + " are always assembly (ffmpeg, 0 usd, no model step); a reframe to an aspect not wider than the source is "
+        "a tracked crop"
     ),
     "lipsync": (
         "for dub-translate — move the lips to the new speech: true | false; default true when outputs include "
