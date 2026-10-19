@@ -1,0 +1,39 @@
+# The studio site block for the HARNESS Caddy (harness-VPS layout, docs/CONNECTOR.md).
+#
+# On the VPS that already serves harness.greenflac.online, the harness Caddy owns 80/443, so a
+# second Caddy cannot start there. Instead this block goes into the harness's deploy/Caddyfile
+# (a change in the green_harness repository, reviewed there, then installed by its
+# vps-bootstrap.sh like any harness configuration change), and the harness compose's caddy
+# service gets `extra_hosts: ["host.docker.internal:host-gateway"]` so it can reach the studio
+# server published on the VPS loopback (127.0.0.1:8770, deploy/compose.yaml).
+#
+# Same headers and the same path allowlist as deploy/Caddyfile.
+
+studio.greenflac.online {
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "no-referrer"
+		Content-Security-Policy "default-src 'none'; frame-ancestors 'none'"
+		Cross-Origin-Resource-Policy "same-origin"
+		-Server
+	}
+
+	request_body {
+		max_size 2MB
+	}
+
+	@app path /mcp /mcp/* /healthz /.well-known/oauth-authorization-server /.well-known/oauth-protected-resource/mcp /register /authorize /token /revoke /oauth/login
+	handle @app {
+		reverse_proxy host.docker.internal:8770
+	}
+	handle {
+		respond "not found" 404
+	}
+
+	log {
+		output stdout
+		format json
+	}
+}

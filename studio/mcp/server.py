@@ -88,13 +88,12 @@ from typing import Any
 
 from mcp.server.mcpserver import MCPServer
 
-from studio import brief_spec as bs
-from studio import claims_policy, clarify, knowledge, l10n, planner
+from studio import claims_policy, clarify, l10n
+from studio.mcp.lazy import lazy
 from studio.selfrag.facts import STALE_AFTER_DAYS  # noqa: E402
 from studio import ruwords
 from studio.mcp import (
     advice,
-    capability,
     contract,
     creative,
     fetch,
@@ -108,6 +107,15 @@ from studio.mcp import screen  # noqa: E402
 
 
 from studio.mcp import lipsync_prompt as lp
+
+# Imported on the first tool call that needs them, not on `initialize`
+# (studio/mcp/lazy.py says why): the planner pulls endpoints, recipes,
+# factindex and pricing; capability and brief_spec pull endpoints and the
+# pipeline.
+bs = lazy("studio.brief_spec")
+knowledge = lazy("studio.knowledge")
+planner = lazy("studio.planner")
+capability = lazy("studio.mcp.capability")
 
 
 def _группы(метки: list[str], англ: bool = False) -> list[str]:

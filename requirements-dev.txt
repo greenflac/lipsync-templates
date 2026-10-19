@@ -30,6 +30,11 @@ uvicorn==0.52.4
 python-multipart==0.0.32
 # The chat agent (studio/mcp) — pinned to what was installed and measured on 2026-08-27.
 mcp==2.1.1
+# The hosted connector (studio/mcp/http_app.py, oauth.py) imports Starlette itself:
+# its requests, responses and routes, and its TestClient in the connector tests.
+# It came only through mcp and fastapi until then. The pin is the version that
+# was installed and measured on 2026-10-19 beside the two pins above.
+starlette==1.7.0
 # Канал к поду RunPod через терминал его JupyterLab (studio/shoot/pod.py): SSH,
 # API и документация RunPod из облачной сессии закрыты, открыт только HTTP-прокси
 # пода. Пин — версия, на которой 2026-10-07 гонялась подготовка пода.

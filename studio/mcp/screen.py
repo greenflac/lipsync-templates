@@ -2106,10 +2106,25 @@ def _есть_появление(строка: str) -> bool:
 
 #: Формы компаний — БЕРУТСЯ У ПЛАНИРОВЩИКА (Е1). Вторая копия этого списка
 #: разъехалась бы с первой на первой же правке.
-try:  # pragma: no cover - подстраховка на случай кругового импорта
-    from studio.planner import ФОРМЫ_КОМПАНИЙ as _ФОРМЫ_КОМПАНИЙ
-except Exception:  # pragma: no cover
-    _ФОРМЫ_КОМПАНИЙ = frozenset({"inc", "ltd", "llc", "studio", "studios"})
+#:
+#: Берутся ПРИ ПЕРВОЙ ПРОВЕРКЕ, а не при импорте модуля: импорт планировщика
+#: тянет endpoints, recipes и factindex, а `screen` импортирует сервер ещё до
+#: рукопожатия MCP — на холодной машине это отвечало `initialize` позже, чем
+#: клиент готов ждать (studio/mcp/lazy.py).
+class _ФормыУПланировщика:
+    _формы: frozenset[str] | None = None
+
+    def __contains__(self, слово: object) -> bool:
+        if self._формы is None:
+            try:  # pragma: no cover - подстраховка на случай кругового импорта
+                from studio.planner import ФОРМЫ_КОМПАНИЙ
+            except Exception:  # pragma: no cover
+                ФОРМЫ_КОМПАНИЙ = frozenset({"inc", "ltd", "llc", "studio", "studios"})
+            type(self)._формы = ФОРМЫ_КОМПАНИЙ
+        return слово in self._формы
+
+
+_ФОРМЫ_КОМПАНИЙ = _ФормыУПланировщика()
 
 
 #: ПРОСЯТ ВЫДАТЬ ВЫДУМАННОЕ ЗА НАСТОЯЩУЮ ЗАПИСЬ. Не пара «предмет +
