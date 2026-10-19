@@ -232,6 +232,7 @@ from lipsync.fork_identity import FAIL, PASS, UNMEASURED
 from studio import brief_spec as bs
 from studio import clarify
 from studio import duration as dur
+from studio import edit_intent as ei
 from studio import endpoints as ep
 from studio import l10n
 from studio import factaxis as fa
@@ -11681,7 +11682,15 @@ def заявленные(
         у = af.условие_темы(тема)
         if у and у not in итог:
             итог.append(у)
+    # ЗАМЕНА ТЕКСТА В КАДРЕ (тринадцатый круг): читаемость надписи — условие
+    # отбора правки, даже если заказчик слов «читаемый текст» не сказал.
+    if ep.EDIT_REPLACE_TEXT in tuple(getattr(понято, "edit", ()) or ()) and TEXT_EDIT_CONDITION not in итог:
+        итог.append(TEXT_EDIT_CONDITION)
     return tuple(итог), tuple(непонятые)
+
+
+#: Условие отбора, которое несёт правка `replace-text` (`attrfamily.УСЛОВИЯ`).
+TEXT_EDIT_CONDITION = "text_legibility"
 
 
 def plan(
@@ -11914,6 +11923,9 @@ def plan(
         # ЯЗЫК ЖЕСТОВ (седьмой круг): ни липсинк, ни говорящий аватар его не
         # делают — план из них был бы подменой работы. Пробел, а не план.
         return пробел_работы(понято, текст, по_английски, creative, бюджет)
+    # ПРАВКА ПО СУТИ, А НЕ ПО СЛОВУ ЗАДАЧИ (тринадцатый круг,
+    # `studio/edit_intent.py`): надпись на вывеске — правка видео с текстом.
+    понято, нота_правки_текста = ei.reroute(понято, текст)
     маршрут = (
         bs.route(bs.with_defaults(понято, ролик=True, текст=текст), правки_на_сборке(индекс))
         if маршрутом

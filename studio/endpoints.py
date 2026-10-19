@@ -1508,6 +1508,10 @@ EDIT_RESTYLE = "restyle"
 #: правкой не считались вовсе (`NOT_AN_EDIT`), и шаг правки брал правку по
 #: инструкции, которая длину ролика не меняет.
 EDIT_EXTEND = "extend"
+#: ЗАМЕНА ТЕКСТА в кадре (тринадцатый круг): надпись на вывеске, табличке,
+#: билборде. Это правка по маске с отрисовкой текста, а не замена персонажа:
+#: «replace the text on the sign» уходило в `замена_персонажа`.
+EDIT_REPLACE_TEXT = "replace-text"
 
 #: Допустимые значения `spec.edit`. КОНСТАНТА-РЕШЕНИЕ.
 EDIT_INTENTS: tuple[str, ...] = (
@@ -1520,6 +1524,7 @@ EDIT_INTENTS: tuple[str, ...] = (
     EDIT_DAY_TO_NIGHT,
     EDIT_RESTYLE,
     EDIT_EXTEND,
+    EDIT_REPLACE_TEXT,
 )
 
 #: Звено ПРАВКИ ПО ИНСТРУКЦИИ: модель правит кадр заказчика словами
@@ -1540,6 +1545,7 @@ EDIT_RULES: dict[str, str] = {
     EDIT_DAY_TO_NIGHT: r"day-to-night|night-to-day|time-of-day",
     EDIT_RESTYLE: r"recast|render-to-real|restyle|style-transfer",
     EDIT_EXTEND: r"extend\w*|extension",
+    EDIT_REPLACE_TEXT: _ПРАВКА_ПО_ИНСТРУКЦИИ + r"|text-edit|edit-text|replace-text|text-replace\w*",
 }
 
 #: Под-работа, НАЗВАННАЯ идентификатором прямо (седьмой круг): без звена

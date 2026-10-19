@@ -2712,6 +2712,11 @@ DRAFT_EDIT_CUES: tuple[tuple[str, str], ...] = (
     (ep.EDIT_REPLACE_SKY, r"sky replac\w*|replace (?:the )?sky|замен\w* неб\w*"),
     (ep.EDIT_REMOVE_OBJECT, r"remove (?:a |the )?(?:logo|watermark|object|person|people|passer)|(?:убра|удал)\w* (?:объект|прохож|человек|логотип)"),
     (ep.EDIT_EXTEND, r"\bextend\w* (?:the |our |my )?(?:\w+ )?(?:clip|video|shot|footage)|продл\w* (?:ролик|видео|клип)"),
+    # Надпись в кадре (тринадцатый круг) — раньше «replace …»: «replace the
+    # text on the sign» — правка текста, а не объекта (`studio/edit_intent.py`).
+    (ep.EDIT_REPLACE_TEXT, r"(?:replac|chang|swap|edit)\w* (?:the |a )?(?:\w+ )?(?:text|lettering|wording|sign(?:age)?|billboard)\b"
+     r"|(?:text|lettering|wording) on (?:the |a )?(?:\w+ )?(?:sign|billboard|banner|storefront|truck|poster)"
+     r"|замен\w* (?:\w+ )?(?:текст|надпис)|надпис\w* на (?:\w+ )?(?:вывеск|табличк|баннер|билборд)"),
     (ep.EDIT_REPLACE_OBJECT, r"replace (?:the |a )?(?!sky)\w+|замен\w* (?!неб)"),
     # Свет на объекте и экспозиция — переосвещение; смена времени суток — своя
     # правка (восьмой круг, валидатор v8 n13).
