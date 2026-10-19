@@ -127,6 +127,19 @@ EN_PLANS: list[tuple[str, dict]] = [
         "One consistent mascot across 4 shots, 20 seconds",
         {"spec": {"task": "r2v", "inputs": [], "outputs": ["video"], "duration_s": 20, "shots": 4}},
     ),
+    # Одиннадцатый круг: реставрация снимков, замена лица на снимке, перенос движения.
+    (
+        "Restore and colorize 12 old black-and-white family photos",
+        {"spec": {"task": ["restore", "colorize"], "outputs": ["image"], "inputs": [{"kind": "image", "owned": True, "count": 12}]}, "full": True},
+    ),
+    (
+        "Swap my face onto the knight in this poster image",
+        {"spec": {"task": "face-replace", "outputs": ["image"], "inputs": [{"kind": "image", "owned": True, "count": 2}]}, "full": True},
+    ),
+    (
+        "Animate my photo so I copy the dance from this driving video, 8 seconds",
+        {"spec": {"task": "animate", "outputs": ["video"], "duration_s": 8, "inputs": [{"kind": "image", "owned": True}, {"kind": "video", "owned": True, "duration_s": 8}]}, "full": True},
+    ),
 ]
 
 #: То же по-русски: русский ответ не должен нести английских шаблонов.

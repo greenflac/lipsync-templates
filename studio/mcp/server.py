@@ -104,6 +104,7 @@ from studio.mcp import (
 )
 from lipsync.fork_identity import FAIL, PASS, UNMEASURED  # noqa: E402
 from studio.mcp import screen  # noqa: E402
+from studio.mcp import spec_screen  # noqa: E402
 
 
 from studio.mcp import lipsync_prompt as lp
@@ -967,7 +968,7 @@ def find_models(
         voice-clone | music | sfx | t2i | image-edit | bg-remove | upscale-image
         | upscale-video | restore | colorize | frame-interpolate |
         transcribe-diarize | captions | turntable-360 | image-to-3d | character-replace |
-        virtual-try-on — or a word for one
+        virtual-try-on | motion-transfer — or a word for one
         ("faceswap", "background removal"). Restoration (noise, scratches,
         blur) and colorization are separate jobs. Broad words (video, image,
         upscale, audio) are narrowed by the job the question names.
@@ -1332,7 +1333,12 @@ def plan_pipeline(
                   "upscale"], ["restore", "colorize"].
                   video-edit: an edit of the customer's video — say WHAT in
                   `edit`. restore: noise/scratches/flicker, adds NO colour;
-                  colorize: black-and-white -> colour (both asked = the chain).
+                  colorize: black-and-white -> colour (both asked = the chain);
+                  both work on photos too (image in, image out).
+                  face-replace: on a video, or on a still (image inputs and
+                  outputs ["image"] = an image face swap). animate: a photo;
+                  a photo + a DRIVING video = motion transfer (the photo
+                  follows the video's motion).
                   r2v: one consistent character across shots. music-visualiser:
                   generated visuals under the customer's track; audio reactivity
                   (beat sync, waveform) is made at assembly — generated t2v does
@@ -1351,7 +1357,9 @@ def plan_pipeline(
         outputs   [video | image | speech | music | sfx | text]
         duration_s  output seconds — or shots + per_shot_s; for work on the
                   customer's material inputs[].duration_s is enough; images:
-                  shots = how many.
+                  shots = how many (work on brought photos: as many as
+                  brought). Speech read from the customer's text: optional
+                  (the script sets it; priced for 60 s until named).
         languages BCP-47 tags of output speech/text (any tag: "kk", "pl", "he",
                   "pt-BR"); required when speech/text is output. Support per
                   model is reported as recorded / unmeasured, never refused.
@@ -1386,8 +1394,11 @@ def plan_pipeline(
     (Apple silicon memory is not CUDA VRAM; a Raspberry Pi / CPU-only box is
     cpu_only — ranked by recorded ARM/CPU runs), open_weights, jurisdiction,
     people [{name, real,
-    public_figure, deceased, consent: stated|none|unknown, claim: none|
-    endorsement|political|news|other}], claims (below), conditions — only what the customer said, e.g.
+    public_figure, deceased, minor (a real person under 18 on screen),
+    consent: stated|none|unknown, claim: none|endorsement|political|news|
+    other}], audience (children|teens|general|adults — who WATCHES: a
+    cartoon series for kids is audience children, not a child on screen),
+    claims (below), conditions — only what the customer said, e.g.
     ["hands"] (ranking only). Speech steps are priced × languages; clip steps
     × shots; a per-clone fee once per voice.
 
@@ -1432,7 +1443,10 @@ def plan_pipeline(
     Without `spec.people` / `spec.claims` the brief is screened conservatively
     (names, titles, a role with a speech verb; news words with a real event or
     a news brand) and a hit is a QUESTION asking you to fill the field — not a
-    guessed verdict. Three text pairs refuse regardless of `spec`: a public
+    guessed verdict. With `spec.people` filled, a child word (an audience of
+    kids, a cartoon character) and a likeness word (a contracted actor with
+    consent, a deceased relative) are decided by the people you listed, not
+    by the word (`decided_by_spec`). Three text pairs refuse regardless of `spec`: a public
     figure + advert words, a public figure + political or news words, a news
     brand + "fake". The decision is in `outcome`, the first `summary` line
     (REFUSED: / QUESTION:) and `people_policy` (people, claims) on every answer.
@@ -1550,6 +1564,9 @@ def _план(
     просев, политика = screen.просеять_с_людьми(
         brief, люди_spec, просев, screen.события_из_spec(spec)
     )
+    # ОДИННАДЦАТЫЙ КРУГ (`spec_screen`): слово о детях, о подмене образа или тема
+    # в названии обучающего ролика — решает заполненная `spec.people`, а не слово.
+    просев, решено_spec = spec_screen.decide(просев, политика, spec, brief)
     if просев["outcome"] != PASS:
         return _json(
             l10n.localise_payload(
@@ -1598,6 +1615,9 @@ def _план(
     итог["checked"] = int(итог.get("checked") or 0) + просев["checked"]
     if просев["risks"]:
         итог["note"] = f"{итог.get('note', '')}. {screen.предупреждение(просев['risks'])}"
+    if решено_spec:
+        итог["note"] = f"{итог.get('note', '')}. {spec_screen.note(решено_spec, язык == 'en')}".lstrip(". ")
+        итог["decided_by_spec"] = len(решено_spec)
     итог = вопрос_о_согласии(итог, политика, англ=язык == "en")
     итог = вопрос_о_заявлении(итог, заявления, англ=язык == "en")
     if не_прочитан:
