@@ -161,6 +161,12 @@ EIGHT_K = (
 
 
 class EightKPlans(unittest.TestCase):
+    def test_only_upscale_steps_are_judged_by_output_ceiling(self) -> None:
+        d = plan("A 10-second 4K clip of waves at dawn", {"task": "generate", "inputs": [], "outputs": ["video"],
+                                                         "duration_s": 10, "resolution": "4k", "people": []})
+        self.assertNotIn("upscale_reach", step(d, "генерация_видео"))
+        self.assertEqual(ur.UPSCALE_OPS, frozenset({"апскейл", "апскейл_изображения"}))
+
     def test_no_upscaler_below_8k_by_record(self) -> None:
         idx = FactIndex()
         for brief, src, s in EIGHT_K:
@@ -209,7 +215,8 @@ class TextEditRouting(unittest.TestCase):
         self.assertTrue(нота)
 
     def test_a_face_keeps_its_task(self) -> None:
-        for brief in ("Replace my face with the actor's face, and the sign text too", "Замените лицо актёра и текст на вывеске"):
+        for brief in ("Change the sign text and put my face on the presenter", "Замените надпись на вывеске и лицо ведущего"):
+            self.assertTrue(ei.TEXT_EDIT_WORDS.search(brief), brief)
             spec = _spec({"task": "face-replace", "inputs": [{"kind": "video", "owned": True}], "outputs": ["video"], "people": []})
             self.assertEqual(ei.reroute(spec, brief)[0].task, "face-replace")
 
@@ -476,6 +483,11 @@ class InHousePresenter(unittest.TestCase):
         # Лишний запрет сверх людей — закрыта.
         self.assertEqual(ihn.decide(spec, policy, {"banned": ["x", "y"]}, {"banned": []})["decision"], ihn.DECISION_NONE)
         self.assertEqual(ihn.decide({**spec, "people": [anchor("A", role="self")]}, policy, screened, {})["decision"], ihn.DECISION_ALLOW)
+        # Сами поля заявлений решают, даже если политика их пропустила.
+        for claims in ([{**OWN, "real_brand": True}], [{k: v for k, v in OWN.items() if k != "fabricated"}],
+                       [{**OWN, "own_brand": False}], [{**OWN, "type": "none"}]):
+            with self.subTest(claims=claims):
+                self.assertEqual(ihn.decide({**spec, "claims": claims}, policy, screened, {})["decision"], ihn.DECISION_NONE)
 
     def test_role_is_a_validated_spec_field(self) -> None:
         _, errors = bs.parse_spec({"task": "avatar", "people": [anchor("A", role="boss")]})
