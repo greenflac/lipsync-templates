@@ -8875,15 +8875,26 @@ def что_дальше(итог: dict) -> str:
     if итог.get("reason") == REASON_OVER_BUDGET:
         сверх = (итог.get("pipeline_price") or {}).get("over_ceiling") or {}
         сколько = float(сверх.get("least_known_usd") or 0)
+        варианты = list((итог.get("budget") or {}).get("cheaper_alternatives") or [])
         if итог.get("по_английски"):
             return (
                 f"the job costs at least {сколько:.2f} usd at the cheapest known rates: raise the "
                 "budget to at least that, or make the clip shorter, lower-resolution or simpler"
+                + (
+                    ". Cheaper alternatives: " + "; ".join(f"({i}) {в['says']}" for i, в in enumerate(варианты, 1))
+                    if варианты
+                    else ""
+                )
             )
         return (
             f"работа стоит не меньше {сколько:.2f} usd даже по самым дешёвым известным ставкам: "
             "поднимите бюджет хотя бы до этой суммы — или сделайте ролик короче, ниже "
             "разрешением или проще"
+            + (
+                ". Дешевле: " + "; ".join(f"({i}) {в['says']}" for i, в in enumerate(варианты, 1))
+                if варианты
+                else ""
+            )
         )
 
     if "применимость" in классы:
@@ -9103,6 +9114,130 @@ def дороже_потолка(
         f"смета дороже потолка: наименьшая известная стоимость {сколько:.2f} usd против "
         f"потолка {потолок:g} usd{раз}; {нота}",
     )
+
+
+#: Наименьшая доля потолка, ради которой ещё предлагается короче ролик
+#: (одиннадцатый круг): версия короче этой доли от заказанной длины — уже не
+#: «тот же ролик покороче», а другой заказ, и он не предлагается.
+SHORTER_MIN_SHARE = 0.25
+
+
+def дешевле_варианты(
+    выбор: "Sequence[tuple[Operation, Candidate | None]]",
+    найдено: "Mapping[str, Sequence[Candidate]]",
+    цена: Mapping[str, Any],
+    секунды: float | None,
+    открытые: "Mapping[str, Sequence[str]] | None",
+    англ: bool,
+) -> list[dict]:
+    """Смета выше потолка — ЧЕМ дешевле, названо (одиннадцатый круг).
+
+    Прежде ответ «дороже потолка» говорил одно: «поднимите бюджет или сделайте
+    проще». Инженер называет вариант: (1) самые дешёвые ЗАПИСАННЫЕ кандидаты
+    каждого шага (ниже по доводам — сказано) и их сумма; (2) ролик короче —
+    сколько секунд влезает по тем же ставкам; (3) свой GPU на открытых весах —
+    0 usd за вызов, если открытые веса есть на каждом шаге. Варианта нет —
+    список пуст, а не выдуман.
+    """
+    сверх = цена.get("over_ceiling") or {}
+    if not сверх:
+        return []
+    потолок = float(сверх.get("ceiling_usd") or 0.0)
+    минимум = float(сверх.get("least_known_usd") or 0.0)
+    out: list[dict] = []
+    шаги: list[dict] = []
+    сумма = 0.0
+    for op, выбран in выбор:
+        годные = [
+            c
+            for c in найдено.get(op.name, [])
+            if c.cost is not None
+            and not c.foreign
+            and not c.licence_blocked
+            and c.gpu_rent_usd is None
+            # ПРИЕМЛЕМЫЙ, а не просто дешёвый: кадр по записи не ниже заказа,
+            # стены (кадр, длительность, запрещённый вход) нет.
+            and not c.below_frame
+            and c.fit_state != FIT_OVER
+            and blocked_rank(c)[0] < STRICT_BLOCK
+        ]
+        if not годные:
+            if выбран is not None and выбран.cost is not None:
+                сумма += min(o.least for o in выбран.cost.options)
+            continue
+        дешёвый = min(годные, key=lambda c: (min(o.least for o in c.cost.options) if c.cost else 0.0, c.model))
+        assert дешёвый.cost is not None  # отобрано выше
+        usd = min(o.least for o in дешёвый.cost.options)
+        сумма += usd
+        шаги.append(
+            {
+                "step": op.name,
+                "model": дешёвый.model,
+                "usd": round(usd, 4),
+                "chosen": выбран is not None and дешёвый.model == выбран.model,
+            }
+        )
+    if шаги and сумма < минимум - 0.005:
+        влезает = сумма <= потолок
+        перечень = "; ".join(
+            f"{_имя_шага(ш['step'], англ)} — {ш['model']} {ш['usd']:.2f} usd" for ш in шаги if not ш["chosen"]
+        )
+        out.append(
+            {
+                "kind": "cheapest_models",
+                "usd": round(сумма, 2),
+                "fits": влезает,
+                "steps": шаги,
+                "says": (
+                    f"cheapest recorded models per step ({перечень}): about {сумма:.2f} usd"
+                    + (" — fits the ceiling" if влезает else " — still over the ceiling")
+                    + "; they rank lower on the evidence, so check a test clip first"
+                    if англ
+                    else f"самые дешёвые записанные модели шагов ({перечень}): около {сумма:.2f} usd"
+                    + (" — в потолок укладывается" if влезает else " — всё ещё выше потолка")
+                    + "; по доводам они ниже, сначала проверьте пробный ролик"
+                ),
+            }
+        )
+    # Короче — по наименьшей сумме: самые дешёвые модели, если они дешевле выбранных.
+    дешёвыми = bool(шаги) and сумма < минимум - 0.005
+    база = сумма if дешёвыми else минимум
+    if секунды and база > потолок > 0:
+        влезет = int(секунды * потолок / база)
+        if SHORTER_MIN_SHARE * секунды <= влезет < секунды:
+            usd = база * влезет / секунды
+            out.append(
+                {
+                    "kind": "shorter",
+                    "seconds": влезет,
+                    "usd": round(usd, 2),
+                    "says": (
+                        f"a {влезет} s version instead of {секунды:g} s fits the ceiling "
+                        + ("with the cheapest models above" if дешёвыми else "at the same rates")
+                        + f" (about {usd:.2f} usd)"
+                        if англ
+                        else f"версия на {влезет} с вместо {секунды:g} с укладывается в потолок "
+                        + ("на самых дешёвых моделях выше" if дешёвыми else "по тем же ставкам")
+                        + f" (около {usd:.2f} usd)"
+                    ),
+                }
+            )
+    if открытые and all(открытые.get(op.name) for op, _ in выбор):
+        модели = "; ".join(f"{_имя_шага(op.name, англ)} — {', '.join(list(открытые[op.name])[:2])}" for op, _ in выбор)
+        out.append(
+            {
+                "kind": "self_host",
+                "usd": 0.0,
+                "says": (
+                    f"self-host the open weights on your own GPU ({модели}): API cost 0 usd per step, you pay in "
+                    "hardware and time — pass spec.self_host to plan it"
+                    if англ
+                    else f"открытые веса на своём GPU ({модели}): цена API 0 usd за шаг, платите железом и "
+                    "временем — передайте spec.self_host, чтобы спланировать"
+                ),
+            }
+        )
+    return out
 
 
 # --------------------------------------------------------------------------
@@ -12647,6 +12782,19 @@ def plan(
     for строка_шага in [*строки_шагов, *([со_звуком] if со_звуком else [])]:
         строка_шага["step_label"] = _имя_шага(строка_шага.get("step"), по_английски)
     ответ["по_английски"] = по_английски
+    if ответ.get("reason") == REASON_OVER_BUDGET:
+        # ДОРОЖЕ ПОТОЛКА — С НАЗВАННЫМ ВАРИАНТОМ ДЕШЕВЛЕ (круг 11).
+        открытые = {
+            р["step"]: р["models"] for р in бесплатный_путь(операции, индекс, по_английски)["open_weights"]
+        }
+        ответ["budget"]["cheaper_alternatives"] = дешевле_варианты(
+            выбор,
+            найдено_на_шаг,
+            цена_пайплайна,
+            длительность.секунды if длительность.разобрано else None,
+            открытые,
+            по_английски,
+        )
     ответ["что_дальше"] = что_дальше(ответ)
     ответ["summary"] = сводка(ответ)
     ответ.pop("по_английски", None)
