@@ -96,6 +96,10 @@ INPUT_KIND_OUT: dict[str, str] = {
 CONSENT_STATES: tuple[str, ...] = ("stated", "none", "unknown")
 CLAIM_KINDS: tuple[str, ...] = ("none", "endorsement", "political", "news", "other")
 OBJECTIVES: tuple[str, ...] = ("cheapest", "balanced", "quality")
+#: Для кого сделано (одиннадцатый круг, `spec.audience`): ЗРИТЕЛЬ, а не тот, кто
+#: в кадре. Мультсериал для детей — `children`; ребёнка в кадре это не значит
+#: (кто в кадре — `spec.people`, `minor`).
+AUDIENCES: tuple[str, ...] = ("children", "teens", "general", "adults")
 
 #: Все поля `spec`, которые плановщик принимает. Неизвестное поле — ошибка, а
 #: не молчание: вызывающий, написавший `durations`, должен узнать, что его не
@@ -131,6 +135,8 @@ SPEC_FIELDS: tuple[str, ...] = (
     "lipsync",
     # Восьмой круг: допущения рецептов (`studio/recipes`) — {id: false} выключает.
     "priors",
+    # Одиннадцатый круг: для кого ролик (зритель) — читает политика текста `spec_screen`.
+    "audience",
 )
 
 SOURCE_SPEC = "spec"
@@ -495,6 +501,8 @@ class Spec:
     edit: tuple[str, ...] = ()
     #: Губы под новую речь (седьмой круг): True/False — сказано; None — `lipsync_default`.
     lipsync: bool | None = None
+    #: Для кого ролик (одиннадцатый круг): children | teens | general | adults.
+    audience: str | None = None
     #: Восьмой круг: допущения рецептов, выключенные вызывающим ({id: False});
     #: не названо — допущение класса заполняет молчание базы (`studio/recipes`).
     priors: Mapping[str, bool] = field(default_factory=dict)
@@ -767,7 +775,7 @@ def _входы_spec(raw: Any, ошибки: list[str]) -> tuple[tuple[str, ...]
     return tuple(dict.fromkeys(виды)), tuple(подробно)
 
 
-_PEOPLE_FIELDS = frozenset({"name", "real", "public_figure", "consent", "claim", "deceased"})
+_PEOPLE_FIELDS = frozenset({"name", "real", "public_figure", "consent", "claim", "deceased", "minor"})
 
 
 def _люди_spec(raw: Any, ошибки: list[str]) -> tuple[dict[str, Any], ...]:
@@ -781,7 +789,7 @@ def _люди_spec(raw: Any, ошибки: list[str]) -> tuple[dict[str, Any], .
         if лишние:
             ошибки.append(f"spec.people[{i}]: unknown field(s) {', '.join(sorted(лишние))}")
         запись: dict[str, Any] = {"name": str(ч.get("name") or "").strip()}
-        for ключ in ("real", "public_figure", "deceased"):
+        for ключ in ("real", "public_figure", "deceased", "minor"):
             if ч.get(ключ) is not None and not isinstance(ч[ключ], bool):
                 ошибки.append(f"spec.people[{i}].{ключ}={ч[ключ]!r}: must be true or false")
             запись[ключ] = ч[ключ] if isinstance(ч.get(ключ), bool) else None
@@ -940,6 +948,7 @@ def parse_spec(raw: Mapping[str, Any] | None) -> tuple[Spec, list[str]]:
     _enum("outputs", OUTPUTS, много=True)
     _enum("audio", AUDIO_MODES)
     _enum("objective", OBJECTIVES)
+    _enum("audience", AUDIENCES)
     # Работа — одна или ЦЕПОЧКА: ["video-edit", "upscale"] — стабилизировать,
     # затем поднять разрешение. Первая — главная (`task`), прочие — `then_tasks`.
     if raw.get("task") is not None:
@@ -2310,6 +2319,10 @@ OPTIONAL_HELP: dict[str, str] = {
     "characters": "how many recurring characters; 1 + shots N over images = one reference and N edits from it",
     "fps": "output frames per second; above the model's recorded rate a frame-interpolation step is added",
     "audio": "none | native | voiceover",
+    "audience": (
+        " | ".join(AUDIENCES) + " — who WATCHES it (a cartoon series for kids = children); who is ON SCREEN is "
+        "spec.people (minor: true for a real person under 18)"
+    ),
     "budget": "{amount, currency: ISO 4217}; convert to USD yourself (no FX rates are recorded) and keep the original for echo",
     "conditions": "short phrases the customer actually said, e.g. [\"profile face\", \"hands\"] (ranking only)",
 }

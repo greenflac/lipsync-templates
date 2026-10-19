@@ -305,9 +305,14 @@ class Многоперсонажный(unittest.TestCase):
         )
 
     def test_один_персонаж_без_ключевых_кадров(self) -> None:
-        """MULTI_CHARACTER_MIN с другой стороны: один персонаж — видео с нуля."""
-        итог = план("x", spec={"outputs": ["video"], "characters": 1, "duration_s": 40, "inputs": []})
+        """MULTI_CHARACTER_MIN с другой стороны: один персонаж в ОДНОМ прогоне — видео с нуля."""
+        итог = план("x", spec={"outputs": ["video"], "characters": 1, "duration_s": 10, "inputs": []})
         self.assertEqual(["генерация_видео"], [ш for ш, _ in шаги(итог)])
+
+    def test_один_персонаж_дольше_прогона_от_референса(self) -> None:
+        """Одиннадцатый круг: 40 с с одним персонажем — несколько прогонов, персонаж держится референсом."""
+        итог = план("x", spec={"outputs": ["video"], "characters": 1, "duration_s": 40, "inputs": []})
+        self.assertEqual(["генерация_изображения", "оживление"], [ш for ш, _ in шаги(итог)])
 
     def test_персонажи_из_текста(self) -> None:
         self.assertEqual(
@@ -356,7 +361,7 @@ class СпецификацияСтаршеТекста(unittest.TestCase):
             [
                 "spec.colour: unknown field (known: task, outputs, duration_s, shots, per_shot_s, characters, "
                 "resolution, aspect, fps, audio, languages, inputs, objective, budget_usd, self_host, jurisdiction, "
-                "budget, people, conditions, open_weights, edit, claims, lipsync, priors)",
+                "budget, people, conditions, open_weights, edit, claims, lipsync, priors, audience)",
                 "spec.task: dance not in generate, animate, lipsync, dub-translate, face-replace, avatar, upscale, edit, "
                 "restore, remove-background, interpolate, transcribe, voice-clone, turntable, captions, "
                 "video-edit, r2v, music-visualiser, sing-photo, cut-to-shorts, colorize",

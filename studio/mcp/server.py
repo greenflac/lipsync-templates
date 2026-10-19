@@ -105,6 +105,7 @@ from studio.mcp import (
 )
 from lipsync.fork_identity import FAIL, PASS, UNMEASURED  # noqa: E402
 from studio.mcp import screen  # noqa: E402
+from studio.mcp import spec_screen  # noqa: E402
 
 
 from studio.mcp import lipsync_prompt as lp
@@ -946,7 +947,7 @@ def find_models(
         voice-clone | music | sfx | t2i | image-edit | bg-remove | upscale-image
         | upscale-video | restore | colorize | frame-interpolate |
         transcribe-diarize | captions | turntable-360 | image-to-3d | character-replace |
-        virtual-try-on — or a word for one
+        virtual-try-on | motion-transfer — or a word for one
         ("faceswap", "background removal"). Restoration (noise, scratches,
         blur) and colorization are separate jobs. Broad words (video, image,
         upscale, audio) are narrowed by the job the question names.
@@ -1529,6 +1530,9 @@ def _план(
     просев, политика = screen.просеять_с_людьми(
         brief, люди_spec, просев, screen.события_из_spec(spec)
     )
+    # ОДИННАДЦАТЫЙ КРУГ (`spec_screen`): слово о детях, о подмене образа или тема
+    # в названии обучающего ролика — решает заполненная `spec.people`, а не слово.
+    просев, решено_spec = spec_screen.decide(просев, политика, spec, brief)
     if просев["outcome"] != PASS:
         return _json(
             l10n.localise_payload(
@@ -1577,6 +1581,9 @@ def _план(
     итог["checked"] = int(итог.get("checked") or 0) + просев["checked"]
     if просев["risks"]:
         итог["note"] = f"{итог.get('note', '')}. {screen.предупреждение(просев['risks'])}"
+    if решено_spec:
+        итог["note"] = f"{итог.get('note', '')}. {spec_screen.note(решено_spec, язык == 'en')}".lstrip(". ")
+        итог["decided_by_spec"] = len(решено_spec)
     итог = вопрос_о_согласии(итог, политика, англ=язык == "en")
     итог = вопрос_о_заявлении(итог, заявления, англ=язык == "en")
     if не_прочитан:

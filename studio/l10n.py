@@ -190,6 +190,9 @@ TERMS_EN: dict[str, str] = {
     "видео_реставрация": "restored video",
     "видео_раскраска": "colorized video",
     "изображение_раскраска": "colorized image",
+    "изображение_реставрация": "restored image",
+    "изображение_замена_лица": "image with the face swapped",
+    "видео_перенос_движения": "motion-transfer video",
     "3d_модель": "3D model (mesh)",
     "видео_интерполяция": "frame-interpolated video",
     "изображение_без_фона": "image with background removed",
@@ -332,6 +335,13 @@ EN: tuple[tuple[str, str], ...] = (
      "the object turns 360° without warping, a seamless loop"),
     (r"чёрно-белый снимок раскрашен правдоподобно: кожа, небо, одежда без пятен цвета",
      "the black-and-white photo colourised plausibly: skin, sky and clothes without colour blotches"),
+    # круг 11: реставрация снимка, замена лица на снимке, перенос движения
+    (r"старый снимок восстановлен \(царапины, заломы, пятна, выцветание\) без смены цвета и лица",
+     "the old photo restored (scratches, creases, stains, fading) without changing its colours or faces"),
+    (r"лицо заменено на снимке: черты нового лица, свет и тон кожи сцены сохранены",
+     "the face swapped on the image: the new face's features kept, the scene's light and skin tone preserved"),
+    (r"персонаж со снимка повторяет движение ведущего видео; лицо и одежда со снимка сохранены",
+     "the character from the photo follows the driving video's motion; the photo's face and clothes are kept"),
     (r"сетка предмета по снимкам: форма и текстура сходятся со всеми сторонами снимков",
      "a mesh of the object from the photos: shape and texture agree with every side shown"),
     (r"режимы вариантов: ", "modes of the variants: "),
@@ -773,6 +783,9 @@ EN: tuple[tuple[str, str], ...] = (
      r"vendor hosting on record: \1 — the request may be served in \2, and the record names no way to pin the region (\3): "),
     (r"\bсемья ([\w.\-]+): (?=(?:семья |serving_regions|data_residency|hosting_regions|processing_regions|data_location))",
      r"family \1: "),
+    # --- круг 11: пометки маршрутов по spec (`brief_spec.NOTES_EN` — те же слова)
+    (r"движение берётся из ВАШЕГО ведущего видео, внешность — со снимка \(motion control\), а не выдумывается",
+     "the motion comes from YOUR driving video and the look from the photo (motion control), not invented"),
     # --- круг 6: пометки маршрутов по spec (`brief_spec.NOTES_EN` — те же слова)
     (r"субтитры вжигает монтаж \(ffmpeg\) по расшифровке с таймингами — модели на это не нужно",
      "captions are burned in at assembly (ffmpeg) from the timed transcript — no model needed for that"),

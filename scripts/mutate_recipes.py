@@ -46,7 +46,7 @@ MUTANTS: tuple[tuple[str, str, str, str], ...] = (
     (RT, "VISUALISER_LOOP_CLIP_S = 8", "VISUALISER_LOOP_CLIP_S = 10", "longer loop clips"),
     (RT, "SINGLE_HOST_REFERENCES = 1", "SINGLE_HOST_REFERENCES = 2", "two references for one host"),
     (RT, "SINGLE_HOST_REFERENCES = 1", "SINGLE_HOST_REFERENCES = 5", "a reference per short again"),
-    (RA, '    "раскраска": 2,\n    "апскейл": 3,', '    "раскраска": 3,\n    "апскейл": 2,', "upscale before colourise"),
+    (RA, '    "раскраска": 2,\n    "раскраска_изображения": 2,\n    "апскейл": 3,', '    "раскраска": 3,\n    "раскраска_изображения": 2,\n    "апскейл": 2,', "upscale before colourise"),
     (RA, '    "реставрация": 1,\n', '    "реставрация": 5,\n', "restore after upscale"),
     (RA, 'FIRST_STEPS: tuple[str, ...] = ("клонирование_голоса",)', "FIRST_STEPS: tuple[str, ...] = ()", "clone not first"),
     (RA, 'DEBLUR_MODELS = r"deblur|sharpen"', 'DEBLUR_MODELS = r"sharpen"', "deblur allowed on film damage"),
