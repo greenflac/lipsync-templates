@@ -32,6 +32,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 CL = "studio/recipes/checklist.py"
 PN = "studio/planner.py"
+SV = "studio/mcp/server.py"
 
 #: (файл, было, стало, что ломается).
 MUTANTS: tuple[tuple[str, str, str, str], ...] = (
@@ -68,6 +69,11 @@ MUTANTS: tuple[tuple[str, str, str, str], ...] = (
     (PN, "SHORTER_MIN_SHARE = 0.25", "SHORTER_MIN_SHARE = 0.3", "четверть длины не предлагается"),
     (PN, "SHORTER_MIN_SHARE = 0.25", "SHORTER_MIN_SHARE = 0.2", "меньше четверти длины предлагается"),
     (PN, "    if шаги and сумма < минимум - 0.005:", "    if False:", "дешёвые модели не названы"),
+    (CL, "            (общие if р.trigger is _always else условные).append((р.id, поля))",
+     "            (условные if р.trigger is _always else общие).append((р.id, поля))", "общие правила раньше условий"),
+    (CL, "transparent(?!\\s+(?:background|bg|backdrop))", "transparent", "прозрачный фон — стекло"),
+    (CL, "    if c.priors & LOGO_PRIORS:\n        return False\n", "", "логотип повторяется после рецепта"),
+    (SV, "    if len(out) > объявлено and limit > _CAP_RESERVE * 4:", "    if False:", "объявление обрезки за потолком"),
 )
 
 

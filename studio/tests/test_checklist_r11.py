@@ -399,6 +399,41 @@ class Пороги(unittest.TestCase):
         self.assertNotIn("cjk_typesetting", _ids(w(I, languages=["vi"]), ["генерация_изображения"]))
 
 
+class Уточнения(unittest.TestCase):
+    def test_прозрачный_фон_не_стекло(self) -> None:
+        raw = w(V, task="animate", inputs=PHOTO)
+        self.assertNotIn("reflective_surfaces", _ids(raw, ["оживление"], "mascot on a transparent background"))
+        self.assertNotIn("reflective_surfaces", _ids(raw, ["оживление"], "персонаж на прозрачном фоне"))
+        self.assertIn("reflective_surfaces", _ids(raw, ["оживление"], "a transparent glass vase"))
+
+    def test_логотип_уже_наложен_рецептом(self) -> None:
+        spec = _spec(V)
+        self.assertIn("logo_motion_vector", [i for i, _ in cl.fire(spec, ["генерация_видео"], "logo intro")])
+        self.assertNotIn(
+            "logo_motion_vector", [i for i, _ in cl.fire(spec, ["генерация_видео"], "logo intro", priors=["logo_overlay"])]
+        )
+
+    def test_3d_вместо_оборота_без_ноты_оборота(self) -> None:
+        raw = w(V, task="turntable", inputs=PHOTO)
+        self.assertNotIn("turntable_closes", _ids(raw, ["модель_3d"]))
+        self.assertIn("turntable_closes", _ids(raw, ["оборот_360"]))
+
+    def test_правила_условий_раньше_общих(self) -> None:
+        ids = _ids(w(S, languages=["ar"]), ["озвучка"], "IVR greeting")
+        self.assertLess(ids.index("telephony_audio"), ids.index("voice_licence"))
+        self.assertLess(ids.index("rtl_tts_diacritics"), ids.index("voice_licence"))
+
+
+class Потолок(unittest.TestCase):
+    def test_объявление_обрезки_входит_в_потолок(self) -> None:
+        from studio.mcp import server as S
+
+        payload = {"note": "n", **{f"list{i:02d}": ["x" * 100] * 20 for i in range(30)}}
+        out = S.cap_response(payload, limit=8_000, tool="plan_pipeline")
+        self.assertLessEqual(len(out), 8_000)
+        self.assertIn("8000-character cap", json.loads(out)["note"])
+
+
 class Заметки(unittest.TestCase):
     def test_правила_доходят_до_production_notes_на_языке_ответа(self) -> None:
         spec = _spec(w(S, languages=["ar"]))

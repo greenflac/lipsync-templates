@@ -232,8 +232,14 @@ class ЖивойСвойGpu(unittest.TestCase):
 
     def test_цена_временем_gpu_и_это_оценка(self) -> None:
         цена = self.итог["steps"][0]["chosen"]["price"]
+        # Одиннадцатый круг: на своём GPU цена шага — 0 usd по API; аренда того
+        # же прогона и время GPU — оценкой рядом, а не в сумме.
         self.assertTrue(
-            цена.startswith("0.11 usd per step: via own GPU — ESTIMATE: 540 GPU-s per 5 s clip"), цена
+            цена.startswith(
+                "0.00 usd per step: via own GPU — API 0 usd: the step runs on your GPU (rtx-4090), no API call; "
+                "the same run on a rented GPU would cost 0.05–0.11 usd; GPU time — ESTIMATE: 540 GPU-s per 5 s clip"
+            ),
+            цена,
         )
         self.assertIn("CONSTRAINTS: own GPU (rtx-4090 24 GB)", self.итог["summary"])
 

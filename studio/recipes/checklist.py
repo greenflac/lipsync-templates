@@ -251,9 +251,9 @@ W_PRODUCT = re.compile(
     re.I,
 )
 W_REFLECTIVE = re.compile(
-    r"chrome|\bglass\b|glassware|transparent|translucent|glossy|reflective|reflection|mirror|metallic|polished"
+    r"chrome|\bglass\b|glassware|transparent(?!\s+(?:background|bg|backdrop))|translucent|glossy|reflective|reflection|mirror|metallic|polished"
     r"|jewel|\bring\b|diamond|\bwatch(?:es)?\b|perfume|\bbottle|crystal|stainless"
-    r"|хром|стекл|стеклян|прозрачн|глянц|отраж|зеркал|металлич|полирован|ювелир|кольц|бриллиант|часы|часов\b"
+    r"|хром|стекл|стеклян|прозрачн(?!\w*\s+фон)|глянц|отраж|зеркал|металлич|полирован|ювелир|кольц|бриллиант|часы|часов\b"
     r"|духи|парфюм|флакон|бутылк|хрустал",
     re.I,
 )
@@ -424,6 +424,11 @@ def _shorts_no_text_output(c: Ctx) -> bool:
     return "text" not in c.outputs
 
 
+def _turntable_video(c: Ctx) -> bool:
+    """A turntable VIDEO is made (not a 3D mesh the route chose instead)."""
+    return "оборот_360" in c.steps or ("модель_3d" not in c.steps and "turntable" in c.jobs)
+
+
 def _reflective(c: Ctx) -> bool:
     return c.says(W_REFLECTIVE)
 
@@ -525,7 +530,13 @@ def _diarize(c: Ctx) -> dict[str, str] | None:
     return {"n": "2+"} if c.says(W_INTERVIEW) else None
 
 
+#: Recipe priors that already composite the brand mark (then the logo note is not repeated).
+LOGO_PRIORS = frozenset({"logo_overlay", "logo_image_is_endcard"})
+
+
 def _logo_motion(c: Ctx) -> bool:
+    if c.priors & LOGO_PRIORS:
+        return False
     return bool(c.jobs & {"t2v", "i2v"}) and bool(re.search(r"\blogo|логотип", c.text))
 
 
@@ -1251,6 +1262,8 @@ RULES_LIST: tuple[Rule, ...] = (
         "центру оси — проверьте качание и «дыхание» размера по всему обороту; веб-просмотрщики 360 берут 24-36 "
         "кадров на оборот",
         E,
+        _turntable_video,
+        ("task", "steps"),
     ),
     _r(
         "reflective_surfaces",
@@ -1398,14 +1411,22 @@ RULES: dict[str, Rule] = {р.id: р for р in RULES_LIST}
 def fire(
     spec: "bs.Spec", steps: Sequence[str], text: str = "", priors: Sequence[str] = ()
 ) -> list[tuple[str, dict[str, str]]]:
-    """Which checklist rules this plan carries, with the fields of their wording (in table order)."""
+    """Which checklist rules this plan carries, with the fields of their wording.
+
+    Condition rules first, then the rules every plan of the job class carries;
+    table order inside each group.
+    """
     ctx = context(spec, steps, text, priors)
-    out: list[tuple[str, dict[str, str]]] = []
+    условные: list[tuple[str, dict[str, str]]] = []
+    общие: list[tuple[str, dict[str, str]]] = []
     for р in RULES_LIST:
         поля = р.fire(ctx)
         if поля is not None:
-            out.append((р.id, поля))
-    return out
+            (общие if р.trigger is _always else условные).append((р.id, поля))
+    # ПРАВИЛА УСЛОВИЙ — ПЕРВЫМИ: потолок ответа режет длинный список с хвоста
+    # (`server.cap_response`), и сказанное про ЭТОТ заказ (телефония, RTL,
+    # петля, 8K) должно пережить сказанное про любой заказ этого класса.
+    return условные + общие
 
 
 def spec_fields_to_add() -> dict[str, list[str]]:

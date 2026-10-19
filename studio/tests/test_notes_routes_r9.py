@@ -68,7 +68,22 @@ def маршрут(raw: dict, бриф: str = "") -> rc.Applied:
 
 
 def заметки(raw: dict, шаги: tuple[str, ...], бриф: str = "") -> list[str]:
-    return [и for и, _ in rc.note_ids(spec_(raw), шаги, text=бриф)]
+    """Заметки ДЕВЯТОГО И ДЕСЯТОГО кругов (`table.NOTES`).
+
+    Одиннадцатый круг добавил отдельный слой — чек-лист инженера
+    (`recipes/checklist.py`, свои тесты в `test_checklist_r11.py`); здесь
+    сторожатся правила своего круга, и строки чек-листа в сравнение не идут.
+    """
+    return [и for и, _ in rc.note_ids(spec_(raw), шаги, text=бриф) if и in rt.NOTES]
+
+
+def notes_r9(*args: object, **kwargs: object) -> list[dict]:
+    """`rc.notes` без строк чек-листа одиннадцатого круга (см. `заметки`)."""
+    return [з for з in rc.notes(*args, **kwargs) if з["id"] in rt.NOTES]  # type: ignore[arg-type]
+
+
+def свои_заметки(итог: dict) -> list[str]:
+    return [з["id"] for з in итог["production_notes"] if з["id"] in rt.NOTES]
 
 
 def свой(kind: str, сек: float | None = None, **ещё: object) -> dict:
@@ -109,7 +124,7 @@ class Заметки(unittest.TestCase):
     def test_музыка_лицензия(self) -> None:
         raw = {"task": "generate", "inputs": [], "outputs": ["music"], "duration_s": 90}
         self.assertEqual(["music_licence"], заметки(raw, ("музыка",)))
-        (строка,) = rc.notes(spec_(raw), ("музыка",), True)
+        (строка,) = notes_r9(spec_(raw), ("музыка",), True)
         self.assertIn("licence terms of the chosen service decide commercial use", строка["says"])
         self.assertIn("royalty-free", строка["says"])
 
@@ -132,7 +147,7 @@ class Заметки(unittest.TestCase):
             ["long_form_segmented"], заметки({**raw, "duration_s": 300}, ("озвучка", "говорящий_аватар"))
         )
         self.assertEqual([], заметки({**raw, "duration_s": 120}, ("озвучка", "говорящий_аватар")))
-        (строка,) = rc.notes(spec_({**raw, "duration_s": 900}), ("говорящий_аватар",), True)
+        (строка,) = notes_r9(spec_({**raw, "duration_s": 900}), ("говорящий_аватар",), True)
         self.assertTrue(строка["says"].startswith("long form (900 s): a talking-avatar or lip-sync run"))
 
     def test_длинный_ролик_без_речи_не_отрезками(self) -> None:
@@ -150,13 +165,13 @@ class Заметки(unittest.TestCase):
     def test_рефрейм_кадрирование(self) -> None:
         raw = {"task": "video-edit", "edit": ["reframe"], "inputs": [свой("video", 30)], "outputs": ["video"], "aspect": "4:5"}
         self.assertEqual(["crop_track"], заметки(raw, ("правка_видео",)))
-        (строка,) = rc.notes(spec_(raw), ("правка_видео",), True)
+        (строка,) = notes_r9(spec_(raw), ("правка_видео",), True)
         self.assertTrue(строка["says"].startswith("reframing to 4:5 is a crop that follows the subject"))
 
     def test_нестандартный_кадр_кадрируется(self) -> None:
         raw = {"task": "generate", "inputs": [], "outputs": ["video"], "duration_s": 8, "aspect": "2.39:1"}
         self.assertEqual(["aspect_crop"], заметки(raw, ("генерация_видео",)))
-        (строка,) = rc.notes(spec_(raw), ("генерация_видео",), True)
+        (строка,) = notes_r9(spec_(raw), ("генерация_видео",), True)
         self.assertTrue(строка["says"].startswith("2.39:1 is not an aspect generators render natively: it is generated at 16:9"))
         self.assertEqual(["aspect_crop"], заметки({**raw, "aspect": "1.85:1"}, ("генерация_видео",)))
         for родной in ("16:9", "1.78:1", "21:9", "9:16", "4:5"):
@@ -164,7 +179,7 @@ class Заметки(unittest.TestCase):
 
     def test_узкий_кадр_от_вертикали(self) -> None:
         raw = {"task": "generate", "inputs": [], "outputs": ["image"], "shots": 1, "aspect": "1:3"}
-        (строка,) = rc.notes(spec_(raw), ("генерация_изображения",), True)
+        (строка,) = notes_r9(spec_(raw), ("генерация_изображения",), True)
         self.assertIn("generated at 9:16", строка["says"])
 
     def test_ес_маркировка(self) -> None:
@@ -180,7 +195,7 @@ class Заметки(unittest.TestCase):
         ]
         raw = {"task": "lipsync", "inputs": [свой("video", 30), свой("audio", 30)], "outputs": ["video"], "people": люди}
         self.assertEqual(["multi_speaker"], заметки(raw, ("липсинк",)))
-        (строка,) = rc.notes(spec_(raw), ("липсинк",), True)
+        (строка,) = notes_r9(spec_(raw), ("липсинк",), True)
         self.assertTrue(строка["says"].startswith("2 speakers in the shot: the audio is diarized"))
         self.assertIn("each speaker's face", строка["says"])
         raw["people"] = люди[:1]
@@ -196,7 +211,7 @@ class Заметки(unittest.TestCase):
         raw = {"task": "generate", "inputs": [], "outputs": ["video"], "duration_s": 6, "conditions": ["logo legible"]}
         применено = маршрут(raw)
         self.assertIn("logo_overlay", применено.priors)
-        self.assertEqual([], [и for и, _ in rc.note_ids(spec_(raw), ("генерация_видео",), applied=применено)])
+        self.assertEqual([], [и for и, _ in rc.note_ids(spec_(raw), ("генерация_видео",), applied=применено) if и in rt.NOTES])
 
     def test_один_снимок_обратная_сторона(self) -> None:
         raw = {"task": "turntable", "inputs": [свой("image")], "outputs": ["video"], "duration_s": 4}
@@ -213,14 +228,14 @@ class Заметки(unittest.TestCase):
     def test_региональный_вариант_языка(self) -> None:
         raw = {"task": "generate", "inputs": [свой("text")], "outputs": ["speech"], "duration_s": 60, "languages": ["pt-BR", "de"]}
         self.assertEqual(["regional_variety"], заметки(raw, ("озвучка",)))
-        (строка,) = rc.notes(spec_(raw), ("озвучка",), True)
+        (строка,) = notes_r9(spec_(raw), ("озвучка",), True)
         self.assertTrue(строка["says"].startswith("pt-BR: a regional variety (dialect, accent) is not the language itself"))
         raw["languages"] = ["pt", "de"]
         self.assertEqual([], заметки(raw, ("озвучка",)))
 
     def test_по_русски(self) -> None:
         raw = {"task": "generate", "inputs": [], "outputs": ["music"], "duration_s": 60}
-        (строка,) = rc.notes(spec_(raw), ("музыка",), False)
+        (строка,) = [з for з in notes_r9(spec_(raw), ("музыка",), False) if з["id"] in rt.NOTES]
         self.assertEqual("инженерное допущение", строка["tag"])
         self.assertIn("условия лицензии", строка["says"])
 
@@ -234,7 +249,10 @@ class Маршруты(unittest.TestCase):
         применено = маршрут(raw)
         self.assertEqual(("оживление", "удаление_фона_видео"), применено.route.шаги)
         self.assertEqual(("alpha_matte",), применено.priors)
-        self.assertEqual(["alpha_delivery"], [и for и, _ in rc.note_ids(spec_(raw), применено.route.шаги, applied=применено)])
+        self.assertEqual(
+            ["alpha_delivery"],
+            [и for и, _ in rc.note_ids(spec_(raw), применено.route.шаги, applied=применено) if и in rt.NOTES],
+        )
 
     def test_прозрачный_фон_словами_брифа(self) -> None:
         raw = {"task": "animate", "inputs": [свой("image")], "outputs": ["video"], "duration_s": 3}
@@ -262,7 +280,7 @@ class Маршруты(unittest.TestCase):
     def test_аудиограмма_план_монтажом(self) -> None:
         итог = план({"task": "music-visualiser", "inputs": [свой("audio", 30), свой("image")], "outputs": ["video"]})
         self.assertEqual(("только_монтаж", []), (итог["reason"], итог["steps"]))
-        self.assertEqual(["waveform_layer"], [з["id"] for з in итог["production_notes"]])
+        self.assertEqual(["waveform_layer"], свои_заметки(итог))
 
     def test_клип_со_словами_расшифровка_для_выравнивания(self) -> None:
         raw = {"task": "music-visualiser", "inputs": [свой("audio", 200), свой("text")], "outputs": ["video"], "languages": ["es"]}
@@ -300,7 +318,7 @@ class Маршруты(unittest.TestCase):
             (["модель_3d"], None, "шаг_без_кандидатов"),
             ([ш["step"] for ш in итог["steps"]], итог["steps"][0]["chosen"], итог["reason"]),
         )
-        self.assertEqual(["mesh_route"], [з["id"] for з in итог["production_notes"]])
+        self.assertEqual(["mesh_route"], свои_заметки(итог))
 
     def test_бюджет_ноль_свой_gpu_при_открытых_весах(self) -> None:
         база = (*БАЗА, факт("x-open-t2i", "architecture", "text-to-image model"),
