@@ -189,6 +189,7 @@ class КлонИНачитка(unittest.TestCase):
                 клон = answer["steps"][0]["chosen"]
                 self.assertRegex(клон["price"], r"^1\.50 usd")
                 self.assertNotRegex(клон["price"], r"chars|знак")
+                self.assertEqual([], [ф for ф in клон.get("price_flags") or [] if "НИЖНЯЯ" in ф or "LOWER" in ф])
 
     def test_по_записи_реестра(self) -> None:
         реестр = ep.build(load_facts())
@@ -368,6 +369,8 @@ class РеальноеВремя(unittest.TestCase):
         ("Live-action product ad with a presenter talking to camera", {"task": "avatar", "outputs": ["video", "speech"]}),
         ("It does not need to be real time: a recorded 60 s avatar video", {"task": "avatar", "outputs": ["video", "speech"]}),
         ("Real-time strategy game trailer, 30 s", {"task": "generate", "outputs": ["video"]}),
+        ("Dub our real-time strategy game trailer into German", {"task": "dub-translate", "outputs": ["video", "speech"]}),
+        ("Translate the live recording of our concert into Spanish subtitles", {"task": "captions", "outputs": ["video"]}),
         ("Live dubbing of our webinar", {"task": "generate", "outputs": ["video"]}),
     )
 
@@ -418,8 +421,9 @@ class ВидеоВЗвук(unittest.TestCase):
         self.assertEqual(("музыка",), п.route.шаги)
 
     def test_без_работы_звук_не_вопрос_а_речь_вопрос(self) -> None:
-        поля = [н["field"] for н in bs.gaps({"inputs": [V(15)], "outputs": ["sfx"], "duration_s": 15})[2]]
-        self.assertNotIn("task", поля)
+        for выход in ("sfx", "music"):
+            поля = [н["field"] for н in bs.gaps({"inputs": [V(15)], "outputs": [выход], "duration_s": 15})[2]]
+            self.assertNotIn("task", поля)
         поля = [н["field"] for н in bs.gaps({"inputs": [V(15)], "outputs": ["speech"], "duration_s": 15,
                                               "languages": ["en"]})[2]]
         self.assertIn("task", поля)
