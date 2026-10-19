@@ -402,7 +402,7 @@ class НеNvidia(unittest.TestCase):
         self.assertEqual(("arc-a770", 16.0, "xpu"), (h.gpu, h.vram_gb, h.gpu_backend))
         h = hn.from_brief("on one RTX 4090")
         self.assertEqual(("rtx-4090", ""), (h.gpu, h.gpu_backend))
-        self.assertEqual("", hn.from_brief("an AMD-sponsored esports trailer").gpu_backend)
+        self.assertEqual("", hn.from_brief("a promo explaining ROCm to developers").gpu_backend)
 
     def test_spec_несёт_платформу_и_жёсткое(self) -> None:
         spec = _spec({"self_host": {"gpu": "Radeon RX 7800 XT", "vram_gb": 16}})
@@ -434,6 +434,33 @@ class НеNvidia(unittest.TestCase):
         ru = {з["id"]: з for з in ra.notes(spec, GEN_I, english=False)}
         self.assertIn("AMD GPU (Radeon RX 7900 XTX)", en["backend_rocm"]["says"])
         self.assertIn("GPU AMD (Radeon RX 7900 XTX)", ru["backend_rocm"]["says"])
+
+
+class ПланНаAmd(unittest.TestCase):
+    def test_отбор_ранжирует_по_записанному_rocm_и_пишет_бэкенд_шага(self) -> None:
+        import json
+
+        from studio.mcp import server
+
+        d = json.loads(
+            server.plan_pipeline(
+                "Make 5 seconds of 720p ocean waves on my own Radeon RX 7900 XTX, open weights",
+                spec={
+                    "task": "generate",
+                    "inputs": [],
+                    "outputs": ["video"],
+                    "duration_s": 5,
+                    "resolution": "720p",
+                    "self_host": {"gpu": "Radeon RX 7900 XTX", "vram_gb": 24},
+                    "open_weights": True,
+                    "people": [],
+                },
+            )
+        )
+        текст = json.dumps(d, ensure_ascii=False)
+        self.assertIn("AMD ROCm: запуск на этом бэкенде записан", текст)
+        self.assertIn("recorded (AMD ROCm)", текст)
+        self.assertIn("backend_rocm", [з["id"] for з in d["production_notes"]])
 
 
 if __name__ == "__main__":
