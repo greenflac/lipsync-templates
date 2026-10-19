@@ -114,6 +114,58 @@ GARMENT = re.compile(
 )
 
 
+#: Round 12: a walkthrough / tour of a property made from its photos (a camera moves
+#: through still rooms — not a person copying a driving video's motion).
+WALKTHROUGH = re.compile(
+    r"walk-?through|walk through|virtual tour|(?:house|home|property|apartment|room) tour|room[- ]by[- ]room"
+    r"|fly-?through|real[- ]estate|\blisting\b|видеотур\w*|виртуальн\w* тур\w*|тур по (?:дому|квартир\w*|дом\w*|комнат\w*)"
+    r"|обход\w* (?:дома|квартир\w*)|прогулк\w* по (?:дому|квартир\w*)|по комнатам|недвижимост\w*",
+    re.I,
+)
+#: Round 12: so many photos of one place that a 3D reconstruction (gaussian splat)
+#: is a real alternative to per-photo camera moves. DECISION CONSTANT (T1): a
+#: splat needs dozens of overlapping views; at 20 a listing set usually has them.
+SPLAT_PHOTOS_MIN = 20
+#: Motion-control endpoints: they need a DRIVING video of a performer; a walkthrough has none.
+MOTION_CONTROL_MODELS = r"motion-control|motion-transfer|animate-move|act-two"
+#: TTS builds published without the cloning head: they do not read in a sample's voice.
+NO_CLONE_MODELS = r"without-voice-clon|no-voice-clon"
+#: Round 12: drawn (2D / anime / cartoon) footage — photoreal lip sync is the wrong tool for it.
+DRAWN = re.compile(
+    r"\banime\b|\bcartoons?\b|\bcartoony\b|\banimated (?:series|show|film|movie|episode|short)|\bmanga\b"
+    r"|\b2d[- ]animat\w*|\bhand[- ]drawn|аниме|мультфильм\w*|мультсериал\w*|мультик\w*|рисованн\w*|анимационн\w*",
+    re.I,
+)
+#: Round 12: everything must run on the customer's machine (no hosted API).
+LOCAL_ONLY = re.compile(
+    r"local[- ]only|\blocally\b|\boffline\b|on[- ]prem\w*|air[- ]?gapped|no cloud|without (?:the |any )?cloud"
+    r"|own (?:gpu|machine|server|hardware)|локально|офлайн|оффлайн|без облак\w*|без интернет\w*"
+    r"|на (?:своём|своем|моём|моем) (?:компьютере|сервере|железе|gpu|видеокарте)",
+    re.I,
+)
+
+
+def walkthrough(spec: "bs.Spec", text: str = "") -> bool:
+    """A camera tour of a place from the customer's photos (round 12)."""
+    if "video" not in spec.outputs or "photo" not in spec.inputs or _photo_count(spec) < 2:
+        return False
+    if any(п.get("real") for п in spec.people):
+        return False
+    return any(WALKTHROUGH.search(str(у)) for у in (*spec.conditions, text) if у)
+
+
+def drawn(spec: "bs.Spec", text: str = "") -> bool:
+    """The footage is drawn (anime, cartoon): mouths are drawn shapes, not a photographed face."""
+    return any(DRAWN.search(str(у)) for у in (*spec.conditions, text) if у)
+
+
+def local_only(spec: "bs.Spec", text: str = "") -> bool:
+    """Everything runs on the customer's own machine: `spec.self_host`, `open_weights`, or said in words."""
+    if spec.self_host or spec.open_weights:
+        return True
+    return any(LOCAL_ONLY.search(str(у)) for у in (*spec.conditions, text) if у)
+
+
 def whole_character(spec: "bs.Spec", text: str = "") -> bool:
     """A face-replace order whose replacement is a non-human character (mascot, costume): the whole figure goes.
 
@@ -200,6 +252,53 @@ NOTE_TRY_ON_MODEL = (
     "the model photo (no person on your photos): full-length pose, plain background, clothing of a similar cut",
 )
 
+NOTE_WALKTHROUGH = (
+    "проход камеры по ВАШИМ снимкам: каждая комната — свой короткий клип (наезд, проезд, панорама) из снимка, "
+    "людей и мебели не выдумывать, прямые линии держать",
+    "a camera path through YOUR photos: each room is its own short clip (push-in, dolly, pan) from the photo — no "
+    "invented people or furniture, straight lines kept",
+)
+NOTE_DRAWN_DUB = (
+    "рисованный ролик: дубляж закадром, фотореалистичный липсинк к нарисованным ртам не применяется; рты "
+    "переставляются в проекте анимации по фонемам новой речи (Rhubarb Lip Sync, автолипсинк Toon Boom / "
+    "Character Animator) — или остаются как есть",
+    "drawn footage: a voice-over dub — photoreal lip sync is not applied to drawn mouths; the mouth flaps are "
+    "re-timed in the animation project from the new speech's phonemes (Rhubarb Lip Sync, Toon Boom / Character "
+    "Animator auto lip-sync) — or left as they are",
+)
+NOTE_LOCAL_TRANSCRIBE = (
+    "речь ВАШЕГО видео расшифровывается с таймингами на вашем GPU (Whisper / faster-whisper)",
+    "the speech of YOUR video is transcribed with timestamps on your GPU (Whisper / faster-whisper)",
+)
+NOTE_LOCAL_VOICE = (
+    "расшифровка переводится локальной моделью (NLLB-200 / MADLAD-400 / локальная LLM) и читается голосом "
+    "исходного диктора (клон без обучения: XTTS-v2 / CosyVoice / Chatterbox) по отрезкам таймингов",
+    "the transcript is translated by a local model (NLLB-200 / MADLAD-400 / a local LLM) and read in the original "
+    "speaker's voice (zero-shot clone: XTTS-v2 / CosyVoice / Chatterbox), segment by segment on the timestamps",
+)
+
+ASSEMBLY_WALKTHROUGH = (
+    "клипы комнат склеиваются в порядке прохода (ffmpeg concat / xfade) — 0 usd",
+    "the room clips are joined in walking order (ffmpeg concat / xfade) — 0 usd",
+)
+ASSEMBLY_SPLAT = (
+    "снимков много: вместо клипов по снимкам возможен настоящий облёт — 3D gaussian splat по снимкам "
+    "(nerfstudio splatfacto / Postshot на своём GPU) и рендер пути камеры; нужны снимки с перекрытием",
+    "many photos: instead of per-photo clips a true fly-through is possible — a 3D gaussian splat from the "
+    "photos (nerfstudio splatfacto / Postshot on your GPU) and a rendered camera path; the photos must overlap",
+)
+ASSEMBLY_DRAWN_DUB = (
+    "новая дорожка заменяет речь ВАШЕГО ролика (ffmpeg), рты при желании переставляются в проекте анимации — 0 usd",
+    "the new track replaces the speech of YOUR video (ffmpeg); mouth flaps are re-timed in the animation "
+    "project if wanted — 0 usd",
+)
+ASSEMBLY_LOCAL_DUB = (
+    "голос отделяется от музыки и шумов (Demucs), новая речь сводится поверх них и кладётся в ВАШЕ видео "
+    "(ffmpeg) — всё на вашем GPU, 0 usd",
+    "the voice is separated from music and effects (Demucs), the new speech is mixed over them and muxed into "
+    "YOUR video (ffmpeg) — all on your GPU, 0 usd",
+)
+
 ASSEMBLY_LOGO = (
     "логотип накладывается из ВАШЕГО файла (ffmpeg overlay) финальной карточкой — буква в букву; "
     "сгенерированный текст в кадр не идёт — 0 usd",
@@ -270,6 +369,9 @@ class Applied:
     free_route: bool = False
     #: Round 10: a printed still — ((w, h) at print DPI, size label, dpi); None — not print or no size.
     print_frame: tuple[tuple[int, int], str, int] | None = None
+    #: Round 12: the route was rebuilt for the customer's own machine (a local chain):
+    #: selection goes to open weights on their GPU even when `spec.self_host` is silent.
+    local_only: bool = False
 
 
 def enabled(spec: "bs.Spec", prior_id: str) -> bool:
@@ -332,6 +434,7 @@ def rewrite(spec: "bs.Spec", route: "bs.Маршрут", text: str = "") -> Appl
     outputs = set(spec.outputs)
     tasks = {spec.task, *spec.then_tasks}
     free = False
+    local = False
 
     # --- customer likeness: their recording, their video -----------------------
     if spec.task == "avatar" and "video" in inputs and "photo" not in inputs and "говорящий_аватар" in steps:
@@ -395,6 +498,41 @@ def rewrite(spec: "bs.Spec", route: "bs.Маршрут", text: str = "") -> Appl
             notes["примерка"] = NOTE_TRY_ON[0]
             if made:
                 notes["генерация_изображения"] = NOTE_TRY_ON_MODEL[0]
+
+    # --- round 12: a property walkthrough from photos ---------------------------------
+    # Motion transfer needs a DRIVING video of a performer; a tour of rooms is a camera
+    # moving through stills: one image-to-video camera move per photo, joined in order.
+    if walkthrough(spec, text) and set(steps) & {"перенос_движения", "генерация_видео", "оживление"}:
+        if acc.prior("property_walkthrough", "walkthrough_camera_path"):
+            for old in ("перенос_движения", "генерация_видео"):
+                steps = _replace_step(steps, old, "оживление")
+                notes.pop(old, None)
+            notes["оживление"] = NOTE_WALKTHROUGH[0]
+            avoid["оживление"] = MOTION_CONTROL_MODELS
+            acc.assembly.append(ASSEMBLY_WALKTHROUGH)
+            if _photo_count(spec) >= SPLAT_PHOTOS_MIN:
+                acc.assembly.append(ASSEMBLY_SPLAT)
+
+    # --- round 12: dubbing drawn footage ---------------------------------------------
+    if spec.task == "dub-translate" and "липсинк" in steps and drawn(spec, text):
+        if acc.prior("drawn_dub", "drawn_mouth_flaps"):
+            steps = [s for s in steps if s != "липсинк"]
+            notes.pop("липсинк", None)
+            notes["дубляж"] = NOTE_DRAWN_DUB[0]
+            acc.assembly.append(ASSEMBLY_DRAWN_DUB)
+
+    # --- round 12: a dub that must run on the customer's own machine --------------------
+    # Hosted dubbing endpoints are one call; on own hardware the same job is a chain.
+    if spec.task == "dub-translate" and "дубляж" in steps and local_only(spec, text):
+        if acc.prior("local_dub", "local_dub_chain"):
+            i = steps.index("дубляж")
+            steps = [*steps[:i], "расшифровка", "клонирование_голоса", *steps[i + 1 :]]
+            notes.pop("дубляж", None)
+            notes["расшифровка"] = NOTE_LOCAL_TRANSCRIBE[0]
+            notes["клонирование_голоса"] = NOTE_LOCAL_VOICE[0]
+            avoid["клонирование_голоса"] = NO_CLONE_MODELS
+            acc.assembly += [ASSEMBLY_EXTRACT, ASSEMBLY_LOCAL_DUB]
+            local = True
 
     # --- logo / wordmark ----------------------------------------------------------
     # Only where the piece is MADE (generate / animate): a logo printed on a brought
@@ -516,6 +654,7 @@ def rewrite(spec: "bs.Spec", route: "bs.Маршрут", text: str = "") -> Appl
         avoid=avoid,
         assembly=tuple(dict.fromkeys(acc.assembly)),
         free_route=free,
+        local_only=local,
         print_frame=delivery.print_frame(spec, text),
     )
 
@@ -598,7 +737,8 @@ def order(names: Sequence[str]) -> list[str]:
     Steps outside the chain keep their places: only the slots the chain
     occupies are refilled in `CHAIN_RANK` order (stable).
     """
-    first = [n for n in FIRST_STEPS if n in names]
+    # A clone that reads a TRANSCRIPT (the local dub chain) comes after the transcription.
+    first = [n for n in FIRST_STEPS if n in names and "расшифровка" not in names]
     rest = [n for n in names if n not in first]
     slots = [i for i, n in enumerate(rest) if n in CHAIN_RANK]
     chain = sorted((rest[i] for i in slots), key=lambda n: CHAIN_RANK[n])
@@ -745,6 +885,10 @@ NOTES_EN: dict[str, str] = dict(
         NOTE_WHOLE_CHARACTER,
         NOTE_TRY_ON,
         NOTE_TRY_ON_MODEL,
+        NOTE_WALKTHROUGH,
+        NOTE_DRAWN_DUB,
+        NOTE_LOCAL_TRANSCRIBE,
+        NOTE_LOCAL_VOICE,
     )
 )
 

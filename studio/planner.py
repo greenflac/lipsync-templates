@@ -2404,6 +2404,9 @@ OPERATIONS: tuple[Operation, ...] = (
         name="клонирование_голоса",
         cues=(),
         anchors=("voice-clone", "voice-cloning"),
+        # Двенадцатый круг: «…-without-voice-cloning» попадает под якорь, а голос
+        # образца не повторяет — другая работа, в конец порядка.
+        чужие=(r"without-voice-clon",),
         # Образец голоса — материал заказчика (`референс`), согласие — его же.
         requires=(ARTEFACT_REFERENCE,),
         produces=(ARTEFACT_AUDIO,),
@@ -11867,7 +11870,7 @@ def plan(
         # дописанные замыканием производители — перед всеми. Только для работ
         # над материалом по порядку (`ORDERED_ROUTES`) — прочие планы держат
         # прежний порядок `OPERATIONS`.
-        if понято.then_tasks or понято.task in ORDERED_ROUTES:
+        if понято.then_tasks or понято.task in ORDERED_ROUTES or рецепт.local_only:
             порядок_маршрута = {и: i for i, и in enumerate(маршрут.шаги)}
             операции = sorted(операции, key=lambda оп: порядок_маршрута.get(оп.name, -1))
         # ПОРЯДОК РАБОТ РЕЦЕПТА: клон голоса первым; реставрация -> раскраска
@@ -12093,6 +12096,14 @@ def plan(
             жёсткие,
             self_host=True,
             sources=tuple(sorted({**dict(жёсткие.sources), "self_host": "бюджет 0"}.items())),
+        )
+    # ДВЕНАДЦАТЫЙ КРУГ: «только локально» словами — маршрут рецепт уже пересобрал
+    # цепочкой открытых весов; отбор идёт по ним на своём GPU, как при self_host.
+    if рецепт.local_only and not жёсткие.self_host:
+        жёсткие = replace(
+            жёсткие,
+            self_host=True,
+            sources=tuple(sorted({**dict(жёсткие.sources), "self_host": "только локально"}.items())),
         )
     юрисдикции = жёсткие.jurisdiction or None
 
