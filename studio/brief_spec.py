@@ -503,6 +503,11 @@ class Spec:
     lipsync: bool | None = None
     #: Для кого ролик (одиннадцатый круг): children | teens | general | adults.
     audience: str | None = None
+    #: Двенадцатый круг: говорящий ВИДЕН в кадре (ведущий, персонаж говорит в
+    #: камеру). Поля в контракте нет — решает `with_defaults` по словам брифа
+    #: (`говорят_в_кадре`); маршрут читает его, чтобы к речи и картинке добавить
+    #: шаг, который двигает губы.
+    speaker_on_screen: bool = False
     #: Восьмой круг: допущения рецептов, выключенные вызывающим ({id: False});
     #: не названо — допущение класса заполняет молчание базы (`studio/recipes`).
     priors: Mapping[str, bool] = field(default_factory=dict)
@@ -1542,7 +1547,24 @@ NOTE_SIGN = (
     "язык жестов генеративные модели не делают: липсинк и говорящие аватары двигают губы, а не руки — "
     "пробел записан, план не строится"
 )
+#: Двенадцатый круг: работы, которые добавляет СОСТАВ выходов (`_все_выходы`).
+NOTE_NARRATION = "закадровый голос для заказанной речи: синтез по тексту, кладётся поверх картинки при сборке"
+NOTE_NARRATION_MIX = "голос кладётся поверх картинки при сборке (ffmpeg amix, приглушение фона под речью)"
+NOTE_SPEAKER_LIPS = "говорящий виден в кадре: губы двигает липсинк под синтезированную речь"
+NOTE_PHOTO_TO_VIDEO = "заказано видео, а работа отдаёт снимок: снимок оживляется (image-to-video)"
+NOTE_POSTER = "заказана картинка, а план делает только видео: картинка (обложка, постер) генерируется отдельно"
+NOTE_VISUALISER_NO_TRACK = (
+    "трек не приложен: визуал делается петлями без него, дорожку кладёт монтаж, когда трек будет"
+)
 NOTES_EN: dict[str, str] = {
+    NOTE_NARRATION: "a voice-over for the ordered speech: synthesised from the text and laid over the picture at assembly",
+    NOTE_NARRATION_MIX: "the voice is laid over the picture at assembly (ffmpeg amix, background ducked under speech)",
+    NOTE_SPEAKER_LIPS: "the speaker is seen on screen: lip sync moves the lips to the synthesised speech",
+    NOTE_PHOTO_TO_VIDEO: "a video is ordered and the job returns a still: the still is animated (image-to-video)",
+    NOTE_POSTER: "a picture is ordered and the plan only makes video: the picture (cover, poster) is generated separately",
+    NOTE_VISUALISER_NO_TRACK: (
+        "no track attached: the visuals are made as loops without it, and assembly lays the track in once it exists"
+    ),
     NOTE_DUB_LIPS: "translating your own video: lip sync moves the lips to the new language (no faces on screen — drop the step)",
     NOTE_CAPTIONS: "captions are burned in at assembly (ffmpeg) from the timed transcript — no model needed for that",
     NOTE_VIDEO_EDIT: "an edit of YOUR video (stabilise, reframe, sky replacement, cut-out): no new clip is generated",
@@ -1568,6 +1590,16 @@ NOTES_EN: dict[str, str] = {
 #: заказчика под картинкой, отбор фрагментов по расшифровке. Читает
 #: `planner.нужна_сборка`. Ключ — пометка, значение — (ru, en).
 ASSEMBLY_REASONS: dict[str, tuple[str, str]] = {
+    NOTE_NARRATION_MIX: (
+        "голос кладётся поверх картинки: ffmpeg amix, фон и музыка приглушаются под речью (sidechain) — 0 usd",
+        "the voice is mixed over the picture: ffmpeg amix, background and music ducked under speech "
+        "(sidechain) — 0 usd",
+    ),
+    NOTE_VISUALISER_NO_TRACK: (
+        "трек не приложен: петли визуала режутся под длину ролика, дорожка кладётся, когда трек будет — 0 usd",
+        "no track attached: the visual loops are cut to the clip length and the track is laid in once it "
+        "exists — 0 usd",
+    ),
     NOTE_VISUALISER: (
         "под картинку кладётся ВАША дорожка (её длина — длина ролика)",
         "YOUR track is laid under the visuals (its length is the clip length)",
@@ -1715,6 +1747,132 @@ def _подложка(выходы: set[str]) -> tuple[str, ...]:
     return tuple(ш for в, ш in (("music", "музыка"), ("sfx", "звук_фон")) if в in выходы)
 
 
+#: Двенадцатый круг: КТО ОТДАЁТ какой выход (шаги — имена операций плановщика).
+#: Состав выходов (`_все_выходы`) сверяет с этим каждый вид в `spec.outputs`:
+#: «отреставрировать хронику И наложить диктора» терял диктора, потому что
+#: маршрут реставрации возвращал один шаг и о речи не знал.
+SPEECH_MAKERS: frozenset[str] = frozenset({"озвучка", "клонирование_голоса", "дубляж", "видео_со_звуком"})
+#: Работы над видео заказчика, которые оставляют ЕГО звук: речь в выходе — речь исходника.
+SOURCE_SOUND_TASKS: frozenset[str | None] = frozenset(
+    {"cut-to-shorts", "captions", "transcribe", "video-edit", "edit", "face-replace", "lipsync", "dub-translate"}
+)
+#: Шаги, которым речь нужна на входе: её дописывает замыкание плановщика.
+SPEECH_TAKERS: frozenset[str] = frozenset({"говорящий_аватар", "липсинк"})
+VIDEO_MAKERS: frozenset[str] = frozenset(
+    {
+        "генерация_видео",
+        "оживление",
+        "видео_по_референсу",
+        "говорящий_аватар",
+        "липсинк",
+        "перенос_движения",
+        "замена_персонажа",
+        "замена_фигуры",
+        "правка_видео",
+        "апскейл",
+        "реставрация",
+        "раскраска",
+        "интерполяция_кадров",
+        "удаление_фона_видео",
+        "оборот_360",
+        "видео_со_звуком",
+    }
+)
+#: Генерируемая картинка, на которой говорящего можно «озвучить» липсинком.
+GENERATED_VIDEO: frozenset[str] = frozenset({"генерация_видео", "оживление", "видео_по_референсу"})
+IMAGE_MAKERS: frozenset[str] = frozenset(
+    {
+        "генерация_изображения",
+        "редактирование_изображения",
+        "примерка",
+        "апскейл_изображения",
+        "реставрация_изображения",
+        "раскраска_изображения",
+        "удаление_фона",
+        "замена_лица_изображения",
+    }
+)
+
+
+def _выход_без_шага(виды: list[str]) -> tuple[str, str, str, tuple[str, ...], tuple[str, ...]]:
+    названо = ", ".join(виды)
+    return (
+        "выход_без_шага",
+        f"заказан выход ({названо}), но ни одна работа плана его не делает — уточните, откуда он берётся",
+        f"the output ({названо}) is ordered but no step of the plan makes it — say where it comes from",
+        ("он у меня есть — приложу", "убрать его из заказа"),
+        ("I have it and will attach it", "drop it from the order"),
+    )
+
+
+def _все_выходы(spec: Spec, м: Маршрут) -> Маршрут:
+    """СОСТАВ: каждый заказанный вид выхода делает какой-то шаг (двенадцатый круг).
+
+    Маршрут одной работы знает только свою работу: реставрация — реставрацию,
+    апскейл — апскейл. Речь, музыка, шумы, оживление снимка и губы говорящего
+    в кадре, которых работа не делает, дописываются здесь; вид, который так и
+    остался без шага, — ВОПРОС, а не молча выпавшая часть заказа.
+    """
+    if м.нехватка is not None or м.пробел is not None or not (м.шаги or м.сборка):
+        return м
+    шаги = list(м.шаги)
+    пометки = dict(м.пометки)
+    сборка = list(м.сборка)
+    выходы = set(spec.outputs)
+    входы = set(spec.inputs)
+    своя_речь = "audio" in входы and "script" not in входы
+    # Речь ВАШЕГО видео — его собственная, когда работа оставляет звук исходника
+    # (нарезка, субтитры, правка): голос дописывается, только если назван закадр.
+    if "video" in входы and spec.task in SOURCE_SOUND_TASKS and spec.audio != "voiceover":
+        своя_речь = True
+    if "video" in выходы and not (set(шаги) & VIDEO_MAKERS or сборка or "video" in входы):
+        if "photo" in входы and set(шаги) & IMAGE_MAKERS:
+            шаги.append("оживление")
+            пометки.setdefault("оживление", NOTE_PHOTO_TO_VIDEO)
+    видео = bool(set(шаги) & VIDEO_MAKERS or сборка or "video" in входы)
+    if (
+        "speech" in выходы
+        and spec.audio != "native"
+        and not set(шаги) & (SPEECH_MAKERS | SPEECH_TAKERS)
+        and not своя_речь
+    ):
+        шаги.append("озвучка")
+        пометки.setdefault("озвучка", NOTE_NARRATION)
+        if видео:
+            сборка.append(NOTE_NARRATION_MIX)
+    if "music" in выходы and "музыка" not in шаги and "audio" not in входы:
+        шаги.append("музыка")
+    if "sfx" in выходы and "звук_фон" not in шаги and spec.audio != "native":
+        шаги.append("звук_фон")
+    if (
+        spec.speaker_on_screen
+        and {"video", "speech"} <= выходы
+        and spec.audio != "native"
+        and "video" not in входы
+        and set(шаги) & GENERATED_VIDEO
+        and not set(шаги) & SPEECH_TAKERS
+    ):
+        шаги.append("липсинк")
+        пометки.setdefault("липсинк", NOTE_SPEAKER_LIPS)
+    if "image" in выходы and видео and not set(шаги) & IMAGE_MAKERS and "photo" not in входы:
+        шаги.insert(0, "генерация_изображения")
+        пометки.setdefault("генерация_изображения", NOTE_POSTER)
+    есть = set(шаги)
+    сделано = {
+        "video": видео,
+        "image": bool(есть & IMAGE_MAKERS) or "photo" in входы,
+        "speech": bool(есть & (SPEECH_MAKERS | SPEECH_TAKERS)) or spec.audio == "native" or "audio" in входы or своя_речь,
+        "music": "музыка" in есть or "audio" in входы,
+        "sfx": "звук_фон" in есть or spec.audio == "native",
+    }
+    не_сделано = [в for в in spec.outputs if not сделано.get(в, True)]
+    if не_сделано:
+        return Маршрут(нехватка=_выход_без_шага(не_сделано))
+    if шаги == list(м.шаги) and сборка == list(м.сборка):
+        return м
+    return replace(м, шаги=tuple(dict.fromkeys(шаги)), пометки=пометки, сборка=tuple(dict.fromkeys(сборка)))
+
+
 def route(spec: Spec, на_сборке: frozenset[str] | None = None) -> Маршрут:
     """Шаги по спецификации: главная работа, затем работы цепочки (`then_tasks`).
 
@@ -1729,6 +1887,11 @@ def route(spec: Spec, на_сборке: frozenset[str] | None = None) -> Мар
     if sign_language(spec):
         return Маршрут(пробел=(NOTE_SIGN, NOTES_EN[NOTE_SIGN]))
     сборочные = frozenset(ASSEMBLY_EDITS) if на_сборке is None else на_сборке
+    return _все_выходы(spec, _цепочка(spec, сборочные))
+
+
+def _цепочка(spec: Spec, сборочные: frozenset[str]) -> Маршрут:
+    """Главная работа и работы цепочки (`then_tasks`), без состава выходов."""
     главный = _маршрут_одной(spec, сборочные)
     if главный.нехватка is not None or not spec.then_tasks:
         return главный
@@ -1841,11 +2004,18 @@ def _маршрут_одной(spec: Spec, на_сборке: frozenset[str] = f
             сборка=(NOTE_SHORTS_EDIT,),
         )
     if задача == "music-visualiser":
-        if (нет := _нехватка_двух(задача, ("audio",), входы)) is not None:
-            return нет
         # Принесённый кадр оживляется, иначе картинка генерируется с нуля;
         # музыки не генерирует никто — трек заказчика.
         шаг = "оживление" if "photo" in входы else "генерация_видео"
+        if "audio" not in входы:
+            # ДВЕНАДЦАТЫЙ КРУГ: визуализатор без приложенного трека спрашивал
+            # трек — а картинка от трека не зависит: петли делаются без него,
+            # дорожку кладёт монтаж. Музыка заказана выходом — её делает шаг.
+            return Маршрут(
+                (шаг, *(("музыка",) if "music" in выходы else ())),
+                {шаг: NOTE_VISUALISER_NO_TRACK},
+                сборка=(NOTE_VISUALISER_NO_TRACK,),
+            )
         return Маршрут((шаг,), {шаг: NOTE_VISUALISER}, сборка=(NOTE_VISUALISER, NOTE_VISUALISER_SYNC))
     if задача == "sing-photo":
         if (нет := _нехватка_двух(задача, ("photo", "audio"), входы)) is not None:
@@ -1900,9 +2070,10 @@ def _маршрут_одной(spec: Spec, на_сборке: frozenset[str] = f
     elif задача == "lipsync":
         if "video" in входы:
             return Маршрут(("липсинк",), {})
-        if "photo" in входы:
-            return Маршрут(("говорящий_аватар",), {})
-        return Маршрут()
+        # ДВЕНАДЦАТЫЙ КРУГ: ни снимка, ни видео — говорящего делает план (кадр
+        # персонажа -> говорящий аватар, как у задачи avatar), а не вопрос
+        # «что сделать»: ответ на него плана не меняет.
+        return Маршрут(("говорящий_аватар",), {})
     elif задача == "upscale":
         if "video" in входы:
             return Маршрут(("апскейл",), {})
@@ -2003,6 +2174,30 @@ SPEAKING_IN_FRAME = re.compile(
 )
 #: Голос ЗА кадром назван словами — говорящего в кадре нет.
 VOICE_OFF_FRAME = re.compile(r"voice-?over|narrat\w*|off-?screen|озвучк\w*|закадров\w*|диктор\w*|配音", re.I)
+#: Двенадцатый круг: говорящий ВИДЕН словами — ведущий, «в камеру», «в кадре».
+#: Старше `VOICE_OFF_FRAME`: «ведущий в кадре, озвучка нейросетью» — губы
+#: двигаются. Глагол речи (`SPEAKING_IN_FRAME`) без этих слов считается только
+#: при персонаже (`characters`/`people`) — «ролик, который рассказывает о
+#: приложении», говорящего не показывает.
+ON_SCREEN_SPEAKER = re.compile(
+    r"\bpresenter|\bhost(?:s|ed)?\b|\banchor(?:man|woman|s)?\b|\bspokes(?:person|man|woman)"
+    r"|(?:to|into|at|on)[- ](?:the )?camera|\bin (?:the )?frame|\bon[- ]screen (?:host|presenter|speaker|character)"
+    r"|talking (?:character|head|mascot|cartoon)|gives? (?:a |the |his |her |their )?(?:speech|monologue|rant|address)"
+    r"|ведущ\w*|в кадре|в камеру|на камеру|говорящ\w* (?:персонаж|геро|кот|пёс|пес|робот|маскот)",
+    re.I,
+)
+
+
+def говорят_в_кадре(spec: Spec, текст: str = "") -> bool:
+    """Говорящий виден в кадре генерируемого ролика (двенадцатый круг): к речи нужен липсинк."""
+    выходы = set(spec.outputs)
+    if not {"video", "speech"} <= выходы or spec.task not in (None, "generate", "animate", "r2v"):
+        return False
+    сказано = " ".join(str(у) for у in (*spec.conditions, текст) if у)
+    if ON_SCREEN_SPEAKER.search(сказано):
+        return True
+    персонаж = (spec.characters or 0) >= 1 or bool(spec.people)
+    return персонаж and bool(SPEAKING_IN_FRAME.search(сказано)) and not VOICE_OFF_FRAME.search(сказано)
 
 
 #: «Тот же персонаж» словами — серия держит одного героя (одиннадцатый круг).
@@ -2129,6 +2324,18 @@ def with_defaults(spec: Spec, ролик: bool, текст: str = "") -> Spec:
         допущения.append(
             "a short generated clip where someone speaks: the video model makes the voice and the lips together "
             "(native audio) — no separate voiceover or lip sync; pass spec.audio='voiceover' for an off-screen voice"
+        )
+    elif говорят_в_кадре(spec, текст):
+        # ДВЕНАДЦАТЫЙ КРУГ: ведущий или персонаж говорит в кадре, а клип длиннее
+        # одного дубля со звуком — речь синтезируется, губы двигает липсинк
+        # (`_все_выходы`). Прежде шла одна озвучка поверх немого кадра.
+        поля["speaker_on_screen"] = True
+        if spec.audio is None:
+            поля["audio"] = "voiceover"
+            источник["audio"] = SOURCE_DEFAULT
+        допущения.append(
+            "the speaker is seen on screen: the voice is synthesised and a lip-sync step moves the lips to it — "
+            "pass spec.audio='native' for a short single-take clip with the voice made by the video model"
         )
     elif "speech" in spec.outputs and "video" in spec.outputs and spec.audio is None and spec.task in (None, "generate", "animate"):
         поля["audio"] = "voiceover"

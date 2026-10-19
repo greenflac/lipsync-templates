@@ -88,7 +88,7 @@ from typing import Any
 
 from mcp.server.mcpserver import MCPServer
 
-from studio import claims_policy, clarify, l10n
+from studio import broadcast_marks, claims_policy, clarify, l10n
 from studio.mcp.lazy import lazy
 from studio.selfrag.facts import STALE_AFTER_DAYS  # noqa: E402
 from studio import ruwords
@@ -1567,6 +1567,17 @@ def _план(
     # ОДИННАДЦАТЫЙ КРУГ (`spec_screen`): слово о детях, о подмене образа или тема
     # в названии обучающего ролика — решает заполненная `spec.people`, а не слово.
     просев, решено_spec = spec_screen.decide(просев, политика, spec, brief)
+    # ДВЕНАДЦАТЫЙ КРУГ (`studio.broadcast_marks`): знаки настоящего канала на
+    # выдуманном или пародийном выпуске — отказ, а не вопрос: ответа, который
+    # сделал бы это планируемым, нет.
+    марки = broadcast_marks.decide(brief, spec)
+    if марки["decision"] == broadcast_marks.DECISION_REFUSE:
+        return _json(
+            l10n.localise_payload(
+                _отказ_марки(марки, просев, политика, англ=язык == "en"),
+                язык,
+            )
+        )
     if просев["outcome"] != PASS:
         return _json(
             l10n.localise_payload(
@@ -1755,6 +1766,32 @@ def _отказ_заявления(заявления: dict, просев: dict,
             "remove or rephrase the claim, or bring its substantiation, and call again"
             if англ
             else "уберите или переформулируйте заявление либо назовите его подтверждение и спросите снова"
+        ),
+    }
+
+
+def _отказ_марки(марки: dict, просев: dict, политика: dict, англ: bool) -> dict:
+    """Отказ по знакам настоящего канала на выдуманных новостях (`broadcast_marks`)."""
+    нота = broadcast_marks.refusal_note(марки, англ)
+    return {
+        "outcome": FAIL,
+        "checked": int(просев["checked"]) + 1,
+        "violations": 1,
+        "unmeasured": 0,
+        "reason": REASON_BANNED_TOPIC,
+        "risks": просев["risks"],
+        "risky": просев["risky"],
+        "classes": [],
+        "steps": [],
+        "question": None,
+        "people_policy": screen.отчёт_политики(политика),
+        "broadcast_marks": dict(марки),
+        "note": нота,
+        "summary": f"REFUSED: {нота}" if англ else f"ОТКАЗ: {нота}",
+        "что_дальше": (
+            "make it a fictional channel with its own name, logo and graphics, and call again"
+            if англ
+            else "сделайте выдуманный канал со своим названием, логотипом и графикой и спросите снова"
         ),
     }
 

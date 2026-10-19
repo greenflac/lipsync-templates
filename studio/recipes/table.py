@@ -354,6 +354,41 @@ PRIORS_LIST: tuple[Prior, ...] = (
     ),
 )
 
+PRIORS_LIST = (
+    *PRIORS_LIST,
+    Prior(
+        "walkthrough_camera_path",
+        "a walkthrough or tour of a place from YOUR photos is a camera path: one image-to-video camera move per "
+        "photo (push-in, dolly, pan), joined in walking order — not motion transfer, which copies a performer from "
+        "a driving video; with many overlapping photos a 3D gaussian splat fly-through is the alternative",
+        "проход или тур по месту из ВАШИХ снимков — это путь камеры: одно движение камеры image-to-video на снимок "
+        "(наезд, проезд, панорама), склейка в порядке прохода — а не перенос движения, который повторяет "
+        "исполнителя из ведущего видео; при многих перекрывающихся снимках альтернатива — облёт по 3D gaussian splat",
+        TAG_ENGINEERING,
+    ),
+    Prior(
+        "drawn_mouth_flaps",
+        "dubbing drawn footage (anime, cartoon) is a voice-over dub: photoreal lip-sync models are trained on "
+        "filmed faces and are wrong (and expensive) for drawn mouths; the mouth flaps are re-timed in the animation "
+        "project (Rhubarb Lip Sync, Toon Boom / Character Animator auto lip-sync) or left as they are",
+        "дубляж рисованного ролика (аниме, мультфильм) — закадровый: фотореалистичный липсинк учён на снятых лицах "
+        "и к нарисованным ртам не подходит (и дорог); рты переставляются в проекте анимации (Rhubarb Lip Sync, "
+        "автолипсинк Toon Boom / Character Animator) или остаются как есть",
+        TAG_ENGINEERING,
+    ),
+    Prior(
+        "local_dub_chain",
+        "a dub that must run on your own machine is a chain of open-weights steps: transcribe (Whisper) -> "
+        "translate (NLLB-200 / MADLAD-400 / a local LLM) -> read in the speaker's voice (XTTS-v2 / CosyVoice / "
+        "Chatterbox) -> separate and remix (Demucs, ffmpeg); hosted dubbing endpoints do it in one call and are "
+        "not local",
+        "дубляж, который должен идти на вашей машине, — цепочка открытых весов: расшифровка (Whisper) -> перевод "
+        "(NLLB-200 / MADLAD-400 / локальная LLM) -> чтение голосом диктора (XTTS-v2 / CosyVoice / Chatterbox) -> "
+        "разделение и сведение (Demucs, ffmpeg); облачные эндпоинты дубляжа делают это одним вызовом и не локальны",
+        TAG_ENGINEERING,
+    ),
+)
+
 #: Tools and failure checks each prior brings (kept apart from the wording above).
 _PRIOR_TOOLS_FAILURES: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
     "t2i_native_max": ((), ("upscale_hallucination",)),
@@ -376,6 +411,9 @@ _PRIOR_TOOLS_FAILURES: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
     "print_upscale": ((), ("upscale_hallucination",)),
     "whole_character_replace": ((), ("character_motion_drift",)),
     "virtual_try_on": ((), ("garment_detail_lost",)),
+    "walkthrough_camera_path": (("ffmpeg_concat",), ("walkthrough_warp",)),
+    "drawn_mouth_flaps": ((), ("mouth_flap_timing",)),
+    "local_dub_chain": (("extract_audio",), ("clone_accent", "dub_segment_overrun")),
 }
 PRIORS_LIST = tuple(
     Prior(п.id, п.en, п.ru, п.tag, п.sources, *_PRIOR_TOOLS_FAILURES[п.id]) for п in PRIORS_LIST
@@ -458,6 +496,18 @@ FAILURES_LIST: tuple[Failure, ...] = (
             "turn the mesh to every side the photos did not cover", "повернуть модель всеми сторонами, которых нет на снимках"),
     Failure("lyric_drift", "lyric lines drift off the sung words", "строки текста уезжают от спетых слов",
             "check the first word of every line against the vocal", "сверить первое слово каждой строки с вокалом"),
+)
+
+FAILURES_LIST = (
+    *FAILURES_LIST,
+    Failure("walkthrough_warp", "image-to-video bends walls and door frames or invents rooms past the photo",
+            "image-to-video гнёт стены и дверные проёмы или выдумывает комнаты за краем снимка",
+            "check verticals and the last frame of every room clip", "проверить вертикали и последний кадр каждого клипа"),
+    Failure("mouth_flap_timing", "drawn mouths keep the old language's timing", "нарисованные рты держат тайминг старого языка",
+            "watch the longest line with sound", "посмотреть самую длинную реплику со звуком"),
+    Failure("dub_segment_overrun", "a translated line runs longer than its original segment",
+            "переведённая реплика длиннее своего отрезка оригинала",
+            "compare each segment's new length with the original", "сверить длину каждого отрезка с оригиналом"),
 )
 
 FAILURES: dict[str, Failure] = {ф.id: ф for ф in FAILURES_LIST}
@@ -642,6 +692,41 @@ RECIPES_LIST = (
         ("virtual_try_on",),
         (),
         ("garment_detail_lost",),
+    ),
+)
+
+RECIPES_LIST = (
+    *RECIPES_LIST,
+    Recipe(
+        "property_walkthrough",
+        "a walkthrough / tour of a place from the customer's photos",
+        (
+            RecipeStep("оживление", "model", "one camera move per photo"),
+            RecipeStep("ffmpeg_concat", "tool", "room clips joined in walking order"),
+        ),
+        ("walkthrough_camera_path",),
+        ("ffmpeg_concat",),
+        ("walkthrough_warp",),
+    ),
+    Recipe(
+        "drawn_dub",
+        "dubbing anime / cartoon footage",
+        (RecipeStep("дубляж", "model", "voice-over dub; no photoreal lip sync on drawn mouths"),),
+        ("drawn_mouth_flaps",),
+        (),
+        ("mouth_flap_timing",),
+    ),
+    Recipe(
+        "local_dub",
+        "a dub that runs on the customer's own machine",
+        (
+            RecipeStep("расшифровка", "model", "timed transcript (Whisper)"),
+            RecipeStep("клонирование_голоса", "model", "translated text read in the speaker's voice"),
+            RecipeStep("extract_audio", "tool", "the speaker's sample from the video"),
+        ),
+        ("local_dub_chain",),
+        ("extract_audio",),
+        ("clone_accent", "dub_segment_overrun"),
     ),
 )
 
