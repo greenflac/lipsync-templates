@@ -82,6 +82,53 @@ class ЗапускНаMac(unittest.TestCase):
         # 20B весов (оценка снизу 20 ГБ) в 8 ГБ единой памяти не помещаются.
         self.assertNotEqual("qwen-image", итог["steps"][0]["chosen"]["model"])
 
+    def test_flux1_записана_память_и_8_гб_mac_её_не_вмещает(self) -> None:
+        """FLUX.1 (12B): самые малые веса — 9.85 ГБ (MLX, четыре бита, mflux).
+
+        Прежде у schnell не было ни строки памяти, ни числа параметров, и на
+        M1 8 ГБ план выбирал её. Теперь записанный предел решает: 8 ГБ — нет,
+        64 ГБ — да.
+        """
+        from studio.selfrag.facts import load_facts
+
+        факты = load_facts()
+        for модель in ("flux.1-schnell", "flux.1-dev"):
+            строки = [f for f in факты if f.model == модель]
+            память, откуда, оценка = hn.vram_need(строки)
+            self.assertEqual(9.85, память, модель)
+            self.assertFalse(оценка)
+            self.assertIn("mflux", откуда)
+            self.assertEqual(hn.VRAM_OVER, hn.vram_state(память, оценка, 8.0))
+            self.assertEqual(hn.VRAM_FITS, hn.vram_state(память, оценка, 12.0))
+        оп = next(o for o in pn.OPERATIONS if o.name == "генерация_изображения")
+        строки = [f for f in факты if f.model == "flux.1-schnell"]
+        mac8 = hn.Hard(self_host=True, gpu="applem1", apple_silicon=True, unified_memory_gb=8.0)
+        итог = pn.требования_заказчика(оп, "flux.1-schnell", строки, None, mac8, {}, [], None, None)
+        self.assertIn("единой памяти 8 ГБ, а нужно 10 ГБ", итог.исключить)
+        mac64 = hn.Hard(self_host=True, gpu="applem3max", apple_silicon=True, unified_memory_gb=64.0)
+        self.assertEqual(
+            "", pn.требования_заказчика(оп, "flux.1-schnell", строки, None, mac64, {}, [], None, None).исключить
+        )
+
+    def test_mac_8_гб_не_выбирает_flux1(self) -> None:
+        def выбор(память: int) -> str:
+            итог = pn.plan(
+                "Generate images locally on an Apple laptop",
+                spec={
+                    "task": "generate",
+                    "inputs": [],
+                    "outputs": ["image"],
+                    "shots": 1,
+                    "self_host": {"gpu": "Apple M1", "unified_memory_gb": память},
+                    "open_weights": True,
+                    "people": [],
+                },
+                spec_only=True,
+            )
+            return итог["steps"][0]["chosen"]["model"]
+
+        self.assertNotIn(выбор(8), ("flux.1-schnell", "flux.1-dev"))
+
 
 class ПравкаВидео(unittest.TestCase):
     def test_продление_названо_эндпоинтом(self) -> None:
