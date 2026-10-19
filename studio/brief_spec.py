@@ -1752,6 +1752,10 @@ def _подложка(выходы: set[str]) -> tuple[str, ...]:
 #: «отреставрировать хронику И наложить диктора» терял диктора, потому что
 #: маршрут реставрации возвращал один шаг и о речи не знал.
 SPEECH_MAKERS: frozenset[str] = frozenset({"озвучка", "клонирование_голоса", "дубляж", "видео_со_звуком"})
+#: Работы над видео заказчика, которые оставляют ЕГО звук: речь в выходе — речь исходника.
+SOURCE_SOUND_TASKS: frozenset[str | None] = frozenset(
+    {"cut-to-shorts", "captions", "transcribe", "video-edit", "edit", "face-replace", "lipsync", "dub-translate"}
+)
 #: Шаги, которым речь нужна на входе: её дописывает замыкание плановщика.
 SPEECH_TAKERS: frozenset[str] = frozenset({"говорящий_аватар", "липсинк"})
 VIDEO_MAKERS: frozenset[str] = frozenset(
@@ -1817,6 +1821,10 @@ def _все_выходы(spec: Spec, м: Маршрут) -> Маршрут:
     выходы = set(spec.outputs)
     входы = set(spec.inputs)
     своя_речь = "audio" in входы and "script" not in входы
+    # Речь ВАШЕГО видео — его собственная, когда работа оставляет звук исходника
+    # (нарезка, субтитры, правка): голос дописывается, только если назван закадр.
+    if "video" in входы and spec.task in SOURCE_SOUND_TASKS and spec.audio != "voiceover":
+        своя_речь = True
     if "video" in выходы and not (set(шаги) & VIDEO_MAKERS or сборка or "video" in входы):
         if "photo" in входы and set(шаги) & IMAGE_MAKERS:
             шаги.append("оживление")
@@ -1853,7 +1861,7 @@ def _все_выходы(spec: Spec, м: Маршрут) -> Маршрут:
     сделано = {
         "video": видео,
         "image": bool(есть & IMAGE_MAKERS) or "photo" in входы,
-        "speech": bool(есть & (SPEECH_MAKERS | SPEECH_TAKERS)) or spec.audio == "native" or "audio" in входы,
+        "speech": bool(есть & (SPEECH_MAKERS | SPEECH_TAKERS)) or spec.audio == "native" or "audio" in входы or своя_речь,
         "music": "музыка" in есть or "audio" in входы,
         "sfx": "звук_фон" in есть or spec.audio == "native",
     }

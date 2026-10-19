@@ -297,8 +297,12 @@ class Единицы(unittest.TestCase):
         self.assertEqual("compute_second", pricing.parse(self.AMT, "price_unit_second_usd").per)
 
     def test_без_отношения_цены_нет_а_не_секунды_ролика(self) -> None:
+        # Двенадцатый круг: без записанного отношения — не «цены нет», а НИЖНЯЯ
+        # граница по оценке (`COMPUTE_RATIO_ESTIMATE`), помеченная основанием.
         ставки = pricing.rates(self.AMT, "price_unit_second_usd")
-        self.assertEqual([], pricing.estimate(ставки, pricing.Need(seconds=4.0)))
+        (оценка,) = pricing.estimate(ставки, pricing.Need(seconds=4.0))
+        self.assertEqual(pricing.LOWER_BOUND_COMPUTE, оценка.lower_bound)
+        self.assertAlmostEqual(0.000625 * 4.0 * pricing.COMPUTE_RATIO_ESTIMATE, оценка.usd, places=4)
         (o,) = pricing.estimate(ставки, pricing.Need(seconds=4.0, compute_ratio=3.0))
         self.assertEqual(0.0075, o.usd)
 
@@ -319,9 +323,11 @@ class Единицы(unittest.TestCase):
         _, строки = живой()
         for имя in ("amt-interpolation", "rife-video"):
             with self.subTest(имя=имя):
-                self.assertIsNone(
-                    pn.стоимость(строки[fold(имя)], pricing.Need(seconds=4.0, mode="v2v"))
-                )
+                # Двенадцатый круг: цена есть, но только нижней границей.
+                ст = pn.стоимость(строки[fold(имя)], pricing.Need(seconds=4.0, mode="v2v"))
+                self.assertIsNotNone(ст)
+                assert ст is not None
+                self.assertTrue(ст.default.lower_bound)
 
     def test_отношение_записанное_считается(self) -> None:
         строки = [
