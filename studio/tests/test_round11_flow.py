@@ -235,7 +235,11 @@ class ЛицоНаСнимке(unittest.TestCase):
             task="face-replace", inputs=[{"kind": "image", "owned": True, "count": 2}], outputs=["image"], people=[ME],
         )
         self.assertEqual(["замена_лица_изображения"], _steps(answer))
-        self.assertIn(_models(answer)["замена_лица_изображения"], {"easel-advanced-face-swap", "face-swap-fal"})
+        # Тринадцатый круг: картиночный face swap WaveSpeed с записанной ценой.
+        self.assertIn(
+            _models(answer)["замена_лица_изображения"],
+            {"easel-advanced-face-swap", "face-swap-fal", "wavespeed-image-face-swap"},
+        )
 
     def test_видео_по_прежнему_замена_персонажа(self) -> None:
         answer = _plan(

@@ -2937,7 +2937,7 @@ def _single_take(c: Ctx) -> dict[str, str] | None:
         return None
     шот = float(c.spec.per_shot_s or 0) or (float(c.spec.duration_s or 0) if int(c.spec.shots or 1) <= 1 else 0.0)
     if шот > SINGLE_TAKE_TYPICAL_MAX_S:
-        return {"s": f"{шот:g}", "max": f"{SINGLE_TAKE_TYPICAL_MAX_S:g}"}
+        return {"seconds": f"{шот:g}"}
     return None
 
 
@@ -3080,10 +3080,10 @@ RULES_R13: tuple[Rule, ...] = (
     _r(
         "single_take_limit",
         sorted(GENERATED_TAKE_JOBS),
-        "a single {s} s take is longer than one generation of most video models (about 5-{max} s; the step prints "
+        "a single {seconds} s take is longer than one generation of most video models (about 5-15 s; the step prints "
         "the chosen model's recorded maximum per run): it is made as several runs joined by extend / last-frame "
         "continuation, and the joins show drift — or the shot is split with a cut",
-        "один непрерывный дубль в {s} с длиннее одной генерации большинства видеомоделей (около 5-{max} с; шаг "
+        "один непрерывный дубль в {seconds} с длиннее одной генерации большинства видеомоделей (около 5-15 с; шаг "
         "печатает записанный максимум выбранной модели на прогон): его делают несколькими прогонами, сшитыми "
         "продлением или продолжением с последнего кадра, и на стыках виден дрейф — или шот режут склейкой",
         E,

@@ -1328,6 +1328,24 @@ RU: tuple[tuple[str, str], ...] = (
     (r"ceil\(([\d.]+) s / ([\d.]+) s max run of the chosen model\)", r"ceil(\1 с / \2 с — предел прогона выбранной модели)"),
     (r"ceil\(([\d.]+) s / ([\d.]+) s assumed shot — the model records no max run\)",
      r"ceil(\1 с / \2 с — принятый шот: предел прогона модели не записан)"),
+    # --- предел выхода апскейлера (тринадцатый круг, `studio/upscale_reach.py`)
+    (r"no upscaler here records a (\d+)p output: two passes — (\S+) up to (.+?), then a second pass of the same \(or a factor-mode upscaler\) from (.+?) to (\d+)p; check seams and over-sharpening after the second pass, or pick an upscaler that records the frame",
+     r"ни один апскейлер здесь не записывает выход \1p: два прохода — \2 до \3, затем второй проход тем же (или апскейлером с множителем) от \4 до \5p; после второго прохода проверьте швы и пересвет резкости или возьмите апскейлер, у которого кадр записан"),
+    (r"upscale output ceiling: (.+?) — an upscaler that cannot write the ordered frame is not a candidate",
+     r"предел выхода апскейлера: \1 — апскейлер, который не пишет заказанный кадр, не кандидат"),
+    (r"reaches the ordered frame by record: ", "заказанный кадр достигается по записи: "),
+    (r"recorded output ceiling below the ordered frame: ", "записанный предел выхода ниже заказанного кадра: "),
+    (r"output ceiling not recorded: ", "предел выхода не записан: "),
+    (r"(\d+) row\(s\) about the output ceiling decide nothing without the source frame",
+     r"строк о пределе выхода \1: без кадра исходника они ничего не решают"),
+    (r"no row about the output ceiling", "строк о пределе выхода нет"),
+    (r"factor ([\d.]+)x of the (\d+)p source", r"множитель \1x от исходника \2p"),
+    (r"factor ([\d.]+)x, source frame not named", r"множитель \1x, кадр исходника не назван"),
+    (r"output cap ([\d.]+) MP/frame", r"предел выхода \1 Мп/кадр"),
+    (r"output cap (\d+)p", r"предел выхода \1p"),
+    (r"no output cap", "предела выхода нет"),
+    (r" reaches (\d+)p \(", r" достигает \1p ("),
+    (r"its recorded ceiling", "своего записанного предела"),
 )
 
 

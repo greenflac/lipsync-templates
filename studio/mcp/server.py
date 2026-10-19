@@ -1647,7 +1647,11 @@ def _план(
         итог["decided_by_spec"] = len(решено_spec)
     if свой_выпуск["decision"] == inhouse_news.DECISION_ALLOW:
         итог["note"] = f"{итог.get('note', '')}. {inhouse_news.note(свой_выпуск, язык == 'en')}".lstrip(". ")
-        итог["in_house_news"] = свой_выпуск
+        итог["in_house_news"] = {
+            "decision": свой_выпуск["decision"],
+            "people": list(свой_выпуск["people"]),
+            "rule": inhouse_news.RULE_ID,
+        }
     итог = вопрос_о_согласии(итог, политика, англ=язык == "en")
     итог = вопрос_о_заявлении(итог, заявления, англ=язык == "en")
     if не_прочитан:
