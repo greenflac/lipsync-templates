@@ -78,6 +78,11 @@ class Hard:
     #: Видеопамяти нет — отбор ранжирует по записанному запуску на ARM / CPU
     #: (`cpu_state`), а не по VRAM.
     cpu_only: bool = False
+    #: Свой GPU НЕ NVIDIA (двенадцатый круг): `rocm` (AMD Radeon / Instinct) или
+    #: `xpu` (Intel Arc / Data Center GPU). Видеопамять у них настоящая, но CUDA
+    #: нет — отбор ранжирует по записанному запуску на этом бэкенде
+    #: (`backend_state`), а молчание — не отказ.
+    gpu_backend: str = ""
     #: Откуда взято каждое значение: «бриф» / «spec» — печатается рядом.
     sources: tuple[tuple[str, str], ...] = field(default=())
 
@@ -105,6 +110,7 @@ class Hard:
                 else {}
             ),
             **({"cpu_only": True} if self.cpu_only else {}),
+            **({"gpu_backend": self.gpu_backend} if self.gpu_backend else {}),
             "sources": dict(self.sources),
         }
 
@@ -126,7 +132,41 @@ GPU_VRAM_GB: dict[str, float] = {
     "a100": 80.0,
     "h100": 80.0,
     "h200": 141.0,
+    # Двенадцатый круг: карты не NVIDIA (паспорт производителя).
+    "rx-7900-xtx": 24.0,
+    "rx-7900-xt": 20.0,
+    "rx-7800-xt": 16.0,
+    "rx-9070-xt": 16.0,
+    "mi300x": 192.0,
+    "arc-a770": 16.0,
+    "arc-b580": 12.0,
 }
+
+#: Бэкенд своего GPU не NVIDIA -> атрибут базы, которым записан запуск на нём.
+GPU_BACKEND_ATTRS: dict[str, str] = {"rocm": "rocm_inference", "xpu": "intel_xpu_inference"}
+#: Имя бэкенда для человека (печатается в ноте отбора и в строке шага).
+GPU_BACKEND_NAMES: dict[str, str] = {"rocm": "AMD ROCm", "xpu": "Intel XPU (oneAPI)"}
+#: Карта AMD по имени или слову: Radeon, RX 7900 XTX, Instinct MI300X, ROCm.
+AMD_GPU = re.compile(
+    r"\bradeon\b|\brx ?-?[5-9]\d{3}(?: ?-?(?:xtx|xt|gre))?\b|\binstinct\b|\bmi ?(?:210|250x?|300[ax]?|325x|355x)\b"
+    r"|\brocm\b|\bamd (?:gpu|card|видеокарт\w*)",
+    re.I,
+)
+#: Карта Intel по имени или слову: Arc A770 / B580, XPU, oneAPI, IPEX, Gaudi.
+INTEL_GPU = re.compile(
+    r"\bintel arc\b|\barc ?-?[ab]\d{3}\b|\bxpu\b|\boneapi\b|\bipex\b|\bgaudi ?\d?\b|\bintel (?:gpu|видеокарт\w*)",
+    re.I,
+)
+
+
+def gpu_backend(name: str | None) -> str:
+    """Бэкенд своего GPU по имени карты: `rocm`, `xpu` или "" (NVIDIA / не назван)."""
+    низ = str(name or "").lower()
+    if AMD_GPU.search(низ):
+        return "rocm"
+    if INTEL_GPU.search(низ):
+        return "xpu"
+    return ""
 
 #: Как бриф называет запуск на своём GPU. Слова — о МЕСТЕ запуска; GPU,
 #: названный по имени («on one RTX 4090»), — тоже запуск на своём.
@@ -166,7 +206,11 @@ QUALITY_CUES: tuple[str, ...] = (
 #: Размер памяти, названный словами: «24 GB», «24gb VRAM», «24 ГБ».
 _VRAM_IN_TEXT = re.compile(r"(\d{1,3}(?:\.\d+)?)\s*(?:gb|гб|gib)\b", re.I)
 _GPU_IN_TEXT = re.compile(
-    r"\b(?:(?:nvidia|geforce)\s+)?(rtx\s*a?\s*\d{4}|rtx\s*a\d{4}|l40s|l4|a100|h100|h200)\b", re.I
+    r"\b(?:(?:nvidia|geforce)\s+)?(rtx\s*a?\s*\d{4}|rtx\s*a\d{4}|l40s|l4|a100|h100|h200)\b"
+    r"|\b(?:amd\s+)?(?:radeon\s+)?(rx\s*[5-9]\d{3}(?:\s*(?:xtx|xt|gre))?)\b"
+    r"|\b(?:amd\s+)?(?:instinct\s+)?(mi\s*(?:210|250x?|300[ax]?|325x|355x))\b"
+    r"|\b(?:intel\s+)?(arc\s*[ab]\d{3})\b",
+    re.I,
 )
 
 
@@ -176,6 +220,15 @@ def gpu_key(name: str) -> str:
     м = re.match(r"rtx(a?)(\d{4})$", низ)
     if м:
         return f"rtx-{м.group(1)}{м.group(2)}"
+    м = re.match(r"(?:amd)?(?:radeon)?rx-?(\d{4})-?(xtx|xt|gre)?$", низ)
+    if м:
+        return f"rx-{м.group(1)}" + (f"-{м.group(2)}" if м.group(2) else "")
+    м = re.match(r"(?:amd)?(?:instinct)?(mi\d{3}[ax]?)$", низ)
+    if м:
+        return м.group(1)
+    м = re.match(r"(?:intel)?arc-?([ab]\d{3})$", низ)
+    if м:
+        return f"arc-{м.group(1)}"
     return низ
 
 
@@ -185,7 +238,7 @@ def from_brief(brief: str) -> Hard:
     свой = any(re.search(r, низ) for r in SELF_HOST_CUES)
     веса = any(re.search(r, низ) for r in OPEN_WEIGHTS_CUES)
     gpu_м = _GPU_IN_TEXT.search(низ)
-    gpu = gpu_key(gpu_м.group(1)) if gpu_м else None
+    gpu = gpu_key(next(г for г in gpu_м.groups() if г)) if gpu_м else None
     vram_м = _VRAM_IN_TEXT.search(низ)
     vram = float(vram_м.group(1)) if vram_м and (свой or gpu) else None
     # Память без имени GPU («self-host, 24 GB»): запуск свой, карта не названа.
@@ -193,6 +246,9 @@ def from_brief(brief: str) -> Hard:
         vram = GPU_VRAM_GB.get(gpu)
     # GPU назван — запуск свой, даже если слова self-host нет («on one RTX 4090»).
     свой = свой or gpu is not None
+    # Карта не NVIDIA (двенадцатый круг): по имени карты, а слово бэкенда
+    # («ROCm», «AMD GPU», «Intel Arc») — только при своём запуске.
+    бэкенд = gpu_backend(gpu) or (gpu_backend(низ) if свой else "")
     цель = OBJECTIVE_QUALITY if any(re.search(r, низ) for r in QUALITY_CUES) else ""
     источники = tuple(
         (k, "бриф")
@@ -206,7 +262,13 @@ def from_brief(brief: str) -> Hard:
         if v
     )
     return Hard(
-        self_host=свой, open_weights=веса, gpu=gpu, vram_gb=vram, objective=цель, sources=источники
+        self_host=свой,
+        open_weights=веса,
+        gpu=gpu,
+        vram_gb=vram,
+        objective=цель,
+        gpu_backend=бэкенд,
+        sources=источники,
     )
 
 
@@ -229,6 +291,8 @@ def from_spec(spec: Mapping | None, base: Hard | None = None) -> Hard:
             поля["cpu_only"] = True
         if свой.get("gpu"):
             поля["gpu"] = gpu_key(str(свой["gpu"]))
+            if gpu_backend(str(свой["gpu"])):
+                поля["gpu_backend"] = gpu_backend(str(свой["gpu"]))
         if свой.get("vram_gb") is not None:
             поля["vram_gb"] = float(свой["vram_gb"])
         elif поля.get("gpu") and base.vram_gb is None:
@@ -515,6 +579,32 @@ def cpu_state(rows: Sequence[Fact]) -> tuple[str, str]:
         if f.attribute in _CPU_ATTRS and _NO.match(f.value):
             return CPU_NO, f"{f.attribute} = «{f.value[:90]}» ({f.source_url})"
     return CPU_UNKNOWN, "ни запуска на ARM, ни на CPU не записано"
+
+
+# --------------------------------------------------------------------------
+# СВОЙ GPU НЕ NVIDIA: AMD ROCm, INTEL XPU (двенадцатый круг)
+# --------------------------------------------------------------------------
+
+BACKEND_YES = "запуск на этом бэкенде записан"
+BACKEND_UNKNOWN = "запуск на этом бэкенде не записан"
+BACKEND_NO = "записано: на этом бэкенде не запускается"
+#: Порядок: записанный запуск старше молчания; запись «не запускается» — последней
+#: (не отсев: молчание базы о соседях не доказывает, что они запустятся).
+BACKEND_ORDER: dict[str, int] = {BACKEND_YES: 0, BACKEND_UNKNOWN: 1, BACKEND_NO: 2}
+
+
+def backend_state(rows: Sequence[Fact], backend: str) -> tuple[str, str]:
+    """Запускается ли модель на `rocm` / `xpu` — по СВОИМ строкам `GPU_BACKEND_ATTRS[backend]`."""
+    атрибут = GPU_BACKEND_ATTRS.get(backend)
+    if not атрибут:
+        return BACKEND_UNKNOWN, f"бэкенд {backend!r} не из {sorted(GPU_BACKEND_ATTRS)}"
+    for f in rows:
+        if f.attribute == атрибут and _YES.match(f.value):
+            return BACKEND_YES, f"{f.attribute} = «{f.value[:90]}» ({f.source_url})"
+    for f in rows:
+        if f.attribute == атрибут and _NO.match(f.value):
+            return BACKEND_NO, f"{f.attribute} = «{f.value[:90]}» ({f.source_url})"
+    return BACKEND_UNKNOWN, f"{атрибут} не записан"
 
 
 # --------------------------------------------------------------------------

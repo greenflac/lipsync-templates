@@ -1405,6 +1405,1433 @@ RULES_LIST: tuple[Rule, ...] = (
     ),
 )
 
+# =========================================================================================
+# ROUND 12: THE LONG TAIL OF PROFESSIONAL CAVEATS
+# =========================================================================================
+#
+# WHY. On fresh unseen briefs the round-11 checklist carried about 81 % of the notes
+# a post-production supervisor adds; the misses were not job classes but DELIVERY
+# TARGETS and DOMAINS (a DCP, a broadcast master, an audiobook for ACX, a listing
+# photo, a political ad, an AMD card). One rule per delivery target or domain, the
+# same contract as above: structured fields first (`fps`, `duration_s`, `languages`,
+# `people[].claim / deceased / minor / public_figure`, `jurisdiction`,
+# `self_host.platform`, `aspect`, `task`), words only where the spec has no field —
+# and then `spec_field` names the field that would carry it.
+#
+# DECISION CONSTANTS (T1: mutated both ways by `scripts/mutate_round12_checklist.py`):
+# `GLYPH_RISK_LANGS`, `INDIC_LANGS`, `SEA_LANGS`, `LOCL_LANGS`, `DCP_FPS`,
+# `SOCIAL_SHORT_MAX_S`, `NON_NVIDIA_PLATFORMS`.
+
+#: Non-Latin alphabets where generators substitute Latin look-alikes or invent letters
+#: (Cyrillic, Greek, Armenian, Georgian): on-screen text in them is overlaid, not generated.
+GLYPH_RISK_LANGS: frozenset[str] = frozenset(
+    {"ru", "uk", "be", "bg", "sr", "mk", "kk", "ky", "tg", "mn", "el", "hy", "ka"}
+)
+#: Brahmic scripts of South Asia: conjuncts and vowel signs need complex shaping.
+INDIC_LANGS: frozenset[str] = frozenset(
+    {"hi", "mr", "ne", "sa", "bn", "as", "pa", "gu", "or", "ta", "te", "kn", "ml", "si"}
+)
+#: South-East Asian scripts written without spaces between words (dictionary line breaking).
+SEA_LANGS: frozenset[str] = frozenset({"th", "lo", "km", "my"})
+#: Cyrillic languages whose letterforms differ from Russian (OpenType `locl`).
+LOCL_LANGS: frozenset[str] = frozenset({"bg", "sr", "mk"})
+#: Frame rates a DCI DCP carries (2K at 24 or 48, 4K at 24).
+DCP_FPS: frozenset[int] = frozenset({24, 48})
+#: Shorts and Reels take a vertical video up to 3 minutes; a longer one is a regular video.
+SOCIAL_SHORT_MAX_S = 180
+#: Self-host platforms that are not CUDA (`spec.self_host.platform`).
+NON_NVIDIA_PLATFORMS: frozenset[str] = frozenset({"rocm", "xpu", "apple-silicon"})
+
+W_CINEMA = re.compile(
+    r"\bdcp\b|digital cinema|cinema (?:release|screening|projection|ad|advert|spot|trailer)|theatrical|movie theat"
+    r"|\bcinemas\b|\bfor (?:the )?cinema\b|film festival|festival screening|big screen|кинотеатр|кинопоказ|кинопрокат|кинофестивал"
+    r"|больш\w+ экран",
+    re.I,
+)
+W_STREAMING = re.compile(
+    r"netflix|prime video|disney\+|\bhbo\b|apple tv\+|\bimf\b|streaming (?:platform|service|deliver)|\bott\b"
+    r"|кинопоиск|\bokko\b|стриминг\w* (?:платформ|сервис)",
+    re.I,
+)
+W_LOCALISE = re.compile(
+    r"locali[sz]|international version|foreign (?:version|market)|\bm&e\b|music and effects|\bdme\b|локализ"
+    r"|международн\w* верси|иностранн\w* рын",
+    re.I,
+)
+W_REAL_ESTATE = re.compile(
+    r"real[- ]estate|realtor|property listing|listing photo|virtual(?:ly)? stag|home staging|\bmls\b"
+    r"|(?:apartment|house|flat|home) for sale|недвижим|риелтор|риэлтор|квартир\w* (?:на|для) продаж"
+    r"|объявлени\w* о продаже|стейджинг",
+    re.I,
+)
+W_RETOUCH = re.compile(
+    r"retouch|\bslim(?:mer|ming)?\b|thinner|reshape (?:the )?(?:body|waist|face)|smooth(?:er)? (?:the )?skin"
+    r"|skin smoothing|beauty filter|airbrush|flawless skin|perfect skin|ретуш|стройн|похуд|тоньше|разглад\w* кож"
+    r"|фильтр\w* красоты|идеальн\w+ кож",
+    re.I,
+)
+W_AD = re.compile(
+    r"\bads?\b|advert|commercial|campaign|billboard|\bpromo|marketing|sponsored|реклам|баннер|билборд|промо"
+    r"|кампани",
+    re.I,
+)
+W_COSMETIC = re.compile(
+    r"cosmetic|skin ?care|mascara|foundation|lipstick|serum|\bcream|tanning|self-tan|beauty product|anti-?ag"
+    r"|wrinkle|косметик|крем|сыворотк|тушь|помад|тональн|автозагар|морщин|уход\w* за кож",
+    re.I,
+)
+W_BEFORE_AFTER = re.compile(r"before (?:and|&|/) after|before-after|до и после|до/после", re.I)
+W_FRANCE = re.compile(r"\bfrance\b|\bfrench\b|\bparis\b|франц|париж", re.I)
+W_POLITICAL = re.compile(
+    r"politic|election|candidate|ballot|referendum|vote for|voters?\b|\bsuper ?pac\b|политич|выбор(?:ы|ах|ов)\b"
+    r"|предвыбор|кандидат|голосуй|референдум|агитац",
+    re.I,
+)
+W_OUTBOUND = re.compile(
+    r"robocall|outbound (?:calls?|calling|dial\w*)|auto-?dial|cold call|(?:phone )?calls? to (?:our |the )?(?:customers|clients|subscribers|leads)"
+    r"|phone calls? (?:to|reminding|for) "
+    r"|автообзвон|обзвон|исходящ\w+ звон|звонк\w+ клиентам",
+    re.I,
+)
+W_VOICE_BOT = re.compile(
+    r"voice ?bot|voice assistant|voice agent|conversational|\bai agent|talks? (?:to|with) callers|answers? (?:the )?calls"
+    r"|голосов\w+ (?:бот|ассистент|помощник|агент)|робот\w* оператор|отвеча\w+ на звонки",
+    re.I,
+)
+W_GAME = re.compile(
+    r"video ?games?|game (?:audio|sound|music|sfx|asset|trailer|dev|level|soundtrack)|\bin-?game\b|\bwwise\b|\bfmod\b"
+    r"|\bunity\b|unreal engine|\bgamedev|indie game|для (?:нашей |моей |мобильной )?игры|игров\w+ (?:звук|музык|эффект|ассет|саундтрек)"
+    r"|геймдев",
+    re.I,
+)
+W_AUDIOBOOK = re.compile(r"audio ?books?|\bacx\b|audible|аудиокниг", re.I)
+W_DISTRIBUTION = re.compile(
+    r"distrokid|tunecore|cd ?baby|ditto music|onerpm|release (?:it |the track |my track |the song |my song |a single )?on "
+    r"(?:spotify|apple music|streaming)|(?:upload|put) (?:it |the track |my track )?(?:on|to) (?:spotify|apple music)"
+    r"|music distribut|\bisrc\b|дистрибуц|выпустить (?:трек|песню|сингл|альбом)|релиз на (?:spotify|стриминг)"
+    r"|выложить (?:трек |песню )?на (?:spotify|стриминг)",
+    re.I,
+)
+W_MONETISE = re.compile(r"content ?id|monetis|monetiz|монетиз", re.I)
+W_STOCK = re.compile(
+    r"stock (?:footage|music|photos?|videos?|images?|clips?|tracks?)|shutterstock|getty|istock|adobe stock|pond5"
+    r"|envato|artlist|epidemic sound|storyblocks|стоков\w*|сток\w* (?:видео|музык|фото)|фотобанк",
+    re.I,
+)
+W_SELL_STOCK = re.compile(
+    r"sell (?:\w+ ){0,2}(?:on|to|as|via) (?:stock|shutterstock|adobe stock|getty)|stock contributor"
+    r"|upload (?:them |it )?to (?:adobe stock|shutterstock|getty)|продава\w* (?:на|в) (?:сток|фотобанк)"
+    r"|для продажи на (?:сток|фотобанк)|на стоки",
+    re.I,
+)
+W_MARKETPLACE = re.compile(
+    r"amazon|marketplace|маркетплейс|wildberries|\bozon\b|\betsy\b|\bebay\b",
+    re.I,
+)
+W_A11Y = re.compile(
+    r"accessib|\bwcag\b|\ba11y\b|\bada\b|section 508|\bdeaf\b|hard of hearing|blind (?:viewers|users|people)"
+    r"|visually impaired|\bsdh\b|audio description|public sector|government|e-?learning|online course"
+    r"|доступн\w+ (?:сред|для)|глух|слабослыш|незрячи|слабовидящ|тифлокомментар|инклюзив|госучрежд|онлайн-?курс",
+    re.I,
+)
+W_FLASH = re.compile(
+    r"strob|\bflash(?:es|ing)?\b|flicker(?:ing)? effect|glitch|epilep|стробоскоп|вспышк|мигани|глитч|эпилеп",
+    re.I,
+)
+W_NEWS = re.compile(
+    r"\bnews\b|newsroom|journalis|reportage|documentary|breaking|новост|репортаж|журналист|документальн", re.I
+)
+W_VFX = re.compile(
+    r"\bvfx\b|\bnuke\b|\baces\b|\bexr\b|\bplates?\b for|post-?house|composit(?:e|ing|or)|\bcg\b integration"
+    r"|композитинг|\bвфх\b|в нюк",
+    re.I,
+)
+W_EDITORIAL = re.compile(
+    r"premiere pro|davinci|resolve|\bavid\b|final cut|\bedl\b|\baaf\b|fcpxml|(?:our|the) editor will"
+    r"|монтажёр|монтажер|в монтажке|проект\w* монтаж",
+    re.I,
+)
+W_HEALTH = re.compile(
+    r"medic(?:al|ine)|pharma|\bdrugs?\b|supplement|\bclinic|doctor|physician|dentist|health claim|\bcures?\b"
+    r"|лекарств|фарм|\bбад\b|клиник|врач|доктор|медицин|лечени|стоматолог",
+    re.I,
+)
+W_FINANCE = re.compile(
+    r"crypto|bitcoin|forex|trading app|\binvest|\bloans?\b|credit card|mortgage|insurance|крипт|биткоин|форекс"
+    r"|трейдинг|инвест|кредит|ипотек|займ|страхов",
+    re.I,
+)
+W_APP_STORE = re.compile(r"app store|app preview|google play|play store|превью приложени|в магазин\w* приложений", re.I)
+W_SPONSORED = re.compile(
+    r"sponsored|influencer|paid partnership|brand deal|#ad\b|\bugc\b|affiliate|блогер|инфлюенс|спонсор"
+    r"|рекламн\w+ интеграци|интеграци\w+ (?:у|в) блог",
+    re.I,
+)
+W_COVER = re.compile(r"thumbnail|cover (?:frame|image)|обложк|превью ролик|миниатюр", re.I)
+
+
+# --- round-12 triggers ---------------------------------------------------------------------
+
+
+def _cinema(c: Ctx) -> bool:
+    return c.video and c.says(W_CINEMA)
+
+
+def _dcp_fps(c: Ctx) -> dict[str, str] | None:
+    fps = c.spec.fps
+    if _cinema(c) and fps is not None and int(fps) not in DCP_FPS:
+        return {"fps": str(fps)}
+    return None
+
+
+def _broadcast_video(c: Ctx) -> bool:
+    return c.video and c.says(W_BROADCAST)
+
+
+def _broadcast_speech(c: Ctx) -> bool:
+    return _broadcast_video(c) and (bool(c.jobs & (SPEECH_MAKE | FACE_SYNC | {"captions"})) or "speech" in c.outputs)
+
+
+def _broadcast_rate(c: Ctx) -> bool:
+    return _broadcast_video(c) and bool(c.jobs & VIDEO_GEN)
+
+
+def _streaming(c: Ctx) -> bool:
+    return c.video and c.says(W_STREAMING)
+
+
+def _localise(c: Ctx) -> bool:
+    if not c.video:
+        return False
+    return "dub" in c.jobs or (len(c.langs) >= 2 and bool(c.jobs & SPEECH_MAKE)) or c.says(W_LOCALISE)
+
+
+def _dub_text(c: Ctx) -> bool:
+    return "dub" in c.jobs
+
+
+def _twos_made(c: Ctx) -> bool:
+    return bool(c.jobs & VIDEO_GEN) and c.says(W_ANIMATION_TWOS)
+
+
+def _twos_upscale(c: Ctx) -> bool:
+    return bool(c.jobs & UPSCALE) and c.says(W_ANIMATION_TWOS)
+
+
+def _gen_text_langs(c: Ctx, langs: frozenset[str]) -> dict[str, str] | None:
+    hit = sorted(c.langs & langs)
+    if hit and c.jobs & (VIDEO_GEN | STILL_GEN) and c.says(W_TEXT_IN_FRAME):
+        return {"langs": ", ".join(hit)}
+    return None
+
+
+def _glyph_risk(c: Ctx) -> dict[str, str] | None:
+    return _gen_text_langs(c, GLYPH_RISK_LANGS)
+
+
+def _text_langs(c: Ctx, langs: frozenset[str]) -> dict[str, str] | None:
+    hit = sorted(c.langs & langs)
+    if hit and (c.visual or c.jobs & {"transcribe", "captions"}):
+        return {"langs": ", ".join(hit)}
+    return None
+
+
+def _indic(c: Ctx) -> dict[str, str] | None:
+    return _text_langs(c, INDIC_LANGS)
+
+
+def _sea(c: Ctx) -> dict[str, str] | None:
+    return _text_langs(c, SEA_LANGS)
+
+
+def _locl(c: Ctx) -> dict[str, str] | None:
+    return _text_langs(c, LOCL_LANGS)
+
+
+def _real_estate(c: Ctx) -> bool:
+    return bool(c.jobs & (STILL_GEN | VIDEO_GEN | {"v2v_edit"})) and c.says(W_REAL_ESTATE)
+
+
+def _retouch_ad(c: Ctx) -> bool:
+    return bool(c.jobs & (STILL_GEN | VIDEO_GEN | {"v2v_edit", "char_replace"})) and c.says(W_RETOUCH) and c.says(W_AD)
+
+
+def _retouch_france(c: Ctx) -> bool:
+    return _retouch_ad(c) and c.says(W_FRANCE)
+
+
+def _cosmetic_ad(c: Ctx) -> bool:
+    return bool(c.jobs & (STILL_GEN | VIDEO_GEN | {"v2v_edit"})) and c.says(W_COSMETIC) and c.says(W_AD)
+
+
+def _before_after(c: Ctx) -> bool:
+    return bool(c.steps or c.jobs) and c.says(W_BEFORE_AFTER)
+
+
+def _claim(c: Ctx, kind: str) -> bool:
+    return any(п.get("claim") == kind for п in c.spec.people)
+
+
+def _political(c: Ctx) -> bool:
+    return bool(c.steps or c.jobs) and (_claim(c, "political") or c.says(W_POLITICAL))
+
+
+def _political_us(c: Ctx) -> bool:
+    return _political(c) and "US" in c.spec.jurisdiction
+
+
+def _robocall(c: Ctx) -> bool:
+    return bool(c.jobs & SPEECH_MAKE) and c.says(W_OUTBOUND)
+
+
+def _voice_bot(c: Ctx) -> bool:
+    return bool(c.jobs & SPEECH_MAKE) and c.says(W_VOICE_BOT)
+
+
+def _platform_of(c: Ctx) -> str:
+    sh = c.self_host
+    return str(sh.get("platform") or "") if sh else ""
+
+
+def _backend(c: Ctx, platform: str) -> dict[str, str] | None:
+    if c.steps and _platform_of(c) == platform and platform in NON_NVIDIA_PLATFORMS:
+        return {"gpu": str(c.self_host.get("gpu") or platform)}
+    return None
+
+
+def _rocm(c: Ctx) -> dict[str, str] | None:
+    return _backend(c, "rocm")
+
+
+def _xpu(c: Ctx) -> dict[str, str] | None:
+    return _backend(c, "xpu")
+
+
+def _mps(c: Ctx) -> dict[str, str] | None:
+    return _backend(c, "apple-silicon")
+
+
+def _game_sfx(c: Ctx) -> bool:
+    return "sfx" in c.jobs and c.says(W_GAME)
+
+
+def _game_music(c: Ctx) -> bool:
+    return "music" in c.jobs and c.says(W_GAME)
+
+
+def _audiobook(c: Ctx) -> bool:
+    return bool(c.jobs & {"tts", "voice_clone"}) and c.says(W_AUDIOBOOK)
+
+
+def _podcast_made(c: Ctx) -> bool:
+    return bool(c.jobs & (SPEECH_MAKE | {"music"})) and c.says(W_PODCAST)
+
+
+def _podcast_ai_voice(c: Ctx) -> bool:
+    return bool(c.jobs & SPEECH_MAKE) and c.says(W_PODCAST)
+
+
+def _distribution(c: Ctx) -> bool:
+    return "music" in c.jobs and c.says(W_DISTRIBUTION)
+
+
+def _monetised_music(c: Ctx) -> bool:
+    return "music" in c.jobs and c.says(W_MONETISE)
+
+
+def _stock_use(c: Ctx) -> bool:
+    return bool(c.steps or c.jobs) and c.says(W_STOCK) and not c.says(W_SELL_STOCK)
+
+
+def _stock_sell(c: Ctx) -> bool:
+    return bool(c.jobs & (STILL_GEN | VIDEO_GEN | {"music"})) and c.says(W_SELL_STOCK)
+
+
+def _print_still(c: Ctx) -> bool:
+    return delivery.is_print(c.spec, c.text) and bool(c.jobs & (STILL_GEN | UPSCALE | {"colorize", "restore"}))
+
+
+def _print_text(c: Ctx) -> bool:
+    return _print_still(c) and c.says(W_TEXT_IN_FRAME)
+
+
+def _short_too_long(c: Ctx) -> dict[str, str] | None:
+    s = c.seconds
+    if _vertical(c) and c.says(W_PLATFORM) and s > SOCIAL_SHORT_MAX_S:
+        return {"seconds": f"{s:g}"}
+    return None
+
+
+def _cover(c: Ctx) -> bool:
+    return c.video and c.says(W_PLATFORM) and c.says(W_COVER)
+
+
+def _social_music_ad(c: Ctx) -> bool:
+    return c.video and c.says(W_PLATFORM) and c.says(W_AD) and ("music" in c.jobs or bool(re.search(r"music|музык", c.text)))
+
+
+def _sponsored(c: Ctx) -> bool:
+    return bool(c.steps or c.jobs) and c.says(W_SPONSORED)
+
+
+def _marketplace_main(c: Ctx) -> bool:
+    return bool(c.jobs & (STILL_GEN | BG_REMOVE | {"upscale_image"})) and c.says(W_PRODUCT) and c.says(W_MARKETPLACE)
+
+
+def _a11y_video(c: Ctx) -> bool:
+    return c.video and c.says(W_A11Y)
+
+
+def _flash(c: Ctx) -> bool:
+    return c.video and c.says(W_FLASH)
+
+
+def _deceased(c: Ctx) -> bool:
+    return any(п.get("deceased") is True and п.get("real") is not False for п in c.spec.people) and bool(c.steps or c.jobs)
+
+
+def _minor(c: Ctx) -> bool:
+    return any(п.get("minor") is True for п in c.spec.people) and bool(c.steps or c.jobs)
+
+
+def _endorsement(c: Ctx) -> bool:
+    return any(п.get("claim") == "endorsement" and п.get("real") is True for п in c.spec.people) and bool(c.steps or c.jobs)
+
+
+def _famous_voice(c: Ctx) -> bool:
+    return any(п.get("public_figure") is True for п in c.spec.people) and bool(c.jobs & {"voice_clone", "tts", "dub"})
+
+
+def _news(c: Ctx) -> bool:
+    return bool(c.jobs & (VIDEO_GEN | STILL_GEN | FACE_SYNC | {"v2v_edit", "char_replace"})) and (
+        _claim(c, "news") or c.says(W_NEWS)
+    )
+
+
+def _china(c: Ctx) -> bool:
+    return "CN" in c.spec.jurisdiction and bool(c.jobs & (VIDEO_GEN | STILL_GEN | FACE_SYNC | SPEECH_MAKE | {"music"}))
+
+
+def _vfx(c: Ctx) -> bool:
+    return c.video and c.says(W_VFX)
+
+
+def _editorial(c: Ctx) -> bool:
+    return c.video and c.says(W_EDITORIAL)
+
+
+def _health_ad(c: Ctx) -> bool:
+    return bool(c.steps or c.jobs) and c.says(W_HEALTH) and c.says(W_AD)
+
+
+def _finance_ad(c: Ctx) -> bool:
+    return bool(c.steps or c.jobs) and c.says(W_FINANCE) and c.says(W_AD)
+
+
+def _app_preview(c: Ctx) -> bool:
+    return c.video and c.says(W_APP_STORE)
+
+
+# --- round-12 sources ----------------------------------------------------------------------
+
+S_DCI = "https://www.dcimovies.com/specification/"
+S_SMPTE_RP200 = "https://pub.smpte.org/doc/rp200/"
+S_EBU_R103 = "https://tech.ebu.ch/publications/r103"
+S_EBU_R95 = "https://tech.ebu.ch/publications/r095"
+S_FCC_CC = "https://www.fcc.gov/consumers/guides/closed-captioning-television"
+S_NETFLIX_MIX = (
+    "https://partnerhelp.netflixstudios.com/hc/en-us/articles/360001794307-Netflix-Sound-Mix-Specifications-Best-Practices-v1-5"
+)
+S_NETFLIX_GENAI = "https://www.tvbeurope.com/artificial-intelligence/netflix-publishes-genai-guidance-for-creators"
+S_IMF = "https://www.imfug.com/"
+S_REAL_ESTATE_NAR = "https://www.nar.realtor/about-nar/governing-documents/the-code-of-ethics"
+S_UCPD = "https://eur-lex.europa.eu/eli/dir/2005/29/oj"
+S_FR_RETOUCH = "https://cms.law/en/fra/legal-updates/La-mention-photographie-retouchee-obligatoire-a-partir-du-1er-octobre-2017"
+S_ASA_FILTERS = "https://www.asa.org.uk/news/the-mis-use-of-social-media-beauty-filters-when-advertising-cosmetic-products.html"
+S_EU_POLITICAL = (
+    "https://commission.europa.eu/strategy-and-policy/policies/justice-and-fundamental-rights/"
+    "democracy-eu-citizenship-anti-corruption/democracy-and-electoral-rights/transparency-and-targeting-political-advertising_en"
+)
+S_GOOGLE_POLITICAL = "https://support.google.com/adspolicy/answer/6014595"
+S_FEC_DISCLAIMER = "https://www.fec.gov/help-candidates-and-committees/advertising-and-disclaimers/"
+S_FCC_AI_VOICE = "https://docs.fcc.gov/public/attachments/FCC-24-17A1.pdf"
+S_AI_ACT = "https://eur-lex.europa.eu/eli/reg/2024/1689/oj"
+S_ROCM_MATRIX = "https://rocm.docs.amd.com/en/latest/compatibility/compatibility-matrix.html"
+S_COMFY = "https://raw.githubusercontent.com/comfyanonymous/ComfyUI/master/README.md"
+S_TORCH_XPU = "https://docs.pytorch.org/docs/main/notes/get_start_xpu.html"
+S_APPLE_MPS = "https://developer.apple.com/metal/pytorch/"
+S_WWISE = "https://www.audiokinetic.com/en/library/edge/?source=Help&id=importing_media_files"
+S_ACX = "https://help.acx.com/s/article/acx-audio-submission-requirements"
+S_APPLE_PODCAST_ART = "https://podcasters.apple.com/support/896-artwork-requirements"
+S_APPLE_PODCAST_RULES = "https://podcasters.apple.com/support/891-content-and-subscription-guidelines"
+S_ISRC = "https://isrc.ifpi.org/"
+S_SPOTIFY_AI = "https://www.digitalmusicnews.com/2025/09/25/spotify-ai-protections-announcement/"
+S_CONTENT_ID = "https://support.google.com/youtube/answer/2797370"
+S_SHUTTERSTOCK_LICENCE = "https://www.shutterstock.com/license"
+S_ADOBE_STOCK_AI = (
+    "https://helpx.adobe.com/stock/contributor/submit-your-content/submit-generative-ai-content/"
+    "generative-ai-content-guidelines.html"
+)
+S_ICC = "https://www.color.org/registry/index.xalter"
+S_PDFX = "https://www.iso.org/standard/42876.html"
+S_SHORTS_3MIN = "https://engadget.com/entertainment/youtube/youtube-shorts-can-now-run-up-to-three-minutes-160002081.html"
+S_YT_THUMB = "https://support.google.com/youtube/answer/72431"
+S_TIKTOK_CML = "https://ads.tiktok.com/help/article/commercial-music-library"
+S_FTC_ENDORSE = "https://www.ftc.gov/business-guidance/resources/ftcs-endorsement-guides-what-people-are-asking"
+S_AMAZON_IMAGES = "https://sellercentral.amazon.com/help/hub/reference/external/G1881"
+S_WCAG = "https://www.w3.org/TR/WCAG22/"
+S_WCAG_AD = "https://www.w3.org/WAI/WCAG22/Understanding/audio-description-prerecorded.html"
+S_BT1702 = "https://www.itu.int/rec/R-REC-BT.1702"
+S_CA_3344_1 = "https://leginfo.legislature.ca.gov/faces/codes_displaySection.xhtml?lawCode=CIV&sectionNum=3344.1"
+S_YT_MINORS = "https://support.google.com/youtube/answer/2801999"
+S_FTC_IMPERSONATION = "https://www.ftc.gov/legal-library/browse/rules/impersonation-government-businesses"
+S_TN_ELVIS = "https://www.capitol.tn.gov/Bills/113/Bill/SB2096.pdf"
+S_CN_LABEL = (
+    "https://www.loeb.com/en/insights/publications/2025/03/"
+    "chinas-ai-labeling-measures-and-mandatory-national-standards-take-effect-september-1"
+)
+S_ACES = "https://www.oscars.org/science-technology/sci-tech-projects/aces"
+S_CAP_HEALTH = "https://www.asa.org.uk/type/non_broadcast/code_section/12.html"
+S_FCA_PROMO = "https://www.fca.org.uk/firms/financial-promotions-adverts"
+S_APP_PREVIEW = "https://developer.apple.com/help/app-store-connect/reference/app-preview-specifications"
+S_UAX14 = "https://www.unicode.org/reports/tr14/"
+S_DEVANAGARI = "https://learn.microsoft.com/en-us/typography/script-development/devanagari"
+S_LOCL = "https://learn.microsoft.com/en-us/typography/opentype/spec/features_ko"
+
+RULES_R12: tuple[Rule, ...] = (
+    # --- cinema / DCP ----------------------------------------------------------------------
+    _r(
+        "dcp_master",
+        [],
+        "cinema delivery is a DCP, not a video file: DCI containers 2K 2048x1080 / 4K 4096x2160 (flat 1998x1080, "
+        "scope 2048x858), JPEG 2000 in XYZ colour, 24-bit 48 kHz PCM — build it with a DCP mastering tool and check "
+        "it on a cinema projector before the screening",
+        "показ в кинотеатре — это DCP, а не видеофайл: контейнеры DCI 2K 2048x1080 / 4K 4096x2160 (flat "
+        "1998x1080, scope 2048x858), JPEG 2000 в цвете XYZ, звук PCM 24 бит 48 кГц — соберите его программой "
+        "мастеринга DCP и проверьте на кинопроекторе до показа",
+        P,
+        _cinema,
+        ("outputs",),
+        "spec.delivery.platform = 'cinema'",
+        (S_DCI,),
+    ),
+    _r(
+        "dcp_frame_rate",
+        [],
+        "{fps} fps is not a DCI DCP rate (2K plays at 24 or 48 fps, 4K at 24): conform to 24 fps before mastering — "
+        "25 fps material is usually slowed by 4 % with the audio pitch-corrected, 30 fps is retimed",
+        "{fps} кадров/с — не частота DCI DCP (2K идёт на 24 или 48, 4K — на 24): приведите к 24 до мастеринга — "
+        "материал 25 кадров/с обычно замедляют на 4 % с коррекцией высоты звука, 30 кадров/с перетаймируют",
+        P,
+        _dcp_fps,
+        ("fps", "outputs"),
+        "spec.delivery.platform = 'cinema'",
+        (S_DCI,),
+    ),
+    _r(
+        "cinema_sound_reference",
+        [],
+        "a theatrical mix is set by the calibrated monitoring level (85 dB SPL reference, SMPTE RP 200), not by a "
+        "LUFS target: a web-loud mix plays painfully loud in a cinema — mix or check it in a calibrated room",
+        "кинотеатральный микс строится по калиброванному уровню прослушивания (опорные 85 дБ SPL, SMPTE RP 200), "
+        "а не по цели LUFS: микс «громкий для интернета» в кинозале звучит болезненно громко — сводите или "
+        "проверяйте в калиброванной комнате",
+        P,
+        _cinema,
+        ("outputs",),
+        "spec.delivery.platform = 'cinema'",
+        (S_SMPTE_RP200,),
+    ),
+    _r(
+        "cinema_big_screen_check",
+        ["t2v", "i2v", "t2v_audio", "r2v", "series", "upscale", "upscale_video"],
+        "a cinema screen magnifies everything: generated video is native 720p-1080p and a 2K/4K DCP of it is an "
+        "upscale — review every shot projected at full size for texture swimming, banding and soft faces before "
+        "locking the cut",
+        "киноэкран увеличивает всё: сгенерированное видео родом из 720p-1080p, и DCP в 2K/4K из него — это "
+        "апскейл — просмотрите каждый шот в проекции в полный размер на плавающую текстуру, полосы градиента и "
+        "мягкие лица до утверждения монтажа",
+        E,
+        _cinema,
+        ("outputs", "task"),
+        "spec.delivery.platform = 'cinema'",
+    ),
+    # --- broadcast ---------------------------------------------------------------------------
+    _r(
+        "broadcast_legal_range",
+        [],
+        "broadcast picture must be legal: EBU R103 limits luma to -1 %..103 % (8-bit 16-235 video range) and RGB "
+        "gamut — generated clips are full-range with very saturated colours, so run a legaliser and check on a "
+        "waveform scope before delivery",
+        "эфирная картинка должна быть «легальной»: EBU R103 ограничивает яркость -1 %..103 % (видеодиапазон "
+        "16-235 в 8 битах) и охват RGB — сгенерированные ролики идут в полном диапазоне с очень насыщенными "
+        "цветами, поэтому пропустите их через легалайзер и проверьте по осциллографу сигнала до сдачи",
+        R,
+        _broadcast_video,
+        ("outputs",),
+        "spec.delivery.platform = 'broadcast'",
+        (S_EBU_R103,),
+    ),
+    _r(
+        "broadcast_closed_captions",
+        [],
+        "broadcast speech needs closed captions in the channel's format: CEA-608/708 embedded in the US (FCC "
+        "caption quality rules), EBU-TT / teletext subtitles in Europe — a burned-in caption is not a closed "
+        "caption",
+        "речь в эфире требует скрытых субтитров в формате канала: CEA-608/708 внутри сигнала в США (правила FCC "
+        "о качестве субтитров), EBU-TT или телетекст в Европе — вжитые субтитры скрытыми не считаются",
+        R,
+        _broadcast_speech,
+        ("outputs", "task"),
+        "spec.delivery.platform = 'broadcast'",
+        (S_FCC_CC,),
+    ),
+    _r(
+        "broadcast_safe_areas",
+        [],
+        "broadcast graphics stay inside the safe areas (EBU R95: action safe 3.5 %, graphics safe 5 % from each "
+        "edge in 16:9, 14:9 protection if the channel asks) — keep supers, logos and phone numbers inside them",
+        "графика для эфира — внутри безопасных зон (EBU R95: зона действия 3,5 %, графики 5 % от каждого края в "
+        "16:9, защита 14:9, если канал просит) — титры, логотипы и телефоны держите внутри",
+        P,
+        _broadcast_video,
+        ("outputs",),
+        "spec.delivery.platform = 'broadcast'",
+        (S_EBU_R95,),
+    ),
+    _r(
+        "broadcast_frame_rate",
+        [],
+        "generated clips come at 24 or 30 fps; a broadcast master runs at the channel's rate (25/50 in Europe, "
+        "29.97/59.94 in North America and Japan) — convert with optical-flow retiming or 2:3 pulldown and check "
+        "motion cadence; never just relabel the rate",
+        "сгенерированные ролики приходят в 24 или 30 кадров/с, а эфирный мастер идёт в частоте канала (25/50 в "
+        "Европе, 29,97/59,94 в Северной Америке и Японии) — переводите оптическим потоком или раскладкой 2:3 и "
+        "проверяйте плавность движения; простая перемаркировка частоты не годится",
+        E,
+        _broadcast_rate,
+        ("outputs", "steps"),
+        "spec.delivery.platform = 'broadcast'",
+    ),
+    # --- streaming --------------------------------------------------------------------------
+    _r(
+        "streaming_imf_delivery",
+        [],
+        "premium streaming delivery (Netflix-class) is an IMF package (SMPTE ST 2067) with a ProRes or JPEG 2000 "
+        "master, timed text and audio stems per the platform's spec sheet — confirm the deliverables list before "
+        "rendering",
+        "сдача на премиальный стриминг (класса Netflix) — пакет IMF (SMPTE ST 2067) с мастером ProRes или "
+        "JPEG 2000, субтитрами и звуковыми стемами по спецификации площадки — уточните список материалов до "
+        "рендера",
+        P,
+        _streaming,
+        ("outputs",),
+        "spec.delivery.platform = 'streaming-premium'",
+        (S_IMF,),
+    ),
+    _r(
+        "streaming_dialogue_loudness",
+        [],
+        "streaming mix: Netflix-class platforms measure dialogue-gated loudness, -27 LKFS +-2 LU (ITU-R BS.1770-1) "
+        "with true peaks at most -2 dBTP — not the -14 LUFS of a music service or the -23 LUFS of EBU broadcast",
+        "микс для стриминга: площадки класса Netflix меряют громкость по диалогу, -27 LKFS +-2 LU (ITU-R "
+        "BS.1770-1), истинный пик не выше -2 dBTP — не -14 LUFS музыкального сервиса и не -23 LUFS эфира EBU",
+        P,
+        _streaming,
+        ("outputs",),
+        "spec.delivery.platform = 'streaming-premium'",
+        (S_NETFLIX_MIX,),
+    ),
+    _r(
+        "streaming_genai_approval",
+        [],
+        "studios and streamers now ask to be told about generative AI in a production and want written approval "
+        "when it reaches final deliverables, talent likeness or third-party IP — clear the AI shots with the "
+        "commissioning platform before delivery",
+        "студии и стриминги теперь просят сообщать о генеративном ИИ в производстве и требуют письменного "
+        "согласования, когда он попадает в финальные материалы, образ актёра или чужую интеллектуальную "
+        "собственность — согласуйте сгенерированные кадры с заказчиком-площадкой до сдачи",
+        P,
+        _streaming,
+        ("outputs",),
+        "spec.delivery.platform = 'streaming-premium'",
+        (S_NETFLIX_GENAI,),
+    ),
+    # --- localisation: M&E, forced narratives ---------------------------------------------------
+    _r(
+        "me_stems_delivery",
+        [],
+        "localisation deliverable: keep dialogue, music and effects as separate stems (DME) and deliver a fully "
+        "filled M&E (music and effects, no dialogue, with effects that were on the dialogue track rebuilt) — "
+        "every new language is mixed over it",
+        "материалы для локализации: держите диалог, музыку и эффекты отдельными стемами (DME) и отдайте полную "
+        "дорожку M&E (музыка и эффекты без речи, с восстановленными шумами, что были на дорожке диалога) — "
+        "каждый новый язык сводится поверх неё",
+        E,
+        _localise,
+        ("task", "languages", "language_tags"),
+        "spec.delivery.stems = ['dialogue', 'music', 'effects']",
+    ),
+    _r(
+        "forced_narratives",
+        ["dub"],
+        "on-screen text in the source (signs, captions, inserts) is not dubbed: translate it as forced-narrative "
+        "subtitles or replace the graphics per language — list every text moment when you spot the film",
+        "текст в кадре исходника (вывески, титры, вставки) дубляж не переводит: переведите его вынужденными "
+        "субтитрами или замените графику для каждого языка — составьте список всех таких моментов при "
+        "разметке фильма",
+        E,
+        _dub_text,
+        ("task",),
+        sources=(S_NETFLIX_TT,),
+    ),
+    # --- anime / limited animation -------------------------------------------------------------
+    _r(
+        "anime_on_twos_output",
+        [],
+        "anime or hand-drawn look: video models render smooth full-rate in-betweens, which reads as 3D or "
+        "rotoscope — for the limited-animation feel hold drawings at assembly (keep every 2nd frame and double "
+        "it, 12 drawings/s at 24 fps) and keep camera pans at full rate",
+        "аниме или рисованный вид: видеомодели дают плавные промежуточные фазы на полной частоте, и это "
+        "выглядит как 3D или ротоскоп — для ограниченной анимации держите рисунки при сборке (каждый второй кадр "
+        "повторён дважды, 12 рисунков в секунду на 24 кадрах), а панорамы камеры оставьте на полной частоте",
+        E,
+        _twos_made,
+        ("steps",),
+        "spec.style = 'limited-animation'",
+        (S_FFMPEG_FILTERS,),
+    ),
+    _r(
+        "anime_upscaler",
+        [],
+        "upscaling anime or flat-colour animation: use an animation-trained model (Real-ESRGAN anime or "
+        "Anime4K class) — photo upscalers paint texture and noise into flat colour fields and thicken line art",
+        "апскейл аниме или анимации с заливками: берите модель, обученную на анимации (класс Real-ESRGAN anime "
+        "или Anime4K), — фото-апскейлеры рисуют фактуру и шум в ровных заливках и утолщают контур",
+        E,
+        _twos_upscale,
+        ("task",),
+        "spec.style = 'limited-animation'",
+    ),
+    # --- text rendering per script --------------------------------------------------------------
+    _r(
+        "script_text_overlay",
+        [],
+        "on-screen text in {langs}: generators swap Cyrillic, Greek, Armenian or Georgian letters for Latin "
+        "look-alikes or invent letters — generate the picture without text and set the words as an overlay in a "
+        "font that covers the script, then proofread on the final frame",
+        "текст в кадре на {langs}: генераторы подменяют кириллицу, греческие, армянские или грузинские буквы "
+        "похожими латинскими или выдумывают буквы — генерируйте картинку без текста и ставьте слова слоем "
+        "шрифтом с поддержкой письменности, затем вычитайте на финальном кадре",
+        E,
+        _glyph_risk,
+        ("languages", "language_tags"),
+    ),
+    _r(
+        "indic_shaping",
+        [],
+        "{langs}: Brahmic scripts need complex shaping (conjuncts, vowel signs that reorder) — render captions "
+        "and overlays with a HarfBuzz-based renderer and a full font (Noto Sans Devanagari / Bengali / Tamil "
+        "class); never generate the lettering, and have a native reader check the frame",
+        "{langs}: брахмические письменности требуют сложной вёрстки (лигатуры согласных, знаки гласных, меняющие "
+        "место) — рендерите субтитры и надписи движком на основе HarfBuzz с полным шрифтом (класс Noto Sans "
+        "Devanagari / Bengali / Tamil); надписи не генерируйте и дайте кадр носителю на проверку",
+        E,
+        _indic,
+        ("languages", "language_tags", "outputs"),
+        sources=(S_DEVANAGARI,),
+    ),
+    _r(
+        "sea_line_break",
+        [],
+        "{langs}: these scripts put no spaces between words — caption line breaks need dictionary segmentation "
+        "(ICU line breaking), otherwise lines split inside words; check tone marks and stacked vowels on the "
+        "final frame",
+        "{langs}: в этих письменностях нет пробелов между словами — перенос строк субтитров требует словарной "
+        "сегментации (разбиение строк ICU), иначе строки рвутся внутри слов; проверьте тоновые знаки и "
+        "надстрочные гласные на финальном кадре",
+        E,
+        _sea,
+        ("languages", "language_tags", "outputs"),
+        sources=(S_UAX14,),
+    ),
+    _r(
+        "cyrillic_locl",
+        [],
+        "{langs}: Bulgarian, Serbian and Macedonian use their own Cyrillic letterforms (the italic b, g, d, p, t "
+        "shapes differ from Russian) — set the text language so the font's localised forms (OpenType locl) switch on, "
+        "and use a font that has them",
+        "{langs}: в болгарском, сербском и македонском свои начертания кириллицы (курсивные б, г, д, п, т "
+        "отличаются от русских) — указывайте язык текста, чтобы включились локальные формы шрифта (OpenType "
+        "locl), и берите шрифт, где они есть",
+        E,
+        _locl,
+        ("languages", "language_tags", "outputs"),
+        sources=(S_LOCL,),
+    ),
+    # --- real estate ------------------------------------------------------------------------
+    _r(
+        "virtual_staging_disclosure",
+        [],
+        "real-estate listing: label virtually staged or AI-altered photos ('virtually staged') and show the "
+        "unaltered photo next to them — listing rules (MLS, NAR Code of Ethics 'true picture') and consumer law "
+        "(EU UCPD) treat an undisclosed edit as misleading",
+        "объявление о недвижимости: виртуально обставленные или изменённые ИИ фото помечаются («виртуальная "
+        "расстановка мебели»), и рядом показывается неизменённое фото — правила площадок объявлений (MLS, "
+        "этический кодекс NAR) и закон о защите потребителей (UCPD в ЕС) считают нераскрытую правку "
+        "вводящей в заблуждение",
+        R,
+        _real_estate,
+        ("task",),
+        "spec.domain = 'real-estate'",
+        (S_REAL_ESTATE_NAR, S_UCPD),
+    ),
+    _r(
+        "real_estate_permanent_features",
+        [],
+        "virtual staging may add furniture and decor, but never removes or changes permanent features — cracks, "
+        "power lines, the view, room size, fixtures; check every generated room against the real one (walls, "
+        "windows and doors where they are)",
+        "виртуальная расстановка может добавить мебель и декор, но не убирает и не меняет постоянное — трещины, "
+        "провода, вид из окна, размер комнаты, встроенное оборудование; сверяйте каждую сгенерированную комнату "
+        "с настоящей (стены, окна и двери на своих местах)",
+        R,
+        _real_estate,
+        ("task",),
+        "spec.domain = 'real-estate'",
+        (S_UCPD,),
+    ),
+    # --- retouched advertising -----------------------------------------------------------------
+    _r(
+        "retouch_label_france",
+        [],
+        "France: a commercial photo of a model whose silhouette was slimmed or thickened by retouching or AI "
+        "must carry the mention 'photographie retouchée' (Public Health Code L.2133-2, decree 2017-738; fine up "
+        "to 37,500 EUR or 30 % of the ad spend)",
+        "Франция: рекламное фото модели, чью фигуру сделали тоньше или полнее ретушью или ИИ, обязано нести "
+        "пометку «photographie retouchée» (Кодекс здравоохранения L.2133-2, декрет 2017-738; штраф до 37 500 "
+        "евро или 30 % расходов на рекламу)",
+        R,
+        _retouch_france,
+        ("jurisdiction",),
+        "spec.jurisdiction = ['FR'] with spec.domain = 'advertising'",
+        (S_FR_RETOUCH,),
+    ),
+    _r(
+        "cosmetic_ad_effect",
+        [],
+        "cosmetics advertising: retouching, filters or generated skin must not exaggerate what the product does "
+        "(UK ASA ruling on beauty filters, 2021; consumer law elsewhere) — show the product's real effect and "
+        "keep the unretouched source",
+        "реклама косметики: ретушь, фильтры или сгенерированная кожа не должны преувеличивать действие "
+        "средства (решение ASA Великобритании о фильтрах красоты, 2021; закон о защите потребителей в других "
+        "странах) — показывайте настоящий эффект средства и храните исходник без ретуши",
+        R,
+        _cosmetic_ad,
+        ("task",),
+        "spec.domain = 'advertising'",
+        (S_ASA_FILTERS,),
+    ),
+    _r(
+        "before_after_genuine",
+        [],
+        "before/after images must be real and comparable: the same person, light, pose, lens and processing, no "
+        "generated or retouched 'after' — a fabricated result is a misleading claim under ad codes and consumer "
+        "law",
+        "снимки «до и после» должны быть настоящими и сопоставимыми: тот же человек, свет, поза, объектив и "
+        "обработка, без сгенерированного или отретушированного «после» — выдуманный результат считается "
+        "вводящим в заблуждение по рекламным кодексам и закону о защите потребителей",
+        R,
+        _before_after,
+        (),
+        "spec.domain = 'advertising'",
+        (S_ASA_FILTERS, S_UCPD),
+    ),
+    # --- political ads ------------------------------------------------------------------------
+    _r(
+        "political_ai_disclosure",
+        [],
+        "political advertising with AI-made or altered people, voices or events is disclosed on the ad itself: "
+        "Google and Meta require a synthetic-content disclosure on election ads, EU Regulation 2024/900 requires "
+        "a transparency label (fully applicable from 10 October 2025), and many US states regulate election "
+        "deepfakes",
+        "политическая реклама с людьми, голосами или событиями, созданными или изменёнными ИИ, раскрывает это в "
+        "самой рекламе: Google и Meta требуют пометку о синтетическом контенте в предвыборной рекламе, Регламент "
+        "ЕС 2024/900 — метку прозрачности (в полной силе с 10 октября 2025), а многие штаты США регулируют "
+        "предвыборные дипфейки",
+        R,
+        _political,
+        ("people",),
+        "spec.people[].claim = 'political' (or spec.domain = 'political')",
+        (S_GOOGLE_POLITICAL, S_EU_POLITICAL),
+    ),
+    _r(
+        "political_paid_for_by",
+        [],
+        "US political ads carry the 'paid for by' disclaimer (FEC, 11 CFR 110.11) with the sponsor named on "
+        "screen and, for candidate ads, the candidate's spoken approval — check state rules on synthetic media "
+        "near an election",
+        "политическая реклама в США несёт пометку «оплачено» (FEC, 11 CFR 110.11) с названием спонсора на "
+        "экране, а реклама кандидата — его голосовое одобрение; проверьте законы штата о синтетических медиа "
+        "перед выборами",
+        R,
+        _political_us,
+        ("people", "jurisdiction"),
+        sources=(S_FEC_DISCLAIMER,),
+    ),
+    # --- telephony with synthetic voices -------------------------------------------------------
+    _r(
+        "fcc_ai_voice_robocall",
+        [],
+        "outbound calls with a synthetic or cloned voice: under the FCC's 2024 declaratory ruling an AI voice is "
+        "an 'artificial voice' under the TCPA — such calls need the called party's prior express consent (written "
+        "for marketing), plus identification and an opt-out",
+        "исходящие звонки синтетическим или клонированным голосом: по декларативному решению FCC 2024 года "
+        "голос ИИ считается «искусственным голосом» по закону TCPA — на такие звонки нужно предварительное явное "
+        "согласие абонента (письменное для маркетинга), плюс представление звонящего и возможность отказаться",
+        R,
+        _robocall,
+        ("task",),
+        "spec.delivery.platform = 'telephony' with spec.delivery.direction = 'outbound'",
+        (S_FCC_AI_VOICE,),
+    ),
+    _r(
+        "voice_bot_disclosure",
+        [],
+        "a voice bot that talks with people must tell them they are talking to an AI system (EU AI Act Art. 50(1); "
+        "California's bot disclosure law for sales and votes) — put it in the first sentence of the greeting",
+        "голосовой бот, который разговаривает с людьми, обязан сообщить, что с ними говорит система ИИ "
+        "(Регламент ЕС об ИИ, ст. 50(1); калифорнийский закон о раскрытии ботов в продажах и выборах) — "
+        "скажите это первой фразой приветствия",
+        R,
+        _voice_bot,
+        ("task",),
+        "spec.delivery.platform = 'voice-agent'",
+        (S_AI_ACT,),
+    ),
+    # --- self-host on non-NVIDIA hardware ------------------------------------------------------
+    _r(
+        "backend_rocm",
+        [],
+        "AMD GPU ({gpu}): install the PyTorch ROCm build and check the card is on the ROCm support matrix; CUDA-only "
+        "parts (flash-attention CUDA wheels, xformers, older bitsandbytes, TensorRT, custom CUDA kernels) fail — "
+        "use PyTorch SDPA attention and a ROCm-capable runner (ComfyUI supports AMD); see gpu_backend per step",
+        "GPU AMD ({gpu}): ставьте сборку PyTorch для ROCm и проверьте карту по матрице поддержки ROCm; части "
+        "только под CUDA (колёса flash-attention для CUDA, xformers, старый bitsandbytes, TensorRT, свои ядра CUDA) "
+        "не заработают — берите внимание SDPA из PyTorch и среду с поддержкой ROCm (ComfyUI поддерживает AMD); "
+        "смотрите gpu_backend у каждого шага",
+        E,
+        _rocm,
+        ("self_host.platform", "self_host.gpu"),
+        sources=(S_ROCM_MATRIX, S_COMFY),
+    ),
+    _r(
+        "backend_intel_xpu",
+        [],
+        "Intel GPU ({gpu}): install the PyTorch xpu build (torch.xpu, Intel GPU driver and oneAPI runtime) or run "
+        "through OpenVINO; CUDA-only kernels and fp8 paths are missing — use SDPA attention and a runner that "
+        "supports XPU (ComfyUI does); see gpu_backend per step",
+        "GPU Intel ({gpu}): ставьте сборку PyTorch xpu (torch.xpu, драйвер Intel GPU и среда oneAPI) или "
+        "запускайте через OpenVINO; ядер только под CUDA и путей fp8 нет — берите внимание SDPA и среду с "
+        "поддержкой XPU (ComfyUI её имеет); смотрите gpu_backend у каждого шага",
+        E,
+        _xpu,
+        ("self_host.platform", "self_host.gpu"),
+        sources=(S_TORCH_XPU, S_COMFY),
+    ),
+    _r(
+        "backend_apple_mps",
+        [],
+        "Apple silicon ({gpu}): PyTorch runs on the MPS device (or MLX ports) — fp8 and CUDA kernels are not "
+        "available, use bf16/fp16 weights, set PYTORCH_ENABLE_MPS_FALLBACK=1 for missing operators, and expect "
+        "video models to run several times slower than on a CUDA card; see apple_silicon per step",
+        "Apple silicon ({gpu}): PyTorch идёт на устройстве MPS (или порты на MLX) — fp8 и ядер CUDA нет, берите "
+        "веса bf16/fp16, для недостающих операций ставьте PYTORCH_ENABLE_MPS_FALLBACK=1, а видеомодели "
+        "работают в разы медленнее, чем на карте с CUDA; смотрите apple_silicon у каждого шага",
+        E,
+        _mps,
+        ("self_host.platform", "self_host.unified_memory_gb"),
+        sources=(S_APPLE_MPS,),
+    ),
+    # --- game audio ---------------------------------------------------------------------------
+    _r(
+        "game_audio_variations",
+        [],
+        "game sound effects: make 3-5 variations of each repeating sound (footsteps, hits, UI) so the engine can "
+        "randomise them, export mono 48 kHz / 24-bit WAV for 3D-positioned sounds, trim to zero-crossing starts, "
+        "and name files by a fixed scheme (category_object_action_01)",
+        "звуки для игры: делайте 3-5 вариаций каждого повторяющегося звука (шаги, удары, интерфейс), чтобы движок "
+        "их чередовал, выгружайте моно WAV 48 кГц / 24 бит для звуков в 3D-пространстве, обрезайте старт по нулю "
+        "волны и называйте файлы по одной схеме (категория_объект_действие_01)",
+        E,
+        _game_sfx,
+        ("outputs",),
+        "spec.delivery.platform = 'game-engine'",
+        (S_WWISE,),
+    ),
+    _r(
+        "game_music_layers",
+        [],
+        "game music is interactive: deliver seamless loops cut on bar lines plus stems for vertical layering "
+        "(intensity layers) and short stingers/transitions in the same key and tempo — one finished linear track "
+        "cannot react to gameplay",
+        "музыка для игры интерактивна: отдайте бесшовные петли, нарезанные по тактам, плюс стемы для "
+        "вертикальных слоёв (уровни напряжения) и короткие связки в той же тональности и темпе — один готовый "
+        "линейный трек не реагирует на игру",
+        E,
+        _game_music,
+        ("outputs",),
+        "spec.delivery.platform = 'game-engine'",
+        (S_WWISE,),
+    ),
+    # --- audiobook ------------------------------------------------------------------------------
+    _r(
+        "acx_audio_specs",
+        [],
+        "audiobook for ACX/Audible: each file -23 to -18 dB RMS, peaks at most -3 dB, noise floor at most -60 dB RMS, "
+        "192 kbps+ CBR MP3 at 44.1 kHz, one chapter per file with 0.5-1 s of room tone at the head and 1-5 s at "
+        "the tail",
+        "аудиокнига для ACX/Audible: каждый файл от -23 до -18 дБ RMS, пики не выше -3 дБ, шумовой фон не выше "
+        "-60 дБ RMS, MP3 CBR от 192 кбит/с при 44,1 кГц, одна глава на файл с 0,5-1 с тишины комнаты в начале и "
+        "1-5 с в конце",
+        P,
+        _audiobook,
+        ("outputs",),
+        "spec.delivery.platform = 'audiobook'",
+        (S_ACX,),
+    ),
+    _r(
+        "audiobook_ai_narration",
+        [],
+        "synthetic narration and audiobook stores: ACX requires human narration unless Amazon authorised it "
+        "(its own Virtual Voice programme), while other stores accept AI narration with a label — check the "
+        "store's rule before voicing the whole book",
+        "синтетическое чтение и магазины аудиокниг: ACX требует чтения человеком, если Amazon не разрешил иначе "
+        "(своя программа Virtual Voice), а другие магазины принимают чтение ИИ с пометкой — проверьте правило "
+        "магазина до озвучки всей книги",
+        P,
+        _audiobook,
+        ("outputs",),
+        "spec.delivery.platform = 'audiobook'",
+        (S_ACX,),
+    ),
+    # --- podcast ------------------------------------------------------------------------------
+    _r(
+        "podcast_artwork_metadata",
+        [],
+        "podcast delivery: show artwork 3000x3000 px (square, RGB, JPEG or PNG), episode title, description and "
+        "chapters in the feed/ID3 tags — the audio is only half of what the directory checks",
+        "сдача подкаста: обложка шоу 3000x3000 px (квадрат, RGB, JPEG или PNG), название, описание и главы "
+        "эпизода в ленте и тегах ID3 — звук лишь половина того, что проверяет каталог",
+        P,
+        _podcast_made,
+        ("outputs",),
+        "spec.delivery.platform = 'podcast'",
+        (S_APPLE_PODCAST_ART,),
+    ),
+    _r(
+        "podcast_ai_disclosure",
+        [],
+        "a podcast whose voices or a material part of the audio are AI-generated says so in the show and episode "
+        "metadata (Apple Podcasts content guidelines; other hosts have similar rules) — and never uses a synthetic "
+        "voice to fabricate a real person's words",
+        "подкаст, где голоса или заметная часть звука созданы ИИ, сообщает об этом в метаданных шоу и эпизода "
+        "(правила контента Apple Podcasts; у других площадок похожие) — и никогда не вкладывает синтетическим "
+        "голосом слова в уста реального человека",
+        P,
+        _podcast_ai_voice,
+        ("task",),
+        "spec.delivery.platform = 'podcast'",
+        (S_APPLE_PODCAST_RULES,),
+    ),
+    # --- music distribution --------------------------------------------------------------------
+    _r(
+        "music_release_metadata",
+        [],
+        "releasing to streaming services: each track gets an ISRC (the distributor can issue it) and the release "
+        "a UPC; deliver 16/24-bit WAV at 44.1 kHz or higher, 3000x3000 px cover art, credits and the explicit flag",
+        "выпуск на стриминги: каждому треку нужен ISRC (его может выдать дистрибьютор), релизу — UPC; отдайте "
+        "WAV 16/24 бит от 44,1 кГц, обложку 3000x3000 px, авторов и пометку о ненормативной лексике",
+        P,
+        _distribution,
+        ("outputs",),
+        "spec.delivery.platform = 'music-distribution'",
+        (S_ISRC,),
+    ),
+    _r(
+        "ai_music_distribution",
+        [],
+        "AI-generated music on streaming services: declare the AI involvement to the distributor (AI credits in "
+        "DDEX metadata, as Spotify and its distributors adopted in 2025), make sure the generator's plan grants "
+        "commercial rights, and never imitate a real artist's voice — impersonation is removed",
+        "музыка, созданная ИИ, на стримингах: укажите дистрибьютору участие ИИ (пометки ИИ в метаданных DDEX, "
+        "принятые Spotify и его дистрибьюторами в 2025), убедитесь, что тариф генератора даёт коммерческие права, "
+        "и не подражайте голосу реального артиста — такие треки удаляют",
+        P,
+        _distribution,
+        ("outputs",),
+        "spec.delivery.platform = 'music-distribution'",
+        (S_SPOTIFY_AI,),
+    ),
+    _r(
+        "music_content_id",
+        [],
+        "generated music and Content ID: do not register a generated track in Content ID unless you hold exclusive "
+        "rights to it (other users of the same service may get near-identical output), and expect false claims "
+        "against your own video — keep the generation record to dispute them",
+        "сгенерированная музыка и Content ID: не регистрируйте сгенерированный трек в Content ID без "
+        "исключительных прав на него (у других пользователей того же сервиса может выйти почти то же самое) и "
+        "будьте готовы к ложным заявкам на собственное видео — храните запись генерации, чтобы их оспорить",
+        P,
+        _monetised_music,
+        ("outputs",),
+        sources=(S_CONTENT_ID,),
+    ),
+    # --- stock licences ------------------------------------------------------------------------
+    _r(
+        "stock_licence_scope",
+        [],
+        "stock footage, photos or music: check the licence tier against the use (standard vs extended for large "
+        "print runs, merchandise, broadcast or paid ads), never use 'editorial use only' items in advertising, and "
+        "check whether the licence forbids using the item as AI input",
+        "стоковые видео, фото или музыка: сверьте уровень лицензии с использованием (стандартная или "
+        "расширенная — для больших тиражей, мерча, эфира и платной рекламы), не берите материалы «только для "
+        "редакционного использования» в рекламу и проверьте, не запрещает ли лицензия подавать материал в ИИ",
+        P,
+        _stock_use,
+        ("inputs",),
+        "spec.inputs[].licence = 'stock'",
+        (S_SHUTTERSTOCK_LICENCE,),
+    ),
+    _r(
+        "stock_ai_submission",
+        [],
+        "selling generated work on stock sites: the rules differ — Adobe Stock accepts it with the 'Created using "
+        "generative AI tools' box ticked and no real people, artists or brands in prompts; some agencies accept "
+        "no AI content at all — read the agency's policy first",
+        "продажа сгенерированного на стоках: правила разные — Adobe Stock принимает такие работы с отметкой "
+        "«Created using generative AI tools» и без реальных людей, художников и брендов в промптах; часть "
+        "агентств ИИ-контент не принимает вовсе — сначала прочтите правила агентства",
+        P,
+        _stock_sell,
+        ("outputs",),
+        sources=(S_ADOBE_STOCK_AI,),
+    ),
+    # --- print ---------------------------------------------------------------------------------
+    _r(
+        "print_cmyk_bleed",
+        [],
+        "print: generators output sRGB — convert to CMYK with the printer's ICC profile (FOGRA39/51, GRACoL) and "
+        "soft-proof, because saturated blues, greens and neon go out of gamut; add bleed (3 mm / 0.125 in) and "
+        "keep text 3-5 mm inside the trim",
+        "печать: генераторы отдают sRGB — переводите в CMYK по ICC-профилю типографии (FOGRA39/51, GRACoL) с "
+        "экранной цветопробой, потому что насыщенные синие, зелёные и неон выходят за охват; добавьте вылеты "
+        "(3 мм) и держите текст на 3-5 мм внутри обреза",
+        E,
+        _print_still,
+        ("outputs",),
+        "spec.delivery.platform = 'print'",
+        (S_ICC,),
+    ),
+    _r(
+        "print_vector_text",
+        [],
+        "print text and logos go out as vectors in a print PDF (PDF/X-1a or PDF/X-4), laid over the generated "
+        "image — rasterised small type prints soft and generated lettering is not exact",
+        "текст и логотипы для печати идут векторами в печатном PDF (PDF/X-1a или PDF/X-4) поверх сгенерированной "
+        "картинки — растровый мелкий шрифт печатается мыльно, а сгенерированные буквы неточны",
+        E,
+        _print_text,
+        ("outputs",),
+        "spec.delivery.platform = 'print'",
+        (S_PDFX,),
+    ),
+    # --- social platforms -----------------------------------------------------------------------
+    _r(
+        "short_form_length_cap",
+        [],
+        "{seconds} s vertical: YouTube Shorts and Instagram Reels take up to 3 minutes; a longer vertical upload "
+        "becomes a regular video (no Shorts shelf) — cut a version of at most 180 s for the short-form feed",
+        "вертикальное видео {seconds} с: YouTube Shorts и Instagram Reels берут до 3 минут; более длинная "
+        "вертикальная загрузка становится обычным видео (без полки Shorts) — сделайте версию не длиннее 180 с "
+        "для ленты коротких видео",
+        P,
+        _short_too_long,
+        ("duration_s", "aspect", "task"),
+        "spec.delivery.platform = 'youtube-shorts' | 'reels' | 'tiktok'",
+        (S_SHORTS_3MIN,),
+    ),
+    _r(
+        "platform_thumbnail",
+        [],
+        "thumbnail / cover: YouTube custom thumbnails are 1280x720 (16:9, under 2 MB, JPG/PNG); vertical covers "
+        "are 1080x1920 with the key content in the centre crop the grid shows — design it as a still, with text "
+        "laid over, not taken from a generated frame",
+        "превью и обложка: свои превью YouTube — 1280x720 (16:9, до 2 МБ, JPG/PNG); вертикальные обложки — "
+        "1080x1920 с главным в центральной части, которую показывает сетка — делайте её отдельной картинкой с "
+        "текстом слоем, а не кадром из генерации",
+        P,
+        _cover,
+        ("outputs",),
+        "spec.delivery.platform = 'youtube' | 'tiktok' | 'instagram'",
+        (S_YT_THUMB,),
+    ),
+    _r(
+        "social_commercial_music",
+        [],
+        "music in a brand or paid social post: the platform's general music library is for personal posts only — "
+        "use the commercial music library (TikTok Commercial Music Library, Meta Sound Collection) or a track you "
+        "hold a commercial licence for",
+        "музыка в брендовом или платном посте: общая музыкальная библиотека площадки — только для личных "
+        "публикаций — берите коммерческую библиотеку (Commercial Music Library в TikTok, Sound Collection у Meta) "
+        "или трек с коммерческой лицензией",
+        P,
+        _social_music_ad,
+        ("outputs",),
+        "spec.domain = 'advertising'",
+        (S_TIKTOK_CML,),
+    ),
+    _r(
+        "branded_content_disclosure",
+        [],
+        "paid partnerships and influencer posts are disclosed: the platform's paid-partnership label plus a clear "
+        "'ad' / 'sponsored' (FTC Endorsement Guides in the US, ASA/CAP in the UK) — and an AI-generated "
+        "'influencer' is disclosed as synthetic as well",
+        "платные партнёрства и посты блогеров раскрываются: метка площадки о платном партнёрстве и ясное "
+        "«реклама» (руководство FTC об одобрениях в США, ASA/CAP в Великобритании) — а сгенерированный ИИ "
+        "«блогер» раскрывается ещё и как синтетический",
+        R,
+        _sponsored,
+        (),
+        "spec.domain = 'advertising'",
+        (S_FTC_ENDORSE,),
+    ),
+    # --- e-commerce ---------------------------------------------------------------------------
+    _r(
+        "marketplace_main_image",
+        [],
+        "marketplace main image (Amazon class): pure white background RGB 255,255,255, the product filling about "
+        "85 % of the frame, at least 1000 px on the longest side for zoom, no text, badges, props or watermark — "
+        "generated lifestyle scenes go to the secondary images",
+        "главное фото на маркетплейсе (класса Amazon): чисто белый фон RGB 255,255,255, товар занимает около 85 % "
+        "кадра, не меньше 1000 px по длинной стороне для зума, без текста, значков, реквизита и водяных знаков — "
+        "сгенерированные сцены с товаром идут в дополнительные фото",
+        P,
+        _marketplace_main,
+        ("outputs", "inputs"),
+        "spec.delivery.platform = 'marketplace'",
+        (S_AMAZON_IMAGES,),
+    ),
+    # --- accessibility --------------------------------------------------------------------------
+    _r(
+        "wcag_captions",
+        [],
+        "accessibility: prerecorded video with speech needs synchronised captions (WCAG 2.2 SC 1.2.2, level A) "
+        "with speaker IDs and sound cues for deaf viewers — required for public-sector sites (EU Web "
+        "Accessibility Directive, US ADA Title II) and, since June 2025, many EU services (European Accessibility "
+        "Act)",
+        "доступность: записанное видео с речью требует синхронных субтитров (WCAG 2.2, критерий 1.2.2, уровень A) "
+        "с указанием говорящих и звуковыми пометками для глухих зрителей — обязательно для госсайтов (директива "
+        "ЕС о доступности веб-сайтов, ADA раздел II в США) и с июня 2025 для многих услуг в ЕС (Европейский акт "
+        "о доступности)",
+        R,
+        _a11y_video,
+        ("outputs",),
+        "spec.accessibility = ['captions', 'audio-description']",
+        (S_WCAG,),
+    ),
+    _r(
+        "audio_description",
+        [],
+        "information shown only in picture (on-screen text, actions, a product shot) needs audio description for "
+        "blind viewers (WCAG 2.2 SC 1.2.5, level AA): write the description into the voice-over pauses or deliver "
+        "a described version",
+        "то, что показано только картинкой (текст в кадре, действия, показ товара), требует тифлокомментария для "
+        "незрячих зрителей (WCAG 2.2, критерий 1.2.5, уровень AA): впишите описание в паузы закадрового текста "
+        "или сдайте версию с тифлокомментарием",
+        R,
+        _a11y_video,
+        ("outputs",),
+        "spec.accessibility = ['captions', 'audio-description']",
+        (S_WCAG_AD,),
+    ),
+    _r(
+        "photosensitive_flashes",
+        [],
+        "flashing and strobe effects: no more than 3 flashes per second and no saturated-red flashes (WCAG 2.3.1; "
+        "broadcasters test with ITU-R BT.1702 / Harding-class analysers) — generated glitch and strobe effects "
+        "often fail; test the final render",
+        "вспышки и стробоскоп: не больше 3 вспышек в секунду и без насыщенно-красных вспышек (WCAG 2.3.1; "
+        "вещатели проверяют по ITU-R BT.1702 анализаторами класса Harding) — сгенерированные глитч- и "
+        "строб-эффекты часто не проходят; проверьте финальный рендер",
+        R,
+        _flash,
+        ("outputs",),
+        "spec.conditions[] = 'flashing'",
+        (S_BT1702, S_WCAG),
+    ),
+    # --- people: deceased, minors, endorsements, famous voices ------------------------------------
+    _r(
+        "deceased_likeness",
+        [],
+        "a deceased real person: post-mortem publicity rights belong to the estate (California Civil Code 3344.1, "
+        "70 years; New York's digital-replica law; other countries' personality rights) — get the estate's written "
+        "consent and label the recreation",
+        "умерший реальный человек: посмертные права на образ принадлежат наследникам (Гражданский кодекс "
+        "Калифорнии, 3344.1 — 70 лет; закон Нью-Йорка о цифровых копиях; права личности в других странах) — "
+        "получите письменное согласие наследников и пометьте воссоздание",
+        R,
+        _deceased,
+        ("people",),
+        sources=(S_CA_3344_1,),
+    ),
+    _r(
+        "minor_on_screen",
+        [],
+        "a real minor on screen: get a parent's or guardian's written consent, keep the content age-appropriate, "
+        "and follow the platform's child-safety rules (on YouTube comments may be restricted on such videos)",
+        "реальный несовершеннолетний в кадре: нужно письменное согласие родителя или опекуна, содержание по "
+        "возрасту и правила безопасности детей на площадке (на YouTube комментарии к таким роликам могут "
+        "отключить)",
+        R,
+        _minor,
+        ("people",),
+        sources=(S_YT_MINORS,),
+    ),
+    _r(
+        "fake_endorsement",
+        [],
+        "a real person endorsing a product needs their written agreement to that exact endorsement: a synthetic "
+        "endorsement is deceptive advertising (FTC Act s. 5 and the FTC impersonation rule, 2024; ad codes "
+        "elsewhere), and the endorser must actually use the product",
+        "реальный человек, одобряющий товар, должен письменно согласиться именно на это одобрение: синтетическое "
+        "одобрение — недобросовестная реклама (FTC Act, раздел 5, и правило FTC о выдаче себя за другого, 2024; "
+        "рекламные кодексы в других странах), а сам рекомендующий должен пользоваться товаром",
+        R,
+        _endorsement,
+        ("people",),
+        sources=(S_FTC_IMPERSONATION, S_FTC_ENDORSE),
+    ),
+    _r(
+        "voice_publicity_rights",
+        [],
+        "a public figure's voice is protected as part of their likeness (Tennessee ELVIS Act 2024 names the voice "
+        "explicitly; right of publicity elsewhere) — synthesising or cloning it for content needs their licence",
+        "голос публичного человека защищён как часть его образа (закон Теннесси ELVIS 2024 прямо называет "
+        "голос; право на образ в других местах) — синтез или клон для контента требует его лицензии",
+        R,
+        _famous_voice,
+        ("people",),
+        sources=(S_TN_ELVIS,),
+    ),
+    # --- news, China, VFX / editorial handoff, regulated ads, app stores -----------------------------
+    _r(
+        "news_synthetic_label",
+        [],
+        "news and documentary: generated or AI-altered footage is never presented as a record — label it on "
+        "screen as an AI reconstruction or illustration, keep it apart from real footage, and keep the generation "
+        "record",
+        "новости и документалистика: сгенерированные или изменённые ИИ кадры никогда не выдаются за запись "
+        "событий — помечайте их на экране как реконструкцию или иллюстрацию ИИ, держите отдельно от настоящей "
+        "съёмки и храните запись генерации",
+        P,
+        _news,
+        ("people",),
+        "spec.domain = 'news'",
+        (S_YT_SYNTHETIC, S_C2PA),
+    ),
+    _r(
+        "china_ai_label",
+        [],
+        "publishing in China: AI-generated text, images, audio and video carry an explicit label (visible or "
+        "audible) and an implicit one in the file metadata under the CAC labelling measures (in force since "
+        "1 September 2025, standard GB 45438-2025)",
+        "публикация в Китае: созданные ИИ текст, изображения, звук и видео несут явную метку (видимую или "
+        "звучащую) и скрытую в метаданных файла по правилам маркировки CAC (действуют с 1 сентября 2025, "
+        "стандарт GB 45438-2025)",
+        R,
+        _china,
+        ("jurisdiction",),
+        sources=(S_CN_LABEL,),
+    ),
+    _r(
+        "vfx_plate_handoff",
+        [],
+        "VFX handoff: deliver generated shots as EXR or DPX image sequences in the facility's colour pipeline "
+        "(ACEScg / ACES2065-1 or the agreed log space), ungraded, with 8-12 frame handles and the generation "
+        "settings — an H.264 export cannot be composited cleanly",
+        "передача в VFX: сгенерированные шоты отдаются секвенциями EXR или DPX в цветовом конвейере студии "
+        "(ACEScg / ACES2065-1 или согласованное лог-пространство), без грейда, с запасом 8-12 кадров и "
+        "настройками генерации — экспорт H.264 чисто не скомпозить",
+        E,
+        _vfx,
+        ("outputs",),
+        "spec.delivery.platform = 'vfx'",
+        (S_ACES,),
+    ),
+    _r(
+        "editorial_handoff",
+        [],
+        "handing generated clips to an editor: export an intermediate codec (ProRes 422 HQ / DNxHR) at a "
+        "constant frame rate, with unique file names, timecode and a shot list (prompt, seed, model) — long-GOP "
+        "web files with variable frame rate drift out of sync in the edit",
+        "передача роликов монтажёру: выгружайте в промежуточном кодеке (ProRes 422 HQ / DNxHR) с постоянной "
+        "частотой кадров, уникальными именами файлов, таймкодом и списком шотов (промпт, сид, модель) — "
+        "веб-файлы с длинной группой кадров и переменной частотой расходятся по синхрону в монтаже",
+        E,
+        _editorial,
+        ("outputs",),
+        "spec.delivery.platform = 'editorial'",
+    ),
+    _r(
+        "health_ad_claims",
+        [],
+        "health, medicine or supplement advertising: no generated 'doctor', 'nurse' or patient testimonial "
+        "presented as real, and every health claim must be substantiated or authorised (UK CAP Code section 12; "
+        "FDA/FTC in the US; EU health-claims register)",
+        "реклама здоровья, лекарств или БАД: никаких сгенерированных «врачей», «медсестёр» или отзывов пациентов "
+        "под видом настоящих, а каждое заявление о здоровье должно быть доказано или разрешено (раздел 12 "
+        "кодекса CAP в Великобритании; FDA/FTC в США; реестр заявлений о здоровье ЕС)",
+        R,
+        _health_ad,
+        (),
+        "spec.domain = 'health-advertising'",
+        (S_CAP_HEALTH,),
+    ),
+    _r(
+        "financial_promo",
+        [],
+        "financial products (investment, crypto, credit, insurance): the promotion must be fair, clear and not "
+        "misleading with risk warnings (UK FCA financial promotion rules; similar elsewhere), and an AI-made "
+        "spokesperson or 'customer' is not presented as real",
+        "финансовые продукты (инвестиции, крипта, кредит, страхование): продвижение должно быть честным, ясным и "
+        "не вводящим в заблуждение, с предупреждением о рисках (правила FCA Великобритании о финансовой рекламе; "
+        "похожие в других странах), а сгенерированный ИИ «представитель» или «клиент» не выдаётся за настоящего",
+        R,
+        _finance_ad,
+        (),
+        "spec.domain = 'financial-advertising'",
+        (S_FCA_PROMO,),
+    ),
+    _r(
+        "app_preview_specs",
+        [],
+        "App Store app preview: 15-30 s, the device's exact resolution (e.g. 886x1920 portrait for 6.9-inch "
+        "iPhone), and footage captured from the app itself — generated scenes of the app are rejected; Google Play "
+        "takes a YouTube link instead",
+        "превью приложения в App Store: 15-30 с, точное разрешение устройства (например, 886x1920 вертикально для "
+        "iPhone 6,9 дюйма) и кадры, снятые с самого приложения — сгенерированные сцены приложения отклоняют; "
+        "Google Play берёт ссылку на YouTube",
+        P,
+        _app_preview,
+        ("outputs",),
+        "spec.delivery.platform = 'app-store'",
+        (S_APP_PREVIEW,),
+    ),
+)
+
+RULES_LIST = RULES_LIST + RULES_R12
+
 RULES: dict[str, Rule] = {р.id: р for р in RULES_LIST}
 
 

@@ -69,6 +69,9 @@ ROOT = Path(__file__).resolve().parents[1]
     # Подключатель claude.ai: куда OAuth возвращает, сроки, PKCE, хэши, 401 на
     # /mcp, какие инструменты требуют пользователя, запись до вызова.
     "scripts/mutate_connector.py",
+    # Двенадцатый круг: длинный хвост чек-листа (письменности, DCP, короткие
+    # видео) и свой GPU не NVIDIA (ROCm / XPU в разборе, отборе и строке шага).
+    "scripts/mutate_round12_checklist.py",
 )
 ПУТЬ_В_ТАБЛИЦЕ = re.compile(r'"((?:studio|scripts|lipsync)/[\w/]+\.py)"')
 

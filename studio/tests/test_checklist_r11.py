@@ -322,7 +322,7 @@ class Таблица(unittest.TestCase):
         self.assertFalse(set(cl.RULES) & set(rt.NOTES), "a checklist id shadows a round-9/10 note")
 
     def test_каждое_правило_с_двумя_языками_тегом_и_источником_нормы(self) -> None:
-        поля = {"n": "2", "seconds": "600", "shots": "4", "langs": "ar, he", "vram": "8", "gpu": "Jetson"}
+        поля = {"n": "2", "seconds": "600", "shots": "4", "langs": "ar, he", "vram": "8", "gpu": "Jetson", "fps": "25"}
         for р in cl.RULES_LIST:
             self.assertIn(р.tag, (rt.TAG_ENGINEERING, rt.TAG_REGULATION, rt.TAG_PLATFORM), р.id)
             if р.tag == rt.TAG_REGULATION:
@@ -333,7 +333,8 @@ class Таблица(unittest.TestCase):
             self.assertEqual([], l10n.leaks({"says": р.en.format(**поля)}, "en"), р.id)
 
     def test_каждое_правило_проверено_в_обе_стороны(self) -> None:
-        self.assertEqual(set(cl.RULES), set(CASES))
+        # Round-12 rules are cased in `test_checklist_r12`.
+        self.assertEqual(set(cl.RULES) - {р.id for р in cl.RULES_R12}, set(CASES))
 
     def test_поля_спецификации_к_добавлению_названы(self) -> None:
         поля = cl.spec_fields_to_add()

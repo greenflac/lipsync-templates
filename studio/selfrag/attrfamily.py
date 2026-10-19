@@ -384,6 +384,9 @@ import re
             "cpu_inference",
             "arm_inference",
             "gguf_weights_gb",
+            # Двенадцатый круг: запуск на картах не NVIDIA (AMD ROCm, Intel XPU).
+            "rocm_inference",
+            "intel_xpu_inference",
         ),
         "подстроки": ("vram", "runs_on", "parameter_count"),
     },
