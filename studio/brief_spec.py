@@ -1653,6 +1653,21 @@ SERIES_IMAGES_MIN = 2
 #: Ролик из стольких шотов с одним персонажем строится от одного референса
 #: (кадр персонажа -> оживление), а не независимыми t2v. КОНСТАНТА-РЕШЕНИЕ.
 SERIES_SHOTS_MIN = 2
+#: Ролик с одним персонажем ДЛИННЕЕ одного прогона генератора (одиннадцатый
+#: круг): «серия мультсериала на 3 минуты про робота» шла одним t2v — а 3 минуты
+#: это десятки прогонов, и без референса персонаж в каждом другой. Длиннее
+#: 15 с (самый длинный записанный прогон Kling 3.0 / Seedance 2.x) — от
+#: референса. КОНСТАНТА-РЕШЕНИЕ.
+SERIES_DURATION_MIN_S = 15.0
+
+
+def серия_с_персонажем(spec: "Spec") -> bool:
+    """Один персонаж в нескольких шотах (или в ролике длиннее прогона): референс, затем оживление."""
+    if (spec.characters or 0) < SERIES_CHARACTERS_MIN:
+        return False
+    if (spec.shots or 0) >= SERIES_SHOTS_MIN:
+        return True
+    return bool(spec.duration_s) and float(spec.duration_s) > SERIES_DURATION_MIN_S
 
 #: Работа над ВИДЕО заказчика, которая делается одним шагом правки (v2v-edit).
 VIDEO_EDIT_TASKS: frozenset[str] = frozenset({"video-edit"})
@@ -1913,7 +1928,7 @@ def _маршрут_одной(spec: Spec, на_сборке: frozenset[str] = f
         elif (spec.characters or 0) >= MULTI_CHARACTER_MIN:
             шаги += ["генерация_изображения", "оживление"]
             пометки["генерация_изображения"] = NOTE_KEYFRAMES.format(n=spec.characters)
-        elif (spec.characters or 0) >= SERIES_CHARACTERS_MIN and (spec.shots or 0) >= SERIES_SHOTS_MIN:
+        elif серия_с_персонажем(spec):
             # ОДИН ПЕРСОНАЖ В НЕСКОЛЬКИХ ШОТАХ (девятый круг): «та же женщина в
             # двух шотах» шла двумя независимыми t2v — и лицо в них было разным.
             # Референс персонажа делается один раз, шоты оживляются от него.
@@ -1981,6 +1996,60 @@ SPEAKING_IN_FRAME = re.compile(
 VOICE_OFF_FRAME = re.compile(r"voice-?over|narrat\w*|off-?screen|озвучк\w*|закадров\w*|диктор\w*|配音", re.I)
 
 
+#: «Тот же персонаж» словами — серия держит одного героя (одиннадцатый круг).
+RECURRING_CHARACTER = re.compile(
+    r"\bsame (?:\w+ ){0,3}(?:character|mascot|hero|heroine|girl|boy|cat|dog|fox|dragon|robot|person|woman|man|kid)"
+    r"|\bconsistent (?:\w+ )?(?:character|mascot|hero)|recurring (?:character|mascot|hero)"
+    r"|\bour (?:\w+ ){0,2}mascot|\b(?:main|title) character|on every page|in every (?:scene|picture|image)"
+    r"|(?:один|одн\w*) и т(?:от|ого|ем|ой|у) же|тот же (?:персонаж|герой)|одинаков\w*|фирменн\w* персонаж"
+    r"|главн\w* геро\w*",
+    re.I,
+)
+#: Сериал словами: эпизоды держат героев от серии к серии.
+SERIES_WORDS = re.compile(r"\bseries\b|\bepisodes?\b|\bshow\b|сериал\w*|\bсери[яиюей]\b|эпизод\w*", re.I)
+#: …и у сериала есть ГЕРОЙ: «про лисёнка», «about a little robot», «главный герой».
+#: Без героя «заставка веб-сериала из 6 планов» — разные сцены, не один персонаж.
+SERIES_HERO = re.compile(r"\babout (?:a|an|the|our|two|three) |character|\bhero|\bпро |персонаж|геро", re.I)
+
+
+def персонажи_по_умолчанию(spec: Spec, текст: str = "") -> tuple[int, str]:
+    """Сколько повторяющихся персонажей, когда `characters` не назван (одиннадцатый круг).
+
+    «20 картинок с нашим котом-маскотом, везде один и тот же» без поля
+    `characters` шло двадцатью независимыми генерациями — и кот каждый раз
+    другой; «мультсериал про робота, серия 3 минуты» шёл одним t2v без
+    референса героя. Источники по старшинству: вымышленные персонажи в
+    `spec.people` (`real: false`); «тот же персонаж» или «сериал» словами.
+    Ничего не сгенерировано с нуля (принесён снимок или видео) — не трогается.
+    """
+    if spec.characters is not None or set(spec.inputs) & {"photo", "video"}:
+        return 0, ""
+    if spec.task not in (None, "generate"):
+        return 0, ""
+    выходы = set(spec.outputs)
+    картинки = "image" in выходы and "video" not in выходы and (spec.shots or 0) >= SERIES_IMAGES_MIN
+    ролик = "video" in выходы and (
+        (spec.shots or 0) >= SERIES_SHOTS_MIN or float(spec.duration_s or 0) > SERIES_DURATION_MIN_S
+    )
+    if not (картинки or ролик):
+        return 0, ""
+    вымышленные = [п for п in spec.people if п.get("real") is False]
+    сказано = [str(у) for у in (*spec.conditions, текст) if у]
+    if вымышленные:
+        n = len(вымышленные)
+    elif any(RECURRING_CHARACTER.search(у) for у in сказано) or (
+        ролик and any(SERIES_WORDS.search(у) and SERIES_HERO.search(у) for у in сказано)
+    ):
+        n = 1
+    else:
+        return 0, ""
+    return n, (
+        f"a recurring character across the {'pictures' if картинки else 'shots'} — characters={n} assumed: one "
+        "reference of the character first, everything else built from it; name spec.characters yourself to "
+        "override"
+    )
+
+
 def говорящий_ролик(spec: Spec, текст: str = "") -> bool:
     """Короткий генерируемый клип, где говорят в кадре: звук делает сама видеомодель.
 
@@ -2040,6 +2109,11 @@ def with_defaults(spec: Spec, ролик: bool, текст: str = "") -> Spec:
             f"{SCRIPT_SPEECH_DEFAULT_S:g} s of speech (scale by the script's length: ~150 words a minute); "
             "pass spec.duration_s for an exact price"
         )
+    персонажей, почему = персонажи_по_умолчанию(spec, текст)
+    if персонажей:
+        поля["characters"] = персонажей
+        источник["characters"] = SOURCE_DEFAULT
+        допущения.append(почему)
     if говорящий_ролик(spec, текст):
         поля["audio"] = "native"
         источник["audio"] = SOURCE_DEFAULT
