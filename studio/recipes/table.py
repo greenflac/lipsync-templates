@@ -557,7 +557,7 @@ RECIPES_LIST: tuple[Recipe, ...] = (
         "foley_for_picture",
         "sound effects / foley for the customer's video",
         (
-            RecipeStep("звук_фон", "model", "video-to-audio over YOUR footage"),
+            RecipeStep("звук_по_видео", "model", "video-to-audio over YOUR footage"),
             RecipeStep("ffmpeg_amix", "tool", "mix under the original sound"),
             RecipeStep("loudnorm", "tool", "final loudness"),
         ),

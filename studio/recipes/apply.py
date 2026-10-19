@@ -145,6 +145,22 @@ LOCAL_ONLY = re.compile(
 )
 
 
+#: Round 13: sound asked to follow the brought picture (a soundtrack synced to the action).
+FOLLOWS_PICTURE = re.compile(
+    r"\bsync\w*|follow\w* (?:the |its |their )?(?:action|picture|motion|movement|cuts?|edit|footage|video|clip)"
+    r"|(?:match|fit|react)\w* (?:to )?(?:the |its )?(?:action|picture|motion|movement|cuts?|footage|video|clip)"
+    r"|to (?:the |its )?(?:action|picture|motion|movement|cuts)\b|on[- ]screen action|video[- ]to[- ](?:audio|music)"
+    r"|синхрон\w*|в такт (?:с )?(?:картинк|действи|движени|монтаж)\w*|под (?:действие|картинку|движени\w*|монтаж)"
+    r"|по картинке|следу\w* за (?:действием|картинкой|движением)",
+    re.I,
+)
+
+
+def follows_picture(spec: "bs.Spec", text: str = "") -> bool:
+    """The ordered sound must follow the brought picture (sync words in conditions or the brief)."""
+    return any(FOLLOWS_PICTURE.search(str(у)) for у in (*spec.conditions, text) if у)
+
+
 def walkthrough(spec: "bs.Spec", text: str = "") -> bool:
     """A camera tour of a place from the customer's photos (round 12)."""
     if "video" not in spec.outputs or "photo" not in spec.inputs or _photo_count(spec) < 2:
@@ -555,10 +571,18 @@ def rewrite(spec: "bs.Spec", route: "bs.Маршрут", text: str = "") -> Appl
                 acc.assembly.append(ASSEMBLY_LOGO)
 
     # --- foley for the customer's picture ---------------------------------------
-    if "sfx" in outputs and "video" in inputs and "звук_фон" in steps:
-        if acc.prior("foley_for_picture", "foley_v2a"):
-            prefer["звук_фон"] = ARTEFACT_VIDEO
-            notes["звук_фон"] = NOTE_V2A[0]
+    # Round 13: the step IS video-to-audio (its own operation, job v2a), not the
+    # text-to-sound-effects step with a preference: a model that does not watch the
+    # picture cannot land the hits on it. A soundtrack asked to follow the action
+    # of the brought footage is the same job.
+    if "video" in inputs and "audio" not in inputs:
+        sound = [s for s in ("звук_фон", "музыка") if s in steps and (s == "звук_фон" or follows_picture(spec, text))]
+        if sound and acc.prior("foley_for_picture", "foley_v2a"):
+            for old in sound:
+                steps = _replace_step(steps, old, bs.V2A_STEP)
+                notes.pop(old, None)
+            prefer[bs.V2A_STEP] = ARTEFACT_VIDEO
+            notes[bs.V2A_STEP] = NOTE_V2A[0]
             acc.assembly.append(ASSEMBLY_FOLEY)
 
     # --- archive film ---------------------------------------------------------------
@@ -749,7 +773,7 @@ def order(names: Sequence[str]) -> list[str]:
 
 #: Names of endpoints that do the job a preferred-input prior asks for (searched in the registry
 #: when the chosen model does not take that input).
-HINT_MODELS: dict[str, str] = {"звук_фон": r"mmaudio|foley|thinksound|video-to-audio|(?:^|-)v2a(?:-|$)"}
+HINT_MODELS: dict[str, str] = {bs.V2A_STEP: r"mmaudio|foley|thinksound|video-to-audio|(?:^|-)v2a(?:-|$)"}
 
 
 def unmet(applied: Applied, chosen: Mapping[str, str | None], registry: object, english: bool) -> list[dict]:

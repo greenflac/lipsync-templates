@@ -1752,6 +1752,32 @@ def _дорожки(spec: Spec, шаги: list[str]) -> None:
         шаги.append("звук_фон")
 
 
+#: Тринадцатый круг: операция «видео -> звук» — шумы и саундтрек ПО КАРТИНКЕ
+#: принесённого видео (MMAudio, HunyuanVideo-Foley, ThinkSound). Ставит её
+#: рецепт `foley_for_picture` вместо шага шумов (и музыки под действие).
+V2A_STEP = "звук_по_видео"
+#: Выходы-звук, которые «видео -> звук» делает по принесённой картинке.
+V2A_OUTPUTS: frozenset[str] = frozenset({"sfx", "music"})
+
+
+def звук_к_своему_видео(spec: "Spec") -> bool:
+    """Заказан ТОЛЬКО звук к ВАШЕМУ видео: видео принесено, выход — звук (и само видео), правки нет.
+
+    «Сделай звук к этому немому ролику» без названной работы спрашивало работу,
+    а `video-edit` без названной правки ставило генеративную правку ролика —
+    хотя заказан один звук. Работа видна по входу и выходу.
+    """
+    выходы = set(spec.outputs)
+    return (
+        "video" in spec.inputs
+        and bool(выходы & V2A_OUTPUTS)
+        and выходы <= V2A_OUTPUTS | {"video"}
+        and not spec.edit
+        and spec.task in (None, "generate", "video-edit", "edit")
+        and not spec.then_tasks
+    )
+
+
 def _подложка(выходы: set[str]) -> tuple[str, ...]:
     """Музыка и шумы ПОД правленое видео заказчика (свадебный ролик «с музыкой»).
 
@@ -1877,7 +1903,7 @@ def _все_выходы(spec: Spec, м: Маршрут) -> Маршрут:
         "image": bool(есть & IMAGE_MAKERS) or "photo" in входы,
         "speech": bool(есть & (SPEECH_MAKERS | SPEECH_TAKERS)) or spec.audio == "native" or "audio" in входы or своя_речь,
         "music": "музыка" in есть or "audio" in входы,
-        "sfx": "звук_фон" in есть or spec.audio == "native",
+        "sfx": "звук_фон" in есть or V2A_STEP in есть or spec.audio == "native",
     }
     не_сделано = [в for в in spec.outputs if not сделано.get(в, True)]
     if не_сделано:
@@ -1993,6 +2019,11 @@ def _маршрут_одной(spec: Spec, на_сборке: frozenset[str] = f
     шаги: list[str] = []
     пометки: dict[str, str] = {}
 
+    if звук_к_своему_видео(spec):
+        # ТРИНАДЦАТЫЙ КРУГ: заказан звук к ВАШЕМУ видео (работа не названа,
+        # «generate» или правка без названной правки) — шаг правки ролика не
+        # нужен: звук делается по картинке и кладётся при сборке.
+        return Маршрут(_подложка(выходы), {})
     if задача in ROUTE_TASKS:
         for вход, шаг in ROUTE_TASKS[задача]:
             if вход in входы:
@@ -2648,7 +2679,8 @@ def gaps(raw: Mapping[str, Any] | None) -> tuple[Spec, list[str], list[dict[str,
         raw = {}
     нет: list[dict[str, str]] = []
     работы = (spec.task, *spec.then_tasks) if spec.task else ()
-    if not spec.task:
+    if not spec.task and not звук_к_своему_видео(spec):
+        # Тринадцатый круг: звук к принесённому видео — работа видна по входу и выходу.
         нет.append(_пробел("task", "the job decides the steps; a text guess is how footage became a generation"))
     if raw.get("inputs") is None:
         нет.append(_пробел("inputs", "what the customer brings decides whether anything is generated at all"))
