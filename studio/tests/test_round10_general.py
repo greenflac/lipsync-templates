@@ -95,7 +95,7 @@ class ДоставкаВидео(unittest.TestCase):
 
     def test_ноты_восьми_k_и_интерполяции(self) -> None:
         spec = _spec(task="interpolate", inputs=[{"kind": "video", "owned": True, "duration_s": 3}], outputs=["video"], fps=240)
-        ids = [n for n, _ in ra.note_ids(spec, ["интерполяция_кадров"], text="")]
+        ids = [n for n, _ in ra.note_ids(spec, ["интерполяция_кадров"], text="") if n in ra.NOTES]
         self.assertEqual(["interp_artifacts"], ids)
 
 

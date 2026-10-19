@@ -32,11 +32,15 @@ TAG_ENGINEERING = "engineering prior"
 TAG_BASE_ROWS = "class prior from base rows"
 #: Tag of a production note that rests on a law or regulation (cited in `sources`).
 TAG_REGULATION = "regulation"
+#: Tag of a production note that rests on a platform's or a delivery outlet's published
+#: terms (a loudness spec, a disclosure setting, a vendor's use policy).
+TAG_PLATFORM = "platform policy"
 #: The tags in Russian (a Russian answer carries no English three-word phrase).
 TAG_RU: dict[str, str] = {
     TAG_ENGINEERING: "инженерное допущение",
     TAG_BASE_ROWS: "допущение класса по строкам базы",
     TAG_REGULATION: "норма права",
+    TAG_PLATFORM: "правило площадки",
 }
 
 # --- decision constants ---------------------------------------------------------

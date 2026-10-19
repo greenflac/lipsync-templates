@@ -1367,6 +1367,10 @@ REASON_PLAN_STANDS = "план_подтверждён"
 #: исходе валидатора. Известная нижняя граница выше потолка — измерение, а не
 #: пробел (Р1): `не годно` с числом. «Не смогли» — только когда цен нет.
 REASON_OVER_BUDGET = "дороже_потолка"
+#: Ступень цены шага на своём железе и метка её расчёта (одиннадцатый круг):
+#: вызова API нет — цена шага 0 usd; время GPU и аренда идут формулой рядом.
+OWN_HARDWARE_TIER = "own hardware"
+API_ZERO_MARK = "API 0 usd"
 #: Потолок, названный параметром, не число: отрицательный, NaN, бесконечность.
 REASON_BAD_BUDGET = "бюджет_не_число"
 #: Структура `spec`, поданная вызывающим, не разобрана: неизвестное поле,
@@ -2644,6 +2648,10 @@ class Candidate:
     hard_rank: tuple = ()
     #: Чем требования заказчика подтверждены или нет — словами (веса, VRAM, кадр).
     hard_note: str = ""
+    #: Свой GPU (одиннадцатый круг): оценка аренды того же прогона, usd. Цена
+    #: шага на своём железе — 0 (`API_ZERO_MARK`); ничью кандидатов решает эта
+    #: оценка, как решала, пока она и была ценой. None — не свой GPU или не оценено.
+    gpu_rent_usd: float | None = None
     #: Реестр эндпоинтов (`studio/endpoints.py`) НЕ установил, какую работу
     #: модель делает: свидетельства нет ни в идентификаторе, ни в каталоге, ни
     #: в схеме. Кандидат найден старыми каналами (якорь, профиль) и стоит ПОСЛЕ
@@ -5693,6 +5701,10 @@ def смета_ролика(
                 f" — ПОТОЛОК {потолок:g}: работа столько не стоит, "
                 f"дешевле всего выходит {минимум:.2f} {pl.BUDGET_UNIT}"
             )
+        elif not (неполная or без_ролика):
+            # ПОТОЛОК 0 И ПЛАН ЗА 0 (круг 11: всё на своём GPU) — укладывается,
+            # и это вердикт, а не молчание: вызовов API в плане нет.
+            цена["outcome"] = pricing.ГОДНО
         return цена
     # «НЕ ВЛЕЗАЕТ» ДОКАЗЫВАЕТ ТОЛЬКО НАИМЕНЬШАЯ ИЗВЕСТНАЯ СТОИМОСТЬ (круг 4):
     # самый дешёвый тариф каждого шага и нижний край неоднозначной ставки.
@@ -5982,13 +5994,32 @@ def прогонов(секунды: float | None, предел: float | None) -
 
 
 def цена_есть(c: Candidate) -> bool:
-    """Есть ли у кандидата ЦЕНА ШАГА целиком: посчитана, больше нуля, не нижняя граница."""
+    """Есть ли у кандидата ЦЕНА ШАГА целиком: посчитана, больше нуля, не нижняя граница.
+
+    Свой GPU с оценкой аренды — цена есть (круг 11): шаг стоит 0 usd по API, и
+    это полная цена, а не её отсутствие; без оценки времени GPU — как прежде нет.
+    """
+    if c.gpu_rent_usd is not None:
+        return True
     return (
         c.cost is not None
         and c.cost.default.usd > 0
         and not c.cost.default.lower_bound
         and not c.cost.default.conditional
     )
+
+
+def цена_ничьей(c: Candidate) -> tuple[int, float]:
+    """Ключ ничьей ценой: (есть ли цена, сколько). Свой GPU — по оценке аренды (круг 11).
+
+    Цена шага на своём железе — 0 usd, и ничья по ней сравнивала бы нули; прежде
+    ценой была аренда, и порядок решала она — так и остаётся.
+    """
+    if c.gpu_rent_usd is not None:
+        return 0, c.gpu_rent_usd
+    if цена_есть(c) and c.cost is not None:
+        return 0, c.cost.default.usd
+    return 1, 0.0
 
 
 def by_evidence(c: Candidate) -> tuple:
@@ -6422,6 +6453,9 @@ class Жёсткое:
     свой_gpu: bool = False
     стоимость: "Стоимость | None" = None
     без_цены: str = ""
+    #: Оценка аренды того же прогона (usd, нижний край): НЕ цена шага на своём
+    #: GPU (она 0), а ключ ничьи кандидатов и строка рядом с ценой.
+    аренда: float | None = None
 
 
 def _семья_строк(
@@ -6521,6 +6555,7 @@ def требования_заказчика(
     свой = False
     стоимость_gpu: Стоимость | None = None
     без_цены = ""
+    аренда: float | None = None
     if hard.weights_required:
         семья = _семья_строк(имя, по_имени, известные)
         веса, нота_весов = hn.weights_state(все, семья)
@@ -6586,22 +6621,35 @@ def требования_заказчика(
         время = hn.gpu_time(все, режим) or next(
             (t for _, строки in семья if (t := hn.gpu_time(строки, режим)) is not None), None
         )
+        # СВОЁ ЖЕЛЕЗО — API 0 USD, ВРЕМЯ GPU — ОТДЕЛЬНОЙ ОЦЕНКОЙ (одиннадцатый
+        # круг). Прежде цена шага на своём GPU была АРЕНДОЙ того же прогона, а
+        # без записанного времени или ставки — «цены нет»: план на своей карте
+        # печатал «no clip price» и не получал вердикта бюджета, хотя заказчик
+        # не платит за вызов ничего. Теперь цена шага — 0 usd (вызова API нет),
+        # а оценка аренды и время GPU идут формулой рядом, не в сумму; они же
+        # решают ничью кандидатов (`Candidate.gpu_rent_usd`), как решали.
+        где = f"({hard.gpu})" if hard.gpu else "(GPU не назван)"
         if ставка is not None and время is not None:
             оценено = hn.self_host_cost(время, ставка, need.seconds if need else None)
-            варианты = (
-                pricing.Option(round(оценено.high, 4), "secure cloud", None, оценено.formula),
-                pricing.Option(round(оценено.low, 4), "community cloud", None, оценено.formula),
+            аренда = round(оценено.low, 4)
+            про_время = (
+                f"на арендованном GPU тот же прогон стоил бы {оценено.low:.2f}–{оценено.high:.2f} usd; "
+                f"время GPU — {оценено.formula}"
             )
-            стоимость_gpu = Стоимость(варианты, варианты[0], варианты[1], ставка.source, route="свой GPU")
         else:
-            без_цены = (
-                "свой GPU: цена — время GPU × ставка аренды; "
-                + ("ставка не записана" if ставка is None else "")
+            про_время = (
+                ("ставка не записана" if ставка is None else "")
                 + ("; " if ставка is None and время is None else "")
                 + ("время GPU на клип не записано" if время is None else "")
-                + (f" (GPU {hard.gpu})" if hard.gpu else " (GPU не назван)")
             )
-        ранг += [hn.VRAM_ORDER[влезает], int(стоимость_gpu is None)]
+        ноль = pricing.Option(
+            0.0,
+            OWN_HARDWARE_TIER,
+            None,
+            f"{API_ZERO_MARK}: шаг идёт на вашем GPU {где}, вызова API нет; {про_время}; электричество не считается",
+        )
+        стоимость_gpu = Стоимость((ноль,), ноль, ноль, ставка.source if ставка else "", route="свой GPU")
+        ранг += [hn.VRAM_ORDER[влезает], int(аренда is None)]
         ноты.append(
             f"память: {влезает}"
             + (
@@ -6633,6 +6681,7 @@ def требования_заказчика(
                 свой_gpu=свой,
                 стоимость=стоимость_gpu,
                 без_цены=без_цены,
+                аренда=аренда,
                 ниже_родного=родной_предел(
                     все,
                     _семья_строк(имя, по_имени, известные),
@@ -6646,6 +6695,7 @@ def требования_заказчика(
         свой_gpu=свой,
         стоимость=стоимость_gpu,
         без_цены=без_цены,
+        аренда=аренда,
     )
 
 
@@ -7683,6 +7733,7 @@ def candidates_for(
                 price_value=None if жёсткое.свой_gpu else цена_разобранная,
                 hard_rank=жёсткое.ранг,
                 hard_note=жёсткое.нота,
+                gpu_rent_usd=жёсткое.аренда,
                 condition_rank=ступень_условия,
                 condition_note=нота_условия,
                 refused=отвергнет,
@@ -7779,8 +7830,7 @@ def candidates_for(
     найдены.sort(
         key=lambda c: (
             by_evidence(c)[:-1],
-            0 if цена_есть(c) else 1,
-            c.cost.default.usd if цена_есть(c) and c.cost is not None else 0.0,
+            *цена_ничьей(c),
             c.model,
         )
     )
@@ -8825,15 +8875,26 @@ def что_дальше(итог: dict) -> str:
     if итог.get("reason") == REASON_OVER_BUDGET:
         сверх = (итог.get("pipeline_price") or {}).get("over_ceiling") or {}
         сколько = float(сверх.get("least_known_usd") or 0)
+        варианты = list((итог.get("budget") or {}).get("cheaper_alternatives") or [])
         if итог.get("по_английски"):
             return (
                 f"the job costs at least {сколько:.2f} usd at the cheapest known rates: raise the "
                 "budget to at least that, or make the clip shorter, lower-resolution or simpler"
+                + (
+                    ". Cheaper alternatives: " + "; ".join(f"({i}) {в['says']}" for i, в in enumerate(варианты, 1))
+                    if варианты
+                    else ""
+                )
             )
         return (
             f"работа стоит не меньше {сколько:.2f} usd даже по самым дешёвым известным ставкам: "
             "поднимите бюджет хотя бы до этой суммы — или сделайте ролик короче, ниже "
             "разрешением или проще"
+            + (
+                ". Дешевле: " + "; ".join(f"({i}) {в['says']}" for i, в in enumerate(варианты, 1))
+                if варианты
+                else ""
+            )
         )
 
     if "применимость" in классы:
@@ -9053,6 +9114,130 @@ def дороже_потолка(
         f"смета дороже потолка: наименьшая известная стоимость {сколько:.2f} usd против "
         f"потолка {потолок:g} usd{раз}; {нота}",
     )
+
+
+#: Наименьшая доля потолка, ради которой ещё предлагается короче ролик
+#: (одиннадцатый круг): версия короче этой доли от заказанной длины — уже не
+#: «тот же ролик покороче», а другой заказ, и он не предлагается.
+SHORTER_MIN_SHARE = 0.25
+
+
+def дешевле_варианты(
+    выбор: "Sequence[tuple[Operation, Candidate | None]]",
+    найдено: "Mapping[str, Sequence[Candidate]]",
+    цена: Mapping[str, Any],
+    секунды: float | None,
+    открытые: "Mapping[str, Sequence[str]] | None",
+    англ: bool,
+) -> list[dict]:
+    """Смета выше потолка — ЧЕМ дешевле, названо (одиннадцатый круг).
+
+    Прежде ответ «дороже потолка» говорил одно: «поднимите бюджет или сделайте
+    проще». Инженер называет вариант: (1) самые дешёвые ЗАПИСАННЫЕ кандидаты
+    каждого шага (ниже по доводам — сказано) и их сумма; (2) ролик короче —
+    сколько секунд влезает по тем же ставкам; (3) свой GPU на открытых весах —
+    0 usd за вызов, если открытые веса есть на каждом шаге. Варианта нет —
+    список пуст, а не выдуман.
+    """
+    сверх = цена.get("over_ceiling") or {}
+    if not сверх:
+        return []
+    потолок = float(сверх.get("ceiling_usd") or 0.0)
+    минимум = float(сверх.get("least_known_usd") or 0.0)
+    out: list[dict] = []
+    шаги: list[dict] = []
+    сумма = 0.0
+    for op, выбран in выбор:
+        годные = [
+            c
+            for c in найдено.get(op.name, [])
+            if c.cost is not None
+            and not c.foreign
+            and not c.licence_blocked
+            and c.gpu_rent_usd is None
+            # ПРИЕМЛЕМЫЙ, а не просто дешёвый: кадр по записи не ниже заказа,
+            # стены (кадр, длительность, запрещённый вход) нет.
+            and not c.below_frame
+            and c.fit_state != FIT_OVER
+            and blocked_rank(c)[0] < STRICT_BLOCK
+        ]
+        if not годные:
+            if выбран is not None and выбран.cost is not None:
+                сумма += min(o.least for o in выбран.cost.options)
+            continue
+        дешёвый = min(годные, key=lambda c: (min(o.least for o in c.cost.options) if c.cost else 0.0, c.model))
+        assert дешёвый.cost is not None  # отобрано выше
+        usd = min(o.least for o in дешёвый.cost.options)
+        сумма += usd
+        шаги.append(
+            {
+                "step": op.name,
+                "model": дешёвый.model,
+                "usd": round(usd, 4),
+                "chosen": выбран is not None and дешёвый.model == выбран.model,
+            }
+        )
+    if шаги and сумма < минимум - 0.005:
+        влезает = сумма <= потолок
+        перечень = "; ".join(
+            f"{_имя_шага(ш['step'], англ)} — {ш['model']} {ш['usd']:.2f} usd" for ш in шаги if not ш["chosen"]
+        )
+        out.append(
+            {
+                "kind": "cheapest_models",
+                "usd": round(сумма, 2),
+                "fits": влезает,
+                "steps": шаги,
+                "says": (
+                    f"cheapest recorded models per step ({перечень}): about {сумма:.2f} usd"
+                    + (" — fits the ceiling" if влезает else " — still over the ceiling")
+                    + "; they rank lower on the evidence, so check a test clip first"
+                    if англ
+                    else f"самые дешёвые записанные модели шагов ({перечень}): около {сумма:.2f} usd"
+                    + (" — в потолок укладывается" if влезает else " — всё ещё выше потолка")
+                    + "; по доводам они ниже, сначала проверьте пробный ролик"
+                ),
+            }
+        )
+    # Короче — по наименьшей сумме: самые дешёвые модели, если они дешевле выбранных.
+    дешёвыми = bool(шаги) and сумма < минимум - 0.005
+    база = сумма if дешёвыми else минимум
+    if секунды and база > потолок > 0:
+        влезет = int(секунды * потолок / база)
+        if SHORTER_MIN_SHARE * секунды <= влезет < секунды:
+            usd = база * влезет / секунды
+            out.append(
+                {
+                    "kind": "shorter",
+                    "seconds": влезет,
+                    "usd": round(usd, 2),
+                    "says": (
+                        f"a {влезет} s version instead of {секунды:g} s fits the ceiling "
+                        + ("with the cheapest models above" if дешёвыми else "at the same rates")
+                        + f" (about {usd:.2f} usd)"
+                        if англ
+                        else f"версия на {влезет} с вместо {секунды:g} с укладывается в потолок "
+                        + ("на самых дешёвых моделях выше" if дешёвыми else "по тем же ставкам")
+                        + f" (около {usd:.2f} usd)"
+                    ),
+                }
+            )
+    if открытые and all(открытые.get(op.name) for op, _ in выбор):
+        модели = "; ".join(f"{_имя_шага(op.name, англ)} — {', '.join(list(открытые[op.name])[:2])}" for op, _ in выбор)
+        out.append(
+            {
+                "kind": "self_host",
+                "usd": 0.0,
+                "says": (
+                    f"self-host the open weights on your own GPU ({модели}): API cost 0 usd per step, you pay in "
+                    "hardware and time — pass spec.self_host to plan it"
+                    if англ
+                    else f"открытые веса на своём GPU ({модели}): цена API 0 usd за шаг, платите железом и "
+                    "временем — передайте spec.self_host, чтобы спланировать"
+                ),
+            }
+        )
+    return out
 
 
 # --------------------------------------------------------------------------
@@ -10067,8 +10252,7 @@ def годные_со_звуком(
             c.kind_rank,
             by_evidence(c)[CONSTRAINT_KEYS:-1],
             # Ничья — ценой, как в `candidates_for` (пятый круг).
-            0 if цена_есть(c) else 1,
-            c.cost.default.usd if цена_есть(c) and c.cost is not None else 0.0,
+            *цена_ничьей(c),
             c.model,
         )
     )
@@ -10593,9 +10777,9 @@ def _требования_словами(итог: dict, англ: bool) -> str:
         gpu = f"{т.get('gpu') or ('GPU not named' if англ else 'GPU не назван')}"
         память = f" {т['vram_gb']:g} GB" if т.get("vram_gb") else ""
         части.append(
-            (f"own GPU ({gpu}{память}): open weights required, price = GPU time × rental rate (estimate)")
+            (f"own GPU ({gpu}{память}): open weights required, API cost 0 usd per step; GPU time and rental shown as an estimate")
             if англ
-            else f"свой GPU ({gpu}{память}): нужны открытые веса, цена — время GPU × ставка аренды (оценка)"
+            else f"свой GPU ({gpu}{память}): нужны открытые веса, цена API за шаг 0 usd; время GPU и аренда — оценкой рядом"
         )
     if т.get("objective") == hn.OBJECTIVE_QUALITY:
         части.append(
@@ -12598,6 +12782,19 @@ def plan(
     for строка_шага in [*строки_шагов, *([со_звуком] if со_звуком else [])]:
         строка_шага["step_label"] = _имя_шага(строка_шага.get("step"), по_английски)
     ответ["по_английски"] = по_английски
+    if ответ.get("reason") == REASON_OVER_BUDGET:
+        # ДОРОЖЕ ПОТОЛКА — С НАЗВАННЫМ ВАРИАНТОМ ДЕШЕВЛЕ (круг 11).
+        открытые = {
+            р["step"]: р["models"] for р in бесплатный_путь(операции, индекс, по_английски)["open_weights"]
+        }
+        ответ["budget"]["cheaper_alternatives"] = дешевле_варианты(
+            выбор,
+            найдено_на_шаг,
+            цена_пайплайна,
+            длительность.секунды if длительность.разобрано else None,
+            открытые,
+            по_английски,
+        )
     ответ["что_дальше"] = что_дальше(ответ)
     ответ["summary"] = сводка(ответ)
     ответ.pop("по_английски", None)

@@ -678,6 +678,11 @@ EN: tuple[tuple[str, str], ...] = (
     ('через свой GPU — ', 'via own GPU — '),
     ('свой GPU: цена — время GPU × ставка аренды; ', 'own GPU: price = GPU time × rental rate; '),
     ('время GPU на клип не записано', 'GPU time per clip not recorded'),
+    # круг 11: свой GPU — API 0 usd, время GPU и аренда оценкой рядом
+    ('API 0 usd: шаг идёт на вашем GPU \\(([^)]*)\\), вызова API нет; ', 'API 0 usd: the step runs on your GPU (\\1), no API call; '),
+    ('время GPU — ', 'GPU time — '),
+    ('на арендованном GPU тот же прогон стоил бы ([\\d.]+)–([\\d.]+) usd', 'the same run on a rented GPU would cost \\1–\\2 usd'),
+    ('; электричество не считается', '; electricity not counted'),
     ('ставка не записана', 'rental rate not recorded'),
     ('\\(GPU не назван\\)', '(no GPU named)'),
     ('ОЦЕНКА: ', 'ESTIMATE: '),

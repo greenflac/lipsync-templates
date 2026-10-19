@@ -499,7 +499,9 @@ def _set_at(work: dict, path: tuple[str, ...], value: Any) -> None:
 CAP_PROTECTED_LISTS: frozenset[tuple[str, ...]] = frozenset({("steps",), ("validator", "steps")})
 
 
-def cap_response(payload: Any, limit: int = MAX_RESPONSE_CHARS, tool: str = "") -> str:
+def cap_response(
+    payload: Any, limit: int = MAX_RESPONSE_CHARS, tool: str = "", _announced: int | None = None
+) -> str:
     """JSON ответа, не длиннее `limit` символов; обрезка ОБЪЯВЛЯЕТСЯ в ответе.
 
     Порядок (дешёвое и точное раньше грубого):
@@ -635,8 +637,9 @@ def cap_response(payload: Any, limit: int = MAX_RESPONSE_CHARS, tool: str = "") 
         if tool in HOW_TO_PAGE_BY_TOOL
         else HOW_TO_PAGE
     )
+    объявлено = _announced or limit
     notice = (
-        f"[RESPONSE CUT by the server's {limit}-character cap: the full answer was "
+        f"[RESPONSE CUT by the server's {объявлено}-character cap: the full answer was "
         f"{len(text)} characters. Cut: "
         + ", ".join(
             f"{t['field']} ({t.get('shown', t.get('shown_chars', 0))} of "
@@ -647,12 +650,22 @@ def cap_response(payload: Any, limit: int = MAX_RESPONSE_CHARS, tool: str = "") 
     )
     work["note"] = f"{work.get('note', '')} {notice}".strip()
     work["response_cap"] = {
-        "limit_chars": limit,
+        "limit_chars": объявлено,
         "original_chars": len(text),
         "trimmed": trimmed,
         "how_to_page": подсказка,
     }
-    return _dump(work)
+    out = _dump(work)
+    # ОБЪЯВЛЕНИЕ ОБ ОБРЕЗКЕ ТОЖЕ ВХОДИТ В ПОТОЛОК (круг 11). Запас
+    # `_CAP_RESERVE` рассчитан на короткую ноту; при двух десятках урезанных
+    # полей нота и `response_cap` длиннее запаса, и ответ выходил за потолок
+    # (40 427 из 40 000 на плане из шести шагов). Тогда резка повторяется с
+    # потолком, меньшим ровно на перебор, а объявляется прежний.
+    if len(out) > объявлено and limit > _CAP_RESERVE * 4:
+        return cap_response(
+            payload, limit - (len(out) - объявлено) - 200, tool, _announced=объявлено
+        )
+    return out
 
 
 def _json(payload: Any, tool: str = "") -> str:

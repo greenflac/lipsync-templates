@@ -26,13 +26,14 @@ from dataclasses import dataclass, field, replace
 from typing import Callable, Mapping, Sequence
 
 from studio import brief_spec as bs
-from studio.recipes import delivery
+from studio.recipes import checklist, delivery
 from studio.recipes.table import (
     ASPECT_TOLERANCE,
     FAILURES,
     LONG_FORM_S,
     NATIVE_ASPECTS,
     NOTES,
+    Note,
     PRIORS,
     RECIPES,
     SINGLE_HOST_REFERENCES,
@@ -850,6 +851,10 @@ def note_ids(
         out.append(("eight_k_detail", {}))
     if delivery.extreme_fps(spec) and names:
         out.append(("interp_artifacts", {"fps": f"{spec.fps:g}"}))
+    # Round 11: the engineering checklist (`checklist.py`) — every job class and
+    # common condition, read from structured spec fields first. A plan without a
+    # step (assembly only) still carries the condition rules of its deliverable.
+    out.extend(checklist.fire(spec, steps, text=text, priors=sorted(priors)))
     return out
 
 
@@ -880,7 +885,7 @@ def notes(
     """The plan's `production_notes` rows in the answer's language."""
     rows: list[dict] = []
     for nid, fields in note_ids(spec, steps, text=text, applied=applied):
-        n = NOTES[nid]
+        n = NOTES.get(nid) or checklist.RULES[nid]
         if "aspect" in fields and not fields["aspect"]:
             fields = {**fields, "aspect": "the new aspect" if english else "новый формат"}
         if nid == "print_resolution" and not fields["frame"]:
@@ -890,7 +895,11 @@ def notes(
                 "id": nid,
                 "says": (n.en if english else n.ru).format(**fields),
                 "tag": n.tag if english else TAG_RU[n.tag],
-                "sources": [{"model": s.model, "attribute": s.attribute, "url": s.url} for s in n.sources],
+                "sources": (
+                    [{"model": s.model, "attribute": s.attribute, "url": s.url} for s in n.sources]
+                    if isinstance(n, Note)
+                    else [{"url": u} for u in n.sources]
+                ),
             }
         )
     return rows
