@@ -63,6 +63,9 @@ ROOT = Path(__file__).resolve().parents[1]
     # Одиннадцатый круг (поток): слова, которые решает spec.people, снимки, перенос
     # движения, повторяющийся персонаж, нативный звук, образец голоса.
     "scripts/mutate_round11_flow.py",
+    # Подключатель claude.ai: куда OAuth возвращает, сроки, PKCE, хэши, 401 на
+    # /mcp, какие инструменты требуют пользователя, запись до вызова.
+    "scripts/mutate_connector.py",
 )
 ПУТЬ_В_ТАБЛИЦЕ = re.compile(r'"((?:studio|scripts|lipsync)/[\w/]+\.py)"')
 

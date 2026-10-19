@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import json
 import logging
 import os
 import secrets
@@ -26,8 +27,8 @@ from urllib.parse import parse_qs, urlparse
 
 from starlette.testclient import TestClient
 
-from studio.mcp import http_app, oauth
-from studio.mcp.connector_store import PROBE_USER, ConnectorStore, StoreError
+from studio.mcp import connector_store, http_app, oauth
+from studio.mcp.connector_store import PROBE_USER, USER_NAME, ConnectorStore, StoreError
 from studio.mcp.lazy import lazy, loaded
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -37,6 +38,16 @@ CALLBACK = "https://claude.ai/api/mcp/auth_callback"
 KEY = "k" * 48
 QUIET_ENV = {"STUDIO_MCP_WARM_INDEX": "0", "STUDIO_NO_JOURNAL": "1"}
 ACCEPT = "application/json, text/event-stream"
+
+
+def later(seconds: int):
+    """The store's clock moved `seconds` ahead: what a grant's expiry is checked against."""
+    from datetime import UTC, datetime, timedelta
+
+    at = (datetime.now(UTC) + timedelta(seconds=seconds)).isoformat(timespec="seconds")
+    return mock.patch.object(connector_store, "now", return_value=at)
+
+
 VERSION = "2025-11-25"
 
 
@@ -97,6 +108,44 @@ class _Connector(unittest.TestCase):
         return str(r.json()["client_id"])
 
     def sign_in(self, key: str = KEY) -> tuple[str, dict]:
+        client_id, code, verifier = self.code_for(key)
+        r = self.token_for(client_id, code, verifier)
+        self.assertEqual(r.status_code, 200, r.text)
+        return client_id, r.json()
+
+    def pending_request(self, client_id: str, challenge: str) -> str:
+        """/authorize up to the sign-in page: the pending request id it links to."""
+        r = self.client.get(
+            "/authorize",
+            params={
+                "response_type": "code",
+                "client_id": client_id,
+                "redirect_uri": CALLBACK,
+                "code_challenge": challenge,
+                "code_challenge_method": "S256",
+                "state": "s-1",
+                "resource": f"{BASE}/mcp",
+            },
+            follow_redirects=False,
+        )
+        self.assertEqual(r.status_code, 302, r.text)
+        return parse_qs(urlparse(r.headers["location"]).query)["request"][0]
+
+    def token_for(self, client_id: str, code: str, verifier: str):
+        return self.client.post(
+            "/token",
+            data={
+                "grant_type": "authorization_code",
+                "code": code,
+                "redirect_uri": CALLBACK,
+                "client_id": client_id,
+                "code_verifier": verifier,
+                "resource": f"{BASE}/mcp",
+            },
+        )
+
+    def code_for(self, key: str = KEY) -> tuple[str, str, str]:
+        """Register, authorize and sign in: (client_id, code, PKCE verifier)."""
         client_id = self.register()
         verifier = secrets.token_urlsafe(48)
         challenge = (
@@ -133,19 +182,7 @@ class _Connector(unittest.TestCase):
         self.assertEqual(f"{back.scheme}://{back.netloc}{back.path}", CALLBACK)
         query = parse_qs(back.query)
         self.assertEqual(query["state"], ["s-1"])
-        r = self.client.post(
-            "/token",
-            data={
-                "grant_type": "authorization_code",
-                "code": query["code"][0],
-                "redirect_uri": CALLBACK,
-                "client_id": client_id,
-                "code_verifier": verifier,
-                "resource": f"{BASE}/mcp",
-            },
-        )
-        self.assertEqual(r.status_code, 200, r.text)
-        return client_id, r.json()
+        return client_id, query["code"][0], verifier
 
     def mcp(self, body: dict, token: str = "", **headers: str):
         sent = {"Accept": ACCEPT, "MCP-Protocol-Version": VERSION, **headers}
@@ -237,6 +274,89 @@ class OAuthFlow(_Connector):
         self.store.disable_user("owner")
         self.assertEqual(self.mcp(initialize(), tokens["access_token"]).status_code, 401)
 
+    def test_pkce_is_required_and_checked(self) -> None:
+        client_id = self.register()
+        r = self.client.get(
+            "/authorize",
+            params={
+                "response_type": "code",
+                "client_id": client_id,
+                "redirect_uri": CALLBACK,
+                "state": "s",
+            },
+            follow_redirects=False,
+        )
+        self.assertNotIn(oauth.LOGIN_PATH, r.headers.get("location", ""))
+        client_id, code, _ = self.code_for()
+        r = self.token_for(client_id, code, secrets.token_urlsafe(48))
+        self.assertEqual(r.status_code, 400)
+        self.assertIn("code_verifier", r.text)
+
+
+class Lifetimes(_Connector):
+    """Each grant lives exactly as long as chosen: a minute either side flips the answer."""
+
+    def test_the_sign_in_link_lives_ten_minutes(self) -> None:
+        request = self.pending_request(self.register(), "x" * 43)
+        with later(oauth.PENDING_S - 60):
+            self.assertEqual(
+                self.client.get(oauth.LOGIN_PATH, params={"request": request}).status_code, 200
+            )
+        with later(oauth.PENDING_S + 60):
+            self.assertEqual(
+                self.client.get(oauth.LOGIN_PATH, params={"request": request}).status_code, 400
+            )
+        self.assertEqual(oauth.PENDING_S, 600)
+
+    def test_a_code_lives_five_minutes(self) -> None:
+        client_id, code, verifier = self.code_for()
+        with later(oauth.CODE_S + 60):
+            self.assertEqual(self.token_for(client_id, code, verifier).status_code, 400)
+        client_id, code, verifier = self.code_for()
+        with later(oauth.CODE_S - 60):
+            self.assertEqual(self.token_for(client_id, code, verifier).status_code, 200)
+        self.assertEqual(oauth.CODE_S, 300)
+
+    def test_an_access_token_lives_an_hour(self) -> None:
+        _, tokens = self.sign_in()
+        self.assertEqual(tokens["expires_in"], 3600)
+        with later(3600 - 60):
+            self.assertEqual(self.mcp(initialize(), tokens["access_token"]).status_code, 200)
+        with later(3600 + 60):
+            self.assertEqual(self.mcp(initialize(), tokens["access_token"]).status_code, 401)
+
+    def test_a_refresh_token_lives_thirty_days(self) -> None:
+        def refresh(client_id: str, token: str):
+            return self.client.post(
+                "/token",
+                data={
+                    "grant_type": "refresh_token",
+                    "refresh_token": token,
+                    "client_id": client_id,
+                },
+            )
+
+        client_id, tokens = self.sign_in()
+        with later(30 * 86400 + 3600):
+            self.assertEqual(refresh(client_id, tokens["refresh_token"]).status_code, 400)
+        client_id, tokens = self.sign_in()
+        with later(30 * 86400 - 3600):
+            self.assertEqual(refresh(client_id, tokens["refresh_token"]).status_code, 200)
+
+
+class FailedSignInsAreLimited(_Connector):
+    def test_ten_wrong_keys_then_the_address_waits(self) -> None:
+        request = self.pending_request(self.register(), "x" * 43)
+        for _ in range(10):
+            r = self.client.post(
+                oauth.LOGIN_PATH, data={"request": request, "key": "w" * 48}, follow_redirects=False
+            )
+            self.assertEqual(r.status_code, 401)
+        r = self.client.post(
+            oauth.LOGIN_PATH, data={"request": request, "key": KEY}, follow_redirects=False
+        )
+        self.assertEqual(r.status_code, 429)
+
 
 class McpNeedsAUser(_Connector):
     def test_no_token_is_401_with_the_resource_metadata_challenge(self) -> None:
@@ -290,6 +410,19 @@ class GuardedToolsAreAttributed(_Connector):
         self.assertEqual(calls[0]["client_id"], client_id)
         self.assertEqual(calls[0]["tool"], "probe_model_limit")
         self.assertIn('"absurd_value": "5"', calls[0]["arguments"])
+
+    def test_the_row_is_written_before_the_tool_runs(self) -> None:
+        _, tokens = self.sign_in()
+        seen: list[int] = []
+
+        def tool(*_args: object, **_kwargs: object) -> dict:
+            seen.append(len(self.store.calls()))
+            return {"outcome": "fail", "note": "stub: nothing sent"}
+
+        with mock.patch("studio.mcp.probe.probe_limit", side_effect=tool):
+            r = self.mcp(rpc("tools/call", HARMLESS_PROBE), tokens["access_token"])
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertEqual(seen, [1])
 
     def test_a_reading_tool_leaves_no_attribution_row(self) -> None:
         _, tokens = self.sign_in()
@@ -357,6 +490,10 @@ class Redirects(unittest.TestCase):
             "http://localhost/callback?x=1",
             "https://localhost/callback",
             "http://evil.example/callback",
+            "http://localhost/callback/evil",
+            "http://localhost/callback#x",
+            "http://user@localhost/callback",
+            "http://user:pw@127.0.0.1/callback",
         ):
             self.assertFalse(oauth.redirect_allowed(bad), bad)
 
@@ -368,7 +505,8 @@ class Store(unittest.TestCase):
             store = ConnectorStore(path, pepper="p" * 40)
             store.add_user("anna", KEY)
             self.assertEqual(store.user_of_key(KEY), "anna")
-            self.assertNotIn(KEY.encode(), path.read_bytes())
+            on_disk = b"".join(f.read_bytes() for f in Path(tmp).iterdir())
+            self.assertNotIn(KEY.encode(), on_disk)
 
     def test_names_and_short_keys_are_refused(self) -> None:
         store = ConnectorStore(":memory:")
@@ -379,6 +517,45 @@ class Store(unittest.TestCase):
         store.add_user("bob", KEY)
         with self.assertRaises(StoreError):
             store.add_user("bob", "x" * 48)
+
+    def test_a_copied_database_acts_for_nobody(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "c.sqlite3"
+            ConnectorStore(path, pepper="p" * 40).add_user("anna", KEY)
+            self.assertEqual(ConnectorStore(path, pepper="p" * 40).user_of_key(KEY), "anna")
+            self.assertIsNone(ConnectorStore(path, pepper="q" * 40).user_of_key(KEY))
+            self.assertIsNone(ConnectorStore(path).user_of_key(KEY))
+
+    def test_without_a_pepper_the_key_is_still_hashed(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "c.sqlite3"
+            store = ConnectorStore(path)
+            store.add_user("anna", KEY)
+            store.oauth_grant_put("access", "t" * 43, "c", "anna", "f", "{}", "9999-01-01")
+            self.assertEqual(store.user_of_key(KEY), "anna")
+            # WAL: fresh rows sit in c.sqlite3-wal, so every file of the database is read.
+            on_disk = b"".join(f.read_bytes() for f in Path(tmp).iterdir())
+            self.assertNotIn(KEY.encode(), on_disk)
+            self.assertNotIn(b"t" * 43, on_disk)
+
+    def test_key_length_and_name_length_at_the_boundary(self) -> None:
+        store = ConnectorStore(":memory:")
+        with self.assertRaises(StoreError):
+            store.add_user("short", "k" * 39)
+        store.add_user("exact", "k" * 40)
+        with self.assertRaises(StoreError):
+            store.add_user("a" * 41, KEY)
+        store.add_user("a" * 40, "m" * 48)
+
+    def test_no_user_name_can_be_the_probe(self) -> None:
+        self.assertIsNone(USER_NAME.match(PROBE_USER))
+
+    def test_a_long_argument_is_cut_and_the_hash_keeps_the_whole(self) -> None:
+        store = ConnectorStore(":memory:")
+        store.record_call("anna", "c", "search_web", "w", {"q": "a" * 2000, "long": "b" * 2001})
+        kept = json.loads(store.calls()[0]["arguments"])
+        self.assertEqual(kept["q"], "a" * 2000)
+        self.assertEqual(kept["long"], "b" * 2000 + " [cut]")
 
     def test_rekey_drops_the_old_key(self) -> None:
         store = ConnectorStore(":memory:")
@@ -397,6 +574,17 @@ class Config(unittest.TestCase):
         with self.assertRaises(http_app.ConfigError):
             http_app.pepper({}, DOMAIN)
         self.assertEqual(http_app.pepper({}, ""), "")
+
+    def test_a_pepper_needs_thirty_two_characters(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "pepper"
+            path.write_text("p" * 31)
+            with self.assertRaises(http_app.ConfigError):
+                http_app.pepper({"STUDIO_KEY_PEPPER_FILE": str(path)}, DOMAIN)
+            path.write_text("p" * 32)
+            self.assertEqual(
+                http_app.pepper({"STUDIO_KEY_PEPPER_FILE": str(path)}, DOMAIN), "p" * 32
+            )
 
     def test_a_domain_is_a_plain_host_name(self) -> None:
         self.assertEqual(
