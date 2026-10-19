@@ -59,12 +59,12 @@ MUTANTS: tuple[tuple[str, str, str, str], ...] = (
     (BS, '        if "photo" in входы and set(шаги) & IMAGE_MAKERS:\n            шаги.append("оживление")',
      '        if False:\n            шаги.append("оживление")', "заказанное видео из снимка не делается"),
     # --- говорящий в кадре ------------------------------------------------------------
-    (BS, "        spec.speaker_on_screen\n        and {", "        False\n        and {", "ведущий в кадре без губ"),
+    (BS, "        spec.speaker_on_screen\n        and ({", "        False\n        and ({", "ведущий в кадре без губ"),
     (BS, "    if ON_SCREEN_SPEAKER.search(сказано):\n        return True", "    if False:\n        return True",
      "ведущий словами не виден"),
-    (BS, "    return персонаж and bool(SPEAKING_IN_FRAME.search(сказано)) and not VOICE_OFF_FRAME.search(сказано)",
-     "    return bool(SPEAKING_IN_FRAME.search(сказано))", "глагол без персонажа двигает губы"),
-    (BS, "    return персонаж and bool(SPEAKING_IN_FRAME.search(сказано)) and not VOICE_OFF_FRAME.search(сказано)",
+    (BS, "    return персонаж and bool(SPEAKING_IN_FRAME.search(сказано) or DIALOGUE.search(сказано))",
+     "    return bool(SPEAKING_IN_FRAME.search(сказано) or DIALOGUE.search(сказано))", "глагол без персонажа двигает губы"),
+    (BS, "    return персонаж and bool(SPEAKING_IN_FRAME.search(сказано) or DIALOGUE.search(сказано))",
      "    return False", "говорящий персонаж без губ"),
     # --- нижняя граница цены ------------------------------------------------------------
     (PR, "COMPUTE_RATIO_ESTIMATE = 1.0", "COMPUTE_RATIO_ESTIMATE = 0.5", "оценка вычисления вдвое ниже"),
