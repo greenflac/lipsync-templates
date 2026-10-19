@@ -897,6 +897,14 @@ def _свой_запуск_spec(sh: Any, поля: dict[str, Any], ошибки:
         # БЕЗ GPU (десятый круг): Raspberry Pi, мини-ПК, «CPU only» — видеопамяти
         # нет, отбор идёт по записанному запуску на ARM / CPU (`hn.cpu_state`).
         поля["self_host"] = {"gpu": gpu, "vram_gb": None, "platform": "cpu"}
+    elif gpu and hn.gpu_backend(str(gpu)):
+        # КАРТА НЕ NVIDIA (двенадцатый круг): видеопамять настоящая, но CUDA нет —
+        # отбор идёт по записанному запуску на ROCm / XPU (`hn.backend_state`).
+        поля["self_host"] = {
+            "gpu": gpu,
+            "vram_gb": память.get("vram_gb"),
+            "platform": hn.gpu_backend(str(gpu)),
+        }
     else:
         поля["self_host"] = {"gpu": gpu, "vram_gb": память.get("vram_gb")}
 
@@ -1307,7 +1315,11 @@ def from_text(brief: str) -> Spec:
     # «on-prem», «run locally» и GPU, названный по имени («on one RTX 4090»).
     свой = hn.from_brief(brief)
     if свой.self_host:
-        поля["self_host"] = {"gpu": свой.gpu, "vram_gb": свой.vram_gb}
+        поля["self_host"] = {
+            "gpu": свой.gpu,
+            "vram_gb": свой.vram_gb,
+            **({"platform": свой.gpu_backend} if свой.gpu_backend else {}),
+        }
     # Юрисдикция — по тексту БЕЗ названий языков: «Japanese voice» — язык
     # речи, а не страна показа.
     без_языков = низ
@@ -1405,6 +1417,8 @@ def hard(
         if свой.get("platform") == "cpu":
             поля["cpu_only"] = True
             поля["vram_gb"] = None
+        if свой.get("platform") in hn.GPU_BACKEND_ATTRS:
+            поля["gpu_backend"] = str(свой["platform"])
         if свой.get("platform") == "apple-silicon":
             поля["apple_silicon"] = True
             единая = свой.get("unified_memory_gb")
@@ -3086,7 +3100,9 @@ def draft(brief: str, raw: Mapping[str, Any] | None = None) -> dict[str, Any]:
             **({"unified_memory_gb": float(память.group(1))} if память else {}),
         }
     elif t.self_host:
-        черновик["self_host"] = {к: в for к, в in dict(t.self_host).items() if в is not None} or True
+        черновик["self_host"] = {
+            к: в for к, в in dict(t.self_host).items() if в is not None and к != "platform"
+        } or True
     if t.jurisdiction:
         черновик["jurisdiction"] = list(t.jurisdiction)
     _доводка_черновика(brief, низ, t, черновик, угадано)

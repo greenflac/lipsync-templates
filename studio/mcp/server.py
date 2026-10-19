@@ -1392,7 +1392,8 @@ def plan_pipeline(
     "2.39:1"), audio (none|native|voiceover), objective (cheapest|balanced|
     quality), self_host {gpu, vram_gb | unified_memory_gb | cpu_only: true}
     (Apple silicon memory is not CUDA VRAM; a Raspberry Pi / CPU-only box is
-    cpu_only — ranked by recorded ARM/CPU runs), open_weights, jurisdiction,
+    cpu_only — ranked by recorded ARM/CPU runs; an AMD Radeon/Instinct or
+    Intel Arc gpu is ranked by recorded ROCm/XPU runs), open_weights, jurisdiction,
     people [{name, real,
     public_figure, deceased, minor (a real person under 18 on screen),
     consent: stated|none|unknown, claim: none|endorsement|political|news|
@@ -1465,7 +1466,7 @@ def plan_pipeline(
     READ IN THE ANSWER: `understood_as` (every field and its source),
     `question` (ask it verbatim, do not answer it yourself), per step `chosen`
     with its evidence kind (`применимость не измерена` = nobody measured the
-    result), `proven_rival`, `language_support`, `apple_silicon`, and
+    result), `proven_rival`, `language_support`, `apple_silicon`, `gpu_backend`, and
     `pipeline_price` — a sum only over steps priced in the same unit; any
     unpriced step makes it "could not measure", so quote the bound AND the
     missing steps. `assembly` is the 0-usd ffmpeg/editing work (cuts, reframe,

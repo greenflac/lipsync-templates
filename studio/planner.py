@@ -6666,6 +6666,19 @@ def требования_заказчика(
                         break
             ранг.append(hn.CPU_ORDER[цпу])
             ноты.append(f"без GPU: {цпу} ({нота_цпу})")
+        # GPU НЕ NVIDIA (двенадцатый круг): AMD ROCm, Intel XPU. Видеопамять
+        # настоящая, CUDA нет: записанный запуск на бэкенде старше молчания,
+        # запись «не запускается» — последней. Отсева нет: молчание — не отказ.
+        if hard.gpu_backend:
+            бэк, нота_бэка = hn.backend_state(все, hard.gpu_backend)
+            if бэк == hn.BACKEND_UNKNOWN:
+                for р, строки in семья:
+                    бэк, нота_бэка = hn.backend_state(строки, hard.gpu_backend)
+                    if бэк != hn.BACKEND_UNKNOWN:
+                        нота_бэка = f"по семье {р}: {нота_бэка}"
+                        break
+            ранг.append(hn.BACKEND_ORDER[бэк])
+            ноты.append(f"{hn.GPU_BACKEND_NAMES.get(hard.gpu_backend, hard.gpu_backend)}: {бэк} ({нота_бэка})")
         ставка = hn.gpu_rate(по_имени.get(fold(hn.RATE_MODEL_PREFIX + (hard.gpu or "")), []), hard.gpu)
         режим = need.mode if need else ""
         время = hn.gpu_time(все, режим) or next(
@@ -8451,6 +8464,16 @@ def поддержка_apple(model: str, facts: Sequence[Fact]) -> str:
         if APPLE_RUNTIME.search(f"{f.attribute} {f.value}"):
             return f"recorded: {f.attribute} = {str(f.value)[:120]} ({f.tier}, {f.source_url})"
     return "unmeasured: nothing recorded about MPS/MLX for this model"
+
+
+def поддержка_бэкенда(model: str, facts: Sequence[Fact], backend: str) -> str:
+    """Записан ли запуск модели на `rocm` / `xpu`. Нет записи — «unmeasured», не «нет»."""
+    атрибут = hn.GPU_BACKEND_ATTRS.get(backend, "")
+    имя = hn.GPU_BACKEND_NAMES.get(backend, backend)
+    for f in pl.facts_for(model, facts):
+        if f.attribute == атрибут:
+            return f"recorded ({имя}): {f.attribute} = {str(f.value)[:120]} ({f.tier}, {f.source_url})"
+    return f"unmeasured: nothing recorded about {имя} for this model"
 
 
 def поддержка_языков(model: str, facts: Sequence[Fact], теги: Sequence[str]) -> dict[str, str]:
@@ -12710,6 +12733,9 @@ def plan(
     # на MPS/MLX — не измерено, пока база не записала обратное.
     по_имени_шага = {op.name: к for op, к in выбор}
     apple = (понято.self_host or {}).get("platform") == "apple-silicon"
+    бэкенд = str((понято.self_host or {}).get("platform") or "")
+    if бэкенд not in hn.GPU_BACKEND_ATTRS:
+        бэкенд = ""
     for строка in строки_шагов:
         оп_шага = next((оп for оп in операции if оп.name == строка["step"]), None)
         выбран = по_имени_шага.get(строка["step"])
@@ -12719,6 +12745,8 @@ def plan(
             строка["language_support"] = поддержка_языков(выбран.model, индекс.facts, понято.language_tags)
         if выбран is not None and apple:
             строка["apple_silicon"] = поддержка_apple(выбран.model, индекс.facts)
+        if выбран is not None and бэкенд:
+            строка["gpu_backend"] = поддержка_бэкенда(выбран.model, индекс.facts, бэкенд)
     со_звуком = вариант_со_звуком(
         выбор,
         индекс,
@@ -12991,6 +13019,7 @@ def сжать(ответ: dict) -> dict:
                         "languages_multiplier",
                         "language_support",
                         "apple_silicon",
+                        "gpu_backend",
                         "edit",
                     )
                     if к in ш
