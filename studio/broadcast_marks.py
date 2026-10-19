@@ -83,8 +83,9 @@ def decide(brief: str, spec: Mapping[str, Any] | None) -> dict[str, Any]:
         if not (_flag(c.get("fabricated")) or _flag(c.get("parody"))):
             continue
         brand = str(c.get("brand") or "")
-        if BROADCASTER.search(brand) or (str(c.get("type")) in NEWS_TYPES and BROADCASTER.search(text)):
-            return {"decision": DECISION_REFUSE, "brand": brand or BROADCASTER.search(text).group(0), "source": "spec"}
+        in_text = BROADCASTER.search(text)
+        if BROADCASTER.search(brand) or (str(c.get("type")) in NEWS_TYPES and in_text):
+            return {"decision": DECISION_REFUSE, "brand": brand or (in_text.group(0) if in_text else ""), "source": "spec"}
     m = BROADCASTER.search(text)
     if m and FAKE.search(text) and _marks_asked(text):
         return {"decision": DECISION_REFUSE, "brand": m.group(0), "source": "text"}
