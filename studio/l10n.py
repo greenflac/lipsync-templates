@@ -1078,6 +1078,16 @@ EN_FRAGMENTS: tuple[tuple[str, str], ...] = (
     (r"клон\(ов\)", "clone(s)"),
     (r"посчитана только плата за клон: прочие ставки шага к брифу не привязались",
      "only the clone fee is counted: the step's other rates did not bind to the brief"),
+    (r"ставка записана за меньшую частоту кадров, чем заказана: больше кадров — дороже, нижняя граница",
+     "the rate is recorded for a lower frame rate than ordered: more frames cost more — a lower bound"),
+    (r"секунд вычисления на секунду ролика модель не записала: принята оценка ([\d.]+) с/с "
+     r"\(самый быстрый записанный интерполятор\) — нижняя граница",
+     r"the model records no compute seconds per output second: an estimate of \1 s/s is used (the fastest "
+     r"recorded interpolator) — a lower bound"),
+    (r"с вычисления/с \(ОЦЕНКА\)", "compute s per s (ESTIMATE)"),
+    (r"отношение вычисления к ролику — наша оценка по записи вендора, нижняя граница",
+     "the compute-to-output ratio is our estimate from the vendor's figure — a lower bound"),
+    (r"длина прогона не записана: посчитан один прогон", "the run length is not recorded: one run is counted"),
     (r"знаков", "chars"),
     (r"usd за 1000_chars", "usd per 1000 chars"),
     (r"usd за знак", "usd per char"),

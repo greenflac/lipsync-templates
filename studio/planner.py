@@ -4988,7 +4988,14 @@ def стоимость(
     if need.compute_ratio is None:
         отношение = compute_ratio(facts)
         if отношение is not None:
-            need = pricing.Need(**{**need.__dict__, "compute_ratio": отношение})
+            need = pricing.Need(
+                **{
+                    **need.__dict__,
+                    "compute_ratio": отношение,
+                    # Отношение, ВЫВЕДЕННОЕ нами (запись помечена оценкой), — нижняя граница.
+                    "compute_ratio_basis": RATIO_ESTIMATE_NOTE if ratio_is_estimate(facts) else "",
+                }
+            )
 
     # маршрут -> тариф -> [(ступень, вариант, кто сказал, строка)]
     по_маршруту: dict[str, dict[str, list[tuple[int, pricing.Option, str, Fact]]]] = {}
@@ -5145,6 +5152,18 @@ def тариф_по_размеру(
         ):
             return по_тарифу[r.tier]
     return умолчание
+
+
+#: Двенадцатый круг: основание нижней границы, когда отношение записано ОЦЕНКОЙ.
+RATIO_ESTIMATE_NOTE = "отношение вычисления к ролику — наша оценка по записи вендора, нижняя граница"
+
+
+def ratio_is_estimate(facts: Sequence[Fact]) -> bool:
+    """Записанное отношение вычисления помечено как оценка (выведено, а не названо вендором)."""
+    return any(
+        f.attribute == pricing.COMPUTE_RATIO_ATTRIBUTE and re.search(r"estimate|оценк", str(f.value), re.I)
+        for f in facts
+    )
 
 
 def compute_ratio(facts: Sequence[Fact]) -> float | None:
@@ -10621,7 +10640,11 @@ def _смета_словами(итог: dict, смета: dict, англ: bool)
     """Цена плана по смете шагов: сумма, дешёвые тарифы, шаги без цены, бюджет."""
     цена = итог.get("pipeline_price") or {}
     без = list(смета.get("steps_without_cost") or [])
-    нижние = [str(н).split(" (")[0] for н in смета.get("steps_lower_bound") or []]
+    нижние_почему = [
+        (str(н).split(" (")[0], str(н).split(" (", 1)[1].rstrip(")") if " (" in str(н) else "")
+        for н in смета.get("steps_lower_bound") or []
+    ]
+    нижние = [н for н, _ in нижние_почему]
     итого = float(смета.get("usd") or 0.0)
     дёшево = float(смета.get("usd_cheapest_tiers") or итого)
     минимум = float(смета.get("usd_min_known", дёшево))
@@ -10656,8 +10679,11 @@ def _смета_словами(итог: dict, смета: dict, англ: bool)
         )
     if нижние:
         части.append(
-            ("LOWER BOUND ONLY (run length not recorded) for: " if англ else "ТОЛЬКО НИЖНЯЯ ГРАНИЦА (длина прогона не записана): ")
-            + ", ".join(_имя_шага(н, англ) for н in нижние)
+            ("LOWER BOUND ONLY for: " if англ else "ТОЛЬКО НИЖНЯЯ ГРАНИЦА: ")
+            + ", ".join(
+                _имя_шага(н, англ) + (f" ({_по_английски(п) if англ else п})" if п else "")
+                for н, п in нижние_почему
+            )
         )
     if смета.get("steps_ambiguous"):
         части.append(
@@ -12618,7 +12644,11 @@ def plan(
         # СЕДЬМОЙ КРУГ: то же у любой работы, где ролик собирает МОНТАЖ,
         # названный маршрутом (нарезка, стабилизация, дорожка дубляжа).
         (ролик_заказан(brief) or (spec_only and "video" in понято.outputs and понято.task != "captions"))
-        and not маршрут.сборка,
+        and not маршрут.сборка
+        # ДВЕНАДЦАТЫЙ КРУГ: ролик — ВАШЕ видео (дубляж поверх рисованного ролика,
+        # голос поверх своего): новая дорожка кладётся в него при сборке, и цена
+        # плана — цена ролика, а не «цены ролика нет».
+        and not (spec_only and "video" in понято.inputs),
     )
     for строка_сметы in (цена_пайплайна.get("смета") or {}).get("steps") or []:
         n = шотов_шага(next(оп for оп in операции if оп.name == строка_сметы["step"]), маршрут.штук.get(строка_сметы["step"], кадров), клипов) if строка_сметы["step"] in имена_плана else None
