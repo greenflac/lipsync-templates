@@ -74,7 +74,7 @@ MUTANTS: tuple[tuple[str, str, str, str], ...] = (
     # --- единицы цены
     (PR, '    "compute_second",\n    "second",', '    "second",', "секунда вычисления не единица"),
     (PR, "    if re.match(r\"^[^$]{0,30}?(?:/|per)\\s*(?:gpu\\s+)?compute[\\s-]+seconds?\\b\", голова):\n        return \"compute_second\", 1.0, None, вид", "", "секунда вычисления читается секундой ролика"),
-    (PR, "        if сек is None or need.compute_ratio is None:\n            return None", "        if сек is None:\n            return None", "без отношения — секунды ролика"),
+    (PR, "            отношение, основание = COMPUTE_RATIO_ESTIMATE, LOWER_BOUND_COMPUTE", "            отношение, основание = 1.0, \"\"", "без отношения — секунды ролика"),
     (PR, "            if r.per == \"second\" and (маршрут, round(r.amount, 9)) in вычисления:", "            if False:", "близнец вычисления — секунда ролика"),
     (PR, "            if r.per == \"second\" and (маршрут, round(r.amount, 9)) in вычисления:", "            if r.per == \"second\" and round(r.amount, 9) in {a for _, a in вычисления}:", "близнец через чужой маршрут"),
     (PR, "    if _ЕДИНИЦА_НЕ_НАЗВАНА.search(текст):\n        # «$1 per unit", "    if False:\n        # «$1 per unit", "заглушка $1 per unit — ставка"),
