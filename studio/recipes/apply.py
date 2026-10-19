@@ -265,7 +265,7 @@ NOTE_LOOPS = (
     f"{VISUALISER_LOOP_CLIPS} loopable clips of {VISUALISER_LOOP_CLIP_S} s; assembly reaches the track's length",
 )
 NOTE_V2A = (
-    "«видео -> звук»: модель смотрит ВАШ ролик (MMAudio, HunyuanVideo-Foley)",
+    "видео -> звук: модель смотрит ВАШ ролик (MMAudio, HunyuanVideo-Foley)",
     "video-to-audio: the model watches YOUR footage (MMAudio, HunyuanVideo-Foley)",
 )
 NOTE_LOOP_ONCE = (
