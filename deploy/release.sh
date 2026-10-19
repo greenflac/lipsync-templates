@@ -8,7 +8,7 @@
 #   release.sh rollback                                    back to the previous digest
 #   release.sh status                                      running, previous, health
 #
-# TRUST (as in the harness): this script, compose.yaml, the Caddyfile, probe.sh and .env are
+# TRUST (as in the harness): this script, compose.yaml, probe.sh and .env are
 # installed by vps-bootstrap.sh as root and are NOT writable by `studio`. CI sends one thing:
 # an image digest. `studio` is in the docker group (root-equivalent), which is why it must
 # never be able to change what `docker compose` runs; it writes state/ only.
@@ -23,7 +23,7 @@ DEFAULT_IMAGE_REPO="ghcr.io/greenflac/lipsync-templates"
 # CHOSEN (as in the harness): 30 polls 4 s apart. A first start may issue the certificate.
 HEALTH_TRIES=${HEALTH_TRIES:-30}
 HEALTH_WAIT_S=4
-TRUSTED=(release.sh probe.sh compose.yaml Caddyfile .env)
+TRUSTED=(release.sh probe.sh compose.yaml .env)
 
 say() { echo "release: $*" >&2; }
 refuse() { say "$*"; exit 2; }
@@ -69,20 +69,21 @@ domain() {
 }
 
 probe_address() {
-  # Where the public side listens: STUDIO_BIND_IP when set, else the loopback (the harness
-  # owner's first release probed 127.0.0.1:443 while another service held it - b-292).
+  # Where the harness Caddy listens: STUDIO_PROBE_IP (its HARNESS_BIND_IP, copied into our
+  # .env because `studio` cannot read the harness's). The harness owner's first release
+  # probed 127.0.0.1:443 while the VPN held it (harness b-292).
   local ip
-  ip=$(setting STUDIO_BIND_IP "$STUDIO_HOME/.env")
+  ip=$(setting STUDIO_PROBE_IP "$STUDIO_HOME/.env")
   case "$ip" in
     "" | 0.0.0.0) echo 127.0.0.1 ;;
-    *) [[ "$ip" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]] || refuse ".env STUDIO_BIND_IP is not IPv4"
+    *) [[ "$ip" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]] || refuse ".env STUDIO_PROBE_IP is not IPv4"
        echo "$ip" ;;
   esac
 }
 
 healthy() {
   # Two halves, both required:
-  #  1. probe.sh over HTTPS through whichever Caddy serves the domain, resolved to this
+  #  1. probe.sh over HTTPS through the harness Caddy, resolved to this
   #     machine: /healthz 200, the OAuth metadata, and /mcp answering 401 with the challenge;
   #  2. the in-container probe (`http_app probe`): a one-minute token for the probe principal,
   #     initialize and tools/list through the OAuth front - a dead transport fails the release.

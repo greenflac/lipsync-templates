@@ -1,16 +1,15 @@
-# The lipsync-studio connector on one VPS: the server and, on its own machine, Caddy for TLS.
-# Shape and conventions from green-harness deploy/compose.yaml (the connector at
-# harness.greenflac.online): the image is pinned by DIGEST in state/release.env, written by
-# release.sh only; secrets are files under ${STUDIO_SECRETS_DIR}, never variables.
+# The lipsync-studio connector on the green-harness VPS (owner decision 2026-10-19).
+# Shape and conventions from green-harness deploy/compose.yaml: the image is pinned by DIGEST
+# in state/release.env, which only release.sh writes; secrets are files under
+# ${STUDIO_SECRETS_DIR}, never variables.
 #
 #   docker compose --project-directory /srv/studio -f /srv/studio/compose.yaml \
 #     --env-file /srv/studio/.env --env-file /srv/studio/state/release.env up -d
 #
-# Two layouts (docs/CONNECTOR.md, "Where it runs"):
-#   own VPS       COMPOSE_PROFILES=tls  - this file's Caddy takes 80/443 and the certificate.
-#   harness VPS   COMPOSE_PROFILES=     - the harness Caddy already holds 80/443 there; the
-#                 server is published on 127.0.0.1:8770 only and the harness Caddy gets the
-#                 site block in deploy/Caddyfile.harness-site.
+# No Caddy here. The harness Caddy already holds 80/443 on this VPS. It serves
+# studio.greenflac.online with the site block in deploy/Caddyfile.harness-site (committed
+# to green_harness deploy/Caddyfile, REVISION 10) and reaches this server over the harness
+# network `harness-studio-edge`, under the alias `studio-server`.
 
 name: studio
 
@@ -22,14 +21,12 @@ services:
       STUDIO_DOMAIN: ${STUDIO_DOMAIN:?.env must set STUDIO_DOMAIN}
       STUDIO_KEY_PEPPER_FILE: /run/secrets/key_pepper
       STUDIO_VENDOR_ENV_FILE: /run/secrets/vendor_env
-      # Caddy's fixed address on the network below (own-VPS layout), and this network's
-      # gateway, which is where a connection to the loopback publish arrives from
-      # (harness-VPS layout; UNVERIFIED on the live VPS - if the logs show another peer,
-      # put that one here). Only the VPS's own processes reach the loopback publish.
-      STUDIO_TRUSTED_PROXIES: 172.31.250.2,172.31.250.1
+      # The harness Caddy's fixed address on harness-studio-edge (green_harness
+      # deploy/compose.yaml). X-Forwarded-For is believed from that address only.
+      STUDIO_TRUSTED_PROXIES: 172.31.251.2
       STUDIO_SELFRAG_STATE: /data/selfrag_state.sqlite3
       # The dense channel needs sentence-transformers and its weights, which this image
-      # does not carry; the index is lexical + phrase + structural (knowledge.py).
+      # does not carry. The index is lexical + phrase + structural (knowledge.py).
       STUDIO_MCP_DENSE: "0"
     secrets:
       - key_pepper
@@ -38,11 +35,15 @@ services:
       - data:/data
       - knowledge:/app/studio/knowledge
     ports:
-      # Loopback only: the public side is Caddy (this file's, or the harness's).
+      # Loopback only, for the owner's own checks on the VPS. The public side is the
+      # harness Caddy over harness-studio-edge.
       - "127.0.0.1:${STUDIO_LOCAL_PORT:-8770}:8770"
     networks:
       edge:
-        ipv4_address: 172.31.250.3
+        aliases: [studio-server]
+      # The way out, for fetch_url, search_web and probe_model_limit. harness-studio-edge
+      # is internal and has no route out.
+      egress: {}
     read_only: true
     tmpfs:
       - /tmp
@@ -53,45 +54,19 @@ services:
       driver: json-file
       options: {max-size: "10m", max-file: "5"}
 
-  caddy:
-    profiles: ["tls"]
-    # The same image and digest as green-harness deploy/compose.yaml.
-    image: caddy:2.11.4-alpine@sha256:6aeddd44c3078b0f9a35206472a11420648a79c184603ef95957d0a20044cb2b
-    restart: unless-stopped
-    depends_on: [server]
-    environment:
-      STUDIO_DOMAIN: ${STUDIO_DOMAIN}
-      ACME_EMAIL: ${ACME_EMAIL:?.env must set ACME_EMAIL}
-    ports:
-      - "${STUDIO_BIND_IP:-0.0.0.0}:80:80"
-      - "${STUDIO_BIND_IP:-0.0.0.0}:443:443"
-    volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile:ro
-      - caddy_data:/data
-      - caddy_config:/config
-    networks:
-      edge:
-        ipv4_address: 172.31.250.2
-    cap_drop: [ALL]
-    cap_add: [NET_BIND_SERVICE]
-    security_opt: ["no-new-privileges:true"]
-    logging:
-      driver: json-file
-      options: {max-size: "10m", max-file: "5"}
-
 networks:
   edge:
-    ipam:
-      config:
-        - subnet: 172.31.250.0/24
+    # Created by the harness compose project (green_harness REVISION 10). `up` fails with
+    # "network harness-studio-edge not found" until the harness has been redeployed with it.
+    name: harness-studio-edge
+    external: true
+  egress: {}
 
 volumes:
   data:
-  # Seeded from the image's studio/knowledge on first creation; from then on it is the
-  # live base the connector writes to (docs/CONNECTOR.md, "The knowledge base on the server").
+  # Seeded from the image's studio/knowledge on first creation. From then on it is the live
+  # base the connector writes to (docs/CONNECTOR.md, "The knowledge base on the server").
   knowledge:
-  caddy_data:
-  caddy_config:
 
 secrets:
   key_pepper:

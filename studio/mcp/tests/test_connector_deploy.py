@@ -20,7 +20,7 @@ WORKFLOW = ROOT / ".github" / "workflows" / "deploy-connector.yml"
 
 
 def caddy_paths(text: str) -> set[str]:
-    line = next(x for x in text.splitlines() if x.strip().startswith("@app path "))
+    line = next(x for x in text.splitlines() if x.strip().startswith("@studio path "))
     return set(line.split()[2:])
 
 
@@ -32,9 +32,31 @@ class CaddyPassesExactlyTheAppsPaths(unittest.TestCase):
 
     def test_every_route_is_proxied_and_nothing_else(self) -> None:
         wanted = self.paths | {"/mcp/*"}
-        for name in ("Caddyfile", "Caddyfile.harness-site"):
+        for name in ("Caddyfile.harness-site",):
             with self.subTest(name):
                 self.assertEqual(caddy_paths((DEPLOY / name).read_text()), wanted)
+
+
+class SharedVpsLayout(unittest.TestCase):
+    """Owner decision 2026-10-19: the harness VPS; its Caddy is the only public side."""
+
+    def test_no_caddy_and_only_a_loopback_publish(self) -> None:
+        text = (DEPLOY / "compose.yaml").read_text()
+        self.assertNotRegex(text, r"(?m)^  caddy:")
+        self.assertEqual(
+            re.findall(r'(?m)^\s+- "([^"]*:8770)"$', text),
+            ["127.0.0.1:${STUDIO_LOCAL_PORT:-8770}:8770"],
+        )
+        self.assertFalse((DEPLOY / "Caddyfile").exists())
+
+    def test_it_joins_the_harness_network_where_caddy_has_its_fixed_address(self) -> None:
+        text = (DEPLOY / "compose.yaml").read_text()
+        self.assertIn("name: harness-studio-edge\n    external: true", text)
+        self.assertIn("aliases: [studio-server]", text)
+        self.assertIn("STUDIO_TRUSTED_PROXIES: 172.31.251.2", text)
+        self.assertIn(
+            "reverse_proxy studio-server:8770", (DEPLOY / "Caddyfile.harness-site").read_text()
+        )
 
 
 class SecretsAreFiles(unittest.TestCase):

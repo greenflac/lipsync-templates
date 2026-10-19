@@ -1,13 +1,11 @@
-# The studio site block for the HARNESS Caddy (harness-VPS layout, docs/CONNECTOR.md).
+# The studio site block in the HARNESS Caddy: a byte copy of the block that green_harness
+# deploy/Caddyfile carries since REVISION 10 (local branch studio-connector-site).
 #
-# On the VPS that already serves harness.greenflac.online, the harness Caddy owns 80/443, so a
-# second Caddy cannot start there. Instead this block goes into the harness's deploy/Caddyfile
-# (a change in the green_harness repository, reviewed there, then installed by its
-# vps-bootstrap.sh like any harness configuration change), and the harness compose's caddy
-# service gets `extra_hosts: ["host.docker.internal:host-gateway"]` so it can reach the studio
-# server published on the VPS loopback (127.0.0.1:8770, deploy/compose.yaml).
-#
-# Same headers and the same path allowlist as deploy/Caddyfile.
+# On the shared VPS the harness Caddy owns 80/443. It proxies studio.greenflac.online to
+# this repository's server over the internal docker network harness-studio-edge, where the
+# studio compose project names the server `studio-server` (deploy/compose.yaml).
+# studio/mcp/tests/test_connector_deploy.py keeps the path list equal to the app's routes.
+# A change here is also a change in green_harness deploy/Caddyfile.
 
 studio.greenflac.online {
 	header {
@@ -24,9 +22,9 @@ studio.greenflac.online {
 		max_size 2MB
 	}
 
-	@app path /mcp /mcp/* /healthz /.well-known/oauth-authorization-server /.well-known/oauth-protected-resource/mcp /register /authorize /token /revoke /oauth/login
-	handle @app {
-		reverse_proxy host.docker.internal:8770
+	@studio path /mcp /mcp/* /healthz /.well-known/oauth-authorization-server /.well-known/oauth-protected-resource/mcp /register /authorize /token /revoke /oauth/login
+	handle @studio {
+		reverse_proxy studio-server:8770
 	}
 	handle {
 		respond "not found" 404
