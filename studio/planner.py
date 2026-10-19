@@ -4938,6 +4938,20 @@ def _ступень_строки(f: Fact) -> int:
     return TIERS.index(f.tier) if f.tier in TIERS else len(TIERS)
 
 
+def run_limit_line(c: "Candidate", shot_s: float, en: bool = True) -> str:
+    """One take longer than the chosen model's recorded run: how many runs and how they join."""
+    прогонов = math.ceil(shot_s / float(c.run_s or shot_s))
+    if en:
+        return (
+            f"one run of {c.model} is at most {c.run_s:g} s by record ({c.dur_note}); the {shot_s:g} s take is "
+            f"{прогонов} runs joined by extend / last-frame continuation (drift shows at the joins) or a cut"
+        )
+    return (
+        f"один прогон {c.model} — не больше {c.run_s:g} с по записи ({c.dur_note}); дубль {shot_s:g} с — это "
+        f"{прогонов} прогона, сшитых продлением / продолжением с последнего кадра (на стыках дрейф), или склейка"
+    )
+
+
 def предел_прогона(facts: Sequence[Fact]) -> float | None:
     """Сколько секунд даёт ОДИН прогон модели по её записям; None — не записано.
 
@@ -12462,6 +12476,17 @@ def plan(
                     if лучший is not None and лучший.reach_note
                     else {}
                 ),
+                # ПРЕДЕЛ ОДНОГО ДУБЛЯ (тринадцатый круг): шот длиннее записанного
+                # прогона выбранной модели — сколько прогонов и как их сшить.
+                **(
+                    {"run_limit": run_limit_line(лучший, длительность_шота.секунды, по_английски)}
+                    if лучший is not None
+                    and op.name in VIDEO_MAKERS
+                    and лучший.dur_state == dur.DUR_OVER
+                    and лучший.run_s
+                    and длительность_шота.секунды
+                    else {}
+                ),
                 "why_not_next": (
                     why_not(лучший, предложены[1])
                     if лучший is not None and len(предложены) > 1
@@ -13119,6 +13144,7 @@ def сжать(ответ: dict) -> dict:
                         "gpu_backend",
                         "edit",
                         "upscale_reach",
+                        "run_limit",
                     )
                     if к in ш
                 },

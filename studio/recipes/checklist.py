@@ -2832,6 +2832,302 @@ RULES_R12: tuple[Rule, ...] = (
 
 RULES_LIST = RULES_LIST + RULES_R12
 
+# --- round 13: expert caveats -------------------------------------------------------------
+#
+# Structured triggers first (job codes, `spec.edit`, `spec.languages`, `spec.inputs`
+# counts, `spec.people[].role`, `spec.claims[].own_brand`); words only where the spec
+# has no field, and each such rule names the field in `spec_field`.
+
+#: From this many video inputs the material is multi-camera (angles to sync).
+MULTICAM_MIN_INPUTS = 2
+#: Longest single generation most video models record (5-15 s; a few reach 20-25 s).
+#: The planner prints the CHOSEN model's recorded run limit (`run_limit` on the step).
+SINGLE_TAKE_TYPICAL_MAX_S = 15.0
+#: Jobs that GENERATE a take from a prompt or a frame (a talking avatar follows its audio, any length).
+GENERATED_TAKE_JOBS: frozenset[str] = frozenset({"t2v", "i2v", "t2v_audio", "r2v"})
+#: Jobs whose model is trained on real human faces (photoreal mouth / face).
+PHOTOREAL_FACE_JOBS: frozenset[str] = frozenset({"lipsync", "avatar", "sing", "char_replace", "dub"})
+#: Roles of a real person that make them the customer's own staff (`spec.people[].role`).
+IN_HOUSE_ROLES: frozenset[str] = frozenset({"employee", "self"})
+
+W_GREEN_SCREEN = re.compile(
+    r"green ?screen|blue ?screen|chroma ?key|\bkey(?:ing|ed)? (?:out|it)\b|\bkeyer\b|\bkeying\b|\bdespill"
+    r"|хромакей|хрома-?кей|зел[её]н\w* (?:фон|экран)|син\w* (?:фон|экран)|грин ?скрин|кеинг\w*",
+    re.I,
+)
+W_STYLISED_FACE = re.compile(
+    r"cartoon|\banime\b|\bmanga\b|\bchibi\b|pixar|\b3d (?:character|avatar|mascot)|\bmascot|stylis|styliz|cel[- ]shad"
+    r"|hand-?drawn|\bdrawn\b|illustrat|\bclay(?:mation)?\b|puppet|plush|\btoy\b|\bcomic\b|vtuber|\banimal\b|\bdog\b|\bcat\b"
+    r"|мульт\w*|аниме|манга|рисованн\w*|нарисованн\w*|стилизованн\w*|маскот|талисман|3d[- ]персонаж|кукл\w*|пластилин"
+    r"|игрушк\w*|комикс|втубер|животн\w*|собак\w*|кошк\w*|\bкот\b",
+    re.I,
+)
+W_TRAINING_DATA = re.compile(
+    r"training (?:data|set|images|clips|corpus)|train(?:ing)? (?:a |our |my |an? )?(?:own |custom )?(?:model|lora|classifier|detector|network)"
+    r"|fine-?tun\w*|\bdataset|synthetic data|data augmentation"
+    r"|датасет|обучающ\w* (?:выборк|данн|набор)|для обучения|обучени\w* (?:модел|нейросет|сет)|дообуч\w*|синтетическ\w* данн",
+    re.I,
+)
+W_RELIGHT = re.compile(
+    r"relight\w*|re-light\w*|change (?:the )?light(?:ing)?|lighting change|переосвет\w*|измен\w* (?:свет|освещени)|смен\w* (?:свет|освещени)",
+    re.I,
+)
+W_MULTICAM = re.compile(
+    r"multi-?cam\w*|multiple cameras|several cameras|two cameras|three cameras|\b[2-9] cameras|camera angles|several angles"
+    r"|\bcam (?:a|b)\b|нескольк\w* камер|дв[еуx]\w* камер|тр[её]х камер|мультикам\w*",
+    re.I,
+)
+W_RTL_NAMED = re.compile(r"arabic|hebrew|persian|farsi|\burdu\b|yiddish|pashto|араб\w*|иврит\w*|фарси|персидск\w*|урду", re.I)
+W_BURN_IN = re.compile(
+    r"burn(?:ed|t)?[- ]?in|hard-?(?:coded|subs?)|open captions|subtitl\w*|\bcaptions?\b|вшит\w*|вжит\w*|прожечь|субтитр\w*",
+    re.I,
+)
+
+S_BFL_TERMS = "https://bfl.ai/legal/terms-of-service"
+S_FLUX_DEV_LICENCE = "https://raw.githubusercontent.com/black-forest-labs/flux/main/model_licenses/LICENSE-FLUX1-dev"
+S_FAL_TERMS = "https://fal.ai/terms"
+S_WAN_LICENCE = "https://raw.githubusercontent.com/Wan-Video/Wan2.1/main/README.md"
+S_LIBASS = "https://github.com/libass/libass"
+
+
+def _green_screen(c: Ctx) -> bool:
+    return bool(c.steps or c.jobs) and c.says(W_GREEN_SCREEN)
+
+
+def _stylised_face(c: Ctx) -> bool:
+    """A model trained on real faces, asked to work on a drawn / 3D / animal face."""
+    return bool(c.jobs & PHOTOREAL_FACE_JOBS) and (c.says(W_STYLISED_FACE) or c.says(W_ANIMATION_TWOS))
+
+
+def _training_data(c: Ctx) -> bool:
+    return bool(c.steps or c.jobs) and c.says(W_TRAINING_DATA)
+
+
+def _colorize_any(c: Ctx) -> bool:
+    return "colorize" in c.jobs
+
+
+def _relight(c: Ctx) -> bool:
+    return "relight" in tuple(c.spec.edit or ()) or (bool(c.jobs & {"v2v_edit", "image_edit"}) and c.says(W_RELIGHT))
+
+
+def _multicam(c: Ctx) -> dict[str, str] | None:
+    видео = [з for з in c.spec.input_items if str(з.get("kind")) == "video"]
+    штук = sum(max(1, int(з.get("count") or 1)) for з in видео)
+    if штук >= MULTICAM_MIN_INPUTS:
+        return {"n": str(штук)}
+    if видео and c.says(W_MULTICAM):
+        return {"n": "2+"}
+    return None
+
+
+def _rtl_burn_in(c: Ctx) -> dict[str, str] | None:
+    rtl = sorted(c.langs & RTL_LANGS)
+    if not rtl and c.says(W_RTL_NAMED):
+        rtl = ["RTL"]
+    текст_в_кадре = bool(c.jobs & (TEXT_ON_SCREEN | {"captions", "transcribe"})) or c.says(W_BURN_IN)
+    if rtl and текст_в_кадре and (c.video or "text" in c.outputs or c.says(W_BURN_IN)):
+        return {"langs": ", ".join(rtl)}
+    return None
+
+
+def _single_take(c: Ctx) -> dict[str, str] | None:
+    """One generated shot longer than a single run of most video models."""
+    if not c.jobs & GENERATED_TAKE_JOBS:
+        return None
+    шот = float(c.spec.per_shot_s or 0) or (float(c.spec.duration_s or 0) if int(c.spec.shots or 1) <= 1 else 0.0)
+    if шот > SINGLE_TAKE_TYPICAL_MAX_S:
+        return {"s": f"{шот:g}", "max": f"{SINGLE_TAKE_TYPICAL_MAX_S:g}"}
+    return None
+
+
+def _text_edit(c: Ctx) -> bool:
+    return "replace-text" in tuple(c.spec.edit or ())
+
+
+def _in_house_anchor(c: Ctx) -> bool:
+    """A consented real person of the customer's own staff reading news (the claims were decided by the
+    people policy before the plan: fabricated news or another broadcaster's brand never reach here)."""
+    свои = any(
+        п.get("real") is True
+        and п.get("consent") == "stated"
+        and str(п.get("role") or "") in IN_HOUSE_ROLES
+        and п.get("claim") == "news"
+        for п in c.spec.people
+    )
+    return свои and bool(c.steps or c.jobs)
+
+
+RULES_R13: tuple[Rule, ...] = (
+    _r(
+        "green_screen_keying",
+        [],
+        "green / blue screen: key it with a real keyer before any AI step — despill the green on hair, skin and "
+        "edges, pull a soft edge matte separately from the solid core matte, and expect motion blur and fine hair "
+        "to need a hand-tuned edge (AI background removal does not despill and chatters on blur); light the screen "
+        "evenly, use a fast shutter and the least compressed source",
+        "зелёный / синий фон: кеинг настоящим кеером до любого шага ИИ — уберите зелёные рефлексы (despill) с "
+        "волос, кожи и краёв, снимите мягкую маску краёв отдельно от плотной маски ядра и ждите, что смаз движения "
+        "и тонкие волосы потребуют ручной настройки края (удаление фона ИИ рефлексы не убирает и дрожит на "
+        "смазе); фон освещается ровно, выдержка короткая, исходник — наименее сжатый",
+        E,
+        _green_screen,
+        ("inputs",),
+        "spec.inputs[].keying = 'green-screen'",
+        (S_FFMPEG_FILTERS,),
+    ),
+    _r(
+        "stylised_face_photoreal_model",
+        sorted(PHOTOREAL_FACE_JOBS),
+        "a stylised face (cartoon, anime, 3D character, mascot or animal) on a lip-sync / face-swap / avatar "
+        "model trained on real human faces: the face detector may miss it, the mouth comes out smeared or "
+        "photoreal, and line art breaks — test 5 s first, prefer a model that records stylised or anime support, "
+        "or animate the mouth in the style (viseme mouth shapes on the rig, Live2D, Character Animator)",
+        "стилизованное лицо (мультяшное, аниме, 3D-персонаж, маскот или животное) на модели липсинка, замены лица "
+        "или аватара, обученной на настоящих лицах: детектор лица может его не найти, рот выходит смазанным или "
+        "фотореалистичным, контурные линии рвутся — сначала проверьте 5 с, берите модель, у которой записана "
+        "поддержка стилизованных или аниме-лиц, или анимируйте рот в стиле (формы рта по фонемам на риге, Live2D, "
+        "Character Animator)",
+        E,
+        _stylised_face,
+        ("people", "characters"),
+        "spec.subject.style = 'stylised'",
+    ),
+    _r(
+        "outputs_as_training_data",
+        [],
+        "generated outputs used as ML training data: each provider's terms decide, per step — the BFL API terms "
+        "forbid using Output to train, distill or fine-tune any other AI model; the FLUX.1 [dev] licence forbids "
+        "training a model competitive with it; fal's terms forbid using outputs of third-party models it hosts to "
+        "train competing models; Apache-2.0 open weights (Wan 2.1) claim no rights over the outputs. Check the "
+        "terms of every model in the plan before the data set is built, and log model, version and terms date per "
+        "sample",
+        "сгенерированное как обучающие данные: решают условия каждого поставщика, по шагам — условия API BFL "
+        "запрещают использовать результат для обучения, дистилляции или дообучения любой другой модели ИИ; "
+        "лицензия FLUX.1 [dev] запрещает обучать конкурирующую с ней модель; условия fal запрещают обучать "
+        "конкурирующие модели на результатах сторонних моделей, которые он размещает; открытые веса под "
+        "Apache-2.0 (Wan 2.1) прав на результат не заявляют. Проверьте условия каждой модели плана до сборки "
+        "датасета и записывайте модель, версию и дату условий на каждый образец",
+        R,
+        _training_data,
+        (),
+        "spec.use = 'training-data'",
+        (S_BFL_TERMS, S_FLUX_DEV_LICENCE, S_FAL_TERMS, S_WAN_LICENCE),
+    ),
+    _r(
+        "colorize_plausible_not_true",
+        ["colorize"],
+        "colourisation is a plausible guess, not historical truth: the model invents colours that look right "
+        "(uniforms, flags, cars, skin and sky can be wrong) — disclose it as 'colourised with AI' wherever it is "
+        "shown, keep the black-and-white original alongside, and use references or a historian where colour "
+        "matters",
+        "раскраска — правдоподобная догадка, а не историческая правда: модель придумывает цвета, которые выглядят "
+        "верно (форма, флаги, машины, кожа и небо могут быть не теми) — помечайте «раскрашено ИИ» везде, где это "
+        "показывают, храните чёрно-белый оригинал рядом и берите референсы или историка там, где цвет важен",
+        P,
+        _colorize_any,
+        ("task", "steps"),
+        "",
+        (S_YT_SYNTHETIC,),
+    ),
+    _r(
+        "relight_limits",
+        ["v2v_edit", "image_edit"],
+        "relighting re-renders shading from an estimate of the shape: it can move the key light and change the "
+        "mood, but it cannot recover blown highlights or crushed shadows, it invents speculars and cast shadows, "
+        "and strong changes flatten skin texture and flicker over time — keep changes moderate, match the plate's "
+        "light for composites, and relight in 3D (depth / normal passes) or reshoot when it must be exact",
+        "переосвещение пересчитывает светотень по оценке формы: оно сдвигает ключевой свет и меняет настроение, "
+        "но не вернёт пересвеченные света и заваленные тени, придумывает блики и падающие тени, а сильная правка "
+        "сглаживает текстуру кожи и мерцает во времени — меняйте умеренно, подгоняйте свет под плейт при "
+        "композитинге, а где нужно точно — переосвещение в 3D (проходы глубины и нормалей) или пересъёмка",
+        E,
+        _relight,
+        ("edit",),
+    ),
+    _r(
+        "multicam_sync",
+        [],
+        "multi-camera material ({n} angles): sync the angles before any AI step — by timecode (jam-synced / LTC), "
+        "a clap or slate, or the audio waveform (PluralEyes, Resolve 'sync by audio', Premiere 'synchronize') — "
+        "keep one master audio track, and make every AI step keep the frame count and frame rate (no retiming), or "
+        "the sync is lost",
+        "многокамерный материал ({n} ракурса): синхронизируйте ракурсы до любого шага ИИ — по таймкоду (общий "
+        "генератор / LTC), по хлопушке или по форме звуковой волны (PluralEyes, «sync by audio» в Resolve, "
+        "«synchronize» в Premiere) — держите одну мастер-дорожку звука и следите, чтобы каждый шаг ИИ сохранял "
+        "число кадров и частоту (без перетайминга), иначе синхронизация уйдёт",
+        E,
+        _multicam,
+        ("inputs",),
+    ),
+    _r(
+        "rtl_burn_in",
+        [],
+        "burning right-to-left subtitles ({langs}) into the picture: render with libass built with HarfBuzz and "
+        "FriBidi (ffmpeg 'subtitles' / 'ass' filter) and an embedded font that covers the script — a renderer "
+        "without shaping writes disconnected letters in the wrong order; mark punctuation and numbers with "
+        "RLM/LRM where the bidi algorithm misplaces them, right-align the lines, and ship a sidecar SRT/VTT too",
+        "вжигание субтитров справа налево ({langs}) в картинку: рендер через libass, собранный с HarfBuzz и "
+        "FriBidi (фильтр ffmpeg «subtitles» / «ass»), и встроенный шрифт, покрывающий письмо — рендер без "
+        "шейпинга пишет несоединённые буквы в обратном порядке; пунктуацию и числа помечайте RLM/LRM там, где "
+        "двунаправленный алгоритм их сдвигает, строки выравнивайте вправо и отдавайте ещё и файл SRT/VTT",
+        E,
+        _rtl_burn_in,
+        ("languages", "language_tags", "outputs"),
+        "",
+        (S_BIDI, S_LIBASS, S_FFMPEG_FILTERS),
+    ),
+    _r(
+        "single_take_limit",
+        sorted(GENERATED_TAKE_JOBS),
+        "a single {s} s take is longer than one generation of most video models (about 5-{max} s; the step prints "
+        "the chosen model's recorded maximum per run): it is made as several runs joined by extend / last-frame "
+        "continuation, and the joins show drift — or the shot is split with a cut",
+        "один непрерывный дубль в {s} с длиннее одной генерации большинства видеомоделей (около 5-{max} с; шаг "
+        "печатает записанный максимум выбранной модели на прогон): его делают несколькими прогонами, сшитыми "
+        "продлением или продолжением с последнего кадра, и на стыках виден дрейф — или шот режут склейкой",
+        E,
+        _single_take,
+        ("duration_s", "shots", "per_shot_s"),
+    ),
+    _r(
+        "in_house_anchor_disclosure",
+        [],
+        "your own presenter reading your own newsroom's true news: keep the presenter's written consent to an AI "
+        "likeness with its scope and end date, label every item on screen and in the description as made with an "
+        "AI-generated presenter (EU AI Act art. 50 deepfake disclosure; platform synthetic-media labels), keep the "
+        "newsroom's editorial sign-off on the script, never let the avatar read anything the presenter or the "
+        "newsroom did not approve, and attach C2PA content credentials",
+        "ваш ведущий читает правдивые новости вашей редакции: храните письменное согласие ведущего на ИИ-образ с "
+        "объёмом и сроком, помечайте каждый выпуск в кадре и в описании как сделанный с ИИ-ведущим (статья 50 "
+        "AI Act ЕС о раскрытии дипфейков; метки синтетических медиа площадок), сохраняйте редакционное "
+        "утверждение текста, не давайте аватару читать то, что ведущий или редакция не одобрили, и прикладывайте "
+        "C2PA content credentials",
+        R,
+        _in_house_anchor,
+        ("people", "claims"),
+        "",
+        (S_AI_ACT, S_YT_SYNTHETIC, S_C2PA),
+    ),
+    _r(
+        "text_edit_in_video",
+        ["v2v_edit"],
+        "lettering in the shot (a sign, a label, a billboard) is an inpaint / video-edit job with text rendering, "
+        "not a character swap: mask the surface, draw the new text into it and check spelling, font and "
+        "perspective on every frame — AI edits misspell and drift; for exact typography planar-track the surface "
+        "(Mocha / After Effects) and composite the text at assembly",
+        "надпись в кадре (вывеска, этикетка, билборд) — правка по маске с отрисовкой текста, а не замена "
+        "персонажа: маска поверхности, новый текст внутри неё, а орфографию, шрифт и перспективу проверяйте на "
+        "каждом кадре — правки ИИ ошибаются в буквах и плывут; для точной типографики — планарный трекинг "
+        "поверхности (Mocha / After Effects) и композитинг текста на монтаже",
+        E,
+        _text_edit,
+        ("edit",),
+    ),
+)
+
+RULES_LIST = RULES_LIST + RULES_R13
+
 RULES: dict[str, Rule] = {р.id: р for р in RULES_LIST}
 
 

@@ -95,6 +95,11 @@ INPUT_KIND_OUT: dict[str, str] = {
 #: Согласие и род заявления о человеке в кадре (`spec.people`, читает `screen`).
 CONSENT_STATES: tuple[str, ...] = ("stated", "none", "unknown")
 CLAIM_KINDS: tuple[str, ...] = ("none", "endorsement", "political", "news", "other")
+#: Кем человек приходится заказчику (тринадцатый круг, `spec.people[].role`):
+#: employee — сотрудник заказчика (свой ведущий канала), self — сам заказчик,
+#: talent — нанятый актёр/модель, other — посторонний. Решает
+#: `studio/inhouse_news.py`: свой ведущий со своими новостями — план, не отказ.
+PERSON_ROLES: tuple[str, ...] = ("employee", "self", "talent", "other")
 OBJECTIVES: tuple[str, ...] = ("cheapest", "balanced", "quality")
 #: Для кого сделано (одиннадцатый круг, `spec.audience`): ЗРИТЕЛЬ, а не тот, кто
 #: в кадре. Мультсериал для детей — `children`; ребёнка в кадре это не значит
@@ -780,7 +785,7 @@ def _входы_spec(raw: Any, ошибки: list[str]) -> tuple[tuple[str, ...]
     return tuple(dict.fromkeys(виды)), tuple(подробно)
 
 
-_PEOPLE_FIELDS = frozenset({"name", "real", "public_figure", "consent", "claim", "deceased", "minor"})
+_PEOPLE_FIELDS = frozenset({"name", "real", "public_figure", "consent", "claim", "deceased", "minor", "role"})
 
 
 def _люди_spec(raw: Any, ошибки: list[str]) -> tuple[dict[str, Any], ...]:
@@ -807,6 +812,12 @@ def _люди_spec(raw: Any, ошибки: list[str]) -> tuple[dict[str, Any], .
                 ошибки.append(f"spec.people[{i}].{ключ}={ч.get(ключ)!r}: not in {', '.join(допустимо)}")
                 з = по_умолчанию
             запись[ключ] = з
+        if ч.get("role") is not None:
+            роль = str(ч["role"]).strip().lower()
+            if роль not in PERSON_ROLES:
+                ошибки.append(f"spec.people[{i}].role={ч['role']!r}: not in {', '.join(PERSON_ROLES)}")
+            else:
+                запись["role"] = роль
         люди.append(запись)
     return tuple(люди)
 

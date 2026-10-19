@@ -88,7 +88,7 @@ from typing import Any
 
 from mcp.server.mcpserver import MCPServer
 
-from studio import broadcast_marks, claims_policy, clarify, l10n
+from studio import broadcast_marks, claims_policy, clarify, inhouse_news, l10n
 from studio.mcp.lazy import lazy
 from studio.selfrag.facts import STALE_AFTER_DAYS  # noqa: E402
 from studio import ruwords
@@ -1397,7 +1397,8 @@ def plan_pipeline(
     people [{name, real,
     public_figure, deceased, minor (a real person under 18 on screen),
     consent: stated|none|unknown, claim: none|endorsement|political|news|
-    other}], audience (children|teens|general|adults — who WATCHES: a
+    other, role: employee|self|talent|other — employee = on the customer's
+    own staff (the station's own anchor), self = the customer}], audience (children|teens|general|adults — who WATCHES: a
     cartoon series for kids is audience children, not a child on screen),
     claims (below), conditions — only what the customer said, e.g.
     ["hands"] (ranking only). Speech steps are priced × languages; clip steps
@@ -1425,14 +1426,20 @@ def plan_pipeline(
             recorded as the customer's word; consent=none -> REFUSED;
             unknown                                      -> QUESTION
     NEWS AND REAL EVENTS — FILL `spec.claims` even with no person in the clip:
-    [{type: none|news|real_event, real_brand, brand?, fabricated?}].
+    [{type: none|news|real_event, real_brand, own_brand?, brand?, fabricated?}].
     real_event = disasters, elections, wars, health emergencies, market
     events; real_brand=true when it imitates a real broadcaster or news brand
-    that is not the customer's own (BBC, CNN, ТАСС, NHK…).
+    that is not the customer's own (BBC, CNN, ТАСС, NHK…); own_brand=true
+    when the outlet is the CUSTOMER'S OWN (their station, site, newsroom).
         real_brand=true                                  -> REFUSED
         news|real_event + fabricated=true                -> REFUSED
         news|real_event + fabricated=false (true report) -> planned, recorded
         news|real_event, fabricated unknown              -> QUESTION
+        IN-HOUSE PRESENTER: a real person with consent=stated, claim=news,
+        role=employee|self, reading news with own_brand=true and
+        fabricated=false (no real_brand claim) -> PLANNED with disclosure
+        notes, even when the presenter is a public figure (`in_house_news`
+        on the answer). Fabricated news and another broadcaster stay REFUSED.
     HEALTH AND MONEY CLAIMS IN ADVERTS — also `spec.claims`: {type:
     health_claim (the product cures/treats/prevents/relieves a disease or
     condition) | financial_claim (guaranteed returns, profit, "no risk"),
@@ -1562,6 +1569,7 @@ def _план(
     spec = dict(без_заявлений) if без_заявлений is not None else None
     заявления = claims_policy.decide(свои_заявления, brief)
     люди_spec, spec_плана = screen.люди_из_spec(spec, bs.SPEC_FIELDS)
+    просев_текста = просев
     просев, политика = screen.просеять_с_людьми(
         brief, люди_spec, просев, screen.события_из_spec(spec)
     )
@@ -1579,6 +1587,13 @@ def _план(
                 язык,
             )
         )
+    # ТРИНАДЦАТЫЙ КРУГ (`studio.inhouse_news`): свой сотрудник с заявленным
+    # согласием читает правдивые новости своей редакции — план с раскрытием,
+    # а не отказ «публичное лицо + новости». Узкая дверь: только структурные
+    # поля (people[].role, claims[].own_brand / fabricated) и ни одного другого
+    # запрета; выдуманные новости и чужой канал остаются отказом.
+    свой_выпуск = inhouse_news.decide(spec, политика, просев, просев_текста)
+    просев, политика = inhouse_news.apply(свой_выпуск, просев, политика)
     if просев["outcome"] != PASS:
         return _json(
             l10n.localise_payload(
@@ -1630,6 +1645,9 @@ def _план(
     if решено_spec:
         итог["note"] = f"{итог.get('note', '')}. {spec_screen.note(решено_spec, язык == 'en')}".lstrip(". ")
         итог["decided_by_spec"] = len(решено_spec)
+    if свой_выпуск["decision"] == inhouse_news.DECISION_ALLOW:
+        итог["note"] = f"{итог.get('note', '')}. {inhouse_news.note(свой_выпуск, язык == 'en')}".lstrip(". ")
+        итог["in_house_news"] = свой_выпуск
     итог = вопрос_о_согласии(итог, политика, англ=язык == "en")
     итог = вопрос_о_заявлении(итог, заявления, англ=язык == "en")
     if не_прочитан:
