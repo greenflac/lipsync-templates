@@ -176,7 +176,7 @@ class EightKPlans(unittest.TestCase):
                 self.assertIn("upscale_reach", ш)
                 отсеяны = {х["model"]: х["why"] for х in ш.get("hard_excluded") or []}
                 self.assertIn("bytedance-upscaler-upscale-video", отсеяны)
-                self.assertIn("output ceiling", отсеяны["bytedance-upscaler-upscale-video"])
+                self.assertRegex(отсеяны["bytedance-upscaler-upscale-video"], r"output ceiling|предел выхода")
 
 
 # --- 1b. lettering in a video is a text edit -------------------------------------------------
@@ -301,6 +301,11 @@ def w(base: dict, **more: object) -> dict:
     return {**base, **more}
 
 
+AV0 = {"task": "avatar", "inputs": [{"kind": "image", "owned": True}, {"kind": "audio", "owned": True}],
+       "outputs": ["video"], "duration_s": 30, "languages": ["en"]}
+ANCHOR = {"name": "A", "real": True, "public_figure": True, "consent": "stated", "claim": "news", "role": "employee"}
+
+
 #: rule -> (firing cases [(spec, steps, brief)], silent cases).
 CAVEATS: dict[str, tuple[list[tuple[dict, list[str], str]], list[tuple[dict, list[str], str]]]] = {
     "green_screen_keying": (
@@ -359,6 +364,17 @@ CAVEATS: dict[str, tuple[list[tuple[dict, list[str], str]], list[tuple[dict, lis
          (w(GEN, shots=2, per_shot_s=20, duration_s=40), ["генерация_видео"], "два шота по 20 секунд")],
         [(w(GEN, duration_s=15), ["генерация_видео"], "one take"), (w(GEN, duration_s=30, shots=3), ["генерация_видео"], "three shots")],
     ),
+    "text_edit_in_video": (
+        [(w(EDV, edit=["replace-text"]), ["правка_видео"], ""),
+         (w(EDV, edit=["replace-text", "stabilise"]), ["правка_видео"], "новая надпись на вывеске")],
+        [(w(EDV, edit=["replace-object"]), ["правка_видео"], "replace the car with a bus")],
+    ),
+    "in_house_anchor_disclosure": (
+        [({**AV0, "people": [ANCHOR]}, ["говорящий_аватар"], "our anchor reads our news"),
+         ({**AV0, "people": [{**ANCHOR, "role": "self"}]}, ["говорящий_аватар"], "я сам читаю новости своего канала")],
+        [({**AV0, "people": [{**ANCHOR, "role": "talent"}]}, ["говорящий_аватар"], "a hired presenter"),
+         ({**AV0, "people": [{**ANCHOR, "consent": "unknown"}]}, ["говорящий_аватар"], "our anchor")],
+    ),
 }
 
 
@@ -381,6 +397,7 @@ class Caveats(unittest.TestCase):
              "outputs": ["video"], "duration_s": 60, "languages": ["en"], "people": []}, ["говорящий_аватар"], ""))
 
     def test_rules_are_bilingual_and_sourced_where_regulatory(self) -> None:
+        self.assertEqual({р.id for р in cl.RULES_R13}, set(CAVEATS))
         for р in cl.RULES_R13:
             self.assertTrue(р.en and р.ru, р.id)
             if р.tag == cl.R:
