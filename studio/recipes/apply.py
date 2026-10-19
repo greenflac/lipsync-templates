@@ -44,6 +44,7 @@ from studio.recipes.table import (
     TOOLS,
     VISUALISER_LOOP_CLIP_S,
     VISUALISER_LOOP_CLIPS,
+    LOOP_CLIP_S,
     Prior,
 )
 
@@ -145,6 +146,35 @@ LOCAL_ONLY = re.compile(
 )
 
 
+#: Round 13: a seamless loop asked for (one clip that repeats) — a shared asset of every version.
+LOOP = re.compile(
+    r"\bloop(?:s|ed|ing|able)?\b|seamless(?:ly)? repeat\w*|cinemagraph\w*|зацикл\w*|\bлуп\w*|бесшовн\w* (?:петл|повтор)\w*"
+    r"|\bпетл[яеюи]\w*",
+    re.I,
+)
+#: The loop's own length named next to it: «a 6-second loop», «loop of 5 s», «петля на 5 секунд».
+LOOP_LENGTH = re.compile(
+    r"(\d+(?:[.,]\d+)?)\s*-?\s*(?:s|sec|secs|seconds?|сек\w*|с)\b(?:[\s-]+[\w-]+){0,3}?[\s-]+(?:loop|зацикл|петл|луп|цикл)"
+    r"|(?:loop\w*|петл\w*|луп\w*|цикл\w*|зацикл\w*)(?:\s+[\w-]+){0,4}?\s+(?:of|на|в|длиной)\s*(\d+(?:[.,]\d+)?)\s*-?\s*"
+    r"(?:s|sec|secs|seconds?|сек\w*|с)\b",
+    re.I,
+)
+#: Loop steps: generators of a clip (a talking avatar is not a loop).
+LOOP_MAKERS: tuple[str, ...] = ("генерация_видео", "оживление", "видео_по_референсу")
+
+
+def loop_seconds(spec: "bs.Spec", text: str = "") -> float | None:
+    """A loop is asked for: its own length (named, or `LOOP_CLIP_S`); None — no loop."""
+    said = [str(у) for у in (*spec.conditions, text) if у]
+    if not any(LOOP.search(у) for у in said):
+        return None
+    for у in said:
+        m = LOOP_LENGTH.search(у)
+        if m:
+            return float((m.group(1) or m.group(2)).replace(",", "."))
+    return float(LOOP_CLIP_S)
+
+
 #: Round 13: sound asked to follow the brought picture (a soundtrack synced to the action).
 FOLLOWS_PICTURE = re.compile(
     r"\bsync\w*|follow\w* (?:the |its |their )?(?:action|picture|motion|movement|cuts?|edit|footage|video|clip)"
@@ -238,6 +268,10 @@ NOTE_V2A = (
     "«видео -> звук»: модель смотрит ВАШ ролик (MMAudio, HunyuanVideo-Foley)",
     "video-to-audio: the model watches YOUR footage (MMAudio, HunyuanVideo-Foley)",
 )
+NOTE_LOOP_ONCE = (
+    "одна бесшовная петля на {s} с — ОБЩАЯ для всех версий и длин: генерируется один раз",
+    "one seamless loop of {s} s — SHARED by every version and length: generated once",
+)
 NOTE_ONE_REFERENCE = (
     f"{SINGLE_HOST_REFERENCES} референс ведущего на все ролики",
     f"{SINGLE_HOST_REFERENCES} reference of the host for every short",
@@ -315,6 +349,10 @@ ASSEMBLY_LOCAL_DUB = (
     "YOUR video (ffmpeg) — all on your GPU, 0 usd",
 )
 
+ASSEMBLY_LOOP_VERSIONS = (
+    "петля повторяется до каждой заказанной длины и версии (ffmpeg -stream_loop, обрезка по длине) — 0 usd",
+    "the loop is repeated to every ordered length and version (ffmpeg -stream_loop, cut to length) — 0 usd",
+)
 ASSEMBLY_LOGO = (
     "логотип накладывается из ВАШЕГО файла (ffmpeg overlay) финальной карточкой — буква в букву; "
     "сгенерированный текст в кадр не идёт — 0 usd",
@@ -388,6 +426,9 @@ class Applied:
     #: Round 12: the route was rebuilt for the customer's own machine (a local chain):
     #: selection goes to open weights on their GPU even when `spec.self_host` is silent.
     local_only: bool = False
+    #: Round 13: steps whose output is a SHARED ASSET (made once, reused by every
+    #: version / shot): the plan states the reuse.
+    shared: tuple[str, ...] = ()
 
 
 def enabled(spec: "bs.Spec", prior_id: str) -> bool:
@@ -655,6 +696,29 @@ def rewrite(spec: "bs.Spec", route: "bs.Маршрут", text: str = "") -> Appl
             notes[loop_maker] = NOTE_LOOPS[0]
             acc.assembly.append(ASSEMBLY_LOOPS)
 
+    # --- round 13: one loop, many versions (a shared asset) ----------------------------
+    shared: list[str] = []
+    loop_s = loop_seconds(spec, text)
+    if (
+        loop_s is not None
+        and spec.task in (None, "generate", "animate")
+        and "speech" not in outputs
+        and "video" in outputs
+        and not set(steps) & SPEECH_CONSUMERS
+        and (spec.characters or 0) < 2
+    ):
+        maker = next((s for s in steps if s in LOOP_MAKERS), None)
+        if maker is not None and acc.prior("shared_loop", "loop_reuse"):
+            step_seconds[maker] = (loop_s, loop_s)
+            counts[maker] = 1
+            if "генерация_изображения" in steps:
+                counts["генерация_изображения"] = 1
+            notes[maker] = NOTE_LOOP_ONCE[0].format(s=f"{loop_s:g}")
+            acc.assembly.append(ASSEMBLY_LOOP_VERSIONS)
+            shared.append(maker)
+    if counts.get("генерация_изображения") == SINGLE_HOST_REFERENCES and "генерация_изображения" in steps:
+        shared.append("генерация_изображения")
+
     # --- zero budget ------------------------------------------------------------------
     # Own GPU already named — the plan is on the free route; nothing to add.
     if not spec.self_host and (
@@ -680,6 +744,7 @@ def rewrite(spec: "bs.Spec", route: "bs.Маршрут", text: str = "") -> Appl
         free_route=free,
         local_only=local,
         print_frame=delivery.print_frame(spec, text),
+        shared=tuple(dict.fromkeys(shared)),
     )
 
 

@@ -4834,6 +4834,7 @@ def нужда_шага(
     языков: int = 1,
     штук: int | None = None,
     языки: Sequence[str] = (),
+    начитка: bool = True,
 ) -> pricing.Need:
     """Что шаг должен выдать на ЭТОМ брифе — от этого зависит строка таблицы цен.
 
@@ -4848,6 +4849,8 @@ def нужда_шага(
         (`brief_spec.Маршрут.штук`: референс серии — 1, правок по нему — N).
     :param языки: языки речи (BCP-47) — знаки текста считаются по скорости
         письма (`pricing.speech_chars`): японский — не 15 знаков в секунду.
+    :param начитка: шаг читает текст сам (тринадцатый круг): False у клона,
+        за которым начитку делает шаг озвучки, — у него только плата за клон.
     """
     if штук is not None:
         кадров = штук
@@ -4859,7 +4862,7 @@ def нужда_шага(
     # для шагов `PER_LANGUAGE_STEPS` и языков, названных в spec).
     if секунды is not None and языков > 1:
         секунды *= языков
-    речь = op.name in ("озвучка", "дубляж", "клонирование_голоса")
+    речь = op.name in ("озвучка", "дубляж", "клонирование_голоса") and начитка
     return pricing.Need(
         seconds=секунды,
         resolution=min(кадр) if кадр else None,
@@ -4876,7 +4879,7 @@ def нужда_шага(
         megapixels=(кадр[0] * кадр[1] / 1e6) if кадр else 1.0,
         mode=РЕЖИМ_ШАГА.get(op.name, ""),
         fps=fps,
-        shots=клипов if (клипов and op.клипами and not картинка) else 1,
+        shots=штук if (штук is not None and not картинка) else клипов if (клипов and op.клипами and not картинка) else 1,
         jobs=языков if (секунды is not None and языков > 1) else 1,
     )
 
@@ -9542,6 +9545,76 @@ def бесплатный_путь(операции: Sequence[Operation], инд�
     }
 
 
+#: Вход «текст» в записи реестра (`ep.Endpoint.inputs`).
+ARTEFACT_TEXT_INPUT = "текст"
+#: Тринадцатый круг: начитка голосом клона, когда эндпоинт клонирования голос
+#: только СОЗДАЁТ (`minimax-voice-clone`: «voice deleted unless used with a TTS
+#: endpoint within 7 days», на входе — только образец). (ru, en).
+NOTE_CLONE_TTS = (
+    "текст читается синтезом речи ГОЛОСОМ КЛОНА (голос из шага клонирования): эндпоинт клонирования голос "
+    "только создаёт, а заказанный текст не читает",
+    "the text is synthesised IN THE CLONED VOICE (the voice made by the clone step): the clone endpoint only "
+    "creates the voice and does not read the ordered text",
+)
+
+
+bs.NOTES_EN.setdefault(NOTE_CLONE_TTS[0], NOTE_CLONE_TTS[1])
+
+
+#: Тринадцатый круг: шаги, чей выход — ОБЩИЙ АКТИВ серии (референс персонажа,
+#: клон голоса): делаются меньше раз, чем шагов, которые их берут. КОНСТАНТА-РЕШЕНИЕ.
+SHARED_ASSET_STEPS: frozenset[str] = frozenset({"генерация_изображения", "клонирование_голоса"})
+
+
+def общие_активы(
+    строки: Sequence[Mapping[str, Any]], отмечены: Sequence[str], шотов: int, англ: bool
+) -> list[dict[str, Any]]:
+    """Активы, которые делаются ОДИН раз и берутся многими шотами (тринадцатый круг) — план говорит о повторе.
+
+    Общий — шаг из `SHARED_ASSET_STEPS`, сделанный меньше раз, чем делают шаги
+    после него (референс один — шотов N), клон голоса всегда (голос один на все
+    реплики, языки и ролики), и шаги, которые отметил рецепт (петля на все версии).
+    """
+    out: list[dict[str, Any]] = []
+    for i, строка in enumerate(строки):
+        шаг = str(строка.get("step") or "")
+        сделано = int(строка.get("shots") or 1)
+        берут = max((int(с.get("shots") or 1) for с in строки[i + 1 :]), default=1)
+        if шаг in отмечены:
+            берут = max(берут, шотов)
+        общий = шаг in отмечены or шаг == "клонирование_голоса" or (шаг in SHARED_ASSET_STEPS and берут > сделано)
+        if not общий:
+            continue
+        имя = шаг_словами(шаг, англ)
+        out.append(
+            {
+                "step": шаг,
+                "made": сделано,
+                "reused_by": берут,
+                "note": (
+                    f"{имя}: made {сделано}x and reused by every shot/version ({берут}) — a shared asset, priced once"
+                    if англ
+                    else f"{имя}: делается {сделано} раз(а) и берётся всеми шотами/версиями ({берут}) — общий актив, "
+                    "оплачивается один раз"
+                ),
+            }
+        )
+    return out
+
+
+def клон_читает_текст(модель: str, реестр: "ep.Registry") -> bool:
+    """Читает ли эндпоинт клонирования заказанный текст сам — по записи реестра (работа и вход/выход).
+
+    Читает: среди работ узла синтез речи (`xtts-v2` — клон без обучения и
+    синтез в одном), на входе текст, или на выходе аудио. Узла нет — записи нет,
+    и шаг не дописывается (молчание не повод платить).
+    """
+    узел = реестр.get(модель)
+    if узел is None:
+        return True
+    return ep.TTS in узел.functions or ARTEFACT_TEXT_INPUT in узел.inputs or ARTEFACT_AUDIO in узел.outputs
+
+
 def решить_апскейл(
     выбор: Sequence[tuple[Operation, Candidate | None]],
     просят: tuple[int, int] | None,
@@ -11380,8 +11453,14 @@ def чужое_ремесло(brief: str) -> bool:
     return clarify.чужое_ремесло(brief) or bool(bs.MONTAGE.search(_norm(brief)))
 
 
-def шотов_шага(op: Operation, кадров: int, клипов: int) -> int | None:
-    """Сколько раз шаг делается: клипы у видео по шотам, кадры у картинки. 1 — не печатается."""
+def шотов_шага(op: Operation, кадров: int, клипов: int, штук: int | None = None) -> int | None:
+    """Сколько раз шаг делается: клипы у видео по шотам, кадры у картинки. 1 — не печатается.
+
+    :param штук: сколько раз шаг делает МАРШРУТ (тринадцатый круг): липсинк в
+        каждом говорящем шоте — столько прогонов, сколько шотов.
+    """
+    if штук is not None and {OUTPUT_KINDS.get(а) for а in op.produces} != {"изображение"}:
+        return штук if штук > 1 else None
     if op.клипами and клипов > 1:
         return клипов
     if {OUTPUT_KINDS.get(а) for а in op.produces} == {"изображение"} and кадров > 1:
@@ -12256,6 +12335,7 @@ def plan(
                 языков=языков_на_шаг(op),
                 штук=маршрут.штук.get(op.name),
                 языки=tuple(понято.languages) if op.name in SPEECH_STEPS else (),
+                начитка=op.name not in клон_без_начитки,
             ),
             bool(COMMUNITY_ASKED.search(brief)),
             условия,
@@ -12308,11 +12388,16 @@ def plan(
     # (`принудительно`) берёт те же списки, а не ищет заново.
     найдено_на_шаг: dict[str, list[Candidate]] = {}
     принудительно: dict[str, str] = {}
+    клон_без_начитки: set[str] = set()
+    линейка_клона: list[str] = [""]
 
     def _шаг(op: Operation, дописан: str = "") -> None:
         if op.name not in найдено_на_шаг:
             найдено_на_шаг[op.name] = _кандидаты(op)
             по_рецепту(найдено_на_шаг[op.name], op.name, рецепт, индекс)
+            if op.name == "озвучка" and линейка_клона[0]:
+                # Голос клона читается синтезом ЕГО линейки — вперёд, порядок внутри прежний.
+                найдено_на_шаг[op.name].sort(key=lambda c: not c.model.startswith(линейка_клона[0] + "-"))
         отсеяны = getattr(найдено_на_шаг[op.name], "исключены", {})
         предложены = list(найдено_на_шаг[op.name])
         цены_кандидатов = [c.cost.cheapest.usd for c in предложены if c.cost is not None]
@@ -12375,7 +12460,7 @@ def plan(
                 "produces": list(op.produces),
                 "input_of_plan": подменено,
                 "duration_asked": длительность.нота,
-                "shots": шотов_шага(op, маршрут.штук.get(op.name, кадров), клипов),
+                "shots": шотов_шага(op, маршрут.штук.get(op.name, кадров), клипов, маршрут.штук.get(op.name)),
                 "chosen": _candidate_row(лучший),
                 # Чужая работа соседом не показывается (2026-10-15): модель
                 # музыки — не «альтернатива» синтезу речи. Видна в счёте
@@ -12525,6 +12610,23 @@ def plan(
             if почему_частота:
                 _шаг(next(оп for оп in OPERATIONS if оп.name == "интерполяция_кадров"), почему_частота)
 
+    # КЛОН БЕЗ НАЧИТКИ (тринадцатый круг). Эндпоинт клонирования, который голос
+    # только СОЗДАЁТ (по записи реестра: ни синтеза среди работ, ни текста на
+    # входе, ни аудио на выходе), заказанного текста не читает — после него
+    # шаг озвучки голосом клона, а у клона остаётся только плата за клон.
+    # Синтез — той же линейки, что клон (голос клона живёт у его вендора).
+    имена_оп = [оп.name for оп in операции]
+    if "клонирование_голоса" in имена_оп and "озвучка" not in имена_оп:
+        клон_оп = операции[имена_оп.index("клонирование_голоса")]
+        первый_клон = next((c for c in _кандидаты(клон_оп) if not c.foreign), None)
+        if первый_клон is not None and not клон_читает_текст(первый_клон.model, ep.build(индекс.facts)):
+            операции.insert(
+                имена_оп.index("клонирование_голоса") + 1, next(оп for оп in OPERATIONS if оп.name == "озвучка")
+            )
+            дописаны["озвучка"] = NOTE_CLONE_TTS[0]
+            клон_без_начитки.add("клонирование_голоса")
+            линейка_клона[0] = первый_клон.model.split("-")[0]
+            найдено_на_шаг.pop("клонирование_голоса", None)
     _собрать()
 
     # БЮДЖЕТ РОЛИКА ОПТИМИЗИРУЕТСЯ (2026-10-15, см. `полоса`): сумма выше
@@ -12696,7 +12798,7 @@ def plan(
         and not (spec_only and "video" in понято.inputs),
     )
     for строка_сметы in (цена_пайплайна.get("смета") or {}).get("steps") or []:
-        n = шотов_шага(next(оп for оп in операции if оп.name == строка_сметы["step"]), маршрут.штук.get(строка_сметы["step"], кадров), клипов) if строка_сметы["step"] in имена_плана else None
+        n = шотов_шага(next(оп for оп in операции if оп.name == строка_сметы["step"]), маршрут.штук.get(строка_сметы["step"], кадров), клипов, маршрут.штук.get(строка_сметы["step"])) if строка_сметы["step"] in имена_плана else None
         if n:
             строка_сметы["shots"] = n
             строка_сметы["usd_per_shot"] = round(float(строка_сметы["usd"]) / n, 4)
@@ -12913,6 +13015,7 @@ def plan(
         "creative": _creative_row(creative, кадр, про_кадр),
         "steps": строки_шагов,
         "assembly": сборка,
+        "shared_assets": общие_активы(строки_шагов, рецепт.shared, int(понято.shots or 1), по_английски),
         "resolution_carry": пронесено[0],
         "frame_rate": {"asked": fps_заказано, "note": частота[0]} if fps_заказано else None,
         "recipe": строка_рецепта,
@@ -13158,6 +13261,7 @@ def сжать(ответ: dict) -> dict:
         "creative": ответ.get("creative"),
         "steps": шаги,
         "assembly": ответ.get("assembly"),
+        "shared_assets": ответ.get("shared_assets") or [],
         "resolution_carry": ответ.get("resolution_carry"),
         "frame_rate": ответ.get("frame_rate"),
         "recipe": ответ.get("recipe"),
