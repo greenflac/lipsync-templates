@@ -54,7 +54,9 @@ SPEECH_CONSUMERS: frozenset[str] = frozenset({"говорящий_аватар",
 #: Order of operations over footage (rank; lower first). Upscale of a still ranks with video upscale.
 CHAIN_RANK: dict[str, int] = {
     "реставрация": 1,
+    "реставрация_изображения": 1,
     "раскраска": 2,
+    "раскраска_изображения": 2,
     "апскейл": 3,
     "апскейл_изображения": 3,
     "интерполяция_кадров": 4,

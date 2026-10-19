@@ -399,7 +399,7 @@ _КЛАУЗА = re.compile(r"[,;:.!?\n]|\s—\s|\s-\s|\bthen\b|\bзатем\b|\b
 #: имена операций плановщика; кандидатов на них даёт реестр эндпоинтов по
 #: работе (`planner.ФУНКЦИЯ_ОПЕРАЦИИ`), а не слова брифа.
 ROUTE_TASKS: dict[str, tuple[tuple[str, str], ...]] = {
-    "restore": (("video", "реставрация"),),
+    "restore": (("video", "реставрация"), ("photo", "реставрация_изображения")),
     "colorize": (("video", "раскраска"), ("photo", "раскраска_изображения")),
     "interpolate": (("video", "интерполяция_кадров"),),
     "remove-background": (("photo", "удаление_фона"), ("video", "удаление_фона_видео")),
@@ -1527,6 +1527,7 @@ NOTE_DUB_AUDIO = "отдаётся дорожка на новом языке; в
 NOTE_STABILISE = "стабилизация — монтажный инструмент (ffmpeg vidstab или Gyroflow по гироскопу), не модель"
 NOTE_VISUALISER_SYNC = "реакция на звук делается при сборке; генерируемое видео трек не слышит"
 NOTE_SERIES_REF = "один референс персонажа, и каждая картинка серии — правка по нему"
+NOTE_MOTION = "движение берётся из ВАШЕГО ведущего видео, внешность — со снимка (motion control), а не выдумывается"
 NOTE_SERIES_EDIT = "{n} картинок — правки по референсу (а не {n} независимых генераций); вариант — обучить LoRA"
 NOTE_SIGN = (
     "язык жестов генеративные модели не делают: липсинк и говорящие аватары двигают губы, а не руки — "
@@ -1547,6 +1548,7 @@ NOTES_EN: dict[str, str] = {
     NOTE_STABILISE: "stabilisation is an assembly tool (ffmpeg vidstab, or Gyroflow from gyro data), not a model",
     NOTE_VISUALISER_SYNC: "audio reactivity is made at assembly; the generated video does not hear the track",
     NOTE_SERIES_REF: "one character reference, and every picture of the series is an edit from it",
+    NOTE_MOTION: "the motion comes from YOUR driving video and the look from the photo (motion control), not invented",
     NOTE_SIGN: (
         "sign language is not something generative models do: lip sync and talking avatars move lips, not "
         "hands — a recorded gap, no plan is built"
@@ -1667,7 +1669,12 @@ def _нехватка_двух(задача: str, нужно: tuple[str, ...], �
 def _дорожки(spec: Spec, шаги: list[str]) -> None:
     """Речь, музыка, шумы поверх картинки — общие для генерации и r2v."""
     выходы = set(spec.outputs)
-    if "speech" in выходы and spec.audio != "native" and "audio" not in spec.inputs:
+    # Запись И текст на входе — образец голоса и то, что им сказать (одиннадцатый
+    # круг): «вот 30 секунд моего голоса, прочитай им сценарий» не выводило ни
+    # шага и спрашивало, что заказано. Шаг озвучки здесь — место, которое рецепт
+    # `voice_sample_clone` отдаёт клонированию голоса.
+    образец = "audio" in spec.inputs and "script" in spec.inputs
+    if "speech" in выходы and spec.audio != "native" and ("audio" not in spec.inputs or образец):
         шаги.append("озвучка")
     if "music" in выходы:
         шаги.append("музыка")
@@ -1706,7 +1713,15 @@ def route(spec: Spec, на_сборке: frozenset[str] | None = None) -> Мар
     сборка = list(главный.сборка)
     правки = главный.правки
     штук = dict(главный.штук)
-    выход = "video" if "video" in spec.outputs or spec.task not in (None, "generate") else "photo"
+    # Цепочка над СНИМКАМИ (одиннадцатый круг): «реставрация -> раскраска»
+    # 12 фото отдавала раскраске видео — выход работы считался видео всегда,
+    # кроме генерации. Снимки на входе и снимки на выходе — звено над снимком.
+    над_снимком = "video" not in spec.outputs and "photo" in spec.inputs and "video" not in spec.inputs
+    выход = (
+        "video"
+        if "video" in spec.outputs or (spec.task not in (None, "generate") and not над_снимком)
+        else "photo"
+    )
     for задача in spec.then_tasks:
         звено = _маршрут_одной(
             replace(spec, task=задача, then_tasks=(), inputs=tuple(dict.fromkeys((*spec.inputs, выход)))),
@@ -1823,6 +1838,11 @@ def _маршрут_одной(spec: Spec, на_сборке: frozenset[str] = f
         _дорожки(spec, шаги)
         return Маршрут(tuple(dict.fromkeys(шаги)), пометки)
     if задача == "face-replace":
+        if "video" not in входы and "photo" in входы and "video" not in выходы:
+            # ЗАМЕНА ЛИЦА НА СНИМКЕ (одиннадцатый круг): «моё лицо на рыцаря с
+            # этой картинки» спрашивало видео. Снимок-цель и новое лицо —
+            # снимки заказчика; делает картиночный face-swap реестра.
+            return Маршрут(("замена_лица_изображения",), {})
         if "video" not in входы:
             return Маршрут(нехватка=_нехватка_видео(задача))
         # Новое лицо — РЕФЕРЕНС заказчика (вход шага `референс`, он у плана
@@ -1847,6 +1867,11 @@ def _маршрут_одной(spec: Spec, на_сборке: frozenset[str] = f
         # говорящий аватар, а не TTS + t2v + липсинк.
         return Маршрут(("говорящий_аватар",), {})
     if задача == "animate":
+        if "video" in входы and "photo" in входы:
+            # ПЕРЕНОС ДВИЖЕНИЯ (одиннадцатый круг): снимок и ВЕДУЩЕЕ видео —
+            # персонаж со снимка повторяет движение из видео. Простой
+            # image-to-video ведущего видео не берёт.
+            return Маршрут(("перенос_движения", *_подложка(выходы)), {"перенос_движения": NOTE_MOTION})
         шаги.append("оживление")
     elif задача == "lipsync":
         if "video" in входы:
@@ -1936,8 +1961,59 @@ def shots(spec: Spec, max_run_s: float | None, клипов_нужно: bool) ->
     return 1, ""
 
 
-def with_defaults(spec: Spec, ролик: bool) -> Spec:
-    """Допущения, сделанные за заказчика, — НАЗВАННЫЕ: разрешение видео, голос поверх картинки."""
+#: Самый длинный СГЕНЕРИРОВАННЫЙ говорящий клип, который делается одним дублем
+#: видеомодели с нативным звуком (одиннадцатый круг). Видеомодели со звуком
+#: (Veo 3.x, Kling 3.0, Seedance 2.x) отдают 8-15 с за прогон; длиннее — это
+#: уже монтаж из шотов, и голос ведёт озвучка. КОНСТАНТА-РЕШЕНИЕ.
+NATIVE_SPEECH_MAX_S = 15.0
+
+
+#: Говорят В КАДРЕ: глагол речи у персонажа («повар говорит», «a chef saying»).
+#: «Озвучка», «voiceover», «закадровый» — голос ЗА кадром, их здесь нет нарочно.
+SPEAKING_IN_FRAME = re.compile(
+    r"\b(?:say|says|saying|speak|speaks|speaking|talk|talks|talking|tells?|telling|greets?|greeting"
+    r"|shouts?|shouting|whispers?|whispering|asks?|asking|delivers? (?:a |the |one |his |her )?(?:line|speech|monologue)"
+    r"|lip[- ]?synced|dialogue)\b"
+    r"|говор(?:ит|ят|ящ\w*)|произнос\w*|скаж\w*|рассказыва\w*|обраща\w*|приветству\w*|крич\w*|шепч\w*",
+    re.I,
+)
+#: Голос ЗА кадром назван словами — говорящего в кадре нет.
+VOICE_OFF_FRAME = re.compile(r"voice-?over|narrat\w*|off-?screen|озвучк\w*|закадров\w*|диктор\w*|配音", re.I)
+
+
+def говорящий_ролик(spec: Spec, текст: str = "") -> bool:
+    """Короткий генерируемый клип, где говорят в кадре: звук делает сама видеомодель.
+
+    «Сгенерируй 8 секунд: повар говорит „добро пожаловать“» шло озвучкой +
+    text-to-video — голос поверх немого кадра, губы не двигаются. Ничего не
+    принесено, речь на одном языке, клип в один дубль — это видео с нативным
+    звуком. Звук назван (`audio`) — решает он.
+    """
+    if spec.audio is not None or spec.task not in (None, "generate"):
+        return False
+    if not SPEAKING_IN_FRAME.search(текст or "") or VOICE_OFF_FRAME.search(текст or ""):
+        return False
+    выходы = set(spec.outputs)
+    # Речь названа выходом — или языком речи при видео без других выходов
+    # («8 секунд: повар говорит „добро пожаловать“», languages=["en"]).
+    if "video" not in выходы or not ("speech" in выходы or (выходы == {"video"} and spec.languages)):
+        return False
+    if set(spec.inputs) & {"photo", "video", "audio"}:
+        return False
+    if len(spec.language_tags or spec.languages) > 1 or (spec.characters or 0) > 1:
+        return False
+    длина = spec.per_shot_s if spec.shots and spec.per_shot_s else spec.duration_s
+    return bool(длина) and float(длина) <= NATIVE_SPEECH_MAX_S and (spec.shots or 1) == 1
+
+
+def with_defaults(spec: Spec, ролик: bool, текст: str = "") -> Spec:
+    """Допущения, сделанные за заказчика, — НАЗВАННЫЕ: разрешение видео, голос поверх картинки.
+
+    :param текст: слова брифа — читаются ТОЛЬКО для того, говорят ли в кадре
+        (`говорящий_ролик`): у spec нет поля «кто говорит — голос за кадром или
+        персонаж в кадре», а «15-секундная реклама с озвучкой» и «повар говорит
+        в камеру» дают одну и ту же spec.
+    """
     допущения = list(spec.assumptions)
     поля = {к: getattr(spec, к) for к in spec.__dataclass_fields__}
     источник = dict(spec.source)
@@ -1951,7 +2027,27 @@ def with_defaults(spec: Spec, ролик: bool) -> Spec:
             + (" (9:16 ad standard)" if spec.aspect == "9:16" else " (delivery standard)")
             + "; pass spec.resolution to change"
         )
-    if "speech" in spec.outputs and "video" in spec.outputs and spec.audio is None and spec.task in (None, "generate", "animate"):
+    if (
+        not spec.duration_s
+        and not (spec.shots and spec.per_shot_s)
+        and input_seconds(spec) is None
+        and озвучка_по_тексту(spec)
+    ):
+        поля["duration_s"] = SCRIPT_SPEECH_DEFAULT_S
+        источник["duration_s"] = SOURCE_DEFAULT
+        допущения.append(
+            f"the length of the speech is set by YOUR script and was not named — priced for "
+            f"{SCRIPT_SPEECH_DEFAULT_S:g} s of speech (scale by the script's length: ~150 words a minute); "
+            "pass spec.duration_s for an exact price"
+        )
+    if говорящий_ролик(spec, текст):
+        поля["audio"] = "native"
+        источник["audio"] = SOURCE_DEFAULT
+        допущения.append(
+            "a short generated clip where someone speaks: the video model makes the voice and the lips together "
+            "(native audio) — no separate voiceover or lip sync; pass spec.audio='voiceover' for an off-screen voice"
+        )
+    elif "speech" in spec.outputs and "video" in spec.outputs and spec.audio is None and spec.task in (None, "generate", "animate"):
         поля["audio"] = "voiceover"
         источник["audio"] = SOURCE_DEFAULT
         допущения.append(
@@ -2217,6 +2313,21 @@ def _пробел(поле: str, почему: str) -> dict[str, str]:
     return {"field": поле, "allowed": FIELD_HELP.get(поле, ""), "why": почему}
 
 
+#: Длина озвучки, допущенная, когда заказчик принёс ТЕКСТ, а длины не назвал
+#: (одиннадцатый круг): длину речи задаёт сам сценарий, спрашивать её — лишний
+#: круг. Цена печатается как оценка на минуту речи. КОНСТАНТА-РЕШЕНИЕ.
+SCRIPT_SPEECH_DEFAULT_S = 60.0
+
+#: Выходы, при которых длину задаёт принесённый текст: только речь (и текст).
+SCRIPT_TIMED_OUTPUTS: frozenset[str] = frozenset({"speech", "text"})
+
+
+def озвучка_по_тексту(spec: "Spec") -> bool:
+    """Озвучка принесённого сценария: длину речи задаёт текст, вопрос о длине не нужен."""
+    выходы = set(spec.outputs)
+    return bool(выходы) and выходы <= SCRIPT_TIMED_OUTPUTS and "speech" in выходы and "script" in spec.inputs
+
+
 def gaps(raw: Mapping[str, Any] | None) -> tuple[Spec, list[str], list[dict[str, str]]]:
     """(spec, ошибки формы, НЕДОСТАЮЩИЕ решающие поля). Пусто в третьем — план строится.
 
@@ -2261,11 +2372,14 @@ def gaps(raw: Mapping[str, Any] | None) -> tuple[Spec, list[str], list[dict[str,
                     )
     elif выходы & TIMED_OUTPUTS:
         от_входа = input_seconds(spec) is not None
-        if not (spec.duration_s or (spec.shots and spec.per_shot_s) or от_входа):
+        if not (spec.duration_s or (spec.shots and spec.per_shot_s) or от_входа or озвучка_по_тексту(spec)):
             нет.append(_пробел("duration_s", "length decides the price and how many runs/shots are needed"))
     elif выходы == {"image"}:
         штук = any(з.get("count") for з in spec.input_items)
-        if not (spec.shots or штук):
+        # Работа над ПРИНЕСЁННЫМИ снимками (одиннадцатый круг): сколько картинок
+        # — столько, сколько принесено; «одна картинка» без count — не вопрос.
+        над_своими = bool(set(работы) & (MATERIAL_TASKS | {"colorize"})) and "photo" in spec.inputs
+        if not (spec.shots or штук or над_своими):
             нет.append(_пробел("shots", "how many pictures decides the price"))
     if ("speech" in выходы or set(работы) & LANGUAGE_TASKS) and (
         raw.get("languages") is None or not spec.languages

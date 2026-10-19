@@ -101,6 +101,9 @@ CHARACTER_REPLACE = "character-replace"
 #: Десятый круг: виртуальная примерка — одежда с фото товара на фото человека
 #: (вход: снимок человека + снимок вещи, выход: снимок).
 TRY_ON = "virtual-try-on"
+#: Одиннадцатый круг: перенос движения — снимок персонажа повторяет движение
+#: ведущего видео (Kling motion control, Wan Animate move, Runway Act-Two).
+MOTION_TRANSFER = "motion-transfer"
 
 #: Управляемый словарь работ. Порядок — порядок отчёта покрытия.
 FUNCTIONS: tuple[str, ...] = (
@@ -130,6 +133,7 @@ FUNCTIONS: tuple[str, ...] = (
     IMAGE_TO_3D,
     CHARACTER_REPLACE,
     TRY_ON,
+    MOTION_TRANSFER,
 )
 
 #: Работы, у которых ВЫХОД — видео: им нужна длина прогона (ролик длиннее
@@ -144,6 +148,7 @@ VIDEO_FUNCTIONS: frozenset[str] = frozenset(
         AVATAR,
         FACE_SWAP,
         CHARACTER_REPLACE,
+        MOTION_TRANSFER,
         UPSCALE_VIDEO,
         RESTORE,
         COLORIZE,
@@ -219,6 +224,16 @@ JOB_RULES: tuple[tuple[str, tuple[str, ...]], ...] = (
     (r"auto-caption\w*|subtitl\w*", (CAPTIONS,)),
     (r"turntable|orbit|360-?spin|multi-?view|novel-view", (TURNTABLE,)),
     (r"image-to-3d|img-to-3d|image23d|trellis|hunyuan-?3d|tripo(?:sr|sg)?|rodin|instantmesh|sf3d|spar3d", (IMAGE_TO_3D,)),
+)
+
+#: Работы, которые читаются ТОЛЬКО из СОБСТВЕННОГО имени узла (одиннадцатый круг).
+#: Перенос движения — своя работа (и прежняя правка видео) у эндпоинта, чьё имя
+#: её называет. Схемы соседей семьи сюда не идут: под семьёй `kling-3.0` лежит
+#: схема `…/v3/standard/motion-control`, и правило по ВСЕМ идентификаторам
+#: сделало бы всю семью переносом движения — и сняло бы её свидетельство с i2v/t2v
+#: (измерено: dev-набор упал на 6 брифов).
+OWN_NAME_JOB_RULES: tuple[tuple[str, tuple[str, ...]], ...] = (
+    (r"motion-control|motion-transfer|animate-move|act-two", (MOTION_TRANSFER, V2V_EDIT)),
 )
 
 #: Звено апскейла: какая из двух работ — решает выход или звено видео/картинки.
@@ -346,6 +361,7 @@ SIGNATURES: dict[str, tuple[frozenset[str], frozenset[str]]] = {
     IMAGE_TO_3D: (frozenset({_КАРТИНКА, _ТЕКСТ}), frozenset({_3D})),
     CHARACTER_REPLACE: (frozenset({_КАРТИНКА, _ВИДЕО, _ТЕКСТ}), frozenset({_ВИДЕО})),
     TRY_ON: (frozenset({_КАРТИНКА, _ТЕКСТ}), frozenset({_КАРТИНКА})),
+    MOTION_TRANSFER: (frozenset({_КАРТИНКА, _ВИДЕО, _ТЕКСТ}), frozenset({_ВИДЕО})),
 }
 
 
@@ -858,6 +874,10 @@ def _каналы(
         режимы |= м
         if ид in ids:
             режимы_площадки |= м
+    for образец, что in OWN_NAME_JOB_RULES:
+        if _звено(образец, _звенья(model)):
+            работы |= set(что)
+            откуда.append(model)
     if работы:
         yield _порядок(работы), EVIDENCE_ID, "; ".join(откуда)
     # 1б. ОБЯЗАТЕЛЬНЫЙ ЗВУК НА ВХОДЕ ВИДЕОМОДЕЛИ — подпись работы, а не режим:
@@ -1392,6 +1412,7 @@ JOB_WORDS: dict[str, tuple[str, ...]] = {
     FACE_SWAP: ("face-swap", "face swap", "faceswap", "замена лица"),
     CHARACTER_REPLACE: ("character-replace", "character replacement", "replace the character", "замена персонажа целиком"),
     TRY_ON: ("virtual-try-on", "virtual try-on", "try-on", "примерк"),
+    MOTION_TRANSFER: ("motion-transfer", "motion transfer", "motion control", "перенос движения"),
     DUB: ("dub-translate", "dubbing", "dub", "дубляж"),
     TTS: ("tts", "text-to-speech", "text to speech", "speech synthesis", "voiceover", "озвучк", "синтез речи"),
     VOICE_CLONE: ("voice-clone", "voice clone", "voice cloning", "клон голоса", "клонирование голоса"),

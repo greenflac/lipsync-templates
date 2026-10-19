@@ -76,6 +76,10 @@ STEP_JOB: dict[str, str] = {
     "реставрация": "restore",
     "раскраска": "colorize",
     "раскраска_изображения": "colorize",
+    # Round 11: photo restoration, a face swap on a still, motion transfer.
+    "реставрация_изображения": "restore",
+    "замена_лица_изображения": "face_swap",
+    "перенос_движения": "i2v",
     "интерполяция_кадров": "interpolate",
     "удаление_фона": "bg_remove_image",
     "удаление_фона_видео": "bg_remove_video",
