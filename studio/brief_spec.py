@@ -1676,7 +1676,7 @@ def серия_с_персонажем(spec: "Spec") -> bool:
         return False
     if (spec.shots or 0) >= SERIES_SHOTS_MIN:
         return True
-    return bool(spec.duration_s) and float(spec.duration_s) > SERIES_DURATION_MIN_S
+    return spec.duration_s is not None and float(spec.duration_s) > SERIES_DURATION_MIN_S
 
 #: Работа над ВИДЕО заказчика, которая делается одним шагом правки (v2v-edit).
 VIDEO_EDIT_TASKS: frozenset[str] = frozenset({"video-edit"})
@@ -2081,7 +2081,7 @@ def говорящий_ролик(spec: Spec, текст: str = "") -> bool:
     if len(spec.language_tags or spec.languages) > 1 or (spec.characters or 0) > 1:
         return False
     длина = spec.per_shot_s if spec.shots and spec.per_shot_s else spec.duration_s
-    return bool(длина) and float(длина) <= NATIVE_SPEECH_MAX_S and (spec.shots or 1) == 1
+    return длина is not None and 0 < float(длина) <= NATIVE_SPEECH_MAX_S and (spec.shots or 1) == 1
 
 
 def with_defaults(spec: Spec, ролик: bool, текст: str = "") -> Spec:
