@@ -36,7 +36,7 @@ def _ids(raw: dict, steps: list[str], brief: str = "") -> list[str]:
 
 
 V = {"task": "generate", "inputs": [], "outputs": ["video"], "duration_s": 10, "people": []}
-I = {"task": "generate", "inputs": [], "outputs": ["image"], "shots": 1, "people": []}
+IMG = {"task": "generate", "inputs": [], "outputs": ["image"], "shots": 1, "people": []}
 S = {"task": "generate", "inputs": [{"kind": "text", "owned": True}], "outputs": ["speech"], "duration_s": 30, "people": []}
 M = {"task": "generate", "inputs": [], "outputs": ["music"], "duration_s": 60, "people": []}
 PHOTO = [{"kind": "image", "owned": True}]
@@ -53,12 +53,12 @@ def w(base: dict, **more: object) -> dict:
 #: rule id -> ((spec, steps, brief) that fires, (spec, steps, brief) that does not).
 CASES: dict[str, tuple[tuple[dict, list[str], str], tuple[dict, list[str], str]]] = {
     "still_variants_seed": (
-        (I, ["генерация_изображения"], "Обложка для подкаста, квадрат"),
+        (IMG, ["генерация_изображения"], "Обложка для подкаста, квадрат"),
         (V, ["генерация_видео"], "a 10 s clip of a city at night"),
     ),
     "still_anatomy_text_check": (
-        (I, ["генерация_изображения"], "portrait of a smiling nurse for our clinic"),
-        (I, ["генерация_изображения"], "минималистичный пейзаж горы на рассвете"),
+        (IMG, ["генерация_изображения"], "portrait of a smiling nurse for our clinic"),
+        (IMG, ["генерация_изображения"], "минималистичный пейзаж горы на рассвете"),
     ),
     "product_fidelity": (
         (w(V, task="animate", inputs=PHOTO), ["оживление"], "animate our shampoo bottle product shot for a marketplace card"),
@@ -142,7 +142,7 @@ CASES: dict[str, tuple[tuple[dict, list[str], str], tuple[dict, list[str], str]]
     ),
     "voice_licence": (
         (S, ["озвучка"], "voice for an ad"),
-        (I, ["генерация_изображения"], "a poster image"),
+        (IMG, ["генерация_изображения"], "a poster image"),
     ),
     "long_audio_chunks": (
         (w(S, duration_s=900), ["озвучка"], "аудиокнига, глава на 15 минут"),
@@ -178,7 +178,7 @@ CASES: dict[str, tuple[tuple[dict, list[str], str], tuple[dict, list[str], str]]
     ),
     "music_master_loudness": (
         (M, ["музыка"], "a track for Spotify"),
-        (I, ["генерация_изображения"], "album cover"),
+        (IMG, ["генерация_изображения"], "album cover"),
     ),
     "sfx_layers": (
         (w(V, outputs=["sfx"]), ["звук_фон"], "шаги и скрип двери"),
@@ -189,8 +189,8 @@ CASES: dict[str, tuple[tuple[dict, list[str], str], tuple[dict, list[str], str]]
         ({"task": "generate", "inputs": [], "outputs": ["sfx"], "duration_s": 5, "people": []}, ["звук_фон"], "a thunder sound"),
     ),
     "image_edit_masked": (
-        (w(I, task="edit", inputs=PHOTO), ["редактирование_изображения"], "убери провода с фото"),
-        (I, ["генерация_изображения"], "a new illustration"),
+        (w(IMG, task="edit", inputs=PHOTO), ["редактирование_изображения"], "убери провода с фото"),
+        (IMG, ["генерация_изображения"], "a new illustration"),
     ),
     "video_edit_temporal": (
         (w(V, task="video-edit", inputs=VID, edit=["remove-object"]), ["правка_видео"], "remove the boom mic from the shot"),
@@ -213,7 +213,7 @@ CASES: dict[str, tuple[tuple[dict, list[str], str], tuple[dict, list[str], str]]
         (w(V, task="restore", inputs=VID), ["реставрация"], "fix yesterday's drone clip"),
     ),
     "colorize_reference": (
-        (w(I, task="colorize", inputs=PHOTO), ["раскраска_изображения"], "colourise this photo"),
+        (w(IMG, task="colorize", inputs=PHOTO), ["раскраска_изображения"], "colourise this photo"),
         (w(V, task="restore", inputs=VID), ["реставрация"], "restore the clip"),
     ),
     "upscale_faithful": (
@@ -249,8 +249,8 @@ CASES: dict[str, tuple[tuple[dict, list[str], str], tuple[dict, list[str], str]]
         (w(V, task="captions", inputs=VID, languages=["de"]), ["расшифровка"], "German subtitles"),
     ),
     "cjk_typesetting": (
-        (w(I, languages=["ja"]), ["генерация_изображения"], "poster for a Tokyo cafe"),
-        (w(I, languages=["en"]), ["генерация_изображения"], "poster for a London cafe"),
+        (w(IMG, languages=["ja"]), ["генерация_изображения"], "poster for a Tokyo cafe"),
+        (w(IMG, languages=["en"]), ["генерация_изображения"], "poster for a London cafe"),
     ),
     "platform_encode": (
         (V, ["генерация_видео"], "clip for our TikTok"),
@@ -285,8 +285,8 @@ CASES: dict[str, tuple[tuple[dict, list[str], str], tuple[dict, list[str], str]]
         (w(S, task="transcribe", inputs=AUD, outputs=["text"]), ["расшифровка"], "transcribe my voice memo"),
     ),
     "matte_edges": (
-        (w(I, task="remove-background", inputs=PHOTO), ["удаление_фона"], "вырежи фон"),
-        (I, ["генерация_изображения"], "a picture"),
+        (w(IMG, task="remove-background", inputs=PHOTO), ["удаление_фона"], "вырежи фон"),
+        (IMG, ["генерация_изображения"], "a picture"),
     ),
     "self_host_gpu_time": (
         (w(V, self_host={"gpu": "RTX 4090", "vram_gb": 24}), ["генерация_видео"], "run it on my card"),
@@ -301,8 +301,8 @@ CASES: dict[str, tuple[tuple[dict, list[str], str], tuple[dict, list[str], str]]
         (w(S, self_host={"gpu": "RTX 4090", "vram_gb": 24}), ["озвучка"], "local voice"),
     ),
     "batch_queue": (
-        (w(I, shots=40), ["генерация_изображения"], "40 product shots"),
-        (w(I, shots=4), ["генерация_изображения"], "four product shots"),
+        (w(IMG, shots=40), ["генерация_изображения"], "40 product shots"),
+        (w(IMG, shots=4), ["генерация_изображения"], "four product shots"),
     ),
     "synthetic_people_disclosure": (
         (w(V, task="avatar", inputs=PHOTO + AUD, people=[ME]), ["говорящий_аватар"], "our CEO announces the results"),
@@ -368,8 +368,8 @@ class Пороги(unittest.TestCase):
         self.assertNotIn("low_vram", _ids(w(V, self_host={"gpu": "RTX 4070 Ti", "vram_gb": 16}), ["генерация_видео"]))
 
     def test_пакет(self) -> None:
-        self.assertIn("batch_queue", _ids(w(I, shots=20), ["генерация_изображения"]))
-        self.assertNotIn("batch_queue", _ids(w(I, shots=19), ["генерация_изображения"]))
+        self.assertIn("batch_queue", _ids(w(IMG, shots=20), ["генерация_изображения"]))
+        self.assertNotIn("batch_queue", _ids(w(IMG, shots=19), ["генерация_изображения"]))
 
     def test_переходы_со_второго_шота(self) -> None:
         self.assertIn("shot_continuity", _ids(w(V, shots=2), ["генерация_видео"]))
@@ -388,15 +388,15 @@ class Пороги(unittest.TestCase):
     def test_письмо_справа_налево_каждого_языка(self) -> None:
         for тег in ("ar", "he", "fa", "ur"):
             with self.subTest(тег=тег):
-                self.assertIn("rtl_typesetting", _ids(w(I, languages=[тег]), ["генерация_изображения"]))
+                self.assertIn("rtl_typesetting", _ids(w(IMG, languages=[тег]), ["генерация_изображения"]))
                 self.assertIn("rtl_tts_diacritics", _ids(w(S, languages=[тег]), ["озвучка"]))
         self.assertNotIn("rtl_tts_diacritics", _ids(w(S, languages=["yi"]), ["озвучка"]))
 
     def test_cjk_каждого_языка(self) -> None:
         for тег in ("zh", "ja", "ko"):
             with self.subTest(тег=тег):
-                self.assertIn("cjk_typesetting", _ids(w(I, languages=[тег]), ["генерация_изображения"]))
-        self.assertNotIn("cjk_typesetting", _ids(w(I, languages=["vi"]), ["генерация_изображения"]))
+                self.assertIn("cjk_typesetting", _ids(w(IMG, languages=[тег]), ["генерация_изображения"]))
+        self.assertNotIn("cjk_typesetting", _ids(w(IMG, languages=["vi"]), ["генерация_изображения"]))
 
 
 class Уточнения(unittest.TestCase):

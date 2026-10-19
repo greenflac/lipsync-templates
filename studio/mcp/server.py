@@ -491,7 +491,9 @@ def _set_at(work: dict, path: tuple[str, ...], value: Any) -> None:
 CAP_PROTECTED_LISTS: frozenset[tuple[str, ...]] = frozenset({("steps",), ("validator", "steps")})
 
 
-def cap_response(payload: Any, limit: int = MAX_RESPONSE_CHARS, tool: str = "", _announced: int | None = None) -> str:
+def cap_response(
+    payload: Any, limit: int = MAX_RESPONSE_CHARS, tool: str = "", _announced: int | None = None
+) -> str:
     """JSON ответа, не длиннее `limit` символов; обрезка ОБЪЯВЛЯЕТСЯ в ответе.
 
     Порядок (дешёвое и точное раньше грубого):
@@ -652,7 +654,9 @@ def cap_response(payload: Any, limit: int = MAX_RESPONSE_CHARS, tool: str = "", 
     # (40 427 из 40 000 на плане из шести шагов). Тогда резка повторяется с
     # потолком, меньшим ровно на перебор, а объявляется прежний.
     if len(out) > объявлено and limit > _CAP_RESERVE * 4:
-        return cap_response(payload, limit - (len(out) - объявлено) - 200, tool, _announced=объявлено)
+        return cap_response(
+            payload, limit - (len(out) - объявлено) - 200, tool, _announced=объявлено
+        )
     return out
 
 
