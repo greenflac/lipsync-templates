@@ -436,6 +436,29 @@ PRIORS_LIST = (
     ),
 )
 
+#: Round 16: anonymisation by field (pixelation, a voice replaced).
+PRIORS_LIST = (
+    *PRIORS_LIST,
+    Prior(
+        "anonymise_pixelate",
+        "anonymising faces by pixelation: faces are detected in every frame and pixelated with a coarse block at "
+        "assembly (deface / ffmpeg pixelize over tracked boxes) — irreversible, no generative model, 0 usd",
+        "анонимизация лиц пикселизацией: лица находятся в каждом кадре и пикселизуются крупным блоком при сборке "
+        "(deface / ffmpeg pixelize по трекингу) — необратимо, без генеративной модели, 0 usd",
+        TAG_ENGINEERING,
+    ),
+    Prior(
+        "anonymise_voice_replace",
+        "anonymising a voice: the speech is transcribed and re-spoken by a DIFFERENT stock TTS voice, laid in "
+        "line by line at assembly — never a clone of the speaker and never a dubbing endpoint, which is built to "
+        "keep the speaker's timbre",
+        "анонимизация голоса: речь расшифровывается и заново читается ДРУГИМ стоковым голосом синтеза, который "
+        "кладётся фраза за фразой при сборке, — никогда не клон говорящего и не эндпоинт дубляжа, который сделан, "
+        "чтобы сохранить тембр",
+        TAG_ENGINEERING,
+    ),
+)
+
 #: Tools and failure checks each prior brings (kept apart from the wording above).
 _PRIOR_TOOLS_FAILURES: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
     "t2i_native_max": ((), ("upscale_hallucination",)),
@@ -464,6 +487,8 @@ _PRIOR_TOOLS_FAILURES: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
     "loop_reuse": (("ffmpeg_concat",), ("loop_seam",)),
     "anonymise_face_swap": ((), ("missed_faces",)),
     "anonymise_blur": (("deface",), ("missed_faces",)),
+    "anonymise_pixelate": (("deface",), ("missed_faces",)),
+    "anonymise_voice_replace": (("voice_track_swap",), ("missed_voices", "identifying_words")),
     "ambient_segment_loop": (("ffmpeg_concat",), ("loop_seam",)),
 }
 PRIORS_LIST = tuple(
@@ -505,6 +530,12 @@ TOOLS_LIST = (
     *TOOLS_LIST,
     Tool("deface", "deface (ORB-HD) / ffmpeg boxblur", "detect every face per frame and blur or box it",
          "найти каждое лицо в кадре и размыть или закрыть плашкой"),
+)
+TOOLS_LIST = (
+    *TOOLS_LIST,
+    Tool("voice_track_swap", "ffmpeg amix / demucs", "lay the new voice line by line over the speech, music and "
+         "ambience from a stem separation", "положить новый голос фраза за фразой вместо речи, музыка и атмосфера — "
+         "из разделения на стемы"),
 )
 TOOLS: dict[str, Tool] = {т.id: т for т in TOOLS_LIST}
 
@@ -571,6 +602,16 @@ FAILURES_LIST = (
     Failure("missed_faces", "face detection misses small, profile or occluded faces, so some bystanders stay "
             "identifiable", "детектор лиц пропускает мелкие, профильные и закрытые лица — часть прохожих остаётся "
             "узнаваемой", "step through crowds, profiles and the frame edges", "пройти по кадрам толпу, профили и края кадра"),
+)
+FAILURES_LIST = (
+    *FAILURES_LIST,
+    Failure("missed_voices", "a second voice (an overlap, a laugh, an off-mic remark) stays in the original and "
+            "identifies the speaker", "второй голос (наложение, смех, реплика мимо микрофона) остаётся в оригинале и "
+            "выдаёт говорящего", "listen to the final track end to end against the transcript",
+            "прослушать итоговую дорожку целиком по расшифровке"),
+    Failure("identifying_words", "the words themselves identify the speaker (names, places, dates, turns of phrase)",
+            "сами слова выдают говорящего (имена, места, даты, обороты)",
+            "redact the transcript before synthesis", "вычитать и вычистить расшифровку до синтеза"),
 )
 FAILURES: dict[str, Failure] = {ф.id: ф for ф in FAILURES_LIST}
 
@@ -816,9 +857,21 @@ RECIPES_LIST = (
             RecipeStep("замена_персонажа", "model", "video face swap onto every bystander (face-swap route)"),
             RecipeStep("deface", "tool", "detected faces blurred at assembly (blur route)"),
         ),
-        ("anonymise_face_swap", "anonymise_blur"),
+        ("anonymise_face_swap", "anonymise_blur", "anonymise_pixelate"),
         ("deface",),
         ("missed_faces",),
+    ),
+    Recipe(
+        "anonymise_voice",
+        "anonymising a speaker's voice (a witness, an informant)",
+        (
+            RecipeStep("расшифровка", "model", "timed transcript, redacted before synthesis"),
+            RecipeStep("озвучка", "model", "a different stock voice reads it (never a clone)"),
+            RecipeStep("voice_track_swap", "tool", "the new voice laid in line by line at assembly"),
+        ),
+        ("anonymise_voice_replace",),
+        ("voice_track_swap",),
+        ("missed_voices", "identifying_words"),
     ),
     Recipe(
         "ambient_loop",

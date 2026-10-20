@@ -586,9 +586,10 @@ class ЧерновикПредлагаетПоля(unittest.TestCase):
         self.assertIn("draft.decision_fields", answer["spec_needed"]["instruction"])
 
     def test_слова_подсказывают(self) -> None:
+        # Round 16 fields are cased in `test_round16_spec`.
         got = {f["field"]: f["read_from_text"] for f in bs.decision_fields(
             "A live avatar; replace the text on the sign; a seamless loop; training data; no lip sync; "
-            "keep the lighting consistent")}
+            "keep the lighting consistent") if f["field"] not in bs.DECISION_FIELDS_R16}
         self.assertEqual(
             {"live": True, "edit_target": "text", "outputs[].loop": True, "outputs[].tileable": None, "outputs[].alpha": None,
              "people[].on_screen": None, "people[].speaks": None, "lipsync": False, "cast_together": None,

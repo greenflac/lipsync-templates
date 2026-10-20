@@ -234,6 +234,7 @@ from studio import clarify
 from studio import duration as dur
 from studio import edit_intent as ei
 from studio import expert_r15 as x15
+from studio import anonymise
 from studio import endpoints as ep
 from studio import l10n
 from studio import factaxis as fa
@@ -8105,6 +8106,28 @@ COMMUNITY_ASKED = re.compile(
     r"lora|civitai|comfy|workflow|воркфлоу|сообществ|community|checkpoint|чекпоинт", re.I
 )
 
+
+
+def community_asked(spec: "bs.Spec", brief: str) -> bool:
+    """Community work (LoRA, Civitai, ComfyUI workflows) is asked for: `spec.community` (round 16) when
+    named — any brief language, both ways — else the words (`COMMUNITY_ASKED`)."""
+    поле = getattr(spec, "community", None)
+    if isinstance(поле, bool):
+        return поле
+    return bool(COMMUNITY_ASKED.search(brief))
+
+
+def requested_flags(spec: "bs.Spec", brief: str) -> frozenset[str]:
+    """Flags the customer lifted (`endpoints.requested_flags`), with `spec.community` deciding the community ones."""
+    снято = set(ep.requested_flags(brief))
+    поле = getattr(spec, "community", None)
+    if поле is True:
+        снято |= {ep.FLAG_COMMUNITY, ep.FLAG_STYLE_LORA}
+    elif поле is False:
+        снято -= {ep.FLAG_COMMUNITY, ep.FLAG_STYLE_LORA}
+    return frozenset(снято)
+
+
 _ВЕРСИЯ = re.compile(r"^([a-z]+)[-_. ]?.*?(?<![a-z0-9])v?(\d+(?:\.\d+)*)(?![\d])")
 
 
@@ -12225,7 +12248,11 @@ def plan(
         # дописанные замыканием производители — перед всеми. Только для работ
         # над материалом по порядку (`ORDERED_ROUTES`) — прочие планы держат
         # прежний порядок `OPERATIONS`.
-        if понято.then_tasks or понято.task in ORDERED_ROUTES or рецепт.local_only:
+        # Шестнадцатый круг: голос анонимизируется цепочкой «расшифровка -> другой голос» —
+        # тоже в названном порядке (`studio/anonymise.py`).
+        if понято.then_tasks or понято.task in ORDERED_ROUTES or рецепт.local_only or (
+            "anonymise_voice" in рецепт.recipes
+        ):
             порядок_маршрута = {и: i for i, и in enumerate(маршрут.шаги)}
             операции = sorted(операции, key=lambda оп: порядок_маршрута.get(оп.name, -1))
         # ПОРЯДОК РАБОТ РЕЦЕПТА: клон голоса первым; реставрация -> раскраска
@@ -12571,7 +12598,11 @@ def plan(
             кадр,
             today,
             шаг_прогон,
-            sorted(есть | x15.made_inputs(op.name, [оп.name for оп in операции], ARTEFACT_IMAGE)),
+            sorted(
+                есть
+                | x15.made_inputs(op.name, [оп.name for оп in операции], ARTEFACT_IMAGE)
+                | anonymise.assumed_inputs(op.name, понято, ARTEFACT_IMAGE)
+            ),
             языки if op.name in SPEECH_STEPS else (),
             use,
             нужда_шага(
@@ -12586,14 +12617,14 @@ def plan(
                 языки=tuple(понято.languages) if op.name in SPEECH_STEPS else (),
                 начитка=op.name not in клон_без_начитки,
             ),
-            bool(COMMUNITY_ASKED.search(brief)),
+            community_asked(понято, brief),
             условия,
             юрисдикции,
             заказанный_кадр or кадр,
             жёсткие,
             stated_conditions=заявленные_условия,
             edit_intents=маршрут.правки if маршрут.правки is not None else понято.edit,
-            requested_flags=tuple(ep.requested_flags(brief)),
+            requested_flags=tuple(requested_flags(понято, brief)),
             # Язык — требование, только когда его НАЗВАЛИ (spec или слово
             # брифа), а не когда он выведен из языка, которым бриф написан.
             languages_named=bool(

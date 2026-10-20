@@ -1397,6 +1397,42 @@ def plan_pipeline(
                   shots / pictures (light -> one lighting setup for all shots).
         dataset_count  samples in the data set the outputs form (e.g. 500
                   face-swapped images) — priced per sample.
+    DECISION FIELDS (round 16) — the same rule: field first, words second.
+        anonymise {faces?, voice?, method?: swap | blur | pixelate |
+                  voice-replace} or false. faces: swap (default) = one
+                  synthetic face + a video face swap (priced); blur / pixelate
+                  = at assembly. voice = transcript + a DIFFERENT stock TTS
+                  voice, never a clone and never dubbing (a same-language
+                  dub-translate of a witness goes here). Both = both; the
+                  GDPR / anonymisation caveat always.
+        voiceover  true | false: spoken words in the deliverable; false = a
+                  music / text-only piece (the no-speech caveat).
+        delivery  {platform: [broadcast | cinema | streaming-premium | youtube
+                  | youtube-shorts | tiktok | instagram | reels | web | podcast
+                  | audiobook | telephony | voice-agent | game-engine |
+                  marketplace | print | vfx | editorial | app-store |
+                  music-distribution | other], dynamic_range: sdr | hdr,
+                  stems: bool, direction: inbound | outbound, format: [mp4 |
+                  … | glb | usdz …]} — glb / usdz = a 3D model.
+        domain    [advertising | health-advertising | financial-advertising |
+                  branded-content | news | documentary | real-estate |
+                  political | education | entertainment | corporate | other].
+        style     photoreal | stylised | limited-animation.
+        subject   [product | cosmetic | reflective | transparent | logo | text
+                  | garment | interior | mascot | before-after | person |
+                  other].
+        accessibility [captions | audio-description]; display standard |
+                  additive (hologram); audio_content [speech | song | music |
+                  ambience]; follows_picture, animate_input, community: bool.
+        inputs[].source [print-scan | archival | cine-film | timelapse |
+                  green-screen | stock | third-party-song | screen-recording |
+                  slides | own]; inputs[].defects [halftone | blur | noise |
+                  hum | echo | scratches | flicker]; inputs[].fps (16-18 =
+                  cine film). A print scan with a halftone screen is
+                  descreened before restore / upscale.
+        face-replace on your video with NO image of the new face: the plan
+                  makes a synthetic replacement face first (a consenting
+                  volunteer's photo replaces that step).
     OPTIONAL (also listed with values in `spec_needed.allowed`):
         edit      for video-edit: [reframe | replace-object | remove-object |
                   replace-sky | stabilise | relight | restyle]; unnamed = edit

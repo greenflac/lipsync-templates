@@ -115,6 +115,66 @@ CONSISTENCY_AXES: tuple[str, ...] = ("light", "style", "character")
 #: Пятнадцатый круг: поля записи выхода (`spec.outputs[]` объектом).
 OUTPUT_ITEM_FIELDS: tuple[str, ...] = ("kind", "loop", "tileable", "alpha")
 
+# --- ШЕСТНАДЦАТЫЙ КРУГ: поля решений, которые пятнадцатый круг оставил словам ---------------
+# Каждое решение ниже прежде читалось ТОЛЬКО из английских и русских слов брифа
+# (`checklist.spec_fields_to_add()`, рецепты `studio/recipes/apply.py`). Поле
+# названо — решает поле, на любом языке брифа; не названо — запасные слова.
+# Читатели полей — `studio/spec_first.py`.
+
+#: `spec.anonymise.method`: swap — лицо на синтетическое (замена лица в видео, с
+#: ценой); blur / pixelate — размытие / пикселизация при сборке; voice-replace —
+#: голос заменяется другим голосом синтеза (расшифровка + TTS, НЕ клон).
+ANONYMISE_METHODS: tuple[str, ...] = ("swap", "blur", "pixelate", "voice-replace")
+ANONYMISE_FIELDS: tuple[str, ...] = ("faces", "voice", "method")
+#: Методы для ЛИЦ (первый — по умолчанию, когда лица названы без метода).
+FACE_ANON_METHODS: tuple[str, ...] = ("swap", "blur", "pixelate")
+#: `spec.delivery.platform`: куда сдаётся результат (решает оговорки площадки).
+DELIVERY_PLATFORMS: tuple[str, ...] = (
+    "broadcast", "cinema", "streaming-premium", "youtube", "youtube-shorts", "tiktok", "instagram", "reels",
+    "web", "podcast", "audiobook", "telephony", "voice-agent", "game-engine", "marketplace", "print", "vfx",
+    "editorial", "app-store", "music-distribution", "other",
+)  # fmt: skip
+#: Площадки коротких вертикальных роликов и соцсетей (`checklist.W_PLATFORM`).
+SOCIAL_PLATFORMS: tuple[str, ...] = ("youtube", "youtube-shorts", "tiktok", "instagram", "reels")
+DYNAMIC_RANGES: tuple[str, ...] = ("sdr", "hdr")
+CALL_DIRECTIONS: tuple[str, ...] = ("inbound", "outbound")
+#: `spec.delivery.format`: форматы сдачи; glb / gltf / usdz / obj / fbx — 3D-модель.
+DELIVERY_FORMATS: tuple[str, ...] = (
+    "mp4", "mov", "prores", "webm", "gif", "png", "jpg", "tiff", "pdf", "svg", "wav", "mp3", "srt",
+    "glb", "gltf", "usdz", "obj", "fbx",
+)  # fmt: skip
+MESH_FORMATS: tuple[str, ...] = ("glb", "gltf", "usdz", "obj", "fbx")
+DELIVERY_FIELDS: tuple[str, ...] = ("platform", "dynamic_range", "stems", "direction", "format")
+#: `spec.domain`: к какой области относится заказ (решает оговорки рекламы, новостей, политики).
+DOMAINS: tuple[str, ...] = (
+    "advertising", "health-advertising", "financial-advertising", "branded-content", "news", "documentary",
+    "real-estate", "political", "education", "entertainment", "corporate", "other",
+)  # fmt: skip
+#: Рекламные области (любая из них — реклама).
+AD_DOMAINS: tuple[str, ...] = ("advertising", "health-advertising", "financial-advertising", "branded-content")
+#: `spec.style`: photoreal — фотореализм; stylised — рисованный / 3D-мульт / стилизованный;
+#: limited-animation — рисованная анимация «на двойках» (аниме, 2D).
+STYLES: tuple[str, ...] = ("photoreal", "stylised", "limited-animation")
+#: `spec.subject`: что в кадре важно для решения.
+SUBJECTS: tuple[str, ...] = (
+    "product", "cosmetic", "reflective", "transparent", "logo", "text", "garment", "interior", "mascot",
+    "before-after", "person", "other",
+)  # fmt: skip
+ACCESSIBILITY_NEEDS: tuple[str, ...] = ("captions", "audio-description")
+#: `spec.display`: additive — голограмма / прозрачный LED (чёрное прозрачно).
+DISPLAYS: tuple[str, ...] = ("standard", "additive")
+#: `spec.audio_content`: что звучит в результате (или в принесённом звуке).
+AUDIO_CONTENTS: tuple[str, ...] = ("speech", "song", "music", "ambience")
+#: `spec.inputs[].source`: что это за материал.
+INPUT_SOURCES: tuple[str, ...] = (
+    "print-scan", "archival", "cine-film", "timelapse", "green-screen", "stock", "third-party-song",
+    "screen-recording", "slides", "own",
+)  # fmt: skip
+#: `spec.inputs[].defects`: что с материалом не так.
+INPUT_DEFECTS: tuple[str, ...] = ("halftone", "blur", "noise", "hum", "echo", "scratches", "flicker")
+#: Дефекты звука — чистка звука.
+AUDIO_DEFECTS: tuple[str, ...] = ("noise", "hum", "echo")
+
 #: Все поля `spec`, которые плановщик принимает. Неизвестное поле — ошибка, а
 #: не молчание: вызывающий, написавший `durations`, должен узнать, что его не
 #: прочли.
@@ -163,6 +223,20 @@ SPEC_FIELDS: tuple[str, ...] = (
     "training_use",
     "consistency",
     "dataset_count",
+    # ШЕСТНАДЦАТЫЙ КРУГ — остальные решения, прежде читавшиеся только словами
+    # (EN/RU). Внутри записей входа: `inputs[].source`, `inputs[].defects`, `inputs[].fps`.
+    "anonymise",
+    "voiceover",
+    "delivery",
+    "domain",
+    "style",
+    "subject",
+    "accessibility",
+    "display",
+    "audio_content",
+    "follows_picture",
+    "animate_input",
+    "community",
 )
 
 SOURCE_SPEC = "spec"
@@ -564,6 +638,25 @@ class Spec:
     consistency: tuple[str, ...] = ()
     #: Сколько образцов в датасете, который составляют выходы.
     dataset_count: int | None = None
+    # --- шестнадцатый круг: поля решений (см. `SPEC_FIELDS`, читатели — `studio/spec_first.py`) ---
+    #: Анонимизация: {faces: bool, voice: bool, method: str | None}; {faces: False, voice: False} — НЕТ.
+    anonymise: Mapping[str, Any] | None = None
+    #: Речь в результате (закадр, диктор, говорящий в кадре): False — ни слова.
+    voiceover: bool | None = None
+    #: Сдача: {platform: (…), dynamic_range, stems, direction, format: (…)}.
+    delivery: Mapping[str, Any] | None = None
+    domain: tuple[str, ...] = ()
+    style: str | None = None
+    subject: tuple[str, ...] = ()
+    accessibility: tuple[str, ...] = ()
+    display: str | None = None
+    audio_content: tuple[str, ...] = ()
+    #: Заказанный звук следует за действием принесённой картинки (video-to-audio).
+    follows_picture: bool | None = None
+    #: Принесённая картинка САМА движется (визуализатор поверх обложки); False — статична (аудиограмма).
+    animate_input: bool | None = None
+    #: Нужны модели / LoRA / воркфлоу сообщества (Civitai, Hugging Face).
+    community: bool | None = None
 
     def has(self, имя: str) -> bool:
         значение = getattr(self, имя)
@@ -782,7 +875,7 @@ NOTE_APPLE = (
     "whether each model runs on MPS/MLX is unmeasured unless the base records it (see apple_silicon per step)"
 )
 
-_INPUT_FIELDS = frozenset({"kind", "owned", "duration_s", "count", "resolution", "note"})
+_INPUT_FIELDS = frozenset({"kind", "owned", "duration_s", "count", "resolution", "note", "source", "defects", "fps"})
 
 
 def _входы_spec(raw: Any, ошибки: list[str]) -> tuple[tuple[str, ...], tuple[dict[str, Any], ...]]:
@@ -828,6 +921,21 @@ def _входы_spec(raw: Any, ошибки: list[str]) -> tuple[tuple[str, ...]
                 ошибки.append(f"spec.inputs[{i}].resolution={вход['resolution']!r}: not a resolution")
             else:
                 запись["resolution"] = метка
+        # ШЕСТНАДЦАТЫЙ КРУГ: что это за материал и что с ним не так — списки из
+        # перечня (скан печати, архив, хромакей; растр, шум, размытие).
+        for ключ, допустимо in (("source", INPUT_SOURCES), ("defects", INPUT_DEFECTS)):
+            if вход.get(ключ) is None:
+                continue
+            значения = [str(з).strip().lower() for з in _список(вход[ключ]) if str(з).strip()]
+            чужие = [з for з in значения if з not in допустимо]
+            if чужие:
+                ошибки.append(f"spec.inputs[{i}].{ключ}: {', '.join(чужие)} not in {', '.join(допустимо)}")
+            запись[ключ] = tuple(dict.fromkeys(з for з in значения if з in допустимо))
+        if вход.get("fps") is not None:
+            try:
+                запись["fps"] = _положительное(вход["fps"])
+            except ValueError as e:
+                ошибки.append(f"spec.inputs[{i}].fps={вход['fps']!r}: {e}")
         виды.append(вид)
         подробно.append(запись)
     return tuple(dict.fromkeys(виды)), tuple(подробно)
@@ -1192,6 +1300,7 @@ def parse_spec(raw: Mapping[str, Any] | None) -> tuple[Spec, list[str]]:
         if чужие:
             ошибки.append(f"spec.consistency: {', '.join(чужие)} not in {', '.join(CONSISTENCY_AXES)}")
         поля["consistency"] = tuple(dict.fromkeys(з for з in оси if з in CONSISTENCY_AXES))
+    _поля_r16(raw, поля, ошибки)
     if raw.get("open_weights") is not None:
         if not isinstance(raw["open_weights"], bool):
             ошибки.append(f"spec.open_weights={raw['open_weights']!r}: must be true or false")
@@ -1202,6 +1311,118 @@ def parse_spec(raw: Mapping[str, Any] | None) -> tuple[Spec, list[str]]:
     if поля.get("per_shot_s") and поля.get("shots") and not поля.get("duration_s"):
         поля["duration_s"] = поля["per_shot_s"] * поля["shots"]
     return Spec(**поля, source={к: SOURCE_SPEC for к in поля}), ошибки
+
+
+def _список_из(raw: Any, ключ: str, допустимо: tuple[str, ...], ошибки: list[str], где: str = "spec") -> tuple[str, ...]:
+    """Список значений из перечня; чужие — ошибка с перечнем (строгость полей пятнадцатого круга)."""
+    значения = [str(з).strip().lower() for з in _список(raw) if str(з).strip()]
+    чужие = [з for з in значения if з not in допустимо]
+    if чужие:
+        ошибки.append(f"{где}.{ключ}: {', '.join(чужие)} not in {', '.join(допустимо)}")
+    return tuple(dict.fromkeys(з for з in значения if з in допустимо))
+
+
+def _анонимизация_spec(raw: Any, ошибки: list[str]) -> dict[str, Any] | None:
+    """`spec.anonymise`: {faces?, voice?, method?} или false (= не анонимизировать, что бы ни говорили слова)."""
+    if raw is False:
+        return {"faces": False, "voice": False, "method": None}
+    if not isinstance(raw, Mapping):
+        ошибки.append(
+            "spec.anonymise: an object {faces?: bool, voice?: bool, method?: "
+            + " | ".join(ANONYMISE_METHODS) + "} or false"
+        )
+        return None
+    лишние = set(raw) - set(ANONYMISE_FIELDS)
+    if лишние:
+        ошибки.append(
+            f"spec.anonymise: unknown field(s) {', '.join(sorted(map(str, лишние)))} (known: {', '.join(ANONYMISE_FIELDS)})"
+        )
+    запись: dict[str, Any] = {"faces": None, "voice": None, "method": None}
+    for ключ in ("faces", "voice"):
+        if raw.get(ключ) is not None:
+            if not isinstance(raw[ключ], bool):
+                ошибки.append(f"spec.anonymise.{ключ}={raw[ключ]!r}: must be true or false")
+            else:
+                запись[ключ] = raw[ключ]
+    методы = _список_из(raw.get("method"), "method", ANONYMISE_METHODS, ошибки, "spec.anonymise") if raw.get(
+        "method"
+    ) is not None else ()
+    лицам = [м for м in методы if м in FACE_ANON_METHODS]
+    if лицам:
+        запись["method"] = лицам[0]
+        if запись["faces"] is None:
+            запись["faces"] = True
+    if "voice-replace" in методы and запись["voice"] is None:
+        запись["voice"] = True
+    if запись["faces"] and not запись["method"]:
+        запись["method"] = FACE_ANON_METHODS[0]
+    запись["faces"] = bool(запись["faces"])
+    запись["voice"] = bool(запись["voice"])
+    if not запись["faces"]:
+        запись["method"] = None
+    return запись
+
+
+def _сдача_spec(raw: Any, ошибки: list[str]) -> dict[str, Any] | None:
+    """`spec.delivery`: {platform?, dynamic_range?, stems?, direction?, format?}."""
+    if not isinstance(raw, Mapping):
+        ошибки.append("spec.delivery: an object {" + ", ".join(DELIVERY_FIELDS) + "}")
+        return None
+    лишние = set(raw) - set(DELIVERY_FIELDS)
+    if лишние:
+        ошибки.append(
+            f"spec.delivery: unknown field(s) {', '.join(sorted(map(str, лишние)))} (known: {', '.join(DELIVERY_FIELDS)})"
+        )
+    запись: dict[str, Any] = {}
+    for ключ, допустимо in (("platform", DELIVERY_PLATFORMS), ("format", DELIVERY_FORMATS)):
+        if raw.get(ключ) is not None:
+            запись[ключ] = _список_из(raw[ключ], ключ, допустимо, ошибки, "spec.delivery")
+    for ключ, допустимо in (("dynamic_range", DYNAMIC_RANGES), ("direction", CALL_DIRECTIONS)):
+        if raw.get(ключ) is not None:
+            з = str(raw[ключ]).strip().lower()
+            if з not in допустимо:
+                ошибки.append(f"spec.delivery.{ключ}: {з} not in {', '.join(допустимо)}")
+            else:
+                запись[ключ] = з
+    if raw.get("stems") is not None:
+        if not isinstance(raw["stems"], bool):
+            ошибки.append(f"spec.delivery.stems={raw['stems']!r}: must be true or false")
+        else:
+            запись["stems"] = raw["stems"]
+    return запись
+
+
+def _поля_r16(raw: Mapping[str, Any], поля: dict[str, Any], ошибки: list[str]) -> None:
+    """Поля решений шестнадцатого круга: строгие — чужое значение называется с перечнем."""
+    if raw.get("anonymise") is not None:
+        анон = _анонимизация_spec(raw["anonymise"], ошибки)
+        if анон is not None:
+            поля["anonymise"] = анон
+    if raw.get("delivery") is not None:
+        сдача = _сдача_spec(raw["delivery"], ошибки)
+        if сдача is not None:
+            поля["delivery"] = сдача
+    for ключ in ("voiceover", "follows_picture", "animate_input", "community"):
+        if raw.get(ключ) is not None:
+            if not isinstance(raw[ключ], bool):
+                ошибки.append(f"spec.{ключ}={raw[ключ]!r}: must be true or false")
+            else:
+                поля[ключ] = raw[ключ]
+    for ключ, допустимо in (
+        ("domain", DOMAINS),
+        ("subject", SUBJECTS),
+        ("accessibility", ACCESSIBILITY_NEEDS),
+        ("audio_content", AUDIO_CONTENTS),
+    ):
+        if raw.get(ключ) is not None:
+            поля[ключ] = _список_из(raw[ключ], ключ, допустимо, ошибки)
+    for ключ, допустимо in (("style", STYLES), ("display", DISPLAYS)):
+        if raw.get(ключ) is not None:
+            з = str(raw[ключ]).strip().lower()
+            if з not in допустимо:
+                ошибки.append(f"spec.{ключ}: {з} not in {', '.join(допустимо)}")
+            else:
+                поля[ключ] = з
 
 
 def resolution_label(текст: str) -> str | None:
@@ -3348,6 +3569,63 @@ OPTIONAL_HELP: dict[str, str] = {
         "one lighting setup for every shot, character = one recurring character)"
     ),
     "dataset_count": "how many samples the data set made of the outputs holds (e.g. 500 face-swapped images): priced per sample",
+    # Шестнадцатый круг: остальные решения, прежде читавшиеся только словами (EN/RU).
+    "anonymise": (
+        "{faces?: bool, voice?: bool, method?: " + " | ".join(ANONYMISE_METHODS) + "} or false — hide who people "
+        "are: faces + swap (default) = a synthetic face and a video face swap (priced), blur / pixelate = at "
+        "assembly; voice (or method voice-replace) = transcript + a DIFFERENT stock TTS voice (never a clone, "
+        "never dubbing — also for a same-language dub-translate order); false = no anonymisation whatever the words"
+    ),
+    "voiceover": (
+        "true | false — spoken words in the deliverable (narration, voice-over, someone speaking): false = no "
+        "speech at all (a music / text-only short)"
+    ),
+    "delivery.platform": (
+        "list of " + " | ".join(DELIVERY_PLATFORMS) + " — where it is delivered: decides the platform caveats "
+        "(broadcast loudness and legal range, cinema DCP, podcast / audiobook specs, telephony, social encode)"
+    ),
+    "delivery.dynamic_range": " | ".join(DYNAMIC_RANGES) + " — hdr = an HDR master (PQ / HLG)",
+    "delivery.stems": "true | false — separate dialogue / music / effects stems are delivered (M&E for localisation)",
+    "delivery.direction": " | ".join(CALL_DIRECTIONS) + " — for telephony / voice agents: outbound = the AI voice calls people",
+    "delivery.format": (
+        "list of " + " | ".join(DELIVERY_FORMATS) + " — delivery formats; glb / gltf / usdz / obj / fbx = a 3D "
+        "model (mesh reconstruction, not a turntable clip)"
+    ),
+    "domain": (
+        "list of " + " | ".join(DOMAINS) + " — the field of the order: advertising (and its health / financial "
+        "kinds), branded-content (a sponsored post), news, real-estate, political … decide the regulation caveats"
+    ),
+    "style": (
+        " | ".join(STYLES) + " — photoreal = looks real (synthetic-people disclosure); stylised = drawn / cartoon / "
+        "3D-animated (a photoreal face model is the wrong tool); limited-animation = 2D / anime on twos"
+    ),
+    "subject": (
+        "list of " + " | ".join(SUBJECTS) + " — what in the frame decides the craft: product (packshot fidelity), "
+        "reflective / transparent material, logo / text (composited, exact), garment (virtual try-on), interior "
+        "(a walkthrough of a place), mascot (a whole-character replacement), before-after"
+    ),
+    "accessibility": "list of " + " | ".join(ACCESSIBILITY_NEEDS) + " — accessibility deliverables ([] = none)",
+    "display": " | ".join(DISPLAYS) + " — additive = a hologram / Pepper's ghost / transparent LED (black is transparent, no alpha)",
+    "audio_content": (
+        "list of " + " | ".join(AUDIO_CONTENTS) + " — what is HEARD in the result or the brought audio: song = "
+        "sung vocals (a vocal stem), no speech = nobody speaks"
+    ),
+    "follows_picture": "true | false — the ordered sound follows the action of the brought picture (video-to-audio)",
+    "animate_input": (
+        "true | false — the brought picture itself moves (a visualiser animating the cover art); false = it stays "
+        "still under a waveform and captions (an audiogram at assembly)"
+    ),
+    "community": "true | false — community checkpoints / LoRA / ComfyUI workflows are wanted (Civitai, Hugging Face)",
+    "inputs[].source": (
+        "list of " + " | ".join(INPUT_SOURCES) + " — what the brought material is: print-scan (a newspaper / "
+        "magazine / book scan), archival, cine-film (8 mm / Super 8), timelapse, green-screen, stock, "
+        "third-party-song, screen-recording, slides"
+    ),
+    "inputs[].defects": (
+        "list of " + " | ".join(INPUT_DEFECTS) + " — what is wrong with it: halftone = a printed dot screen "
+        "(descreen before restore / upscale), noise / hum / echo = an audio clean-up chain, blur = a deblur model"
+    ),
+    "inputs[].fps": "frames per second of the brought footage (16-18 = cine film: set the true speed first)",
 }
 
 #: Полный пример — печатается в вопросе и в описании инструмента (Е1: один текст).
@@ -3370,7 +3648,9 @@ SPEC_INSTRUCTION = (
     "plan_pipeline again with spec=<the confirmed object>. Do not guess a field the customer did not "
     "state — ask them. Also fill the DECISION FIELDS listed in `draft.decision_fields` that apply "
     "(live, edit_target, outputs[].loop / tileable, people[].on_screen / speaks, lipsync, cast_together, "
-    "single_take_s, training_use, consistency, dataset_count): in a brief in any language they decide what "
+    "single_take_s, training_use, consistency, dataset_count, anonymise, voiceover, delivery, domain, style, "
+    "subject, accessibility, display, audio_content, follows_picture, animate_input, community, "
+    "inputs[].source / defects / fps): in a brief in any language they decide what "
     "the keyword parser can only read in English or Russian."
 )
 
@@ -4045,6 +4325,29 @@ DECISION_FIELDS: tuple[str, ...] = (
     "consistency",
     "dataset_count",
 )
+#: Шестнадцатый круг: поля решений, прежде читавшиеся только словами (EN/RU).
+DECISION_FIELDS_R16: tuple[str, ...] = (
+    "anonymise",
+    "voiceover",
+    "delivery.platform",
+    "delivery.dynamic_range",
+    "delivery.stems",
+    "delivery.direction",
+    "delivery.format",
+    "domain",
+    "style",
+    "subject",
+    "accessibility",
+    "display",
+    "audio_content",
+    "follows_picture",
+    "animate_input",
+    "community",
+    "inputs[].source",
+    "inputs[].defects",
+    "inputs[].fps",
+)
+DECISION_FIELDS = (*DECISION_FIELDS, *DECISION_FIELDS_R16)
 
 
 def _прочитано_словами(brief: str, низ: str) -> dict[str, Any]:
@@ -4076,7 +4379,89 @@ def _прочитано_словами(brief: str, низ: str) -> dict[str, Any
     оси = [о for о, образец in (("light", cl.W_RELIGHT), ("character", RECURRING_CHARACTER)) if образец.search(низ)]
     if оси:
         прочитано["consistency"] = оси
+    прочитано.update(_прочитано_словами_r16(brief, низ))
     return прочитано
+
+
+def _прочитано_словами_r16(brief: str, низ: str) -> dict[str, Any]:
+    """Шестнадцатый круг: что запасные слова (EN/RU) дают полям, которые прежде решались только словами."""
+    from studio import expert_r15 as x15
+    from studio.recipes import apply as rc
+    from studio.recipes import checklist as cl
+
+    п: dict[str, Any] = {}
+    лица = x15.anonymise_method(Spec(), brief)
+    голос = bool(cl.W_VOICE_ANON.search(brief))
+    if лица or голос:
+        п["anonymise"] = {"faces": bool(лица), "voice": голос, **({"method": лица} if лица else {})}
+    if cl.W_NO_SPEECH.search(низ):
+        п["voiceover"] = False
+    площадки = [
+        имя for имя, образец in (
+            ("broadcast", cl.W_BROADCAST), ("cinema", cl.W_CINEMA), ("streaming-premium", cl.W_STREAMING),
+            ("podcast", cl.W_PODCAST), ("audiobook", cl.W_AUDIOBOOK), ("telephony", cl.W_TELEPHONY),
+            ("voice-agent", cl.W_VOICE_BOT), ("game-engine", cl.W_GAME), ("marketplace", cl.W_MARKETPLACE),
+            ("vfx", cl.W_VFX), ("editorial", cl.W_EDITORIAL), ("app-store", cl.W_APP_STORE),
+            ("music-distribution", cl.W_DISTRIBUTION),
+        ) if образец.search(низ)
+    ]
+    if cl.W_PLATFORM.search(низ):
+        площадки.append("youtube" if re.search(r"youtube|ютуб", низ) else "tiktok" if re.search(r"tiktok|тикток", низ) else "instagram")
+    if площадки:
+        п["delivery.platform"] = площадки
+    if cl.W_HDR.search(низ):
+        п["delivery.dynamic_range"] = "hdr"
+    if cl.W_OUTBOUND.search(низ):
+        п["delivery.direction"] = "outbound"
+    if rc.MESH.search(brief):
+        п["delivery.format"] = ["glb"]
+    области = [
+        имя for имя, образец in (
+            ("advertising", cl.W_AD), ("branded-content", cl.W_SPONSORED), ("news", cl.W_NEWS),
+            ("real-estate", cl.W_REAL_ESTATE), ("political", cl.W_POLITICAL),
+        ) if образец.search(низ)
+    ]
+    if области:
+        п["domain"] = области
+    if cl.W_ANIMATION_TWOS.search(низ):
+        п["style"] = "limited-animation"
+    elif cl.W_STYLISED_FACE.search(низ) or rc.DRAWN.search(brief):
+        п["style"] = "stylised"
+    elif cl.W_REALISTIC.search(низ):
+        п["style"] = "photoreal"
+    предметы = [
+        имя for имя, да in (
+            ("product", cl.W_PRODUCT.search(низ)), ("cosmetic", cl.W_COSMETIC.search(низ)),
+            ("reflective", cl.W_REFLECTIVE.search(низ)), ("before-after", cl.W_BEFORE_AFTER.search(низ)),
+            ("garment", rc.TRY_ON.search(brief) and rc.GARMENT.search(brief)), ("interior", rc.WALKTHROUGH.search(brief)),
+            ("mascot", rc.CHARACTER.search(brief) and not rc.FACE_ONLY.search(brief)),
+        ) if да
+    ]
+    if предметы:
+        п["subject"] = предметы
+    if cl.W_A11Y.search(низ):
+        п["accessibility"] = ["captions"]
+    if cl.W_HOLOGRAM.search(низ):
+        п["display"] = "additive"
+    if cl.W_SINGING.search(низ):
+        п["audio_content"] = ["song"]
+    if rc.FOLLOWS_PICTURE.search(brief):
+        п["follows_picture"] = True
+    if ep.COMMUNITY_ASKED.search(brief):
+        п["community"] = True
+    источники = [
+        имя for имя, образец in (
+            ("slides", cl.W_SLIDES), ("archival", cl.W_ARCHIVAL), ("cine-film", cl.W_CINE_FILM),
+            ("timelapse", cl.W_TIMELAPSE), ("green-screen", cl.W_GREEN_SCREEN), ("stock", cl.W_STOCK),
+            ("third-party-song", cl.W_COVER_SONG),
+        ) if образец.search(низ)
+    ]
+    if источники:
+        п["inputs[].source"] = источники
+    дефекты = [имя for имя, образец in (("halftone", cl.W_HALFTONE), ("noise", cl.W_AUDIO_CLEAN)) if образец.search(низ)]
+    if дефекты:
+        п["inputs[].defects"] = дефекты
+    return п
 
 
 def decision_fields(brief: str, raw: Mapping[str, Any] | None = None) -> list[dict[str, Any]]:
@@ -4093,8 +4478,8 @@ def decision_fields(brief: str, raw: Mapping[str, Any] | None = None) -> list[di
     прочитано = _прочитано_словами(brief, _norm(brief))
     out: list[dict[str, Any]] = []
     for поле in DECISION_FIELDS:
-        верх = поле.split("[", 1)[0]
-        if верх in названо and верх not in ("outputs", "people"):
+        верх = re.split(r"[\[.]", поле, maxsplit=1)[0]
+        if верх in названо and верх not in ("outputs", "people", "inputs"):
             continue
         # Допустимые значения — в `spec_needed.allowed` под тем же именем (не дублируются).
         out.append({"field": поле, "read_from_text": прочитано.get(поле)})

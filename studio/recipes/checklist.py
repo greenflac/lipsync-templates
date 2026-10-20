@@ -42,6 +42,7 @@ from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
+from studio import spec_first as sf
 from studio.recipes import delivery
 from studio.recipes.table import TAG_ENGINEERING, TAG_PLATFORM, TAG_REGULATION
 
@@ -227,10 +228,15 @@ def context(spec: "bs.Spec", steps: Sequence[str], text: str = "", priors: Seque
         + [str(у) for у in spec.conditions]
         + [str(з.get("note") or "") for з in spec.input_items]
     )
+    работы = jobs_of(spec, steps)
+    # Round 16: a voice anonymised on a dub order is NOT a dub (no translation, no timbre kept):
+    # the plan's steps are a transcript and a different voice (`studio/anonymise.py`).
+    if "дубляж" not in steps and "dub" in работы and steps and anonymise_voice(spec, слова):
+        работы = работы - {"dub"}
     return Ctx(
         spec=spec,
         steps=frozenset(steps),
-        jobs=jobs_of(spec, steps),
+        jobs=работы,
         text=" ".join(слова.lower().split()),
         priors=frozenset(priors),
     )
@@ -421,7 +427,15 @@ def _twos(c: Ctx) -> bool:
     return c.says(W_ANIMATION_TWOS)
 
 
+#: Round 16: a brought clip recorded at most this many frames per second is silent / amateur cine film
+#: speed (16-18 fps), whatever language the brief is in (`spec.inputs[].fps`).
+CINE_FPS_MAX = 20
+
+
 def _cine(c: Ctx) -> bool:
+    fps = sf.input_fps(c.spec)
+    if fps is not None and fps <= CINE_FPS_MAX:
+        return True
     return c.says(W_CINE_FILM)
 
 
@@ -664,7 +678,7 @@ RULES_LIST: tuple[Rule, ...] = (
         E,
         _product,
         ("inputs",),
-        "spec.subject = 'product'",
+        "spec.subject = ['product']",
     ),
     # --- generate video / animate -----------------------------------------------------------
     _r(
@@ -794,7 +808,7 @@ RULES_LIST: tuple[Rule, ...] = (
         E,
         _singing,
         ("task",),
-        "spec.audio_content = 'song'",
+        "spec.audio_content = ['song']",
         (S_DEMUCS,),
     ),
     _r(
@@ -809,7 +823,7 @@ RULES_LIST: tuple[Rule, ...] = (
         E,
         _slides,
         (),
-        "spec.inputs[].kind = 'slides' | 'screen-recording'",
+        "spec.inputs[].source = ['slides' | 'screen-recording']",
     ),
     # --- speech: tts, dub, voice clone ------------------------------------------------------
     _r(
@@ -984,7 +998,7 @@ RULES_LIST: tuple[Rule, ...] = (
         E,
         _audio_clean,
         ("inputs",),
-        "spec.task = 'audio-cleanup' (or spec.edit = ['denoise-audio'])",
+        "spec.inputs[].defects = ['noise' | 'hum' | 'echo']",
     ),
     # --- music / sfx / visualiser --------------------------------------------------------------
     _r(
@@ -1092,7 +1106,7 @@ RULES_LIST: tuple[Rule, ...] = (
         E,
         _archival,
         ("task",),
-        "spec.source.era = 'archival'",
+        "spec.inputs[].source = ['archival' | 'cine-film']",
     ),
     _r(
         "archival_ai_disclosure",
@@ -1105,7 +1119,7 @@ RULES_LIST: tuple[Rule, ...] = (
         P,
         _archival,
         ("task",),
-        "spec.source.era = 'archival'",
+        "spec.inputs[].source = ['archival' | 'cine-film']",
         (S_YT_SYNTHETIC,),
     ),
     _r(
@@ -1162,7 +1176,7 @@ RULES_LIST: tuple[Rule, ...] = (
         E,
         _cine,
         ("inputs",),
-        "spec.inputs[].fps",
+        "spec.inputs[].source = ['cine-film'] (and spec.inputs[].fps)",
     ),
     # --- delivery: shorts, platforms, captions, scripts ----------------------------------------
     _r(
@@ -1287,7 +1301,7 @@ RULES_LIST: tuple[Rule, ...] = (
         E,
         _reflective,
         (),
-        "spec.subject.material = 'reflective' | 'transparent'",
+        "spec.subject = ['reflective' | 'transparent']",
     ),
     _r(
         "mesh_cleanup",
@@ -2080,7 +2094,7 @@ RULES_R12: tuple[Rule, ...] = (
         E,
         _localise,
         ("task", "languages", "language_tags"),
-        "spec.delivery.stems = ['dialogue', 'music', 'effects']",
+        "spec.delivery.stems = true",
     ),
     _r(
         "forced_narratives",
@@ -2510,7 +2524,7 @@ RULES_R12: tuple[Rule, ...] = (
         P,
         _stock_use,
         ("inputs",),
-        "spec.inputs[].licence = 'stock'",
+        "spec.inputs[].source = ['stock']",
         (S_SHUTTERSTOCK_LICENCE,),
     ),
     _r(
@@ -2647,7 +2661,7 @@ RULES_R12: tuple[Rule, ...] = (
         R,
         _a11y_video,
         ("outputs",),
-        "spec.accessibility = ['captions', 'audio-description']",
+        "spec.accessibility = ['captions' | 'audio-description']",
         (S_WCAG,),
     ),
     _r(
@@ -2662,7 +2676,7 @@ RULES_R12: tuple[Rule, ...] = (
         R,
         _a11y_video,
         ("outputs",),
-        "spec.accessibility = ['captions', 'audio-description']",
+        "spec.accessibility = ['captions' | 'audio-description']",
         (S_WCAG_AD,),
     ),
     _r(
@@ -3027,7 +3041,7 @@ RULES_R13: tuple[Rule, ...] = (
         E,
         _green_screen,
         ("inputs",),
-        "spec.inputs[].keying = 'green-screen'",
+        "spec.inputs[].source = ['green-screen']",
         (S_FFMPEG_FILTERS,),
     ),
     _r(
@@ -3045,7 +3059,7 @@ RULES_R13: tuple[Rule, ...] = (
         E,
         _stylised_face,
         ("people", "characters"),
-        "spec.subject.style = 'stylised'",
+        "spec.style = 'stylised' | 'limited-animation' (or spec.subject = ['mascot'])",
     ),
     _r(
         "outputs_as_training_data",
@@ -3516,11 +3530,23 @@ def _style_set(c: Ctx) -> dict[str, str] | None:
     return None
 
 
+def _short_seconds(c: Ctx) -> float:
+    """Length of ONE deliverable: a cut into shorts is judged per short (`per_shot_s`, or the ordered length
+    over the count), not by the long source it is cut from (round 16)."""
+    if "shorts" in c.jobs:
+        if c.spec.per_shot_s:
+            return float(c.spec.per_shot_s)
+        if c.spec.duration_s:
+            return float(c.spec.duration_s) / max(1, int(c.spec.shots or 1))
+        return 0.0
+    return c.seconds
+
+
 def _no_speech_short(c: Ctx) -> bool:
     """A short video where nobody speaks: `people[].speaks` all false, or the words."""
     if not c.video or "speech" in c.outputs or c.jobs & SPEECH_JOBS:
         return False
-    if c.seconds > NO_SPEECH_SHORT_MAX_S or c.jobs & ({"restore", "colorize", "interpolate"} | UPSCALE):
+    if _short_seconds(c) > NO_SPEECH_SHORT_MAX_S or c.jobs & ({"restore", "colorize", "interpolate"} | UPSCALE):
         return False
     говорят = people_flag(c.spec, "speaks")
     if говорят:
@@ -3529,7 +3555,14 @@ def _no_speech_short(c: Ctx) -> bool:
 
 
 def _anonymise(c: Ctx) -> bool:
-    """Faces of bystanders hidden or swapped in the customer's footage (GDPR)."""
+    """Faces of bystanders hidden or swapped in the customer's footage (GDPR).
+
+    Round 16: `spec.anonymise` named decides (faces or voice anonymised, any brief language); the words
+    are read only without it. A voice-only anonymisation of an audio file carries `voice_anonymisation`.
+    """
+    поле = sf.anonymise_any(c.spec)
+    if поле is not None:
+        return поле and bool(c.steps or c.jobs) and (c.visual or bool(sf.anonymise_faces(c.spec)))
     return c.visual and bool(c.steps or c.jobs) and c.says(W_ANONYMISE) and bool(
         re.search(r"anonymi|de-?identif|blur|pixel|hide|mask|obscure|gdpr|dsgvo|rgpd|swap|replac|анонимиз|обезлич|размы|скры|замаз|пиксел|замен", c.text)
     )
@@ -3584,7 +3617,7 @@ RULES_R15: tuple[Rule, ...] = (
         R,
         _cover_song,
         ("inputs", "conditions"),
-        "spec.inputs[].rights = 'third-party-song'",
+        "spec.inputs[].source = ['third-party-song']",
         (S_COPYRIGHT_OFFICE_MECH, S_YT_COVERS, S_CONTENT_ID),
     ),
     _r(
@@ -3644,7 +3677,7 @@ RULES_R15: tuple[Rule, ...] = (
         E,
         _halftone,
         ("task", "conditions"),
-        "spec.inputs[].source = 'print-scan'",
+        "spec.inputs[].defects = ['halftone'] (or spec.inputs[].source = ['print-scan'])",
         (S_IMAGEMAGICK_FFT,),
     ),
     _r(
@@ -3663,7 +3696,7 @@ RULES_R15: tuple[Rule, ...] = (
         E,
         _timelapse_interp,
         ("task", "conditions"),
-        "spec.inputs[].capture = 'timelapse'",
+        "spec.inputs[].source = ['timelapse']",
         (S_FFMPEG_FILTERS,),
     ),
     _r(
@@ -3700,7 +3733,7 @@ RULES_R15: tuple[Rule, ...] = (
         E,
         _no_speech_short,
         ("outputs", "people"),
-        "spec.people[].speaks = false",
+        "spec.voiceover = false (or spec.people[].speaks = false, spec.audio_content without 'speech')",
         (S_TIKTOK_CML,),
     ),
     _r(
@@ -3746,12 +3779,76 @@ RULES_R15: tuple[Rule, ...] = (
         R,
         _anonymise,
         ("conditions",),
-        "spec.anonymise = 'blur' | 'swap'",
+        "spec.anonymise = {faces, voice, method}",
         (S_GDPR, S_EDPB_VIDEO, S_ICO_ANON),
     ),
 )
 
 RULES_LIST = RULES_LIST + RULES_R15
+
+# --- round 16 -----------------------------------------------------------------------------
+#
+# Anonymising a VOICE (a witness, an informant, a whistle-blower): the speech is transcribed and
+# re-spoken by a different stock voice — never cloned, never dubbed end to end (a dubbing endpoint
+# is built to KEEP the speaker's timbre). `spec.anonymise.voice` first, the words second.
+
+#: «the witness's voice must not be recognisable», «disguise her voice», «измените голос свидетеля».
+W_VOICE_ANON = re.compile(
+    r"(?:disguis|alter|chang|mask|anonymi[sz]|distort|replac|modif|hid)\w*\s+(?:the\s+|his\s+|her\s+|their\s+|a\s+|its\s+)?"
+    r"(?:[\w'’-]+\s+){0,2}?voices?\b|voices?\s+(?:must|should|can(?:not|'t)?|may|will)\s+(?:not\s+)?(?:be\s+)?(?:un)?recogni[sz]\w*"
+    r"|unrecogni[sz]able voices?|voice (?:anonymi[sz]\w*|disguis\w*|changer)|(?:измен|замен|скры|искази|исказ|анонимиз|обезлич)\w*"
+    r"\s+(?:\w+\s+){0,2}?голос\w*|голос\w*\s+(?:\w+\s+){0,2}?(?:не должен|неузнава)\w*|неузнаваем\w* голос\w*",
+    re.I,
+)
+
+
+def anonymise_voice(spec: "bs.Spec", text: str = "") -> bool:
+    """A voice must be anonymised: `spec.anonymise.voice` when named, else the words (EN/RU)."""
+    поле = sf.anonymise_voice(spec)
+    if поле is not None:
+        return поле
+    return bool(W_VOICE_ANON.search(" ".join((str(text or ""), *map(str, spec.conditions)))))
+
+
+def _voice_anon(c: Ctx) -> bool:
+    if not (c.steps or c.jobs):
+        return False
+    поле = sf.anonymise_voice(c.spec)
+    if поле is not None:
+        return поле
+    return c.says(W_VOICE_ANON)
+
+
+RULES_R16: tuple[Rule, ...] = (
+    _r(
+        "voice_anonymisation",
+        [],
+        "anonymising a voice: the speech is TRANSCRIBED and re-spoken by a DIFFERENT stock voice from the TTS "
+        "library — never a clone of the speaker, never an end-to-end dubbing endpoint (it is built to keep the "
+        "speaker's timbre); a pitch shift or a vocoder is reversible and is NOT anonymisation; the words identify "
+        "too — review the transcript and redact names, places, dates and telling turns of phrase before synthesis; "
+        "replace the WHOLE speech track (background voices and room sound carry identity; music / ambience only "
+        "from a stem separation checked by ear); GDPR: only irreversible anonymisation takes the result out of "
+        "scope (recital 26) — record the legal basis, run a DPIA (art. 35), keep the original recording encrypted "
+        "with a deletion date, and check every second for a missed voice (overlaps, laughs, off-mic remarks) "
+        "before release",
+        "анонимизация голоса: речь РАСШИФРОВЫВАЕТСЯ и заново читается ДРУГИМ стоковым голосом из библиотеки TTS — "
+        "никогда не клоном говорящего и не сквозным дубляжом (он сделан, чтобы СОХРАНИТЬ тембр говорящего); сдвиг "
+        "высоты тона или вокодер обратимы и анонимизацией НЕ являются; выдают и сами слова — вычитайте расшифровку "
+        "и уберите имена, места, даты и характерные обороты до синтеза; заменяется ВСЯ речевая дорожка (голоса "
+        "фоном и звук помещения тоже узнаваемы; музыка и атмосфера — только из разделения на стемы, проверенного на "
+        "слух); GDPR: из-под регламента выводит только необратимая анонимизация (преамбула 26) — запишите правовое "
+        "основание, проведите DPIA (ст. 35), храните исходную запись зашифрованной с датой удаления и до "
+        "публикации проверьте каждую секунду на пропущенный голос (наложения, смех, реплики мимо микрофона)",
+        R,
+        _voice_anon,
+        ("anonymise", "conditions"),
+        "",
+        (S_GDPR, S_ICO_ANON),
+    ),
+)
+
+RULES_LIST = RULES_LIST + RULES_R16
 
 RULES: dict[str, Rule] = {р.id: р for р in RULES_LIST}
 
@@ -3772,6 +3869,72 @@ SPEC_FOR_WORDS: dict[re.Pattern[str], Callable[["bs.Spec"], bool | None]] = {
     W_LOOP: lambda spec: spec.loop,
     W_KIDS: _audience_children,
 }
+
+
+def _jurisdiction_fr(spec: "bs.Spec") -> bool | None:
+    """`spec.jurisdiction` named: France among the codes (the French retouch label)."""
+    return "FR" in spec.jurisdiction if "jurisdiction" in spec.source else None
+
+
+# ROUND 16: the rest of the words-only list (`spec_fields_to_add()` of round 15) — each
+# word set read by a caveat now has the field that states it (`studio/spec_first.py`).
+# A field the caller named decides both ways; the words are read only when it is absent.
+SPEC_FOR_WORDS.update({
+    # delivery.platform
+    W_TELEPHONY: lambda spec: sf.platform(spec, "telephony"),
+    W_PODCAST: lambda spec: sf.platform(spec, "podcast"),
+    W_BROADCAST: lambda spec: sf.platform(spec, "broadcast"),
+    W_CINEMA: lambda spec: sf.platform(spec, "cinema"),
+    W_STREAMING: lambda spec: sf.platform(spec, "streaming-premium"),
+    W_PLATFORM: sf.social,
+    W_VOICE_BOT: lambda spec: sf.platform(spec, "voice-agent"),
+    W_GAME: lambda spec: sf.platform(spec, "game-engine"),
+    W_AUDIOBOOK: lambda spec: sf.platform(spec, "audiobook"),
+    W_DISTRIBUTION: lambda spec: sf.platform(spec, "music-distribution"),
+    W_MONETISE: lambda spec: sf.platform(spec, "music-distribution", *sf.SOCIAL),
+    W_MARKETPLACE: lambda spec: sf.platform(spec, "marketplace"),
+    W_VFX: lambda spec: sf.platform(spec, "vfx"),
+    W_EDITORIAL: lambda spec: sf.platform(spec, "editorial"),
+    W_APP_STORE: lambda spec: sf.platform(spec, "app-store"),
+    # delivery.dynamic_range / stems / direction
+    W_HDR: sf.dynamic_range_hdr,
+    W_LOCALISE: sf.stems,
+    W_OUTBOUND: sf.outbound,
+    # domain (and jurisdiction for the French label)
+    W_AD: sf.advertising,
+    W_HEALTH: lambda spec: sf.domain(spec, "health-advertising"),
+    W_FINANCE: lambda spec: sf.domain(spec, "financial-advertising"),
+    W_SPONSORED: lambda spec: sf.domain(spec, "branded-content"),
+    W_NEWS: lambda spec: sf.domain(spec, "news"),
+    W_REAL_ESTATE: lambda spec: sf.domain(spec, "real-estate"),
+    W_POLITICAL: lambda spec: sf.domain(spec, "political"),
+    W_FRANCE: _jurisdiction_fr,
+    # style / subject / display
+    W_ANIMATION_TWOS: lambda spec: sf.style(spec, "limited-animation"),
+    W_STYLISED_FACE: lambda spec: sf.style(spec, *sf.STYLISED_STYLES) if spec.style else sf.subject(spec, "mascot"),
+    W_REALISTIC: lambda spec: sf.style(spec, "photoreal"),
+    W_PRODUCT: lambda spec: sf.subject(spec, "product", "cosmetic"),
+    W_COSMETIC: lambda spec: sf.subject(spec, "cosmetic"),
+    W_REFLECTIVE: lambda spec: sf.subject(spec, "reflective", "transparent"),
+    W_BEFORE_AFTER: lambda spec: sf.subject(spec, "before-after"),
+    W_HOLOGRAM: sf.display_additive,
+    # accessibility / audio content / speech
+    W_A11Y: sf.accessibility,
+    W_SINGING: lambda spec: sf.audio_content(spec, "song"),
+    W_NO_SPEECH: sf.no_speech,
+    # what the brought material is (inputs[].source / inputs[].defects)
+    W_SLIDES: lambda spec: sf.input_source(spec, "slides", "screen-recording"),
+    W_ARCHIVAL: lambda spec: sf.input_source(spec, "archival", "cine-film"),
+    W_CINE_FILM: lambda spec: sf.input_source(spec, "cine-film"),
+    W_TIMELAPSE: lambda spec: sf.input_source(spec, "timelapse"),
+    W_GREEN_SCREEN: lambda spec: sf.input_source(spec, "green-screen"),
+    W_STOCK: lambda spec: sf.input_source(spec, "stock"),
+    W_COVER_SONG: lambda spec: sf.input_source(spec, "third-party-song"),
+    W_HALFTONE: sf.halftone,
+    W_AUDIO_CLEAN: sf.noisy_audio,
+    # anonymisation (faces or voice)
+    W_ANONYMISE: sf.anonymise_any,
+})
 
 
 def fire(
