@@ -28,7 +28,7 @@ when the field is absent; a named field beats the words both ways (docs/MCP_AGEN
    (`optional_lips`), required only when `spec.lipsync` is true.
 
 DECISION CONSTANTS (mutated both ways by `scripts/mutate_round16_knowledge.py`):
-`KEY_VISUAL_SHOTS_MIN`, `BATCH_CLIPS_MIN`, `BATCH_CHEAP_RATIO`, `EDIT_TIER_STEPS`,
+`KEY_VISUAL_SHOTS_MIN`, `BATCH_CLIPS_MIN`, `BATCH_CHEAP_RATIO`, `EDIT_TIER_RATIO`, `EDIT_TIER_STEPS`,
 `BATCH_STEPS`, `OPTIONAL_LIPS_STEP`.
 """
 
@@ -149,6 +149,16 @@ QUALITY = "quality"
 def edit_tier_applies(step: str, objective: str) -> bool:
     """A video edit takes the cheapest adequate candidate of its band unless quality is asked."""
     return step in EDIT_TIER_STEPS and objective != QUALITY
+
+
+#: A video edit gives way to a cheaper tier of its band only when that saves this much (x); a few
+#: cents are not worth trading a model whose output frame is on record.
+EDIT_TIER_RATIO = 1.5
+
+
+def edit_tier_worth(chosen_usd: float, cheaper_usd: float) -> bool:
+    """The premium tier costs more than `EDIT_TIER_RATIO` x the cheaper adequate one."""
+    return cheaper_usd > 0 and chosen_usd > EDIT_TIER_RATIO * cheaper_usd
 
 
 def batch_ratio_exceeded(chosen_usd: float, cheapest_usd: float) -> bool:

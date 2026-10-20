@@ -81,6 +81,10 @@ MUTANTS: tuple[tuple[str, str, str, str], ...] = (
      "правка видео по премиум-ступени"),
     (X16, "    return step in EDIT_TIER_STEPS and objective != QUALITY", "    return step in EDIT_TIER_STEPS",
      "цель «качество» не держит премиум"),
+    (X16, "EDIT_TIER_RATIO = 1.5", "EDIT_TIER_RATIO = 1.6", "правка в 1.51 раза дороже — не обмен"),
+    (X16, "EDIT_TIER_RATIO = 1.5", "EDIT_TIER_RATIO = 1.0", "копейки — уже обмен"),
+    (X16, "    return cheaper_usd > 0 and chosen_usd > EDIT_TIER_RATIO * cheaper_usd",
+     "    return chosen_usd > EDIT_TIER_RATIO * cheaper_usd", "бесплатная ступень — обмен"),
     (X16, 'BELOW_FRAME_MARK = "нужен апскейл"', 'BELOW_FRAME_MARK = "нет такой пометки"', "тариф ниже кадра — годен"),
     (X16, '    if getattr(candidate, "below_frame", False):\n        return False\n', "", "кадр ниже по записи — годен"),
     # --- 5. пачка

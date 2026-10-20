@@ -282,6 +282,16 @@ class СтупеньПравки(unittest.TestCase):
         self.assertFalse(x16.edit_tier_applies("правка_видео", "quality"))
         self.assertFalse(x16.edit_tier_applies("генерация_видео", ""))
 
+    def test_копейки_не_обмен(self) -> None:
+        self.assertFalse(x16.edit_tier_worth(1.5, 1.0))
+        self.assertTrue(x16.edit_tier_worth(1.51, 1.0))
+        self.assertFalse(x16.edit_tier_worth(1.2, 0.0))
+        # A 4K source: the cents saved are not worth a model whose output frame is not on record.
+        d = plan("Replace the red car with a blue one in our clip", {
+            "task": "video-edit", "edit": ["replace-object"], "outputs": ["video"], "duration_s": 8, "people": [],
+            "inputs": [{"kind": "video", "owned": True, "duration_s": 8, "resolution": "3840x2160"}]})
+        self.assertNotIn("budget_swap", step(d, "правка_видео"))
+
     def test_тариф_ниже_кадра_негоден(self) -> None:
         class C:
             below_frame = False

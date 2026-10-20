@@ -13019,7 +13019,13 @@ def plan(
             найдены_шага = найдено_на_шаг.get(op.name, [])
             if x16.edit_tier_applies(op.name, жёсткие.objective):
                 замена = дешевле_в_полосе(к, найдены_шага, op, годен=x16.adequate_frame)
-                if замена is not None and x16.adequate_frame(к):
+                if (
+                    замена is not None
+                    and x16.adequate_frame(к)
+                    and к.cost is not None
+                    and замена.cost is not None
+                    and x16.edit_tier_worth(к.cost.default.usd, замена.cost.default.usd)
+                ):
                     принудительно[op.name] = замена.model
                     обмены_эксперта.append({**обмен(op.name, к, замена), "reason": x16.REASON_EDIT_TIER})
             elif x16.batch_cheap_applies(op.name, клипов, жёсткие.objective):
