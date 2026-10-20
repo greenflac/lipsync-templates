@@ -64,7 +64,7 @@ MUTANTS: tuple[tuple[str, str, str, str], ...] = (
     (PN, "        if дотяг_сост == ur.REACH_BELOW and not все_ниже:", "        if дотяг_сост == ur.REACH_BELOW:",
      "все ниже — шаг без кандидатов вместо двух проходов"),
     (PN, "            треб_ранг = (ur.REACH_ORDER[дотяг_сост], *треб_ранг[1:])\n", "", "дотяг не ранжирует"),
-    (PN, "            upscale_target=None if понято.source.get(\"resolution\") == bs.SOURCE_DEFAULT else заказанный_кадр,",
+    (PN, "            upscale_target=кадр_выдачи(),",
      "            upscale_target=None,", "заказанный кадр не доходит до отбора"),
     (PN, "            source_frame=bs.source_frame(понято),", "            source_frame=None,", "кадр исходника не доходит"),
     # --- надпись в видео

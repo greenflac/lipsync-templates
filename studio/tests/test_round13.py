@@ -119,6 +119,8 @@ class ОбщиеРеференсы(unittest.TestCase):
         м = _route("One 8 s shot: a knight and a dragon", task="generate", inputs=[], outputs=["video"],
                    characters=2, duration_s=8)
         self.assertEqual(("генерация_изображения", "оживление"), м.шаги)
+        # Round 14: a single shot is not a series — no shared references (the keyframe count is the shot's).
+        self.assertNotIn("генерация_изображения", м.штук)
 
 
 class ОднаПетля(unittest.TestCase):
