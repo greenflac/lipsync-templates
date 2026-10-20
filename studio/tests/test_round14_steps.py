@@ -10,8 +10,8 @@ Each class guards one category, never a dev or holdout id:
   characters share the frame; dialogue in a cutscene gets lip sync, after the video;
 * VISUALISER WITHOUT A PERFORMER — abstract / audio-reactive visuals for a track get no
   performer reference and no lip sync; a performer counts only when on screen;
-* EDIT AT THE ORDERED FRAME — an edit endpoint silent on its frame borrows "below" from its
-  product line, so a 4K delivery gets an upscale step;
+* EDIT AT THE ORDERED FRAME — an edit whose model records a lower limit is followed by an
+  upscale priced at the delivery frame (named, or the source frame of YOUR footage);
 * NO PREMIUM TIER FOR A CLONED VOICE — the clone's line is read by its cheapest priced tier.
 
 Expected values are literals (T2).
@@ -31,7 +31,7 @@ from studio import brief_spec as bs  # noqa: E402
 from studio import planner as pn  # noqa: E402
 from studio import realtime  # noqa: E402
 from studio.mcp import server  # noqa: E402
-from studio.selfrag.facts import Fact  # noqa: E402
+from studio.recipes import apply as rc  # noqa: E402
 
 T = {"kind": "text", "owned": True}
 ME = {"name": "me", "real": True, "public_figure": False, "consent": "stated", "claim": "none"}
@@ -116,6 +116,7 @@ class ЖивоеТолькоВЖивом(unittest.TestCase):
         """A face without an interactive brief: a fast render is not a live system."""
         self.assertFalse(realtime.applies("Render our avatar video with low latency, 60 s", {"task": "avatar", "outputs": ["video"]}))
         self.assertTrue(realtime.asked("visitors talk to it in real time", face=True))
+        self.assertTrue(realtime.applies("The avatar answers visitors in real time", {"task": "avatar", "outputs": ["speech"]}))
         self.assertFalse(realtime.asked("visitors talk to it in real time", face=False))
 
     def test_быстрый_синтез_план_озвучки(self) -> None:
@@ -269,6 +270,17 @@ class ВизуализаторБезИсполнителя(unittest.TestCase):
                 м = _route(brief, task="generate", inputs=[A(120)], outputs=["video"], duration_s=120, shots=6)
                 self.assertEqual(steps, м.шаги)
 
+    def test_исполнитель_с_визуальными_словами_не_визуализатор(self) -> None:
+        spec = _defaults("Audio-reactive music video: the singer performs in 6 scenes", task="generate", inputs=[A(120)],
+                         outputs=["video"], duration_s=120, shots=6)
+        self.assertEqual(("generate", 1), (spec.task, spec.characters))
+
+    def test_петли_визуализатора_названного_generate(self) -> None:
+        brief = "Audio-reactive visualiser for the band's new song, 6 scenes of cosmic landscapes"
+        spec = _spec(task="generate", inputs=[A(180)], outputs=["video"], duration_s=180, shots=6)
+        п = rc.rewrite(spec, bs.route(bs.with_defaults(spec, ролик=True, текст=brief)), brief)
+        self.assertEqual({"генерация_видео": (32.0, 8.0)}, dict(п.step_seconds))
+
     def test_слова_без_исполнителя(self) -> None:
         self.assertNotRegex(bs.исполнитель_словами("visuals for the band's track"), bs.PERFORMER)
         self.assertNotRegex(bs.исполнитель_словами("the artist's logo morphing"), bs.PERFORMER)
@@ -284,48 +296,33 @@ class ВизуализаторБезИсполнителя(unittest.TestCase):
 # --- 4. edit at the ordered frame ---------------------------------------------------------------
 
 
-def _f(model: str, value: str, attribute: str = "resolution_enum") -> Fact:
-    return Fact(model, attribute, value, "https://example.org", "portal")
+class КадрВыдачиПравки(unittest.TestCase):
+    """An edit whose model records a lower limit is followed by an upscale priced at the delivery frame."""
 
-
-class ЛинейкаНиже(unittest.TestCase):
-    """A silent endpoint borrows 'below' from its product line — only unanimously, from two or more."""
-
-    K4 = (3840, 2160)
-
-    def test_единогласно_ниже(self) -> None:
-        соседи = [[_f("x-a", "480p, 720p")], [_f("x-b", "720p")]]
-        self.assertTrue(pn.линейка_ниже(соседи, self.K4)[0])
-
-    def test_один_сосед_мало(self) -> None:
-        self.assertFalse(pn.линейка_ниже([[_f("x-a", "480p, 720p")], []], self.K4)[0])
-
-    def test_сосед_принимает_нет(self) -> None:
-        соседи = [[_f("x-a", "480p, 720p")], [_f("x-b", "720p")], [_f("x-c", "1080p, 2160p")]]
-        self.assertFalse(pn.линейка_ниже(соседи, self.K4)[0])
-
-    def test_линейка_по_пути_площадки(self) -> None:
-        facts = [
-            _f("p-inpaint", "on fal.ai as fal-ai/p-quality/inpaint (video-to-video)", "availability"),
-            _f("p-relight", "on fal.ai as fal-ai/p-quality/relight (video-to-video)", "availability"),
-            _f("q-solo", "on wavespeed.ai as wavespeed-ai/q-solo (video-to-video)", "availability"),
-        ]
-        self.assertEqual({"fal-ai/p-quality": ["p-inpaint", "p-relight"]}, dict(pn.линейки(facts)))
-
-    def test_правка_4к_апскейл(self) -> None:
+    def test_названный_кадр_выше_предела_апскейл(self) -> None:
         for brief, edit in (
-            ("Replace the sky in our drone clip with a sunset, deliver in 4K", "replace-sky"),
-            ("Убери прохожего из нашего ролика, сдать в 4K", "remove-object"),
-            ("Extend our clip outward to a wider frame, 4K master", "reframe"),
+            ("Relight our interview clip to evening light, 4K master", "relight"),
+            ("Переосвети наш ролик под вечерний свет, сдать в 4K", "relight"),
+            ("Replace the red car with a blue one in our clip, deliver 4K", "replace-object"),
         ):
             with self.subTest(brief=brief):
                 answer = _plan(brief, task="video-edit", edit=[edit], inputs=[V(10)], outputs=["video"], duration_s=10,
                                resolution="4K", people=[])
                 self.assertEqual(["правка_видео", "апскейл"], _steps(answer))
+                self.assertRegex(answer["steps"][1]["chosen"]["price"], r"\[2160p\]")
 
-    def test_правка_720p_без_апскейла(self) -> None:
-        answer = _plan("Remove the passer-by from our clip, deliver 720p", task="video-edit", edit=["remove-object"],
-                       inputs=[V(10)], outputs=["video"], duration_s=10, resolution="720p", people=[])
+    def test_кадр_исходника_апскейл_по_кадру_выдачи(self) -> None:
+        for brief in ("Replace the red car with a blue one in our clip", "Замени машину на нашем ролике на синюю"):
+            with self.subTest(brief=brief):
+                answer = _plan(brief, task="video-edit", edit=["replace-object"], inputs=[V(8, "3840x2160")],
+                               outputs=["video"], duration_s=8, people=[])
+                self.assertEqual(["правка_видео", "апскейл"], _steps(answer))
+                self.assertRegex(answer["steps"][1]["chosen"]["price"], r"\[2160p\]")
+
+    def test_кадр_не_выше_предела_без_апскейла(self) -> None:
+        answer = _plan("Replace the red car with a blue one in our clip, deliver 720p", task="video-edit",
+                       edit=["replace-object"], inputs=[V(8)], outputs=["video"], duration_s=8, resolution="720p",
+                       people=[])
         self.assertEqual(["правка_видео"], _steps(answer))
 
     def test_работы_в_кадре_исходника(self) -> None:
