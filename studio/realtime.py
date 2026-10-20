@@ -151,12 +151,20 @@ def _spec_field(spec: Mapping[str, Any] | None, name: str) -> Any:
     return spec.get(name) if isinstance(spec, Mapping) else None
 
 
+def _outputs(spec: Mapping[str, Any] | None) -> set[str]:
+    """Output kinds of a raw spec: strings, or objects {kind, loop?, tileable?} (round 15)."""
+    raw = _spec_field(spec, "outputs") or ()
+    if isinstance(raw, (str, Mapping)):
+        raw = [raw]
+    return {str(o.get("kind") if isinstance(o, Mapping) else o) for o in raw}
+
+
 def applies(brief: str, spec: Mapping[str, Any] | None) -> bool:
     """The order is real-time speaking work: a recorded gap, not a batch plan."""
     said = " ".join([str(brief or ""), *(str(c) for c in (_spec_field(spec, "conditions") or ()) if c)])
     task = _spec_field(spec, "task")
     tasks = set(task) if isinstance(task, (list, tuple)) else {task}
-    outputs = {str(o) for o in (_spec_field(spec, "outputs") or ())}
+    outputs = _outputs(spec)
     if not asked(said, face=bool(tasks & FACE_TASKS) or "video" in outputs):
         return False
     return bool(tasks & REALTIME_TASKS) or bool(outputs & SPEAKING_OUTPUTS)

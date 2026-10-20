@@ -1371,6 +1371,31 @@ def plan_pipeline(
         languages BCP-47 tags of output speech/text (any tag: "kk", "pl", "he",
                   "pt-BR"); required when speech/text is output. Support per
                   model is reported as recorded / unmeasured, never refused.
+    DECISION FIELDS (round 15) — FILL THEM IN ANY BRIEF LANGUAGE. Without one
+    the decision falls back to EN/RU keywords of the brief; a field you fill
+    wins over the words. Unknown values are a spec error naming the allowed list.
+        live      true | false: a LIVE / interactive system (live stream, video
+                  call, avatar answering people in session, live dubbing) ->
+                  a recorded gap, not rendered clips; false -> ordinary plan.
+        edit_target  text | person | object | background | sky | light |
+                  style — WHAT the edit changes: text = lettering on a sign /
+                  label / billboard (video edit with text rendering, never a
+                  character swap, even with task face-replace).
+        outputs   items may be objects: {kind, loop?: bool, tileable?: bool} —
+                  loop = a seamless loop; tileable = a seamless texture.
+        people[].on_screen / people[].speaks  true | false: visible in the
+                  frame / speaks or sings. Both true on a generated clip = lip
+                  sync on that speaker (series dialogue, a singer on camera);
+                  nobody on screen = no performer and no lip sync.
+        cast_together  true | false: recurring characters SHARE the frame
+                  (dialogue) -> a keyframe edit per shot from shared references.
+        single_take_s  seconds of the longest continuous take (one shot with no
+                  cut) — longer than a model's run = several joined runs.
+        training_use  true | false: outputs will train / fine-tune a model.
+        consistency  [light | style | character]: what stays the same across
+                  shots / pictures (light -> one lighting setup for all shots).
+        dataset_count  samples in the data set the outputs form (e.g. 500
+                  face-swapped images) — priced per sample.
     OPTIONAL (also listed with values in `spec_needed.allowed`):
         edit      for video-edit: [reframe | replace-object | remove-object |
                   replace-sky | stabilise | relight | restyle]; unnamed = edit
@@ -1379,6 +1404,9 @@ def plan_pipeline(
         lipsync   for dub-translate: true | false. Default: true when outputs
                   include video and audio is not "voiceover", else false — a
                   voice-over-only dub, or outputs ["speech"], gets no lip sync.
+                  On a GENERATED clip (generate | animate | r2v |
+                  music-visualiser): true = the on-screen speaker's / singer's
+                  lips move; false = no lip-sync step, whatever the words say.
         characters  recurring characters; characters >= 1 with outputs
                   ["image"] and shots N = one reference + N edits from it (a
                   LoRA is the alternative), not N independent generations.
