@@ -151,6 +151,11 @@ def edit_tier_applies(step: str, objective: str) -> bool:
     return step in EDIT_TIER_STEPS and objective != QUALITY
 
 
+def batch_ratio_exceeded(chosen_usd: float, cheapest_usd: float) -> bool:
+    """The chosen model costs more than `BATCH_CHEAP_RATIO` x the cheapest adequate one."""
+    return cheapest_usd > 0 and chosen_usd > BATCH_CHEAP_RATIO * cheapest_usd
+
+
 def batch_cheap_applies(step: str, clips: int, objective: str) -> bool:
     """A lip-sync / avatar batch takes the cheapest adequate candidate unless quality is asked."""
     return step in BATCH_STEPS and int(clips or 0) >= BATCH_CLIPS_MIN and objective != QUALITY

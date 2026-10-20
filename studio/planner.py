@@ -13029,10 +13029,13 @@ def plan(
                     return x16.adequate_frame(c) and c.out_state == OUT_YES
 
                 замена = дешевле_в_полосе(к, найдены_шага, op, годен=_годен_в_пачке)
-                вне = дешёвый_вне_полосы(
-                    замена or к, найдены_шага, op, во_сколько_раз=x16.BATCH_CHEAP_RATIO, годен=_годен_в_пачке
-                )
-                if вне is not None:
+                вне = дешёвый_вне_полосы(замена or к, найдены_шага, op, во_сколько_раз=1.0, годен=_годен_в_пачке)
+                if (
+                    вне is not None
+                    and к.cost is not None
+                    and вне.cost is not None
+                    and x16.batch_ratio_exceeded(к.cost.default.usd, вне.cost.default.usd)
+                ):
                     принудительно[op.name] = вне.model
                     обмены_эксперта.append({**обмен_вне_полосы(op.name, к, вне), "reason": x16.REASON_BATCH})
                 elif замена is not None:
