@@ -116,7 +116,7 @@ MUTANTS: tuple[tuple[str, str, str, str], ...] = (
     (PN, "    if bs.GENERATED_STYLE.search(_norm(brief)):\n        return True\n", "", "стиль не отвечает на «уже снято?»"),
     (PN, "    if понято.task in (None, \"generate\") and чужое_ремесло(brief):", "    if чужое_ремесло(brief):", "чужое ремесло глушит и названную работу"),
     (PN, "    if not операции and вопрос is None and ARTEFACT_VIDEO not in есть and not чужое_ремесло(brief):", "    if False:", "пустой план снова без вопроса"),
-    (PN, '    просят_кадр = None if понято.source.get("resolution") == bs.SOURCE_DEFAULT else заказанный_кадр', "    просят_кадр = заказанный_кадр", "кадр-допущение дописывает апскейл"),
+    (PN, '        просят = None if понято.source.get("resolution") == bs.SOURCE_DEFAULT else заказанный_кадр', "        просят = заказанный_кадр", "кадр-допущение дописывает апскейл"),
     (PR, "        if сек and need.shots > 1:", "        if False:", "шоты снова одним куском в цене"),
     (PR, "            прогонов = need.shots * прогонов_на_шот", "            прогонов = прогонов_на_шот", "цена за один шот вместо всех"),
     # --- реестр эндпоинтов (пятый круг): работа из свидетельства, узел семьи,

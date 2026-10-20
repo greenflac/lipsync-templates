@@ -513,6 +513,11 @@ class Spec:
     #: (`говорят_в_кадре`); маршрут читает его, чтобы к речи и картинке добавить
     #: шаг, который двигает губы.
     speaker_on_screen: bool = False
+    #: Четырнадцатый круг: персонажи серии ДЕЛЯТ кадр (диалог, «вместе», «в каждом
+    #: шоте»). Поля в контракте нет — решает `with_defaults` по словам брифа
+    #: (`персонажи_в_одном_кадре`): только тогда ключевой кадр шота — правка по
+    #: референсам; иначе шот оживляется прямо от референса своего персонажа.
+    cast_together: bool = False
     #: Восьмой круг: допущения рецептов, выключенные вызывающим ({id: False});
     #: не названо — допущение класса заполняет молчание базы (`studio/recipes`).
     priors: Mapping[str, bool] = field(default_factory=dict)
@@ -1561,6 +1566,11 @@ NOTE_R2V_REF = "референс персонажа делается один р
 NOTE_CAST_REFS = "референсы персонажей ({n}) делаются ОДИН раз и общие для всех шотов — не генерируются на каждый шот"
 NOTE_CAST_KEYFRAMES = "ключевой кадр каждого шота — правка по общим референсам персонажей (лица не разъезжаются)"
 NOTE_SPEAKER_LIPS_SHOTS = "губы двигает липсинк в КАЖДОМ шоте, где говорят в кадре ({n})"
+#: Четырнадцатый круг: персонажи кадра не делят — шот оживляется прямо от референса.
+NOTE_CAST_STRAIGHT = (
+    "каждый шот оживляется прямо от референса своего персонажа (image-to-video): персонажи кадра не делят, "
+    "отдельный ключевой кадр на шот не нужен"
+)
 NOTE_SINGER_LIPS = "исполнитель поёт в кадре: липсинк под вокал ВАШЕГО трека в каждой сцене ({n})"
 NOTE_MUSIC_VIDEO = "клип из сцен: референс исполнителя один раз, каждая сцена оживляется по нему; дорожку кладёт монтаж"
 NOTE_R2V = "каждый шот — по одному референсу персонажа (reference-to-video)"
@@ -1590,6 +1600,10 @@ NOTE_VISUALISER_NO_TRACK = (
 )
 NOTES_EN: dict[str, str] = {
     NOTE_CAST_KEYFRAMES: "each shot's keyframe is an edit from the shared character references (faces do not drift)",
+    NOTE_CAST_STRAIGHT: (
+        "every shot is animated straight from its character's reference (image-to-video): the characters do not "
+        "share the frame, so no per-shot keyframe is made"
+    ),
     NOTE_MUSIC_VIDEO: (
         "a music video of scenes: the performer's reference is made once and every scene is animated from it; "
         "the track is laid in at assembly"
@@ -1961,6 +1975,9 @@ SERIES_SHOTS_MIN = 2
 #: 15 с (самый длинный записанный прогон Kling 3.0 / Seedance 2.x) — от
 #: референса. КОНСТАНТА-РЕШЕНИЕ.
 SERIES_DURATION_MIN_S = 15.0
+#: Четырнадцатый круг: сколько референсов у серии с ОДНИМ персонажем — один на всю
+#: серию, сколько бы шотов ни вывела длительность. КОНСТАНТА-РЕШЕНИЕ.
+SINGLE_REFERENCE = 1
 
 
 def серия_с_персонажем(spec: "Spec") -> bool:
@@ -2339,6 +2356,12 @@ def _маршрут_одной(spec: Spec, на_сборке: frozenset[str] = f
             шаги += ["генерация_изображения", "видео_по_референсу"]
             пометки["генерация_изображения"] = NOTE_R2V_REF
             пометки["видео_по_референсу"] = NOTE_R2V
+            # ЧЕТЫРНАДЦАТЫЙ КРУГ: референс — на ПЕРСОНАЖА, а не на шот (прежде
+            # 60 шотов серии генерировали 60 картинок, которые r2v не берёт).
+            _дорожки(spec, шаги)
+            return Маршрут(
+                tuple(dict.fromkeys(шаги)), пометки, штук={"генерация_изображения": max(1, int(spec.characters or 1))}
+            )
         _дорожки(spec, шаги)
         return Маршрут(tuple(dict.fromkeys(шаги)), пометки)
     if задача == "face-replace":
@@ -2420,9 +2443,16 @@ def _маршрут_одной(spec: Spec, на_сборке: frozenset[str] = f
             # персонажа, ОДИН раз на всю серию; ключевой кадр шота — правка по ним;
             # шот оживляется от своего кадра. Прежде каждый шот генерировал своих
             # персонажей заново (t2i на каждый шот) — и платил за это N раз.
-            шаги += ["генерация_изображения", "редактирование_изображения", "оживление"]
+            # ЧЕТЫРНАДЦАТЫЙ КРУГ: ключевой кадр шота — только когда персонажи ДЕЛЯТ
+            # кадр (композиции нет ни в одном референсе, а image-to-video берёт один
+            # стартовый кадр); иначе шот оживляется прямо от референса.
+            if spec.cast_together:
+                шаги += ["генерация_изображения", "редактирование_изображения", "оживление"]
+                пометки["редактирование_изображения"] = NOTE_CAST_KEYFRAMES
+            else:
+                шаги += ["генерация_изображения", "оживление"]
+                пометки["оживление"] = NOTE_CAST_STRAIGHT
             пометки["генерация_изображения"] = NOTE_CAST_REFS.format(n=spec.characters)
-            пометки["редактирование_изображения"] = NOTE_CAST_KEYFRAMES
             _дорожки(spec, шаги)
             return Маршрут(
                 tuple(dict.fromkeys(шаги)), пометки, штук={"генерация_изображения": int(spec.characters or 0)}
@@ -2436,6 +2466,10 @@ def _маршрут_одной(spec: Spec, на_сборке: frozenset[str] = f
             # Референс персонажа делается один раз, шоты оживляются от него.
             шаги += ["генерация_изображения", "оживление"]
             пометки["генерация_изображения"] = NOTE_R2V_REF
+            # ЧЕТЫРНАДЦАТЫЙ КРУГ: референс ОДИН и тогда, когда шоты не названы, а
+            # выведены из длительности (прежде — картинка на каждый клип).
+            _дорожки(spec, шаги)
+            return Маршрут(tuple(dict.fromkeys(шаги)), пометки, штук={"генерация_изображения": SINGLE_REFERENCE})
         else:
             шаги.append("генерация_видео")
     elif "image" in выходы:
@@ -2514,6 +2548,16 @@ PERFORMER = re.compile(
 )
 #: Голос ЗА кадром назван словами — говорящего в кадре нет.
 VOICE_OFF_FRAME = re.compile(r"voice-?over|narrat\w*|off-?screen|озвучк\w*|закадров\w*|диктор\w*|配音", re.I)
+#: Четырнадцатый круг: голоса ПЕРСОНАЖЕЙ («озвучка персонажей», «voiced lines») —
+#: это не закадр: говорят персонажи, и в кадре. Старше `VOICE_OFF_FRAME`.
+CHARACTER_VOICES = re.compile(
+    r"voiced (?:lines?|dialogue|characters?|cutscenes?)|character (?:voices?|lines?|dialogue)|voice[- ]acted|voice acting"
+    r"|(?:his|her|their|its) lines\b|speak\w* (?:\w+ ){0,2}lines|(?:says|say|delivers?|reads?) (?:his|her|their|its) lines"
+    r"|озвучк\w* (?:персонаж\w*|геро\w*|рол\w*)|голос\w* персонаж\w*|реплик\w*",
+    re.I,
+)
+#: Четырнадцатый круг: КАТ-СЦЕНА — персонажи игры на экране; речь в ней — их речь.
+CUTSCENE = re.compile(r"\bcut-?scenes?\b|in-game cinematic\w*|кат-?сцен\w*|катсцен\w*|игров\w+ ролик\w*", re.I)
 #: Двенадцатый круг: говорящий ВИДЕН словами — ведущий, «в камеру», «в кадре».
 #: Старше `VOICE_OFF_FRAME`: «ведущий в кадре, озвучка нейросетью» — губы
 #: двигаются. Глагол речи (`SPEAKING_IN_FRAME`) без этих слов считается только
@@ -2537,10 +2581,49 @@ def говорят_в_кадре(spec: Spec, текст: str = "") -> bool:
     if ON_SCREEN_SPEAKER.search(сказано):
         return True
     персонаж = (spec.characters or 0) >= 1 or bool(spec.people)
-    if VOICE_OFF_FRAME.search(сказано):
+    голоса_персонажей = bool(CHARACTER_VOICES.search(сказано))
+    if VOICE_OFF_FRAME.search(сказано) and not голоса_персонажей:
         return False
+    # ЧЕТЫРНАДЦАТЫЙ КРУГ: реплики персонажей и речь кат-сцены — тоже в кадре.
+    if персонаж and (голоса_персонажей or CUTSCENE.search(сказано)):
+        return True
     # ТРИНАДЦАТЫЙ КРУГ: диалог персонажей («кот и пёс разговаривают») — говорят в кадре.
     return персонаж and bool(SPEAKING_IN_FRAME.search(сказано) or DIALOGUE.search(сказано))
+
+
+#: Четырнадцатый круг: исполнителя В КАДРЕ НЕТ словами — «no performer on screen»,
+#: «без людей», «исполнителей в кадре нет», «nobody sings».
+NO_PERFORMER = re.compile(
+    r"\b(?:no|without|zero)\s+(?:\w+\s+){0,2}(?:performers?|singers?|vocalists?|rappers?|artists?|bands?|musicians?"
+    r"|people|persons?|humans?|faces?|figures?|characters?|one)\b(?:\s+(?:on|in)\s+(?:the\s+)?(?:screen|camera|frame|shot))?"
+    r"|\b(?:nobody|no one|no-one)\b[^.,;]{0,40}"
+    r"|\b(?:performers?|singers?|bands?|artists?|people)\s+(?:is|are)?\s*(?:not|never)\s+(?:shown|seen|visible|on screen|in frame)"
+    r"|\bfaceless\b|\bpurely abstract\b"
+    r"|без\s+(?:\w+\s+)?(?:людей|человек\w*|исполнител\w*|артист\w*|певц\w*|певиц\w*|вокалист\w*|музыкант\w*|лиц\b|персонаж\w*)"
+    r"|(?:исполнител\w*|артист\w*|певц\w*|певиц\w*|людей|музыкант\w*|персонаж\w*)\s+(?:\w+\s+){0,2}нет\b"
+    r"|\bнет\s+(?:\w+\s+)?(?:людей|исполнител\w*|артист\w*)|никого\s+в\s+кадре|никто\s+не\s+\w+",
+    re.I,
+)
+#: Исполнитель назван ЧЕЙ-ТО трек, а не тем, кто в кадре: «the band's new song»,
+#: «artist's logo», «for our rapper», «песня нашей группы», «для певицы».
+PERFORMER_NOT_ON_SCREEN = re.compile(
+    r"\b(?:performer|singer|vocalist|rapper|artist|band|frontman|frontwoman|musician)(?:'s|’s|s'|s’)"
+    r"|\bfor (?:the |our |my |a |an |their )?(?:new )?(?:band|artist|singer|rapper|musician)s?\b"
+    r"|(?:песн\w*|трек\w*|клип\w*|альбом\w*|сингл\w*|логотип\w*)\s+(?:нашей |моей |этой |вашей |своей |нашего |моего )?"
+    r"(?:групп\w*|певиц\w*|певц\w*|артист\w*|исполнител\w*|рэпер\w*)"
+    r"|для\s+(?:нашей |моей |нашего |моего )?(?:групп\w*|певиц\w*|певц\w*|артист\w*|исполнител\w*|рэпер\w*)",
+    re.I,
+)
+
+
+def исполнитель_словами(текст: str) -> str:
+    """Слова брифа без исполнителя, которого в кадре НЕТ (четырнадцатый круг).
+
+    «Визуализатор без исполнителя в кадре», «логотип артиста», «трек нашей группы»
+    называют исполнителя, но не ставят его в кадр: клип с референсом и губами —
+    только когда исполнитель В КАДРЕ.
+    """
+    return PERFORMER_NOT_ON_SCREEN.sub(" ", NO_PERFORMER.sub(" ", str(текст or "")))
 
 
 def поют_в_кадре(spec: Spec, текст: str = "") -> bool:
@@ -2549,7 +2632,7 @@ def поют_в_кадре(spec: Spec, текст: str = "") -> bool:
         return False
     if spec.task not in (None, "generate", "music-visualiser", "r2v"):
         return False
-    сказано = " ".join(str(у) for у in (*spec.conditions, текст) if у)
+    сказано = исполнитель_словами(" ".join(str(у) for у in (*spec.conditions, текст) if у))
     return bool(SINGING.search(сказано))
 
 
@@ -2560,8 +2643,54 @@ def клип_с_исполнителем(spec: Spec, текст: str = "") -> bo
     if spec.task not in (None, "generate", "music-visualiser"):
         return False
     сцен = (spec.shots or 0) >= SERIES_SHOTS_MIN or float(spec.duration_s or 0) > SERIES_DURATION_MIN_S
-    сказано = " ".join(str(у) for у in (*spec.conditions, текст) if у)
+    сказано = исполнитель_словами(" ".join(str(у) for у in (*spec.conditions, текст) if у))
     return сцен and bool(PERFORMER.search(сказано) or SINGING.search(сказано))
+
+
+#: Четырнадцатый круг: ВИЗУАЛИЗАТОР словами — картинка под трек без исполнителя.
+VISUALISER_WORDS = re.compile(
+    r"visuali[sz]er|визуализ\w*|audio[- ]reactive|sound[- ]reactive|reacts? to the (?:beat|music|track)"
+    r"|reactive (?:shapes|visuals)|pulsing to the beat|пульсиру\w* под|реагиру\w* на (?:бит|звук|музык)",
+    re.I,
+)
+
+
+def визуализатор(spec: Spec, текст: str = "") -> bool:
+    """Картинка под ВАШ трек без исполнителя в кадре: работа визуализатора, даже названная generate."""
+    if spec.task not in (None, "generate") or "audio" not in spec.inputs or set(spec.inputs) & {"video", "photo"}:
+        return False
+    if set(spec.outputs) != {"video"} or (spec.characters or 0) >= 1 or spec.people:
+        return False
+    сказано = " ".join(str(у) for у in (*spec.conditions, текст) if у)
+    return bool(VISUALISER_WORDS.search(сказано)) and not клип_с_исполнителем(spec, текст)
+
+
+#: Четырнадцатый круг: персонажи ДЕЛЯТ кадр словами — вместе, друг с другом, оба,
+#: в каждом шоте (и диалог, `DIALOGUE`).
+CAST_TOGETHER = re.compile(
+    r"\btogether\b|each other|one another|\bboth\b|\ball (?:two|three|four|of them)\b|in (?:every|each) (?:of (?:the )?\d+ )?(?:shots?|scenes?|frames?)"
+    r"|\b(?:meet|meets|fight|fights|hug|hugs|chase|chases|dance with|play with|plays with|duel\w*)\b"
+    r"|\band (?:the |a |an |his |her |their |our |its )?[\w-]+ (?:talk|chat|speak|argue|bicker|negotiate|discuss|sing)\b"
+    r"|вместе|друг (?:с )?друг\w*|\bоба\b|\bобе\b|\bвсе (?:трое|четверо)|в каждом (?:из \d+ )?(?:шот\w*|кадр\w*|сцен\w*)"
+    r"|встреча\w*|деру\w*|сража\w*|обнима\w*|догоня\w*|танцу\w* с",
+    re.I,
+)
+
+
+#: «Без диалогов», «no dialogue» — диалог назван, чтобы его НЕ было.
+NO_DIALOGUE = re.compile(
+    r"\b(?:no|without|zero|not any)\s+(?:\w+\s+)?(?:dialog\w*|conversation\w*|talking|lines)\b"
+    r"|\bnon-?dialog\w*|без\s+(?:\w+\s+)?(?:диалог\w*|разговор\w*|реплик\w*|слов)",
+    re.I,
+)
+
+
+def персонажи_в_одном_кадре(spec: "Spec", текст: str = "") -> bool:
+    """Персонажи серии делят кадр: ключевой кадр шота собирается из их референсов (четырнадцатый круг)."""
+    if (spec.characters or 0) < MULTI_CHARACTER_MIN:
+        return False
+    сказано = NO_DIALOGUE.sub(" ", " ".join(str(у) for у in (*spec.conditions, текст) if у))
+    return bool(CAST_TOGETHER.search(сказано) or DIALOGUE.search(сказано))
 
 
 #: «Тот же персонаж» словами — серия держит одного героя (одиннадцатый круг).
@@ -2683,11 +2812,23 @@ def with_defaults(spec: Spec, ролик: bool, текст: str = "") -> Spec:
             f"{SCRIPT_SPEECH_DEFAULT_S:g} s of speech (scale by the script's length: ~150 words a minute); "
             "pass spec.duration_s for an exact price"
         )
+    if визуализатор(spec, текст):
+        # ЧЕТЫРНАДЦАТЫЙ КРУГ: визуализатор под ВАШ трек, названный generate, —
+        # петли визуала и монтаж, а не кадры-портреты на каждую сцену.
+        поля["task"] = "music-visualiser"
+        источник["task"] = SOURCE_DERIVED
+        spec = replace(spec, task="music-visualiser")
+        допущения.append(
+            "visuals for YOUR track with nobody on screen — a music visualiser: looped generation laid under the "
+            "track at assembly, no performer reference and no lip sync; pass spec.characters for a performer"
+        )
     персонажей, почему = персонажи_по_умолчанию(spec, текст)
     if персонажей:
         поля["characters"] = персонажей
         источник["characters"] = SOURCE_DEFAULT
         допущения.append(почему)
+    if персонажи_в_одном_кадре(replace(spec, characters=поля["characters"]), текст):
+        поля["cast_together"] = True
     if говорящий_ролик(spec, текст):
         поля["audio"] = "native"
         источник["audio"] = SOURCE_DEFAULT

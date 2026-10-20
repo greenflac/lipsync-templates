@@ -89,22 +89,29 @@ def _models(answer: dict) -> dict[str, str]:
 class ОбщиеРеференсы(unittest.TestCase):
     """Two or more recurring characters: one reference per character for the whole series."""
 
+    # Round 14: the per-shot keyframe edit is made only when the characters SHARE the
+    # frame (argue, "in every shot"); otherwise each shot starts from its reference.
     CASES = (
-        ("A web series where two robots argue, 4 episodes of 3 shots", 2, 12),
-        ("Три подруги в каждом из 6 шотов рекламы", 3, 6),
-        ("Сериал про двух котов: 10 серий по 3 шота", 2, 30),
-        ("Ad with a knight and a dragon in 5 shots", 2, 5),
+        ("A web series where two robots argue, 4 episodes of 3 shots", 2, 12,
+         ("генерация_изображения", "редактирование_изображения", "оживление")),
+        ("Три подруги в каждом из 6 шотов рекламы", 3, 6,
+         ("генерация_изображения", "редактирование_изображения", "оживление")),
+        ("Сериал про двух котов: 10 серий по 3 шота", 2, 30, ("генерация_изображения", "оживление")),
+        ("Ad with a knight and a dragon in 5 shots", 2, 5, ("генерация_изображения", "оживление")),
     )
 
     def test_референс_на_персонажа_один_раз(self) -> None:
-        for brief, chars, shots in self.CASES:
+        for brief, chars, shots, steps in self.CASES:
             with self.subTest(brief=brief):
                 м = _route(brief, task="generate", inputs=[], outputs=["video"], characters=chars, shots=shots, per_shot_s=5)
-                self.assertEqual(("генерация_изображения", "редактирование_изображения", "оживление"), м.шаги)
+                self.assertEqual(steps, м.шаги)
                 self.assertEqual(chars, м.штук["генерация_изображения"])
 
     def test_длинный_ролик_без_шотов_тоже_серия(self) -> None:
         м = _route("A 40-second clip with a knight and a dragon", task="generate", inputs=[], outputs=["video"],
+                   characters=2, duration_s=40)
+        self.assertEqual(("генерация_изображения", "оживление"), м.шаги)
+        м = _route("A 40-second clip: a knight and a dragon fight", task="generate", inputs=[], outputs=["video"],
                    characters=2, duration_s=40)
         self.assertEqual(("генерация_изображения", "редактирование_изображения", "оживление"), м.шаги)
 
@@ -112,6 +119,8 @@ class ОбщиеРеференсы(unittest.TestCase):
         м = _route("One 8 s shot: a knight and a dragon", task="generate", inputs=[], outputs=["video"],
                    characters=2, duration_s=8)
         self.assertEqual(("генерация_изображения", "оживление"), м.шаги)
+        # Round 14: a single shot is not a series — no shared references (the keyframe count is the shot's).
+        self.assertNotIn("генерация_изображения", м.штук)
 
 
 class ОднаПетля(unittest.TestCase):
@@ -368,6 +377,9 @@ class РеальноеВремя(unittest.TestCase):
     RECORDED = (
         ("Live-action product ad with a presenter talking to camera", {"task": "avatar", "outputs": ["video", "speech"]}),
         ("It does not need to be real time: a recorded 60 s avatar video", {"task": "avatar", "outputs": ["video", "speech"]}),
+        # Round 14: a speed word counts only with someone answered in session — the negation is judged there.
+        ("It does not need to be real time: the avatar answers visitors in a recorded 60 s video",
+         {"task": "avatar", "outputs": ["video", "speech"]}),
         ("Real-time strategy game trailer, 30 s", {"task": "generate", "outputs": ["video"]}),
         ("Dub our real-time strategy game trailer into German", {"task": "dub-translate", "outputs": ["video", "speech"]}),
         ("Translate the live recording of our concert into Spanish subtitles", {"task": "captions", "outputs": ["video"]}),
