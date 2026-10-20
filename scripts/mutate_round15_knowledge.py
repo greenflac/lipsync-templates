@@ -72,6 +72,8 @@ MUTANTS: tuple[tuple[str, str, str, str], ...] = (
      "удаление предмета — вставка товара"),
     (CL, '    return "replace-object" in правки or any(str(з.get("kind")) in ("image", "photo") for з in spec.input_items)',
      '    return "replace-object" in правки', "фото товара рядом с роликом не читается"),
+    (CL, '["t2v", "i2v", "music", "sfx", "visualiser", "t2v_audio", "turntable"]',
+     '["t2v", "i2v", "music", "visualiser", "t2v_audio", "turntable"]', "петля звука (sfx) без оговорки шва"),
     # --- длинный фон одним отрезком
     (X15, "AMBIENT_AUDIO_SEGMENT_S = 180", "AMBIENT_AUDIO_SEGMENT_S = 181", "отрезок звука длиннее трёх минут"),
     (X15, "AMBIENT_AUDIO_SEGMENT_S = 180", "AMBIENT_AUDIO_SEGMENT_S = 179", "отрезок звука короче трёх минут"),

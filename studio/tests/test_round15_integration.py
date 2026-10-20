@@ -98,6 +98,14 @@ class ТолькоПолеРешает(unittest.TestCase):
                 self.assertIn(rid, fired(с_полем, steps, brief))
                 self.assertNotIn(rid, fired(без_поля, steps, brief))
 
+    def test_петля_звука_ja(self) -> None:
+        # The loop field on an ambience (sfx) output: the seam caveat, in a brief without loop words.
+        raw = {"task": "generate", "inputs": [], "outputs": ["sfx"], "duration_s": 600, "people": []}
+        brief = "瞑想アプリ用の夜の湖の音、十分間"
+        self.assertIn("seamless_loop", fired(w(raw, outputs=[{"kind": "sfx", "loop": True}]), ["звук_фон"], brief))
+        self.assertNotIn("seamless_loop", fired(raw, ["звук_фон"], brief))
+        self.assertIn("seamless_loop", notes(plan(brief, w(raw, outputs=[{"kind": "sfx", "loop": True}]))))
+
     def test_ложное_поле_глушит(self) -> None:
         self.assertNotIn("long_ambient_loop", fired(w(LONG, outputs=[{"kind": "video", "loop": False}]),
                                                     ["генерация_видео"], ZH_RAIN + "，雨声 ambient loop"))

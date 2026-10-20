@@ -711,7 +711,8 @@ RULES_LIST: tuple[Rule, ...] = (
     ),
     _r(
         "seamless_loop",
-        ["t2v", "i2v", "music", "visualiser", "t2v_audio", "turntable"],
+        # Round-15 integration: `outputs[].loop` may sit on an sfx output (an ambience loop) too.
+        ["t2v", "i2v", "music", "sfx", "visualiser", "t2v_audio", "turntable"],
         "seamless loop: make the last frame meet the first (first/last-frame conditioning, or crossfade the "
         "tail into the head) and watch the join at full speed; for audio, cut the loop on a bar line at zero "
         "crossings",
