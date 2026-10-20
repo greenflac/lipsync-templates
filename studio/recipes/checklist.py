@@ -3459,7 +3459,7 @@ def _ambient_long(c: Ctx) -> dict[str, str] | None:
     if петля is False:
         return None
     if петля or c.says(W_LOOP) or c.says(W_AMBIENT):
-        return {"hours": f"{s / 3600:.3g}"}
+        return {"seconds": f"{s:g}"}
     return None
 
 
@@ -3553,12 +3553,12 @@ RULES_R15: tuple[Rule, ...] = (
     _r(
         "long_ambient_loop",
         [],
-        "a long ambient piece (~{hours} h) is NOT generated end to end: generate one loopable segment (a few "
+        "a long ambient piece ({seconds} s) is NOT generated end to end: generate one loopable segment (a few "
         "minutes of audio, or a 5-20 s clip) — or 2-3 variations to break audible repetition — make the tail "
         "meet the head (crossfade 2-5 s on a zero crossing / matched frames), check the loop point on headphones "
         "and at full speed, then repeat it at assembly (ffmpeg -stream_loop, acrossfade / xfade) — 0 usd; "
         "master to the platform loudness once, and note that YouTube may limit monetisation of repetitive content",
-        "длинный фоновый материал (~{hours} ч) НЕ генерируется целиком: сгенерируйте один зацикливаемый отрезок "
+        "длинный фоновый материал ({seconds} с) НЕ генерируется целиком: сгенерируйте один зацикливаемый отрезок "
         "(несколько минут звука или клип 5-20 с) — или 2-3 вариации, чтобы повтор не был слышен, — сведите "
         "хвост с началом (наплыв 2-5 с в нуле волны / по совпадающим кадрам), проверьте точку петли в наушниках "
         "и на полной скорости, затем повторите отрезок при сборке (ffmpeg -stream_loop, acrossfade / xfade) — "

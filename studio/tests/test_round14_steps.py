@@ -303,13 +303,21 @@ class КадрВыдачиПравки(unittest.TestCase):
         for brief, edit in (
             ("Relight our interview clip to evening light, 4K master", "relight"),
             ("Переосвети наш ролик под вечерний свет, сдать в 4K", "relight"),
-            ("Replace the red car with a blue one in our clip, deliver 4K", "replace-object"),
         ):
             with self.subTest(brief=brief):
                 answer = _plan(brief, task="video-edit", edit=[edit], inputs=[V(10)], outputs=["video"], duration_s=10,
                                resolution="4K", people=[])
                 self.assertEqual(["правка_видео", "апскейл"], _steps(answer))
                 self.assertRegex(answer["steps"][1]["chosen"]["price"], r"\[2160p\]")
+
+    def test_замена_предмета_правкой_до_4k(self) -> None:
+        # Round 15: an object swap is an object edit, not a character replacement (`expert_r15.person_edit`);
+        # the instruction-edit endpoints reach 2160p by record, so no upscale is added.
+        answer = _plan("Replace the red car with a blue one in our clip, deliver 4K", task="video-edit",
+                       edit=["replace-object"], inputs=[V(10)], outputs=["video"], duration_s=10, resolution="4K", people=[])
+        self.assertEqual(["правка_видео"], _steps(answer))
+        self.assertRegex(answer["steps"][0]["chosen"]["price"], r"\[2160p\]")
+        self.assertNotRegex(answer["steps"][0]["chosen"]["model"], r"animate-replace")
 
     def test_кадр_исходника_апскейл_по_кадру_выдачи(self) -> None:
         for brief in ("Replace the red car with a blue one in our clip", "Замени машину на нашем ролике на синюю"):

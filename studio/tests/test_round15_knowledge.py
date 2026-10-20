@@ -207,7 +207,7 @@ class Предостережения(unittest.TestCase):
         )
 
     def test_ноты_на_двух_языках_без_утечек(self) -> None:
-        поля = {"n": "12", "hours": "3"}
+        поля = {"n": "12", "seconds": "10800"}
         for р in cl.RULES_R15:
             self.assertEqual([], l10n.leaks({"says": р.ru.format(**поля)}, "ru"), р.id)
             self.assertEqual([], l10n.leaks({"says": р.en.format(**поля)}, "en"), р.id)
