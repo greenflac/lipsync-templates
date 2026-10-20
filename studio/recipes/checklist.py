@@ -3319,10 +3319,9 @@ RULES_LIST = RULES_LIST + RULES_R14
 # tileable textures, halftone scans, timelapse interpolation, style across an image set,
 # no-speech shorts, anonymising passers-by). Structured spec fields first, the words second.
 #
-# R15-SPEC: the language-independent fields (`outputs[].loop`, `outputs[].tileable`,
-# `consistency`, `people[].speaks`) are read through `spec_value` / `output_flag` /
-# `people_flag`, which tolerate their absence; the integrator points them at the merged
-# `brief_spec.Spec` attributes.
+# The round-15 spec fields (`spec.loop` / `spec.tileable` from `outputs[].loop|tileable`,
+# `spec.consistency`, `people[].speaks`) are read first; a field that is NAMED beats the words
+# both ways (false silences the rule whatever the brief says).
 
 #: From this many seconds an ambient / looping deliverable is built from ONE loopable segment
 #: repeated at assembly (a 3-hour rain track, an 8-hour fireplace) — never generated end to end.
@@ -3341,28 +3340,25 @@ S_EDPB_VIDEO = "https://www.edpb.europa.eu/our-work-tools/our-documents/guidelin
 S_ICO_ANON = "https://ico.org.uk/for-organisations/uk-gdpr-guidance-and-resources/data-sharing/anonymisation/"
 
 
-def spec_value(spec: "bs.Spec", name: str) -> Any:
-    """A spec attribute that may not exist yet (R15-SPEC: the parallel spec round adds it)."""
-    return getattr(spec, name, None)
-
-
-def output_flag(spec: "bs.Spec", flag: str) -> bool:
-    """`outputs[].<flag>` is true for some output (R15-SPEC: outputs as objects, or `output_items`)."""
-    for имя in ("output_items", "outputs"):
-        for о in getattr(spec, имя, None) or ():
-            if isinstance(о, Mapping) and о.get(flag) is True:
-                return True
-    return False
+def output_flag(spec: "bs.Spec", flag: str) -> bool | None:
+    """`outputs[].<flag>` (`spec.loop` / `spec.tileable`): True / False as named, None — not named."""
+    v = getattr(spec, flag, None)
+    if isinstance(v, bool):
+        return v
+    for о in getattr(spec, "output_items", None) or ():
+        if isinstance(о, Mapping) and isinstance(о.get(flag), bool):
+            return bool(о[flag])
+    return None
 
 
 def people_flag(spec: "bs.Spec", key: str) -> list[object]:
-    """`people[].<key>` as given (absent keys skipped)."""
-    return [п.get(key) for п in spec.people if isinstance(п, Mapping) and key in п]
+    """`people[].<key>` as named (people without the key are skipped)."""
+    return [п.get(key) for п in spec.people if isinstance(п, Mapping) and п.get(key) is not None]
 
 
 def consistency(spec: "bs.Spec") -> set[str]:
-    """`spec.consistency` — what must stay the same across the set (R15-SPEC)."""
-    return {str(к).lower() for к in (spec_value(spec, "consistency") or ())}
+    """`spec.consistency` — what must stay the same across the set."""
+    return {str(к).lower() for к in (getattr(spec, "consistency", None) or ())}
 
 
 W_COVER_SONG = re.compile(
@@ -3451,14 +3447,18 @@ def _ambient_long(c: Ctx) -> dict[str, str] | None:
         return None
     if not (c.video or c.jobs & {"music", "sfx"} or c.outputs & {"music", "sfx", "audio"}):
         return None
-    if output_flag(c.spec, "loop") or c.says(W_LOOP) or c.says(W_AMBIENT):
+    петля = output_flag(c.spec, "loop")
+    if петля is False:
+        return None
+    if петля or c.says(W_LOOP) or c.says(W_AMBIENT):
         return {"hours": f"{s / 3600:.3g}"}
     return None
 
 
 def _tileable(c: Ctx) -> bool:
-    if output_flag(c.spec, "tileable"):
-        return True
+    тайл = output_flag(c.spec, "tileable")
+    if тайл is not None:
+        return тайл and bool(c.steps or c.jobs)
     return c.visual and bool(c.steps or c.jobs) and c.says(W_TILEABLE)
 
 
@@ -3475,7 +3475,8 @@ def _style_set(c: Ctx) -> dict[str, str] | None:
     штук = max(int(c.spec.shots or 0), *(int(з.get("count") or 0) for з in c.spec.input_items), 0)
     if штук < STYLE_SET_MIN or not c.jobs & (STILL_GEN | VIDEO_GEN | {"i2v"}):
         return None
-    if "style" in consistency(c.spec) or c.says(W_STYLE_SET):
+    оси = consistency(c.spec)
+    if "style" in оси or (not оси and c.says(W_STYLE_SET)):
         return {"n": str(штук)}
     return None
 
@@ -3487,8 +3488,8 @@ def _no_speech_short(c: Ctx) -> bool:
     if c.seconds > NO_SPEECH_SHORT_MAX_S or c.jobs & ({"restore", "colorize", "interpolate"} | UPSCALE):
         return False
     говорят = people_flag(c.spec, "speaks")
-    if говорят and all(г is False for г in говорят):
-        return True
+    if говорят:
+        return all(г is False for г in говорят)
     return c.says(W_NO_SPEECH)
 
 
@@ -3661,7 +3662,7 @@ RULES_R15: tuple[Rule, ...] = (
         R,
         _anonymise,
         ("conditions",),
-        "spec.edit.target = 'bystander-faces'",
+        "spec.anonymise = 'blur' | 'swap'",
         (S_GDPR, S_EDPB_VIDEO, S_ICO_ANON),
     ),
 )

@@ -1,9 +1,9 @@
 """Round 15: expert decisions the hidden set found missing in steps, models and prices.
 
-Every decision reads a structured spec field first and the brief's words only as a
-fallback. The fields come from the parallel round-15 spec work (`edit.target`,
-`outputs[].loop`, ...): until it is merged they are read through `spec_value` /
-`checklist.output_flag`, which tolerate their absence (marker R15-SPEC).
+Every decision reads a structured spec field first (round-15 spec fields:
+`spec.edit_target`, `outputs[].loop` -> `spec.loop`, `outputs[].tileable`,
+`spec.consistency`, `people[].speaks`) and the brief's words only when the field is
+not named; a named field beats the words both ways.
 
 1. OBJECT EDIT — placing / replacing a product or an object in the customer's shot
    is a video edit; a character-replacement endpoint (Wan Animate replace) is a
@@ -27,8 +27,8 @@ from typing import Any
 from studio import edit_intent as ei
 from studio.recipes import checklist as cl
 
-#: `edit.target` values that make a person the object of the edit (R15-SPEC).
-PERSON_TARGETS: frozenset[str] = frozenset({"person", "face", "character", "body", "actor", "presenter"})
+#: `spec.edit_target` values that make a person the object of the edit (`brief_spec.EDIT_TARGETS`).
+PERSON_TARGETS: frozenset[str] = frozenset({"person"})
 #: Tasks whose target is a person by definition.
 PERSON_TASKS: frozenset[str] = frozenset({"face-replace"})
 
@@ -40,19 +40,13 @@ AMBIENT_VIDEO_SEGMENT_S = 10
 
 
 def spec_value(spec: Any, name: str) -> Any:
-    """A spec attribute that may not exist yet (R15-SPEC)."""
+    """A spec attribute (None when the object has no such field — a hand-built stand-in in a test)."""
     return getattr(spec, name, None)
 
 
 def edit_target(spec: Any) -> str:
-    """`spec.edit.target` (R15-SPEC: `edit_target` attribute, or a mapping in `spec.edit`)."""
-    v = spec_value(spec, "edit_target")
-    if v:
-        return str(v).lower()
-    правки = spec_value(spec, "edit")
-    if isinstance(правки, dict) and правки.get("target"):
-        return str(правки["target"]).lower()
-    return ""
+    """`spec.edit_target` (`brief_spec.EDIT_TARGETS`), lower-case; "" — not named."""
+    return str(spec_value(spec, "edit_target") or "").lower()
 
 
 def person_edit(spec: Any, text: str = "") -> bool:
@@ -138,8 +132,11 @@ def ambient_segment_s(spec: Any, text: str, audio: bool) -> float | None:
     секунды = float(spec_value(spec, "duration_s") or 0)
     if секунды < cl.AMBIENT_LOOP_MIN_S:
         return None
+    петля = cl.output_flag(spec, "loop")
+    if петля is False:
+        return None
     слова = " ".join((str(text or ""), *map(str, spec_value(spec, "conditions") or ())))
-    if not (cl.output_flag(spec, "loop") or cl.W_LOOP.search(слова) or cl.W_AMBIENT.search(слова)):
+    if not (петля or cl.W_LOOP.search(слова) or cl.W_AMBIENT.search(слова)):
         return None
     return float(AMBIENT_AUDIO_SEGMENT_S if audio else AMBIENT_VIDEO_SEGMENT_S)
 
@@ -178,14 +175,14 @@ BLUR_WORDS = re.compile(
 def anonymise_method(spec: Any, text: str = "") -> str | None:
     """'swap' | 'blur' for an order to anonymise bystanders' faces; None — no such order.
 
-    R15-SPEC: `edit.target` = 'bystander-faces' (or 'faces' with an anonymise / blur / swap word)
-    decides first; the words (`checklist.W_ANONYMISE`) are the fallback.
+    The spec has no field for anonymisation (`edit_target` names WHAT is edited, and a
+    named target other than `person` rules it out); the words (`checklist.W_ANONYMISE`) decide.
     """
     слова = " ".join((str(text or ""), *map(str, spec_value(spec, "conditions") or ())))
     цель = edit_target(spec)
-    if not (цель in {"bystander-faces", "bystanders", "passers-by"} or cl.W_ANONYMISE.search(слова)):
+    if (цель and цель not in PERSON_TARGETS) or not cl.W_ANONYMISE.search(слова):
         return None
-    if not (цель or re.search(
+    if not (re.search(
         r"anonymi|de-?identif|blur|pixel|hide|mask|obscure|gdpr|dsgvo|rgpd|swap|replac|анонимиз|обезлич|размы|скры|замаз|пиксел|замен|подмен",
         слова, re.I,
     )):
