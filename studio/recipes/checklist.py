@@ -3394,7 +3394,7 @@ W_TILEABLE = re.compile(
     re.I,
 )
 W_HALFTONE = re.compile(
-    r"half-?tone|moir[eé]|newspaper (?:photo|clipping|cutting|scan|image|picture|page|print)|(?:from|in|of) (?:an? |the |old )?(?:newspaper|magazine|book|brochure|catalog(?:ue)?|yearbook|postcard)s?\b"
+    r"half-?tone|moir[eé]|newspaper (?:photo|clipping|cutting|scan|image|picture|page|print)|(?:from|in|of) (?:(?:an?|the|old|local|our|my|his|her) ){0,2}(?:newspaper|magazine|book|brochure|catalog(?:ue)?|yearbook|postcard)s?\b"
     r"|magazine (?:photo|scan|page|clipping|cutout|image|picture|print)|printed (?:photo|picture|image|page|brochure)|offset print"
     r"|растр\w*|муар\w*|газетн\w*|из газет\w*|из журнал\w*|журнальн\w* (?:фото|снимк|страниц|вырезк|скан)\w*|из книг\w*|открытк\w*|полиграф\w*|печатн\w* (?:фото|снимк|оттиск)\w*",
     re.I,

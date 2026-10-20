@@ -334,9 +334,10 @@ class Таблица(unittest.TestCase):
 
     def test_каждое_правило_проверено_в_обе_стороны(self) -> None:
         # Round-12 rules are cased in `test_checklist_r12`, round-13 in `test_round13_models`,
-        # round-14 in `test_round14_models`.
+        # round-14 in `test_round14_models`, round-15 in `test_round15_knowledge`.
         self.assertEqual(
-            set(cl.RULES) - {р.id for р in cl.RULES_R12} - {р.id for р in cl.RULES_R13} - {р.id for р in cl.RULES_R14},
+            set(cl.RULES) - {р.id for р in cl.RULES_R12} - {р.id for р in cl.RULES_R13} - {р.id for р in cl.RULES_R14}
+            - {р.id for р in cl.RULES_R15},
             set(CASES),
         )
 
