@@ -384,6 +384,12 @@ class ПравилаПоПолю(unittest.TestCase):
             with self.subTest(rules=rules):
                 self.assertEqual(set(rules), set(rules) & _fired(brief, steps, base))
 
+    def test_доступность_по_нужде(self) -> None:
+        """Captions and audio description are separate needs: naming one does not order the other."""
+        base, steps = VID
+        got = _fired("Lehrvideo für eine Behörde", steps, _merge(base, {"accessibility": ["audio-description"]}))
+        self.assertEqual({"audio_description"}, got & {"wcag_captions", "audio_description"})
+
     def test_обложка_без_выхода_картинки_словами(self) -> None:
         """The thumbnail field is one-sided: outputs without an image leave the words to decide."""
         self.assertIn("platform_thumbnail", _fired("a YouTube video with a thumbnail", ["генерация_видео"],
