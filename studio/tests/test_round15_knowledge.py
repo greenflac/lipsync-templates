@@ -248,9 +248,13 @@ class ДлинныйФон(unittest.TestCase):
 
     def test_отрезок_видео_и_звука(self) -> None:
         s = _spec(w(GEN, duration_s=7200))
-        self.assertEqual(float(x15.AMBIENT_VIDEO_SEGMENT_S), x15.ambient_segment_s(s, "2 hours of fireplace", audio=False))
-        self.assertEqual(float(x15.AMBIENT_AUDIO_SEGMENT_S), x15.ambient_segment_s(s, "2 hours of fireplace", audio=True))
+        # Pinned: three minutes of audio fit one music-model run (`checklist.MUSIC_RUN_MAX_S`) and hide the
+        # repeat; ten seconds of video is one generator run.
+        self.assertEqual(10.0, x15.ambient_segment_s(s, "2 hours of fireplace", audio=False))
+        self.assertEqual(180.0, x15.ambient_segment_s(s, "2 hours of fireplace", audio=True))
+        self.assertLessEqual(x15.AMBIENT_AUDIO_SEGMENT_S, cl.MUSIC_RUN_MAX_S)
         self.assertIsNone(x15.ambient_segment_s(s, "a 2-hour lecture", audio=False))
+        self.assertIsNone(x15.ambient_segment_s(_spec(w(GEN, duration_s=cl.AMBIENT_LOOP_MIN_S - 1)), "fireplace", audio=False))
 
 
 class ПачкаЛипсинка(unittest.TestCase):
