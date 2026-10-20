@@ -418,6 +418,13 @@ class Анонимизация(unittest.TestCase):
         self.assertIsNone(x15.anonymise_method(s, "swap my face onto the actor"))
         self.assertIsNone(x15.anonymise_method(_spec(w(EDV, edit_target="sky")), "blur passers-by"))
         self.assertIsNone(x15.anonymise_method(s, "passers-by walk past the shop"))
+        self.assertEqual("swap", x15.anonymise_method(s, "instead of blurring, swap the faces of passers-by for GDPR"))
+
+    def test_рецепт_размытия(self) -> None:
+        а = ra.rewrite(_spec(EDV), bs.Маршрут(("правка_видео",), {}), "pixelate the faces of bystanders for GDPR")
+        self.assertEqual((), а.route.шаги)
+        self.assertIn(x15.ASSEMBLY_ANON_BLUR, а.assembly)
+        self.assertIn(x15.ASSEMBLY_ANON_BLUR[0], а.route.сборка)
 
 
 if __name__ == "__main__":
