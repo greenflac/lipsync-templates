@@ -159,6 +159,9 @@ class Расшифровка(unittest.TestCase):
         self.assertTrue(x16.sensitive_material(_spec(ASR), "записи судебного заседания"))
         self.assertTrue(x16.sensitive_material(_spec(w(ASR, conditions=["HIPAA"])), ""))
         self.assertFalse(x16.sensitive_material(_spec(ASR), "our weekly podcast about coffee"))
+        # Each word alone (no second cue in the same brief).
+        self.assertTrue(x16.sensitive_material(_spec(ASR), "files for the court"))
+        self.assertTrue(x16.sensitive_material(_spec(ASR), "записи для суда"))
         self.assertIn("confidential_transcription", fired(ASR, ["расшифровка"], "medical consultation recordings"))
         self.assertNotIn("confidential_transcription", fired(ASR, ["расшифровка"], "a podcast"))
         self.assertNotIn("confidential_transcription", fired(IMG, ["генерация_изображения"], "court sketch poster"))
@@ -234,6 +237,11 @@ class ПространственныйЗвук(unittest.TestCase):
     def test_слова_en_ru(self) -> None:
         self.assertIn("spatial_audio", fired(SFX, ["звук_фон"], "ambisonic forest ambience for our VR experience"))
         self.assertIn("spatial_audio", fired(SFX, ["звук_фон"], "объёмный звук леса для VR"))
+
+    def test_каждое_слово_отдельно(self) -> None:
+        self.assertTrue(x16.spatial_audio(_spec(SFX), "an ambisonic forest bed"))
+        self.assertTrue(x16.spatial_audio(_spec(SFX), "объёмный звук леса"))
+        self.assertFalse(x16.spatial_audio(_spec(SFX), "звук леса"))
 
     def test_поле_zh(self) -> None:
         raw = w(SFX, outputs=[{"kind": "sfx", "spatial": True}])
@@ -364,6 +372,14 @@ class Серии(unittest.TestCase):
         brief = "Une série de vidéos explicatives pour notre logiciel, voix off"
         self.assertIn("генерация_изображения", route(brief, w(SER, languages=["fr"], consistency=["style"])).шаги)
         self.assertIn("генерация_видео", route(brief, w(SER, languages=["fr"])).шаги)
+
+    def test_названное_поле_старше_слов(self) -> None:
+        # `consistency` named without style: the words "explainer series" do not add it.
+        self.assertIn("генерация_видео", route("an explainer series", w(SER, consistency=["light"])).шаги)
+
+    def test_ведущий_в_кадре_без_персонажей(self) -> None:
+        м = route("an explainer series where the host talks to camera in every episode", SER)
+        self.assertNotIn("генерация_изображения", м.шаги)
 
     def test_края_шотов(self) -> None:
         self.assertIn("генерация_изображения", route("an explainer series", w(SER, shots=4)).шаги)
