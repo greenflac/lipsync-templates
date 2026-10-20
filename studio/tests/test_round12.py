@@ -8,7 +8,7 @@ Each class guards one category, never a dev or holdout id:
 * UNPRICED STEPS — a compute-second rate without a recorded ratio and a rate for
   a lower frame rate give a LOWER BOUND, and the plan still shows a clip price;
 * NICHE ROUTES — a property walkthrough from photos (camera path, not motion
-  transfer), a drawn-footage dub (no photoreal lip sync), a local dub chain;
+  transfer), a drawn-footage dub (lip sync on a stylised-face model, round 15), a local dub chain;
 * DECISIVE OUTCOMES — a real broadcaster's marks on fabricated or parody news
   are refused; a visualiser without its track and a lip-sync order without
   footage plan instead of asking.
@@ -250,7 +250,7 @@ class ПроходПоСнимкам(unittest.TestCase):
 
 
 class ДубляжРисованного(unittest.TestCase):
-    """Drawn footage: no photoreal lip sync."""
+    """Drawn footage keeps lip sync, on a model recorded for drawn / stylised faces (round 15)."""
 
     def _дубляж(self, brief: str, **extra: Any) -> rc.Applied:
         raw: dict[str, Any] = {"task": "dub-translate", "inputs": [V], "outputs": ["video"], "duration_s": 300, "languages": ["en"]}
@@ -259,16 +259,19 @@ class ДубляжРисованного(unittest.TestCase):
 
     def test_аниме(self) -> None:
         а = self._дубляж("Dub my 5-minute anime episode from Japanese into English")
-        self.assertEqual(("дубляж",), а.route.шаги)
+        self.assertEqual(("дубляж", "липсинк"), а.route.шаги)
+        self.assertEqual(("липсинк",), а.prefer_stylised)
         self.assertIn(rc.ASSEMBLY_DRAWN_DUB, а.assembly)
 
     def test_мультфильм_ru(self) -> None:
         а = self._дубляж("Переведи и озвучь наш мультфильм на английский")
-        self.assertEqual(("дубляж",), а.route.шаги)
+        self.assertEqual(("дубляж", "липсинк"), а.route.шаги)
+        self.assertEqual(("липсинк",), а.prefer_stylised)
 
     def test_снятое_видео_с_губами(self) -> None:
         а = self._дубляж("Dub my interview video into English with lip sync")
         self.assertEqual(("дубляж", "липсинк"), а.route.шаги)
+        self.assertEqual((), а.prefer_stylised)
 
 
 class ЛокальныйДубляж(unittest.TestCase):

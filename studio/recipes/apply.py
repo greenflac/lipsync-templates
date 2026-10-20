@@ -172,6 +172,13 @@ LOOP_LENGTH = re.compile(
 LOOP_MAKERS: tuple[str, ...] = ("генерация_видео", "оживление", "видео_по_референсу")
 
 
+#: Round 15: steps a long ambient piece is made with (one loopable segment each).
+AMBIENT_AUDIO_MAKERS: tuple[str, ...] = ("музыка", "звук_фон")
+AMBIENT_MAKERS: tuple[str, ...] = (*AMBIENT_AUDIO_MAKERS, "генерация_видео", "оживление", "видео_со_звуком")
+#: Round 15: the route steps an anonymisation order lands on before the recipe (edit / character swap).
+ANONYMISE_ROUTES: frozenset[str] = frozenset({"правка_видео", "замена_персонажа", "замена_фигуры"})
+
+
 def loop_seconds(spec: "bs.Spec", text: str = "") -> float | None:
     """A loop is asked for: its own length (named, or `LOOP_CLIP_S`); None — no loop.
 
@@ -325,13 +332,35 @@ NOTE_WALKTHROUGH = (
     "invented people or furniture, straight lines kept",
 )
 NOTE_DRAWN_DUB = (
-    "рисованный ролик: дубляж закадром, фотореалистичный липсинк к нарисованным ртам не применяется; рты "
-    "переставляются в проекте анимации по фонемам новой речи (Rhubarb Lip Sync, автолипсинк Toon Boom / "
-    "Character Animator) — или остаются как есть",
-    "drawn footage: a voice-over dub — photoreal lip sync is not applied to drawn mouths; the mouth flaps are "
-    "re-timed in the animation project from the new speech's phonemes (Rhubarb Lip Sync, Toon Boom / Character "
-    "Animator auto lip-sync) — or left as they are",
+    "рисованный ролик: губы двигает липсинк, но модель берётся та, у которой записана поддержка рисованных / "
+    "стилизованных лиц (2D-персонажи); сначала проверьте 5 с — детектор лица может не найти нарисованный рот, "
+    "линии контура рвутся; запасной путь — рты переставляются в проекте анимации по фонемам новой речи (Rhubarb "
+    "Lip Sync, автолипсинк Toon Boom / Character Animator)",
+    "drawn footage: lip sync moves the mouths, on a model that records support for drawn / stylised faces (2D "
+    "characters); test 5 s first — the face detector may miss a drawn mouth and line art can break; the fallback "
+    "is re-timing the mouth flaps in the animation project from the new speech's phonemes (Rhubarb Lip Sync, Toon "
+    "Boom / Character Animator auto lip-sync)",
 )
+#: Round 15: drawn ANIMAL characters — no lip-sync model records them (Kling's guide: human 2D/3D only).
+NOTE_DRAWN_ANIMAL = (
+    "персонажи — животные: ни у одной модели липсинка не записана поддержка морд животных (руководство Kling: "
+    "только человеческие персонажи, реальные / 3D / 2D) — проверьте 5 с до всего эпизода, иначе рты "
+    "переставляются в проекте анимации",
+    "the characters are animals: no lip-sync model records support for animal faces (Kling's guide: human "
+    "characters only, real / 3D / 2D) — test 5 s before the whole episode, otherwise the mouth flaps are re-timed "
+    "in the animation project",
+)
+NOTE_DRAWN_DUB_ANIMAL = (NOTE_DRAWN_DUB[0] + "; " + NOTE_DRAWN_ANIMAL[0], NOTE_DRAWN_DUB[1] + "; " + NOTE_DRAWN_ANIMAL[1])
+#: Round 15: route / assembly lines that the server localises through `studio/l10n.py` (EN table).
+R15_NOTE_PAIRS: tuple[tuple[str, str], ...] = (NOTE_DRAWN_DUB, NOTE_DRAWN_DUB_ANIMAL)
+#: Round 15: animal characters named in the brief (drawn dub: no recorded lip-sync model for them).
+ANIMAL_CHARACTERS = re.compile(
+    r"\b(?:animal|fox|dog|puppy|cat|kitten|bear|rabbit|bunny|mouse|duck|pig|lion|wolf|bird|owl|frog|horse|cow|monkey|dragon|dinosaur)s?\b"
+    r"|животн\w*|лис\w*|собак\w*|щен\w*|кош\w*|кот\b|котён\w*|медвед\w*|зай\w*|кролик\w*|мыш\w*|утк\w*|свин\w*|лев\b|льв\w*"
+    r"|волк\w*|птиц\w*|сов\w*|лягуш\w*|лошад\w*|коров\w*|обезьян\w*|дракон\w*|динозавр\w*",
+    re.I,
+)
+
 NOTE_LOCAL_TRANSCRIBE = (
     "речь ВАШЕГО видео расшифровывается с таймингами на вашем GPU (Whisper / faster-whisper)",
     "the speech of YOUR video is transcribed with timestamps on your GPU (Whisper / faster-whisper)",
@@ -354,10 +383,11 @@ ASSEMBLY_SPLAT = (
     "photos (nerfstudio splatfacto / Postshot on your GPU) and a rendered camera path; the photos must overlap",
 )
 ASSEMBLY_DRAWN_DUB = (
-    "новая дорожка заменяет речь ВАШЕГО ролика (ffmpeg), рты при желании переставляются в проекте анимации — 0 usd",
-    "the new track replaces the speech of YOUR video (ffmpeg); mouth flaps are re-timed in the animation "
-    "project if wanted — 0 usd",
+    "новая дорожка заменяет речь ВАШЕГО ролика (ffmpeg), губы подгоняет шаг липсинка — 0 usd за сборку",
+    "the new track replaces the speech of YOUR video (ffmpeg) and the lip-sync step fits the mouths — 0 usd "
+    "for the assembly",
 )
+R15_NOTE_PAIRS = R15_NOTE_PAIRS + (ASSEMBLY_DRAWN_DUB,)
 ASSEMBLY_LOCAL_DUB = (
     "голос отделяется от музыки и шумов (Demucs), новая речь сводится поверх них и кладётся в ВАШЕ видео "
     "(ffmpeg) — всё на вашем GPU, 0 usd",
@@ -433,6 +463,8 @@ class Applied:
     prefer_input: Mapping[str, str] = field(default_factory=dict)
     #: op -> regex of model names ranked last.
     avoid: Mapping[str, str] = field(default_factory=dict)
+    #: Round 15: ops whose candidates that RECORD drawn / stylised face support rank first (a cartoon dub).
+    prefer_stylised: tuple[str, ...] = ()
     #: (ru, en) assembly reasons — free tools, 0 usd.
     assembly: tuple[tuple[str, str], ...] = ()
     #: 0 budget: the plan offers the open-weights route.
@@ -516,6 +548,8 @@ def rewrite(spec: "bs.Spec", route: "bs.Маршрут", text: str = "") -> Appl
     step_seconds: dict[str, tuple[float, float]] = {}
     prefer: dict[str, str] = {}
     avoid: dict[str, str] = {}
+    stylised: list[str] = []
+    anonymise_assembly: tuple[str, ...] = ()
     inputs = set(spec.inputs)
     outputs = set(spec.outputs)
     tasks = {spec.task, *spec.then_tasks}
@@ -601,10 +635,13 @@ def rewrite(spec: "bs.Spec", route: "bs.Маршрут", text: str = "") -> Appl
 
     # --- round 12: dubbing drawn footage ---------------------------------------------
     if spec.task == "dub-translate" and "липсинк" in steps and drawn(spec, text):
-        if acc.prior("drawn_dub", "drawn_mouth_flaps"):
-            steps = [s for s in steps if s != "липсинк"]
-            notes.pop("липсинк", None)
-            notes["дубляж"] = NOTE_DRAWN_DUB[0]
+        # Round 15 (hidden set): an expert keeps lip sync on a 2D cartoon dub — on a model recorded for
+        # drawn / stylised faces (`planner.STYLISED_FACE_FACT`), with the mouth-flap re-time as the fallback.
+        if acc.prior("drawn_dub", "drawn_stylised_lipsync"):
+            stylised.append("липсинк")
+            notes["липсинк"] = NOTE_DRAWN_DUB[0]
+            if ANIMAL_CHARACTERS.search(" ".join((*map(str, spec.conditions), text))):
+                notes["липсинк"] = NOTE_DRAWN_DUB_ANIMAL[0]
             acc.assembly.append(ASSEMBLY_DRAWN_DUB)
 
     # --- round 12: a dub that must run on the customer's own machine --------------------
@@ -750,6 +787,50 @@ def rewrite(spec: "bs.Spec", route: "bs.Маршрут", text: str = "") -> Appl
     if counts.get("генерация_изображения") == SINGLE_HOST_REFERENCES and "генерация_изображения" in steps:
         shared.append("генерация_изображения")
 
+    # --- round 15: hours of ambience are one loopable segment ------------------------------
+    # A 3-hour rain track or an 8-hour fireplace was priced as full-length generation
+    # (108 usd of music, 5760 usd of video): an expert generates one loopable segment and
+    # repeats it at assembly (`expert_r15.ambient_segment_s`, `checklist.long_ambient_loop`).
+    from studio import expert_r15 as x15
+
+    ambient = [s for s in steps if s in AMBIENT_MAKERS]
+    if ambient and not set(steps) & SPEECH_CONSUMERS and "speech" not in outputs:
+        audio_s = x15.ambient_segment_s(spec, text, audio=True)
+        if audio_s is not None and acc.prior("ambient_loop", "ambient_segment_loop"):
+            said = " ".join((str(text or ""), *map(str, spec.conditions)))
+            video_s = loop_seconds(spec, text) if LOOP_LENGTH.search(said) else None
+            video_s = video_s or x15.ambient_segment_s(spec, text, audio=False) or float(x15.AMBIENT_VIDEO_SEGMENT_S)
+            for s in ambient:
+                seg = audio_s if s in AMBIENT_AUDIO_MAKERS else video_s
+                step_seconds[s] = (seg, seg)
+                counts[s] = 1
+                notes[s] = (x15.NOTE_AMBIENT_AUDIO if s in AMBIENT_AUDIO_MAKERS else x15.NOTE_AMBIENT_VIDEO)[0].format(
+                    n=f"{seg:g}"
+                )
+                if s not in shared:
+                    shared.append(s)
+            if "генерация_изображения" in steps:
+                counts["генерация_изображения"] = 1
+            acc.assembly.append(x15.ASSEMBLY_AMBIENT)
+
+    # --- round 15: anonymising bystanders in the customer's footage --------------------------
+    method = x15.anonymise_method(spec, text)
+    if method and "video" in inputs and set(steps) & ANONYMISE_ROUTES:
+        if method == "swap" and acc.prior("anonymise_bystanders", "anonymise_face_swap"):
+            steps = [s for s in steps if s not in ANONYMISE_ROUTES]
+            steps = ["генерация_изображения", "замена_персонажа", *steps]
+            counts["генерация_изображения"] = 1
+            notes["генерация_изображения"] = x15.NOTE_SYNTHETIC_FACE[0]
+            notes["замена_персонажа"] = x15.NOTE_ANON_SWAP[0]
+            avoid["замена_персонажа"] = x15.PERSON_REPLACE_LINKS
+            acc.assembly.append(x15.ASSEMBLY_ANON_BLUR_ALT)
+        elif method == "blur" and acc.prior("anonymise_bystanders", "anonymise_blur"):
+            steps = [s for s in steps if s not in ANONYMISE_ROUTES]
+            for s in ANONYMISE_ROUTES:
+                notes.pop(s, None)
+            anonymise_assembly = (x15.ASSEMBLY_ANON_BLUR[0],)
+            acc.assembly.append(x15.ASSEMBLY_ANON_BLUR)
+
     # --- zero budget ------------------------------------------------------------------
     # Own GPU already named — the plan is on the free route; nothing to add.
     if not spec.self_host and (
@@ -761,6 +842,8 @@ def rewrite(spec: "bs.Spec", route: "bs.Маршрут", text: str = "") -> Appl
     if tasks & {"restore", "colorize"} or steps != list(route.шаги):
         steps = order(steps)
     new_route = replace(route, шаги=tuple(steps), пометки=notes, штук=counts)
+    if anonymise_assembly:
+        new_route = replace(new_route, сборка=tuple(dict.fromkeys((*new_route.сборка, *anonymise_assembly))))
     return Applied(
         route=new_route,
         recipes=tuple(acc.recipes),
@@ -771,6 +854,7 @@ def rewrite(spec: "bs.Spec", route: "bs.Маршрут", text: str = "") -> Appl
         step_seconds=step_seconds,
         prefer_input=prefer,
         avoid=avoid,
+        prefer_stylised=tuple(stylised),
         assembly=tuple(dict.fromkeys(acc.assembly)),
         free_route=free,
         local_only=local,
@@ -1007,6 +1091,7 @@ NOTES_EN: dict[str, str] = dict(
         NOTE_TRY_ON_MODEL,
         NOTE_WALKTHROUGH,
         NOTE_DRAWN_DUB,
+        NOTE_DRAWN_DUB_ANIMAL,
         NOTE_LOCAL_TRANSCRIBE,
         NOTE_LOCAL_VOICE,
     )

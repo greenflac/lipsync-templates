@@ -639,8 +639,24 @@ def rates(value: str, attribute: str = "") -> list[Rate]:
             Rate(**{**r.__dict__, "block": 1.0}) if r.per == "minute" and not r.block else r
             for r in итог
         ]
+    if (м := _ВВЕРХ_ДО_СЕКУНД.search(текст)) is not None:
+        # Пятнадцатый круг: «rolling up to closest 5 second increment» (Kling LipSync
+        # на fal) — секунды счёта округляются вверх до блока В КАЖДОМ ролике: пачка
+        # 12-секундных роликов платит по 15 с за ролик.
+        блок = float(м.group(1) or м.group(2))
+        итог = [
+            Rate(**{**r.__dict__, "block": блок}) if r.per == "second" and not r.block else r
+            for r in итог
+        ]
     return _привязать_повтор(итог)
 
+
+#: «rolling up to closest 5 second increment», «billed in 5-second increments» — блок секунд.
+_ВВЕРХ_ДО_СЕКУНД = re.compile(
+    r"(?:rolling|rounded|rounding) up to (?:the )?(?:closest|nearest|next) (\d+(?:\.\d+)?)[\s-]*seconds? increments?"
+    r"|billed in (\d+(?:\.\d+)?)[\s-]*seconds? increments?",
+    re.I,
+)
 
 #: «per compute second» в тексте цены.
 _ЗА_ВЫЧИСЛЕНИЕ = re.compile(r"per\s+(?:gpu\s+)?compute[\s-]+seconds?\b", re.I)
@@ -1313,6 +1329,15 @@ def _деньги(r: Rate, need: Need) -> tuple[float, str, str] | None:
     if r.per == "minute":
         if сек is None:
             return None
+        if r.block and need.shots > 1:
+            # Пятнадцатый круг: пачка роликов — начатая минута платится В КАЖДОМ ролике.
+            сумма, расчёт = _блоками(сек / need.shots / 60.0, r)
+            return (
+                сумма * need.shots,
+                f"{need.shots} шот(ов) × ({сек / need.shots:g} с = {сек / need.shots / 60.0:g} мин: {расчёт}) "
+                f"(блок = {r.block:g} мин)",
+                "",
+            )
         if r.block and need.jobs > 1:
             сумма, расчёт = _блоками(сек / need.jobs / 60.0, r)
             return (

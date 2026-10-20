@@ -91,6 +91,11 @@ ROOT = Path(__file__).resolve().parents[1]
     # people[].on_screen/speaks и lipsync, cast_together, single_take_s, training_use,
     # consistency, dataset_count, outputs[].loop/alpha, audience, shots — поле старше слов.
     "scripts/mutate_round15_spec.py",
+    # Пятнадцатый круг (знания и цены): оговорки круга (кавер, длинный фон, тайл,
+    # растр, таймлапс, стиль серии, шортс без речи, вставка товара, анонимизация),
+    # фон одним отрезком, пачка липсинка по роликам, расшифровка всего материала и
+    # разметка по записи, липсинк рисованного, правка предмета без замены персонажа.
+    "scripts/mutate_round15_knowledge.py",
 )
 ПУТЬ_В_ТАБЛИЦЕ = re.compile(r'"((?:studio|scripts|lipsync)/[\w/]+\.py)"')
 

@@ -233,6 +233,7 @@ from studio import brief_spec as bs
 from studio import clarify
 from studio import duration as dur
 from studio import edit_intent as ei
+from studio import expert_r15 as x15
 from studio import endpoints as ep
 from studio import l10n
 from studio import factaxis as fa
@@ -4887,7 +4888,11 @@ def нужда_шага(
         megapixels=(кадр[0] * кадр[1] / 1e6) if кадр else 1.0,
         mode=РЕЖИМ_ШАГА.get(op.name, ""),
         fps=fps,
-        shots=штук if (штук is not None and not картинка) else клипов if (клипов and op.клипами and not картинка) else 1,
+        shots=штук
+        if (штук is not None and not картинка)
+        else клипов
+        if (клипов and (op.клипами or op.name in x15.BATCH_PRICED_STEPS) and not картинка)
+        else 1,
         jobs=языков if (секунды is not None and языков > 1) else 1,
         clone_only=op.name == "клонирование_голоса" and not начитка,
     )
@@ -7247,6 +7252,20 @@ EDIT_METHOD_NOTES: dict[str, str] = {
 }
 
 
+#: Пятнадцатый круг: эндпоинт замены ПЕРСОНАЖА на правке, где цель — предмет.
+EDIT_PERSON_ONLY_NOTE = "правка: эндпоинт меняет персонажа (фигуру по ведущему видео), а цель правки — предмет"
+#: Звенья идентификатора, называющие замену персонажа целиком (`expert_r15.PERSON_REPLACE_LINKS`).
+PERSON_REPLACE_LINKS = x15.PERSON_REPLACE_LINKS
+
+
+def персонажная_замена(что: "ep.Endpoint | str") -> bool:
+    """Эндпоинт меняет персонажа целиком (по функции реестра или по звену идентификатора)."""
+    if not isinstance(что, str) and ep.CHARACTER_REPLACE in (что.functions or ()):
+        return True
+    тексты = (что,) if isinstance(что, str) else (что.model, *что.ids)
+    return any(re.search(PERSON_REPLACE_LINKS, т, re.I) for т in тексты)
+
+
 def продление_в(нужно: Sequence[str]) -> bool:
     return ep.EDIT_EXTEND in нужно
 
@@ -7313,8 +7332,14 @@ def отбор_правки(
     написание: Mapping[str, str],
     реестр: "ep.Registry",
     названы: Sequence[str],
+    *,
+    person_edit: bool = True,
 ) -> dict[str, Any]:
     """Шаг `правка_видео`: оставить только эндпоинты, которые ДЕЛАЮТ названную правку.
+
+    Пятнадцатый круг: цель правки — ПРЕДМЕТ (вставить товар в кадр, заменить машину), а не
+    человек (`person_edit` ложно) — замена персонажа (`ep.CHARACTER_REPLACE`: Wan Animate
+    replace) не кандидат: она меняет фигуру по ведущему видео, а не ставит предмет в сцену.
 
     Интеграция шестого круга (валидатор: «замена неба» выбрала продление
     `ltx-2.3-extend`, «смена кадра» — `wan-3.0-r2v`). Что эндпоинт правит —
@@ -7337,6 +7362,10 @@ def отбор_правки(
             del по_модели[ключ]
             continue
         умеет = ep.edit_intents(что)
+        if not person_edit and персонажная_замена(что):
+            отсеяно_не_та[написание.get(ключ, ключ)] = EDIT_PERSON_ONLY_NOTE
+            del по_модели[ключ]
+            continue
         if not set(нужно) <= умеет:
             отсеяно_не_та[написание.get(ключ, ключ)] = (
                 f"правка: умеет {', '.join(sorted(умеет)) or 'не названо'}, а нужно {', '.join(нужно)}"
@@ -7533,6 +7562,7 @@ def candidates_for(
     upscale_target: tuple[int, int] | None = None,
     source_frame: tuple[int, int] | None = None,
     alpha_wanted: bool = True,
+    person_edit: bool = True,
 ) -> "Кандидаты":
     """Кандидаты на операцию: модели, о которых база говорит СЛОВАМИ ОПЕРАЦИИ.
 
@@ -7752,7 +7782,7 @@ def candidates_for(
                     f"{REGISTRY_MATCH_LABEL}: {'/'.join(set(работы) & set(узел.functions))} ({узел.evidence})",
                 )
 
-    правка = отбор_правки(op, по_модели, написание, реестр, edit_intents) if работы else {}
+    правка = отбор_правки(op, по_модели, написание, реестр, edit_intents, person_edit=person_edit) if работы else {}
 
     wanted = wanted if wanted is not None else dur.Запрос(None, "длительность не спрашивали")
     найдены: list[Candidate] = []
@@ -9581,6 +9611,21 @@ def кадр_шага(
     return REACH_SILENT, f"{положение}: {нота}"
 
 
+#: Пятнадцатый круг: запись о модели говорит, что она берёт РИСОВАННЫЕ / стилизованные лица
+#: (Kling: «human characters (real/3D/2D)»; sync-3: «any illustration or animated frame»).
+#: КОНСТАНТА-РЕШЕНИЕ: читается значение строки, а не имя модели.
+STYLISED_FACE_FACT = re.compile(
+    r"\b2D\b|illustration|animated frame|cartoon|anime\b|stylis|styliz|drawn (?:face|character)", re.I
+)
+
+
+def стилизованные_лица(facts: Sequence[Fact]) -> frozenset[str]:
+    """Модели, у которых ЗАПИСАНА поддержка рисованных / стилизованных лиц (ключи `fold`)."""
+    return frozenset(
+        fold(f.model) for f in facts if f.model != "*" and STYLISED_FACE_FACT.search(f"{f.attribute} {f.value}")
+    )
+
+
 def по_рецепту(найдены: list["Candidate"], шаг: str, рецепт: "rc.Applied", индекс: FactIndex) -> None:
     """Кандидаты шага по рецепту (восьмой круг): нужный вход — вперёд, чужой инструмент — назад.
 
@@ -9590,14 +9635,17 @@ def по_рецепту(найдены: list["Candidate"], шаг: str, реце
     """
     вход = рецепт.prefer_input.get(шаг)
     избегать = рецепт.avoid.get(шаг)
-    if not найдены or (вход is None and избегать is None):
+    стиль = шаг in getattr(рецепт, "prefer_stylised", ())
+    if not найдены or (вход is None and избегать is None and not стиль):
         return
     реестр = ep.build(индекс.facts)
+    рисованные = стилизованные_лица(индекс.facts) if стиль else frozenset()
 
-    def ключ(c: "Candidate") -> tuple[int, int]:
+    def ключ(c: "Candidate") -> tuple[int, int, int]:
         узел = реестр.get(c.model)
         входы = узел.inputs if узел is not None else ()
         return (
+            0 if not стиль or fold(c.model) in рисованные else 1,
             0 if вход is None or вход in входы else 1,
             1 if избегать is not None and re.search(избегать, c.model, re.I) else 0,
         )
@@ -12436,6 +12484,14 @@ def plan(
         if исходник_с
         else None
     )
+    # ПЯТНАДЦАТЫЙ КРУГ: расшифровка идёт по ВСЕМУ материалу — 20 интервью по 45 минут
+    # это 900 минут, а не 45 (`expert_r15.material_seconds`: длина × count каждого входа).
+    материал_с = x15.material_seconds(понято)
+    длительность_материала = (
+        dur.Запрос(материал_с, f"spec.inputs[].duration_s × count = {материал_с:g} с (весь ваш материал)")
+        if материал_с and исходник_с and материал_с > исходник_с
+        else None
+    )
 
     # ШАГ НА ИСХОДНИКЕ ДО АПСКЕЙЛА (интеграция круга 6, w07): правка своего
     # ролика идёт в кадре ИСХОДНИКА, а заказанный кадр даёт апскейл после неё.
@@ -12500,7 +12556,11 @@ def plan(
             шаг_прогон = dur.Запрос(прогон_с, нота_рецепта)
         else:
             шаг_всего = (
-                длительность_исходника if (op.name in ON_SOURCE_STEPS and длительность_исходника) else длительность
+                длительность_материала
+                if (op.name in ON_SOURCE_STEPS and длительность_материала)
+                else длительность_исходника
+                if (op.name in ON_SOURCE_STEPS and длительность_исходника)
+                else длительность
             )
             шаг_прогон = длительность_шота
         return candidates_for(
@@ -12511,7 +12571,7 @@ def plan(
             кадр,
             today,
             шаг_прогон,
-            sorted(есть),
+            sorted(есть | x15.made_inputs(op.name, [оп.name for оп in операции], ARTEFACT_IMAGE)),
             языки if op.name in SPEECH_STEPS else (),
             use,
             нужда_шага(
@@ -12551,6 +12611,7 @@ def plan(
             upscale_target=кадр_выдачи(),
             source_frame=bs.source_frame(понято),
             alpha_wanted=rc.wants_alpha(понято, brief),
+            person_edit=x15.person_edit(понято, brief),
         )
 
     # СКОЛЬКО ШОТОВ (2026-10-15, четвёртый круг). Явное число; «each» над N;
@@ -12744,6 +12805,13 @@ def plan(
                     and op.name in SPEECH_STEPS
                     and op.name != "озвучка"
                     and (говорящих_несколько(brief) or (spec_only and (понято.characters or 0) >= bs.MULTI_CHARACTER_MIN))
+                    else ""
+                ),
+                # ПЯТНАДЦАТЫЙ КРУГ: метки говорящих — по записи о ВЫБРАННОЙ модели:
+                # разметка в той же цене, платное дополнение или отдельный проход.
+                "speaker_labels": (
+                    x15.diarisation_line(лучший.model, индекс.facts, fold, по_английски)
+                    if лучший is not None and op.name == x15.TRANSCRIBE_STEP and x15.needs_diarisation(понято, текст)
                     else ""
                 ),
             }
@@ -13392,6 +13460,7 @@ def сжать(ответ: dict) -> dict:
                 },
                 "banned_input": _коротко(ш.get("banned_input"), 240),
                 "speakers_note": ш.get("speakers_note"),
+                **({"speaker_labels": ш["speaker_labels"]} if ш.get("speaker_labels") else {}),
                 **{
                     к: ш.get(к)
                     for к in (

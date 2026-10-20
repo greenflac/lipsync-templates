@@ -371,13 +371,15 @@ PRIORS_LIST = (
         TAG_ENGINEERING,
     ),
     Prior(
-        "drawn_mouth_flaps",
-        "dubbing drawn footage (anime, cartoon) is a voice-over dub: photoreal lip-sync models are trained on "
-        "filmed faces and are wrong (and expensive) for drawn mouths; the mouth flaps are re-timed in the animation "
-        "project (Rhubarb Lip Sync, Toon Boom / Character Animator auto lip-sync) or left as they are",
-        "дубляж рисованного ролика (аниме, мультфильм) — закадровый: фотореалистичный липсинк учён на снятых лицах "
-        "и к нарисованным ртам не подходит (и дорог); рты переставляются в проекте анимации (Rhubarb Lip Sync, "
-        "автолипсинк Toon Boom / Character Animator) или остаются как есть",
+        "drawn_stylised_lipsync",
+        "dubbing drawn footage (anime, cartoon) keeps lip sync, on a model that records support for drawn / "
+        "stylised 2D faces (photoreal-only models miss drawn mouths or smear the line art); test 5 s first, and "
+        "re-time the mouth flaps in the animation project (Rhubarb Lip Sync, Toon Boom / Character Animator auto "
+        "lip-sync) where the model fails",
+        "дубляж рисованного ролика (аниме, мультфильм) сохраняет липсинк — на модели, у которой записана поддержка "
+        "рисованных / стилизованных 2D-лиц (модели только для фотореализма не находят нарисованный рот или "
+        "размазывают линии); сначала проверьте 5 с, а там, где модель не справляется, рты переставляются в проекте "
+        "анимации (Rhubarb Lip Sync, автолипсинк Toon Boom / Character Animator)",
         TAG_ENGINEERING,
     ),
     Prior(
@@ -399,6 +401,37 @@ PRIORS_LIST = (
         "бесшовная петля генерируется ОДИН раз своей длины и повторяется до каждой заказанной версии и длины при "
         "сборке (ffmpeg -stream_loop); генерировать каждую версию отдельно — платить N раз за ту же петлю, и "
         "версии перестают совпадать",
+        TAG_ENGINEERING,
+    ),
+)
+
+#: Round 15: anonymising bystanders, long ambient loops.
+PRIORS_LIST = (
+    *PRIORS_LIST,
+    Prior(
+        "anonymise_face_swap",
+        "anonymising bystanders by face swap: every passer-by's face is swapped to ONE generated synthetic face "
+        "that resembles nobody (a video face-swap endpoint, priced per second), not a whole-character replacement; "
+        "the irreversible alternative is blurring the detected faces at assembly",
+        "анонимизация прохожих заменой лица: лицо каждого прохожего меняется на ОДНО сгенерированное синтетическое "
+        "лицо, не похожее ни на кого (эндпоинт замены лица в видео, цена за секунду), а не замена персонажа целиком; "
+        "необратимая альтернатива — размытие найденных лиц при сборке",
+        TAG_ENGINEERING,
+    ),
+    Prior(
+        "anonymise_blur",
+        "anonymising bystanders by blur: faces are detected in every frame and blurred or boxed at assembly "
+        "(deface / ffmpeg boxblur over tracked boxes) — irreversible anonymisation, no generative model, 0 usd",
+        "анонимизация прохожих размытием: лица находятся в каждом кадре и размываются или закрываются плашкой при "
+        "сборке (deface / ffmpeg boxblur по трекингу) — необратимая анонимизация, без генеративной модели, 0 usd",
+        TAG_ENGINEERING,
+    ),
+    Prior(
+        "ambient_segment_loop",
+        "hours of ambience (rain, fire, sleep sounds, a fireplace video) are ONE loopable segment generated once "
+        "and repeated with a crossfade at assembly — generating the full length pays for hours of the same thing",
+        "часы фона (дождь, огонь, звуки для сна, ролик с камином) — это ОДИН зацикливаемый отрезок, сгенерированный "
+        "один раз и повторённый с наплывом при сборке; генерация полной длины — плата за часы одного и того же",
         TAG_ENGINEERING,
     ),
 )
@@ -426,9 +459,12 @@ _PRIOR_TOOLS_FAILURES: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
     "whole_character_replace": ((), ("character_motion_drift",)),
     "virtual_try_on": ((), ("garment_detail_lost",)),
     "walkthrough_camera_path": (("ffmpeg_concat",), ("walkthrough_warp",)),
-    "drawn_mouth_flaps": ((), ("mouth_flap_timing",)),
+    "drawn_stylised_lipsync": ((), ("mouth_flap_timing",)),
     "local_dub_chain": (("extract_audio",), ("clone_accent", "dub_segment_overrun")),
     "loop_reuse": (("ffmpeg_concat",), ("loop_seam",)),
+    "anonymise_face_swap": ((), ("missed_faces",)),
+    "anonymise_blur": (("deface",), ("missed_faces",)),
+    "ambient_segment_loop": (("ffmpeg_concat",), ("loop_seam",)),
 }
 PRIORS_LIST = tuple(
     Prior(п.id, п.en, п.ru, п.tag, п.sources, *_PRIOR_TOOLS_FAILURES[п.id]) for п in PRIORS_LIST
@@ -465,6 +501,11 @@ TOOLS_LIST: tuple[Tool, ...] = (
          "закодировать ролик с альфа-каналом (WebM VP9 или ProRes 4444)"),
 )
 
+TOOLS_LIST = (
+    *TOOLS_LIST,
+    Tool("deface", "deface (ORB-HD) / ffmpeg boxblur", "detect every face per frame and blur or box it",
+         "найти каждое лицо в кадре и размыть или закрыть плашкой"),
+)
 TOOLS: dict[str, Tool] = {т.id: т for т in TOOLS_LIST}
 
 # --- failure modes ----------------------------------------------------------------
@@ -525,6 +566,12 @@ FAILURES_LIST = (
             "compare each segment's new length with the original", "сверить длину каждого отрезка с оригиналом"),
 )
 
+FAILURES_LIST = (
+    *FAILURES_LIST,
+    Failure("missed_faces", "face detection misses small, profile or occluded faces, so some bystanders stay "
+            "identifiable", "детектор лиц пропускает мелкие, профильные и закрытые лица — часть прохожих остаётся "
+            "узнаваемой", "step through crowds, profiles and the frame edges", "пройти по кадрам толпу, профили и края кадра"),
+)
 FAILURES: dict[str, Failure] = {ф.id: ф for ф in FAILURES_LIST}
 
 # --- recipes (one per job class) --------------------------------------------------
@@ -726,8 +773,11 @@ RECIPES_LIST = (
     Recipe(
         "drawn_dub",
         "dubbing anime / cartoon footage",
-        (RecipeStep("дубляж", "model", "voice-over dub; no photoreal lip sync on drawn mouths"),),
-        ("drawn_mouth_flaps",),
+        (
+            RecipeStep("дубляж", "model", "dub of the speech"),
+            RecipeStep("липсинк", "model", "lip sync on a model recorded for drawn / stylised faces"),
+        ),
+        ("drawn_stylised_lipsync",),
         (),
         ("mouth_flap_timing",),
     ),
@@ -751,6 +801,34 @@ RECIPES_LIST = (
             RecipeStep("ffmpeg_concat", "tool", "the loop repeated to every version's length"),
         ),
         ("loop_reuse",),
+        ("ffmpeg_concat",),
+        ("loop_seam",),
+    ),
+)
+
+RECIPES_LIST = (
+    *RECIPES_LIST,
+    Recipe(
+        "anonymise_bystanders",
+        "anonymising passers-by in the customer's footage",
+        (
+            RecipeStep("генерация_изображения", "model", "one synthetic face that resembles nobody (face-swap route)"),
+            RecipeStep("замена_персонажа", "model", "video face swap onto every bystander (face-swap route)"),
+            RecipeStep("deface", "tool", "detected faces blurred at assembly (blur route)"),
+        ),
+        ("anonymise_face_swap", "anonymise_blur"),
+        ("deface",),
+        ("missed_faces",),
+    ),
+    Recipe(
+        "ambient_loop",
+        "a long ambient piece (hours) from one loopable segment",
+        (
+            RecipeStep("музыка", "model", "one loopable audio segment"),
+            RecipeStep("генерация_видео", "model", "one loopable clip"),
+            RecipeStep("ffmpeg_concat", "tool", "the segment repeated with a crossfade to the ordered length"),
+        ),
+        ("ambient_segment_loop",),
         ("ffmpeg_concat",),
         ("loop_seam",),
     ),
