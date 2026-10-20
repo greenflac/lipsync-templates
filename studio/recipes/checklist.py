@@ -1802,6 +1802,17 @@ def _marketplace_main(c: Ctx) -> bool:
     return bool(c.jobs & (STILL_GEN | BG_REMOVE | {"upscale_image"})) and c.says(W_PRODUCT) and c.says(W_MARKETPLACE)
 
 
+def _a11y_captions(c: Ctx) -> bool:
+    """Round 16: `spec.accessibility` named decides per need (captions); the words ask for both."""
+    поле = sf.accessibility(c.spec, "captions")
+    return (c.video and поле) if поле is not None else _a11y_video(c)
+
+
+def _a11y_described(c: Ctx) -> bool:
+    поле = sf.accessibility(c.spec, "audio-description")
+    return (c.video and поле) if поле is not None else _a11y_video(c)
+
+
 def _a11y_video(c: Ctx) -> bool:
     return c.video and c.says(W_A11Y)
 
@@ -2238,7 +2249,7 @@ RULES_R12: tuple[Rule, ...] = (
         R,
         _retouch_france,
         ("jurisdiction",),
-        "spec.jurisdiction = ['FR'] with spec.domain = 'advertising'",
+        "spec.delivery.markets = ['FR'] with spec.domain = ['advertising']",
         (S_FR_RETOUCH,),
     ),
     _r(
@@ -2659,9 +2670,9 @@ RULES_R12: tuple[Rule, ...] = (
         "ЕС о доступности веб-сайтов, ADA раздел II в США) и с июня 2025 для многих услуг в ЕС (Европейский акт "
         "о доступности)",
         R,
-        _a11y_video,
-        ("outputs",),
-        "spec.accessibility = ['captions' | 'audio-description']",
+        _a11y_captions,
+        ("outputs", "accessibility"),
+        "spec.accessibility = ['captions']",
         (S_WCAG,),
     ),
     _r(
@@ -2674,9 +2685,9 @@ RULES_R12: tuple[Rule, ...] = (
         "незрячих зрителей (WCAG 2.2, критерий 1.2.5, уровень AA): впишите описание в паузы закадрового текста "
         "или сдайте версию с тифлокомментарием",
         R,
-        _a11y_video,
-        ("outputs",),
-        "spec.accessibility = ['captions' | 'audio-description']",
+        _a11y_described,
+        ("outputs", "accessibility"),
+        "spec.accessibility = ['audio-description']",
         (S_WCAG_AD,),
     ),
     _r(
@@ -3793,11 +3804,12 @@ RULES_LIST = RULES_LIST + RULES_R15
 # is built to KEEP the speaker's timbre). `spec.anonymise.voice` first, the words second.
 
 #: «the witness's voice must not be recognisable», «disguise her voice», «измените голос свидетеля».
+#: Only ANONYMITY words: «change / replace the voice» alone is a voice change or a clone, not this.
 W_VOICE_ANON = re.compile(
-    r"(?:disguis|alter|chang|mask|anonymi[sz]|distort|replac|modif|hid)\w*\s+(?:the\s+|his\s+|her\s+|their\s+|a\s+|its\s+)?"
+    r"(?:disguis|anonymi[sz]|distort|mask|hid)\w*\s+(?:the\s+|his\s+|her\s+|their\s+|a\s+|its\s+)?"
     r"(?:[\w'’-]+\s+){0,2}?voices?\b|voices?\s+(?:must|should|can(?:not|'t)?|may|will)\s+(?:not\s+)?(?:be\s+)?(?:un)?recogni[sz]\w*"
-    r"|unrecogni[sz]able voices?|voice (?:anonymi[sz]\w*|disguis\w*|changer)|(?:измен|замен|скры|искази|исказ|анонимиз|обезлич)\w*"
-    r"\s+(?:\w+\s+){0,2}?голос\w*|голос\w*\s+(?:\w+\s+){0,2}?(?:не должен|неузнава)\w*|неузнаваем\w* голос\w*",
+    r"|unrecogni[sz]able voices?|voice anonymi[sz]\w*|(?:скры|искази|исказ|анонимиз|обезлич)\w*"
+    r"\s+(?:\w+\s+){0,2}?голос\w*|голос\w*\s+(?:\w+\s+){0,3}?(?:не должен быть узна|неузнава)\w*|неузнаваем\w* голос\w*",
     re.I,
 )
 
@@ -3872,8 +3884,8 @@ SPEC_FOR_WORDS: dict[re.Pattern[str], Callable[["bs.Spec"], bool | None]] = {
 
 
 def _jurisdiction_fr(spec: "bs.Spec") -> bool | None:
-    """`spec.jurisdiction` named: France among the codes (the French retouch label)."""
-    return "FR" in spec.jurisdiction if "jurisdiction" in spec.source else None
+    """`spec.delivery.markets` named: France among the markets it is published in (the French retouch label)."""
+    return sf.market(spec, "FR")
 
 
 # ROUND 16: the rest of the words-only list (`spec_fields_to_add()` of round 15) — each
@@ -3905,10 +3917,11 @@ SPEC_FOR_WORDS.update({
     W_HEALTH: lambda spec: sf.domain(spec, "health-advertising"),
     W_FINANCE: lambda spec: sf.domain(spec, "financial-advertising"),
     W_SPONSORED: lambda spec: sf.domain(spec, "branded-content"),
-    W_NEWS: lambda spec: sf.domain(spec, "news"),
+    W_NEWS: lambda spec: sf.domain(spec, "news", "documentary"),
     W_REAL_ESTATE: lambda spec: sf.domain(spec, "real-estate"),
     W_POLITICAL: lambda spec: sf.domain(spec, "political"),
     W_FRANCE: _jurisdiction_fr,
+    W_RETOUCH: lambda spec: None if spec.edit_target is None else spec.edit_target == "person",
     # style / subject / display
     W_ANIMATION_TWOS: lambda spec: sf.style(spec, "limited-animation"),
     W_STYLISED_FACE: lambda spec: sf.style(spec, *sf.STYLISED_STYLES) if spec.style else sf.subject(spec, "mascot"),
@@ -3918,6 +3931,10 @@ SPEC_FOR_WORDS.update({
     W_REFLECTIVE: lambda spec: sf.subject(spec, "reflective", "transparent"),
     W_BEFORE_AFTER: lambda spec: sf.subject(spec, "before-after"),
     W_HOLOGRAM: sf.display_additive,
+    W_TEXT_IN_FRAME: lambda spec: sf.subject(spec, "text", "logo"),
+    # A thumbnail / cover image ordered beside the clip: an image output with the video (one-sided — an
+    # outputs list without an image leaves the words to decide).
+    W_COVER: lambda spec: True if {"image", "video"} <= set(spec.outputs) else None,
     # accessibility / audio content / speech
     W_A11Y: sf.accessibility,
     W_SINGING: lambda spec: sf.audio_content(spec, "song"),

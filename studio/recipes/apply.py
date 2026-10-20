@@ -222,14 +222,14 @@ def walkthrough(spec: "bs.Spec", text: str = "") -> bool:
     """A camera tour of a place from the customer's photos (round 12)."""
     if "video" not in spec.outputs or "photo" not in spec.inputs or _photo_count(spec) < 2:
         return False
-    if any(п.get("real") for п in spec.people):
-        return False
     # Round 16: `spec.subject` (interior) or `spec.domain` (real-estate) named decides, any brief language.
     поле = sf.subject(spec, "interior")
     if поле is None:
         поле = sf.domain(spec, "real-estate")
     if поле is not None:
-        return поле
+        return поле and not any(п.get("real") for п in spec.people)
+    if any(п.get("real") for п in spec.people):
+        return False
     return any(WALKTHROUGH.search(str(у)) for у in (*spec.conditions, text) if у)
 
 
@@ -907,15 +907,18 @@ def rewrite(spec: "bs.Spec", route: "bs.Маршрут", text: str = "") -> Appl
             notes["замена_персонажа"] = x15.NOTE_ANON_SWAP[0]
             avoid["замена_персонажа"] = x15.PERSON_REPLACE_LINKS
             acc.assembly.append(x15.ASSEMBLY_ANON_BLUR_ALT)
-        elif method in ("blur", "pixelate") and acc.prior(
-            "anonymise_bystanders", "anonymise_blur" if method == "blur" else "anonymise_pixelate"
-        ):
+        elif method == "blur" and acc.prior("anonymise_bystanders", "anonymise_blur"):
             steps = [s for s in steps if s not in ANONYMISE_ROUTES]
             for s in ANONYMISE_ROUTES:
                 notes.pop(s, None)
-            line = x15.ASSEMBLY_ANON_BLUR if method == "blur" else an.ASSEMBLY_PIXELATE
-            anonymise_assembly = (line[0],)
-            acc.assembly.append(line)
+            anonymise_assembly = (x15.ASSEMBLY_ANON_BLUR[0],)
+            acc.assembly.append(x15.ASSEMBLY_ANON_BLUR)
+        elif method == "pixelate" and acc.prior("anonymise_bystanders", "anonymise_pixelate"):
+            steps = [s for s in steps if s not in ANONYMISE_ROUTES]
+            for s in ANONYMISE_ROUTES:
+                notes.pop(s, None)
+            anonymise_assembly = (an.ASSEMBLY_PIXELATE[0],)
+            acc.assembly.append(an.ASSEMBLY_PIXELATE)
     # The VOICE: transcript + a different stock voice — never a clone, never a dub (it keeps the timbre).
     voice_anon = an.voice(spec, text) and bool(inputs & {"video", "audio"})
     if voice_anon and acc.prior("anonymise_voice", "anonymise_voice_replace"):

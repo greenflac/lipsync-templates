@@ -1413,7 +1413,8 @@ def plan_pipeline(
                   marketplace | print | vfx | editorial | app-store |
                   music-distribution | other], dynamic_range: sdr | hdr,
                   stems: bool, direction: inbound | outbound, format: [mp4 |
-                  … | glb | usdz …]} — glb / usdz = a 3D model.
+                  … | glb | usdz …], markets: [ISO country codes where it
+                  is published, e.g. FR]} — glb / usdz = a 3D model.
         domain    [advertising | health-advertising | financial-advertising |
                   branded-content | news | documentary | real-estate |
                   political | education | entertainment | corporate | other].

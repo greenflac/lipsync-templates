@@ -12248,11 +12248,12 @@ def plan(
         # дописанные замыканием производители — перед всеми. Только для работ
         # над материалом по порядку (`ORDERED_ROUTES`) — прочие планы держат
         # прежний порядок `OPERATIONS`.
+        if понято.then_tasks or понято.task in ORDERED_ROUTES or рецепт.local_only:
+            порядок_маршрута = {и: i for i, и in enumerate(маршрут.шаги)}
+            операции = sorted(операции, key=lambda оп: порядок_маршрута.get(оп.name, -1))
         # Шестнадцатый круг: голос анонимизируется цепочкой «расшифровка -> другой голос» —
         # тоже в названном порядке (`studio/anonymise.py`).
-        if понято.then_tasks or понято.task in ORDERED_ROUTES or рецепт.local_only or (
-            "anonymise_voice" in рецепт.recipes
-        ):
+        if "anonymise_voice" in рецепт.recipes:
             порядок_маршрута = {и: i for i, и in enumerate(маршрут.шаги)}
             операции = sorted(операции, key=lambda оп: порядок_маршрута.get(оп.name, -1))
         # ПОРЯДОК РАБОТ РЕЦЕПТА: клон голоса первым; реставрация -> раскраска

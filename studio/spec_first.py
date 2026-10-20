@@ -15,7 +15,7 @@ ways: `delivery.platform: ["youtube"]` silences the broadcast caveat whatever
 the brief says, `["broadcast"]` fires it in a brief with no English word.
 
 The fields (`brief_spec.SPEC_FIELDS`, round 16): `anonymise`, `voiceover`,
-`delivery` {platform, dynamic_range, stems, direction, format}, `domain`,
+`delivery` {platform, dynamic_range, stems, direction, format, markets}, `domain`,
 `style`, `subject`, `accessibility`, `display`, `audio_content`,
 `follows_picture`, `community`; in the input records `inputs[].source`,
 `inputs[].defects`, `inputs[].fps`.
@@ -103,6 +103,14 @@ def platform(spec: Any, *wanted: str) -> bool | None:
 
 def social(spec: Any) -> bool | None:
     return platform(spec, *SOCIAL)
+
+
+def market(spec: Any, *wanted: str) -> bool | None:
+    """`spec.delivery.markets` holds one of `wanted` (ISO country codes); None — no market named."""
+    рынки = _delivery(spec).get("markets")
+    if not рынки:
+        return None
+    return _has_any(рынки, wanted)
 
 
 def dynamic_range_hdr(spec: Any) -> bool | None:

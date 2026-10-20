@@ -144,7 +144,7 @@ DELIVERY_FORMATS: tuple[str, ...] = (
     "glb", "gltf", "usdz", "obj", "fbx",
 )  # fmt: skip
 MESH_FORMATS: tuple[str, ...] = ("glb", "gltf", "usdz", "obj", "fbx")
-DELIVERY_FIELDS: tuple[str, ...] = ("platform", "dynamic_range", "stems", "direction", "format")
+DELIVERY_FIELDS: tuple[str, ...] = ("platform", "dynamic_range", "stems", "direction", "format", "markets")
 #: `spec.domain`: к какой области относится заказ (решает оговорки рекламы, новостей, политики).
 DOMAINS: tuple[str, ...] = (
     "advertising", "health-advertising", "financial-advertising", "branded-content", "news", "documentary",
@@ -1384,6 +1384,14 @@ def _сдача_spec(raw: Any, ошибки: list[str]) -> dict[str, Any] | None
                 ошибки.append(f"spec.delivery.{ключ}: {з} not in {', '.join(допустимо)}")
             else:
                 запись[ключ] = з
+    if raw.get("markets") is not None:
+        # Где публикуется (ISO 3166-1 alpha-2): «FR» — французская метка ретуши; не путать с
+        # `jurisdiction` (где обрабатываются данные — она сворачивает страны ЕС в «EU»).
+        рынки = [str(з).strip().upper() for з in _список(raw["markets"]) if str(з).strip()]
+        чужие = [з for з in рынки if not re.fullmatch(r"[A-Z]{2}", з)]
+        if чужие:
+            ошибки.append(f"spec.delivery.markets: {', '.join(чужие)} — ISO 3166-1 alpha-2 country codes (FR, DE, US)")
+        запись["markets"] = tuple(dict.fromkeys(з for з in рынки if re.fullmatch(r"[A-Z]{2}", з)))
     if raw.get("stems") is not None:
         if not isinstance(raw["stems"], bool):
             ошибки.append(f"spec.delivery.stems={raw['stems']!r}: must be true or false")
@@ -3587,6 +3595,7 @@ OPTIONAL_HELP: dict[str, str] = {
     "delivery.dynamic_range": " | ".join(DYNAMIC_RANGES) + " — hdr = an HDR master (PQ / HLG)",
     "delivery.stems": "true | false — separate dialogue / music / effects stems are delivered (M&E for localisation)",
     "delivery.direction": " | ".join(CALL_DIRECTIONS) + " — for telephony / voice agents: outbound = the AI voice calls people",
+    "delivery.markets": "list of ISO 3166-1 alpha-2 codes where it is PUBLISHED (FR = the French retouched-photo label)",
     "delivery.format": (
         "list of " + " | ".join(DELIVERY_FORMATS) + " — delivery formats; glb / gltf / usdz / obj / fbx = a 3D "
         "model (mesh reconstruction, not a turntable clip)"
@@ -4334,6 +4343,7 @@ DECISION_FIELDS_R16: tuple[str, ...] = (
     "delivery.stems",
     "delivery.direction",
     "delivery.format",
+    "delivery.markets",
     "domain",
     "style",
     "subject",
@@ -4415,6 +4425,8 @@ def _прочитано_словами_r16(brief: str, низ: str) -> dict[str,
         п["delivery.direction"] = "outbound"
     if rc.MESH.search(brief):
         п["delivery.format"] = ["glb"]
+    if cl.W_FRANCE.search(низ):
+        п["delivery.markets"] = ["FR"]
     области = [
         имя for имя, образец in (
             ("advertising", cl.W_AD), ("branded-content", cl.W_SPONSORED), ("news", cl.W_NEWS),
@@ -4477,9 +4489,16 @@ def decision_fields(brief: str, raw: Mapping[str, Any] | None = None) -> list[di
     названо = set(raw) if isinstance(raw, Mapping) else set()
     прочитано = _прочитано_словами(brief, _norm(brief))
     out: list[dict[str, Any]] = []
+    входы = [в for в in _список(raw.get("inputs")) if isinstance(в, Mapping)] if isinstance(raw, Mapping) else []
     for поле in DECISION_FIELDS:
-        верх = re.split(r"[\[.]", поле, maxsplit=1)[0]
-        if верх in названо and верх not in ("outputs", "people", "inputs"):
+        верх = поле.split("[", 1)[0].split(".", 1)[0]
+        if верх == "inputs":
+            # Шестнадцатый круг: поля ЗАПИСЕЙ входа предлагаются и при названных входах —
+            # пока ни одна запись не назвала это поле.
+            if not any(поле.rsplit(".", 1)[1] in в for в in входы):
+                out.append({"field": поле, "read_from_text": прочитано.get(поле)})
+            continue
+        if верх in названо and верх not in ("outputs", "people"):
             continue
         # Допустимые значения — в `spec_needed.allowed` под тем же именем (не дублируются).
         out.append({"field": поле, "read_from_text": прочитано.get(поле)})
