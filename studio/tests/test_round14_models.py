@@ -176,6 +176,10 @@ class Caveats(unittest.TestCase):
         self.assertEqual(cl.PRESENTER_NEWS_TYPES, frozenset({"news", "real_event"}))
         self.assertEqual(cl.FACE_SWAP_JOBS, frozenset({"char_replace", "face_swap"}))
         self.assertEqual(cl.JOBS_OF_STEP["замена_лица_изображения"], "face_swap")
+        # Работа «замена лица на снимке» — по шагу, даже когда задача названа иначе.
+        правка = {"task": "edit", "inputs": [{"kind": "image", "owned": True, "count": 3}], "outputs": ["image"], "shots": 500,
+                  "people": []}
+        self.assertIn("face_swap_dataset_consent", fired(правка, ["замена_лица_изображения"], ""))
 
 
 class SingleTakeFollowsTheChosenModel(unittest.TestCase):
@@ -187,6 +191,12 @@ class SingleTakeFollowsTheChosenModel(unittest.TestCase):
         self.assertEqual(cl.run_over_priors([None, ""]), ())
         self.assertEqual(cl.chosen_run_s((f"{cl.RUN_OVER_PRIOR}:8",)), 8.0)
         self.assertIsNone(cl.chosen_run_s(("lyrics_alignment",)))
+
+    def test_notes_take_the_plan_priors(self) -> None:
+        take = _spec(w(GEN, duration_s=12))
+        ids = [р["id"] for р in ra.notes(take, ["генерация_видео"], True, extra_priors=(f"{cl.RUN_OVER_PRIOR}:8",))]
+        self.assertIn("single_take_limit", ids)
+        self.assertNotIn("single_take_limit", [р["id"] for р in ra.notes(take, ["генерация_видео"], True)])
 
     def test_take_under_15_s_but_over_the_chosen_run(self) -> None:
         take = w(GEN, duration_s=12)
@@ -297,6 +307,8 @@ class SyntheticPresenter(unittest.TestCase):
         self.assertEqual(sp.decide({**spec, "people": [{**SYN, "real": None}]}, policy, screened, {})["decision"],
                          sp.DECISION_NONE)
         self.assertEqual(sp.decide({**spec, "people": []}, policy, screened, {})["decision"], sp.DECISION_NONE)
+        смешанные = {**spec, "people": [SYN, {"name": "Ann", "real": None}]}
+        self.assertEqual(sp.decide(смешанные, policy, screened, {})["decision"], sp.DECISION_NONE)
         for claims in ([{**OWN_REAL, "own_brand": False}], [{k: v for k, v in OWN_REAL.items() if k != "fabricated"}],
                        [{**OWN_REAL, "type": "product"}], [{**OWN_REAL, "brand": "Sky News"}]):
             with self.subTest(claims=claims):
