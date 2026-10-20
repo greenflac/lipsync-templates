@@ -4390,7 +4390,8 @@ DECISION_FIELDS_R16: tuple[str, ...] = (
 )
 #: Шестнадцатый круг (экспертиза, `expert_r16.spatial_audio`): флаг записи выхода-звука.
 DECISION_FIELDS_R16_OUTPUTS: tuple[str, ...] = tuple(f"outputs[].{флаг}" for флаг in OUTPUT_ITEM_FLAGS_R16)
-DECISION_FIELDS = (*DECISION_FIELDS, *DECISION_FIELDS_R16, *DECISION_FIELDS_R16_OUTPUTS)
+DECISION_FIELDS = (*DECISION_FIELDS, *DECISION_FIELDS_R16)
+DECISION_FIELDS = (*DECISION_FIELDS, *DECISION_FIELDS_R16_OUTPUTS)
 
 
 def _прочитано_словами(brief: str, низ: str) -> dict[str, Any]:
