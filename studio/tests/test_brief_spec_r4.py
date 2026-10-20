@@ -371,7 +371,8 @@ class СпецификацияСтаршеТекста(unittest.TestCase):
             [
                 "spec.colour: unknown field (known: task, outputs, duration_s, shots, per_shot_s, characters, "
                 "resolution, aspect, fps, audio, languages, inputs, objective, budget_usd, self_host, jurisdiction, "
-                "budget, people, conditions, open_weights, edit, claims, lipsync, priors, audience)",
+                "budget, people, conditions, open_weights, edit, claims, lipsync, priors, audience, live, "
+                "edit_target, cast_together, single_take_s, training_use, consistency, dataset_count)",
                 "spec.task: dance not in generate, animate, lipsync, dub-translate, face-replace, avatar, upscale, edit, "
                 "restore, remove-background, interpolate, transcribe, voice-clone, turntable, captions, "
                 "video-edit, r2v, music-visualiser, sing-photo, cut-to-shorts, colorize",
