@@ -26,17 +26,42 @@ from __future__ import annotations
 import re
 from typing import Any, Mapping, Sequence
 
-#: Live / real-time / streaming words. "live" counts only next to a live-system noun or
-#: after a speaking verb ("answers customers live").
-REALTIME = re.compile(
-    r"real[- ]?time|\bin real time\b|\blive[- ]?(?:stream\w*|dub\w*|translat\w*|interpret\w*|chat|conversation\w*"
-    r"|call\w*|avatar\w*|caption\w*|subtitl\w*|broadcast\w*|q&a|session\w*|meeting\w*|webinar\w*|zoom)"
+#: LIVE-SYSTEM words (round 14): a live stream / call / broadcast / live dubbing / an
+#: interactive or conversational avatar. One of these alone is live work. "live" counts
+#: only next to a live-system noun ("live AI avatar" — up to two words between) or after
+#: a speaking verb ("answers customers live").
+LIVE = re.compile(
+    r"\blive[- ]?(?:stream\w*|dub\w*|translat\w*|interpret\w*|chat|conversation\w*"
+    r"|call\w*|caption\w*|subtitl\w*|broadcast\w*|q&a|session\w*|meeting\w*|webinar\w*|zoom)"
+    r"|\blive (?:[\w-]+ ){0,2}avatar\w*"
     r"|(?:answer\w*|respond\w*|talk\w*|reply\w*|chat\w*|speak\w*|translat\w*|dub\w*) (?:\w+ ){0,3}live\b"
-    r"|\bstreaming avatar|interactive avatar|low[- ]latency|\blatency\b|conversational avatar|on a (?:video )?call"
-    r"|реальн\w* времен\w*|в прямом эфире|прям\w+ эфир\w*|онлайн-перевод\w*|синхронн\w+ перевод\w*"
-    r"|живо\w* (?:перевод\w*|дубляж\w*|аватар\w*|диалог\w*|общени\w*)|стрим\w*|задержк\w*|интерактивн\w+ аватар\w*",
+    r"|\bstreaming avatar|interactive avatar|conversational avatar|on a (?:video )?call|\bvideo[- ]?call\w*"
+    r"|\b(?:joins?|joining|in|into|during) (?:our |the |a |my )?(?:zoom|teams|google meet)\b|\bon[- ]air\b"
+    r"|в прямом эфире|прям\w+ эфир\w*|онлайн-перевод\w*|синхронн\w+ перевод\w*|видеозвонк\w*|созвон\w*"
+    r"|живо\w* (?:перевод\w*|дубляж\w*|аватар\w*|диалог\w*|общени\w*)|стрим\w*|интерактивн\w+ аватар\w*",
     re.I,
 )
+#: SPEED words (round 14): real time / low latency / latency. Alone they describe a FAST
+#: system — on-device or low-latency speech synthesis is an ordinary TTS plan (the latency
+#: is a ranking condition, printed among the unmeasured requirements). They make the work
+#: live only when the brief is INTERACTIVE (someone is answered in session) and a face is
+#: rendered (`FACE_TASKS` / a video output).
+SPEED = re.compile(
+    r"real[- ]?time|\bin real time\b|low[- ]latency|\blatency\b|реальн\w* времен\w*|задержк\w*",
+    re.I,
+)
+#: Someone is answered IN SESSION: visitors, viewers, callers, a conversation.
+INTERACTIVE = re.compile(
+    r"\b(?:answer\w*|respond\w*|repl(?:y|ies|ying)|talk\w* (?:with|to)|chat\w* with|convers\w*|interact\w*)\b"
+    r"|\b(?:visitors?|viewers?|callers?|attendees?|participants?)\b|\bin (?:the |a )?session\b|\bdialog\w*"
+    r"|отвеча\w*|разговарива\w*|общает\w*|собеседник\w*|зрител\w*|посетител\w*|в сесси\w*|диалог\w*|интерактив\w*",
+    re.I,
+)
+#: Kept for callers that read one pattern: either kind of word.
+REALTIME = re.compile(f"{LIVE.pattern}|{SPEED.pattern}", re.I)
+#: Tasks that render a FACE: a speed word with an interactive brief is live only for these
+#: (or with a video output) — a fast TTS voice for a bot is still a TTS plan.
+FACE_TASKS: frozenset[str | None] = frozenset({"avatar", "lipsync", "dub-translate"})
 #: Not a live system: shot footage, a game genre, a rendered preview.
 NOT_LIVE = re.compile(
     r"live[- ]action|real[- ]time strategy|real[- ]time render\w*|\brts\b|live footage|live recording"
@@ -97,11 +122,21 @@ def _negated(text: str, start: int) -> bool:
     return any(NEGATION.match(w) for w in before)
 
 
-def asked(text: str) -> bool:
-    """A live / real-time system is asked for in these words (not negated, not live-action)."""
+def _said(pattern: re.Pattern[str], clean: str) -> bool:
+    return any(not _negated(clean, m.start()) for m in pattern.finditer(clean))
+
+
+def asked(text: str, face: bool = True) -> bool:
+    """A live / real-time system is asked for in these words (not negated, not live-action).
+
+    A live-system word is enough; a speed word ("real time", "low latency") only with an
+    interactive brief and a rendered face (`face`).
+    """
     t = " ".join(str(text or "").split())
     clean = NOT_LIVE.sub(" ", t)
-    return any(not _negated(clean, m.start()) for m in REALTIME.finditer(clean))
+    if _said(LIVE, clean):
+        return True
+    return face and _said(SPEED, clean) and bool(INTERACTIVE.search(clean))
 
 
 def _spec_field(spec: Mapping[str, Any] | None, name: str) -> Any:
@@ -110,12 +145,12 @@ def _spec_field(spec: Mapping[str, Any] | None, name: str) -> Any:
 
 def applies(brief: str, spec: Mapping[str, Any] | None) -> bool:
     """The order is real-time speaking work: a recorded gap, not a batch plan."""
-    said = [str(brief or ""), *(str(c) for c in (_spec_field(spec, "conditions") or ()) if c)]
-    if not any(asked(s) for s in said):
-        return False
+    said = " ".join([str(brief or ""), *(str(c) for c in (_spec_field(spec, "conditions") or ()) if c)])
     task = _spec_field(spec, "task")
     tasks = set(task) if isinstance(task, (list, tuple)) else {task}
     outputs = {str(o) for o in (_spec_field(spec, "outputs") or ())}
+    if not asked(said, face=bool(tasks & FACE_TASKS) or "video" in outputs):
+        return False
     return bool(tasks & REALTIME_TASKS) or bool(outputs & SPEAKING_OUTPUTS)
 
 
