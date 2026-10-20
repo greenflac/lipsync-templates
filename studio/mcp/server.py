@@ -1381,8 +1381,9 @@ def plan_pipeline(
                   style — WHAT the edit changes: text = lettering on a sign /
                   label / billboard (video edit with text rendering, never a
                   character swap, even with task face-replace).
-        outputs   items may be objects: {kind, loop?: bool, tileable?: bool} —
-                  loop = a seamless loop; tileable = a seamless texture.
+        outputs   items may be objects: {kind, loop?: bool, tileable?: bool,
+                  alpha?: bool} — loop = a seamless loop; tileable = a
+                  seamless texture; alpha = a transparent background.
         people[].on_screen / people[].speaks  true | false: visible in the
                   frame / speaks or sings. Both true on a generated clip = lip
                   sync on that speaker (series dialogue, a singer on camera);

@@ -198,6 +198,13 @@ class Ctx:
         return sh if sh.get("enabled", True) is not False else {}
 
     def says(self, rx: re.Pattern[str]) -> bool:
+        """The order says this — by its SPEC FIELD when the words have one and it is filled (round 15:
+        any brief language), else by the words (`SPEC_FOR_WORDS`)."""
+        поле = SPEC_FOR_WORDS.get(rx)
+        if поле is not None:
+            решено = поле(self.spec)
+            if решено is not None:
+                return решено
         return bool(rx.search(self.text))
 
 
@@ -714,7 +721,7 @@ RULES_LIST: tuple[Rule, ...] = (
         E,
         _loop,
         (),
-        "spec.delivery.loop = true",
+        "spec.outputs[].loop = true",
         (S_FFMPEG_FILTERS,),
     ),
     _r(
@@ -2928,6 +2935,14 @@ def _relight(c: Ctx) -> bool:
         return False
     if "relight" in tuple(c.spec.edit or ()):
         return True
+    # ПЯТНАДЦАТЫЙ КРУГ: свет назван полем — целью правки (`edit_target: light`) или
+    # осью постоянства (`consistency: ["light"]`); названные поля старше слов.
+    правка = c.spec.edit_target == "light" and bool(c.jobs & {"v2v_edit", "image_edit"})
+    серия = "light" in c.spec.consistency and bool(c.jobs & (VIDEO_GEN | STILL_GEN))
+    if правка or серия:
+        return правка or int(c.spec.shots or 1) >= RELIGHT_SERIES_MIN_SHOTS
+    if "consistency" in c.spec.source or c.spec.edit_target is not None:
+        return False
     if not c.says(W_RELIGHT):
         return False
     if c.jobs & {"v2v_edit", "image_edit"}:
@@ -2959,6 +2974,12 @@ def _single_take(c: Ctx) -> dict[str, str] | None:
     """One generated shot longer than a single run of most video models."""
     if not c.jobs & GENERATED_TAKE_JOBS:
         return None
+    if c.spec.single_take_s is not None:
+        # ПЯТНАДЦАТЫЙ КРУГ: длина непрерывного дубля названа полем — она и решает.
+        дубль = float(c.spec.single_take_s)
+        прогон = chosen_run_s(c.priors)
+        предел = min(SINGLE_TAKE_TYPICAL_MAX_S, прогон) if прогон else SINGLE_TAKE_TYPICAL_MAX_S
+        return {"seconds": f"{дубль:g}"} if дубль > предел else None
     шот = float(c.spec.per_shot_s or 0) or (float(c.spec.duration_s or 0) if int(c.spec.shots or 1) <= 1 else 0.0)
     if шот > SINGLE_TAKE_TYPICAL_MAX_S:
         return {"seconds": f"{шот:g}"}
@@ -3043,7 +3064,7 @@ RULES_R13: tuple[Rule, ...] = (
         R,
         _training_data,
         (),
-        "spec.use = 'training-data'",
+        "spec.training_use = true",
         (S_BFL_TERMS, S_FLUX_DEV_LICENCE, S_FAL_TERMS, S_WAN_LICENCE),
     ),
     _r(
@@ -3081,7 +3102,8 @@ RULES_R13: tuple[Rule, ...] = (
         "грейд с проверкой шотов рядом",
         E,
         _relight,
-        ("edit",),
+        ("edit", "edit_target", "consistency"),
+        "spec.consistency = ['light'] (or spec.edit_target = 'light')",
     ),
     _r(
         "multicam_sync",
@@ -3126,7 +3148,7 @@ RULES_R13: tuple[Rule, ...] = (
         "продлением или продолжением с последнего кадра, и на стыках виден дрейф — или шот режут склейкой",
         E,
         _single_take,
-        ("duration_s", "shots", "per_shot_s"),
+        ("single_take_s", "duration_s", "shots", "per_shot_s"),
     ),
     _r(
         "in_house_anchor_disclosure",
@@ -3235,8 +3257,12 @@ def _face_swap_dataset(c: Ctx) -> dict[str, str] | None:
     """Many swapped faces, or swapped faces as training data: biometric consent and licences per identity."""
     if not c.jobs & FACE_SWAP_JOBS:
         return None
-    штук = max([int(c.spec.shots or 0)] + [int(з.get("count") or 0) for з in c.spec.input_items])
-    if c.says(W_TRAINING_DATA) or штук >= FACE_SWAP_DATASET_MIN:
+    штук = max(
+        [int(c.spec.shots or 0), int(c.spec.dataset_count or 0)] + [int(з.get("count") or 0) for з in c.spec.input_items]
+    )
+    # Пятнадцатый круг: `dataset_count` — выходы составляют датасет; `training_use`
+    # решает вместо слов об обучении (`SPEC_FOR_WORDS`).
+    if c.spec.dataset_count or c.says(W_TRAINING_DATA) or штук >= FACE_SWAP_DATASET_MIN:
         return {"n": str(штук) if штук > 1 else "many"}
     return None
 
@@ -3305,8 +3331,8 @@ RULES_R14: tuple[Rule, ...] = (
         "обучения как настоящее фото; можно ли учить модель на результатах, решают условия поставщика замены лиц",
         R,
         _face_swap_dataset,
-        ("people", "shots", "inputs"),
-        "spec.use = 'training-data'",
+        ("people", "shots", "inputs", "dataset_count", "training_use"),
+        "spec.training_use = true",
         (S_GDPR, S_BIPA, S_FAL_TERMS),
     ),
 )
@@ -3314,6 +3340,24 @@ RULES_R14: tuple[Rule, ...] = (
 RULES_LIST = RULES_LIST + RULES_R14
 
 RULES: dict[str, Rule] = {р.id: р for р in RULES_LIST}
+
+# --- round 15: spec first ------------------------------------------------------------------
+#
+# WORDS -> THE SPEC FIELD THAT STATES THEM. A trigger reading one of these word sets
+# (`Ctx.says`) reads the field instead when the caller filled it — the caller understands
+# any language, the words are EN/RU — and the words decide only when the field is absent.
+# When the field and the words disagree, the field wins.
+
+
+def _audience_children(spec: "bs.Spec") -> bool | None:
+    return None if spec.audience is None else spec.audience == "children"
+
+
+SPEC_FOR_WORDS: dict[re.Pattern[str], Callable[["bs.Spec"], bool | None]] = {
+    W_TRAINING_DATA: lambda spec: spec.training_use,
+    W_LOOP: lambda spec: spec.loop,
+    W_KIDS: _audience_children,
+}
 
 
 def fire(

@@ -173,9 +173,16 @@ LOOP_MAKERS: tuple[str, ...] = ("генерация_видео", "оживлен
 
 
 def loop_seconds(spec: "bs.Spec", text: str = "") -> float | None:
-    """A loop is asked for: its own length (named, or `LOOP_CLIP_S`); None — no loop."""
+    """A loop is asked for: its own length (named, or `LOOP_CLIP_S`); None — no loop.
+
+    Round 15 — SPEC FIRST: `spec.outputs[].loop` decides whether a loop is asked for (any brief
+    language); the loop words are read only when it is absent.
+    """
     said = [str(у) for у in (*spec.conditions, text) if у]
-    if not any(LOOP.search(у) for у in said):
+    петля = getattr(spec, "loop", None)
+    if петля is False:
+        return None
+    if петля is None and not any(LOOP.search(у) for у in said):
         return None
     for у in said:
         m = LOOP_LENGTH.search(у)
@@ -481,6 +488,10 @@ def wants_alpha(spec: "bs.Spec", text: str = "") -> bool:
     """
     from studio.recipes import checklist
 
+    # ПЯТНАДЦАТЫЙ КРУГ: `spec.outputs[].alpha` названо — оно и решает, на любом языке брифа.
+    альфа = getattr(spec, "alpha", None)
+    if альфа is not None:
+        return альфа
     слова = (*(str(у) for у in spec.conditions), str(text or ""))
     if any(checklist.W_HOLOGRAM.search(у) for у in слова) and not any(ALPHA_EXPLICIT.search(у) for у in слова):
         return False

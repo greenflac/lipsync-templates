@@ -10,8 +10,9 @@ synthesis and a face renderer chained under a latency budget of a few hundred
 milliseconds, billed per minute of session. Pricing it as hours of rendered clips is
 the wrong product at the wrong price.
 
-THE RULE (one rule):
-    the brief or spec.conditions names real time / live / streaming / low latency
+THE RULE (one rule; round 15: `spec.live` decides when the caller fills it, the words are the
+fallback):
+    spec.live is true — or, absent, the brief or spec.conditions names real time / live / streaming / low latency
     (not negated, not "live-action", not "real-time strategy")
     AND the work is speech or a speaking face (avatar, lip sync, dub, voice, captions,
     or speech among the outputs)                                      -> recorded gap
@@ -160,11 +161,19 @@ def _outputs(spec: Mapping[str, Any] | None) -> set[str]:
 
 
 def applies(brief: str, spec: Mapping[str, Any] | None) -> bool:
-    """The order is real-time speaking work: a recorded gap, not a batch plan."""
-    said = " ".join([str(brief or ""), *(str(c) for c in (_spec_field(spec, "conditions") or ()) if c)])
+    """The order is real-time speaking work: a recorded gap, not a batch plan.
+
+    Round 15 — SPEC FIRST: `spec.live` (true | false) decides whether the system is live, in any
+    brief language; the live / speed words below are read only when it is absent. The work must
+    still be speaking work (a speaking task or speech among the outputs) for the gap.
+    """
+    live = _spec_field(spec, "live")
     task = _spec_field(spec, "task")
     tasks = set(task) if isinstance(task, (list, tuple)) else {task}
     outputs = _outputs(spec)
+    if isinstance(live, bool):
+        return live and (bool(tasks & REALTIME_TASKS) or bool(outputs & SPEAKING_OUTPUTS))
+    said = " ".join([str(brief or ""), *(str(c) for c in (_spec_field(spec, "conditions") or ()) if c)])
     if not asked(said, face=bool(tasks & FACE_TASKS) or "video" in outputs):
         return False
     return bool(tasks & REALTIME_TASKS) or bool(outputs & SPEAKING_OUTPUTS)

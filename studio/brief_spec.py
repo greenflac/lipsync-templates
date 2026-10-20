@@ -113,7 +113,7 @@ EDIT_TARGETS: tuple[str, ...] = ("text", "person", "object", "background", "sky"
 #: (кадру серии): light — свет, style — стиль, character — персонаж.
 CONSISTENCY_AXES: tuple[str, ...] = ("light", "style", "character")
 #: Пятнадцатый круг: поля записи выхода (`spec.outputs[]` объектом).
-OUTPUT_ITEM_FIELDS: tuple[str, ...] = ("kind", "loop", "tileable")
+OUTPUT_ITEM_FIELDS: tuple[str, ...] = ("kind", "loop", "tileable", "alpha")
 
 #: Все поля `spec`, которые плановщик принимает. Неизвестное поле — ошибка, а
 #: не молчание: вызывающий, написавший `durations`, должен узнать, что его не
@@ -552,6 +552,8 @@ class Spec:
     #: `outputs[].tileable`); None — не сказано.
     loop: bool | None = None
     tileable: bool | None = None
+    #: Выход с прозрачным фоном (альфа-канал: PNG, WebM, ProRes 4444) — `outputs[].alpha`.
+    alpha: bool | None = None
     #: Записи выходов, как названы объектами: {kind, loop?, tileable?}.
     output_items: tuple[Mapping[str, Any], ...] = ()
     #: Самый длинный НЕПРЕРЫВНЫЙ дубль, секунды (без склейки внутри).
@@ -1655,6 +1657,9 @@ def face_swap_items(spec: "Spec") -> int:
     `FACE_SWAP_BATCH_MIN` (the targets of a data set); 0 — as many as ordered frames (one)."""
     if spec.shots:
         return int(spec.shots)
+    if spec.dataset_count:
+        # Пятнадцатый круг: датасет назван полем — столько образцов и делается.
+        return int(spec.dataset_count)
     штуки = [int(з.get("count") or 1) for з in spec.input_items if str(з.get("kind")) in ("photo", "image")]
     наибольшее = max(штуки, default=0)
     return наибольшее if наибольшее >= FACE_SWAP_BATCH_MIN else 0
@@ -2727,11 +2732,48 @@ ON_SCREEN_SPEAKER = re.compile(
 )
 
 
+#: Пятнадцатый круг: работы, у которых губы ГЕНЕРИРУЕМОГО клипа решает `spec.lipsync`
+#: (у дубляжа и липсинка своего видео поле значит своё — `lipsync_default`).
+GENERATED_LIPS_TASKS: tuple[str | None, ...] = (None, "generate", "animate", "r2v", "music-visualiser")
+
+
+def говорящий_по_spec(spec: Spec) -> bool | None:
+    """Виден ли говорящий (поющий) в кадре — ПО ПОЛЯМ (пятнадцатый круг); None — поля молчат.
+
+    Порядок: `spec.lipsync` на генерируемом клипе (true — губы двигаются, false —
+    липсинка нет вовсе), затем `people[].on_screen` и `people[].speaks`: хоть один
+    виден и говорит — да; каждый описанный либо не виден, либо молчит — нет.
+    Слова брифа (`ON_SCREEN_SPEAKER`, `SINGING`…) читаются, только когда здесь None:
+    решение не зависит от языка брифа, если вызывающий назвал поле.
+    """
+    if spec.lipsync is not None and spec.task in GENERATED_LIPS_TASKS:
+        return spec.lipsync
+    описаны = [п for п in spec.people if п.get("on_screen") is not None or п.get("speaks") is not None]
+    if not описаны:
+        return None
+    if any(п.get("on_screen") is True and п.get("speaks") is True for п in описаны):
+        return True
+    if all(п.get("on_screen") is False or п.get("speaks") is False for п in описаны):
+        return False
+    return None
+
+
+def исполнитель_в_кадре_по_spec(spec: Spec) -> bool | None:
+    """Есть ли в кадре исполнитель — по `people[].on_screen` (пятнадцатый круг); None — не сказано."""
+    видны = [п.get("on_screen") for п in spec.people if п.get("on_screen") is not None]
+    if not видны:
+        return None
+    return any(видны)
+
+
 def говорят_в_кадре(spec: Spec, текст: str = "") -> bool:
     """Говорящий виден в кадре генерируемого ролика (двенадцатый круг): к речи нужен липсинк."""
     выходы = set(spec.outputs)
     if not {"video", "speech"} <= выходы or spec.task not in (None, "generate", "animate", "r2v"):
         return False
+    решено = говорящий_по_spec(spec)
+    if решено is not None:
+        return решено
     сказано = " ".join(str(у) for у in (*spec.conditions, текст) if у)
     if ON_SCREEN_SPEAKER.search(сказано):
         return True
@@ -2771,6 +2813,16 @@ PERFORMER_NOT_ON_SCREEN = re.compile(
 )
 
 
+#: Пятнадцатый круг: липсинк назван, чтобы его НЕ было («no lip sync», «sin lip
+#: sync», «без липсинка») — запасной путь словами, когда `spec.lipsync` не назван.
+NO_LIPSYNC = re.compile(
+    r"\b(?:no|without|not|never|zero|sin|sans|ohne|kein\w*|sem|senza|nada de|pas de|без|не|нет|никак\w*)"
+    r"\s+(?:\w+\s+){0,2}?(?:lip[- ]?sync\w*|lipsync\w*|липсинк\w*|синхрон\w* губ)"
+    r"|(?:lip[- ]?sync\w*|липсинк\w*)\s+(?:is\s+)?(?:not (?:needed|required|wanted)|не нуж\w*)",
+    re.I,
+)
+
+
 def исполнитель_словами(текст: str) -> str:
     """Слова брифа без исполнителя, которого в кадре НЕТ (четырнадцатый круг).
 
@@ -2778,7 +2830,7 @@ def исполнитель_словами(текст: str) -> str:
     называют исполнителя, но не ставят его в кадр: клип с референсом и губами —
     только когда исполнитель В КАДРЕ.
     """
-    return PERFORMER_NOT_ON_SCREEN.sub(" ", NO_PERFORMER.sub(" ", str(текст or "")))
+    return PERFORMER_NOT_ON_SCREEN.sub(" ", NO_PERFORMER.sub(" ", NO_LIPSYNC.sub(" ", str(текст or ""))))
 
 
 def поют_в_кадре(spec: Spec, текст: str = "") -> bool:
@@ -2787,6 +2839,9 @@ def поют_в_кадре(spec: Spec, текст: str = "") -> bool:
         return False
     if spec.task not in (None, "generate", "music-visualiser", "r2v"):
         return False
+    решено = говорящий_по_spec(spec)
+    if решено is not None:
+        return решено
     сказано = исполнитель_словами(" ".join(str(у) for у in (*spec.conditions, текст) if у))
     return bool(SINGING.search(сказано))
 
@@ -2798,8 +2853,20 @@ def клип_с_исполнителем(spec: Spec, текст: str = "") -> bo
     if spec.task not in (None, "generate", "music-visualiser"):
         return False
     сцен = (spec.shots or 0) >= SERIES_SHOTS_MIN or float(spec.duration_s or 0) > SERIES_DURATION_MIN_S
+    if not сцен:
+        return False
+    # ПЯТНАДЦАТЫЙ КРУГ: исполнитель в кадре по полям (`people[].on_screen`, губы
+    # `spec.lipsync`) — старше слов «singer», «performs» на любом языке.
+    в_кадре = исполнитель_в_кадре_по_spec(spec)
+    if в_кадре is not None:
+        return в_кадре
+    if spec.task in GENERATED_LIPS_TASKS and spec.lipsync is True:
+        return True
     сказано = исполнитель_словами(" ".join(str(у) for у in (*spec.conditions, текст) if у))
-    return сцен and bool(PERFORMER.search(сказано) or SINGING.search(сказано))
+    if spec.task in GENERATED_LIPS_TASKS and spec.lipsync is False:
+        # Губ нет — «поёт» словами исполнителя в кадр не ставит; исполнитель назван — ставит.
+        return bool(PERFORMER.search(сказано))
+    return bool(PERFORMER.search(сказано) or SINGING.search(сказано))
 
 
 #: Четырнадцатый круг: ВИЗУАЛИЗАТОР словами — картинка под трек без исполнителя.
@@ -2814,7 +2881,11 @@ def визуализатор(spec: Spec, текст: str = "") -> bool:
     """Картинка под ВАШ трек без исполнителя в кадре: работа визуализатора, даже названная generate."""
     if spec.task not in (None, "generate") or "audio" not in spec.inputs or set(spec.inputs) & {"video", "photo"}:
         return False
-    if set(spec.outputs) != {"video"} or (spec.characters or 0) >= 1 or spec.people:
+    # Пятнадцатый круг: человек, о котором сказано `on_screen: false`, в кадр не
+    # выходит — визуализатору он не помеха (артист назван ради трека, не ради кадра).
+    if set(spec.outputs) != {"video"} or (spec.characters or 0) >= 1:
+        return False
+    if any(п.get("on_screen") is not False for п in spec.people):
         return False
     сказано = " ".join(str(у) for у in (*spec.conditions, текст) if у)
     return bool(VISUALISER_WORDS.search(сказано)) and not клип_с_исполнителем(spec, текст)
@@ -2844,6 +2915,9 @@ def персонажи_в_одном_кадре(spec: "Spec", текст: str = 
     """Персонажи серии делят кадр: ключевой кадр шота собирается из их референсов (четырнадцатый круг)."""
     if (spec.characters or 0) < MULTI_CHARACTER_MIN:
         return False
+    if spec.cast_together is not None:
+        # ПЯТНАДЦАТЫЙ КРУГ: поле `spec.cast_together` старше слов «together», «dialogue».
+        return spec.cast_together
     сказано = NO_DIALOGUE.sub(" ", " ".join(str(у) for у in (*spec.conditions, текст) if у))
     return bool(CAST_TOGETHER.search(сказано) or DIALOGUE.search(сказано))
 
@@ -2895,6 +2969,12 @@ def персонажи_по_умолчанию(spec: Spec, текст: str = "")
     сказано = [str(у) for у in (*spec.conditions, текст) if у]
     if вымышленные:
         n = len(вымышленные)
+    elif "consistency" in spec.source:
+        # ПЯТНАДЦАТЫЙ КРУГ: `spec.consistency` названо — один повторяющийся персонаж,
+        # только если в нём есть `character`; слова «same character» тогда не читаются.
+        if "character" not in spec.consistency:
+            return 0, ""
+        n = 1
     elif any(RECURRING_CHARACTER.search(у) for у in сказано) or (
         ролик and any(SERIES_WORDS.search(у) and SERIES_HERO.search(у) for у in сказано)
     ):
@@ -2918,7 +2998,10 @@ def говорящий_ролик(spec: Spec, текст: str = "") -> bool:
     """
     if spec.audio is not None or spec.task not in (None, "generate"):
         return False
-    if not SPEAKING_IN_FRAME.search(текст or "") or VOICE_OFF_FRAME.search(текст or ""):
+    решено = говорящий_по_spec(spec)
+    if решено is False:
+        return False
+    if решено is None and (not SPEAKING_IN_FRAME.search(текст or "") or VOICE_OFF_FRAME.search(текст or "")):
         return False
     выходы = set(spec.outputs)
     # Речь названа выходом — или языком речи при видео без других выходов
@@ -3245,6 +3328,10 @@ OPTIONAL_HELP: dict[str, str] = {
     ),
     "outputs[].loop": "true when the output is a seamless loop (last frame flows into the first): outputs=[{\"kind\": \"video\", \"loop\": true}]",
     "outputs[].tileable": "true when the output is a seamless tileable texture: outputs=[{\"kind\": \"image\", \"tileable\": true}]",
+    "outputs[].alpha": (
+        "true when the output must have a TRANSPARENT background (alpha channel: PNG, WebM, ProRes 4444); false "
+        "for an opaque frame (a hologram / transparent-LED display wants black, not alpha)"
+    ),
     "people[].on_screen": "true | false — the person (or character, real=false) is VISIBLE in the frame",
     "people[].speaks": (
         "true | false — the person speaks or sings in the audio; on_screen and speaks both true = a lip-sync step "
@@ -3281,7 +3368,10 @@ SPEC_INSTRUCTION = (
     "The plan is built ONLY from spec. Read the draft below WITH the customer (it was read from the "
     "text by a keyword parser and is unconfirmed), correct it, fill every field in `missing`, and call "
     "plan_pipeline again with spec=<the confirmed object>. Do not guess a field the customer did not "
-    "state — ask them."
+    "state — ask them. Also fill the DECISION FIELDS listed in `draft.decision_fields` that apply "
+    "(live, edit_target, outputs[].loop / tileable, people[].on_screen / speaks, lipsync, cast_together, "
+    "single_take_s, training_use, consistency, dataset_count): in a brief in any language they decide what "
+    "the keyword parser can only read in English or Russian."
 )
 
 
@@ -3939,6 +4029,78 @@ def _доводка_черновика(brief: str, низ: str, t: Spec, чер�
             черновик["lipsync"] = True
 
 
+#: Пятнадцатый круг: ПОЛЯ РЕШЕНИЙ, которые черновик предлагает заполнить — порядок печати.
+DECISION_FIELDS: tuple[str, ...] = (
+    "live",
+    "edit_target",
+    "outputs[].loop",
+    "outputs[].tileable",
+    "outputs[].alpha",
+    "people[].on_screen",
+    "people[].speaks",
+    "lipsync",
+    "cast_together",
+    "single_take_s",
+    "training_use",
+    "consistency",
+    "dataset_count",
+)
+
+
+def _прочитано_словами(brief: str, низ: str) -> dict[str, Any]:
+    """Значения полей решений, которые ЗАПАСНЫЕ слова брифа (EN/RU) дают сейчас — подсказка, не решение."""
+    from studio import edit_intent as ei
+    from studio import realtime as rt
+    from studio.recipes import apply as rc
+    from studio.recipes import checklist as cl
+
+    прочитано: dict[str, Any] = {}
+    if rt.asked(brief):
+        прочитано["live"] = True
+    if ei.PERSON_EDIT.search(brief):
+        прочитано["edit_target"] = "person"
+    elif ei.TEXT_EDIT_WORDS.search(brief):
+        прочитано["edit_target"] = "text"
+    if rc.LOOP.search(brief):
+        прочитано["outputs[].loop"] = True
+    if rc.wants_alpha(Spec(), brief):
+        прочитано["outputs[].alpha"] = True
+    if NO_LIPSYNC.search(brief):
+        прочитано["lipsync"] = False
+    elif SINGING.search(исполнитель_словами(brief)) or ON_SCREEN_SPEAKER.search(brief):
+        прочитано["lipsync"] = True
+    if CAST_TOGETHER.search(NO_DIALOGUE.sub(" ", brief)) or DIALOGUE.search(NO_DIALOGUE.sub(" ", brief)):
+        прочитано["cast_together"] = True
+    if cl.W_TRAINING_DATA.search(низ):
+        прочитано["training_use"] = True
+    оси = [о for о, образец in (("light", cl.W_RELIGHT), ("character", RECURRING_CHARACTER)) if образец.search(низ)]
+    if оси:
+        прочитано["consistency"] = оси
+    return прочитано
+
+
+def decision_fields(brief: str, raw: Mapping[str, Any] | None = None) -> list[dict[str, Any]]:
+    """Поля решений для вопроса о спецификации: что заполнить и что дали запасные слова.
+
+    ПЯТНАДЦАТЫЙ КРУГ. Эти решения (живая система, цель правки, петля, губы, кадр
+    на двоих, длина дубля, обучение, постоянство, датасет) прежде брались только
+    из английских и русских слов брифа: тот же заказ по-китайски, по-японски,
+    по-испански терял оговорку или шаг. Вызывающая модель понимает любой язык —
+    черновик просит её назвать поле; `read_from_text` — что дали бы запасные
+    слова (на другом языке там обычно пусто — это и есть повод заполнить поле).
+    """
+    названо = set(raw) if isinstance(raw, Mapping) else set()
+    прочитано = _прочитано_словами(brief, _norm(brief))
+    out: list[dict[str, Any]] = []
+    for поле in DECISION_FIELDS:
+        верх = поле.split("[", 1)[0]
+        if верх in названо and верх not in ("outputs", "people"):
+            continue
+        # Допустимые значения — в `spec_needed.allowed` под тем же именем (не дублируются).
+        out.append({"field": поле, "read_from_text": прочитано.get(поле)})
+    return out
+
+
 def draft(brief: str, raw: Mapping[str, Any] | None = None) -> dict[str, Any]:
     """ЧЕРНОВИК спецификации из текста — для вопроса, а не для плана.
 
@@ -4055,4 +4217,6 @@ def draft(brief: str, raw: Mapping[str, Any] | None = None) -> dict[str, Any]:
         "still_missing": [н["field"] for н in нет],
         "draft_errors": ошибки,
         "guesses": угадано,
+        # Пятнадцатый круг: поля решений — заполните их на любом языке брифа.
+        "decision_fields": decision_fields(brief, raw),
     }

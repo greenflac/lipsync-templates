@@ -8,7 +8,9 @@ with text rendering: a mask over the sign, new text drawn into it, tracked
 across frames — or a planar track and a composite at assembly.
 
 RULE (structured first). `spec.edit` names `replace-text` -> the edit job,
-whatever task word came with it. Without it, the words decide only when the
+whatever task word came with it. Round 15: `spec.edit_target` ("text" | "person"
+| …) decides next, in any brief language — "text" reroutes, any other target
+keeps the task, and the words are not read. Without it, the words decide only when the
 spec cannot: a face/character task on the customer's VIDEO and the brief asks
 to change text, a sign, a label or a billboard. Round 14: the edit TARGET
 decides, not whether people are in the shot — a person in `spec.people` who
@@ -24,6 +26,8 @@ from typing import Any
 
 from studio import endpoints as ep
 
+#: `spec.edit_target` value that makes the edit a lettering edit (round 15, `brief_spec.EDIT_TARGETS`).
+EDIT_TARGET_TEXT = "text"
 #: Tasks whose route is a person/character swap or a generic edit — the ones a
 #: text edit gets misfiled under.
 TEXT_EDIT_TASKS: frozenset[str] = frozenset({"face-replace", "edit", "video-edit"})
@@ -75,6 +79,11 @@ def wants_text_edit(spec: Any, text: str) -> bool:
         return True
     if getattr(spec, "task", "") not in TEXT_EDIT_TASKS or "video" not in tuple(getattr(spec, "inputs", ()) or ()):
         return False
+    # ПЯТНАДЦАТЫЙ КРУГ: цель правки названа полем (`spec.edit_target`) — она и решает,
+    # на любом языке брифа; слова ниже читаются, только когда поля нет.
+    цель = getattr(spec, "edit_target", None)
+    if цель is not None:
+        return цель == EDIT_TARGET_TEXT
     # ЧЕЛОВЕК В КАДРЕ — НЕ ЦЕЛЬ ПРАВКИ (четырнадцатый круг). Раньше любой
     # человек в `spec.people` держал задачу «замена лица», и «двое проходят
     # мимо вывески — замените надпись» уходило в замену персонажа без модели и
