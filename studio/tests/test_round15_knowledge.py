@@ -107,6 +107,7 @@ CAVEATS: dict[str, tuple[list[tuple[dict, list[str], str]], list[tuple[dict, lis
          (w(SING, inputs=[{"kind": "image", "owned": True}, {"kind": "audio", "owned": True, "duration_s": 30}]),
           ["говорящий_аватар"], "my cat sings our own jingle"),
          (MUS, ["музыка"], "write an original pop song about coffee"),
+         (SING, ["говорящий_аватар"], "my cat sings our own jingle that our agency wrote"),
          (GEN, ["генерация_видео"], "обложка для трека, 20 секунд анимации")],
     ),
     "long_ambient_loop": (
@@ -157,6 +158,8 @@ CAVEATS: dict[str, tuple[list[tuple[dict, list[str], str]], list[tuple[dict, lis
         [(w(GEN, duration_s=30), ["генерация_видео"], "a 30 s ad with a warm voiceover"),
          (w(GEN, duration_s=30, outputs=["video", "speech"]), ["генерация_видео", "озвучка"], "no music, a voiceover"),
          (w(GEN, duration_s=30, people=[{"name": "host", "real": False, "speaks": True}]), ["генерация_видео"], "без слов"),
+         (w(GEN, duration_s=30, people=[{"name": "a", "real": False, "speaks": False},
+                                        {"name": "b", "real": False, "speaks": True}]), ["генерация_видео"], ""),
          (w(GEN, duration_s=600), ["генерация_видео"], "a 10-minute film without dialogue")],
     ),
     "product_insertion": (
@@ -190,21 +193,17 @@ class Предостережения(unittest.TestCase):
                     self.assertNotIn(rid, fired(raw, steps, brief))
 
     def test_длина_фонового_на_краю(self) -> None:
-        на_краю = w(MUS, duration_s=cl.AMBIENT_LOOP_MIN_S)
-        self.assertIn("long_ambient_loop", fired(на_краю, ["музыка"], "rain ambience"))
-        self.assertNotIn("long_ambient_loop", fired(w(MUS, duration_s=cl.AMBIENT_LOOP_MIN_S - 1), ["музыка"], "rain ambience"))
+        # Pinned at half an hour: from there a generated full length pays for the same sound many times over.
+        self.assertIn("long_ambient_loop", fired(w(MUS, duration_s=1800), ["музыка"], "rain ambience"))
+        self.assertNotIn("long_ambient_loop", fired(w(MUS, duration_s=1799), ["музыка"], "rain ambience"))
 
     def test_серия_стиля_на_краю(self) -> None:
-        self.assertIn("style_consistency_set", fired(w(SET, shots=cl.STYLE_SET_MIN), ["генерация_изображения"], "same style"))
-        self.assertNotIn(
-            "style_consistency_set", fired(w(SET, shots=cl.STYLE_SET_MIN - 1), ["генерация_изображения"], "same style")
-        )
+        self.assertIn("style_consistency_set", fired(w(SET, shots=3), ["генерация_изображения"], "same style"))
+        self.assertNotIn("style_consistency_set", fired(w(SET, shots=2), ["генерация_изображения"], "same style"))
 
     def test_шортс_без_речи_на_краю(self) -> None:
-        self.assertIn("no_speech_short", fired(w(GEN, duration_s=cl.NO_SPEECH_SHORT_MAX_S), ["генерация_видео"], "no voiceover"))
-        self.assertNotIn(
-            "no_speech_short", fired(w(GEN, duration_s=cl.NO_SPEECH_SHORT_MAX_S + 1), ["генерация_видео"], "no voiceover")
-        )
+        self.assertIn("no_speech_short", fired(w(GEN, duration_s=180), ["генерация_видео"], "no voiceover"))
+        self.assertNotIn("no_speech_short", fired(w(GEN, duration_s=181), ["генерация_видео"], "no voiceover"))
 
     def test_ноты_на_двух_языках_без_утечек(self) -> None:
         поля = {"n": "12", "seconds": "10800"}
