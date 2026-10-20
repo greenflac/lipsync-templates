@@ -640,3 +640,28 @@ replacement; `people[].real: false` with a character name is read first),
 `TRY_ON` / `GARMENT`, `WALKTHROUGH`, `DRAWN`, `LOCAL_ONLY` (`self_host` /
 `open_weights` are read first), `FOLLOWS_PICTURE`; and in the planner
 `COMMUNITY_ASKED` (community LoRA / workflows wanted).
+
+## `plan_pipeline`: model expertise and pricing (round 16)
+
+`studio/expert_r16.py` holds the round's decisions; each reads a spec field first and
+the EN/RU words only when the field is absent. Tests: `studio/tests/test_round16_knowledge.py`
+(EN, RU and at least one other language per theme, both ways); mutants:
+`scripts/mutate_round16_knowledge.py`.
+
+| decision | spec field (first) | fallback words |
+|---|---|---|
+| open weights with no API route run on the customer's GPU (ASR: faster-whisper, Whisper, Parakeet) instead of "no candidate" (`open_weights_route`) | `open_weights` (without `self_host`) | — |
+| sensitive transcription caveat: self-host, pyannote diarisation, human review (`checklist.confidential_transcription`) | `self_host`, `open_weights` | `expert_r16.W_SENSITIVE` |
+| a still whose job is lettering is ranked by RECORDED text rendering (`text_legibility`; a `text_rendering` value is "for" only on that condition, never as general good news) | `conditions` (any language, `attrfamily.УСЛОВИЯ_СИНОНИМЫ`) | `W_TEXT_HEAVY`, a quoted string in any script |
+| spatial / VR / 360 sound caveat (ambisonics, binaural, head tracking, stereo models, spatialiser at assembly) | **`outputs[].spatial`** (new flag of a sound output) | `W_SPATIAL` |
+| a video edit takes the cheapest adequate tier of its evidence band (frame not below the order) | `objective: quality` keeps the premium | — |
+| a lip-sync / avatar batch (3+ clips) takes the cheapest adequate model (output recorded, frame not below) when the chosen one costs more than 1.5x | `objective: quality` keeps it | — |
+| a narrated series / explainer of 4+ shots without characters is made from key visuals (t2i per shot, then i2v) | `consistency: ["style"]` | `W_SERIES_EXPLAINER` (sets `consistency` as an assumption) |
+| a narrator off screen gets no lip sync | `people[].on_screen` / `speaks`, `lipsync` | `VOICE_OFF_FRAME` (now with «за кадром», «рассказчик») |
+| a drawn (anime / cartoon) dub adapts the script to the mouth flaps; visual lip sync is an OPTIONAL step priced apart (`steps[].optional`, `pipeline_price.conditional_steps[].optional`, not in the clip price) | `lipsync: true` makes it required | `apply.DRAWN` (conditions / words) |
+
+New facts (2026-10-20, sources in each row): Parakeet TDT 0.6B v3 (licence, ASR tag, 25
+languages, long form), faster-whisper / whisper.cpp GPU seconds per 13-minute clip (the
+self-host compute estimate), text rendering of Ideogram 3, Recraft V3, FLUX.2 / FLUX.2 [flex],
+Qwen-Image, Nano Banana Pro / 2.1 and the GPT Image models' own limitation; gaps recorded
+for Imagen 4 and Seedream 5 (hosts refused or pages client-rendered, `denied_hosts.jsonl`).
