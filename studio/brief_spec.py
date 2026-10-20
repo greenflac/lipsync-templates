@@ -2830,7 +2830,8 @@ def исполнитель_словами(текст: str) -> str:
     называют исполнителя, но не ставят его в кадр: клип с референсом и губами —
     только когда исполнитель В КАДРЕ.
     """
-    return PERFORMER_NOT_ON_SCREEN.sub(" ", NO_PERFORMER.sub(" ", NO_LIPSYNC.sub(" ", str(текст or ""))))
+    текст = NO_LIPSYNC.sub(" ", str(текст or ""))
+    return PERFORMER_NOT_ON_SCREEN.sub(" ", NO_PERFORMER.sub(" ", str(текст or "")))
 
 
 def поют_в_кадре(spec: Spec, текст: str = "") -> bool:
@@ -2853,20 +2854,18 @@ def клип_с_исполнителем(spec: Spec, текст: str = "") -> bo
     if spec.task not in (None, "generate", "music-visualiser"):
         return False
     сцен = (spec.shots or 0) >= SERIES_SHOTS_MIN or float(spec.duration_s or 0) > SERIES_DURATION_MIN_S
-    if not сцен:
-        return False
     # ПЯТНАДЦАТЫЙ КРУГ: исполнитель в кадре по полям (`people[].on_screen`, губы
     # `spec.lipsync`) — старше слов «singer», «performs» на любом языке.
     в_кадре = исполнитель_в_кадре_по_spec(spec)
     if в_кадре is not None:
-        return в_кадре
+        return сцен and в_кадре
     if spec.task in GENERATED_LIPS_TASKS and spec.lipsync is True:
-        return True
+        return сцен
     сказано = исполнитель_словами(" ".join(str(у) for у in (*spec.conditions, текст) if у))
     if spec.task in GENERATED_LIPS_TASKS and spec.lipsync is False:
         # Губ нет — «поёт» словами исполнителя в кадр не ставит; исполнитель назван — ставит.
-        return bool(PERFORMER.search(сказано))
-    return bool(PERFORMER.search(сказано) or SINGING.search(сказано))
+        return сцен and bool(PERFORMER.search(сказано))
+    return сцен and bool(PERFORMER.search(сказано) or SINGING.search(сказано))
 
 
 #: Четырнадцатый круг: ВИЗУАЛИЗАТОР словами — картинка под трек без исполнителя.
@@ -2913,11 +2912,11 @@ NO_DIALOGUE = re.compile(
 
 def персонажи_в_одном_кадре(spec: "Spec", текст: str = "") -> bool:
     """Персонажи серии делят кадр: ключевой кадр шота собирается из их референсов (четырнадцатый круг)."""
-    if (spec.characters or 0) < MULTI_CHARACTER_MIN:
-        return False
     if spec.cast_together is not None:
         # ПЯТНАДЦАТЫЙ КРУГ: поле `spec.cast_together` старше слов «together», «dialogue».
         return spec.cast_together
+    if (spec.characters or 0) < MULTI_CHARACTER_MIN:
+        return False
     сказано = NO_DIALOGUE.sub(" ", " ".join(str(у) for у in (*spec.conditions, текст) if у))
     return bool(CAST_TOGETHER.search(сказано) or DIALOGUE.search(сказано))
 
@@ -3001,8 +3000,9 @@ def говорящий_ролик(spec: Spec, текст: str = "") -> bool:
     решено = говорящий_по_spec(spec)
     if решено is False:
         return False
-    if решено is None and (not SPEAKING_IN_FRAME.search(текст or "") or VOICE_OFF_FRAME.search(текст or "")):
-        return False
+    if решено is None:
+        if not SPEAKING_IN_FRAME.search(текст or "") or VOICE_OFF_FRAME.search(текст or ""):
+            return False
     выходы = set(spec.outputs)
     # Речь названа выходом — или языком речи при видео без других выходов
     # («8 секунд: повар говорит „добро пожаловать“», languages=["en"]).
