@@ -172,6 +172,13 @@ LOOP_LENGTH = re.compile(
 LOOP_MAKERS: tuple[str, ...] = ("генерация_видео", "оживление", "видео_по_референсу")
 
 
+#: Round 15: steps a long ambient piece is made with (one loopable segment each).
+AMBIENT_AUDIO_MAKERS: tuple[str, ...] = ("музыка", "звук_фон")
+AMBIENT_MAKERS: tuple[str, ...] = (*AMBIENT_AUDIO_MAKERS, "генерация_видео", "оживление", "видео_со_звуком")
+#: Round 15: the route steps an anonymisation order lands on before the recipe (edit / character swap).
+ANONYMISE_ROUTES: frozenset[str] = frozenset({"правка_видео", "замена_персонажа", "замена_фигуры"})
+
+
 def loop_seconds(spec: "bs.Spec", text: str = "") -> float | None:
     """A loop is asked for: its own length (named, or `LOOP_CLIP_S`); None — no loop."""
     said = [str(у) for у in (*spec.conditions, text) if у]
@@ -531,6 +538,7 @@ def rewrite(spec: "bs.Spec", route: "bs.Маршрут", text: str = "") -> Appl
     prefer: dict[str, str] = {}
     avoid: dict[str, str] = {}
     stylised: list[str] = []
+    anonymise_assembly: tuple[str, ...] = ()
     inputs = set(spec.inputs)
     outputs = set(spec.outputs)
     tasks = {spec.task, *spec.then_tasks}
@@ -768,6 +776,50 @@ def rewrite(spec: "bs.Spec", route: "bs.Маршрут", text: str = "") -> Appl
     if counts.get("генерация_изображения") == SINGLE_HOST_REFERENCES and "генерация_изображения" in steps:
         shared.append("генерация_изображения")
 
+    # --- round 15: hours of ambience are one loopable segment ------------------------------
+    # A 3-hour rain track or an 8-hour fireplace was priced as full-length generation
+    # (108 usd of music, 5760 usd of video): an expert generates one loopable segment and
+    # repeats it at assembly (`expert_r15.ambient_segment_s`, `checklist.long_ambient_loop`).
+    from studio import expert_r15 as x15
+
+    ambient = [s for s in steps if s in AMBIENT_MAKERS]
+    if ambient and not set(steps) & SPEECH_CONSUMERS and "speech" not in outputs:
+        audio_s = x15.ambient_segment_s(spec, text, audio=True)
+        if audio_s is not None and acc.prior("ambient_loop", "ambient_segment_loop"):
+            said = " ".join((str(text or ""), *map(str, spec.conditions)))
+            video_s = loop_seconds(spec, text) if LOOP_LENGTH.search(said) else None
+            video_s = video_s or x15.ambient_segment_s(spec, text, audio=False) or float(x15.AMBIENT_VIDEO_SEGMENT_S)
+            for s in ambient:
+                seg = audio_s if s in AMBIENT_AUDIO_MAKERS else video_s
+                step_seconds[s] = (seg, seg)
+                counts[s] = 1
+                notes[s] = (x15.NOTE_AMBIENT_AUDIO if s in AMBIENT_AUDIO_MAKERS else x15.NOTE_AMBIENT_VIDEO)[0].format(
+                    n=f"{seg:g}"
+                )
+                if s not in shared:
+                    shared.append(s)
+            if "генерация_изображения" in steps:
+                counts["генерация_изображения"] = 1
+            acc.assembly.append(x15.ASSEMBLY_AMBIENT)
+
+    # --- round 15: anonymising bystanders in the customer's footage --------------------------
+    method = x15.anonymise_method(spec, text)
+    if method and "video" in inputs and set(steps) & ANONYMISE_ROUTES:
+        if method == "swap" and acc.prior("anonymise_bystanders", "anonymise_face_swap"):
+            steps = [s for s in steps if s not in ANONYMISE_ROUTES]
+            steps = ["генерация_изображения", "замена_персонажа", *steps]
+            counts["генерация_изображения"] = 1
+            notes["генерация_изображения"] = x15.NOTE_SYNTHETIC_FACE[0]
+            notes["замена_персонажа"] = x15.NOTE_ANON_SWAP[0]
+            avoid["замена_персонажа"] = x15.PERSON_REPLACE_LINKS
+            acc.assembly.append(x15.ASSEMBLY_ANON_BLUR_ALT)
+        elif method == "blur" and acc.prior("anonymise_bystanders", "anonymise_blur"):
+            steps = [s for s in steps if s not in ANONYMISE_ROUTES]
+            for s in ANONYMISE_ROUTES:
+                notes.pop(s, None)
+            anonymise_assembly = (x15.ASSEMBLY_ANON_BLUR[0],)
+            acc.assembly.append(x15.ASSEMBLY_ANON_BLUR)
+
     # --- zero budget ------------------------------------------------------------------
     # Own GPU already named — the plan is on the free route; nothing to add.
     if not spec.self_host and (
@@ -779,6 +831,8 @@ def rewrite(spec: "bs.Spec", route: "bs.Маршрут", text: str = "") -> Appl
     if tasks & {"restore", "colorize"} or steps != list(route.шаги):
         steps = order(steps)
     new_route = replace(route, шаги=tuple(steps), пометки=notes, штук=counts)
+    if anonymise_assembly:
+        new_route = replace(new_route, сборка=tuple(dict.fromkeys((*new_route.сборка, *anonymise_assembly))))
     return Applied(
         route=new_route,
         recipes=tuple(acc.recipes),

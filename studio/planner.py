@@ -233,6 +233,7 @@ from studio import brief_spec as bs
 from studio import clarify
 from studio import duration as dur
 from studio import edit_intent as ei
+from studio import expert_r15 as x15
 from studio import endpoints as ep
 from studio import l10n
 from studio import factaxis as fa
@@ -7247,6 +7248,20 @@ EDIT_METHOD_NOTES: dict[str, str] = {
 }
 
 
+#: Пятнадцатый круг: эндпоинт замены ПЕРСОНАЖА на правке, где цель — предмет.
+EDIT_PERSON_ONLY_NOTE = "правка: эндпоинт меняет персонажа (фигуру по ведущему видео), а цель правки — предмет"
+#: Звенья идентификатора, называющие замену персонажа целиком (`expert_r15.PERSON_REPLACE_LINKS`).
+PERSON_REPLACE_LINKS = x15.PERSON_REPLACE_LINKS
+
+
+def персонажная_замена(что: "ep.Endpoint | str") -> bool:
+    """Эндпоинт меняет персонажа целиком (по функции реестра или по звену идентификатора)."""
+    if not isinstance(что, str) and ep.CHARACTER_REPLACE in (что.functions or ()):
+        return True
+    тексты = (что,) if isinstance(что, str) else (что.model, *что.ids)
+    return any(re.search(PERSON_REPLACE_LINKS, т, re.I) for т in тексты)
+
+
 def продление_в(нужно: Sequence[str]) -> bool:
     return ep.EDIT_EXTEND in нужно
 
@@ -7313,8 +7328,14 @@ def отбор_правки(
     написание: Mapping[str, str],
     реестр: "ep.Registry",
     названы: Sequence[str],
+    *,
+    person_edit: bool = True,
 ) -> dict[str, Any]:
     """Шаг `правка_видео`: оставить только эндпоинты, которые ДЕЛАЮТ названную правку.
+
+    Пятнадцатый круг: цель правки — ПРЕДМЕТ (вставить товар в кадр, заменить машину), а не
+    человек (`person_edit` ложно) — замена персонажа (`ep.CHARACTER_REPLACE`: Wan Animate
+    replace) не кандидат: она меняет фигуру по ведущему видео, а не ставит предмет в сцену.
 
     Интеграция шестого круга (валидатор: «замена неба» выбрала продление
     `ltx-2.3-extend`, «смена кадра» — `wan-3.0-r2v`). Что эндпоинт правит —
@@ -7337,6 +7358,10 @@ def отбор_правки(
             del по_модели[ключ]
             continue
         умеет = ep.edit_intents(что)
+        if not person_edit and персонажная_замена(что):
+            отсеяно_не_та[написание.get(ключ, ключ)] = EDIT_PERSON_ONLY_NOTE
+            del по_модели[ключ]
+            continue
         if not set(нужно) <= умеет:
             отсеяно_не_та[написание.get(ключ, ключ)] = (
                 f"правка: умеет {', '.join(sorted(умеет)) or 'не названо'}, а нужно {', '.join(нужно)}"
@@ -7533,6 +7558,7 @@ def candidates_for(
     upscale_target: tuple[int, int] | None = None,
     source_frame: tuple[int, int] | None = None,
     alpha_wanted: bool = True,
+    person_edit: bool = True,
 ) -> "Кандидаты":
     """Кандидаты на операцию: модели, о которых база говорит СЛОВАМИ ОПЕРАЦИИ.
 
@@ -7752,7 +7778,7 @@ def candidates_for(
                     f"{REGISTRY_MATCH_LABEL}: {'/'.join(set(работы) & set(узел.functions))} ({узел.evidence})",
                 )
 
-    правка = отбор_правки(op, по_модели, написание, реестр, edit_intents) if работы else {}
+    правка = отбор_правки(op, по_модели, написание, реестр, edit_intents, person_edit=person_edit) if работы else {}
 
     wanted = wanted if wanted is not None else dur.Запрос(None, "длительность не спрашивали")
     найдены: list[Candidate] = []
@@ -12518,7 +12544,7 @@ def plan(
             кадр,
             today,
             шаг_прогон,
-            sorted(есть),
+            sorted(есть | x15.made_inputs(op.name, [оп.name for оп in операции], ARTEFACT_IMAGE)),
             языки if op.name in SPEECH_STEPS else (),
             use,
             нужда_шага(
@@ -12558,6 +12584,7 @@ def plan(
             upscale_target=кадр_выдачи(),
             source_frame=bs.source_frame(понято),
             alpha_wanted=rc.wants_alpha(понято, brief),
+            person_edit=x15.person_edit(понято, brief),
         )
 
     # СКОЛЬКО ШОТОВ (2026-10-15, четвёртый круг). Явное число; «each» над N;
