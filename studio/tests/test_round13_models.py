@@ -220,10 +220,14 @@ class TextEditRouting(unittest.TestCase):
             spec = _spec({"task": "face-replace", "inputs": [{"kind": "video", "owned": True}], "outputs": ["video"], "people": []})
             self.assertEqual(ei.reroute(spec, brief)[0].task, "face-replace")
 
-    def test_a_person_in_spec_keeps_its_task(self) -> None:
+    def test_a_person_in_spec_does_not_decide_the_target(self) -> None:
+        # Round 14 (owner policy): the edit TARGET decides — a person in the shot does not turn a sign
+        # edit into a character swap (`test_round14_models.TextTargetDecides`); a face named as the
+        # object of the edit still keeps the task.
         spec = _spec({"task": "face-replace", "inputs": [{"kind": "video", "owned": True}], "outputs": ["video"],
                       "people": [{"name": "me", "real": True, "public_figure": False, "consent": "stated", "claim": "none"}]})
-        self.assertEqual(ei.reroute(spec, "change the text on the sign")[0].task, "face-replace")
+        self.assertEqual(ei.reroute(spec, "change the text on the sign")[0].task, "video-edit")
+        self.assertEqual(ei.reroute(spec, "change the text on the sign and swap my face onto the host")[0].task, "face-replace")
 
     def test_only_on_video_and_only_listed_tasks(self) -> None:
         фото = _spec({"task": "face-replace", "inputs": [{"kind": "image", "owned": True}], "outputs": ["image"], "people": []})

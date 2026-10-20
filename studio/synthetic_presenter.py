@@ -19,8 +19,8 @@ THE NARROW DOOR, ALL STRUCTURED (no word opens it):
   outlet) and its brand is not one of the broadcasters `broadcast_marks`
   names; no claim fabricated or parody;
 * the only refusals are the claims rule `news_brand` on those own-brand claims
-  — the text screen's own bans, any other policy ban, a known broadcaster in
-  the brief, and the broadcast-marks rule (`studio/broadcast_marks.py`, run
+  — the text screen's own bans, any other policy ban, a known broadcaster or
+  words of invented news (`FABRICATED_WORDS`) in the brief, and the broadcast-marks rule (`studio/broadcast_marks.py`, run
   before this door) all stay.
 
 Then the claim refusal is lifted for those claims, the decision is recorded as
@@ -32,6 +32,7 @@ that refuse them.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Mapping, Sequence
 from typing import Any
 
@@ -43,6 +44,15 @@ NEWS_TYPES: frozenset[str] = frozenset({"news", "real_event"})
 #: The one claims-policy rule this door lifts (a real news brand read as imitation).
 LIFTED_RULE = "news_brand"
 RULE_ID = "synthetic_presenter_own_programme"
+
+#: The brief itself says the content is invented (the caller's `fabricated: false` notwithstanding): the
+#: door stays shut. "Fictional" is NOT here — the presenter is fictional by definition.
+FABRICATED_WORDS = re.compile(
+    r"\bfake\b|fabricat\w*|made-?up (?:news|story|event|report|bulletin)|\bhoax|never happened|did ?n[o']t happen"
+    r"|parod\w*|satir\w*|spoof\w*|prank\w*|фейк\w*|выдуманн\w* (?:новост|событи|сюжет|репортаж|происшеств)"
+    r"|не было на самом деле|которого не было|которой не было|пароди\w*|сатир\w*|розыгрыш\w*|поддельн\w*",
+    re.I,
+)
 
 DECISION_ALLOW = "allow"
 DECISION_NONE = "none"
@@ -96,7 +106,7 @@ def decide(
         return нет
     if text_screen.get("banned") or text_screen.get("injection"):
         return нет
-    if broadcast_marks.BROADCASTER.search(str(brief or "")):
+    if broadcast_marks.BROADCASTER.search(str(brief or "")) or FABRICATED_WORDS.search(str(brief or "")):
         return нет
     if not synthetic_people(_list(spec.get("people"))):
         return нет

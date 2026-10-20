@@ -40,7 +40,7 @@ PN = "studio/planner.py"
 SV = "studio/mcp/server.py"
 
 _OPS = 'UPSCALE_OPS: frozenset[str] = frozenset({"апскейл", "апскейл_изображения"})'
-_ORDER = "REACH_ORDER: dict[str, int] = {REACH_YES: 0, REACH_UNKNOWN: 1, REACH_BELOW: 2}"
+_ORDER = "REACH_ORDER: dict[str, int] = {REACH_YES: 0, REACH_UNTESTED: 1, REACH_UNKNOWN: 2, REACH_BELOW: 3}"
 _CAP = 'CAP_ATTRIBUTES: frozenset[str] = frozenset({"max_resolution", "max_output_resolution", "output_resolution_max"})'
 _FACTOR = 'FACTOR_ATTRIBUTES: frozenset[str] = frozenset({"upscale_factor_max", "max_upscale_factor"})'
 _TASKS = 'TEXT_EDIT_TASKS: frozenset[str] = frozenset({"face-replace", "edit", "video-edit"})'
@@ -54,7 +54,7 @@ MUTANTS: tuple[tuple[str, str, str, str], ...] = (
     (UR, _OPS, _OPS.replace('"апскейл", ', ""), "апскейл видео без предела выхода"),
     (UR, _OPS, _OPS.replace('"апскейл_изображения"}', '"апскейл_изображения", "генерация_видео"}'),
      "предел выхода судит генератор"),
-    (UR, _ORDER, _ORDER.replace("REACH_YES: 0, REACH_UNKNOWN: 1", "REACH_YES: 1, REACH_UNKNOWN: 0"), "молчание выше записи"),
+    (UR, _ORDER, _ORDER.replace("REACH_YES: 0, REACH_UNTESTED: 1, REACH_UNKNOWN: 2", "REACH_YES: 2, REACH_UNTESTED: 1, REACH_UNKNOWN: 0"), "молчание выше записи"),
     (UR, _CAP, _CAP.replace('"max_resolution", ', ""), "предел выхода не читается"),
     (UR, _FACTOR, _FACTOR.replace('"upscale_factor_max", ', ""), "множитель не читается"),
     (UR, "        if до >= target_short:", "        if до > target_short:", "ровно заказанный кадр — «ниже»"),
@@ -69,9 +69,8 @@ MUTANTS: tuple[tuple[str, str, str, str], ...] = (
     (PN, "            source_frame=bs.source_frame(понято),", "            source_frame=None,", "кадр исходника не доходит"),
     # --- надпись в видео
     (EI, _TASKS, _TASKS.replace('"face-replace", ', ""), "надпись под заменой лица остаётся заменой"),
-    (EI, "    return bool(TEXT_EDIT_WORDS.search(низ)) and not PERSON_WORDS.search(низ)",
+    (EI, "    return bool(TEXT_EDIT_WORDS.search(низ)) and not PERSON_EDIT.search(низ)",
      "    return bool(TEXT_EDIT_WORDS.search(низ))", "слово о лице не держит задачу"),
-    (EI, "    if len(getattr(spec, \"people\", ()) or ()) > 0:\n        return False\n", "", "человек в spec не держит задачу"),
     (EP, "    EDIT_EXTEND,\n    EDIT_REPLACE_TEXT,\n)", "    EDIT_EXTEND,\n)", "правка надписи не допустима"),
     (PN, 'TEXT_EDIT_CONDITION = "text_legibility"', 'TEXT_EDIT_CONDITION = "hands"', "читаемость надписи не в отборе"),
     # --- правила чек-листа

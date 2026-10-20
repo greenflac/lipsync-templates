@@ -1040,6 +1040,11 @@ def parse_spec(raw: Mapping[str, Any] | None) -> tuple[Spec, list[str]]:
         _свой_запуск_spec(raw["self_host"], поля, ошибки)
     if raw.get("people") is not None:
         поля["people"] = _люди_spec(raw["people"], ошибки)
+    if raw.get("claims") is not None:
+        # Четырнадцатый круг: заявления доходят до заметок плана (синтетический
+        # ведущий своей программы, `checklist.synthetic_presenter_disclosure`).
+        # Решают их политика людей и `claims_policy` — здесь только перенос.
+        поля["claims"] = tuple(dict(з) for з in _список(raw["claims"]) if isinstance(з, Mapping))
     if raw.get("conditions") is not None:
         if any(not isinstance(у, str) for у in _список(raw["conditions"])):
             ошибки.append('spec.conditions: a list of short phrases, e.g. ["profile face", "logo legible"]')

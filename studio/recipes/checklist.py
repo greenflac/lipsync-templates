@@ -2882,7 +2882,7 @@ W_RELIGHT = re.compile(
     r"|(?:match|unify|equali[sz]e|even out|consistent|same|uniform|continuous|harmoni[sz]e)\w* (?:\w+ ){0,3}?(?:light|lighting|illumination)\b"
     r"|(?:light|lighting|illumination) (?:\w+ ){0,3}?(?:match|consistent|the same|uniform|differs|is different|varies|changes between)"
     r"|golden[- ]hour (?:light|lighting|look)|(?:make|turn) (?:it|the scene|the shot|the clip) (?:look )?(?:like )?(?:sunset|golden hour|evening|morning) light"
-    r"|(?:одинаков|един|ровн|согласованн|похож)\w* (?:\w+ )?(?:свет|освещени)|(?:свет|освещени)\w* (?:\w+ ){0,2}?(?:одинаков|совпада|разн|отлича|скач|прыга|подогна|выровня)"
+    r"|(?:одинаков|един|ровн|согласованн|похож)\w* (?:\w+ )?(?:свет|освещени)|(?:свет|освещени)\w* (?:\w+ ){0,3}?(?:одинаков|совпада|разн|отлича|скач|прыга|подогна|выровня)"
     r"|(?:подогна|выровня|уравня|свест)\w* (?:\w+ )?(?:свет|освещени)|свет\w* (?:как|под) (?:в|на) (?:соседн|другом|первом)",
     re.I,
 )

@@ -62,9 +62,9 @@ MUTANTS: tuple[tuple[str, str, str, str], ...] = (
      "    над_снимком = False", "раскраска фото после реставрации уходит в видео"),
     (BS, '        над_своими = bool(set(работы) & (MATERIAL_TASKS | {"colorize"})) and "photo" in spec.inputs',
      "        над_своими = False", "одно фото без count снова спрашивает число"),
-    (BS, '        if "video" not in входы and "photo" in входы and "video" not in выходы:',
-     '        if "video" not in входы and "audio" in входы and "video" not in выходы:', "замена лица на снимке спрашивает видео"),
-    (BS, '        if "video" not in входы and "photo" in входы and "video" not in выходы:',
+    (BS, '        if "photo" in входы and "video" not in выходы and ("video" not in входы or "image" in выходы):',
+     '        if "audio" in входы and "video" not in выходы and ("video" not in входы or "image" in выходы):', "замена лица на снимке спрашивает видео"),
+    (BS, '        if "photo" in входы and "video" not in выходы and ("video" not in входы or "image" in выходы):',
      '        if "photo" in входы:', "видео-замена лица уходит в картиночную"),
     # --- перенос движения -------------------------------------------------------------
     (BS, '        if "video" in входы and "photo" in входы:\n            # ПЕРЕНОС',
