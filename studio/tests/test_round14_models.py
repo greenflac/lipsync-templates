@@ -310,7 +310,9 @@ class SyntheticPresenter(unittest.TestCase):
         смешанные = {**spec, "people": [SYN, {"name": "Ann", "real": None}]}
         self.assertEqual(sp.decide(смешанные, policy, screened, {})["decision"], sp.DECISION_NONE)
         for claims in ([{**OWN_REAL, "own_brand": False}], [{k: v for k, v in OWN_REAL.items() if k != "fabricated"}],
-                       [{**OWN_REAL, "type": "product"}], [{**OWN_REAL, "brand": "Sky News"}]):
+                       [{**OWN_REAL, "type": "product"}], [{**OWN_REAL, "brand": "Sky News"}],
+                       [OWN_REAL, {"type": "news", "fabricated": False, "real_brand": True, "own_brand": False,
+                                   "brand": "Metro Daily"}]):
             with self.subTest(claims=claims):
                 self.assertEqual(sp.decide({**spec, "claims": claims}, policy, screened, {})["decision"], sp.DECISION_NONE)
 
