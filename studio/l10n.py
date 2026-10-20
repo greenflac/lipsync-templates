@@ -430,6 +430,7 @@ EN: tuple[tuple[str, str], ...] = (
     (r"применимость закрыта (\d+) относящимися строк\(ами\), не опровергнута", r"applicability covered by \1 relevant row(s), not refuted"),
     (r"способность закрыта (\d+) относящимися строк\(ами\)", r"capability covered by \1 relevant row(s)"),
     (r", не опровергнута", ", not refuted"),
+    (r"(\d+) шаг\(ов\) не опровергнуты ни одним из (\d+) классов", r"\1 step(s) refuted by none of the \2 classes"),
     (r"применимость: нет свидетельства", "applicability: no evidence"),
     (r"нечем закрывать требование: ни одной размеченной строки", "nothing to cover the requirement: not one labelled row"),
     (r"\[со звуком\]", "[with audio]"),

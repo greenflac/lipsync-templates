@@ -115,6 +115,8 @@ EDIT_TARGETS: tuple[str, ...] = ("text", "person", "object", "background", "sky"
 CONSISTENCY_AXES: tuple[str, ...] = ("light", "style", "character")
 #: Пятнадцатый круг: поля записи выхода (`spec.outputs[]` объектом).
 OUTPUT_ITEM_FIELDS: tuple[str, ...] = ("kind", "loop", "tileable", "alpha")
+#: Шестнадцатый круг (`expert_r16.spatial_audio`): флаг выхода-звука — пространственная сдача.
+OUTPUT_ITEM_FLAGS_R16: tuple[str, ...] = ("spatial",)
 
 #: Все поля `spec`, которые плановщик принимает. Неизвестное поле — ошибка, а
 #: не молчание: вызывающий, написавший `durations`, должен узнать, что его не
@@ -555,6 +557,8 @@ class Spec:
     tileable: bool | None = None
     #: Выход с прозрачным фоном (альфа-канал: PNG, WebM, ProRes 4444) — `outputs[].alpha`.
     alpha: bool | None = None
+    #: Шестнадцатый круг: звук сдаётся ПРОСТРАНСТВЕННЫМ (амбисоника / бинаурал для VR и 360) — `outputs[].spatial`.
+    spatial: bool | None = None
     #: Записи выходов, как названы объектами: {kind, loop?, tileable?}.
     output_items: tuple[Mapping[str, Any], ...] = ()
     #: Самый длинный НЕПРЕРЫВНЫЙ дубль, секунды (без склейки внутри).
@@ -1013,12 +1017,12 @@ def _выходы_spec(raw: Any, поля: dict[str, Any], ошибки: list[st
     """
     виды: list[str] = []
     записи: list[dict[str, Any]] = []
-    флаги: dict[str, list[bool]] = {ключ: [] for ключ in OUTPUT_ITEM_FIELDS[1:]}
+    флаги: dict[str, list[bool]] = {ключ: [] for ключ in (*OUTPUT_ITEM_FIELDS[1:], *OUTPUT_ITEM_FLAGS_R16)}
     плохие: list[str] = []
     for i, выход in enumerate(_список(raw)):
         запись: dict[str, Any] = {}
         if isinstance(выход, Mapping):
-            лишние = set(выход) - set(OUTPUT_ITEM_FIELDS)
+            лишние = set(выход) - set(OUTPUT_ITEM_FIELDS) - set(OUTPUT_ITEM_FLAGS_R16)
             if лишние:
                 ошибки.append(
                     f"spec.outputs[{i}]: unknown field(s) {', '.join(sorted(map(str, лишние)))} "
@@ -2785,10 +2789,6 @@ def говорят_в_кадре(spec: Spec, текст: str = "") -> bool:
     решено = говорящий_по_spec(spec)
     if решено is not None:
         return решено
-    # ШЕСТНАДЦАТЫЙ КРУГ: голос за кадром НАЗВАН полем (`spec.audio = "voiceover"`) — рассказчик
-    # не в кадре, губ не двигает никто; слова брифа тогда не читаются (`expert_r16.voiceover_named`).
-    if x16.voiceover_named(spec):
-        return False
     сказано = " ".join(str(у) for у in (*spec.conditions, текст) if у)
     if ON_SCREEN_SPEAKER.search(сказано):
         return True
@@ -3085,6 +3085,7 @@ def with_defaults(spec: Spec, ролик: bool, текст: str = "") -> Spec:
     if (
         x16.key_visual_words(spec, текст)
         and not поля["characters"]
+        and not говорят_в_кадре(spec, текст)
         and int(spec.shots or 0) >= x16.KEY_VISUAL_SHOTS_MIN
         and x16.key_visual_series(replace(spec, consistency=("style",)))
     ):
@@ -3354,6 +3355,10 @@ OPTIONAL_HELP: dict[str, str] = {
     ),
     "outputs[].loop": "true when the output is a seamless loop (last frame flows into the first): outputs=[{\"kind\": \"video\", \"loop\": true}]",
     "outputs[].tileable": "true when the output is a seamless tileable texture: outputs=[{\"kind\": \"image\", \"tileable\": true}]",
+    "outputs[].spatial": (
+        "true when the SOUND is delivered spatial (ambisonics / binaural for VR, 360 video, head-tracked playback): "
+        "outputs=[{\"kind\": \"sfx\", \"spatial\": true}]"
+    ),
     "outputs[].alpha": (
         "true when the output must have a TRANSPARENT background (alpha channel: PNG, WebM, ProRes 4444); false "
         "for an opaque frame (a hologram / transparent-LED display wants black, not alpha)"

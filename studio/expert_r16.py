@@ -21,8 +21,8 @@ when the field is absent; a named field beats the words both ways (docs/MCP_AGEN
    cheapest adequate candidate when the chosen one costs more than `BATCH_CHEAP_RATIO`x
    (`batch_cheap_applies`), unless `objective: quality`.
 6. SERIES — a narrated multi-shot series without characters is made from key visuals
-   (`key_visual_series`: text-to-image per shot, then image-to-video); a voice-over named
-   by `spec.audio` is never lip-synced (`voiceover_named`).
+   (`key_visual_series`: text-to-image per shot, then image-to-video); a narrator off screen
+   ("за кадром", "рассказчик", `people[].on_screen: false`) is never lip-synced.
 7. DRAWN DUBS — dubbing anime / cartoon footage adapts the script to the existing mouth
    flaps; visual lip sync is an OPTIONAL upgrade priced apart from the plan
    (`optional_lips`), required only when `spec.lipsync` is true.
@@ -211,11 +211,6 @@ def key_visual_words(spec: Any, text: str = "") -> bool:
     if "speech" not in set(spec.outputs):
         return False
     return bool(W_SERIES_EXPLAINER.search(" ".join((str(text or ""), *map(str, spec.conditions)))))
-
-
-def voiceover_named(spec: Any) -> bool:
-    """`spec.audio = 'voiceover'` named by the caller: the voice is off screen, nobody's lips move."""
-    return getattr(spec, "audio", None) == "voiceover" and dict(getattr(spec, "source", {}) or {}).get("audio") == "spec"
 
 
 # --- 7. drawn dubs --------------------------------------------------------------------------

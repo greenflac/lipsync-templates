@@ -1383,7 +1383,9 @@ def plan_pipeline(
                   character swap, even with task face-replace).
         outputs   items may be objects: {kind, loop?: bool, tileable?: bool,
                   alpha?: bool} — loop = a seamless loop; tileable = a
-                  seamless texture; alpha = a transparent background.
+                  seamless texture; alpha = a transparent background; a sound
+                  output also takes spatial?: bool = delivered spatial
+                  (ambisonics / binaural for VR / 360).
         people[].on_screen / people[].speaks  true | false: visible in the
                   frame / speaks or sings. Both true on a generated clip = lip
                   sync on that speaker (series dialogue, a singer on camera);
