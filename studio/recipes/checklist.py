@@ -3985,6 +3985,264 @@ RULES_R16: tuple[Rule, ...] = (
 
 RULES_LIST = RULES_LIST + RULES_R16
 
+# --- round 17: specialist knowledge (`studio/expert_r17.py`) -------------------------------
+#
+# Each trigger reads the spec fields first (`accessibility`, `delivery.*`, `domain`,
+# `training_use`, `people[].minor`, `inputs[].fps`, `fps`, `edit` / `edit_target`, the `mul`
+# language tag) and the EN/RU words only when the field is absent.
+
+S_WCAG_EXTENDED_AD = "https://www.w3.org/WAI/WCAG22/Understanding/extended-audio-description-prerecorded.html"
+S_ADA_WEB_RULE = "https://www.ada.gov/resources/2024-03-08-web-rule/"
+S_EAA = "https://eur-lex.europa.eu/eli/dir/2019/882/oj"
+S_WHISPER_CARD = "https://huggingface.co/openai/whisper-large-v3"
+S_DEEPGRAM_CODESWITCH = "https://developers.deepgram.com/docs/multilingual-code-switching"
+S_OPENAI_DATA = "https://platform.openai.com/docs/guides/your-data"
+S_FAL_RETENTION = "https://docs.fal.ai/model-apis/data-retention"
+S_ELEVEN_ZRM = "https://elevenlabs.io/docs/developers/resources/zero-retention-mode"
+S_PYSCENEDETECT = "https://github.com/Breakthrough/PySceneDetect"
+S_TRANSNETV2 = "https://github.com/soCzech/TransNetV2"
+S_RIFE = "https://github.com/hzwer/ECCV2022-RIFE"
+S_BS_ROFORMER = "https://arxiv.org/abs/2309.02612"
+S_MSST = "https://github.com/ZFTurbo/Music-Source-Separation-Training"
+S_RVM = "https://github.com/PeterL1n/RobustVideoMatting"
+S_VIDEO_DEPTH = "https://github.com/DepthAnything/Video-Depth-Anything"
+S_SAM2 = "https://github.com/facebookresearch/sam2"
+
+
+def _audio_description_track(c: Ctx) -> bool:
+    from studio import expert_r17 as x17
+
+    return x17.audio_description(c.spec, c.text)
+
+
+def _code_switching(c: Ctx) -> bool:
+    from studio import expert_r17 as x17
+
+    return bool(c.jobs & (SPEECH_MAKE | {"transcribe", "captions", "shorts", "lipsync", "avatar"})) and x17.code_switching(
+        c.spec, c.text
+    )
+
+
+def _provider_data_terms(c: Ctx) -> bool:
+    """Client / personal / confidential uploads to a hosted API; the confidential transcription caveat covers its own."""
+    from studio import expert_r17 as x17
+
+    return bool(c.steps or c.jobs) and not _confidential_transcription(c) and x17.provider_data_terms(c.spec, c.text)
+
+
+def _highlight_selection(c: Ctx) -> bool:
+    from studio import expert_r17 as x17
+
+    return x17.highlight_selection(c.spec, c.text)
+
+
+def _standards_conversion(c: Ctx) -> bool:
+    from studio import expert_r17 as x17
+
+    return x17.standards_conversion(c.spec, c.text)
+
+
+def _stem_separation(c: Ctx) -> bool:
+    from studio import expert_r17 as x17
+
+    return x17.stem_separation(c.spec, c.text)
+
+
+def _background_blur(c: Ctx) -> bool:
+    from studio import expert_r17 as x17
+
+    return x17.background_blur(c.spec, c.text)
+
+
+RULES_R17: tuple[Rule, ...] = (
+    _r(
+        "audio_description_track",
+        [],
+        "audio description is its own production, not a caption track: write the AD script into the natural gaps "
+        "in dialogue (never over speech — describe what is ONLY in the picture: on-screen text, slides, actions, "
+        "who appears), and where the gaps are too short use extended audio description (WCAG 2.2 SC 1.2.7, AAA: the "
+        "picture pauses while the description plays); voice it with a voice clearly distinct from the cast / "
+        "presenter (a neutral stock TTS voice, never a clone of the speaker); duck the programme a few dB under "
+        "each description and restore it after; deliver AD as a SEPARATE stem and as an extra audio language "
+        "track (the 'described' track of the player / HLS, e.g. 'eng-ad'), plus a mixed described version; "
+        "captions (SC 1.2.2) and the transcript stay separate deliverables; required at level AA (SC 1.2.5) for "
+        "ADA Title II public bodies (WCAG 2.1 AA rule, 2024) and in scope of the European Accessibility Act "
+        "(June 2025); have a blind or low-vision reviewer check it",
+        "тифлокомментарий — отдельная работа, а не дорожка субтитров: текст описания пишется в естественные паузы "
+        "речи (никогда поверх речи — описывается то, что есть ТОЛЬКО в картинке: текст в кадре, слайды, действия, "
+        "кто появляется), а где пауз не хватает — расширенный тифлокомментарий (WCAG 2.2, критерий 1.2.7, уровень "
+        "AAA: картинка ставится на паузу, пока звучит описание); читает его голос, явно отличный от актёров и "
+        "ведущего (нейтральный стоковый голос синтеза, не клон говорящего); программа приглушается на несколько "
+        "дБ под каждым описанием и возвращается после; тифлокомментарий сдаётся ОТДЕЛЬНЫМ стемом и отдельной "
+        "звуковой дорожкой-языком (дорожка с описанием в плеере / HLS, например eng-ad), плюс сведённая версия; "
+        "субтитры (критерий 1.2.2) и расшифровка — отдельные материалы; уровень AA (критерий 1.2.5) обязателен "
+        "для госорганов по ADA раздел II (правило WCAG 2.1 AA, 2024) и входит в Европейский акт о доступности "
+        "(июнь 2025); проверить должен незрячий или слабовидящий рецензент",
+        R,
+        _audio_description_track,
+        ("accessibility", "inputs", "outputs"),
+        "",
+        (S_WCAG_AD, S_WCAG_EXTENDED_AD, S_ADA_WEB_RULE, S_EAA),
+    ),
+    _r(
+        "code_switching_speech",
+        [],
+        "code-switching (two languages inside one sentence): ASR that fixes one language per file or per 30 s "
+        "window (Whisper detects the language from the first 30 s and transcribes the rest as that language) "
+        "mis-spells or silently translates the other language's words — use a model with a code-switching mode "
+        "(Deepgram Nova-3 language=multi, faster-whisper multilingual=True for per-segment detection) or pass "
+        "both languages as hints, and keep a language tag per segment in the transcript so captions and "
+        "translation treat each span right; for TTS use a multilingual model and voice and mark each span's "
+        "language (SSML lang where the engine supports it) — a monolingual voice reads the other language with "
+        "the wrong phonetics; it is ONE mixed track, not one per language; a bilingual reviewer checks every "
+        "switch, names and numbers",
+        "переключение языков внутри фразы (code-switching): распознавание, которое фиксирует один язык на файл "
+        "или на окно 30 с (Whisper определяет язык по первым 30 с и дальше пишет всё на нём), коверкает или "
+        "молча переводит слова второго языка — берите модель с режимом смешанной речи (Deepgram Nova-3 "
+        "language=multi, faster-whisper multilingual=True — язык на каждый сегмент) или передавайте оба языка "
+        "подсказкой, и храните метку языка у каждого сегмента расшифровки, чтобы субтитры и перевод обращались с "
+        "каждым куском правильно; для синтеза — многоязычная модель и голос, язык каждого куска помечается (SSML "
+        "lang, где движок это умеет) — одноязычный голос читает второй язык с чужой фонетикой; это ОДНА "
+        "смешанная дорожка, а не по дорожке на язык; каждое переключение, имена и числа проверяет двуязычный "
+        "рецензент",
+        E,
+        _code_switching,
+        ("languages", "conditions"),
+        "",
+        (S_WHISPER_CARD, S_DEEPGRAM_CODESWITCH, S_FASTER_WHISPER),
+    ),
+    _r(
+        "provider_data_terms",
+        [],
+        "client, personal or confidential footage goes to a third-party model API: read each provider's data "
+        "terms BEFORE the first upload and get the client's written permission (NDA) — retention (OpenAI API: "
+        "abuse-monitoring logs up to 30 days by default, zero data retention only on approval; fal: request "
+        "history and CDN files are kept and CDN URLs are public by default — send X-Fal-Store-IO: 0 and an object "
+        "lifecycle / private ACL, ZDR by contract; ElevenLabs: history kept by default, Zero Retention Mode is "
+        "enterprise-only and does not cover dubbing), training on your inputs (off by default on the OpenAI API; "
+        "check every other provider's opt-out), the processing region (data residency) and a signed DPA (GDPR "
+        "art. 28) with each processor; faces and voices of identifiable people are personal data (biometric when "
+        "used to identify, art. 9), children's doubly so; delete uploads and outputs after delivery (fal delete "
+        "payloads API, ElevenLabs delete generations); a model trained on outputs must respect the provider's "
+        "output terms; when the terms do not fit, run open weights on your own GPU",
+        "материал клиента, персональный или конфиденциальный уходит во внешний API моделей: условия обработки "
+        "данных каждого провайдера читаются ДО первой загрузки, и нужно письменное разрешение клиента (NDA) — "
+        "хранение (OpenAI API: журналы контроля злоупотреблений до 30 дней по умолчанию, нулевое хранение — "
+        "только по одобрению; fal: история запросов и файлы CDN хранятся, а ссылки CDN по умолчанию публичные — "
+        "заголовок X-Fal-Store-IO: 0 и срок жизни / закрытый доступ к файлам, нулевое хранение — по договору; "
+        "ElevenLabs: история хранится по умолчанию, режим нулевого хранения — только для корпоративных клиентов "
+        "и на дубляж не распространяется), обучение на ваших данных (в API OpenAI выключено по умолчанию; у "
+        "остальных провайдеров проверьте отказ), регион обработки (резидентность данных) и подписанный DPA (GDPR "
+        "ст. 28) с каждым обработчиком; лица и голоса узнаваемых людей — персональные данные (биометрические, "
+        "когда служат опознанию, ст. 9), детские — вдвойне; загрузки и результаты удаляются после сдачи (API "
+        "удаления у fal, удаление генераций у ElevenLabs); модель, обученная на результатах, обязана соблюдать "
+        "условия провайдера о результатах; если условия не подходят — открытые веса на своём GPU",
+        R,
+        _provider_data_terms,
+        ("inputs", "domain", "training_use", "people", "self_host"),
+        "",
+        (S_OPENAI_DATA, S_FAL_RETENTION, S_ELEVEN_ZRM, S_GDPR),
+    ),
+    _r(
+        "highlight_selection",
+        [],
+        "picking moments for a recap or clips: detect the shot changes first (PySceneDetect ContentDetector / "
+        "AdaptiveDetector, TransNet V2) so every cut lands on a shot boundary, rank candidate moments from the "
+        "timed transcript (story beats, punchlines, reveals, speaker changes) and audio energy, then a PERSON "
+        "picks and orders them — an automatic pick misses context and spoils twists; nothing is regenerated, "
+        "the footage is cut; reframe to the delivery aspect with subject / face tracking (crop, not outpaint), "
+        "keep each moment's own sound under the voice-over, and check music and talent clearances for reuse",
+        "выбор моментов для пересказа или клипов: сначала находятся смены планов (PySceneDetect ContentDetector / "
+        "AdaptiveDetector, TransNet V2), чтобы каждая склейка ложилась на границу плана, кандидаты ранжируются по "
+        "расшифровке с таймингами (повороты сюжета, шутки, раскрытия, смена говорящих) и энергии звука, а "
+        "выбирает и выстраивает их ЧЕЛОВЕК — автоматический выбор теряет контекст и выдаёт развязки; ничего не "
+        "генерируется заново, исходник режется; перекадрирование под формат сдачи — с ведением объекта или лица "
+        "(кадрирование, не дорисовка), свой звук момента остаётся под закадровым голосом, права на музыку и "
+        "актёров для повторного использования проверяются",
+        E,
+        _highlight_selection,
+        ("task", "inputs"),
+        "",
+        (S_PYSCENEDETECT, S_TRANSNETV2),
+    ),
+    _r(
+        "standards_conversion",
+        [],
+        "frame-rate standards conversion (25 <-> 29.97, 23.976 -> 25 / 29.97): never drop or repeat frames "
+        "naively (judder on every pan) — 25 <-> 29.97 needs motion-compensated conversion (optical flow: DaVinci "
+        "Resolve Optical Flow, ffmpeg minterpolate mi_mode=mci, RIFE-class interpolation, or a broadcast standards "
+        "converter); 23.976 -> 25 is the PAL speed-up (4.1 % faster, runtime shorter) with the audio pitch "
+        "corrected and every subtitle / AD cue retimed; 23.976 -> 29.97 is 2:3 pulldown (or flagged progressive "
+        "for the platform); interlaced sources (50i / 59.94i) are deinterlaced first (bwdif / QTGMC) unless the "
+        "master is interlaced too; check cadence on pans, text crawls and fast motion",
+        "перевод между стандартами частоты кадров (25 <-> 29,97, 23,976 -> 25 / 29,97): никогда не выбрасывайте "
+        "и не повторяйте кадры просто так (дёргается каждая панорама) — 25 <-> 29,97 требует перевода с "
+        "компенсацией движения (оптический поток: DaVinci Resolve Optical Flow, ffmpeg minterpolate mi_mode=mci, "
+        "интерполяция класса RIFE или эфирный конвертер стандартов); 23,976 -> 25 — ускорение PAL (на 4,1 % "
+        "быстрее, хронометраж короче) с исправлением высоты тона звука и пересчётом таймингов субтитров и "
+        "тифлокомментария; 23,976 -> 29,97 — раскладка 2:3 (или прогрессив с флагом, как просит площадка); "
+        "чересстрочный исходник (50i / 59,94i) сначала деинтерлейсится (bwdif / QTGMC), если мастер не "
+        "чересстрочный; проверьте плавность на панорамах, бегущих строках и быстром движении",
+        E,
+        _standards_conversion,
+        ("inputs", "fps", "delivery"),
+        "",
+        (S_RIFE,),
+    ),
+    _r(
+        "stem_separation",
+        [],
+        "separating a mixed track (vocals / dialogue / music / effects) is a model pass, not an EQ: Demucs v4 "
+        "(htdemucs / htdemucs_ft, MIT; drums, bass, vocals, other; --two-stems=vocals for karaoke; 9.0 dB SDR on "
+        "MUSDB HQ; the repository is no longer maintained) or a BS-RoFormer / Mel-Band RoFormer checkpoint (9.80 dB "
+        "SDR, first in SDX23 music separation) through Music-Source-Separation-Training or UVR; hosted Demucs is "
+        "cents per minute; expect artefacts — bleed (hi-hats and reverb in the vocal), watery or phasey tails, "
+        "lost room tone — so solo every stem, try two models and keep the cleaner one per stem; a separated stem "
+        "is never as clean as the original multitrack or M&E, so ask for those first; separation is not a "
+        "licence — an instrumental or acapella of a third-party song still needs the publishing and master "
+        "rights (karaoke the lyric rights too)",
+        "разделение сведённой дорожки (вокал / диалог / музыка / шумы) — проход модели, а не эквалайзер: Demucs "
+        "v4 (htdemucs / htdemucs_ft, MIT; ударные, бас, вокал, прочее; --two-stems=vocals для караоке; 9,0 дБ SDR "
+        "на MUSDB HQ; репозиторий больше не поддерживается) или чекпойнт BS-RoFormer / Mel-Band RoFormer (9,80 дБ "
+        "SDR, первое место в SDX23 по разделению музыки) через Music-Source-Separation-Training или UVR; Demucs по "
+        "API стоит центы за минуту; артефакты будут — протечки (тарелки и реверберация в вокале), «водянистые» "
+        "или фазовые хвосты, потерянный звук помещения — слушайте каждый стем соло, попробуйте две модели и "
+        "оставьте чистую на каждый стем; отделённый стем никогда не чище исходной многодорожки или M&E — сначала "
+        "попросите их; разделение — не лицензия: минусовка или акапелла чужой песни по-прежнему требует прав на "
+        "произведение и фонограмму (караоке — ещё и на текст)",
+        E,
+        _stem_separation,
+        ("inputs", "delivery", "audio_content"),
+        "",
+        (S_DEMUCS, S_BS_ROFORMER, S_MSST),
+    ),
+    _r(
+        "background_blur",
+        [],
+        "background blur (bokeh) on your own footage: a person matte (Robust Video Matting, GPL-3.0, recurrent and "
+        "temporally stable; BiRefNet / a hosted video background removal; SAM 2 for objects) or a video depth map "
+        "(Video Depth Anything — Small is Apache-2.0, Base / Large are non-commercial) drives a lens blur at "
+        "assembly; a generative video edit or relight would redraw the speaker's face and lips; hair and "
+        "glasses edges halo — feather the matte, check fine hair at 100 %, keep the blur falloff consistent "
+        "frame to frame (a per-frame image matte flickers), and stop down the blur for a natural lens (a "
+        "depth map gives graded blur, a matte gives a flat cut-out)",
+        "размытие фона (боке) на вашем ролике: маска человека (Robust Video Matting, GPL-3.0, рекуррентная и "
+        "стабильная во времени; BiRefNet / удаление фона видео по API; SAM 2 для предметов) или карта глубины "
+        "видео (Video Depth Anything — Small под Apache-2.0, Base / Large только некоммерчески) управляет "
+        "размытием объектива при сборке; генеративная правка видео или переосвещение перерисовали бы лицо и губы "
+        "говорящего; края волос и очков дают ореол — растушуйте маску, проверьте тонкие волосы в 100 %, держите "
+        "спад размытия одинаковым от кадра к кадру (маска по отдельным кадрам мерцает) и не перебарщивайте с "
+        "силой для естественного объектива (карта глубины даёт ступенчатое размытие, маска — плоскую вырезку)",
+        E,
+        _background_blur,
+        ("edit", "edit_target", "inputs"),
+        "",
+        (S_RVM, S_VIDEO_DEPTH, S_SAM2),
+    ),
+)
+
+RULES_LIST = RULES_LIST + RULES_R17
+
 RULES: dict[str, Rule] = {р.id: р for р in RULES_LIST}
 
 # --- round 15: spec first ------------------------------------------------------------------

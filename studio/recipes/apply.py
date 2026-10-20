@@ -966,6 +966,44 @@ def rewrite(spec: "bs.Spec", route: "bs.Маршрут", text: str = "") -> Appl
     # An optional step the route no longer has is not offered.
     optional = [s for s in optional if s in steps]
 
+    # --- round 17: accessibility package, series recap, background blur -----------------------
+    from studio import expert_r17 as x17
+
+    # An accessibility package with audio description: ONE transcript (captions, text, translation and
+    # the speech gaps come from it) and a distinct stock voice for the GAP seconds, not the runtime.
+    runtime = x17.material_seconds(spec)
+    if x17.ad_package(spec, text) and runtime and acc.prior("accessibility_package", "ad_gap_voice"):
+        if "расшифровка" not in steps:
+            steps = ["расшифровка", *steps]
+        notes["расшифровка"] = x17.NOTE_AD_TRANSCRIPT[0]
+        if "озвучка" not in steps:
+            steps = [*steps, "озвучка"]
+        gap = x17.ad_voice_seconds(runtime)
+        step_seconds["озвучка"] = (gap, gap)
+        notes["озвучка"] = x17.NOTE_AD_VOICE[0].format(share=f"{x17.AD_GAP_SHARE * 100:g}", n=f"{gap:g}")
+        avoid["озвучка"] = an.CLONE_ONLY_MODELS
+        acc.assembly.append(x17.ASSEMBLY_AD_MIX)
+    # A recap of the customer's series: their footage is cut (a generative edit regenerates nothing that
+    # is needed), and a narrator is priced by the RECAP's length, not the series'.
+    if x17.recap_edit(spec, text) and "правка_видео" in steps and acc.prior("series_recap", "recap_short_vo"):
+        steps = _replace_step(steps, "правка_видео", "расшифровка")
+        notes.pop("правка_видео", None)
+        notes["расшифровка"] = bs.NOTE_SHORTS_TRANSCRIPT
+        acc.assembly.append(x17.ASSEMBLY_RECAP)
+    vo_s = x17.recap_vo_seconds(spec)
+    if x17.recap_narration(spec, text) and vo_s and acc.prior("series_recap", "recap_short_vo"):
+        if "озвучка" not in steps:
+            steps = [*steps, "озвучка"]
+        step_seconds["озвучка"] = (vo_s, vo_s)
+        notes["озвучка"] = x17.NOTE_RECAP_VO[0].format(n=f"{vo_s:g}")
+        acc.assembly.append(x17.ASSEMBLY_RECAP)
+    # A background blur (bokeh): a person matte and a lens blur at assembly — never a generative edit.
+    if x17.background_blur(spec, text) and "правка_видео" in steps and acc.prior("background_blur", "matte_background_blur"):
+        steps = _replace_step(steps, "правка_видео", "удаление_фона_видео")
+        notes.pop("правка_видео", None)
+        notes["удаление_фона_видео"] = x17.NOTE_MATTE_BLUR[0]
+        acc.assembly.append(x17.ASSEMBLY_BLUR)
+
 
     # --- zero budget ------------------------------------------------------------------
     # Own GPU already named — the plan is on the free route; nothing to add.

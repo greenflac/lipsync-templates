@@ -236,6 +236,7 @@ from studio import edit_intent as ei
 from studio import expert_r15 as x15
 from studio import anonymise
 from studio import expert_r16 as x16
+from studio import expert_r17 as x17
 from studio import endpoints as ep
 from studio import l10n
 from studio import factaxis as fa
@@ -12281,7 +12282,9 @@ def plan(
             операции = sorted(операции, key=lambda оп: порядок_маршрута.get(оп.name, -1))
         # Шестнадцатый круг: голос анонимизируется цепочкой «расшифровка -> другой голос» —
         # тоже в названном порядке (`studio/anonymise.py`).
-        if "anonymise_voice" in рецепт.recipes:
+        # Семнадцатый круг: пакет доступности и пересказ — расшифровка, затем голос
+        # тифлокомментария / диктора (`expert_r17.ROUTE_ORDER_RECIPES`).
+        if "anonymise_voice" in рецепт.recipes or set(рецепт.recipes) & x17.ROUTE_ORDER_RECIPES:
             по_маршруту = {и: i for i, и in enumerate(маршрут.шаги)}
             операции = sorted(операции, key=lambda оп: по_маршруту.get(оп.name, -1))
         # ПОРЯДОК РАБОТ РЕЦЕПТА: клон голоса первым; реставрация -> раскраска
@@ -12603,6 +12606,10 @@ def plan(
     def языков_на_шаг(op: Operation) -> int:
         """Сколько раз шаг делается по языкам: только речевые шаги и только языки из spec."""
         if op.name in PER_LANGUAGE_STEPS and понято.source.get("languages") == bs.SOURCE_SPEC:
+            # Семнадцатый круг: речь с переключением языков — ОДНА смешанная дорожка, а не по
+            # дорожке на язык (`expert_r17.code_switching`).
+            if x17.code_switching(понято, текст):
+                return 1
             return max(1, len(понято.languages))
         return 1
 

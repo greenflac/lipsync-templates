@@ -711,6 +711,9 @@ import re
             "consent_gate",
             "face_requirement",
             "human_face_restriction",
+            # Семнадцатый круг: что провайдер хранит из загруженного и как это выключить
+            # (режим нулевого хранения) — `checklist.provider_data_terms`.
+            "data_retention",
         ),
         "подстроки": (),
         "кроме": (),
@@ -964,6 +967,9 @@ import re
     "ограничения": "restrictions",
     "что нельзя": "restrictions",
     "запреты": "restrictions",
+    "data retention": "restrictions",
+    "retention": "restrictions",
+    "хранение данных": "restrictions",
     # «МОДЕРАЦИЯ», «ВОДЯНОЙ ЗНАК» И `watermark` СЮДА НЕ БЕРУТСЯ, И ЭТО ТОТ ЖЕ
     # НЕГАТИВНЫЙ КОНТРОЛЬ (И5). Каждое из них называет ОДНО имя семьи, а не
     # семью: спросивший «модерация» получил бы в ответ ещё и `watermark`, то
