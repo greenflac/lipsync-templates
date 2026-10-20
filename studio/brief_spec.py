@@ -1036,13 +1036,14 @@ def parse_spec(raw: Mapping[str, Any] | None) -> tuple[Spec, list[str]]:
             dict.fromkeys(str(у).strip() for у in _список(raw["conditions"]) if str(у).strip())
         )
     if raw.get("edit") is not None:
-        правки = [str(п).strip().lower() for п in _список(raw["edit"]) if str(п).strip()]
-        чужие = [п for п in правки if п not in ep.EDIT_INTENTS]
+        правки = [str(п).strip().lower().replace("_", "-").replace(" ", "-") for п in _список(raw["edit"]) if str(п).strip()]
+        правки = [EDIT_ALIASES.get(п, п) for п in правки]
+        чужие = [п for п in правки if п not in EDIT_VALUES]
         if чужие:
             ошибки.append(
-                f"spec.edit: {', '.join(map(repr, чужие))} — allowed: {', '.join(ep.EDIT_INTENTS)}"
+                f"spec.edit: {', '.join(map(repr, чужие))} — allowed: {', '.join(EDIT_VALUES)}"
             )
-        поля["edit"] = tuple(dict.fromkeys(п for п in правки if п in ep.EDIT_INTENTS))
+        поля["edit"] = tuple(dict.fromkeys(п for п in правки if п in EDIT_VALUES))
     if raw.get("lipsync") is not None:
         if not isinstance(raw["lipsync"], bool):
             ошибки.append(f"spec.lipsync={raw['lipsync']!r}: must be true or false")
@@ -1545,6 +1546,12 @@ NOTE_DUB_LIPS = "перевод готового видео: губы под н�
 NOTE_KEYFRAMES = "персонажей {n}: ключевой кадр на каждый шот, иначе лица разъезжаются от шота к шоту"
 NOTE_VIDEO_EDIT = "правка ВАШЕГО видео (стабилизация, рефрейм, замена неба, вырезка): нового ролика никто не генерирует"
 NOTE_R2V_REF = "референс персонажа делается один раз, и каждый шот строится по нему — персонаж не разъезжается"
+#: Тринадцатый круг: референсы персонажей — ОБЩИЙ актив серии, делаются один раз.
+NOTE_CAST_REFS = "референсы персонажей ({n}) делаются ОДИН раз и общие для всех шотов — не генерируются на каждый шот"
+NOTE_CAST_KEYFRAMES = "ключевой кадр каждого шота — правка по общим референсам персонажей (лица не разъезжаются)"
+NOTE_SPEAKER_LIPS_SHOTS = "губы двигает липсинк в КАЖДОМ шоте, где говорят в кадре ({n})"
+NOTE_SINGER_LIPS = "исполнитель поёт в кадре: липсинк под вокал ВАШЕГО трека в каждой сцене ({n})"
+NOTE_MUSIC_VIDEO = "клип из сцен: референс исполнителя один раз, каждая сцена оживляется по нему; дорожку кладёт монтаж"
 NOTE_R2V = "каждый шот — по одному референсу персонажа (reference-to-video)"
 NOTE_VISUALISER = "только картинка под ВАШ трек: музыка не генерируется, дорожку кладёт монтаж"
 NOTE_SING = "ВАШ снимок поёт ВАШУ дорожку: аватар, ведомый звуком; ни синтеза речи, ни генерации музыки"
@@ -1571,6 +1578,11 @@ NOTE_VISUALISER_NO_TRACK = (
     "трек не приложен: визуал делается петлями без него, дорожку кладёт монтаж, когда трек будет"
 )
 NOTES_EN: dict[str, str] = {
+    NOTE_CAST_KEYFRAMES: "each shot's keyframe is an edit from the shared character references (faces do not drift)",
+    NOTE_MUSIC_VIDEO: (
+        "a music video of scenes: the performer's reference is made once and every scene is animated from it; "
+        "the track is laid in at assembly"
+    ),
     NOTE_NARRATION: "a voice-over for the ordered speech: synthesised from the text and laid over the picture at assembly",
     NOTE_NARRATION_MIX: "the voice is laid over the picture at assembly (ffmpeg amix, background ducked under speech)",
     NOTE_SPEAKER_LIPS: "the speaker is seen on screen: lip sync moves the lips to the synthesised speech",
@@ -1656,6 +1668,219 @@ ASSEMBLY_REASONS: dict[str, tuple[str, str]] = {
 #: кандидата). Правка -> пометка сборки. КОНСТАНТА-РЕШЕНИЕ.
 ASSEMBLY_EDITS: dict[str, str] = {ep.EDIT_STABILISE: NOTE_STABILISE}
 
+# --- тринадцатый круг: правки, которые делает ТОЛЬКО монтаж -------------------------
+#
+# Скрытый набор: «обрезать начало и ускорить вдвое», «склеить три клипа и
+# поставить логотип в угол», «наложить LUT и водяной знак» кончались ошибкой
+# spec (таких значений `spec.edit` не было) или генеративной правкой ролика за
+# десятки долларов; «вжечь приложенные SRT» — расшифровкой, которая не нужна.
+# Это всё ffmpeg: 0 usd, модели нет, и вопрос не нужен, когда вход есть.
+EDIT_TRIM = "trim"
+EDIT_CONCAT = "concat"
+EDIT_SPEED = "speed"
+EDIT_LUT = "lut"
+EDIT_WATERMARK = "watermark"
+EDIT_LOGO = "logo-overlay"
+EDIT_BURN_CAPTIONS = "burn-captions"
+#: Кадрирование в другой формат (рефрейм, где объект в кадре остаётся целиком).
+EDIT_CROP = "crop"
+
+NOTE_TRIM = "обрезка по таймкодам — монтаж (ffmpeg -ss/-to), модели не нужно"
+NOTE_CONCAT = "склейка клипов — монтаж (ffmpeg concat / xfade), модели не нужно"
+NOTE_SPEED = "смена скорости — монтаж (ffmpeg setpts / atempo), модели не нужно"
+NOTE_LUT = "цвет по LUT — монтаж (ffmpeg lut3d с вашим .cube), модели не нужно"
+NOTE_WATERMARK = "водяной знак — монтаж (ffmpeg overlay вашего файла), модели не нужно"
+NOTE_LOGO = "логотип поверх ролика — монтаж (ffmpeg overlay ВАШЕГО файла), буква в букву, модели не нужно"
+NOTE_BURN_CAPTIONS = "ВАШИ субтитры (SRT/ASS) вжигаются монтажом (ffmpeg subtitles) — расшифровка не нужна"
+NOTE_CROP = (
+    "смена формата — кадрирование при монтаже с ведением лица/объекта (face/subject tracking), объект в "
+    "кадре остаётся целиком; дорисовка краёв (outpaint) — только если объект обрезался бы"
+)
+
+#: Правка -> пометка сборки. КОНСТАНТА-РЕШЕНИЕ: эти правки делает монтаж ВСЕГДА,
+#: что бы ни записал реестр (`ASSEMBLY_EDITS` — только когда эндпоинта нет).
+ASSEMBLY_ONLY_EDITS: dict[str, str] = {
+    EDIT_TRIM: NOTE_TRIM,
+    EDIT_CONCAT: NOTE_CONCAT,
+    EDIT_SPEED: NOTE_SPEED,
+    EDIT_LUT: NOTE_LUT,
+    EDIT_WATERMARK: NOTE_WATERMARK,
+    EDIT_LOGO: NOTE_LOGO,
+    EDIT_BURN_CAPTIONS: NOTE_BURN_CAPTIONS,
+    EDIT_CROP: NOTE_CROP,
+}
+#: По-английски — для пометок и причин сборки (ru, en).
+ASSEMBLY_ONLY_EN: dict[str, str] = {
+    NOTE_TRIM: "trimming on timecodes is assembly (ffmpeg -ss/-to) — 0 usd, no model",
+    NOTE_CONCAT: "joining the clips is assembly (ffmpeg concat / xfade) — 0 usd, no model",
+    NOTE_SPEED: "the speed change is assembly (ffmpeg setpts / atempo) — 0 usd, no model",
+    NOTE_LUT: "the colour LUT is applied at assembly (ffmpeg lut3d with your .cube) — 0 usd, no model",
+    NOTE_WATERMARK: "the watermark is overlaid at assembly (ffmpeg overlay of your file) — 0 usd, no model",
+    NOTE_LOGO: "the logo is overlaid from YOUR file at assembly (ffmpeg overlay), letter for letter — 0 usd, no model",
+    NOTE_BURN_CAPTIONS: "YOUR subtitles (SRT/ASS) are burned in at assembly (ffmpeg subtitles) — no transcription needed, 0 usd",
+    NOTE_CROP: (
+        "the new aspect is an assembly crop with face/subject tracking (ffmpeg crop driven by a tracker — "
+        "MediaPipe / AutoFlip, Premiere Auto Reframe, DaVinci Smart Reframe) — 0 usd; the subject stays whole, "
+        "and outpainting the edges is only for a subject that a crop would cut"
+    ),
+}
+NOTES_EN.update(ASSEMBLY_ONLY_EN)
+ASSEMBLY_REASONS.update({ru: (ru + " — 0 usd", en) for ru, en in ASSEMBLY_ONLY_EN.items()})
+#: Как вызывающий называет эти правки в `spec.edit` -> имя правки.
+EDIT_ALIASES: dict[str, str] = {
+    "cut": EDIT_TRIM,
+    "shorten": EDIT_TRIM,
+    "join": EDIT_CONCAT,
+    "merge": EDIT_CONCAT,
+    "stitch": EDIT_CONCAT,
+    "speed-change": EDIT_SPEED,
+    "speed-up": EDIT_SPEED,
+    "retime": EDIT_SPEED,
+    "colour-grade": EDIT_LUT,
+    "color-grade": EDIT_LUT,
+    "grade": EDIT_LUT,
+    "colour-lut": EDIT_LUT,
+    "color-lut": EDIT_LUT,
+    "logo": EDIT_LOGO,
+    "overlay": EDIT_LOGO,
+    "subtitles": EDIT_BURN_CAPTIONS,
+    "captions": EDIT_BURN_CAPTIONS,
+    "burn-in": EDIT_BURN_CAPTIONS,
+    "burn-subtitles": EDIT_BURN_CAPTIONS,
+    "resize": EDIT_CROP,
+}
+#: Все значения `spec.edit`: правки реестра и правки монтажа.
+EDIT_VALUES: tuple[str, ...] = (*ep.EDIT_INTENTS, *ASSEMBLY_ONLY_EDITS)
+
+#: Монтажные правки СЛОВАМИ брифа — когда `spec.edit` о них молчит (правка ролика
+#: без названной правки уходила в генеративную правку по инструкции).
+ASSEMBLY_EDIT_WORDS: tuple[tuple[str, re.Pattern[str]], ...] = (
+    (EDIT_TRIM, re.compile(
+        r"\btrim\w*|\bcut (?:off|out|down)\b|cut the (?:first|last|start|end|beginning|ending)|\bshorten\w*"
+        r"|обреж\w*|обрез\w* (?:начал|конец|конц|перв|последн)|укорот\w*|вырежь\w* (?:начал|конец)", re.I)),
+    (EDIT_CONCAT, re.compile(
+        r"\bjoin\w*|concat\w*|\bstitch\w*|\bmerge\w*|combine\w* (?:\w+ ){0,3}(?:clips|videos|shots)"
+        r"|склей\w*|склеи\w*|соедин\w* (?:\w+ ){0,2}(?:ролик|клип|видео)|объедин\w* (?:\w+ ){0,2}(?:ролик|клип|видео)",
+        re.I)),
+    (EDIT_SPEED, re.compile(
+        r"speed (?:it |them )?up|sped up|speed[- ]change|change the speed|\b\d(?:\.\d+)?\s?x (?:speed|faster|slower)"
+        r"|(?:twice|2x|double) (?:as )?(?:fast|speed)|ускор\w*|в (?:два|2) раза быстрее", re.I)),
+    (EDIT_LUT, re.compile(r"\bluts?\b|\.cube\b|colou?r[- ]?grad\w*|\bgrade it\b|цветокор\w*|\bлут\w*", re.I)),
+    (EDIT_WATERMARK, re.compile(r"watermark\w*|водян\w* знак\w*", re.I)),
+    (EDIT_LOGO, re.compile(
+        r"(?:add|put|place|overlay|burn|insert|stamp|show)\w* (?:\w+ ){0,3}logo|logo (?:overlay|bug|in the (?:\w+ )?corner)"
+        r"|(?:добав|налож|постав|встав|размест)\w* (?:\w+ ){0,2}логотип\w*|логотип\w* в угл\w*", re.I)),
+    (EDIT_BURN_CAPTIONS, re.compile(
+        r"burn\w*[- ]in|burn (?:\w+ ){0,3}(?:subtitl|caption|srt)|\bsrt\b|\.ass\b|hard[- ]?(?:sub|code)\w*"
+        r"|(?:add|put)\w* (?:\w+ ){0,3}(?:subtitles|captions)|вжеч\w*|вшей\w* субтитр\w*|(?:добав|налож)\w* (?:\w+ ){0,2}субтитр\w*",
+        re.I)),
+    (EDIT_CROP, re.compile(r"\bcrop\w*|кадрир\w*", re.I)),
+)
+#: Перед монтажной правкой — её отмена или удаление («remove the watermark» — работа модели).
+ASSEMBLY_WORD_NEGATED = re.compile(
+    r"(?:remov\w*|eras\w*|get rid of|clean (?:up|off)|without|no|убра\w*|убер\w*|удал\w*|сотр\w*|без)\s+(?:\w+\s+){0,2}$",
+    re.I,
+)
+#: Стиль словами: правка «restyle» тогда — работа модели, а не LUT.
+STYLE_WORDS = re.compile(
+    r"\banime\b|cartoon|painting|watercolou?r|\bstyle\b|look like|claymation|pixar|ghibli|аниме|мульт\w*|"
+    r"живопис\w*|акварел\w*|в стиле|стилиз\w*",
+    re.I,
+)
+
+#: Рефрейм КАДРИРОВАНИЕМ: формат-цель не шире исходника (с допуском) — объект в
+#: кадре остаётся, если его вести. КОНСТАНТА-РЕШЕНИЕ (Т1): 5 % на округление
+#: соотношений (4:5 против 0.8, 1.78 против 16:9).
+CROP_ASPECT_TOLERANCE = 1.05
+#: Кадр исходника не назван: формат-цель не шире этого — вертикаль или квадрат
+#: из горизонтального исходника (кадрирование); шире — исходник был не
+#: горизонтальным (иначе менять нечего), и края дорисовываются. КОНСТАНТА-РЕШЕНИЕ (Т1).
+UNKNOWN_SOURCE_CROP_MAX = 1.0
+#: Объект обрезался бы, или дорисовку просят словами — кадрирование не годится.
+KEEP_WHOLE_FRAME = re.compile(
+    r"outpaint\w*|extend (?:the )?(?:sides|edges|frame|background)|fill (?:in )?(?:the )?(?:sides|edges|gaps|bars)"
+    r"|expand (?:the )?(?:frame|canvas|sides|background)|without crop\w*|(?:don'?t|do not|no) crop\w*"
+    r"|keep (?:the )?(?:whole|entire|full|everyone|everything|all|both)|nothing (?:cut|cropped)|black bars"
+    r"|дорис\w*|расшир\w* (?:кадр|фон|края)|без обрез\w*|не обреза\w*|целиком",
+    re.I,
+)
+
+
+def _соотношение_в_тексте(текст: str, кроме: float | None) -> float | None:
+    """Соотношение ИСХОДНИКА словами брифа: «16:9 interview», «vertical clip» — не формат-цель."""
+    низ = _norm(текст)
+    for м in _ASPECT.finditer(низ):
+        r = aspect_ratio(м.group(1))
+        if r is not None and (кроме is None or abs(r - кроме) > 0.01):
+            return r
+    if VERTICAL.search(низ) and (кроме is None or кроме > 1):
+        return 9 / 16
+    if HORIZONTAL.search(низ) and (кроме is None or кроме < 1):
+        return 16 / 9
+    return None
+
+
+def рефрейм_кадрированием(spec: "Spec", текст: str = "") -> bool:
+    """Рефрейм — кадрирование при монтаже: формат-цель не шире исходника и дорисовку не просят."""
+    if KEEP_WHOLE_FRAME.search(_norm(текст)) or any(KEEP_WHOLE_FRAME.search(_norm(у)) for у in spec.conditions):
+        return False
+    цель = aspect_ratio(spec.aspect) if spec.aspect else None
+    if цель is None:
+        return False
+    кадр = source_frame(spec)
+    исходник = (кадр[0] / кадр[1]) if кадр else _соотношение_в_тексте(текст, цель)
+    if исходник is None:
+        return цель <= UNKNOWN_SOURCE_CROP_MAX
+    return цель <= исходник * CROP_ASPECT_TOLERANCE
+
+
+def монтажные_правки_словами(текст: str) -> tuple[str, ...]:
+    """Монтажные правки, названные словами брифа (без отмены перед ними)."""
+    низ = _norm(текст)
+    найдено: list[str] = []
+    for правка, образец in ASSEMBLY_EDIT_WORDS:
+        for м in образец.finditer(низ):
+            if not ASSEMBLY_WORD_NEGATED.search(низ[: м.start()]):
+                найдено.append(правка)
+                break
+    return tuple(найдено)
+
+
+def правки_монтажа(spec: "Spec", текст: str = "") -> tuple[str, ...]:
+    """Правки `video-edit` после чтения брифа: монтажные слова, рефрейм-кадрирование, LUT вместо restyle.
+
+    Читается только у работы над ВАШИМ видео (`video-edit`, `edit` над видео) —
+    у прочих работ правок нет.
+    """
+    if "video" not in spec.inputs or spec.task not in ("video-edit", "edit") or not текст:
+        return spec.edit
+    правки = list(spec.edit)
+    словами = монтажные_правки_словами(текст)
+    if ep.EDIT_RESTYLE in правки and EDIT_LUT in словами and not STYLE_WORDS.search(_norm(текст)):
+        правки.remove(ep.EDIT_RESTYLE)
+    if ep.EDIT_REFRAME in правки and рефрейм_кадрированием(spec, текст):
+        правки[правки.index(ep.EDIT_REFRAME)] = EDIT_CROP
+    # Монтажные правки словами: всегда, когда spec о них молчит; кадрирование словами —
+    # только когда нет рефрейма (он решён выше).
+    for п in словами:
+        if п == EDIT_CROP and (ep.EDIT_REFRAME in правки or EDIT_CROP in правки or not spec.aspect):
+            continue
+        if п not in правки:
+            правки.append(п)
+    return tuple(dict.fromkeys(правки))
+
+
+def монтаж_целиком(spec: "Spec", текст: str = "") -> bool:
+    """Работа по spec (и словам брифа) — ТОЛЬКО монтаж: план без шагов-моделей, без вопросов о длине и языке."""
+    if "video" not in spec.inputs or set(spec.outputs) - {"video", "text"}:
+        return False
+    if spec.task == "captions" and "script" in spec.inputs and not spec.then_tasks:
+        return True
+    if spec.task not in ("video-edit", "edit") or spec.then_tasks:
+        return False
+    правки = правки_монтажа(spec, текст)
+    return bool(правки) and all(п in ASSEMBLY_ONLY_EDITS or п in ASSEMBLY_EDITS for п in правки)
+
 #: Коды языков жестов (ISO 639-3) и общий `sgn` — `spec.languages`.
 SIGN_LANGUAGE_CODES: frozenset[str] = frozenset(
     {"sgn", "ase", "bfi", "fsl", "gsg", "jsl", "rsl", "csl", "ins", "asf", "lsf", "ssp", "ise", "bzs", "kvk"}
@@ -1689,6 +1914,17 @@ def note_en(ru: str) -> str | None:
 
     if ru in RECIPE_NOTES_EN:
         return RECIPE_NOTES_EN[ru]
+    from studio.recipes.apply import NOTE_LOOP_ONCE
+
+    for шаблон, en in (
+        (NOTE_LOOP_ONCE[0].replace("{s}", "{n}"), NOTE_LOOP_ONCE[1].replace("{s}", "{n}")),
+        (NOTE_CAST_REFS, "the character references ({n}) are made ONCE and shared by every shot — not regenerated per shot"),
+        (NOTE_SPEAKER_LIPS_SHOTS, "lip sync moves the lips in EVERY shot where someone speaks on screen ({n})"),
+        (NOTE_SINGER_LIPS, "the performer sings on camera: lip sync to the vocals of YOUR track in every scene ({n})"),
+    ):
+        найдено = re.fullmatch(re.escape(шаблон).replace(re.escape("{n}"), r"(\d+(?:\.\d+)?)"), ru)
+        if найдено:
+            return en.format(n=найдено.group(1))
     м = re.fullmatch(NOTE_KEYFRAMES.replace("{n}", r"(\d+)"), ru)
     if м:
         return f"{м.group(1)} characters: a keyframe per shot, otherwise faces drift from shot to shot"
@@ -1750,6 +1986,32 @@ def _дорожки(spec: Spec, шаги: list[str]) -> None:
         шаги.append("музыка")
     if "sfx" in выходы and spec.audio != "native":
         шаги.append("звук_фон")
+
+
+#: Тринадцатый круг: операция «видео -> звук» — шумы и саундтрек ПО КАРТИНКЕ
+#: принесённого видео (MMAudio, HunyuanVideo-Foley, ThinkSound). Ставит её
+#: рецепт `foley_for_picture` вместо шага шумов (и музыки под действие).
+V2A_STEP = "звук_по_видео"
+#: Выходы-звук, которые «видео -> звук» делает по принесённой картинке.
+V2A_OUTPUTS: frozenset[str] = frozenset({"sfx", "music"})
+
+
+def звук_к_своему_видео(spec: "Spec") -> bool:
+    """Заказан ТОЛЬКО звук к ВАШЕМУ видео: видео принесено, выход — звук (и само видео), правки нет.
+
+    «Сделай звук к этому немому ролику» без названной работы спрашивало работу,
+    а `video-edit` без названной правки ставило генеративную правку ролика —
+    хотя заказан один звук. Работа видна по входу и выходу.
+    """
+    выходы = set(spec.outputs)
+    return (
+        "video" in spec.inputs
+        and bool(выходы & V2A_OUTPUTS)
+        and выходы <= V2A_OUTPUTS | {"video"}
+        and not spec.edit
+        and spec.task in (None, "generate", "video-edit", "edit")
+        and not spec.then_tasks
+    )
 
 
 def _подложка(выходы: set[str]) -> tuple[str, ...]:
@@ -1858,16 +2120,23 @@ def _все_выходы(spec: Spec, м: Маршрут) -> Маршрут:
         шаги.append("музыка")
     if "sfx" in выходы and "звук_фон" not in шаги and spec.audio != "native":
         шаги.append("звук_фон")
+    штук = dict(м.штук)
+    поёт = "audio" in входы and "speech" not in выходы
     if (
         spec.speaker_on_screen
-        and {"video", "speech"} <= выходы
+        and ({"video", "speech"} <= выходы or ("video" in выходы and поёт))
         and spec.audio != "native"
         and "video" not in входы
         and set(шаги) & GENERATED_VIDEO
         and not set(шаги) & SPEECH_TAKERS
     ):
         шаги.append("липсинк")
-        пометки.setdefault("липсинк", NOTE_SPEAKER_LIPS)
+        пометки.setdefault("липсинк", NOTE_SINGER_LIPS.format(n=spec.shots or 1) if поёт else NOTE_SPEAKER_LIPS)
+        if (spec.shots or 0) >= SERIES_SHOTS_MIN:
+            # ТРИНАДЦАТЫЙ КРУГ: губы двигаются в КАЖДОМ шоте, где говорят (или поют).
+            штук["липсинк"] = int(spec.shots or 0)
+            if not поёт:
+                пометки["липсинк"] = NOTE_SPEAKER_LIPS_SHOTS.format(n=spec.shots)
     if "image" in выходы and видео and not set(шаги) & IMAGE_MAKERS and "photo" not in входы:
         шаги.insert(0, "генерация_изображения")
         пометки.setdefault("генерация_изображения", NOTE_POSTER)
@@ -1877,14 +2146,16 @@ def _все_выходы(spec: Spec, м: Маршрут) -> Маршрут:
         "image": bool(есть & IMAGE_MAKERS) or "photo" in входы,
         "speech": bool(есть & (SPEECH_MAKERS | SPEECH_TAKERS)) or spec.audio == "native" or "audio" in входы or своя_речь,
         "music": "музыка" in есть or "audio" in входы,
-        "sfx": "звук_фон" in есть or spec.audio == "native",
+        "sfx": "звук_фон" in есть or V2A_STEP in есть or spec.audio == "native",
     }
     не_сделано = [в for в in spec.outputs if not сделано.get(в, True)]
     if не_сделано:
         return Маршрут(нехватка=_выход_без_шага(не_сделано))
     if шаги == list(м.шаги) and сборка == list(м.сборка):
         return м
-    return replace(м, шаги=tuple(dict.fromkeys(шаги)), пометки=пометки, сборка=tuple(dict.fromkeys(сборка)))
+    return replace(
+        м, шаги=tuple(dict.fromkeys(шаги)), пометки=пометки, сборка=tuple(dict.fromkeys(сборка)), штук=штук
+    )
 
 
 def route(spec: Spec, на_сборке: frozenset[str] | None = None) -> Маршрут:
@@ -1966,9 +2237,11 @@ def _правка_своего(spec: Spec, на_сборке: frozenset[str]) ->
             {"правка_видео": NOTE_VIDEO_EDIT},
             правки=(ep.EDIT_EXTEND,),
         )
-    монтаж = tuple(п for п in spec.edit if п in на_сборке and п in ASSEMBLY_EDITS)
+    монтаж = tuple(
+        п for п in spec.edit if п in ASSEMBLY_ONLY_EDITS or (п in на_сборке and п in ASSEMBLY_EDITS)
+    )
     модельные = tuple(п for п in spec.edit if п not in монтаж)
-    сборка = tuple(ASSEMBLY_EDITS[п] for п in монтаж)
+    сборка = tuple(ASSEMBLY_ONLY_EDITS.get(п) or ASSEMBLY_EDITS[п] for п in монтаж)
     if монтаж and not модельные:
         # Только монтажная правка: шага-модели нет, а музыка/шумы под ролик — есть.
         return Маршрут(_подложка(выходы), {}, сборка=сборка, правки=())
@@ -1993,9 +2266,17 @@ def _маршрут_одной(spec: Spec, на_сборке: frozenset[str] = f
     шаги: list[str] = []
     пометки: dict[str, str] = {}
 
+    if звук_к_своему_видео(spec):
+        # ТРИНАДЦАТЫЙ КРУГ: заказан звук к ВАШЕМУ видео (работа не названа,
+        # «generate» или правка без названной правки) — шаг правки ролика не
+        # нужен: звук делается по картинке и кладётся при сборке.
+        return Маршрут(_подложка(выходы), {})
     if задача in ROUTE_TASKS:
         for вход, шаг in ROUTE_TASKS[задача]:
             if вход in входы:
+                if задача == "captions" and "script" in входы:
+                    # ТРИНАДЦАТЫЙ КРУГ: субтитры ПРИЛОЖЕНЫ (SRT) — расшифровывать нечего.
+                    return Маршрут((), {}, сборка=(NOTE_BURN_CAPTIONS,))
                 if задача == "captions":
                     return Маршрут((шаг,), {шаг: NOTE_CAPTIONS}, сборка=(NOTE_CAPTIONS,))
                 return Маршрут((шаг,), {})
@@ -2017,6 +2298,10 @@ def _маршрут_одной(spec: Spec, на_сборке: frozenset[str] = f
             {"расшифровка": NOTE_SHORTS_TRANSCRIPT},
             сборка=(NOTE_SHORTS_EDIT,),
         )
+    if задача == "music-visualiser" and "photo" not in входы and (spec.characters or 0) >= 1:
+        # ТРИНАДЦАТЫЙ КРУГ: клип со сценами и исполнителем — не петли визуала, а
+        # референс исполнителя один раз и сцены по нему (дальше — как generate).
+        задача = "generate"
     if задача == "music-visualiser":
         # Принесённый кадр оживляется, иначе картинка генерируется с нуля;
         # музыки не генерирует никто — трек заказчика.
@@ -2119,6 +2404,18 @@ def _маршрут_одной(spec: Spec, на_сборке: frozenset[str] = f
             return Маршрут()
         if "photo" in входы:
             шаги.append("оживление")
+        elif (spec.characters or 0) >= MULTI_CHARACTER_MIN and серия_с_персонажем(spec):
+            # ТРИНАДЦАТЫЙ КРУГ: ОБЩИЕ АКТИВЫ. Референсы персонажей — по одному на
+            # персонажа, ОДИН раз на всю серию; ключевой кадр шота — правка по ним;
+            # шот оживляется от своего кадра. Прежде каждый шот генерировал своих
+            # персонажей заново (t2i на каждый шот) — и платил за это N раз.
+            шаги += ["генерация_изображения", "редактирование_изображения", "оживление"]
+            пометки["генерация_изображения"] = NOTE_CAST_REFS.format(n=spec.characters)
+            пометки["редактирование_изображения"] = NOTE_CAST_KEYFRAMES
+            _дорожки(spec, шаги)
+            return Маршрут(
+                tuple(dict.fromkeys(шаги)), пометки, штук={"генерация_изображения": int(spec.characters or 0)}
+            )
         elif (spec.characters or 0) >= MULTI_CHARACTER_MIN:
             шаги += ["генерация_изображения", "оживление"]
             пометки["генерация_изображения"] = NOTE_KEYFRAMES.format(n=spec.characters)
@@ -2186,6 +2483,24 @@ SPEAKING_IN_FRAME = re.compile(
     r"|говор(?:ит|ят|ящ\w*)|произнос\w*|скаж\w*|рассказыва\w*|обраща\w*|приветству\w*|крич\w*|шепч\w*",
     re.I,
 )
+#: Тринадцатый круг: ДИАЛОГ персонажей словами — говорят они, и в кадре.
+DIALOGUE = re.compile(
+    r"\bdialog\w*|\bconversation\w*|(?:talk|chat|argue|speak)\w* (?:to|with) each other|\bbanter\w*|\bargu(?:e|es|ing)\b"
+    r"|\bdebate\w*|разговарива\w*|бесед\w*|диалог\w*|спор(?:ят|ит|ят|ящ\w*)\b|болта\w*|переговарива\w*",
+    re.I,
+)
+#: Тринадцатый круг: исполнитель ПОЁТ в кадре (клип на трек заказчика).
+SINGING = re.compile(
+    r"\bsing(?:s|ing)?\b|\blip[- ]?sync\w*|\bmouth\w* the (?:words|lyrics)|\bperform\w* (?:the |our |my )?(?:song|track)"
+    r"|\brapp(?:ing|s)\b|по[её]т\b|поют\b|пою\w*|спо[её]т|исполня\w* (?:песн|трек)|чита\w* рэп|открыва\w* рот",
+    re.I,
+)
+#: Исполнитель клипа словами: тот, кто держит клип от сцены к сцене.
+PERFORMER = re.compile(
+    r"\bsinger\b|\bperformer\b|\bvocalist\b|\brapper\b|\bartist\b|\bband\b|\bfrontman\b|\bfrontwoman\b"
+    r"|певиц\w*|певец\w*|певц\w*|исполнител\w*|вокалист\w*|рэпер\w*|артист\w*|групп[аы]\b",
+    re.I,
+)
 #: Голос ЗА кадром назван словами — говорящего в кадре нет.
 VOICE_OFF_FRAME = re.compile(r"voice-?over|narrat\w*|off-?screen|озвучк\w*|закадров\w*|диктор\w*|配音", re.I)
 #: Двенадцатый круг: говорящий ВИДЕН словами — ведущий, «в камеру», «в кадре».
@@ -2211,7 +2526,31 @@ def говорят_в_кадре(spec: Spec, текст: str = "") -> bool:
     if ON_SCREEN_SPEAKER.search(сказано):
         return True
     персонаж = (spec.characters or 0) >= 1 or bool(spec.people)
-    return персонаж and bool(SPEAKING_IN_FRAME.search(сказано)) and not VOICE_OFF_FRAME.search(сказано)
+    if VOICE_OFF_FRAME.search(сказано):
+        return False
+    # ТРИНАДЦАТЫЙ КРУГ: диалог персонажей («кот и пёс разговаривают») — говорят в кадре.
+    return персонаж and bool(SPEAKING_IN_FRAME.search(сказано) or DIALOGUE.search(сказано))
+
+
+def поют_в_кадре(spec: Spec, текст: str = "") -> bool:
+    """Исполнитель поёт ВАШ трек в кадре генерируемого клипа (тринадцатый круг): к треку нужен липсинк."""
+    if "video" not in spec.outputs or "audio" not in spec.inputs or set(spec.inputs) & {"video", "photo"}:
+        return False
+    if spec.task not in (None, "generate", "music-visualiser", "r2v"):
+        return False
+    сказано = " ".join(str(у) for у in (*spec.conditions, текст) if у)
+    return bool(SINGING.search(сказано))
+
+
+def клип_с_исполнителем(spec: Spec, текст: str = "") -> bool:
+    """Клип на ВАШ трек из нескольких сцен с одним исполнителем (тринадцатый круг)."""
+    if "video" not in spec.outputs or "audio" not in spec.inputs or set(spec.inputs) & {"video", "photo"}:
+        return False
+    if spec.task not in (None, "generate", "music-visualiser"):
+        return False
+    сцен = (spec.shots or 0) >= SERIES_SHOTS_MIN or float(spec.duration_s or 0) > SERIES_DURATION_MIN_S
+    сказано = " ".join(str(у) for у in (*spec.conditions, текст) if у)
+    return сцен and bool(PERFORMER.search(сказано) or SINGING.search(сказано))
 
 
 #: «Тот же персонаж» словами — серия держит одного героя (одиннадцатый круг).
@@ -2242,6 +2581,12 @@ def персонажи_по_умолчанию(spec: Spec, текст: str = "")
     """
     if spec.characters is not None or set(spec.inputs) & {"photo", "video"}:
         return 0, ""
+    if клип_с_исполнителем(spec, текст):
+        # ТРИНАДЦАТЫЙ КРУГ: клип со сценами и одним исполнителем — референс исполнителя.
+        return 1, (
+            "a music video of scenes with one performer — characters=1 assumed: the performer's reference is "
+            "made once and every scene is built from it; name spec.characters yourself to override"
+        )
     if spec.task not in (None, "generate"):
         return 0, ""
     выходы = set(spec.outputs)
@@ -2339,6 +2684,13 @@ def with_defaults(spec: Spec, ролик: bool, текст: str = "") -> Spec:
             "a short generated clip where someone speaks: the video model makes the voice and the lips together "
             "(native audio) — no separate voiceover or lip sync; pass spec.audio='voiceover' for an off-screen voice"
         )
+    elif поют_в_кадре(replace(spec, characters=поля["characters"]), текст):
+        # ТРИНАДЦАТЫЙ КРУГ: исполнитель поёт в кадре — губы под вокал трека.
+        поля["speaker_on_screen"] = True
+        допущения.append(
+            "the performer sings on camera: a lip-sync step moves the lips to YOUR track in every scene — "
+            "pass spec.conditions=['no lip sync'] for a performance without visible singing"
+        )
     elif говорят_в_кадре(spec, текст):
         # ДВЕНАДЦАТЫЙ КРУГ: ведущий или персонаж говорит в кадре, а клип длиннее
         # одного дубля со звуком — речь синтезируется, губы двигает липсинк
@@ -2358,6 +2710,27 @@ def with_defaults(spec: Spec, ролик: bool, текст: str = "") -> Spec:
             "the voice plays over the picture, nobody on screen moves their lips — "
             "pass spec.task='avatar' (or 'lipsync') for an on-screen speaker, or spec.audio='native'"
         )
+    if (
+        spec.task is None
+        and "video" in spec.inputs
+        and set(spec.outputs) <= {"video", "text"}
+        and монтажные_правки_словами(текст)
+    ):
+        # ТРИНАДЦАТЫЙ КРУГ: работа не названа, а бриф называет монтаж над ВАШИМ видео.
+        поля["task"] = "video-edit"
+        источник["task"] = SOURCE_DERIVED
+    правки = правки_монтажа(replace(spec, task=поля["task"]), текст)
+    if правки != spec.edit:
+        # ТРИНАДЦАТЫЙ КРУГ: монтажная правка словами брифа, рефрейм кадрированием,
+        # LUT вместо перерисовки стиля — названо вслух.
+        поля["edit"] = правки
+        источник["edit"] = SOURCE_DERIVED
+        if EDIT_CROP in правки and ep.EDIT_REFRAME in spec.edit:
+            допущения.append(
+                "reframe to " + str(spec.aspect) + " is an assembly crop with face/subject tracking (the target is "
+                "not wider than the source, so the subject stays whole); pass spec.conditions=['outpaint'] if it "
+                "would be cut"
+            )
     if spec.task == "face-replace" and "photo" not in spec.inputs:
         допущения.append(
             "the new face/character comes from YOUR reference image — none is named in the brief; "
@@ -2530,8 +2903,11 @@ FIELD_HELP: dict[str, str] = {
 #: по умолчанию). Е1: тот же текст в описании инструмента.
 OPTIONAL_HELP: dict[str, str] = {
     "edit": (
-        "for video-edit — WHAT is edited: a list of " + " | ".join(ep.EDIT_INTENTS)
-        + "; stabilise is done at assembly (ffmpeg vidstab / Gyroflow, 0 usd) when no endpoint does it"
+        "for video-edit — WHAT is edited: a list of " + " | ".join(EDIT_VALUES)
+        + "; stabilise is done at assembly (ffmpeg vidstab / Gyroflow, 0 usd) when no endpoint does it; "
+        + ", ".join(ASSEMBLY_ONLY_EDITS)
+        + " are always assembly (ffmpeg, 0 usd, no model step); a reframe to an aspect not wider than the source is "
+        "a tracked crop"
     ),
     "lipsync": (
         "for dub-translate — move the lips to the new speech: true | false; default true when outputs include "
@@ -2636,7 +3012,7 @@ def озвучка_по_тексту(spec: "Spec") -> bool:
     return bool(выходы) and выходы <= SCRIPT_TIMED_OUTPUTS and "speech" in выходы and "script" in spec.inputs
 
 
-def gaps(raw: Mapping[str, Any] | None) -> tuple[Spec, list[str], list[dict[str, str]]]:
+def gaps(raw: Mapping[str, Any] | None, текст: str = "") -> tuple[Spec, list[str], list[dict[str, str]]]:
     """(spec, ошибки формы, НЕДОСТАЮЩИЕ решающие поля). Пусто в третьем — план строится.
 
     Решающие поля: работа, входы (с владением), выходы, длительность или число
@@ -2647,8 +3023,16 @@ def gaps(raw: Mapping[str, Any] | None) -> tuple[Spec, list[str], list[dict[str,
     if not isinstance(raw, Mapping):
         raw = {}
     нет: list[dict[str, str]] = []
+    if spec.task is None and "video" in spec.inputs and монтажные_правки_словами(текст) and set(spec.outputs) <= {"video", "text"}:
+        # ТРИНАДЦАТЫЙ КРУГ: работа не названа, а бриф называет монтаж над ВАШИМ видео.
+        spec = replace(spec, task="video-edit")
+    if монтаж_целиком(spec, текст) and raw.get("inputs") is not None:
+        # ТРИНАДЦАТЫЙ КРУГ: работа целиком монтажная — длина и язык цены не решают
+        # (0 usd), вопрос о них только задержал бы план.
+        return spec, ошибки, []
     работы = (spec.task, *spec.then_tasks) if spec.task else ()
-    if not spec.task:
+    if not spec.task and not звук_к_своему_видео(spec):
+        # Тринадцатый круг: звук к принесённому видео — работа видна по входу и выходу.
         нет.append(_пробел("task", "the job decides the steps; a text guess is how footage became a generation"))
     if raw.get("inputs") is None:
         нет.append(_пробел("inputs", "what the customer brings decides whether anything is generated at all"))

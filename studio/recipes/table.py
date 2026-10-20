@@ -60,6 +60,10 @@ T2V_NATIVE_FPS_MAX = 30
 #: beats at assembly, not by minutes of text-to-video.
 VISUALISER_LOOP_CLIPS = 4
 VISUALISER_LOOP_CLIP_S = 8
+#: Round 13: one loop clip serves every ordered version and length (a loop is a
+#: SHARED ASSET): when the loop's own length is not named, it is this many seconds
+#: (the visualiser's loop clip — one run of a generator).
+LOOP_CLIP_S = VISUALISER_LOOP_CLIP_S
 #: One recurring host across N shorts: how many reference images are made.
 SINGLE_HOST_REFERENCES = 1
 #: Speech-driven video (talking avatar, lip sync) longer than this many seconds
@@ -387,6 +391,16 @@ PRIORS_LIST = (
         "разделение и сведение (Demucs, ffmpeg); облачные эндпоинты дубляжа делают это одним вызовом и не локальны",
         TAG_ENGINEERING,
     ),
+    Prior(
+        "loop_reuse",
+        "a seamless loop is generated ONCE at its own length and repeated to every ordered version and length at "
+        "assembly (ffmpeg -stream_loop); generating each version separately pays N times for the same loop and "
+        "the versions stop matching",
+        "бесшовная петля генерируется ОДИН раз своей длины и повторяется до каждой заказанной версии и длины при "
+        "сборке (ffmpeg -stream_loop); генерировать каждую версию отдельно — платить N раз за ту же петлю, и "
+        "версии перестают совпадать",
+        TAG_ENGINEERING,
+    ),
 )
 
 #: Tools and failure checks each prior brings (kept apart from the wording above).
@@ -414,6 +428,7 @@ _PRIOR_TOOLS_FAILURES: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
     "walkthrough_camera_path": (("ffmpeg_concat",), ("walkthrough_warp",)),
     "drawn_mouth_flaps": ((), ("mouth_flap_timing",)),
     "local_dub_chain": (("extract_audio",), ("clone_accent", "dub_segment_overrun")),
+    "loop_reuse": (("ffmpeg_concat",), ("loop_seam",)),
 }
 PRIORS_LIST = tuple(
     Prior(п.id, п.en, п.ru, п.tag, п.sources, *_PRIOR_TOOLS_FAILURES[п.id]) for п in PRIORS_LIST
@@ -557,7 +572,7 @@ RECIPES_LIST: tuple[Recipe, ...] = (
         "foley_for_picture",
         "sound effects / foley for the customer's video",
         (
-            RecipeStep("звук_фон", "model", "video-to-audio over YOUR footage"),
+            RecipeStep("звук_по_видео", "model", "video-to-audio over YOUR footage"),
             RecipeStep("ffmpeg_amix", "tool", "mix under the original sound"),
             RecipeStep("loudnorm", "tool", "final loudness"),
         ),
@@ -727,6 +742,17 @@ RECIPES_LIST = (
         ("local_dub_chain",),
         ("extract_audio",),
         ("clone_accent", "dub_segment_overrun"),
+    ),
+    Recipe(
+        "shared_loop",
+        "one loop reused across several versions or lengths",
+        (
+            RecipeStep("генерация_видео", "model", "one seamless loop at its own length"),
+            RecipeStep("ffmpeg_concat", "tool", "the loop repeated to every version's length"),
+        ),
+        ("loop_reuse",),
+        ("ffmpeg_concat",),
+        ("loop_seam",),
     ),
 )
 

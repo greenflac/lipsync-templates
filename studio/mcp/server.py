@@ -88,7 +88,7 @@ from typing import Any
 
 from mcp.server.mcpserver import MCPServer
 
-from studio import broadcast_marks, claims_policy, clarify, l10n
+from studio import broadcast_marks, claims_policy, clarify, l10n, realtime
 from studio.mcp.lazy import lazy
 from studio.selfrag.facts import STALE_AFTER_DAYS  # noqa: E402
 from studio import ruwords
@@ -1594,10 +1594,21 @@ def _план(
             )
         )
 
+    # ТРИНАДЦАТЫЙ КРУГ (`studio.realtime`): живой аватар, живой дубляж — другой
+    # класс продукта (потоковая система под бюджет задержки). Пробел с тем, что
+    # база записала для реального времени, — до вопроса о длительности, которой
+    # у сеанса нет, и никогда не план, оценённый часами рендера.
+    if realtime.applies(brief, spec):
+        пробел = realtime.gap(brief, english=язык == "en")
+        пробел["risks"] = просев["risks"]
+        пробел["risky"] = просев["risky"]
+        пробел["people_policy"] = screen.отчёт_политики(политика)
+        return _json(l10n.localise_payload(пробел, язык), tool="plan_pipeline")
+
     # КОНТРАКТ ШЕСТОГО КРУГА: план — только по полной спецификации. Ошибка
     # формы spec уходит в планировщик (он отвечает `fail` с `spec_errors`);
     # неполная — вопрос с черновиком, без плана и без цены.
-    _, ошибки_spec, нехватка = bs.gaps(spec)
+    _, ошибки_spec, нехватка = bs.gaps(spec, brief)
     if not по_тексту and not ошибки_spec and нехватка:
         итог = spec_question(brief, spec, нехватка, англ=язык == "en")
         итог["risks"] = просев["risks"]

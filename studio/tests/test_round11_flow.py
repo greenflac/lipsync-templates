@@ -67,7 +67,8 @@ class СловоРешаетSpec(unittest.TestCase):
             people=[{"name": "my mother", "real": True, "public_figure": False, "deceased": True, "consent": "stated", "claim": "none"}],
         )
         self.assertFalse(_refused(answer))
-        self.assertEqual(["клонирование_голоса"], _steps(answer))
+        # Тринадцатый круг: клон по записи реестра голос только создаёт — читает шаг озвучки.
+        self.assertEqual(["клонирование_голоса", "озвучка"], _steps(answer))
         self.assertEqual(1, answer.get("decided_by_spec"))
 
     def test_без_spec_people_слово_решает_как_прежде(self) -> None:
@@ -337,7 +338,7 @@ class ОбразецГолоса(unittest.TestCase):
             inputs=[{"kind": "audio", "owned": True, "duration_s": 30}, {"kind": "text", "owned": True}],
             outputs=["speech"], duration_s=120, languages=["en"], people=[ME],
         )
-        self.assertEqual(["клонирование_голоса"], _steps(answer))
+        self.assertEqual(["клонирование_голоса", "озвучка"], _steps(answer))
 
 
 class ПереносДвижения(unittest.TestCase):

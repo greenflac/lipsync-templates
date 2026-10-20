@@ -253,7 +253,11 @@ class СвоёУЗаказчика(unittest.TestCase):
             "people": [{"name": "Anna (colleague)", "real": True, "public_figure": False, "consent": "stated", "claim": "none"}],
         }
         п = план(spec)
-        self.assertEqual([("клонирование_голоса", "x-voice-clone"), ("липсинк", "x-lips")], шаги(п))
+        # Тринадцатый круг: x-voice-clone по записи реестра голос только создаёт
+        # (синтеза среди работ нет) — текст читает шаг озвучки голосом клона.
+        self.assertEqual(
+            [("клонирование_голоса", "x-voice-clone"), ("озвучка", "x-tts"), ("липсинк", "x-lips")], шаги(п)
+        )
         self.assertEqual(["own_video_likeness"], допущения(п))
         self.assertIn("the voice sample is taken out of YOUR video (ffmpeg -vn) — 0 usd", п["assembly"]["why"])
         выкл = план({**spec, "priors": {"own_video_likeness": False}})
@@ -271,9 +275,14 @@ class СвоёУЗаказчика(unittest.TestCase):
             "people": [{"name": "abuela", "real": True, "public_figure": False, "consent": "stated", "claim": "none"}],
         }
         п = план(spec)
-        self.assertEqual([("клонирование_голоса", "x-voice-clone"), ("говорящий_аватар", "x-avatar")], шаги(п))
+        self.assertEqual(
+            [("клонирование_голоса", "x-voice-clone"), ("озвучка", "x-tts"), ("говорящий_аватар", "x-avatar")], шаги(п)
+        )
         self.assertEqual(["voice_sample_clone"], допущения(п))
-        self.assertEqual(["voice clone + narration", "talking avatar (photo + voice)"], [о["label"] for о in п["recipe"]["order"]])
+        self.assertEqual(
+            ["voice clone + narration", "voiceover", "talking avatar (photo + voice)"],
+            [о["label"] for о in п["recipe"]["order"]],
+        )
         выкл = план({**spec, "priors": {"voice_sample_clone": False}})
         self.assertEqual([("говорящий_аватар", "x-avatar")], шаги(выкл))
 
@@ -377,7 +386,8 @@ class Шумы(unittest.TestCase):
 
     def test_n30_видео_в_звук(self) -> None:
         п = план(self.N30)
-        self.assertEqual([("звук_фон", "x-foley")], шаги(п))
+        # Тринадцатый круг: шаг — сама операция «видео -> звук» (работа v2a).
+        self.assertEqual([("звук_по_видео", "x-foley")], шаги(п))
         self.assertEqual(["foley_v2a"], допущения(п))
         self.assertNotIn("prior_not_met", п["recipe"])
         выкл = план({**self.N30, "priors": {"foley_v2a": False}})
@@ -386,9 +396,9 @@ class Шумы(unittest.TestCase):
     def test_n30_нет_модели_видео_в_звук_говорится(self) -> None:
         база = tuple(f for f in БАЗА if f.model != "x-foley")
         п = план(self.N30, база)
-        self.assertEqual([("звук_фон", "x-sfx")], шаги(п))
+        self.assertEqual([("звук_по_видео", "x-sfx")], шаги(п))
         строка = п["recipe"]["prior_not_met"][0]
-        self.assertEqual(("звук_фон", "x-sfx", "fail"), (строка["step"], строка["model"], строка["outcome"]))
+        self.assertEqual(("звук_по_видео", "x-sfx", "fail"), (строка["step"], строка["model"], строка["outcome"]))
 
 
 class Плёнка(unittest.TestCase):

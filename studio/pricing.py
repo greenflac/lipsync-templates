@@ -1077,6 +1077,10 @@ class Need:
     #: Сколько клонов голоса делает шаг (ставка «за клон»): один голос — один
     #: клон, сколько бы языков он ни читал.
     clones: int = 1
+    #: Тринадцатый круг: шаг только СОЗДАЁТ голос, начитку делает шаг озвучки —
+    #: плата за клон и есть его полная цена (ставки начитки и предпрослушивания
+    #: к нему не относятся, и это не нижняя граница).
+    clone_only: bool = False
     #: Сколько ОТДЕЛЬНЫХ заказов делает шаг — по одному на язык (восьмой круг,
     #: w24): счёт «начатая минута целиком» округляется в КАЖДОМ, и 90 с на два
     #: языка — 2 × ⌈1.5⌉ = 4 минуты, а не ⌈3⌉ = 3.
@@ -1470,7 +1474,7 @@ def estimate(ставки: list[Rate], need: Need, top: int | None = None) -> li
         прочие = [r for r in ставки if r not in клоны]
         клон = max(клоны, key=lambda r: r.amount)
         плата, расчёт_клона, _ = _деньги(клон, need) or (0.0, "", "")
-        варианты = estimate(прочие, need)
+        варианты = [] if need.clone_only else estimate(прочие, need)
         if not варианты:
             return [
                 Option(
@@ -1481,7 +1485,7 @@ def estimate(ставки: list[Rate], need: Need, top: int | None = None) -> li
                     клон.conditional,
                     lower_bound=(
                         "посчитана только плата за клон: прочие ставки шага к брифу не привязались"
-                        if any(r.unit == "usd" and r.amount > 0 for r in прочие)
+                        if any(r.unit == "usd" and r.amount > 0 for r in прочие) and not need.clone_only
                         else ""
                     ),
                     rate=клон.amount,
