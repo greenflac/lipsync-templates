@@ -45,11 +45,28 @@ CAP_ATTRIBUTES: frozenset[str] = frozenset({"max_resolution", "max_output_resolu
 #: Attributes that state the largest upscale factor of a mode.
 FACTOR_ATTRIBUTES: frozenset[str] = frozenset({"upscale_factor_max", "max_upscale_factor"})
 
+#: Round 14: attributes that state the largest frame a model was TESTED (paper / benchmark / probe) to
+#: write well — not a cap of the endpoint: the schema may allow more, nobody showed the quality there.
+TESTED_ATTRIBUTES: frozenset[str] = frozenset({"tested_output_ceiling"})
+
 REACH_YES = "reaches the ordered frame by record"
+REACH_UNTESTED = "reaches the ordered frame by schema only; its quality is tested below it"
 REACH_UNKNOWN = "output ceiling not recorded"
 REACH_BELOW = "recorded output ceiling below the ordered frame"
-#: Order before price: reaching by record, then silence, then below.
-REACH_ORDER: dict[str, int] = {REACH_YES: 0, REACH_UNKNOWN: 1, REACH_BELOW: 2}
+#: Order before price: reaching by record, then reaching by schema beyond the tested frame, then
+#: silence, then below (round 14: an 8K LED wall prefers the upscaler its own paper does not stop short of).
+REACH_ORDER: dict[str, int] = {REACH_YES: 0, REACH_UNTESTED: 1, REACH_UNKNOWN: 2, REACH_BELOW: 3}
+
+#: Round 14: an upscaler made for TRANSPARENT assets (alpha preserved, PNG) — the wrong tool for an
+#: opaque frame (a product hero shot, a zoom): read from what the model is for, or its endpoint name.
+ALPHA_ROW_ATTRIBUTES: frozenset[str] = frozenset({"best_for", "positioning", "alpha_output"})
+ALPHA_SPECIALISED = re.compile(r"alpha channel|transparen|with alpha|alpha output|альфа|прозрачн", re.I)
+ALPHA_NAME = re.compile(r"transparen|[-_]alpha\b|rgba", re.I)
+
+#: Round 14: an IMAGE upscaler run on each frame of a video (no temporal model) reaches the frame but not
+#: the quality of a video upscaler — it ranks with the schema-only reach (`REACH_UNTESTED`).
+PER_FRAME_ATTRIBUTES: frozenset[str] = frozenset({"architecture", "positioning"})
+PER_FRAME = re.compile(r"\beach frame\b|\bper[- ]frame\b|\bframe[- ]by[- ]frame\b|покадров", re.I)
 
 #: A row that says the output is not capped (self-hosted node, any size).
 UNCAPPED = re.compile(r"\bany output resolution\b|\barbitrary (?:output )?(?:scale|resolution)\b|\bno output cap\b", re.I)
@@ -89,11 +106,31 @@ def row_reach(attribute: str, value: str, source_short: int | None) -> tuple[flo
     return None, ""
 
 
-def reach_state(rows: Sequence[Any], target_short: int, source_short: int | None) -> tuple[str, str]:
-    """(state, note) of one candidate against the ordered short side."""
+def per_frame(rows: Sequence[Any]) -> str:
+    """The row that says the model upscales each frame as an image ("" — none)."""
+    for f in rows:
+        if f.attribute in PER_FRAME_ATTRIBUTES and PER_FRAME.search(str(f.value or "")):
+            return str(f.source_url or "")
+    return ""
+
+
+def reach_state(
+    rows: Sequence[Any], target_short: int, source_short: int | None, video: bool = False
+) -> tuple[str, str]:
+    """(state, note) of one candidate against the ordered short side.
+
+    :param video: the step upscales a VIDEO — a per-frame image upscaler reaches it only as
+        `REACH_UNTESTED` (round 14).
+    """
     прочитано: list[tuple[float, str, str]] = []
     не_решили = 0
+    проверено: list[tuple[float, str]] = []
     for f in rows:
+        if f.attribute in TESTED_ATTRIBUTES:
+            до_проверки, _ = row_reach("max_resolution", f.value, source_short)
+            if до_проверки is not None:
+                проверено.append((до_проверки, f.source_url))
+            continue
         if f.attribute not in CAP_ATTRIBUTES | FACTOR_ATTRIBUTES:
             continue
         до, как = row_reach(f.attribute, f.value, source_short)
@@ -103,6 +140,17 @@ def reach_state(rows: Sequence[Any], target_short: int, source_short: int | None
         прочитано.append((до, как, f.source_url))
     for до, как, url in прочитано:
         if до >= target_short:
+            ниже = [(т, у) for т, у in проверено if т < target_short]
+            if ниже:
+                т, у = max(ниже)
+                return REACH_UNTESTED, (
+                    f"{как} reaches {target_short}p ({url}), but its quality is tested only up to {int(т)}p ({у})"
+                )
+            if video and (кадрами := per_frame(rows)):
+                return REACH_UNTESTED, (
+                    f"{как} reaches {target_short}p ({url}), but it upscales each frame as an image, with no "
+                    f"temporal model ({кадрами}) — flicker between frames is not ruled out"
+                )
             return REACH_YES, f"{как} reaches {target_short}p ({url})"
     if прочитано and not не_решили:
         до, как, url = max(прочитано)
@@ -111,6 +159,22 @@ def reach_state(rows: Sequence[Any], target_short: int, source_short: int | None
         f"{не_решили} row(s) about the output ceiling decide nothing without the source frame"
         if не_решили
         else "no row about the output ceiling"
+    )
+
+
+def alpha_specialised(model: str, rows: Sequence[Any]) -> bool:
+    """An upscaler made for transparent assets: its name, or what its rows say it is for."""
+    if ALPHA_NAME.search(str(model or "")):
+        return True
+    return any(f.attribute in ALPHA_ROW_ATTRIBUTES and ALPHA_SPECIALISED.search(str(f.value or "")) for f in rows)
+
+
+def alpha_exclusion_note(en: bool = True) -> str:
+    return (
+        "made for transparent assets (alpha channel, PNG) — the frame ordered is opaque, so an upscaler for "
+        "ordinary frames is the right tool"
+        if en
+        else "сделан для прозрачных ассетов (альфа-канал, PNG) — заказан непрозрачный кадр, нужен обычный апскейлер"
     )
 
 

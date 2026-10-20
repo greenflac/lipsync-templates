@@ -38,7 +38,7 @@ DECISION CONSTANTS (T1: mutated both ways by `scripts/mutate_round11.py`):
 from __future__ import annotations
 
 import re
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
@@ -85,6 +85,7 @@ JOBS_OF_STEP: dict[str, str] = {
     "видео_со_звуком": "t2v_audio",
     "замена_персонажа": "char_replace",
     "замена_фигуры": "char_replace",
+    "замена_лица_изображения": "face_swap",
     "примерка": "image_edit",
     "звук_фон": "sfx",
     "липсинк": "lipsync",
@@ -2848,6 +2849,8 @@ SINGLE_TAKE_TYPICAL_MAX_S = 15.0
 GENERATED_TAKE_JOBS: frozenset[str] = frozenset({"t2v", "i2v", "t2v_audio", "r2v"})
 #: Jobs whose model is trained on real human faces (photoreal mouth / face).
 PHOTOREAL_FACE_JOBS: frozenset[str] = frozenset({"lipsync", "avatar", "sing", "char_replace", "dub"})
+#: Round 14: from this many GENERATED shots, light named in the brief is a cross-shot consistency job.
+RELIGHT_SERIES_MIN_SHOTS = 2
 #: Roles of a real person that make them the customer's own staff (`spec.people[].role`).
 IN_HOUSE_ROLES: frozenset[str] = frozenset({"employee", "self"})
 
@@ -2865,12 +2868,22 @@ W_STYLISED_FACE = re.compile(
 )
 W_TRAINING_DATA = re.compile(
     r"training (?:data|set|images|clips|corpus)|train(?:ing)? (?:a |our |my |an? )?(?:own |custom )?(?:model|lora|classifier|detector|network)"
-    r"|fine-?tun\w*|\bdataset|synthetic data|data augmentation"
-    r"|датасет|обучающ\w* (?:выборк|данн|набор)|для обучения|обучени\w* (?:модел|нейросет|сет)|дообуч\w*|синтетическ\w* данн",
+    r"|fine-?tun\w*|\bdataset|\bdata ?set\b|synthetic data|data augmentation|train(?:ing)? (?:on|with) (?:them|these|it|the (?:images|clips|outputs))"
+    r"|(?:to|for|will) (?:train|teach) (?:our|my|a|an|the) (?:own )?(?:\w+ )?(?:model|ai|network|classifier|detector|system)"
+    r"|\bfor (?:ml|machine learning|model) training|\bml training|ground[- ]truth (?:set|data)|labell?ed (?:set|data)"
+    r"|датасет|дата-?сет|обучающ\w* (?:выборк|данн|набор)|для обучения|обучени\w* (?:модел|нейросет|сет|ии)|дообуч\w*|синтетическ\w* данн"
+    r"|(?:учить|обучать|обучить|натренировать|тренировать|научить) (?:\w+ )?(?:нейросет|модел|сет[ьи]|ии\b|классификатор|детектор|алгоритм)"
+    r"|на них (?:будем |будут )?(?:учить|обучать|тренировать)|разметк\w* (?:для|под) (?:обучени|модел)",
     re.I,
 )
 W_RELIGHT = re.compile(
-    r"relight\w*|re-light\w*|change (?:the )?light(?:ing)?|lighting change|переосвет\w*|измен\w* (?:свет|освещени)|смен\w* (?:свет|освещени)",
+    r"relight\w*|re-light\w*|change (?:the )?light(?:ing)?|lighting change|переосвет\w*|измен\w* (?:свет|освещени)|смен\w* (?:свет|освещени)"
+    # Round 14: matching / unifying the light across shots is relighting too.
+    r"|(?:match|unify|equali[sz]e|even out|consistent|same|uniform|continuous|harmoni[sz]e)\w* (?:\w+ ){0,3}?(?:light|lighting|illumination)\b"
+    r"|(?:light|lighting|illumination) (?:\w+ ){0,3}?(?:match|consistent|the same|uniform|differs|is different|varies|changes between)"
+    r"|golden[- ]hour (?:light|lighting|look)|(?:make|turn) (?:it|the scene|the shot|the clip) (?:look )?(?:like )?(?:sunset|golden hour|evening|morning) light"
+    r"|(?:одинаков|един|ровн|согласованн|похож)\w* (?:\w+ )?(?:свет|освещени)|(?:свет|освещени)\w* (?:\w+ ){0,2}?(?:одинаков|совпада|разн|отлича|скач|прыга|подогна|выровня)"
+    r"|(?:подогна|выровня|уравня|свест)\w* (?:\w+ )?(?:свет|освещени)|свет\w* (?:как|под) (?:в|на) (?:соседн|другом|первом)",
     re.I,
 )
 W_MULTICAM = re.compile(
@@ -2909,7 +2922,17 @@ def _colorize_any(c: Ctx) -> bool:
 
 
 def _relight(c: Ctx) -> bool:
-    return "relight" in tuple(c.spec.edit or ()) or (bool(c.jobs & {"v2v_edit", "image_edit"}) and c.says(W_RELIGHT))
+    """Relighting asked: `spec.edit`, the words on an edit step, or (round 14) matching the light across
+    several generated shots — the rule is not gated by step type any more, the trigger decides."""
+    if not (c.steps or c.jobs):
+        return False
+    if "relight" in tuple(c.spec.edit or ()):
+        return True
+    if not c.says(W_RELIGHT):
+        return False
+    if c.jobs & {"v2v_edit", "image_edit"}:
+        return True
+    return bool(c.jobs & (VIDEO_GEN | STILL_GEN)) and int(c.spec.shots or 1) >= RELIGHT_SERIES_MIN_SHOTS
 
 
 def _multicam(c: Ctx) -> dict[str, str] | None:
@@ -2939,6 +2962,14 @@ def _single_take(c: Ctx) -> dict[str, str] | None:
     шот = float(c.spec.per_shot_s or 0) or (float(c.spec.duration_s or 0) if int(c.spec.shots or 1) <= 1 else 0.0)
     if шот > SINGLE_TAKE_TYPICAL_MAX_S:
         return {"seconds": f"{шот:g}"}
+    # ЧЕТЫРНАДЦАТЫЙ КРУГ: предел — у ВЫБРАННОЙ модели, а не типичный. Шаг
+    # напечатал `run_limit` (дубль длиннее её записанного прогона) — заметка
+    # идёт и для дубля короче 15 с (8-секундная Veo на 12-секундном дубле).
+    прогон = chosen_run_s(c.priors)
+    if прогон:
+        шотов = max(1, int(c.spec.shots or 1))
+        шот = шот or float(c.spec.duration_s or 0) / шотов
+        return {"seconds": f"{шот:g}"} if шот > прогон else None
     return None
 
 
@@ -3033,15 +3064,21 @@ RULES_R13: tuple[Rule, ...] = (
     ),
     _r(
         "relight_limits",
-        ["v2v_edit", "image_edit"],
+        [],
         "relighting re-renders shading from an estimate of the shape: it can move the key light and change the "
         "mood, but it cannot recover blown highlights or crushed shadows, it invents speculars and cast shadows, "
         "and strong changes flatten skin texture and flicker over time — keep changes moderate, match the plate's "
-        "light for composites, and relight in 3D (depth / normal passes) or reshoot when it must be exact",
+        "light for composites, and relight in 3D (depth / normal passes) or reshoot when it must be exact; across "
+        "several shots keep the light consistent: one lighting setup (direction, colour temperature, intensity) "
+        "and one reference frame or HDRI for every shot, the same model, prompt and seed, and one shared grade "
+        "checked with the shots side by side",
         "переосвещение пересчитывает светотень по оценке формы: оно сдвигает ключевой свет и меняет настроение, "
         "но не вернёт пересвеченные света и заваленные тени, придумывает блики и падающие тени, а сильная правка "
         "сглаживает текстуру кожи и мерцает во времени — меняйте умеренно, подгоняйте свет под плейт при "
-        "композитинге, а где нужно точно — переосвещение в 3D (проходы глубины и нормалей) или пересъёмка",
+        "композитинге, а где нужно точно — переосвещение в 3D (проходы глубины и нормалей) или пересъёмка; на "
+        "нескольких шотах свет держится одинаковым: одна схема света (направление, цветовая температура, "
+        "интенсивность) и одна опорная картинка или HDRI на все шоты, одна модель, промпт и сид, и общий "
+        "грейд с проверкой шотов рядом",
         E,
         _relight,
         ("edit",),
@@ -3128,6 +3165,153 @@ RULES_R13: tuple[Rule, ...] = (
 )
 
 RULES_LIST = RULES_LIST + RULES_R13
+
+# --- round 14 -----------------------------------------------------------------------------
+#
+# Expert caveats the round-14 hidden set found missing on natural phrasings
+# (structured fields first, then EN/RU cue sets).
+
+#: A prior the planner adds when a step's CHOSEN model records a shorter run than the take
+#: (the step carries `run_limit`): the single-take note follows the chosen model, not the typical 15 s.
+RUN_OVER_PRIOR = "chosen_model_run_over"
+#: The chosen model's recorded run in a step's `run_limit` line (EN and RU wording of `planner.run_limit_line`).
+RUN_S_IN_LINE = re.compile(r"(?:is at most|не больше) (\d+(?:\.\d+)?) (?:s|с)\b")
+
+
+def run_over_priors(lines: "Iterable[object]") -> tuple[str, ...]:
+    """Priors for the notes from the steps' `run_limit` lines: `RUN_OVER_PRIOR:<shortest recorded run>`."""
+    прогоны = [float(m.group(1)) for л in lines if л and (m := RUN_S_IN_LINE.search(str(л)))]
+    return (f"{RUN_OVER_PRIOR}:{min(прогоны):g}",) if прогоны else ()
+
+
+def chosen_run_s(priors: "Iterable[str]") -> float | None:
+    """The chosen model's recorded run carried by `run_over_priors`; None — no step is over its run."""
+    for п in priors:
+        if str(п).startswith(RUN_OVER_PRIOR + ":"):
+            try:
+                return float(str(п).split(":", 1)[1])
+            except ValueError:
+                return None
+    return None
+#: Claim types that make a synthetic presenter's script news-shaped (`spec.claims[].type`).
+PRESENTER_NEWS_TYPES: frozenset[str] = frozenset({"news", "real_event"})
+#: Jobs that swap a face (video character replacement, image face swap).
+FACE_SWAP_JOBS: frozenset[str] = frozenset({"char_replace", "face_swap"})
+#: From this many swapped items the order is a face-swap data set (with or without the words).
+FACE_SWAP_DATASET_MIN = 20
+
+W_HOLOGRAM = re.compile(
+    r"hologra\w*|pepper'?’?s[- ]ghost|holo[- ]?(?:fan|box|gauze|screen|display|cube|stage)|hypervsn"
+    r"|transparent (?:led|oled|lcd|screen|display|film|glass display)|(?:led|oled) (?:film|mesh) (?:screen|display|on (?:the )?glass)"
+    r"|(?:3d )?(?:led )?(?:fan|propeller) (?:display|screen)|see-through (?:led|screen|display)|projection (?:gauze|scrim)"
+    r"|голограм\w*|голографи\w*|призрак\w* пеппера|голо-?(?:вентилятор|куб|бокс)"
+    r"|прозрачн\w* (?:led|oled|lcd|светодиод\w*|экран\w*|дисплей\w*|панел\w*|плёнк\w*|пленк\w*)"
+    r"|светодиодн\w* вентилятор|3d[- ]вентилятор",
+    re.I,
+)
+S_GDPR = "https://eur-lex.europa.eu/eli/reg/2016/679/oj"
+S_BIPA = "https://www.ilga.gov/legislation/ilcs/ilcs3.asp?ActID=3004&ChapterID=57"
+
+
+def _hologram(c: Ctx) -> bool:
+    """A display where black is transparent: Pepper's ghost, a holo fan, a transparent LED / OLED."""
+    return bool(c.steps or c.jobs) and c.visual and c.says(W_HOLOGRAM)
+
+
+def _synthetic_presenter(c: Ctx) -> bool:
+    """A made-up presenter (every `spec.people[].real` false) reading news-shaped content for the
+    customer's own outlet (`spec.claims[].own_brand`)."""
+    люди = list(c.spec.people)
+    if not люди or not all(п.get("real") is False for п in люди):
+        return False
+    свои = any(
+        str(з.get("type") or "").lower() in PRESENTER_NEWS_TYPES and з.get("own_brand") is True
+        for з in c.spec.claims
+    )
+    return bool(c.steps or c.jobs) and свои
+
+
+def _face_swap_dataset(c: Ctx) -> dict[str, str] | None:
+    """Many swapped faces, or swapped faces as training data: biometric consent and licences per identity."""
+    if not c.jobs & FACE_SWAP_JOBS:
+        return None
+    штук = max([int(c.spec.shots or 0)] + [int(з.get("count") or 0) for з in c.spec.input_items])
+    if c.says(W_TRAINING_DATA) or штук >= FACE_SWAP_DATASET_MIN:
+        return {"n": str(штук) if штук > 1 else "many"}
+    return None
+
+
+RULES_R14: tuple[Rule, ...] = (
+    _r(
+        "hologram_black_background",
+        [],
+        "hologram / Pepper's-ghost / holo-fan / transparent LED or OLED display: BLACK is the transparent colour "
+        "(the display adds light, black pixels are off) — deliver the subject on true black (RGB 0, full-range "
+        "levels, no grain, vignette, haze or glow in the background), not on a green key and not with an alpha "
+        "channel unless the player asks for one; key the plate with a matte and composite over 0-black, check the "
+        "encoder keeps black at 0 (a limited-range 16-235 file shows a grey glowing box), and light the subject "
+        "for the screen: dark clothes, hair and shadows vanish, so add a rim light, lift the darks and avoid "
+        "black costumes; keep matte edges clean — a halo reads as a glowing outline",
+        "голограмма / «призрак Пеппера» / голо-вентилятор / прозрачный LED- или OLED-экран: ЧЁРНЫЙ — это "
+        "прозрачный цвет (экран добавляет свет, чёрные пиксели не горят) — отдавайте объект на чистом чёрном "
+        "(RGB 0, полный диапазон, без зерна, виньетки, дымки и свечения на фоне), а не на зелёном фоне и не с "
+        "альфа-каналом, если плеер его не просит; вырезайте по маске и кладите на 0-чёрный, проверьте, что "
+        "кодировщик держит чёрный в 0 (файл в ограниченном диапазоне 16-235 светится серым прямоугольником), и "
+        "светите объект под экран: тёмная одежда, волосы и тени исчезают — нужен контровой свет, поднятые тени и "
+        "не чёрные костюмы; края маски чистые — ореол читается светящимся контуром",
+        E,
+        _hologram,
+        ("outputs", "conditions"),
+        "spec.display = 'additive' (hologram / transparent LED)",
+        (S_FFMPEG_FILTERS, S_BT709),
+    ),
+    _r(
+        "synthetic_presenter_disclosure",
+        [],
+        "a synthetic presenter for your own programme: label the presenter as AI-generated on screen and in the "
+        "description of every item (EU AI Act art. 50 deepfake / AI-content disclosure; platform synthetic-media "
+        "labels), make it a NEW face and voice that resembles no real person (no reference photo or voice of "
+        "anyone without their consent), use only your own channel's name, logo and graphics — never another "
+        "broadcaster's marks or look — keep the newsroom's editorial sign-off on every script (the avatar reads "
+        "only approved, true content; nothing invented), and attach C2PA content credentials",
+        "синтетический ведущий для вашей собственной программы: помечайте ведущего как созданного ИИ в кадре и в "
+        "описании каждого выпуска (статья 50 AI Act ЕС о раскрытии дипфейков и ИИ-контента; метки синтетических "
+        "медиа площадок), делайте НОВОЕ лицо и голос, не похожие ни на одного реального человека (без фото или "
+        "голоса кого-либо без его согласия), используйте только название, логотип и графику своего канала — "
+        "никогда знаки или стиль другого вещателя, — сохраняйте утверждение каждого текста редакцией (аватар "
+        "читает только одобренное и правдивое, ничего выдуманного) и прикладывайте C2PA content credentials",
+        R,
+        _synthetic_presenter,
+        ("people", "claims"),
+        "",
+        (S_AI_ACT, S_YT_SYNTHETIC, S_C2PA),
+    ),
+    _r(
+        "face_swap_dataset_consent",
+        [],
+        "a face-swap data set ({n} items): faces are biometric data — keep written consent from EVERY identity "
+        "whose face is used, covering synthetic derivatives and ML training (GDPR art. 9 explicit consent; "
+        "Illinois BIPA written release; no public figures, minors or scraped faces), a licence for every target "
+        "photo or clip that allows AI derivatives and training (stock licences often exclude both), a manifest "
+        "per item (source, identity, consent id, model, version, terms date), and mark every item as synthetic "
+        "so it never leaves the training pipeline as a real photo; the face-swap provider's terms decide whether "
+        "its outputs may train a model",
+        "датасет с заменой лиц ({n} шт.): лица — биометрические данные; храните письменное согласие КАЖДОГО "
+        "человека, чьё лицо используется, на синтетические производные и обучение моделей (явное согласие по "
+        "ст. 9 GDPR; письменное разрешение по BIPA штата Иллинойс; без публичных лиц, детей и собранных из сети "
+        "лиц), лицензию на каждое целевое фото или клип, разрешающую производные ИИ и обучение (стоковые "
+        "лицензии часто исключают и то и другое), манифест на каждый образец (источник, человек, номер согласия, "
+        "модель, версия, дата условий) и пометку «синтетическое» на каждом образце, чтобы он не ушёл из "
+        "обучения как настоящее фото; можно ли учить модель на результатах, решают условия поставщика замены лиц",
+        R,
+        _face_swap_dataset,
+        ("people", "shots", "inputs"),
+        "spec.use = 'training-data'",
+        (S_GDPR, S_BIPA, S_FAL_TERMS),
+    ),
+)
+
+RULES_LIST = RULES_LIST + RULES_R14
 
 RULES: dict[str, Rule] = {р.id: р for р in RULES_LIST}
 

@@ -241,6 +241,7 @@ from studio import lifecycle as life
 from studio import pipeline as pl
 from studio import pricing
 from studio import recipes as rc
+from studio.recipes import checklist as cl
 from studio import resolution
 from studio import upscale_reach as ur
 from studio.factindex import FactIndex
@@ -7528,6 +7529,7 @@ def candidates_for(
     requirement_frame: tuple[int, int] | None = None,
     upscale_target: tuple[int, int] | None = None,
     source_frame: tuple[int, int] | None = None,
+    alpha_wanted: bool = True,
 ) -> "Кандидаты":
     """Кандидаты на операцию: модели, о которых база говорит СЛОВАМИ ОПЕРАЦИИ.
 
@@ -7536,6 +7538,9 @@ def candidates_for(
         отсев, когда хоть один кандидат не ниже; все ниже — два прохода.
     :param source_frame: кадр исходника, НАЗВАННЫЙ заказчиком: по нему
         множитель апскейлера переводится в кадр выхода.
+    :param alpha_wanted: заказан ли прозрачный фон (четырнадцатый круг,
+        `rc.wants_alpha`). Нет — апскейлер для прозрачных ассетов
+        (`ur.alpha_specialised`) на шаге апскейла отсеивается, если есть другой.
 
     :param stated_conditions: условия заказа (`attrfamily.УСЛОВИЯ`: `pose_range`,
         `text_legibility`, `hands`…): по ним `capability.condition_state`
@@ -7757,8 +7762,20 @@ def candidates_for(
     if цель_апскейла:
         for ключ in по_модели:
             имя_дотяга = _написание(по_имени.get(ключ, []), написание[ключ])
-            дотяг[ключ] = ur.reach_state(по_имени.get(fold(имя_дотяга), []), цель_апскейла, исходник_апскейла)
+            дотяг[ключ] = ur.reach_state(
+                по_имени.get(fold(имя_дотяга), []), цель_апскейла, исходник_апскейла, video=op.name == "апскейл"
+            )
     все_ниже = bool(дотяг) and all(с == ur.REACH_BELOW for с, _ in дотяг.values())
+    # АПСКЕЙЛЕР ДЛЯ ПРОЗРАЧНЫХ АССЕТОВ НА НЕПРОЗРАЧНОМ КАДРЕ (четырнадцатый
+    # круг): «зум товара» выбирал `topaz-upscale-image-transparent` — инструмент
+    # для логотипов с альфой. Альфа — условие, только когда её заказали.
+    для_альфы: set[str] = set()
+    if op.name in ur.UPSCALE_OPS and not alpha_wanted:
+        for ключ in по_модели:
+            имя_альфы = _написание(по_имени.get(ключ, []), написание[ключ])
+            if ur.alpha_specialised(имя_альфы, по_имени.get(fold(имя_альфы), [])):
+                для_альфы.add(ключ)
+    все_для_альфы = bool(для_альфы) and для_альфы >= set(по_модели)
     for ключ, свои in по_модели.items():
         имя = _написание(по_имени.get(ключ, []), написание[ключ])
         свои = [f for f in свои if pl.in_scope(f, languages)]
@@ -7819,6 +7836,9 @@ def candidates_for(
         дотяг_сост, дотяг_нота = дотяг.get(ключ, ("", ""))
         if дотяг_сост == ur.REACH_BELOW and not все_ниже:
             исключены[имя] = ur.exclusion_note(дотяг_нота)
+            continue
+        if ключ in для_альфы and not все_для_альфы:
+            исключены[имя] = ur.alpha_exclusion_note()
             continue
         if жёсткое.свой_gpu:
             # СВОЙ GPU — ЦЕНА ВРЕМЕНЕМ GPU, А НЕ ТАРИФОМ API: тариф площадки
@@ -12432,6 +12452,7 @@ def plan(
             # кадр; допущение класса апскейлера не отсеивает.
             upscale_target=None if понято.source.get("resolution") == bs.SOURCE_DEFAULT else заказанный_кадр,
             source_frame=bs.source_frame(понято),
+            alpha_wanted=rc.wants_alpha(понято, brief),
         )
 
     # СКОЛЬКО ШОТОВ (2026-10-15, четвёртый круг). Явное число; «each» над N;
@@ -13122,7 +13143,14 @@ def plan(
         # ЗАМЕТКИ ПРОИЗВОДСТВА (девятый круг, `studio/recipes`): что инженер
         # говорит рядом с шагами — лицензия, маска, кадрирование, маркировка.
         "production_notes": rc.notes(
-            понято, [оп.name for оп, _ in выбор], по_английски, text=текст, applied=рецепт
+            понято,
+            [оп.name for оп, _ in выбор],
+            по_английски,
+            text=текст,
+            applied=рецепт,
+            # ЧЕТЫРНАДЦАТЫЙ КРУГ: дубль длиннее записанного прогона ВЫБРАННОЙ
+            # модели — заметка о пределе дубля, даже если он короче типичных 15 с.
+            extra_priors=cl.run_over_priors(с.get("run_limit") for с in строки_шагов),
         ),
         "native_audio_variant": со_звуком,
         "classes": list(отчёт["classes"]),
