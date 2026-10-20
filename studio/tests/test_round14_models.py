@@ -485,6 +485,9 @@ class FaceSwapDataSets(unittest.TestCase):
         видео = _spec({"task": "face-replace", "inputs": [{"kind": "video", "owned": True}, {"kind": "image", "owned": True}],
                        "outputs": ["video"], "duration_s": 10, "people": []})
         self.assertEqual(bs.route(видео).шаги, ("замена_персонажа",))
+        оба = _spec({"task": "face-replace", "inputs": [{"kind": "video", "owned": True}, {"kind": "image", "owned": True}],
+                     "outputs": ["video", "image"], "duration_s": 10, "people": []})
+        self.assertIn("замена_персонажа", bs.route(оба).шаги)
         снимок = _spec({"task": "face-replace", "inputs": [{"kind": "image", "owned": True, "count": 2}], "outputs": ["image"],
                         "people": []})
         self.assertEqual(bs.route(снимок).сборка, ())
