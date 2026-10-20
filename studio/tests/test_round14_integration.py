@@ -18,6 +18,7 @@ os.environ.setdefault("STUDIO_NO_JOURNAL", "1")
 
 from studio import brief_spec as bs  # noqa: E402
 from studio import planner as pn  # noqa: E402
+from studio import realtime as rt  # noqa: E402
 from studio.recipes import checklist as cl  # noqa: E402
 
 EIGHT_S = SimpleNamespace(model="acme-video-8s", run_s=8.0, dur_note="limit 8 s: max_seconds=8")
@@ -57,6 +58,41 @@ class ShotLengthMeetsSingleTake(unittest.TestCase):
 
     def test_two_long_shots_each_over_the_run(self) -> None:
         self.assertIn("single_take_limit", _notes("Two shots, 24 seconds in total", True, duration_s=24, shots=2))
+
+
+class LiveBroadcastInAnyLanguage(unittest.TestCase):
+    """A live broadcast / stream / video call is live work in the brief's own language.
+
+    Round 14 (steps) made a bare speed word live only with an interactive cue; the live-system
+    nouns must then be known beyond EN/RU, or a live-streamed avatar becomes a 3-hour render.
+    """
+
+    AVATAR = {"task": "avatar", "outputs": ["video"]}
+
+    def test_live_nouns(self) -> None:
+        for brief in (
+            "제 캐릭터 아바타로 매주 라이브 방송을 하고 싶어요, 3시간 정도",
+            "毎晩の生配信でキャラクターのアバターを使いたい",
+            "我们想在直播里用一个虚拟形象主播",
+            "Queremos un avatar para la transmisión en vivo de cada viernes",
+            "Um avatar para a nossa transmissão ao vivo semanal",
+            "Ein Avatar für unsere wöchentliche Live-Übertragung",
+            "Un avatar pour notre diffusion en direct du jeudi",
+        ):
+            with self.subTest(brief=brief):
+                self.assertTrue(rt.applies(brief, self.AVATAR))
+
+    def test_speed_word_alone_is_still_a_render(self) -> None:
+        for brief in (
+            "실시간에 가까운 속도로 60초 아바타 영상을 렌더링해 주세요",
+            "Renderiza un vídeo de avatar de 60 s casi en tiempo real",
+            "Ein 60-Sekunden-Avatarvideo, fast in Echtzeit gerendert",
+        ):
+            with self.subTest(brief=brief):
+                self.assertFalse(rt.applies(brief, self.AVATAR))
+
+    def test_speed_word_with_viewers_answered(self) -> None:
+        self.assertTrue(rt.applies("The avatar answers viewers in tiempo real", self.AVATAR))
 
 
 if __name__ == "__main__":

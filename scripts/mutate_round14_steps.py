@@ -27,7 +27,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 
-НАБОРЫ = ("studio.tests.test_round14_steps",)
+НАБОРЫ = ("studio.tests.test_round14_steps", "studio.tests.test_round14_integration")
 
 BS = "studio/brief_spec.py"
 PN = "studio/planner.py"
@@ -38,6 +38,13 @@ RT = "studio/realtime.py"
 MUTANTS: tuple[tuple[str, str, str, str], ...] = (
     # --- реальное время только при живой системе ----------------------------------------
     (RT, "    if _said(LIVE, clean):\n        return True\n", "", "видеозвонок-аватар без слова скорости — план"),
+    # Интеграция четырнадцатого круга: живой эфир на других языках брифа.
+    (RT, '    r"|라이브 ?(?:방송|스트리밍|스트림)|생방송|실시간 ?(?:방송|스트리밍|스트림)|화상 ?통화"\n', "",
+     "корейский прямой эфир — снова трёхчасовой рендер"),
+    (RT, '    r"|transmisi[oó]n en (?:vivo|directo)|videollamada\\w*|transmiss[aã]o ao vivo|videochamada\\w*"\n', "",
+     "эфир по-испански и по-португальски не живой"),
+    (RT, '    r"|실시간|リアルタイム|实时|實時|tiempo real|tempo real|echtzeit|temps réel",', "    r\"\",",
+     "«реальное время» других языков не слово скорости"),
     (RT, "    return face and _said(SPEED, clean) and bool(INTERACTIVE.search(clean))", "    return _said(SPEED, clean)",
      "быстрый синтез речи — пробел"),
     (RT, "    return face and _said(SPEED, clean) and bool(INTERACTIVE.search(clean))", "    return False",

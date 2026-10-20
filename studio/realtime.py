@@ -38,7 +38,14 @@ LIVE = re.compile(
     r"|\bstreaming avatar|interactive avatar|conversational avatar|on a (?:video )?call|\bvideo[- ]?call\w*"
     r"|\b(?:joins?|joining|in|into|during) (?:our |the |a |my )?(?:zoom|teams|google meet)\b|\bon[- ]air\b"
     r"|в прямом эфире|прям\w+ эфир\w*|онлайн-перевод\w*|синхронн\w+ перевод\w*|видеозвонк\w*|созвон\w*"
-    r"|живо\w* (?:перевод\w*|дубляж\w*|аватар\w*|диалог\w*|общени\w*)|стрим\w*|интерактивн\w+ аватар\w*",
+    r"|живо\w* (?:перевод\w*|дубляж\w*|аватар\w*|диалог\w*|общени\w*)|стрим\w*|интерактивн\w+ аватар\w*"
+    # Integration of round 14: the same live-broadcast / live-stream / video-call nouns in the
+    # other brief languages (ko, ja, zh, es, pt, de, fr) — a live broadcast is live work in any
+    # language, not only when an English speed word sits in the conditions.
+    r"|라이브 ?(?:방송|스트리밍|스트림)|생방송|실시간 ?(?:방송|스트리밍|스트림)|화상 ?통화"
+    r"|生配信|ライブ配信|生放送|ビデオ通話|直播|视频通话|視訊通話"
+    r"|transmisi[oó]n en (?:vivo|directo)|videollamada\w*|transmiss[aã]o ao vivo|videochamada\w*"
+    r"|live-?übertragung\w*|videoanruf\w*|videotelefonat\w*|diffusion en direct|appel vidéo",
     re.I,
 )
 #: SPEED words (round 14): real time / low latency / latency. Alone they describe a FAST
@@ -47,7 +54,8 @@ LIVE = re.compile(
 #: live only when the brief is INTERACTIVE (someone is answered in session) and a face is
 #: rendered (`FACE_TASKS` / a video output).
 SPEED = re.compile(
-    r"real[- ]?time|\bin real time\b|low[- ]latency|\blatency\b|реальн\w* времен\w*|задержк\w*",
+    r"real[- ]?time|\bin real time\b|low[- ]latency|\blatency\b|реальн\w* времен\w*|задержк\w*"
+    r"|실시간|リアルタイム|实时|實時|tiempo real|tempo real|echtzeit|temps réel",
     re.I,
 )
 #: Someone is answered IN SESSION: visitors, viewers, callers, a conversation.
