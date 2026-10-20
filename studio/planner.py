@@ -232,6 +232,7 @@ from lipsync.fork_identity import FAIL, PASS, UNMEASURED
 from studio import brief_spec as bs
 from studio import clarify
 from studio import duration as dur
+from studio import edit_intent as ei
 from studio import endpoints as ep
 from studio import l10n
 from studio import factaxis as fa
@@ -241,6 +242,7 @@ from studio import pipeline as pl
 from studio import pricing
 from studio import recipes as rc
 from studio import resolution
+from studio import upscale_reach as ur
 from studio.factindex import FactIndex
 from studio.selfrag import attrfamily as af
 from studio.selfrag.facts import TIERS, Fact
@@ -2711,6 +2713,8 @@ class Candidate:
     #: требований нет (кандидаты, собранные не `candidates_for`).
     requirement_rank: tuple = ()
     requirement_note: str = ""
+    #: Предел выхода апскейлера против заказанного кадра (`studio/upscale_reach.py`).
+    reach_note: str = ""
     #: Род работы внутри шага, решённый ДО общего ключа (шаг со звуком:
     #: видеомодель 0, аватар-продукт 1). Полоса бюджета (`полоса`) его не
     #: пересекает: дешёвый аватар не заменяет видеомодель ради денег.
@@ -4955,6 +4959,20 @@ def маршрут(f: Fact) -> tuple[str, str]:
 
 def _ступень_строки(f: Fact) -> int:
     return TIERS.index(f.tier) if f.tier in TIERS else len(TIERS)
+
+
+def run_limit_line(c: "Candidate", shot_s: float, en: bool = True) -> str:
+    """One take longer than the chosen model's recorded run: how many runs and how they join."""
+    прогонов = math.ceil(shot_s / float(c.run_s or shot_s))
+    if en:
+        return (
+            f"one run of {c.model} is at most {c.run_s:g} s by record ({c.dur_note}); the {shot_s:g} s take is "
+            f"{прогонов} runs joined by extend / last-frame continuation (drift shows at the joins) or a cut"
+        )
+    return (
+        f"один прогон {c.model} — не больше {c.run_s:g} с по записи ({c.dur_note}); дубль {shot_s:g} с — это "
+        f"{прогонов} прогона, сшитых продлением / продолжением с последнего кадра (на стыках дрейф), или склейка"
+    )
 
 
 def предел_прогона(facts: Sequence[Fact]) -> float | None:
@@ -7508,8 +7526,16 @@ def candidates_for(
     requested_flags: Sequence[str] = (),
     languages_named: bool = True,
     requirement_frame: tuple[int, int] | None = None,
+    upscale_target: tuple[int, int] | None = None,
+    source_frame: tuple[int, int] | None = None,
 ) -> "Кандидаты":
     """Кандидаты на операцию: модели, о которых база говорит СЛОВАМИ ОПЕРАЦИИ.
+
+    :param upscale_target: заказанный кадр шага апскейла (тринадцатый круг,
+        `studio/upscale_reach.py`): записанный предел выхода ниже него —
+        отсев, когда хоть один кандидат не ниже; все ниже — два прохода.
+    :param source_frame: кадр исходника, НАЗВАННЫЙ заказчиком: по нему
+        множитель апскейлера переводится в кадр выхода.
 
     :param stated_conditions: условия заказа (`attrfamily.УСЛОВИЯ`: `pose_range`,
         `text_legibility`, `hands`…): по ним `capability.condition_state`
@@ -7723,6 +7749,16 @@ def candidates_for(
     wanted = wanted if wanted is not None else dur.Запрос(None, "длительность не спрашивали")
     найдены: list[Candidate] = []
     исключены: dict[str, str] = {}
+    # ПРЕДЕЛ ВЫХОДА АПСКЕЙЛЕРА (тринадцатый круг): считается по всем
+    # кандидатам ДО отбора — «ниже» отсеивается, только если кто-то не ниже.
+    цель_апскейла = min(upscale_target) if op.name in ur.UPSCALE_OPS and upscale_target else None
+    исходник_апскейла = min(source_frame) if source_frame else None
+    дотяг: dict[str, tuple[str, str]] = {}
+    if цель_апскейла:
+        for ключ in по_модели:
+            имя_дотяга = _написание(по_имени.get(ключ, []), написание[ключ])
+            дотяг[ключ] = ur.reach_state(по_имени.get(fold(имя_дотяга), []), цель_апскейла, исходник_апскейла)
+    все_ниже = bool(дотяг) and all(с == ur.REACH_BELOW for с, _ in дотяг.values())
     for ключ, свои in по_модели.items():
         имя = _написание(по_имени.get(ключ, []), написание[ключ])
         свои = [f for f in свои if pl.in_scope(f, languages)]
@@ -7780,6 +7816,10 @@ def candidates_for(
         if хостинг_мимо:
             исключены[имя] = хостинг_мимо
             continue
+        дотяг_сост, дотяг_нота = дотяг.get(ключ, ("", ""))
+        if дотяг_сост == ur.REACH_BELOW and not все_ниже:
+            исключены[имя] = ur.exclusion_note(дотяг_нота)
+            continue
         if жёсткое.свой_gpu:
             # СВОЙ GPU — ЦЕНА ВРЕМЕНЕМ GPU, А НЕ ТАРИФОМ API: тариф площадки
             # платит тот, кто запускает у неё, а не на своей карте.
@@ -7828,10 +7868,20 @@ def candidates_for(
             узел,
             имя,
         )
+        нота_дотяга = ""
+        if дотяг_сост:
+            # Кадр апскейла — ПРЕДЕЛ ВЫХОДА, а не «родной кадр»: записанный
+            # дотяг 0, молчание 1, ниже 2 (все ниже — два прохода).
+            треб_ранг = (ur.REACH_ORDER[дотяг_сост], *треб_ранг[1:])
+            нота_дотяга = f"{дотяг_сост}: {дотяг_нота}"
+            if все_ниже and цель_апскейла:
+                нота_дотяга += "; " + ur.chain_note(имя, ur.best_below(все, исходник_апскейла), цель_апскейла)
+            треб_нота = "; ".join(ч for ч in (треб_нота, нота_дотяга) if ч)
         предел = предел_прогона(все)
         найдены.append(
             Candidate(
                 model=имя,
+                reach_note=нота_дотяга,
                 evidence=tuple(строки[:EVIDENCE_SHOWN]),
                 applicability=применимость,
                 against=против,
@@ -11754,7 +11804,15 @@ def заявленные(
         у = af.условие_темы(тема)
         if у and у not in итог:
             итог.append(у)
+    # ЗАМЕНА ТЕКСТА В КАДРЕ (тринадцатый круг): читаемость надписи — условие
+    # отбора правки, даже если заказчик слов «читаемый текст» не сказал.
+    if ep.EDIT_REPLACE_TEXT in tuple(getattr(понято, "edit", ()) or ()) and TEXT_EDIT_CONDITION not in итог:
+        итог.append(TEXT_EDIT_CONDITION)
     return tuple(итог), tuple(непонятые)
+
+
+#: Условие отбора, которое несёт правка `replace-text` (`attrfamily.УСЛОВИЯ`).
+TEXT_EDIT_CONDITION = "text_legibility"
 
 
 def plan(
@@ -11987,6 +12045,9 @@ def plan(
         # ЯЗЫК ЖЕСТОВ (седьмой круг): ни липсинк, ни говорящий аватар его не
         # делают — план из них был бы подменой работы. Пробел, а не план.
         return пробел_работы(понято, текст, по_английски, creative, бюджет)
+    # ПРАВКА ПО СУТИ, А НЕ ПО СЛОВУ ЗАДАЧИ (тринадцатый круг,
+    # `studio/edit_intent.py`): надпись на вывеске — правка видео с текстом.
+    понято, _ = ei.reroute(понято, текст)
     маршрут = (
         bs.route(bs.with_defaults(понято, ролик=True, текст=текст), правки_на_сборке(индекс))
         if маршрутом
@@ -12367,6 +12428,10 @@ def plan(
             # fps обгоняли бы 24 fps 4K-генератора, а 120 всё равно даёт
             # интерполяция (n08); ключ частоты судит заказанную частоту.
             requirement_frame=rc.requirement_frame(op.name, заказанный_кадр or кадр, понято),
+            # ПРЕДЕЛ ВЫХОДА АПСКЕЙЛЕРА (тринадцатый круг): только НАЗВАННЫЙ
+            # кадр; допущение класса апскейлера не отсеивает.
+            upscale_target=None if понято.source.get("resolution") == bs.SOURCE_DEFAULT else заказанный_кадр,
+            source_frame=bs.source_frame(понято),
         )
 
     # СКОЛЬКО ШОТОВ (2026-10-15, четвёртый круг). Явное число; «each» над N;
@@ -12521,6 +12586,22 @@ def plan(
                     {"model": м, "why": п} for м, п in list(отсеяны.items())[:HARD_EXCLUDED_SHOWN]
                 ],
                 "hard_note": лучший.hard_note if лучший is not None else "",
+                **(
+                    {"upscale_reach": лучший.reach_note}
+                    if лучший is not None and лучший.reach_note
+                    else {}
+                ),
+                # ПРЕДЕЛ ОДНОГО ДУБЛЯ (тринадцатый круг): шот длиннее записанного
+                # прогона выбранной модели — сколько прогонов и как их сшить.
+                **(
+                    {"run_limit": run_limit_line(лучший, длительность_шота.секунды, по_английски)}
+                    if лучший is not None
+                    and op.name in VIDEO_MAKERS
+                    and лучший.dur_state == dur.DUR_OVER
+                    and лучший.run_s
+                    and длительность_шота.секунды
+                    else {}
+                ),
                 "why_not_next": (
                     why_not(лучший, предложены[1])
                     if лучший is not None and len(предложены) > 1
@@ -13206,6 +13287,8 @@ def сжать(ответ: dict) -> dict:
                         "apple_silicon",
                         "gpu_backend",
                         "edit",
+                        "upscale_reach",
+                        "run_limit",
                     )
                     if к in ш
                 },

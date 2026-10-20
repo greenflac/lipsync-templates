@@ -75,6 +75,9 @@ ROOT = Path(__file__).resolve().parents[1]
     # Двенадцатый круг: длинный хвост чек-листа (письменности, DCP, короткие
     # видео) и свой GPU не NVIDIA (ROCm / XPU в разборе, отборе и строке шага).
     "scripts/mutate_round12_checklist.py",
+    # Тринадцатый круг: предел выхода апскейлера, правка надписи в видео,
+    # оговорки чек-листа, свой ведущий со своими новостями.
+    "scripts/mutate_round13_models.py",
 )
 ПУТЬ_В_ТАБЛИЦЕ = re.compile(r'"((?:studio|scripts|lipsync)/[\w/]+\.py)"')
 

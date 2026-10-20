@@ -39,7 +39,8 @@ def _план(spec: dict, бриф: str = "please plan this clip") -> dict:
 class ПодработыПравки(unittest.TestCase):
     def test_правка_по_звеньям_идентификатора(self) -> None:
         self.assertEqual(
-            {ep.EDIT_REPLACE_OBJECT, ep.EDIT_REMOVE_OBJECT, ep.EDIT_REPLACE_SKY},
+            # Правка по инструкции меняет и надпись в кадре (тринадцатый круг).
+            {ep.EDIT_REPLACE_OBJECT, ep.EDIT_REMOVE_OBJECT, ep.EDIT_REPLACE_SKY, ep.EDIT_REPLACE_TEXT},
             set(ep.edit_intents("fal-ai/kling-video/o3/standard/video-to-video/edit")),
         )
         self.assertEqual({ep.EDIT_REFRAME}, set(ep.edit_intents("fal-ai/ltx-2.3/reframe")))

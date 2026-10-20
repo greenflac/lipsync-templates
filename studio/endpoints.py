@@ -504,6 +504,22 @@ CURATED: dict[str, tuple[tuple[str, ...], str, str]] = {
         "SeedVR2-3B README: one-step diffusion video restoration and super-resolution",
         "https://huggingface.co/ByteDance-Seed/SeedVR2-3B/raw/main/README.md",
     ),
+    # Тринадцатый круг: апскейл на СВОЁМ Mac — открытые веса, которые
+    # запускаются без CUDA (ncnn Vulkan / Core ML). Площадки их не продают,
+    # категорий нет, а строки блога работу не называют (`DOC_TIERS`).
+    "real-esrgan": (
+        # Только картинка: видео он поднимает кадр за кадром, без временной
+        # согласованности, и на шаге видео не должен вытеснять SeedVR2.
+        (UPSCALE_IMAGE,),
+        "Real-ESRGAN README: practical image and video restoration — 4x / 2x super-resolution models, "
+        "video upscaled frame by frame",
+        "https://raw.githubusercontent.com/xinntao/Real-ESRGAN/master/README.md",
+    ),
+    "upscayl": (
+        (UPSCALE_IMAGE,),
+        "Upscayl README: free and open-source AI image upscaler (Real-ESRGAN family on ncnn Vulkan)",
+        "https://raw.githubusercontent.com/upscayl/upscayl/main/README.md",
+    ),
 }
 
 # --- маршруты -------------------------------------------------------------------
@@ -1492,6 +1508,10 @@ EDIT_RESTYLE = "restyle"
 #: правкой не считались вовсе (`NOT_AN_EDIT`), и шаг правки брал правку по
 #: инструкции, которая длину ролика не меняет.
 EDIT_EXTEND = "extend"
+#: ЗАМЕНА ТЕКСТА в кадре (тринадцатый круг): надпись на вывеске, табличке,
+#: билборде. Это правка по маске с отрисовкой текста, а не замена персонажа:
+#: «replace the text on the sign» уходило в `замена_персонажа`.
+EDIT_REPLACE_TEXT = "replace-text"
 
 #: Допустимые значения `spec.edit`. КОНСТАНТА-РЕШЕНИЕ.
 EDIT_INTENTS: tuple[str, ...] = (
@@ -1504,6 +1524,7 @@ EDIT_INTENTS: tuple[str, ...] = (
     EDIT_DAY_TO_NIGHT,
     EDIT_RESTYLE,
     EDIT_EXTEND,
+    EDIT_REPLACE_TEXT,
 )
 
 #: Звено ПРАВКИ ПО ИНСТРУКЦИИ: модель правит кадр заказчика словами
@@ -1524,6 +1545,7 @@ EDIT_RULES: dict[str, str] = {
     EDIT_DAY_TO_NIGHT: r"day-to-night|night-to-day|time-of-day",
     EDIT_RESTYLE: r"recast|render-to-real|restyle|style-transfer",
     EDIT_EXTEND: r"extend\w*|extension",
+    EDIT_REPLACE_TEXT: _ПРАВКА_ПО_ИНСТРУКЦИИ + r"|text-edit|edit-text|replace-text|text-replace\w*",
 }
 
 #: Под-работа, НАЗВАННАЯ идентификатором прямо (седьмой круг): без звена
