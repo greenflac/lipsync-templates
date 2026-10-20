@@ -92,6 +92,12 @@ def is_print(spec: "bs.Spec", text: str = "") -> bool:
     """A still made for paper: image output and the medium named in conditions or in the brief."""
     if "image" not in spec.outputs or "video" in spec.outputs:
         return False
+    # ШЕСТНАДЦАТЫЙ КРУГ: площадка названа полем (`spec.delivery.platform`) — она и решает, на любом языке.
+    from studio import spec_first as sf
+
+    печать = sf.platform(spec, "print")
+    if печать is not None:
+        return печать
     return any(PRINT.search(т) for т in _texts(spec, text))
 
 

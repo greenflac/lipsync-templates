@@ -897,6 +897,16 @@ EN: tuple[tuple[str, str], ...] = (
     ('длинный\\ фоновый\\ звук:\\ генерируется\\ ОДИН\\ зацикливаемый\\ отрезок\\ (\\d+(?:\\.\\d+)?)\\ с,\\ длину\\ даёт\\ повтор\\ при\\ сборке',
      'long ambient audio: ONE loopable segment of \\1 s is generated, the length comes from repeating it at assembly'),
     # --- конец круга 15
+    # --- круг 16: анонимизация голоса и лиц (`anonymise.NOTE_PAIRS`)
+    ('расшифровка\\ речи\\ говорящего\\ с\\ таймингами\\ —\\ до\\ синтеза\\ её\\ вычитывают\\ и\\ убирают\\ имена,\\ места\\ и\\ даты',
+     "a timed transcript of the speaker's words — reviewed and redacted (names, places, dates) before synthesis"),
+    ('вычитанный\\ текст\\ читает\\ ДРУГОЙ\\ стоковый\\ голос\\ из\\ библиотеки\\ синтеза\\ —\\ не\\ клон\\ говорящего\\ и\\ не\\ дубляж,\\ сохраняющий\\ его\\ тембр',
+     'the redacted text is read by a DIFFERENT stock voice from the TTS library — never a clone of the speaker, never a dub that keeps their timbre'),
+    ('синтетический\\ голос\\ заменяет\\ исходную\\ речь\\ фраза\\ за\\ фразой\\ \\(подгонка\\ по\\ таймингам,\\ ffmpeg\\);\\ музыка\\ и\\ атмосфера\\ —\\ только\\ из\\ разделения\\ на\\ стемы\\ \\(demucs\\),\\ проверенного\\ на\\ слух\\ —\\ 0\\ usd',
+     'the synthetic voice replaces the original speech line by line (time-fitted, ffmpeg); music and ambience only from a stem separation (demucs) checked by ear — 0 usd'),
+    ('лица\\ находятся\\ в\\ каждом\\ кадре\\ и\\ пикселизуются\\ крупным\\ блоком\\ \\(deface\\ /\\ ffmpeg\\ pixelize\\ по\\ трекингу\\)\\ —\\ необратимая\\ анонимизация\\ без\\ генеративной\\ модели,\\ 0\\ usd',
+     'faces are detected in every frame and pixelated with a coarse block (deface / ffmpeg pixelize over tracked boxes) — irreversible anonymisation with no generative model, 0 usd'),
+    # --- конец круга 16
     # --- круг 14: пометки маршрутов (`brief_spec.NOTE_FRAMES_FROM_VIDEO`, `ASSEMBLY_REASONS`)
     ('кадры\\ вынимаются\\ из\\ вашего\\ видео\\ ffmpeg\\ \\(fps=…\\ или\\ select\\ по\\ сценам\\)\\ —\\ 0\\ usd;\\ лицо\\ меняется\\ на\\ каждом\\ снимке',
      'the frames are extracted from your video with ffmpeg (fps=… or select by scene) — 0 usd; the face is swapped on each still'),

@@ -26,6 +26,7 @@ from dataclasses import dataclass, field, replace
 from typing import Callable, Mapping, Sequence
 
 from studio import brief_spec as bs
+from studio import spec_first as sf
 from studio.recipes import checklist, delivery
 from studio.recipes.table import (
     ASPECT_TOLERANCE,
@@ -210,7 +211,10 @@ FOLLOWS_PICTURE = re.compile(
 
 
 def follows_picture(spec: "bs.Spec", text: str = "") -> bool:
-    """The ordered sound must follow the brought picture (sync words in conditions or the brief)."""
+    """The ordered sound must follow the brought picture: `spec.follows_picture` (round 16), else the sync words."""
+    поле = sf.flag(spec, "follows_picture")
+    if поле is not None:
+        return поле
     return any(FOLLOWS_PICTURE.search(str(у)) for у in (*spec.conditions, text) if у)
 
 
@@ -218,20 +222,34 @@ def walkthrough(spec: "bs.Spec", text: str = "") -> bool:
     """A camera tour of a place from the customer's photos (round 12)."""
     if "video" not in spec.outputs or "photo" not in spec.inputs or _photo_count(spec) < 2:
         return False
+    # Round 16: `spec.subject` (interior) or `spec.domain` (real-estate) named decides, any brief language.
+    поле = sf.subject(spec, "interior")
+    if поле is None:
+        поле = sf.domain(spec, "real-estate")
+    if поле is not None:
+        return поле and not any(п.get("real") for п in spec.people)
     if any(п.get("real") for п in spec.people):
         return False
     return any(WALKTHROUGH.search(str(у)) for у in (*spec.conditions, text) if у)
 
 
 def drawn(spec: "bs.Spec", text: str = "") -> bool:
-    """The footage is drawn (anime, cartoon): mouths are drawn shapes, not a photographed face."""
+    """The footage is drawn (anime, cartoon): mouths are drawn shapes, not a photographed face.
+
+    Round 16: `spec.style` named decides (stylised / limited-animation = drawn; photoreal = not)."""
+    поле = sf.style(spec, *sf.STYLISED_STYLES)
+    if поле is not None:
+        return поле
     return any(DRAWN.search(str(у)) for у in (*spec.conditions, text) if у)
 
 
 def local_only(spec: "bs.Spec", text: str = "") -> bool:
     """Everything runs on the customer's own machine: `spec.self_host`, `open_weights`, or said in words."""
-    if spec.self_host or spec.open_weights:
+    if spec.open_weights:
         return True
+    # Round 16: `self_host: false` ({"enabled": False}) is a NAMED no — the words do not overrule it.
+    if spec.self_host:
+        return spec.self_host.get("enabled", True) is not False
     return any(LOCAL_ONLY.search(str(у)) for у in (*spec.conditions, text) if у)
 
 
@@ -246,14 +264,69 @@ def whole_character(spec: "bs.Spec", text: str = "") -> bool:
     named = [str(п.get("name") or "") for п in spec.people if п.get("real") is False]
     if any(CHARACTER.search(n) for n in named):
         return True
+    # Round 16: `spec.subject` named — a mascot in it is a whole-character swap, otherwise a face swap.
+    поле = sf.subject(spec, "mascot")
+    if поле is not None:
+        return поле
     said = [str(у) for у in (*spec.conditions, text) if у]
     return any(CHARACTER.search(у) for у in said) and not any(FACE_ONLY.search(у) for у in said)
 
 
 def wants_try_on(spec: "bs.Spec", text: str = "") -> bool:
-    """A garment from the customer's photo put on a model: an image edit order that names a garment and wearing it."""
+    """A garment from the customer's photo put on a model: an image edit order that names a garment and wearing it.
+
+    Round 16: `spec.subject` named decides — a garment in it is a try-on."""
+    поле = sf.subject(spec, "garment")
+    if поле is not None:
+        return поле
     said = [str(у) for у in (*spec.conditions, text) if у]
     return any(TRY_ON.search(у) for у in said) and any(GARMENT.search(у) for у in said)
+
+
+# --- round 16: the recipe words read their spec field first -------------------------------
+
+
+def logo_named(spec: "bs.Spec") -> bool:
+    """A logo / wordmark is part of the piece: `spec.subject` (logo) when named, else `spec.conditions` words."""
+    поле = sf.subject(spec, "logo")
+    if поле is not None:
+        return поле
+    return any(LOGO.search(у) for у in spec.conditions)
+
+
+def exact_text_named(spec: "bs.Spec") -> bool:
+    """Exact lettering or a logo must be legible: `spec.subject` (logo / text) when named, else the words."""
+    поле = sf.subject(spec, "logo", "text")
+    if поле is not None:
+        return поле
+    return any(LOGO.search(у) or TEXT_EXACT.search(у) for у in spec.conditions)
+
+
+def blur_named(spec: "bs.Spec") -> bool:
+    """The material is BLURRED (then a deblur model is the tool): `spec.inputs[].defects` when named, else words."""
+    поле = sf.blurred(spec)
+    if поле is not None:
+        return поле
+    return any(BLUR.search(у) for у in (*spec.conditions, *spec.edit))
+
+
+def scenes_named(spec: "bs.Spec") -> bool:
+    """A visualiser made of distinct SCENES (a music video), not loops: `outputs[].loop: false` when named."""
+    петля = getattr(spec, "loop", None)
+    if петля is not None:
+        return петля is False
+    return any(SCENES.search(у) for у in spec.conditions)
+
+
+def art_moves(spec: "bs.Spec") -> bool:
+    """The brought art itself is animated (not a static audiogram): `spec.animate_input` when named, then
+    `outputs[].loop` named (animated loops or scenes are both motion), else the words of `spec.conditions`."""
+    поле = sf.flag(spec, "animate_input")
+    if поле is not None:
+        return поле
+    if getattr(spec, "loop", None) is not None:
+        return True
+    return any(ANIMATE_ART.search(у) or SCENES.search(у) for у in spec.conditions)
 
 
 #: Edits of the customer's footage that are a mask and a composite (`spec.edit`).
@@ -531,7 +604,10 @@ def wants_alpha(spec: "bs.Spec", text: str = "") -> bool:
 
 
 def wants_mesh(spec: "bs.Spec", text: str = "") -> bool:
-    """A 3D model asked for: `spec.conditions`, or the brief's own words."""
+    """A 3D model asked for: `spec.delivery.format` (glb / usdz / …, round 16), else `spec.conditions` or the words."""
+    поле = sf.mesh_format(spec)
+    if поле is not None:
+        return поле
     return any(MESH.search(str(у)) for у in (*spec.conditions, text))
 
 
@@ -550,6 +626,7 @@ def rewrite(spec: "bs.Spec", route: "bs.Маршрут", text: str = "") -> Appl
     avoid: dict[str, str] = {}
     stylised: list[str] = []
     anonymise_assembly: tuple[str, ...] = ()
+    drop_assembly: tuple[str, ...] = ()
     inputs = set(spec.inputs)
     outputs = set(spec.outputs)
     tasks = {spec.task, *spec.then_tasks}
@@ -660,7 +737,7 @@ def rewrite(spec: "bs.Spec", route: "bs.Маршрут", text: str = "") -> Appl
     # --- logo / wordmark ----------------------------------------------------------
     # Only where the piece is MADE (generate / animate): a logo printed on a brought
     # product (turntable of packshots) stays on the product and is not overlaid.
-    if spec.task in LOGO_TASKS and "video" in outputs and any(LOGO.search(у) for у in spec.conditions):
+    if spec.task in LOGO_TASKS and "video" in outputs and logo_named(spec):
         if (
             spec.task in (None, "generate")
             and "photo" in inputs
@@ -694,7 +771,7 @@ def rewrite(spec: "bs.Spec", route: "bs.Маршрут", text: str = "") -> Appl
 
     # --- archive film ---------------------------------------------------------------
     if tasks & {"restore", "colorize"}:
-        blur = any(BLUR.search(у) for у in (*spec.conditions, *spec.edit))
+        blur = blur_named(spec)
         if "реставрация" in steps and not blur and acc.prior("archive_restoration", "film_damage_not_blur"):
             avoid["реставрация"] = DEBLUR_MODELS
             acc.assembly.append(ASSEMBLY_FILM)
@@ -710,7 +787,7 @@ def rewrite(spec: "bs.Spec", route: "bs.Маршрут", text: str = "") -> Appl
         spec.task == "music-visualiser"
         and "photo" in inputs
         and "оживление" in steps
-        and not any(ANIMATE_ART.search(у) or SCENES.search(у) for у in spec.conditions)
+        and not art_moves(spec)
     ):
         if acc.prior("audiogram", "audiogram_static_art"):
             steps = [s for s in steps if s != "оживление"]
@@ -754,7 +831,7 @@ def rewrite(spec: "bs.Spec", route: "bs.Маршрут", text: str = "") -> Appl
     # --- beat-reactive visualiser -----------------------------------------------
     # Round 14: a visualiser ordered as "generate" (YOUR track, nobody on screen) is the same job.
     visualiser = spec.task == "music-visualiser" or bs.визуализатор(spec, text)
-    if visualiser and not any(SCENES.search(у) for у in spec.conditions):
+    if visualiser and not scenes_named(spec):
         loop_maker = next((s for s in steps if s in VIDEO_GENERATORS), None)
         if loop_maker is not None and acc.prior("music_visualiser", "visualiser_loops"):
             step_seconds[loop_maker] = (
@@ -814,11 +891,17 @@ def rewrite(spec: "bs.Spec", route: "bs.Маршрут", text: str = "") -> Appl
             acc.assembly.append(x15.ASSEMBLY_AMBIENT)
 
     # --- round 15: anonymising bystanders in the customer's footage --------------------------
-    method = x15.anonymise_method(spec, text)
-    if method and "video" in inputs and set(steps) & ANONYMISE_ROUTES:
+    # Round 16: `spec.anonymise` decides in any brief language (`studio/anonymise.py`); with the field
+    # named the face route does not need an edit / swap step on the route — a dub order of a witness
+    # whose face is hidden too gets it.
+    from studio import anonymise as an
+
+    named = an.field_named(spec)
+    method = an.face_method(spec, text)
+    if method and "video" in inputs and (named or set(steps) & ANONYMISE_ROUTES):
         if method == "swap" and acc.prior("anonymise_bystanders", "anonymise_face_swap"):
             steps = [s for s in steps if s not in ANONYMISE_ROUTES]
-            steps = ["генерация_изображения", "замена_персонажа", *steps]
+            steps = [*an.FACE_SWAP_STEPS, *steps]
             counts["генерация_изображения"] = 1
             notes["генерация_изображения"] = x15.NOTE_SYNTHETIC_FACE[0]
             notes["замена_персонажа"] = x15.NOTE_ANON_SWAP[0]
@@ -830,6 +913,25 @@ def rewrite(spec: "bs.Spec", route: "bs.Маршрут", text: str = "") -> Appl
                 notes.pop(s, None)
             anonymise_assembly = (x15.ASSEMBLY_ANON_BLUR[0],)
             acc.assembly.append(x15.ASSEMBLY_ANON_BLUR)
+        elif method == "pixelate" and acc.prior("anonymise_bystanders", "anonymise_pixelate"):
+            steps = [s for s in steps if s not in ANONYMISE_ROUTES]
+            for s in ANONYMISE_ROUTES:
+                notes.pop(s, None)
+            anonymise_assembly = (an.ASSEMBLY_PIXELATE[0],)
+            acc.assembly.append(an.ASSEMBLY_PIXELATE)
+    # The VOICE: transcript + a different stock voice — never a clone, never a dub (it keeps the timbre).
+    voice_anon = an.voice(spec, text) and bool(inputs & {"video", "audio"})
+    if voice_anon and acc.prior("anonymise_voice", "anonymise_voice_replace"):
+        steps = an.voice_route(steps)
+        for s in an.VOICE_DROPS:
+            notes.pop(s, None)
+        notes["расшифровка"] = an.NOTE_VOICE_TRANSCRIPT[0]
+        notes["озвучка"] = an.NOTE_VOICE_TTS[0]
+        avoid["озвучка"] = an.CLONE_ONLY_MODELS
+        acc.assembly.append(an.ASSEMBLY_VOICE)
+        # The dubbed-track mux line of a dub route no longer describes the plan.
+        drop_assembly = (bs.NOTE_DUB_MUX,)
+
 
     # --- zero budget ------------------------------------------------------------------
     # Own GPU already named — the plan is on the free route; nothing to add.
@@ -842,8 +944,12 @@ def rewrite(spec: "bs.Spec", route: "bs.Маршрут", text: str = "") -> Appl
     if tasks & {"restore", "colorize"} or steps != list(route.шаги):
         steps = order(steps)
     new_route = replace(route, шаги=tuple(steps), пометки=notes, штук=counts)
-    if anonymise_assembly:
+    # The assembly-only route (blur / pixelate with no model step left) carries its line on the route;
+    # with model steps the line is in `assembly` already (not twice).
+    if anonymise_assembly and not steps:
         new_route = replace(new_route, сборка=tuple(dict.fromkeys((*new_route.сборка, *anonymise_assembly))))
+    if drop_assembly:
+        new_route = replace(new_route, сборка=tuple(с for с in new_route.сборка if с not in drop_assembly))
     return Applied(
         route=new_route,
         recipes=tuple(acc.recipes),
@@ -1174,7 +1280,7 @@ def note_ids(
     if names & LIP_STEPS and _speakers(spec) >= 2:
         out.append(("multi_speaker", {"speakers": str(_speakers(spec))}))
     if (
-        any(LOGO.search(у) or TEXT_EXACT.search(у) for у in spec.conditions)
+        exact_text_named(spec)
         and not priors & {"logo_overlay", "logo_image_is_endcard"}
     ):
         out.append(("logo_text_composited", {}))
