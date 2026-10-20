@@ -330,6 +330,34 @@ class КадрВыдачиПравки(unittest.TestCase):
         self.assertNotIn("lipsync", pn.SOURCE_FRAME_TASKS)
 
 
+class ДлинаШота(unittest.TestCase):
+    """Shots named without a per-shot length: one shot is the clip divided by the shots."""
+
+    def _шот(self, brief: str, **raw: Any) -> tuple[float | None, float | None]:
+        всего, шот = pn.длительности_плана(brief, _defaults(brief, **raw))
+        return всего.секунды, шот.секунды
+
+    def test_шот_из_ролика(self) -> None:
+        for brief, seconds, shots, want in (
+            ("A 24-second ad in 3 shots of our sneakers", 24, 3, (24.0, 8.0)),
+            ("Реклама 30 секунд из пяти шотов", 30, 5, (30.0, 6.0)),
+            ("Two 8 s shots of the same woman in Paris", 16, 2, (16.0, 8.0)),
+        ):
+            with self.subTest(brief=brief):
+                self.assertEqual(want, self._шот(brief, task="generate", inputs=[], outputs=["video"],
+                                                 duration_s=seconds, shots=shots))
+
+    def test_один_шот_весь_ролик(self) -> None:
+        self.assertEqual((24.0, 24.0), self._шот("One 24-second shot", task="generate", inputs=[], outputs=["video"],
+                                                 duration_s=24, shots=1))
+        self.assertEqual((24.0, 24.0), self._шот("Один шот на 24 секунды", task="generate", inputs=[],
+                                                 outputs=["video"], duration_s=24))
+
+    def test_названная_длина_шота_старше(self) -> None:
+        self.assertEqual((24.0, 5.0), self._шот("3 shots of 5 s", task="generate", inputs=[], outputs=["video"],
+                                                duration_s=24, shots=3, per_shot_s=5))
+
+
 # --- 5. no premium tier for a cloned voice ------------------------------------------------------
 
 
