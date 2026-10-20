@@ -179,6 +179,8 @@ AMBIENT_AUDIO_MAKERS: tuple[str, ...] = ("музыка", "звук_фон")
 AMBIENT_MAKERS: tuple[str, ...] = (*AMBIENT_AUDIO_MAKERS, "генерация_видео", "оживление", "видео_со_звуком")
 #: Round 15: the route steps an anonymisation order lands on before the recipe (edit / character swap).
 ANONYMISE_ROUTES: frozenset[str] = frozenset({"правка_видео", "замена_персонажа", "замена_фигуры"})
+#: Round-16 integration: the route step kept when the edit names a target other than the person.
+ANONYMISE_KEEPS_EDIT: frozenset[str] = frozenset({"правка_видео"})
 
 
 def loop_seconds(spec: "bs.Spec", text: str = "") -> float | None:
@@ -470,6 +472,8 @@ ASSEMBLY_DRAWN_ADAPT = (
     "is not redrawn — 0 usd for the assembly",
 )
 R16_NOTE_PAIRS: tuple[tuple[str, str], ...] = (ASSEMBLY_DRAWN_ADAPT,)
+#: Assembly lines that describe a dubbed track over the customer's picture (dropped on the voice route).
+DUB_ONLY_ASSEMBLY: tuple[tuple[str, str], ...] = (ASSEMBLY_DRAWN_ADAPT, ASSEMBLY_DRAWN_DUB)
 ASSEMBLY_LOCAL_DUB = (
     "голос отделяется от музыки и шумов (Demucs), новая речь сводится поверх них и кладётся в ВАШЕ видео "
     "(ffmpeg) — всё на вашем GPU, 0 usd",
@@ -918,9 +922,14 @@ def rewrite(spec: "bs.Spec", route: "bs.Маршрут", text: str = "") -> Appl
 
     named = an.field_named(spec)
     method = an.face_method(spec, text)
+    # Round-16 integration: an edit whose named target is not the person (a new background, sky,
+    # object, light, style or lettering) is the customer's own change, not the anonymisation — it stays
+    # on the route beside the face route (and keeps its own model choice, e.g. the edit tier swap).
+    own_edit = ANONYMISE_KEEPS_EDIT if spec.edit_target not in (None, "person") else frozenset()
+    stripped = ANONYMISE_ROUTES - own_edit
     if method and "video" in inputs and (named or set(steps) & ANONYMISE_ROUTES):
         if method == "swap" and acc.prior("anonymise_bystanders", "anonymise_face_swap"):
-            steps = [s for s in steps if s not in ANONYMISE_ROUTES]
+            steps = [s for s in steps if s not in stripped]
             steps = [*an.FACE_SWAP_STEPS, *steps]
             counts["генерация_изображения"] = 1
             notes["генерация_изображения"] = x15.NOTE_SYNTHETIC_FACE[0]
@@ -928,14 +937,14 @@ def rewrite(spec: "bs.Spec", route: "bs.Маршрут", text: str = "") -> Appl
             avoid["замена_персонажа"] = x15.PERSON_REPLACE_LINKS
             acc.assembly.append(x15.ASSEMBLY_ANON_BLUR_ALT)
         elif method == "blur" and acc.prior("anonymise_bystanders", "anonymise_blur"):
-            steps = [s for s in steps if s not in ANONYMISE_ROUTES]
-            for s in ANONYMISE_ROUTES:
+            steps = [s for s in steps if s not in stripped]
+            for s in stripped:
                 notes.pop(s, None)
             anonymise_assembly = (x15.ASSEMBLY_ANON_BLUR[0],)
             acc.assembly.append(x15.ASSEMBLY_ANON_BLUR)
         elif method == "pixelate" and acc.prior("anonymise_bystanders", "anonymise_pixelate"):
-            steps = [s for s in steps if s not in ANONYMISE_ROUTES]
-            for s in ANONYMISE_ROUTES:
+            steps = [s for s in steps if s not in stripped]
+            for s in stripped:
                 notes.pop(s, None)
             anonymise_assembly = (an.ASSEMBLY_PIXELATE[0],)
             acc.assembly.append(an.ASSEMBLY_PIXELATE)
@@ -951,6 +960,11 @@ def rewrite(spec: "bs.Spec", route: "bs.Маршрут", text: str = "") -> Appl
         acc.assembly.append(an.ASSEMBLY_VOICE)
         # The dubbed-track mux line of a dub route no longer describes the plan.
         drop_assembly = (bs.NOTE_DUB_MUX,)
+        # Round-16 integration: nor do the drawn-dub lines (adaptation to the mouth flaps, the
+        # optional lip-sync upgrade) — the voice route has no dub and no lip-sync step.
+        acc.assembly[:] = [a for a in acc.assembly if a not in DUB_ONLY_ASSEMBLY]
+    # An optional step the route no longer has is not offered.
+    optional = [s for s in optional if s in steps]
 
 
     # --- zero budget ------------------------------------------------------------------

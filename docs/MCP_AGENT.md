@@ -713,3 +713,19 @@ languages, long form), faster-whisper / whisper.cpp GPU seconds per 13-minute cl
 self-host compute estimate), text rendering of Ideogram 3, Recraft V3, FLUX.2 / FLUX.2 [flex],
 Qwen-Image, Nano Banana Pro / 2.1 and the GPT Image models' own limitation; gaps recorded
 for Imagen 4 and Seedream 5 (hosts refused or pages client-rendered, `denied_hosts.jsonl`).
+
+### Round 16 integration: where the two halves meet
+
+`outputs[].spatial` is the one output-item flag the expertise half added
+(`brief_spec.OUTPUT_ITEM_FLAGS_R16`); it parses beside `loop` / `tileable` /
+`alpha` on its own item, is listed in the `plan_pipeline` description, in
+`spec_needed.allowed` and in `spec_needed.draft.decision_fields`
+(`brief_spec.DECISION_FIELDS_R16_OUTPUTS`, read from `expert_r16.W_SPATIAL`
+when absent). Decisions settled where a field of one half meets a rule of the
+other (tests: `studio/tests/test_round16_integration.py`):
+
+| interaction | outcome |
+|---|---|
+| `anonymise.voice` on a drawn (anime / cartoon) dub | the voice route (transcript + a different stock voice) wins; no dub, no optional lip-sync upgrade, and the "adapted to the mouth flaps" assembly line is dropped with the dub (`recipes.apply.DUB_ONLY_ASSEMBLY`) |
+| a video edit whose `edit_target` is not the person + `anonymise.faces` | the edit stays on the route next to the face route (`recipes.apply.ANONYMISE_KEEPS_EDIT`) and keeps its own model choice, the edit-tier swap included; with `edit_target: person` or none the edit is the anonymisation and is replaced as before |
+| `voiceover: false` + series / explainer words | not a narrated series: the words do not switch to key visuals (`expert_r16.key_visual_words`); `consistency: ["style"]` still does |

@@ -235,6 +235,9 @@ def key_visual_words(spec: Any, text: str = "") -> bool:
         return False
     if "speech" not in set(spec.outputs):
         return False
+    # Round-16 integration: `voiceover: false` names a piece with no narration — not a narrated series.
+    if getattr(spec, "voiceover", None) is False:
+        return False
     return bool(W_SERIES_EXPLAINER.search(" ".join((str(text or ""), *map(str, spec.conditions)))))
 
 
