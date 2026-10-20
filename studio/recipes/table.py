@@ -371,13 +371,15 @@ PRIORS_LIST = (
         TAG_ENGINEERING,
     ),
     Prior(
-        "drawn_mouth_flaps",
-        "dubbing drawn footage (anime, cartoon) is a voice-over dub: photoreal lip-sync models are trained on "
-        "filmed faces and are wrong (and expensive) for drawn mouths; the mouth flaps are re-timed in the animation "
-        "project (Rhubarb Lip Sync, Toon Boom / Character Animator auto lip-sync) or left as they are",
-        "дубляж рисованного ролика (аниме, мультфильм) — закадровый: фотореалистичный липсинк учён на снятых лицах "
-        "и к нарисованным ртам не подходит (и дорог); рты переставляются в проекте анимации (Rhubarb Lip Sync, "
-        "автолипсинк Toon Boom / Character Animator) или остаются как есть",
+        "drawn_stylised_lipsync",
+        "dubbing drawn footage (anime, cartoon) keeps lip sync, on a model that records support for drawn / "
+        "stylised 2D faces (photoreal-only models miss drawn mouths or smear the line art); test 5 s first, and "
+        "re-time the mouth flaps in the animation project (Rhubarb Lip Sync, Toon Boom / Character Animator auto "
+        "lip-sync) where the model fails",
+        "дубляж рисованного ролика (аниме, мультфильм) сохраняет липсинк — на модели, у которой записана поддержка "
+        "рисованных / стилизованных 2D-лиц (модели только для фотореализма не находят нарисованный рот или "
+        "размазывают линии); сначала проверьте 5 с, а там, где модель не справляется, рты переставляются в проекте "
+        "анимации (Rhubarb Lip Sync, автолипсинк Toon Boom / Character Animator)",
         TAG_ENGINEERING,
     ),
     Prior(
@@ -426,7 +428,7 @@ _PRIOR_TOOLS_FAILURES: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
     "whole_character_replace": ((), ("character_motion_drift",)),
     "virtual_try_on": ((), ("garment_detail_lost",)),
     "walkthrough_camera_path": (("ffmpeg_concat",), ("walkthrough_warp",)),
-    "drawn_mouth_flaps": ((), ("mouth_flap_timing",)),
+    "drawn_stylised_lipsync": ((), ("mouth_flap_timing",)),
     "local_dub_chain": (("extract_audio",), ("clone_accent", "dub_segment_overrun")),
     "loop_reuse": (("ffmpeg_concat",), ("loop_seam",)),
 }
@@ -726,8 +728,11 @@ RECIPES_LIST = (
     Recipe(
         "drawn_dub",
         "dubbing anime / cartoon footage",
-        (RecipeStep("дубляж", "model", "voice-over dub; no photoreal lip sync on drawn mouths"),),
-        ("drawn_mouth_flaps",),
+        (
+            RecipeStep("дубляж", "model", "dub of the speech"),
+            RecipeStep("липсинк", "model", "lip sync on a model recorded for drawn / stylised faces"),
+        ),
+        ("drawn_stylised_lipsync",),
         (),
         ("mouth_flap_timing",),
     ),

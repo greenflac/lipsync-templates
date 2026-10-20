@@ -9570,6 +9570,21 @@ def кадр_шага(
     return REACH_SILENT, f"{положение}: {нота}"
 
 
+#: Пятнадцатый круг: запись о модели говорит, что она берёт РИСОВАННЫЕ / стилизованные лица
+#: (Kling: «human characters (real/3D/2D)»; sync-3: «any illustration or animated frame»).
+#: КОНСТАНТА-РЕШЕНИЕ: читается значение строки, а не имя модели.
+STYLISED_FACE_FACT = re.compile(
+    r"\b2D\b|illustration|animated frame|cartoon|anime\b|stylis|styliz|drawn (?:face|character)", re.I
+)
+
+
+def стилизованные_лица(facts: Sequence[Fact]) -> frozenset[str]:
+    """Модели, у которых ЗАПИСАНА поддержка рисованных / стилизованных лиц (ключи `fold`)."""
+    return frozenset(
+        fold(f.model) for f in facts if f.model != "*" and STYLISED_FACE_FACT.search(f"{f.attribute} {f.value}")
+    )
+
+
 def по_рецепту(найдены: list["Candidate"], шаг: str, рецепт: "rc.Applied", индекс: FactIndex) -> None:
     """Кандидаты шага по рецепту (восьмой круг): нужный вход — вперёд, чужой инструмент — назад.
 
@@ -9579,14 +9594,17 @@ def по_рецепту(найдены: list["Candidate"], шаг: str, реце
     """
     вход = рецепт.prefer_input.get(шаг)
     избегать = рецепт.avoid.get(шаг)
-    if not найдены or (вход is None and избегать is None):
+    стиль = шаг in getattr(рецепт, "prefer_stylised", ())
+    if not найдены or (вход is None and избегать is None and not стиль):
         return
     реестр = ep.build(индекс.facts)
+    рисованные = стилизованные_лица(индекс.facts) if стиль else frozenset()
 
-    def ключ(c: "Candidate") -> tuple[int, int]:
+    def ключ(c: "Candidate") -> tuple[int, int, int]:
         узел = реестр.get(c.model)
         входы = узел.inputs if узел is not None else ()
         return (
+            0 if not стиль or fold(c.model) in рисованные else 1,
             0 if вход is None or вход in входы else 1,
             1 if избегать is not None and re.search(избегать, c.model, re.I) else 0,
         )

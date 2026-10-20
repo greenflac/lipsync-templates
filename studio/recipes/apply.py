@@ -318,13 +318,35 @@ NOTE_WALKTHROUGH = (
     "invented people or furniture, straight lines kept",
 )
 NOTE_DRAWN_DUB = (
-    "рисованный ролик: дубляж закадром, фотореалистичный липсинк к нарисованным ртам не применяется; рты "
-    "переставляются в проекте анимации по фонемам новой речи (Rhubarb Lip Sync, автолипсинк Toon Boom / "
-    "Character Animator) — или остаются как есть",
-    "drawn footage: a voice-over dub — photoreal lip sync is not applied to drawn mouths; the mouth flaps are "
-    "re-timed in the animation project from the new speech's phonemes (Rhubarb Lip Sync, Toon Boom / Character "
-    "Animator auto lip-sync) — or left as they are",
+    "рисованный ролик: губы двигает липсинк, но модель берётся та, у которой записана поддержка рисованных / "
+    "стилизованных лиц (2D-персонажи); сначала проверьте 5 с — детектор лица может не найти нарисованный рот, "
+    "линии контура рвутся; запасной путь — рты переставляются в проекте анимации по фонемам новой речи (Rhubarb "
+    "Lip Sync, автолипсинк Toon Boom / Character Animator)",
+    "drawn footage: lip sync moves the mouths, on a model that records support for drawn / stylised faces (2D "
+    "characters); test 5 s first — the face detector may miss a drawn mouth and line art can break; the fallback "
+    "is re-timing the mouth flaps in the animation project from the new speech's phonemes (Rhubarb Lip Sync, Toon "
+    "Boom / Character Animator auto lip-sync)",
 )
+#: Round 15: drawn ANIMAL characters — no lip-sync model records them (Kling's guide: human 2D/3D only).
+NOTE_DRAWN_ANIMAL = (
+    "персонажи — животные: ни у одной модели липсинка не записана поддержка морд животных (руководство Kling: "
+    "только человеческие персонажи, реальные / 3D / 2D) — проверьте 5 с до всего эпизода, иначе рты "
+    "переставляются в проекте анимации",
+    "the characters are animals: no lip-sync model records support for animal faces (Kling's guide: human "
+    "characters only, real / 3D / 2D) — test 5 s before the whole episode, otherwise the mouth flaps are re-timed "
+    "in the animation project",
+)
+NOTE_DRAWN_DUB_ANIMAL = (NOTE_DRAWN_DUB[0] + "; " + NOTE_DRAWN_ANIMAL[0], NOTE_DRAWN_DUB[1] + "; " + NOTE_DRAWN_ANIMAL[1])
+#: Round 15: route / assembly lines that the server localises through `studio/l10n.py` (EN table).
+R15_NOTE_PAIRS: tuple[tuple[str, str], ...] = (NOTE_DRAWN_DUB, NOTE_DRAWN_DUB_ANIMAL)
+#: Round 15: animal characters named in the brief (drawn dub: no recorded lip-sync model for them).
+ANIMAL_CHARACTERS = re.compile(
+    r"\b(?:animal|fox|dog|puppy|cat|kitten|bear|rabbit|bunny|mouse|duck|pig|lion|wolf|bird|owl|frog|horse|cow|monkey|dragon|dinosaur)s?\b"
+    r"|животн\w*|лис\w*|собак\w*|щен\w*|кош\w*|кот\b|котён\w*|медвед\w*|зай\w*|кролик\w*|мыш\w*|утк\w*|свин\w*|лев\b|льв\w*"
+    r"|волк\w*|птиц\w*|сов\w*|лягуш\w*|лошад\w*|коров\w*|обезьян\w*|дракон\w*|динозавр\w*",
+    re.I,
+)
+
 NOTE_LOCAL_TRANSCRIBE = (
     "речь ВАШЕГО видео расшифровывается с таймингами на вашем GPU (Whisper / faster-whisper)",
     "the speech of YOUR video is transcribed with timestamps on your GPU (Whisper / faster-whisper)",
@@ -347,10 +369,11 @@ ASSEMBLY_SPLAT = (
     "photos (nerfstudio splatfacto / Postshot on your GPU) and a rendered camera path; the photos must overlap",
 )
 ASSEMBLY_DRAWN_DUB = (
-    "новая дорожка заменяет речь ВАШЕГО ролика (ffmpeg), рты при желании переставляются в проекте анимации — 0 usd",
-    "the new track replaces the speech of YOUR video (ffmpeg); mouth flaps are re-timed in the animation "
-    "project if wanted — 0 usd",
+    "новая дорожка заменяет речь ВАШЕГО ролика (ffmpeg), губы подгоняет шаг липсинка — 0 usd за сборку",
+    "the new track replaces the speech of YOUR video (ffmpeg) and the lip-sync step fits the mouths — 0 usd "
+    "for the assembly",
 )
+R15_NOTE_PAIRS = R15_NOTE_PAIRS + (ASSEMBLY_DRAWN_DUB,)
 ASSEMBLY_LOCAL_DUB = (
     "голос отделяется от музыки и шумов (Demucs), новая речь сводится поверх них и кладётся в ВАШЕ видео "
     "(ffmpeg) — всё на вашем GPU, 0 usd",
@@ -426,6 +449,8 @@ class Applied:
     prefer_input: Mapping[str, str] = field(default_factory=dict)
     #: op -> regex of model names ranked last.
     avoid: Mapping[str, str] = field(default_factory=dict)
+    #: Round 15: ops whose candidates that RECORD drawn / stylised face support rank first (a cartoon dub).
+    prefer_stylised: tuple[str, ...] = ()
     #: (ru, en) assembly reasons — free tools, 0 usd.
     assembly: tuple[tuple[str, str], ...] = ()
     #: 0 budget: the plan offers the open-weights route.
@@ -505,6 +530,7 @@ def rewrite(spec: "bs.Spec", route: "bs.Маршрут", text: str = "") -> Appl
     step_seconds: dict[str, tuple[float, float]] = {}
     prefer: dict[str, str] = {}
     avoid: dict[str, str] = {}
+    stylised: list[str] = []
     inputs = set(spec.inputs)
     outputs = set(spec.outputs)
     tasks = {spec.task, *spec.then_tasks}
@@ -590,10 +616,13 @@ def rewrite(spec: "bs.Spec", route: "bs.Маршрут", text: str = "") -> Appl
 
     # --- round 12: dubbing drawn footage ---------------------------------------------
     if spec.task == "dub-translate" and "липсинк" in steps and drawn(spec, text):
-        if acc.prior("drawn_dub", "drawn_mouth_flaps"):
-            steps = [s for s in steps if s != "липсинк"]
-            notes.pop("липсинк", None)
-            notes["дубляж"] = NOTE_DRAWN_DUB[0]
+        # Round 15 (hidden set): an expert keeps lip sync on a 2D cartoon dub — on a model recorded for
+        # drawn / stylised faces (`planner.STYLISED_FACE_FACT`), with the mouth-flap re-time as the fallback.
+        if acc.prior("drawn_dub", "drawn_stylised_lipsync"):
+            stylised.append("липсинк")
+            notes["липсинк"] = NOTE_DRAWN_DUB[0]
+            if ANIMAL_CHARACTERS.search(" ".join((*map(str, spec.conditions), text))):
+                notes["липсинк"] = NOTE_DRAWN_DUB_ANIMAL[0]
             acc.assembly.append(ASSEMBLY_DRAWN_DUB)
 
     # --- round 12: a dub that must run on the customer's own machine --------------------
@@ -760,6 +789,7 @@ def rewrite(spec: "bs.Spec", route: "bs.Маршрут", text: str = "") -> Appl
         step_seconds=step_seconds,
         prefer_input=prefer,
         avoid=avoid,
+        prefer_stylised=tuple(stylised),
         assembly=tuple(dict.fromkeys(acc.assembly)),
         free_route=free,
         local_only=local,
@@ -996,6 +1026,7 @@ NOTES_EN: dict[str, str] = dict(
         NOTE_TRY_ON_MODEL,
         NOTE_WALKTHROUGH,
         NOTE_DRAWN_DUB,
+        NOTE_DRAWN_DUB_ANIMAL,
         NOTE_LOCAL_TRANSCRIBE,
         NOTE_LOCAL_VOICE,
     )

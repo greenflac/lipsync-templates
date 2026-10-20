@@ -90,9 +90,9 @@ MUTANTS: tuple[tuple[str, str, str, str], ...] = (
     (AP, "            avoid[\"оживление\"] = MOTION_CONTROL_MODELS\n", "", "motion control не отодвинут в туре"),
     # --- дубляж рисованного -------------------------------------------------------------
     (AP, '    if spec.task == "dub-translate" and "липсинк" in steps and drawn(spec, text):',
-     "    if False:", "аниме снова с фотореалистичным липсинком"),
+     "    if False:", "аниме без предпочтения модели для рисованных лиц"),
     (AP, '    if spec.task == "dub-translate" and "липсинк" in steps and drawn(spec, text):',
-     '    if spec.task == "dub-translate" and "липсинк" in steps:', "снятое интервью теряет губы"),
+     '    if spec.task == "dub-translate" and "липсинк" in steps:', "снятое интервью ищет модель для рисованных лиц"),
     # --- локальный дубляж ---------------------------------------------------------------
     (AP, '    if spec.task == "dub-translate" and "дубляж" in steps and local_only(spec, text):',
      "    if False:", "локальный дубляж снова пустой шаг"),
