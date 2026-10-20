@@ -3540,8 +3540,18 @@ def _product_insertion(c: Ctx) -> bool:
         return False
     цель = str(getattr(c.spec, "edit_target", None) or "").lower()
     if цель:
-        return цель == "object" and (c.says(W_INSERT) or c.says(W_PRODUCT))
+        return цель == "object" and (c.says(W_INSERT) or c.says(W_PRODUCT) or _object_brought(c.spec))
     return c.says(W_INSERT) and not c.says(W_NOT_AN_OBJECT)
+
+
+def _object_brought(spec: "bs.Spec") -> bool:
+    """With `edit_target` = 'object', the spec itself says an object is BROUGHT into the shot (any brief
+    language): `edit` names replace-object, or a picture of the object comes in beside the footage —
+    and the edit is not a removal only (`edit` = remove-object takes an object out)."""
+    правки = set(spec.edit)
+    if "remove-object" in правки and "replace-object" not in правки:
+        return False
+    return "replace-object" in правки or any(str(з.get("kind")) in ("image", "photo") for з in spec.input_items)
 
 
 #: Things "added into the video" that are assembly overlays or sound, not an object in the scene.

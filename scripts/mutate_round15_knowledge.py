@@ -30,7 +30,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 
-НАБОРЫ = ("studio.tests.test_round15_knowledge",)
+НАБОРЫ = ("studio.tests.test_round15_knowledge", "studio.tests.test_round15_integration")
 
 CL = "studio/recipes/checklist.py"
 X15 = "studio/expert_r15.py"
@@ -55,8 +55,8 @@ MUTANTS: tuple[tuple[str, str, str, str], ...] = (
      "consistency не старше слов"),
     (CL, "        return all(г is False for г in говорят)", "        return any(г is False for г in говорят)",
      "один молчащий — уже шортс без речи"),
-    (CL, '        return цель == "object" and (c.says(W_INSERT) or c.says(W_PRODUCT))',
-     '        return цель != "text" and (c.says(W_INSERT) or c.says(W_PRODUCT))', "вставка человека — вставка товара"),
+    (CL, '        return цель == "object" and (c.says(W_INSERT) or c.says(W_PRODUCT) or _object_brought(c.spec))',
+     '        return цель != "text" and (c.says(W_INSERT) or c.says(W_PRODUCT) or _object_brought(c.spec))', "вставка человека — вставка товара"),
     # --- слова и исключения
     (CL, "covers?\\b(?! (?:image|art|artwork|photo|picture|frame|letter|page|shot|story))", "covers?\\b",
      "обложка песни — кавер"),
@@ -67,6 +67,11 @@ MUTANTS: tuple[tuple[str, str, str, str], ...] = (
      "таймлапс без интерполяции — оговорка интерполяции"),
     (CL, "    return c.says(W_INSERT) and not c.says(W_NOT_AN_OBJECT)", "    return c.says(W_INSERT)",
      "логотип в ролик — вставка товара"),
+    # --- интеграция: edit_target=object решает без слов (любой язык брифа)
+    (CL, '    if "remove-object" in правки and "replace-object" not in правки:\n        return False\n', "",
+     "удаление предмета — вставка товара"),
+    (CL, '    return "replace-object" in правки or any(str(з.get("kind")) in ("image", "photo") for з in spec.input_items)',
+     '    return "replace-object" in правки', "фото товара рядом с роликом не читается"),
     # --- длинный фон одним отрезком
     (X15, "AMBIENT_AUDIO_SEGMENT_S = 180", "AMBIENT_AUDIO_SEGMENT_S = 181", "отрезок звука длиннее трёх минут"),
     (X15, "AMBIENT_AUDIO_SEGMENT_S = 180", "AMBIENT_AUDIO_SEGMENT_S = 179", "отрезок звука короче трёх минут"),
