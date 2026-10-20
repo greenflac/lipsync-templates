@@ -332,11 +332,14 @@ class Пачка(unittest.TestCase):
         self.assertNotIn("budget_swap", step(d, "говорящий_аватар"))
 
     def test_края(self) -> None:
-        self.assertTrue(x16.batch_cheap_applies("говорящий_аватар", 3, ""))
-        self.assertFalse(x16.batch_cheap_applies("говорящий_аватар", 2, ""))
-        self.assertTrue(x16.batch_cheap_applies("липсинк", 3, "cheapest"))
-        self.assertFalse(x16.batch_cheap_applies("липсинк", 30, "quality"))
-        self.assertFalse(x16.batch_cheap_applies("оживление", 30, ""))
+        self.assertTrue(x16.batch_cheap_applies("говорящий_аватар", 3, "", "avatar"))
+        self.assertFalse(x16.batch_cheap_applies("говорящий_аватар", 2, "", "avatar"))
+        self.assertTrue(x16.batch_cheap_applies("липсинк", 3, "cheapest", "lipsync"))
+        self.assertTrue(x16.batch_cheap_applies("говорящий_аватар", 5, "", "sing-photo"))
+        self.assertFalse(x16.batch_cheap_applies("липсинк", 30, "quality", "lipsync"))
+        self.assertFalse(x16.batch_cheap_applies("оживление", 30, "", "avatar"))
+        # The shots of one generated film are not a batch of clips.
+        self.assertFalse(x16.batch_cheap_applies("липсинк", 8, "", "generate"))
         self.assertFalse(x16.batch_ratio_exceeded(1.5, 1.0))
         self.assertTrue(x16.batch_ratio_exceeded(1.51, 1.0))
         self.assertFalse(x16.batch_ratio_exceeded(5.0, 0.0))

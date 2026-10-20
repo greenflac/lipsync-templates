@@ -13028,7 +13028,7 @@ def plan(
                 ):
                     принудительно[op.name] = замена.model
                     обмены_эксперта.append({**обмен(op.name, к, замена), "reason": x16.REASON_EDIT_TIER})
-            elif x16.batch_cheap_applies(op.name, клипов, жёсткие.objective):
+            elif x16.batch_cheap_applies(op.name, клипов, жёсткие.objective, понято.task):
                 # ГОДНЫЙ на пачке: кадр тарифа не ниже заказа и вид выхода ЗАПИСАН
                 # (модель без единой записи о том, что она отдаёт, — не «годная», а «неизвестная»).
                 def _годен_в_пачке(c: Candidate) -> bool:

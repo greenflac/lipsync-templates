@@ -96,8 +96,10 @@ MUTANTS: tuple[tuple[str, str, str, str], ...] = (
     (X16, "BATCH_CHEAP_RATIO = 1.5", "BATCH_CHEAP_RATIO = 1.4", "в 1.5 раза дороже — уже обмен"),
     (X16, "    return cheapest_usd > 0 and chosen_usd > BATCH_CHEAP_RATIO * cheapest_usd",
      "    return chosen_usd > BATCH_CHEAP_RATIO * cheapest_usd", "бесплатный «дешёвый» — обмен"),
-    (X16, "    return step in BATCH_STEPS and int(clips or 0) >= BATCH_CLIPS_MIN and objective != QUALITY",
-     "    return step in BATCH_STEPS and int(clips or 0) >= BATCH_CLIPS_MIN", "«качество» на пачке не держит выбор"),
+    (X16, "        and objective != QUALITY\n    )", "    )", "«качество» на пачке не держит выбор"),
+    (X16, "        and task in BATCH_TASKS\n", "", "шоты одного ролика — тоже пачка"),
+    (X16, 'BATCH_TASKS: frozenset[str] = frozenset({"avatar", "lipsync", "sing-photo"})',
+     'BATCH_TASKS: frozenset[str] = frozenset({"lipsync", "sing-photo"})', "пачка аватаров — не пачка"),
     # --- 6. серии
     (X16, "KEY_VISUAL_SHOTS_MIN = 4", "KEY_VISUAL_SHOTS_MIN = 5", "четыре шота — не серия ключевых кадров"),
     (X16, "KEY_VISUAL_SHOTS_MIN = 4", "KEY_VISUAL_SHOTS_MIN = 3", "три шота — серия ключевых кадров"),

@@ -29,7 +29,7 @@ when the field is absent; a named field beats the words both ways (docs/MCP_AGEN
 
 DECISION CONSTANTS (mutated both ways by `scripts/mutate_round16_knowledge.py`):
 `KEY_VISUAL_SHOTS_MIN`, `BATCH_CLIPS_MIN`, `BATCH_CHEAP_RATIO`, `EDIT_TIER_RATIO`, `EDIT_TIER_STEPS`,
-`BATCH_STEPS`, `OPTIONAL_LIPS_STEP`.
+`BATCH_STEPS`, `BATCH_TASKS`, `OPTIONAL_LIPS_STEP`.
 """
 
 from __future__ import annotations
@@ -166,9 +166,19 @@ def batch_ratio_exceeded(chosen_usd: float, cheapest_usd: float) -> bool:
     return cheapest_usd > 0 and chosen_usd > BATCH_CHEAP_RATIO * cheapest_usd
 
 
-def batch_cheap_applies(step: str, clips: int, objective: str) -> bool:
+#: Tasks whose deliverable IS the talking clip — N of them is a batch of separate clips (UGC ads),
+#: not the shots of one generated film (whose lip sync follows the film's own selection).
+BATCH_TASKS: frozenset[str] = frozenset({"avatar", "lipsync", "sing-photo"})
+
+
+def batch_cheap_applies(step: str, clips: int, objective: str, task: str | None = None) -> bool:
     """A lip-sync / avatar batch takes the cheapest adequate candidate unless quality is asked."""
-    return step in BATCH_STEPS and int(clips or 0) >= BATCH_CLIPS_MIN and objective != QUALITY
+    return (
+        step in BATCH_STEPS
+        and task in BATCH_TASKS
+        and int(clips or 0) >= BATCH_CLIPS_MIN
+        and objective != QUALITY
+    )
 
 
 #: (ru, en) why the step was re-selected (`budget_swap.reason`).
