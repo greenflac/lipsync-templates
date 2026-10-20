@@ -9,10 +9,11 @@ across frames — or a planar track and a composite at assembly.
 
 RULE (structured first). `spec.edit` names `replace-text` -> the edit job,
 whatever task word came with it. Without it, the words decide only when the
-spec cannot: a face/character task on the customer's VIDEO, no person in
-`spec.people`, and the brief asks to change text, a sign, a label or a
-billboard. A brief that also names a face or a
-person keeps its task.
+spec cannot: a face/character task on the customer's VIDEO and the brief asks
+to change text, a sign, a label or a billboard. Round 14: the edit TARGET
+decides, not whether people are in the shot — a person in `spec.people` who
+walks past the sign does not make the lettering a character swap; only a face
+or a person named as the object of the edit (`PERSON_EDIT`) keeps the task.
 """
 
 from __future__ import annotations
@@ -30,16 +31,29 @@ TEXT_EDIT_TASKS: frozenset[str] = frozenset({"face-replace", "edit", "video-edit
 #: "change the text / lettering / sign", "the words on the billboard", RU too.
 TEXT_EDIT_WORDS = re.compile(
     r"\b(?:replac|chang|swap|updat|edit|rewrit|translat|correct|fix)\w*\s+(?:\w+\s+){0,3}?"
-    r"(?:text|lettering|wording|words|writing|inscription|sign|signage|signboard|label|headline|caption|title|logo text)\b"
+    r"(?:text|lettering|wording|words|writing|inscription|sign|signage|signboard|label|headline|caption|title|logo text|typo|spelling|misspelling)\b"
     r"|\b(?:text|lettering|wording|words|writing|inscription|name)\s+on\s+(?:the\s+|a\s+|our\s+|my\s+|this\s+)?"
     r"(?:\w+\s+)?(?:sign|signboard|billboard|banner|board|storefront|shop ?front|truck|van|poster|placard|plate|label|door|wall|screen)\b"
     r"|замен\w*\s+(?:\w+\s+){0,2}?(?:текст|надпис|вывеск|табличк)|(?:измен|исправ|перевед|поменя|перепиш)\w*\s+(?:\w+\s+){0,2}?"
     r"(?:текст|надпис|вывеск|табличк)|надпис\w*\s+на\s+(?:\w+\s+)?(?:вывеск|табличк|баннер|билборд|витрин|фасад|машин|грузовик|стен)",
     re.I,
 )
-#: A face or a person named: the swap is about someone, the task stands.
+#: A face or a person named (kept for callers that read it; the route reads `PERSON_EDIT`).
 PERSON_WORDS = re.compile(
     r"\bfaces?\b|\bperson\b|\bpeople\b|\bactor|\bcharacter|\bhead\b|\bbody\b|\bmascot|лиц[оаеу]\b|человек|актёр|актер|персонаж|голов",
+    re.I,
+)
+#: Round 14: a person or a face is the OBJECT of the edit ("swap the actor's face", "put my face on the
+#: presenter", "замените лицо ведущего") — not merely in the shot ("two people walk past the sign",
+#: "the presenter stands by the screen"). Only this keeps a face/character task.
+PERSON_EDIT = re.compile(
+    r"face[- ]?swap|faceswap|deep-?fake|\b(?:my|our|his|her|their|your|new|another) faces?\b"
+    r"|\b(?:replac|swap|chang|put|turn|transform|mak)\w*\s+(?:(?:the|a|an|my|our|his|her|their|this|that)\s+)?"
+    r"(?:[\w'’-]+\s+)?(?:faces?|heads?|bod(?:y|ies)|actors?|actress\w*|presenters?|persons?|people|man|men|woman|women"
+    r"|him|her|them|characters?|mascots?|hosts?|speakers?|anchors?)\b(?!\s+(?:holds|wears|stands|is holding|is wearing))"
+    r"|подмен\w* лиц|\bмо[её] лицо|\bнаш\w* лиц|\bего лицо|\bеё лицо|лиц[оау]\s+(?:ведущ|актёр|актер|человек|персонаж|диктор|спикер)"
+    r"|(?:замен|поменя|постав|сдела|превра)\w*\s+(?:\w+\s+)?(?:лиц[оа]|голов\w*|человек\w*|актёр\w*|актер\w*|актрис\w*|ведущ\w*"
+    r"|персонаж\w*|диктор\w*|спикер\w*|его|её|ее|их)\b",
     re.I,
 )
 
@@ -61,13 +75,13 @@ def wants_text_edit(spec: Any, text: str) -> bool:
         return True
     if getattr(spec, "task", "") not in TEXT_EDIT_TASKS or "video" not in tuple(getattr(spec, "inputs", ()) or ()):
         return False
-    # Человек в `spec.people` — замена касается его, задача остаётся. (Пустой
-    # список и не названный неразличимы здесь: сервер снимает people до
-    # плановщика; слово о лице в брифе держит задачу так же.)
-    if len(getattr(spec, "people", ()) or ()) > 0:
-        return False
+    # ЧЕЛОВЕК В КАДРЕ — НЕ ЦЕЛЬ ПРАВКИ (четырнадцатый круг). Раньше любой
+    # человек в `spec.people` держал задачу «замена лица», и «двое проходят
+    # мимо вывески — замените надпись» уходило в замену персонажа без модели и
+    # без цены. Решает ЦЕЛЬ правки: надпись (TEXT_EDIT_WORDS) — правка видео;
+    # лицо или человек как объект замены (PERSON_EDIT) — задача остаётся.
     низ = " ".join(str(text or "").split())
-    return bool(TEXT_EDIT_WORDS.search(низ)) and not PERSON_WORDS.search(низ)
+    return bool(TEXT_EDIT_WORDS.search(низ)) and not PERSON_EDIT.search(низ)
 
 
 def reroute(spec: Any, text: str) -> tuple[Any, str]:
