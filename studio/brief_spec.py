@@ -2670,6 +2670,7 @@ def визуализатор(spec: Spec, текст: str = "") -> bool:
 CAST_TOGETHER = re.compile(
     r"\btogether\b|each other|one another|\bboth\b|\ball (?:two|three|four|of them)\b|in (?:every|each) (?:of (?:the )?\d+ )?(?:shots?|scenes?|frames?)"
     r"|\b(?:meet|meets|fight|fights|hug|hugs|chase|chases|dance with|play with|plays with|duel\w*)\b"
+    r"|\band (?:the |a |an |his |her |their |our |its )?[\w-]+ (?:talk|chat|speak|argue|bicker|negotiate|discuss|sing)\b"
     r"|вместе|друг (?:с )?друг\w*|\bоба\b|\bобе\b|\bвсе (?:трое|четверо)|в каждом (?:из \d+ )?(?:шот\w*|кадр\w*|сцен\w*)"
     r"|встреча\w*|деру\w*|сража\w*|обнима\w*|догоня\w*|танцу\w* с",
     re.I,
