@@ -788,6 +788,11 @@ EN: tuple[tuple[str, str], ...] = (
      r"vendor hosting on record: \1 — the request may be served in \2, and the record names no way to pin the region (\3): "),
     (r"\bсемья ([\w.\-]+): (?=(?:семья |serving_regions|data_residency|hosting_regions|processing_regions|data_location))",
      r"family \1: "),
+    # --- круг 14: шаги и экономия (`brief_spec.NOTE_CAST_STRAIGHT`, `planner`)
+    (r"каждый шот оживляется прямо от референса своего персонажа \(image-to-video\): персонажи кадра не делят, "
+     r"отдельный ключевой кадр на шот не нужен",
+     "every shot is animated straight from its character's reference (image-to-video): the characters do not "
+     "share the frame, so no per-shot keyframe is made"),
     # --- круг 13: пометки и причины монтажа (`brief_spec`, `recipes.apply`, `planner.NOTE_CLONE_TTS`)
     ('обрезка\\ по\\ таймкодам\\ —\\ монтаж\\ \\(ffmpeg\\ \\-ss/\\-to\\),\\ модели\\ не\\ нужно\\ —\\ 0\\ usd',
      'trimming on timecodes is assembly (ffmpeg -ss/-to) — 0 usd, no model'),

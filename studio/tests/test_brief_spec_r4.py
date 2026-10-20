@@ -293,19 +293,16 @@ class Многоперсонажный(unittest.TestCase):
     def test_шоты_из_предела_выбранной_модели(self) -> None:
         итог = план("x", spec={"outputs": ["video"], "characters": 2, "duration_s": 40, "inputs": []})
         # Тринадцатый круг: референсы персонажей — общий актив (по одному на
-        # персонажа), ключевой кадр шота — правка по ним, кадров не меньше шотов.
-        self.assertEqual(
-            [("генерация_изображения", 2), ("редактирование_изображения", 4), ("оживление", 4)], шаги(итог)
-        )
+        # персонажа). Четырнадцатый: персонажи кадра не делят (бриф молчит) —
+        # шоты оживляются прямо от референсов, ключевых кадров на шот нет.
+        self.assertEqual([("генерация_изображения", 2), ("оживление", 4)], шаги(итог))
         self.assertEqual("ceil(40 s / 10 s max run of the chosen model)", итог["understood_as"]["shots_basis"])
         self.assertEqual("derived", источники(итог)["shots"])
 
     def test_предел_не_записан_допущение_названо(self) -> None:
         база = [f for f in БАЗА if f.attribute != "max_seconds"]
         итог = план("x", facts=база, spec={"outputs": ["video"], "characters": 2, "duration_s": 40, "inputs": []})
-        self.assertEqual(
-            [("генерация_изображения", 2), ("редактирование_изображения", 5), ("оживление", 5)], шаги(итог)
-        )
+        self.assertEqual([("генерация_изображения", 2), ("оживление", 5)], шаги(итог))
         self.assertEqual(
             "ceil(40 s / 8 s assumed shot — the model records no max run)", итог["understood_as"]["shots_basis"]
         )

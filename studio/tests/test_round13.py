@@ -89,22 +89,29 @@ def _models(answer: dict) -> dict[str, str]:
 class ОбщиеРеференсы(unittest.TestCase):
     """Two or more recurring characters: one reference per character for the whole series."""
 
+    # Round 14: the per-shot keyframe edit is made only when the characters SHARE the
+    # frame (argue, "in every shot"); otherwise each shot starts from its reference.
     CASES = (
-        ("A web series where two robots argue, 4 episodes of 3 shots", 2, 12),
-        ("Три подруги в каждом из 6 шотов рекламы", 3, 6),
-        ("Сериал про двух котов: 10 серий по 3 шота", 2, 30),
-        ("Ad with a knight and a dragon in 5 shots", 2, 5),
+        ("A web series where two robots argue, 4 episodes of 3 shots", 2, 12,
+         ("генерация_изображения", "редактирование_изображения", "оживление")),
+        ("Три подруги в каждом из 6 шотов рекламы", 3, 6,
+         ("генерация_изображения", "редактирование_изображения", "оживление")),
+        ("Сериал про двух котов: 10 серий по 3 шота", 2, 30, ("генерация_изображения", "оживление")),
+        ("Ad with a knight and a dragon in 5 shots", 2, 5, ("генерация_изображения", "оживление")),
     )
 
     def test_референс_на_персонажа_один_раз(self) -> None:
-        for brief, chars, shots in self.CASES:
+        for brief, chars, shots, steps in self.CASES:
             with self.subTest(brief=brief):
                 м = _route(brief, task="generate", inputs=[], outputs=["video"], characters=chars, shots=shots, per_shot_s=5)
-                self.assertEqual(("генерация_изображения", "редактирование_изображения", "оживление"), м.шаги)
+                self.assertEqual(steps, м.шаги)
                 self.assertEqual(chars, м.штук["генерация_изображения"])
 
     def test_длинный_ролик_без_шотов_тоже_серия(self) -> None:
         м = _route("A 40-second clip with a knight and a dragon", task="generate", inputs=[], outputs=["video"],
+                   characters=2, duration_s=40)
+        self.assertEqual(("генерация_изображения", "оживление"), м.шаги)
+        м = _route("A 40-second clip: a knight and a dragon fight", task="generate", inputs=[], outputs=["video"],
                    characters=2, duration_s=40)
         self.assertEqual(("генерация_изображения", "редактирование_изображения", "оживление"), м.шаги)
 

@@ -1975,6 +1975,9 @@ SERIES_SHOTS_MIN = 2
 #: 15 с (самый длинный записанный прогон Kling 3.0 / Seedance 2.x) — от
 #: референса. КОНСТАНТА-РЕШЕНИЕ.
 SERIES_DURATION_MIN_S = 15.0
+#: Четырнадцатый круг: сколько референсов у серии с ОДНИМ персонажем — один на всю
+#: серию, сколько бы шотов ни вывела длительность. КОНСТАНТА-РЕШЕНИЕ.
+SINGLE_REFERENCE = 1
 
 
 def серия_с_персонажем(spec: "Spec") -> bool:
@@ -2463,6 +2466,10 @@ def _маршрут_одной(spec: Spec, на_сборке: frozenset[str] = f
             # Референс персонажа делается один раз, шоты оживляются от него.
             шаги += ["генерация_изображения", "оживление"]
             пометки["генерация_изображения"] = NOTE_R2V_REF
+            # ЧЕТЫРНАДЦАТЫЙ КРУГ: референс ОДИН и тогда, когда шоты не названы, а
+            # выведены из длительности (прежде — картинка на каждый клип).
+            _дорожки(spec, шаги)
+            return Маршрут(tuple(dict.fromkeys(шаги)), пометки, штук={"генерация_изображения": SINGLE_REFERENCE})
         else:
             шаги.append("генерация_видео")
     elif "image" in выходы:
@@ -2584,13 +2591,48 @@ def говорят_в_кадре(spec: Spec, текст: str = "") -> bool:
     return персонаж and bool(SPEAKING_IN_FRAME.search(сказано) or DIALOGUE.search(сказано))
 
 
+#: Четырнадцатый круг: исполнителя В КАДРЕ НЕТ словами — «no performer on screen»,
+#: «без людей», «исполнителей в кадре нет», «nobody sings».
+NO_PERFORMER = re.compile(
+    r"\b(?:no|without|zero)\s+(?:\w+\s+){0,2}(?:performers?|singers?|vocalists?|rappers?|artists?|bands?|musicians?"
+    r"|people|persons?|humans?|faces?|figures?|characters?|one)\b(?:\s+(?:on|in)\s+(?:the\s+)?(?:screen|camera|frame|shot))?"
+    r"|\b(?:nobody|no one|no-one)\b[^.,;]{0,40}"
+    r"|\b(?:performers?|singers?|bands?|artists?|people)\s+(?:is|are)?\s*(?:not|never)\s+(?:shown|seen|visible|on screen|in frame)"
+    r"|\bfaceless\b|\bpurely abstract\b"
+    r"|без\s+(?:\w+\s+)?(?:людей|человек\w*|исполнител\w*|артист\w*|певц\w*|певиц\w*|вокалист\w*|музыкант\w*|лиц\b|персонаж\w*)"
+    r"|(?:исполнител\w*|артист\w*|певц\w*|певиц\w*|людей|музыкант\w*|персонаж\w*)\s+(?:\w+\s+){0,2}нет\b"
+    r"|\bнет\s+(?:\w+\s+)?(?:людей|исполнител\w*|артист\w*)|никого\s+в\s+кадре|никто\s+не\s+\w+",
+    re.I,
+)
+#: Исполнитель назван ЧЕЙ-ТО трек, а не тем, кто в кадре: «the band's new song»,
+#: «artist's logo», «for our rapper», «песня нашей группы», «для певицы».
+PERFORMER_NOT_ON_SCREEN = re.compile(
+    r"\b(?:performer|singer|vocalist|rapper|artist|band|frontman|frontwoman|musician)(?:'s|’s|s'|s’)"
+    r"|\bfor (?:the |our |my |a |an |their )?(?:new )?(?:band|artist|singer|rapper|musician)s?\b"
+    r"|(?:песн\w*|трек\w*|клип\w*|альбом\w*|сингл\w*|логотип\w*)\s+(?:нашей |моей |этой |вашей |своей |нашего |моего )?"
+    r"(?:групп\w*|певиц\w*|певц\w*|артист\w*|исполнител\w*|рэпер\w*)"
+    r"|для\s+(?:нашей |моей |нашего |моего )?(?:групп\w*|певиц\w*|певц\w*|артист\w*|исполнител\w*|рэпер\w*)",
+    re.I,
+)
+
+
+def исполнитель_словами(текст: str) -> str:
+    """Слова брифа без исполнителя, которого в кадре НЕТ (четырнадцатый круг).
+
+    «Визуализатор без исполнителя в кадре», «логотип артиста», «трек нашей группы»
+    называют исполнителя, но не ставят его в кадр: клип с референсом и губами —
+    только когда исполнитель В КАДРЕ.
+    """
+    return PERFORMER_NOT_ON_SCREEN.sub(" ", NO_PERFORMER.sub(" ", str(текст or "")))
+
+
 def поют_в_кадре(spec: Spec, текст: str = "") -> bool:
     """Исполнитель поёт ВАШ трек в кадре генерируемого клипа (тринадцатый круг): к треку нужен липсинк."""
     if "video" not in spec.outputs or "audio" not in spec.inputs or set(spec.inputs) & {"video", "photo"}:
         return False
     if spec.task not in (None, "generate", "music-visualiser", "r2v"):
         return False
-    сказано = " ".join(str(у) for у in (*spec.conditions, текст) if у)
+    сказано = исполнитель_словами(" ".join(str(у) for у in (*spec.conditions, текст) if у))
     return bool(SINGING.search(сказано))
 
 
@@ -2601,8 +2643,26 @@ def клип_с_исполнителем(spec: Spec, текст: str = "") -> bo
     if spec.task not in (None, "generate", "music-visualiser"):
         return False
     сцен = (spec.shots or 0) >= SERIES_SHOTS_MIN or float(spec.duration_s or 0) > SERIES_DURATION_MIN_S
-    сказано = " ".join(str(у) for у in (*spec.conditions, текст) if у)
+    сказано = исполнитель_словами(" ".join(str(у) for у in (*spec.conditions, текст) if у))
     return сцен and bool(PERFORMER.search(сказано) or SINGING.search(сказано))
+
+
+#: Четырнадцатый круг: ВИЗУАЛИЗАТОР словами — картинка под трек без исполнителя.
+VISUALISER_WORDS = re.compile(
+    r"visuali[sz]er|визуализ\w*|audio[- ]reactive|sound[- ]reactive|reacts? to the (?:beat|music|track)"
+    r"|reactive (?:shapes|visuals)|pulsing to the beat|пульсиру\w* под|реагиру\w* на (?:бит|звук|музык)",
+    re.I,
+)
+
+
+def визуализатор(spec: Spec, текст: str = "") -> bool:
+    """Картинка под ВАШ трек без исполнителя в кадре: работа визуализатора, даже названная generate."""
+    if spec.task not in (None, "generate") or "audio" not in spec.inputs or set(spec.inputs) & {"video", "photo"}:
+        return False
+    if set(spec.outputs) != {"video"} or (spec.characters or 0) >= 1 or spec.people:
+        return False
+    сказано = " ".join(str(у) for у in (*spec.conditions, текст) if у)
+    return bool(VISUALISER_WORDS.search(сказано)) and not клип_с_исполнителем(spec, текст)
 
 
 #: Четырнадцатый круг: персонажи ДЕЛЯТ кадр словами — вместе, друг с другом, оба,
@@ -2750,6 +2810,16 @@ def with_defaults(spec: Spec, ролик: bool, текст: str = "") -> Spec:
             f"the length of the speech is set by YOUR script and was not named — priced for "
             f"{SCRIPT_SPEECH_DEFAULT_S:g} s of speech (scale by the script's length: ~150 words a minute); "
             "pass spec.duration_s for an exact price"
+        )
+    if визуализатор(spec, текст):
+        # ЧЕТЫРНАДЦАТЫЙ КРУГ: визуализатор под ВАШ трек, названный generate, —
+        # петли визуала и монтаж, а не кадры-портреты на каждую сцену.
+        поля["task"] = "music-visualiser"
+        источник["task"] = SOURCE_DERIVED
+        spec = replace(spec, task="music-visualiser")
+        допущения.append(
+            "visuals for YOUR track with nobody on screen — a music visualiser: looped generation laid under the "
+            "track at assembly, no performer reference and no lip sync; pass spec.characters for a performer"
         )
     персонажей, почему = персонажи_по_умолчанию(spec, текст)
     if персонажей:

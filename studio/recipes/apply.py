@@ -686,7 +686,9 @@ def rewrite(spec: "bs.Spec", route: "bs.Маршрут", text: str = "") -> Appl
             acc.assembly.append(ASSEMBLY_ALPHA)
 
     # --- beat-reactive visualiser -----------------------------------------------
-    if spec.task == "music-visualiser" and not any(SCENES.search(у) for у in spec.conditions):
+    # Round 14: a visualiser ordered as "generate" (YOUR track, nobody on screen) is the same job.
+    visualiser = spec.task == "music-visualiser" or bs.визуализатор(spec, text)
+    if visualiser and not any(SCENES.search(у) for у in spec.conditions):
         loop_maker = next((s for s in steps if s in VIDEO_GENERATORS), None)
         if loop_maker is not None and acc.prior("music_visualiser", "visualiser_loops"):
             step_seconds[loop_maker] = (
