@@ -1520,6 +1520,16 @@ class Маршрут:
     штук: Mapping[str, int] = field(default_factory=dict)
 
 
+def face_swap_items(spec: "Spec") -> int:
+    """How many stills an image face swap makes: `spec.shots`, else the largest image item of at least
+    `FACE_SWAP_BATCH_MIN` (the targets of a data set); 0 — as many as ordered frames (one)."""
+    if spec.shots:
+        return int(spec.shots)
+    штуки = [int(з.get("count") or 1) for з in spec.input_items if str(з.get("kind")) in ("photo", "image")]
+    наибольшее = max(штуки, default=0)
+    return наибольшее if наибольшее >= FACE_SWAP_BATCH_MIN else 0
+
+
 def _нехватка_видео(задача: str) -> tuple[str, str, str, tuple[str, ...], tuple[str, ...]]:
     return (
         "вход_задачи",
@@ -1572,6 +1582,10 @@ NOTE_DUB_MUX = "новая дорожка кладётся в ВАШЕ виде�
 NOTE_DUB_AUDIO = "отдаётся дорожка на новом языке; видео не трогается и губ не двигает никто"
 NOTE_STABILISE = "стабилизация — монтажный инструмент (ffmpeg vidstab или Gyroflow по гироскопу), не модель"
 NOTE_VISUALISER_SYNC = "реакция на звук делается при сборке; генерируемое видео трек не слышит"
+NOTE_FRAMES_FROM_VIDEO = "кадры для замены лица вынимаются из ВАШЕГО видео при сборке (ffmpeg), лицо меняется на каждом снимке"
+#: Round 14 (DECISION CONSTANT, T1): from this many images in one input item a face swap without
+#: `spec.shots` counts the item as the targets (a data set), not as one picture.
+FACE_SWAP_BATCH_MIN = 10
 NOTE_SERIES_REF = "один референс персонажа, и каждая картинка серии — правка по нему"
 NOTE_MOTION = "движение берётся из ВАШЕГО ведущего видео, внешность — со снимка (motion control), а не выдумывается"
 NOTE_SERIES_EDIT = "{n} картинок — правки по референсу (а не {n} независимых генераций); вариант — обучить LoRA"
@@ -1650,6 +1664,11 @@ ASSEMBLY_REASONS: dict[str, tuple[str, str]] = {
     NOTE_CAPTIONS: (
         "субтитры вжигаются ffmpeg по расшифровке с таймингами — 0 usd",
         "captions are burned in with ffmpeg from the timed transcript — 0 usd",
+    ),
+    NOTE_FRAMES_FROM_VIDEO: (
+        "кадры вынимаются из вашего видео ffmpeg (fps=… или select по сценам) — 0 usd; лицо меняется на каждом снимке",
+        "the frames are extracted from your video with ffmpeg (fps=… or select by scene) — 0 usd; the face is "
+        "swapped on each still",
     ),
     NOTE_DUB_MUX: (
         "переведённая дорожка заменяет звук ВАШЕГО видео (ffmpeg) — 0 usd, липсинка нет",
@@ -2342,11 +2361,22 @@ def _маршрут_одной(spec: Spec, на_сборке: frozenset[str] = f
         _дорожки(spec, шаги)
         return Маршрут(tuple(dict.fromkeys(шаги)), пометки)
     if задача == "face-replace":
-        if "video" not in входы and "photo" in входы and "video" not in выходы:
+        if "photo" in входы and "video" not in выходы and ("video" not in входы or "image" in выходы):
             # ЗАМЕНА ЛИЦА НА СНИМКЕ (одиннадцатый круг): «моё лицо на рыцаря с
             # этой картинки» спрашивало видео. Снимок-цель и новое лицо —
             # снимки заказчика; делает картиночный face-swap реестра.
-            return Маршрут(("замена_лица_изображения",), {})
+            # ЧЕТЫРНАДЦАТЫЙ КРУГ: выход — КАРТИНКИ (датасет из кадров), а видео
+            # принесено как источник кадров — это тоже картиночный face-swap:
+            # кадры вынимает монтаж (ffmpeg), меняется лицо на каждом снимке,
+            # цена — за снимок × число. Раньше шаг уходил в видео-замену
+            # персонажа без цены.
+            штук = face_swap_items(spec)
+            return Маршрут(
+                ("замена_лица_изображения",),
+                {},
+                сборка=(NOTE_FRAMES_FROM_VIDEO,) if "video" in входы else (),
+                штук={"замена_лица_изображения": штук} if штук else {},
+            )
         if "video" not in входы:
             return Маршрут(нехватка=_нехватка_видео(задача))
         # Новое лицо — РЕФЕРЕНС заказчика (вход шага `референс`, он у плана
