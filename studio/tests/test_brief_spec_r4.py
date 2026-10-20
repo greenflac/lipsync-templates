@@ -299,6 +299,13 @@ class Многоперсонажный(unittest.TestCase):
         self.assertEqual("ceil(40 s / 10 s max run of the chosen model)", итог["understood_as"]["shots_basis"])
         self.assertEqual("derived", источники(итог)["shots"])
 
+    def test_вместе_ключевых_кадров_не_меньше_шотов(self) -> None:
+        """Четырнадцатый круг: персонажи делят кадр — ключевой кадр на каждый шот из длительности."""
+        итог = план("two knights fight", spec={"outputs": ["video"], "characters": 2, "duration_s": 40, "inputs": []})
+        self.assertEqual(
+            [("генерация_изображения", 2), ("редактирование_изображения", 4), ("оживление", 4)], шаги(итог)
+        )
+
     def test_предел_не_записан_допущение_названо(self) -> None:
         база = [f for f in БАЗА if f.attribute != "max_seconds"]
         итог = план("x", facts=база, spec={"outputs": ["video"], "characters": 2, "duration_s": 40, "inputs": []})
