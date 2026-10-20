@@ -1678,7 +1678,8 @@ def _план(
             "rule": inhouse_news.RULE_ID,
         }
     if синтетик["decision"] == synthetic_presenter.DECISION_ALLOW:
-        итог["note"] = f"{итог.get('note', '')}. {synthetic_presenter.note(синтетик, язык == 'en')}".lstrip(". ")
+        нота_синтетика = synthetic_presenter.note(синтетик, язык == "en")
+        итог["note"] = f"{итог.get('note', '')}. {нота_синтетика}".lstrip(". ")
         итог["synthetic_presenter"] = {
             "decision": синтетик["decision"],
             "claims": list(синтетик["claims"]),
