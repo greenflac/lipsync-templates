@@ -9505,11 +9505,49 @@ REACH_SILENT = "разрешение выхода не записано"
 FRAME_REACH_TOLERANCE = 0.05
 
 
+#: Четырнадцатый круг: путь эндпоинта у площадки («on fal.ai as fal-ai/ltx-2.3-quality/inpaint»):
+#: ЛИНЕЙКА — всё до последнего сегмента, когда сегментов не меньше трёх.
+PRODUCT_PATH = re.compile(r"\bas ([\w.\-]+/[\w.\-]+)/[\w.\-/]+")
+#: КОНСТАНТА-РЕШЕНИЕ (Т1): сколько эндпоинтов линейки должны записать предел, чтобы
+#: молчащему эндпоинту одолжить «ниже». Один сосед — случайность; два и все ниже — линейка.
+PRODUCT_LINE_MIN = 2
+
+
+def линейки(facts: Sequence[Fact]) -> dict[str, list[str]]:
+    """Линейка площадки -> модели её эндпоинтов (по строкам `availability`)."""
+    out: dict[str, list[str]] = defaultdict(list)
+    for f in facts:
+        if f.attribute == "availability" and (м := PRODUCT_PATH.search(str(f.value))):
+            if f.model not in out[м.group(1)]:
+                out[м.group(1)].append(f.model)
+    return out
+
+
+def соседи_по_линейке(
+    модель: str, facts: Sequence[Fact], линии: Mapping[str, Sequence[str]]
+) -> tuple[str, list[Sequence[Fact]]]:
+    """(линейка, строки СОСЕДНИХ эндпоинтов) молчащей модели; пусто — линейки нет."""
+    for линия, модели in линии.items():
+        if модель in модели:
+            return линия, [pl.facts_for(м, facts) for м in модели if м != модель]
+    return "", []
+
+
+def линейка_ниже(соседи: Sequence[Sequence[Fact]], просят: tuple[int, int]) -> tuple[bool, str]:
+    """Все соседи линейки, записавшие предел, ниже заказа — и их не меньше `PRODUCT_LINE_MIN`."""
+    положения = [fit_stance(строки, просят) for строки in соседи]
+    решили = [(п, н) for п, н in положения if п in (FIT_IN, FIT_OVER)]
+    if len(решили) < PRODUCT_LINE_MIN or any(п == FIT_IN for п, _ in решили):
+        return False, ""
+    return True, f"{len(решили)} эндпоинта линейки, записавшие предел, ниже: {решили[0][1]}"
+
+
 def кадр_шага(
     кандидат: Candidate,
     свои: Sequence[Fact],
     просят: tuple[int, int],
     семья: Sequence[tuple[str, Sequence[Fact]]] = (),
+    линейка: tuple[str, Sequence[Sequence[Fact]]] = ("", ()),
 ) -> tuple[str, str]:
     """Отдаёт ли модель шага заказанный кадр — по ЗАПИСИ, три положения и нота.
 
@@ -9547,6 +9585,15 @@ def кадр_шага(
         их, их_нота = fit_stance(строки, просят)
         if их == FIT_OVER:
             return REACH_NO, f"по записи семьи {имя}: {их_нота}"
+    # ЧЕТЫРНАДЦАТЫЙ КРУГ: ЛИНЕЙКА ПЛОЩАДКИ ОДАЛЖИВАЕТ «НИЖЕ». Эндпоинт молчит, а
+    # соседи той же линейки (`fal-ai/ltx-2.3-quality/*`: 9 из 9 — «480p, 720p»)
+    # записали предел, и весь он ниже заказа: правка 4K-ролика таким эндпоинтом
+    # отдавала 720p без апскейла. Одалживается только «ниже» и только единогласно.
+    имя_линейки, соседи = линейка
+    if соседи:
+        ниже, нота_линейки = линейка_ниже(соседи, просят)
+        if ниже:
+            return REACH_NO, f"по записи линейки {имя_линейки}: {нота_линейки}"
     return REACH_SILENT, f"{положение}: {нота}"
 
 
@@ -9660,6 +9707,9 @@ def общие_активы(
 #: кадре, когда кадр не назван. КОНСТАНТА-РЕШЕНИЕ: правки, замена, реставрация,
 #: раскраска; липсинк и дубляж — проходы, их кадр решает `решить_апскейл`.
 SOURCE_FRAME_TASKS: frozenset[str | None] = frozenset({"video-edit", "edit", "face-replace", "restore", "colorize"})
+#: Четырнадцатый круг: правки ВАШЕГО ролика, которых нет среди работ тринадцатого
+#: круга, — вырезка фона и интерполяция тоже отдают ролик в кадре исходника.
+SOURCE_FRAME_TASKS = SOURCE_FRAME_TASKS | {"remove-background", "interpolate"}
 
 
 def клон_читает_текст(модель: str, реестр: "ep.Registry") -> bool:
@@ -9714,6 +9764,7 @@ def решить_апскейл(
     for f in facts:
         по_имени[fold(f.model)].append(f)
     известные = sorted({f.model for f in facts})
+    линии = линейки(facts)
     for i in range(len(картинка) - 1, -1, -1):
         op, кандидат = картинка[i]
         if кандидат is None:
@@ -9723,6 +9774,7 @@ def решить_апскейл(
             pl.facts_for(кандидат.model, facts),
             просят,
             _семья_строк(кандидат.model, по_имени, известные),
+            соседи_по_линейке(кандидат.model, facts, линии),
         )
         if положение == REACH_YES:
             if not проходы:
@@ -12369,6 +12421,28 @@ def plan(
     def кадр_цены_шага(op: Operation) -> tuple[int, int] | None:
         return кадр_исходника if op.name in до_апскейла else кадр_цены
 
+    def кадр_выдачи() -> tuple[int, int] | None:
+        """Кадр, который план обязан ОТДАТЬ: названный — или кадр ВАШЕГО исходника у правки.
+
+        Кадр-ДОПУЩЕНИЕ (`brief_spec.DEFAULT_VIDEO_RESOLUTION`) ранжирует кандидатов,
+        но платного апскейла не дописывает: апскейл заказывают названным кадром.
+        ТРИНАДЦАТЫЙ КРУГ: правка ВАШЕГО материала отдаётся в его кадре — кадр не
+        назван, а кадр исходника записан (`spec.inputs[].resolution`): правка
+        4K-ролика моделью с пределом 720p отдавала 720p молча.
+        ЧЕТЫРНАДЦАТЫЙ КРУГ: тот же кадр — цель апскейлера (`studio/upscale_reach.py`):
+        апскейлер, который кадр выдачи не пишет, не кандидат и тогда, когда кадр
+        взят от исходника, а не назван.
+        """
+        просят = None if понято.source.get("resolution") == bs.SOURCE_DEFAULT else заказанный_кадр
+        if (
+            просят is None
+            and понято.source.get("resolution") != bs.SOURCE_SPEC
+            and {понято.task, *понято.then_tasks} & SOURCE_FRAME_TASKS
+            and (кадр_своего := bs.source_frame(понято)) is not None
+        ):
+            просят = кадр_своего
+        return просят
+
     def языков_на_шаг(op: Operation) -> int:
         """Сколько раз шаг делается по языкам: только речевые шаги и только языки из spec."""
         if op.name in PER_LANGUAGE_STEPS and понято.source.get("languages") == bs.SOURCE_SPEC:
@@ -12433,7 +12507,7 @@ def plan(
             requirement_frame=rc.requirement_frame(op.name, заказанный_кадр or кадр, понято),
             # ПРЕДЕЛ ВЫХОДА АПСКЕЙЛЕРА (тринадцатый круг): только НАЗВАННЫЙ
             # кадр; допущение класса апскейлера не отсеивает.
-            upscale_target=None if понято.source.get("resolution") == bs.SOURCE_DEFAULT else заказанный_кадр,
+            upscale_target=кадр_выдачи(),
             source_frame=bs.source_frame(понято),
         )
 
@@ -12632,20 +12706,8 @@ def plan(
             }
         )
 
-    # Кадр-ДОПУЩЕНИЕ (`brief_spec.DEFAULT_VIDEO_RESOLUTION`) ранжирует кандидатов,
-    # но платного апскейла не дописывает: апскейл заказывают названным кадром.
-    просят_кадр = None if понято.source.get("resolution") == bs.SOURCE_DEFAULT else заказанный_кадр
-    # ТРИНАДЦАТЫЙ КРУГ: ПРАВКА ВАШЕГО МАТЕРИАЛА ОТДАЁТСЯ В ЕГО КАДРЕ. Кадр не
-    # назван, а кадр исходника записан (`spec.inputs[].resolution`): правка 4K-ролика
-    # моделью с записанным пределом 720p отдавала 720p молча — заказчик получал
-    # ролик хуже своего. Заказанный кадр — кадр исходника; модель ниже — апскейл.
-    if (
-        просят_кадр is None
-        and понято.source.get("resolution") != bs.SOURCE_SPEC
-        and {понято.task, *понято.then_tasks} & SOURCE_FRAME_TASKS
-        and (кадр_своего := bs.source_frame(понято)) is not None
-    ):
-        просят_кадр = кадр_своего
+    # Кадр выдачи (`кадр_выдачи`): названный, или кадр ВАШЕГО исходника у правки.
+    просят_кадр = кадр_выдачи()
     условные: set[str] = set()
     пронесено = [""]
     частота = [""]

@@ -489,6 +489,9 @@ EN: tuple[tuple[str, str], ...] = (
     (r"тариф шага посчитан в (\d+p) — ниже (\d+p)", r"the step's rate is priced at \1 — below \2"),
     (r"тариф шага посчитан в (\d+p)", r"the step's rate is priced at \1"),
     (r"по записи семьи (\S+): ", r"on the family's record \1: "),
+    # круг 14: линейка площадки одалживает «ниже» (`planner.линейка_ниже`)
+    (r"по записи линейки (\S+): (\d+) эндпоинта линейки, записавшие предел, ниже: ",
+     r"on the record of the product line \1: \2 endpoints of the line that record a limit are all below: "),
     (r"в брифе заказан кадр (\S+), а у модели шага (\S+) \((\S+)\) он ниже по записи — ",
      r"the brief asks for a \1 frame, and the model of step \2 (\3) is below it on record — "),
     # --- кадр против предела (planner.fit, studio/resolution.py)
