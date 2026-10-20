@@ -236,6 +236,7 @@ from studio import edit_intent as ei
 from studio import expert_r15 as x15
 from studio import anonymise
 from studio import expert_r16 as x16
+from studio import routes_r17 as r17
 from studio import endpoints as ep
 from studio import l10n
 from studio import factaxis as fa
@@ -2442,6 +2443,18 @@ OPERATIONS: tuple[Operation, ...] = (
         requirement="сетка предмета по снимкам: форма и текстура сходятся со всеми сторонами снимков",
     ),
     Operation(
+        name="реконструкция_3d",
+        # Семнадцатый круг (`studio/routes_r17.py`): 3D-тур / облёт реального места — гауссов
+        # сплат по снимкам или кадрам видео (COLMAP -> gsplat / nerfstudio splatfacto), а не
+        # видеомодель. Ни один заказываемый эндпоинт реестра этого не делает: шаг честно без
+        # кандидата, цена — записанный пробел (`ТОЛЬКО_РЕЕСТР`, работы реестра нет).
+        cues=(),
+        anchors=("gaussian-splat", "3d-scene"),
+        requires=(ARTEFACT_REFERENCE,),
+        produces=(ARTEFACT_MESH,),
+        requirement="3D-сцена места по снимкам с перекрытием: геометрия и вид сходятся со всеми ракурсами съёмки",
+    ),
+    Operation(
         name=bs.V2A_STEP,
         # Тринадцатый круг: звук ПО КАРТИНКЕ (шумы, фон, саундтрек под действие)
         # принесённого видео. Модели «видео -> звук» (MMAudio, HunyuanVideo-Foley,
@@ -3591,6 +3604,10 @@ def _аватар_вместо(имена: set[str], есть: frozenset[str], �
     обычно идёт в сцену с движением, и там оживление + липсинк честнее.
     """
     if not ({"оживление", "липсинк"} <= имена and ARTEFACT_IMAGE in есть):
+        return имена
+    # Семнадцатый круг (`routes_r17`, клип исполнителя): губы идут на клипах по референсу, а
+    # оживление — шоты без исполнителя; аватар из снимка заменил бы обе части не тем.
+    if r17.PERFORMER_REF_STEP in имена:
         return имена
     for имя in ("оживление", "липсинк"):
         добавлены.pop(имя, None)
@@ -7213,6 +7230,7 @@ def запасной_прогон(
         "клонирование_голоса",
         "оборот_360",
         "модель_3d",
+        "реконструкция_3d",
         bs.V2A_STEP,
         "правка_видео",
         "видео_по_референсу",
@@ -8901,6 +8919,7 @@ def _есть_кириллица(текст: str) -> bool:
     "клонирование_голоса": "voice clone + narration",
     "оборот_360": "360° turntable",
     "модель_3d": "3D model from photos (image-to-3D)",
+    "реконструкция_3d": "3D scene reconstruction (gaussian splat)",
     bs.V2A_STEP: "sound from the picture (video-to-audio)",
     "правка_видео": "video edit (your footage)",
     "видео_по_референсу": "reference-to-video (consistent character)",
@@ -8939,6 +8958,7 @@ def _есть_кириллица(текст: str) -> bool:
     "клонирование_голоса": "клон голоса + начитка",
     "оборот_360": "оборот 360°",
     "модель_3d": "3D-модель по снимкам (image-to-3D)",
+    "реконструкция_3d": "3D-реконструкция места (гауссов сплат)",
     bs.V2A_STEP: "звук по картинке (video-to-audio)",
     "правка_видео": "правка видео (ваш материал)",
     "видео_по_референсу": "видео по референсу (один персонаж)",
@@ -12647,6 +12667,7 @@ def plan(
             sorted(
                 есть
                 | x15.made_inputs(op.name, [оп.name for оп in операции], ARTEFACT_IMAGE)
+                | r17.made_inputs(op.name, [оп.name for оп in операции], ARTEFACT_IMAGE)
                 | anonymise.assumed_inputs(op.name, понято, ARTEFACT_IMAGE)
             ),
             языки if op.name in SPEECH_STEPS else (),

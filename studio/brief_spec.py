@@ -178,6 +178,23 @@ INPUT_DEFECTS: tuple[str, ...] = ("halftone", "blur", "noise", "hum", "echo", "s
 #: Дефекты звука — чистка звука.
 AUDIO_DEFECTS: tuple[str, ...] = ("noise", "hum", "echo")
 
+# --- СЕМНАДЦАТЫЙ КРУГ: поля недостающих маршрутов (`studio/routes_r17.py`) ---------------------
+# Каждое поле добавлено потому, что ни одно прежнее решения не несло (docs/MCP_AGENT.md, round 17).
+#: `spec.inputs[].subtitles` (запись ВИДЕО): burned — субтитры вшиты в кадр (их надо найти, убрать,
+#: перевести и вшить заново); soft — отдельной дорожкой; none — субтитров нет.
+INPUT_SUBTITLES: tuple[str, ...] = ("burned", "soft", "none")
+#: `spec.delivery.format`: ply / splat / spz — сдаётся сам 3D-гауссов сплат (навигация в просмотрщике).
+SPLAT_FORMATS: tuple[str, ...] = ("ply", "splat", "spz")
+DELIVERY_FORMATS = (*DELIVERY_FORMATS, *SPLAT_FORMATS)
+#: `spec.delivery.platform: internal` — только внутри организации (LMS, интранет, закрытый показ).
+PLATFORM_INTERNAL = "internal"
+DELIVERY_PLATFORMS = (*DELIVERY_PLATFORMS, PLATFORM_INTERNAL)
+#: `spec.domain: security-awareness` — обучение сотрудников распознавать дипфейки и социнженерию.
+DOMAIN_SECURITY_AWARENESS = "security-awareness"
+DOMAINS = (*DOMAINS, DOMAIN_SECURITY_AWARENESS)
+#: Поля верхнего уровня семнадцатого круга (числа и флаг).
+SPEC_FIELDS_R17: tuple[str, ...] = ("performer_shots", "products", "reconstruct_3d")
+
 #: Все поля `spec`, которые плановщик принимает. Неизвестное поле — ошибка, а
 #: не молчание: вызывающий, написавший `durations`, должен узнать, что его не
 #: прочли.
@@ -240,6 +257,8 @@ SPEC_FIELDS: tuple[str, ...] = (
     "follows_picture",
     "animate_input",
     "community",
+    # СЕМНАДЦАТЫЙ КРУГ (`studio/routes_r17.py`): внутри записей входа — `inputs[].subtitles`.
+    *SPEC_FIELDS_R17,
 )
 
 SOURCE_SPEC = "spec"
@@ -662,6 +681,13 @@ class Spec:
     animate_input: bool | None = None
     #: Нужны модели / LoRA / воркфлоу сообщества (Civitai, Hugging Face).
     community: bool | None = None
+    # --- семнадцатый круг (`studio/routes_r17.py`) ---------------------------------------------
+    #: Клип исполнителя: в скольких шотах исполнитель ПОЁТ в кадре (губы под трек); прочие — без губ.
+    performer_shots: int | None = None
+    #: Пачка роликов о товарах: сколько РАЗНЫХ товаров (по одному кадру товара на все его ролики).
+    products: int | None = None
+    #: Результат — 3D-реконструкция реального места (гауссов сплат / NeRF) или облёт, отрендеренный из неё.
+    reconstruct_3d: bool | None = None
 
     def has(self, имя: str) -> bool:
         значение = getattr(self, имя)
@@ -880,7 +906,9 @@ NOTE_APPLE = (
     "whether each model runs on MPS/MLX is unmeasured unless the base records it (see apple_silicon per step)"
 )
 
-_INPUT_FIELDS = frozenset({"kind", "owned", "duration_s", "count", "resolution", "note", "source", "defects", "fps"})
+_INPUT_FIELDS = frozenset(
+    {"kind", "owned", "duration_s", "count", "resolution", "note", "source", "defects", "fps", "subtitles"}
+)
 
 
 def _входы_spec(raw: Any, ошибки: list[str]) -> tuple[tuple[str, ...], tuple[dict[str, Any], ...]]:
@@ -941,6 +969,13 @@ def _входы_spec(raw: Any, ошибки: list[str]) -> tuple[tuple[str, ...]
                 запись["fps"] = _положительное(вход["fps"])
             except ValueError as e:
                 ошибки.append(f"spec.inputs[{i}].fps={вход['fps']!r}: {e}")
+        # СЕМНАДЦАТЫЙ КРУГ: субтитры в принесённом видео — вшиты, дорожкой или их нет.
+        if вход.get("subtitles") is not None:
+            з = str(вход["subtitles"]).strip().lower()
+            if з not in INPUT_SUBTITLES:
+                ошибки.append(f"spec.inputs[{i}].subtitles: {з} not in {', '.join(INPUT_SUBTITLES)}")
+            else:
+                запись["subtitles"] = з
         виды.append(вид)
         подробно.append(запись)
     return tuple(dict.fromkeys(виды)), tuple(подробно)
@@ -1306,6 +1341,7 @@ def parse_spec(raw: Mapping[str, Any] | None) -> tuple[Spec, list[str]]:
             ошибки.append(f"spec.consistency: {', '.join(чужие)} not in {', '.join(CONSISTENCY_AXES)}")
         поля["consistency"] = tuple(dict.fromkeys(з for з in оси if з in CONSISTENCY_AXES))
     _поля_r16(raw, поля, ошибки)
+    _поля_r17(raw, поля, ошибки)
     if raw.get("open_weights") is not None:
         if not isinstance(raw["open_weights"], bool):
             ошибки.append(f"spec.open_weights={raw['open_weights']!r}: must be true or false")
@@ -1403,6 +1439,27 @@ def _сдача_spec(raw: Any, ошибки: list[str]) -> dict[str, Any] | None
         else:
             запись["stems"] = raw["stems"]
     return запись
+
+
+def _поля_r17(raw: Mapping[str, Any], поля: dict[str, Any], ошибки: list[str]) -> None:
+    """Поля семнадцатого круга: число шотов исполнителя, число товаров, 3D-реконструкция."""
+    if raw.get("performer_shots") is not None:
+        # Ноль — названное «исполнитель в кадре не поёт»: целое не меньше нуля.
+        з = raw["performer_shots"]
+        if isinstance(з, bool) or not isinstance(з, int) or з < 0:
+            ошибки.append(f"spec.performer_shots={з!r}: a whole number >= 0")
+        else:
+            поля["performer_shots"] = з
+    if raw.get("products") is not None:
+        try:
+            поля["products"] = _положительное(raw["products"], True)
+        except ValueError as e:
+            ошибки.append(f"spec.products={raw['products']!r}: {e}")
+    if raw.get("reconstruct_3d") is not None:
+        if not isinstance(raw["reconstruct_3d"], bool):
+            ошибки.append(f"spec.reconstruct_3d={raw['reconstruct_3d']!r}: must be true or false")
+        else:
+            поля["reconstruct_3d"] = raw["reconstruct_3d"]
 
 
 def _поля_r16(raw: Mapping[str, Any], поля: dict[str, Any], ошибки: list[str]) -> None:
@@ -2159,6 +2216,10 @@ EDIT_ALIASES: dict[str, str] = {
 }
 #: Все значения `spec.edit`: правки реестра и правки монтажа.
 EDIT_VALUES: tuple[str, ...] = (*ep.EDIT_INTENTS, *ASSEMBLY_ONLY_EDITS)
+#: СЕМНАДЦАТЫЙ КРУГ: человек в ВАШЕМ видео заменяется ЦЕЛИКОМ (тело, костюм, личность) — замена
+#: персонажа (класс Wan Animate replace), а не замена лица; маршрут ставит `studio/routes_r17.py`.
+EDIT_REPLACE_PERSON = "replace-person"
+EDIT_VALUES = (*EDIT_VALUES, EDIT_REPLACE_PERSON)
 
 #: Монтажные правки СЛОВАМИ брифа — когда `spec.edit` о них молчит (правка ролика
 #: без названной правки уходила в генеративную правку по инструкции).
@@ -3268,6 +3329,13 @@ def with_defaults(spec: Spec, ролик: bool, текст: str = "") -> Spec:
         персонаж в кадре», а «15-секундная реклама с озвучкой» и «повар говорит
         в камеру» дают одну и ту же spec.
     """
+    from studio import routes_r17 as r17
+
+    # СЕМНАДЦАТЫЙ КРУГ (`studio/routes_r17.py`): закадровый текст назван полем (voiceover: true,
+    # audio: voiceover, audio_content: speech), а звука не принесли — речь входит в выходы (шаг озвучки);
+    # вшитые субтитры — снятие старого текста правкой, новые вшиваются при сборке.
+    spec = r17.with_narration(spec)
+    spec = r17.with_subtitle_edit(spec, текст)
     допущения = list(spec.assumptions)
     поля = {к: getattr(spec, к) for к in spec.__dataclass_fields__}
     источник = dict(spec.source)

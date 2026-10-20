@@ -459,6 +459,83 @@ PRIORS_LIST = (
     ),
 )
 
+#: Round 17: the missing routes (`studio/routes_r17.py`).
+PRIORS_LIST = (
+    *PRIORS_LIST,
+    Prior(
+        "burned_subtitles_replace",
+        "translating footage with burned-in subtitles: the old text is read (a timed transcript of the speech, OCR of "
+        "the burned strip for the exact wording), machine-translated, REMOVED by a masked video edit of the subtitle "
+        "band, and the new subtitles are burned in at assembly — or delivered as a soft track where the platform "
+        "takes one; drawing new text over the old one leaves both",
+        "перевод видео со вшитыми субтитрами: старый текст читается (расшифровка речи с таймингами, OCR вшитой строки "
+        "для точной формулировки), переводится машинным переводом, УБИРАЕТСЯ правкой по маске полосы субтитров, а "
+        "новые субтитры вшиваются при сборке — или сдаются отдельной дорожкой, где площадка её принимает; новый текст "
+        "поверх старого оставляет оба",
+        TAG_ENGINEERING,
+    ),
+    Prior(
+        "performer_reference_lips",
+        "a singer's music video: one performer reference (the performer's own photos, or one generated still) feeds "
+        "a reference-to-video clip per performer shot, and lip sync to the track's vocals runs ONLY on the shots where "
+        "the performer sings on camera; the other shots are key stills animated image-to-video without lips",
+        "клип исполнителя: один референс исполнителя (его фото или один сгенерированный кадр) даёт видео по референсу "
+        "на каждый шот с исполнителем, а липсинк к вокалу трека идёт ТОЛЬКО на шотах, где он поёт в кадре; остальные "
+        "шоты — ключевые кадры, оживлённые без губ",
+        TAG_ENGINEERING,
+    ),
+    Prior(
+        "gaussian_splat_scene",
+        "a 3D walkthrough or tour of a real place is a reconstruction — camera poses from overlapping photos or "
+        "video frames (COLMAP), a gaussian splat trained on them (gsplat / nerfstudio splatfacto, Apache-2.0) and a "
+        "camera path rendered from it; a video model animating the photos invents geometry and is not a 3D tour",
+        "3D-тур или облёт реального места — это реконструкция: позы камер по снимкам с перекрытием или кадрам видео "
+        "(COLMAP), гауссов сплат, обученный на них (gsplat / nerfstudio splatfacto, Apache-2.0), и путь камеры, "
+        "отрендеренный из него; видеомодель, оживляющая снимки, выдумывает геометрию и 3D-туром не является",
+        TAG_BASE_ROWS,
+        (
+            Source(
+                "nerfstudio-splatfacto",
+                "vram_gb",
+                "https://raw.githubusercontent.com/nerfstudio-project/nerfstudio/main/docs/nerfology/methods/splat.md",
+                "splatfacto ~6 GB / splatfacto-big ~12 GB, COLMAP initialisation, export .ply",
+            ),
+            Source(
+                "gsplat",
+                "licence",
+                "https://raw.githubusercontent.com/nerfstudio-project/gsplat/main/LICENSE",
+                "Apache-2.0",
+            ),
+        ),
+    ),
+    Prior(
+        "whole_person_replace",
+        "replacing the whole person in the customer's footage (body, costume, identity) is a character-replacement "
+        "model (Wan Animate replace class: the source motion, the new character from its reference, priced per "
+        "second) — a face swap moves only a face and leaves the body, hair and clothes of the original",
+        "замена человека в материале заказчика целиком (тело, костюм, личность) — модель замены персонажа (класс Wan "
+        "Animate replace: движение исходника, новый персонаж по референсу, цена за секунду); замена лица переносит "
+        "только лицо и оставляет тело, волосы и одежду исходного",
+        TAG_BASE_ROWS,
+        (
+            Source(
+                "wan-animate-replace",
+                "architecture",
+                "https://fal.ai/models/fal-ai/wan/v2.2-14b/animate/replace/api",
+                "replaces the character in a reference video, keeping the scene",
+            ),
+        ),
+    ),
+    Prior(
+        "ugc_shared_references",
+        "a UGC batch of product clips reuses a few shared references — one presenter for every clip and one packshot "
+        "per product — made once; a still per clip pays N times and the presenter's face drifts between clips",
+        "пачка UGC-роликов о товарах держится на нескольких общих референсах — один ведущий на все ролики и по кадру "
+        "товара на товар, — сделанных один раз; кадр на каждый ролик — плата N раз, и лицо ведущего плывёт",
+        TAG_ENGINEERING,
+    ),
+)
+
 #: Tools and failure checks each prior brings (kept apart from the wording above).
 _PRIOR_TOOLS_FAILURES: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
     "t2i_native_max": ((), ("upscale_hallucination",)),
@@ -490,6 +567,11 @@ _PRIOR_TOOLS_FAILURES: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
     "anonymise_pixelate": (("deface",), ("missed_faces",)),
     "anonymise_voice_replace": (("voice_track_swap",), ("missed_voices", "identifying_words")),
     "ambient_segment_loop": (("ffmpeg_concat",), ("loop_seam",)),
+    "burned_subtitles_replace": (("ffmpeg_subtitles",), ("subtitle_ghost",)),
+    "performer_reference_lips": (("ffmpeg_concat",), ("mouth_flap_timing",)),
+    "gaussian_splat_scene": (("splat_render",), ("splat_floaters",)),
+    "whole_person_replace": ((), ("character_motion_drift",)),
+    "ugc_shared_references": ((), ()),
 }
 PRIORS_LIST = tuple(
     Prior(п.id, п.en, п.ru, п.tag, п.sources, *_PRIOR_TOOLS_FAILURES[п.id]) for п in PRIORS_LIST
@@ -536,6 +618,14 @@ TOOLS_LIST = (
     Tool("voice_track_swap", "ffmpeg amix / demucs", "lay the new voice line by line over the speech, music and "
          "ambience from a stem separation", "положить новый голос фраза за фразой вместо речи, музыка и атмосфера — "
          "из разделения на стемы"),
+)
+TOOLS_LIST = (
+    *TOOLS_LIST,
+    Tool("ffmpeg_subtitles", "ffmpeg subtitles (libass)", "burn the translated subtitles into the picture, or mux a "
+         "soft track", "вшить переведённые субтитры в картинку или положить их отдельной дорожкой"),
+    Tool("splat_render", "nerfstudio ns-render / SuperSplat", "render the camera path from the trained splat, or "
+         "export it for a web viewer", "отрендерить путь камеры из обученного сплата или выгрузить его для "
+         "веб-просмотрщика"),
 )
 TOOLS: dict[str, Tool] = {т.id: т for т in TOOLS_LIST}
 
@@ -612,6 +702,15 @@ FAILURES_LIST = (
     Failure("identifying_words", "the words themselves identify the speaker (names, places, dates, turns of phrase)",
             "сами слова выдают говорящего (имена, места, даты, обороты)",
             "redact the transcript before synthesis", "вычитать и вычистить расшифровку до синтеза"),
+)
+FAILURES_LIST = (
+    *FAILURES_LIST,
+    Failure("subtitle_ghost", "the removed subtitle band leaves a smear or a flicker where the old letters were",
+            "на месте убранной полосы субтитров остаётся мазок или мерцание", "step through the band frame by frame "
+            "on cuts and on bright backgrounds", "пройти полосу по кадрам на склейках и на светлом фоне"),
+    Failure("splat_floaters", "floaters and blur where the capture had few views (ceilings, corners, behind "
+            "furniture)", "«облака» и размытие там, где мало ракурсов (потолок, углы, за мебелью)",
+            "fly the camera path through every room before delivery", "пролететь путь камеры по каждой комнате до сдачи"),
 )
 FAILURES: dict[str, Failure] = {ф.id: ф for ф in FAILURES_LIST}
 
@@ -884,6 +983,66 @@ RECIPES_LIST = (
         ("ambient_segment_loop",),
         ("ffmpeg_concat",),
         ("loop_seam",),
+    ),
+)
+
+RECIPES_LIST = (
+    *RECIPES_LIST,
+    Recipe(
+        "burned_subtitles",
+        "translating footage whose subtitles are burned into the picture",
+        (
+            RecipeStep("расшифровка", "model", "timed transcript of the speech (OCR of the burned strip beside it)"),
+            RecipeStep("правка_видео", "model", "the old subtitle band removed by a masked edit"),
+            RecipeStep("ffmpeg_subtitles", "tool", "the translated subtitles burned in (or a soft track)"),
+        ),
+        ("burned_subtitles_replace",),
+        ("ffmpeg_subtitles",),
+        ("subtitle_ghost",),
+    ),
+    Recipe(
+        "performer_music_video",
+        "a singer's music video from a performer reference",
+        (
+            RecipeStep("генерация_изображения", "model", "one performer reference (none when brought) and the key stills of the other shots"),
+            RecipeStep("видео_по_референсу", "model", "one clip per performer shot"),
+            RecipeStep("липсинк", "model", "lip sync on the performer shots only"),
+            RecipeStep("оживление", "model", "the other shots, no lips"),
+            RecipeStep("ffmpeg_concat", "tool", "the shots cut to the track"),
+        ),
+        ("performer_reference_lips",),
+        ("ffmpeg_concat",),
+        ("mouth_flap_timing",),
+    ),
+    Recipe(
+        "scene_3d",
+        "a 3D walkthrough / tour of a real place",
+        (
+            RecipeStep("реконструкция_3d", "model", "a gaussian splat from the overlapping photos / video frames"),
+            RecipeStep("splat_render", "tool", "the camera path rendered, or the splat exported for a viewer"),
+        ),
+        ("gaussian_splat_scene",),
+        ("splat_render",),
+        ("splat_floaters",),
+    ),
+    Recipe(
+        "whole_person_replacement",
+        "the whole person in the customer's footage replaced (body, costume, identity)",
+        (
+            RecipeStep("генерация_изображения", "model", "the new character's reference, when none is brought"),
+            RecipeStep("замена_фигуры", "model", "character replacement on the source motion"),
+        ),
+        ("whole_person_replace",),
+        (),
+        ("character_motion_drift",),
+    ),
+    Recipe(
+        "ugc_product_batch",
+        "a batch of UGC clips about a few products",
+        (RecipeStep("генерация_изображения", "model", "one shared presenter and one packshot per product"),),
+        ("ugc_shared_references",),
+        (),
+        (),
     ),
 )
 
