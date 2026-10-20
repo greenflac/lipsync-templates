@@ -875,6 +875,11 @@ EN: tuple[tuple[str, str], ...] = (
      'the room clips are joined in walking order (ffmpeg concat / xfade) — 0 usd'),
     ('говорящий\\ виден\\ в\\ кадре:\\ губы\\ двигает\\ липсинк\\ под\\ синтезированную\\ речь',
      'the speaker is seen on screen: lip sync moves the lips to the synthesised speech'),
+    # --- круг 14: пометки маршрутов (`brief_spec.NOTE_FRAMES_FROM_VIDEO`, `ASSEMBLY_REASONS`)
+    ('кадры\\ вынимаются\\ из\\ вашего\\ видео\\ ffmpeg\\ \\(fps=…\\ или\\ select\\ по\\ сценам\\)\\ —\\ 0\\ usd;\\ лицо\\ меняется\\ на\\ каждом\\ снимке',
+     'the frames are extracted from your video with ffmpeg (fps=… or select by scene) — 0 usd; the face is swapped on each still'),
+    ('кадры\\ для\\ замены\\ лица\\ вынимаются\\ из\\ ВАШЕГО\\ видео\\ при\\ сборке\\ \\(ffmpeg\\),\\ лицо\\ меняется\\ на\\ каждом\\ снимке',
+     'the frames for the face swap are extracted from YOUR video at assembly (ffmpeg), and the face is swapped on each still'),
     # --- круг 11: пометки маршрутов по spec (`brief_spec.NOTES_EN` — те же слова)
     (r"движение берётся из ВАШЕГО ведущего видео, внешность — со снимка \(motion control\), а не выдумывается",
      "the motion comes from YOUR driving video and the look from the photo (motion control), not invented"),
@@ -1398,6 +1403,14 @@ RU: tuple[tuple[str, str], ...] = (
     (r"output cap ([\d.]+) MP/frame", r"предел выхода \1 Мп/кадр"),
     (r"output cap (\d+)p", r"предел выхода \1p"),
     (r"no output cap", "предела выхода нет"),
+    # --- круг 14: дотяг по схеме при проверенном меньшем кадре, покадровый апскейлер, альфа
+    (r"reaches the ordered frame by schema only; its quality is tested below it: ",
+     "заказанный кадр достигается только по схеме; качество проверено на меньшем кадре: "),
+    (r", but its quality is tested only up to (\d+)p \(", r", но качество проверено только до \1p ("),
+    (r", but it upscales each frame as an image, with no temporal model \((.+?)\) — flicker between frames is not ruled out",
+     r", но апскейлит каждый кадр как картинку, без временной модели (\1) — мерцание между кадрами не исключено"),
+    (r"made for transparent assets \(alpha channel, PNG\) — the frame ordered is opaque, so an upscaler for ordinary frames is the right tool",
+     "сделан для прозрачных ассетов (альфа-канал, PNG) — заказан непрозрачный кадр, нужен обычный апскейлер"),
     (r" reaches (\d+)p \(", r" достигает \1p ("),
     (r"its recorded ceiling", "своего записанного предела"),
 )

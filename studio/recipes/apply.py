@@ -82,8 +82,17 @@ ARTEFACT_VIDEO = "видео"
 #: background for our website» is what the customer says, and a caller filling
 #: the spec has nowhere else to put it).
 ALPHA = re.compile(
-    r"transparen|\balpha[- ]?channel|\bwith alpha\b|\bwebm\b|prores ?4444|прозрачн|альфа-?канал", re.I
+    # Round 14: "transparent" about the OBJECT (a glass bottle) or the DISPLAY (a transparent LED / OLED
+    # screen, where black is see-through) is not a transparent background.
+    r"transparen(?:t|cy)(?!\s+(?:led|oled|lcd|screens?|displays?|film|glass\w*|bottles?|jars?|plastic|liquid|objects?"
+    r"|products?|packag\w*|vases?|cups?|perfume|flacons?|crystal|acrylic|resin|water|ice|window|case|lid|cap))"
+    r"|\balpha[- ]?channel|\bwith alpha\b|\bwebm\b|prores ?4444"
+    r"|прозрачн(?!\w*\s+(?:led|oled|lcd|экран|дисплей|панел|плёнк|пленк|стекл|флакон|бутылк|банк|упаковк|пластик|жидкост"
+    r"|вод|лёд|лед|акрил|смол|витрин|корпус|крышк))|альфа-?канал",
+    re.I,
 )
+#: Explicit alpha (a channel, a format that carries one) — stands even on a hologram display.
+ALPHA_EXPLICIT = re.compile(r"\balpha[- ]?channel|\bwith alpha\b|prores ?4444|альфа-?канал", re.I)
 #: A 3D deliverable named — in `spec.conditions` or, as a delivery format, in the brief's words.
 MESH = re.compile(r"\bglb\b|\bgltf\b|\busdz\b|\b3d[- ]?(?:model|mesh|asset)|\bmesh\b|3d-модел|3d модел|\bсетк", re.I)
 #: The customer asks to animate the brought art itself (a visualiser, not an audiogram).
@@ -465,8 +474,17 @@ def _replace_step(steps: list[str], old: str, new: str) -> list[str]:
 
 
 def wants_alpha(spec: "bs.Spec", text: str = "") -> bool:
-    """A transparent background asked for: `spec.conditions`, or the brief's own words."""
-    return any(ALPHA.search(str(у)) for у in (*spec.conditions, text))
+    """A transparent background asked for: `spec.conditions`, or the brief's own words.
+
+    Round 14: a hologram / Pepper's-ghost / transparent LED display wants the subject on BLACK (black is
+    its transparent colour, `checklist.hologram_black_background`) — no alpha unless one is named outright.
+    """
+    from studio.recipes import checklist
+
+    слова = (*(str(у) for у in spec.conditions), str(text or ""))
+    if any(checklist.W_HOLOGRAM.search(у) for у in слова) and not any(ALPHA_EXPLICIT.search(у) for у in слова):
+        return False
+    return any(ALPHA.search(у) for у in слова)
 
 
 def wants_mesh(spec: "bs.Spec", text: str = "") -> bool:
@@ -1028,6 +1046,7 @@ def note_ids(
     *,
     text: str = "",
     applied: "Applied | None" = None,
+    extra_priors: Sequence[str] = (),
 ) -> list[tuple[str, dict[str, str]]]:
     """Which production notes this plan carries, with the fields of their wording.
 
@@ -1036,7 +1055,7 @@ def note_ids(
     """
     names = set(steps)
     outputs = set(spec.outputs)
-    priors = set(applied.priors) if applied is not None else set()
+    priors = (set(applied.priors) if applied is not None else set()) | set(extra_priors)
     seconds = spec.duration_s or bs.source_seconds(spec)
     out: list[tuple[str, dict[str, str]]] = []
     if "музыка" in names:
@@ -1118,10 +1137,15 @@ def notes(
     *,
     text: str = "",
     applied: "Applied | None" = None,
+    extra_priors: Sequence[str] = (),
 ) -> list[dict]:
-    """The plan's `production_notes` rows in the answer's language."""
+    """The plan's `production_notes` rows in the answer's language.
+
+    :param extra_priors: facts of the CHOSEN plan the recipe cannot know (round 14:
+        `checklist.RUN_OVER_PRIOR` — a step's chosen model records a shorter run than the take).
+    """
     rows: list[dict] = []
-    for nid, fields in note_ids(spec, steps, text=text, applied=applied):
+    for nid, fields in note_ids(spec, steps, text=text, applied=applied, extra_priors=extra_priors):
         n = NOTES.get(nid) or checklist.RULES[nid]
         if "aspect" in fields and not fields["aspect"]:
             fields = {**fields, "aspect": "the new aspect" if english else "новый формат"}

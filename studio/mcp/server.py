@@ -95,6 +95,7 @@ from studio import (
     inhouse_news,
     l10n,
     realtime,
+    synthetic_presenter,
 )
 from studio.mcp.lazy import lazy
 from studio.selfrag.facts import STALE_AFTER_DAYS  # noqa: E402
@@ -1601,6 +1602,12 @@ def _план(
     # запрета; выдуманные новости и чужой канал остаются отказом.
     свой_выпуск = inhouse_news.decide(spec, политика, просев, просев_текста)
     просев, политика = inhouse_news.apply(свой_выпуск, просев, политика)
+    # ЧЕТЫРНАДЦАТЫЙ КРУГ (`studio.synthetic_presenter`): вымышленный ведущий
+    # (people[].real=false) читает правдивый материал СВОЕЙ программы канала —
+    # план с раскрытием, а не отказ «настоящий новостной бренд». Узкая дверь:
+    # только поля spec; чужой канал, выдумка и реальный человек — отказ.
+    синтетик = synthetic_presenter.decide(spec, политика, просев, просев_текста, brief)
+    просев, политика = synthetic_presenter.apply(синтетик, просев, политика)
     if просев["outcome"] != PASS:
         return _json(
             l10n.localise_payload(
@@ -1669,6 +1676,14 @@ def _план(
             "decision": свой_выпуск["decision"],
             "people": list(свой_выпуск["people"]),
             "rule": inhouse_news.RULE_ID,
+        }
+    if синтетик["decision"] == synthetic_presenter.DECISION_ALLOW:
+        нота_синтетика = synthetic_presenter.note(синтетик, язык == "en")
+        итог["note"] = f"{итог.get('note', '')}. {нота_синтетика}".lstrip(". ")
+        итог["synthetic_presenter"] = {
+            "decision": синтетик["decision"],
+            "claims": list(синтетик["claims"]),
+            "rule": synthetic_presenter.RULE_ID,
         }
     итог = вопрос_о_согласии(итог, политика, англ=язык == "en")
     итог = вопрос_о_заявлении(итог, заявления, англ=язык == "en")

@@ -103,7 +103,7 @@ MUTANTS: tuple[tuple[str, str, str, str], ...] = (
         'MASK_EDITS: frozenset[str] = frozenset({"remove-object", "replace-object"})',
         "sky replacement without a mask note",
     ),
-    (RA, '    r"transparen|', '    r"transparenx|', "transparent background not read"),
+    (RA, '    r"transparen(?:t|cy)', '    r"transparenx(?:t|cy)', "transparent background not read"),
     (RA, '|\\bwebm\\b|', '|', "WebM with alpha not read as a format"),
     (RA, 'MESH = re.compile(r"\\bglb\\b|', 'MESH = re.compile(r"\\bglbx\\b|', "GLB not read as a 3D deliverable"),
     (RA, "    if names & LIP_STEPS and _speakers(spec) >= 2:", "    if names & LIP_STEPS and _speakers(spec) >= 3:", "two speakers without diarization"),

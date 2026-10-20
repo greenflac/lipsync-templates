@@ -333,8 +333,12 @@ class Таблица(unittest.TestCase):
             self.assertEqual([], l10n.leaks({"says": р.en.format(**поля)}, "en"), р.id)
 
     def test_каждое_правило_проверено_в_обе_стороны(self) -> None:
-        # Round-12 rules are cased in `test_checklist_r12`, round-13 in `test_round13_models`.
-        self.assertEqual(set(cl.RULES) - {р.id for р in cl.RULES_R12} - {р.id for р in cl.RULES_R13}, set(CASES))
+        # Round-12 rules are cased in `test_checklist_r12`, round-13 in `test_round13_models`,
+        # round-14 in `test_round14_models`.
+        self.assertEqual(
+            set(cl.RULES) - {р.id for р in cl.RULES_R12} - {р.id for р in cl.RULES_R13} - {р.id for р in cl.RULES_R14},
+            set(CASES),
+        )
 
     def test_поля_спецификации_к_добавлению_названы(self) -> None:
         поля = cl.spec_fields_to_add()
