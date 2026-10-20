@@ -12473,6 +12473,14 @@ def plan(
         if исходник_с
         else None
     )
+    # ПЯТНАДЦАТЫЙ КРУГ: расшифровка идёт по ВСЕМУ материалу — 20 интервью по 45 минут
+    # это 900 минут, а не 45 (`expert_r15.material_seconds`: длина × count каждого входа).
+    материал_с = x15.material_seconds(понято)
+    длительность_материала = (
+        dur.Запрос(материал_с, f"spec.inputs[].duration_s × count = {материал_с:g} с (весь ваш материал)")
+        if материал_с and исходник_с and материал_с > исходник_с
+        else None
+    )
 
     # ШАГ НА ИСХОДНИКЕ ДО АПСКЕЙЛА (интеграция круга 6, w07): правка своего
     # ролика идёт в кадре ИСХОДНИКА, а заказанный кадр даёт апскейл после неё.
@@ -12537,7 +12545,11 @@ def plan(
             шаг_прогон = dur.Запрос(прогон_с, нота_рецепта)
         else:
             шаг_всего = (
-                длительность_исходника if (op.name in ON_SOURCE_STEPS and длительность_исходника) else длительность
+                длительность_материала
+                if (op.name in ON_SOURCE_STEPS and длительность_материала)
+                else длительность_исходника
+                if (op.name in ON_SOURCE_STEPS and длительность_исходника)
+                else длительность
             )
             шаг_прогон = длительность_шота
         return candidates_for(
@@ -12782,6 +12794,13 @@ def plan(
                     and op.name in SPEECH_STEPS
                     and op.name != "озвучка"
                     and (говорящих_несколько(brief) or (spec_only and (понято.characters or 0) >= bs.MULTI_CHARACTER_MIN))
+                    else ""
+                ),
+                # ПЯТНАДЦАТЫЙ КРУГ: метки говорящих — по записи о ВЫБРАННОЙ модели:
+                # разметка в той же цене, платное дополнение или отдельный проход.
+                "speaker_labels": (
+                    x15.diarisation_line(лучший.model, индекс.facts, fold, по_английски)
+                    if лучший is not None and op.name == x15.TRANSCRIBE_STEP and x15.needs_diarisation(понято, текст)
                     else ""
                 ),
             }
@@ -13430,6 +13449,7 @@ def сжать(ответ: dict) -> dict:
                 },
                 "banned_input": _коротко(ш.get("banned_input"), 240),
                 "speakers_note": ш.get("speakers_note"),
+                **({"speaker_labels": ш["speaker_labels"]} if ш.get("speaker_labels") else {}),
                 **{
                     к: ш.get(к)
                     for к in (
