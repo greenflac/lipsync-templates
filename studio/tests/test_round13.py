@@ -377,6 +377,9 @@ class РеальноеВремя(unittest.TestCase):
     RECORDED = (
         ("Live-action product ad with a presenter talking to camera", {"task": "avatar", "outputs": ["video", "speech"]}),
         ("It does not need to be real time: a recorded 60 s avatar video", {"task": "avatar", "outputs": ["video", "speech"]}),
+        # Round 14: a speed word counts only with someone answered in session — the negation is judged there.
+        ("It does not need to be real time: the avatar answers visitors in a recorded 60 s video",
+         {"task": "avatar", "outputs": ["video", "speech"]}),
         ("Real-time strategy game trailer, 30 s", {"task": "generate", "outputs": ["video"]}),
         ("Dub our real-time strategy game trailer into German", {"task": "dub-translate", "outputs": ["video", "speech"]}),
         ("Translate the live recording of our concert into Spanish subtitles", {"task": "captions", "outputs": ["video"]}),
