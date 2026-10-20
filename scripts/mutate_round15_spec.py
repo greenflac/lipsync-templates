@@ -141,10 +141,10 @@ MUTANTS: tuple[tuple[str, str, str, str], ...] = (
     (CL, "        [int(c.spec.shots or 0), int(c.spec.dataset_count or 0)]", "        [int(c.spec.shots or 0)]",
      "размер датасета не из поля"),
     # --- план: число картинок -----------------------------------------------------------------
-    (PN, '    кадров_словами = None if понято.source.get("shots") == bs.SOURCE_SPEC else кадров_заказано(brief)',
-     "    кадров_словами = кадров_заказано(brief)", "«6 images» словами старше spec.shots"),
-    (PN, '    кадров_словами = None if понято.source.get("shots") == bs.SOURCE_SPEC else кадров_заказано(brief)',
-     "    кадров_словами = None", "без spec.shots слова о числе картинок молчат"),
+    (PN, '    if понято.source.get("shots") == bs.SOURCE_SPEC:\n        return None\n    return кадров_заказано(brief)',
+     "    return кадров_заказано(brief)", "«6 images» словами старше spec.shots"),
+    (PN, '    if понято.source.get("shots") == bs.SOURCE_SPEC:\n        return None\n    return кадров_заказано(brief)',
+     "    return None", "без spec.shots слова о числе картинок молчат"),
     # --- рецепты: петля, прозрачность --------------------------------------------------------
     (AP, "    if петля is False:\n        return None\n", "", "loop=false — петля по словам"),
     (AP, "    if петля is None and not any(", "    if not any(", "loop=true без слов — не петля"),

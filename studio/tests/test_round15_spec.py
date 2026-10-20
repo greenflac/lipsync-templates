@@ -23,6 +23,7 @@ os.environ.setdefault("STUDIO_NO_JOURNAL", "1")
 
 from studio import brief_spec as bs  # noqa: E402
 from studio import edit_intent as ei  # noqa: E402
+from studio import planner as pn  # noqa: E402
 from studio import realtime  # noqa: E402
 from studio.mcp import server  # noqa: E402
 from studio.recipes import apply as rc  # noqa: E402
@@ -273,7 +274,19 @@ class ВизуализаторБезГуб(unittest.TestCase):
         self.assertEqual(("генерация_видео",), _steps("Visualiseur pour la chanson de notre chanteuse", **VIS, people=singer))
         spec = _defaults("Visualizer für den Song unserer Sängerin", task="generate", inputs=[A], outputs=["video"],
                          duration_s=180, shots=6, people=singer)
-        self.assertEqual((None, False), (spec.characters, spec.speaker_on_screen))
+        self.assertEqual(("music-visualiser", None, False), (spec.task, spec.characters, spec.speaker_on_screen))
+
+    def test_исполнитель_в_кадре_полем(self) -> None:
+        """people[].on_screen decides the performer reference: zh words alone name nobody; EN words lose to the field."""
+        clip = dict(task="generate", inputs=[A], outputs=["video"], duration_s=120, shots=6)
+        dancer = {"name": "our singer", "real": True, "public_figure": False, "consent": "stated", "claim": "none",
+                  "speaks": False}
+        self.assertEqual(STRAIGHT, _steps("我们歌曲的MV，六个场景", **clip, people=[{**dancer, "on_screen": True}]))
+        self.assertEqual(("генерация_видео",), _steps("我们歌曲的MV，六个场景", **clip, people=[dancer]))
+        self.assertEqual(("генерация_видео",), _steps("Music video: the singer performs our song in 6 scenes", **clip,
+                                                      people=[{**dancer, "on_screen": False}]))
+        self.assertEqual(STRAIGHT, _steps("Music video: the singer performs our song in 6 scenes", **clip,
+                                          people=[dancer]))
 
     def test_поле_старше_слов(self) -> None:
         # lipsync=false: the singer named in words stays a performer on screen, but nobody's lips move.
@@ -498,12 +511,16 @@ class ЧислоКартинок(unittest.TestCase):
         self.assertRegex(self._price(_plan("我们咖啡杯的产品图", **self.IMG, shots=6)), r"\b6 image\(s\)")
 
     def test_поле_старше_слов(self) -> None:
-        self.assertRegex(self._price(_plan("6 images of our coffee mug on a table", **self.IMG, shots=2)),
-                         r"\b2 image\(s\)")
+        answer = _plan("6 images of our coffee mug on a table", **self.IMG, shots=2)
+        self.assertRegex(self._price(answer), r"\b2 image\(s\)")
+        self.assertEqual(2, answer["steps"][0]["shots"])
+        self.assertEqual(None, pn.кадров_словами(_spec(**self.IMG, shots=2), "6 images of our coffee mug"))
 
     def test_без_поля_слова(self) -> None:
         answer = json.loads(server.план_по_тексту("6 images of our coffee mug on a table", spec=dict(self.IMG)))
         self.assertRegex(self._price(answer), r"\b6 image\(s\)")
+        self.assertEqual(6, pn.кадров_словами(_spec(**self.IMG), "6 images of our coffee mug"))
+        self.assertEqual(4, pn.кадров_словами(_spec(**self.IMG), "4 картинки кружки"))
 
 
 # --- 9. audience (existing field) -----------------------------------------------------------------
