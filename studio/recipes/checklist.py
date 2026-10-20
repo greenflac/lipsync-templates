@@ -3424,6 +3424,14 @@ W_ANONYMISE = re.compile(
     r"|анонимиз\w*|обезличи\w*|размы\w* лиц\w*|размытие лиц|скры\w* лиц\w*|замаз\w* лиц\w*|пикселиз\w*|прохож\w*|случайн\w* люд\w*",
     re.I,
 )
+W_INSERT = re.compile(
+    r"\b(?:put|place|insert|add|drop|integrat\w*|composit\w*)\w*\s+(?:[\w'’-]+\s+){0,4}?(?:in(?:to)?|on(?:to)?)\s+"
+    r"(?:the |this |our |my |a |an )?(?:[\w'’-]+\s+){0,3}?(?:shot|scene|clip|video|footage|table|shelf|counter|hand|frame|desk|wall)s?\b"
+    r"|product placement|virtual (?:product )?placement"
+    r"|встав\w*|размест\w* (?:\w+ ){0,3}(?:в|на) |добав\w* (?:\w+ ){0,3}(?:в кадр|в ролик|в видео|в сцену|на стол|на полку)"
+    r"|постав\w* (?:\w+ ){0,3}на (?:стол|полку)|продакт[- ]?плейсмент\w*",
+    re.I,
+)
 #: Jobs that start from an existing picture (a halftone scan matters there).
 SCAN_JOBS: frozenset[str] = frozenset({"restore", "colorize", "image_edit"}) | UPSCALE
 #: Jobs whose deliverable is speech or a talking face (a no-speech short has none of them).
@@ -3498,6 +3506,24 @@ def _anonymise(c: Ctx) -> bool:
     return c.visual and bool(c.steps or c.jobs) and c.says(W_ANONYMISE) and bool(
         re.search(r"anonymi|de-?identif|blur|pixel|hide|mask|obscure|gdpr|dsgvo|rgpd|swap|replac|анонимиз|обезлич|размы|скры|замаз|пиксел|замен", c.text)
     )
+
+
+def _product_insertion(c: Ctx) -> bool:
+    """A product / object placed into the customer's existing shot (`spec.edit_target` = 'object', or the words)."""
+    if "v2v_edit" not in c.jobs:
+        return False
+    цель = str(getattr(c.spec, "edit_target", None) or "").lower()
+    if цель:
+        return цель == "object" and (c.says(W_INSERT) or c.says(W_PRODUCT))
+    return c.says(W_INSERT) and not c.says(W_NOT_AN_OBJECT)
+
+
+#: Things "added into the video" that are assembly overlays or sound, not an object in the scene.
+W_NOT_AN_OBJECT = re.compile(
+    r"caption|subtitle|\btext\b|title|lower[- ]third|logo|watermark|music|sound|voice|audio|transition|filter|lut"
+    r"|субтитр|титр|текст|логотип|водян\w* знак|музык|звук|голос|переход|фильтр",
+    re.I,
+)
 
 
 RULES_R15: tuple[Rule, ...] = (
@@ -3639,6 +3665,27 @@ RULES_R15: tuple[Rule, ...] = (
         ("outputs", "people"),
         "spec.people[].speaks = false",
         (S_TIKTOK_CML,),
+    ),
+    _r(
+        "product_insertion",
+        [],
+        "placing a product into existing footage: an object-insertion / video-edit model (not a character swap), "
+        "with the product photo as the reference image; the insert must follow the shot — track the surface "
+        "(planar or 3D camera track) and lock the product to it, match perspective, scale and lens blur, the "
+        "light direction and colour, and add a contact shadow and reflections; check the label and logo at 100 % "
+        "in every frame (edit models redraw lettering — composite the real packshot over it if it drifts), and "
+        "label it as product placement / an ad where the platform or broadcaster requires it",
+        "вставка товара в готовый ролик: модель вставки объекта / правки видео (не замена персонажа), фото товара "
+        "— референсом; вставка обязана следовать кадру — трекинг поверхности (планарный или 3D-трекинг камеры) и "
+        "товар, закреплённый на ней, совпадение перспективы, масштаба и размытия объектива, направления и цвета "
+        "света, контактная тень и отражения; проверьте этикетку и логотип в 100 % в каждом кадре (модели правки "
+        "перерисовывают надписи — если поплыли, наложите настоящий пэкшот поверх) и помечайте продакт-плейсмент "
+        "/ рекламу там, где этого требует площадка или вещатель",
+        E,
+        _product_insertion,
+        ("edit_target", "conditions"),
+        "",
+        (S_FFMPEG_FILTERS,),
     ),
     _r(
         "anonymisation_gdpr",
