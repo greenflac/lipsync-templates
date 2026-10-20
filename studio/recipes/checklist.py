@@ -3313,6 +3313,361 @@ RULES_R14: tuple[Rule, ...] = (
 
 RULES_LIST = RULES_LIST + RULES_R14
 
+# --- round 15 -----------------------------------------------------------------------------
+#
+# Expert caveats the round-15 hidden set found missing (cover songs, long ambient loops,
+# tileable textures, halftone scans, timelapse interpolation, style across an image set,
+# no-speech shorts, anonymising passers-by). Structured spec fields first, the words second.
+#
+# R15-SPEC: the language-independent fields (`outputs[].loop`, `outputs[].tileable`,
+# `consistency`, `people[].speaks`) are read through `spec_value` / `output_flag` /
+# `people_flag`, which tolerate their absence; the integrator points them at the merged
+# `brief_spec.Spec` attributes.
+
+#: From this many seconds an ambient / looping deliverable is built from ONE loopable segment
+#: repeated at assembly (a 3-hour rain track, an 8-hour fireplace) — never generated end to end.
+AMBIENT_LOOP_MIN_S = 1800
+#: From this many images (or shots) a set has to hold ONE style.
+STYLE_SET_MIN = 3
+#: A short without speech: at most this many seconds (longer is a film, not a short).
+NO_SPEECH_SHORT_MAX_S = 180
+
+S_COPYRIGHT_OFFICE_MECH = "https://www.copyright.gov/licensing/sec_115.html"
+S_YT_COVERS = "https://support.google.com/youtube/answer/6364458"
+S_YT_REPETITIVE = "https://support.google.com/youtube/answer/1311392"
+S_GIMP_TILE = "https://docs.gimp.org/2.10/en/plug-in-make-seamless.html"
+S_IMAGEMAGICK_FFT = "https://imagemagick.org/Usage/fourier/"
+S_EDPB_VIDEO = "https://www.edpb.europa.eu/our-work-tools/our-documents/guidelines/guidelines-32019-processing-personal-data-through-video_en"
+S_ICO_ANON = "https://ico.org.uk/for-organisations/uk-gdpr-guidance-and-resources/data-sharing/anonymisation/"
+
+
+def spec_value(spec: "bs.Spec", name: str) -> Any:
+    """A spec attribute that may not exist yet (R15-SPEC: the parallel spec round adds it)."""
+    return getattr(spec, name, None)
+
+
+def output_flag(spec: "bs.Spec", flag: str) -> bool:
+    """`outputs[].<flag>` is true for some output (R15-SPEC: outputs as objects, or `output_items`)."""
+    for имя in ("output_items", "outputs"):
+        for о in getattr(spec, имя, None) or ():
+            if isinstance(о, Mapping) and о.get(flag) is True:
+                return True
+    return False
+
+
+def people_flag(spec: "bs.Spec", key: str) -> list[object]:
+    """`people[].<key>` as given (absent keys skipped)."""
+    return [п.get(key) for п in spec.people if isinstance(п, Mapping) and key in п]
+
+
+def consistency(spec: "bs.Spec") -> set[str]:
+    """`spec.consistency` — what must stay the same across the set (R15-SPEC)."""
+    return {str(к).lower() for к in (spec_value(spec, "consistency") or ())}
+
+
+W_COVER_SONG = re.compile(
+    r"\bcover(?:s|ed|ing)? (?:version|song|track)s?\b|\bcover of (?:the |a |an |this |that )?(?:song|track|hit|classic|[\"'“‘«])"
+    r"|\b(?:a|our|my|his|her|their|acoustic|piano|rock|jazz|lo-?fi) covers?\b(?! (?:image|art|artwork|photo|picture|frame|letter|page|shot|story))"
+    r"|\bcovers? (?:the |a |an )?(?:famous |popular |classic |hit )?(?:song|track|hit|classic|tune)\b|cover band|tribute (?:song|band|version)"
+    r"|(?:famous|popular|well-known|known|hit|chart|classic|copyrighted) (?:song|track|tune|single)s?\b"
+    r"|\b(?:sing|sings|singing|sang|perform|performs|performing|lip-?sync\w*|to the song|song)\s+[\"“‘«][^\"”’»]{2,60}[\"”’»]"
+    r"|\bsing\w*\s+'[^']{3,60}'"
+    r"|кавер\w*|перепе\w*|известн\w* (?:песн|трек|хит)\w*|популярн\w* (?:песн|трек|хит)\w*|чуж\w* (?:песн|трек)\w*"
+    r"|(?:спо[её]т|по[её]т|исполн\w*|песн\w*|под песню|трек\w*)\s+«[^»]{2,60}»",
+    re.I,
+)
+#: «an original song», «our own jingle» — no third-party composition (unless a cover is named too).
+W_OWN_SONG = re.compile(
+    r"\boriginal (?:song|track|tune|music|jingle|composition)|\b(?:our|my|his|her|their) own (?:song|track|tune|music|jingle)"
+    r"|оригинальн\w* (?:песн|трек|мелоди|музык)\w*|сво\w* (?:песн|трек|мелоди|джингл)\w*|собственн\w* (?:песн|трек)\w*",
+    re.I,
+)
+W_AMBIENT = re.compile(
+    r"\bambien(?:t|ce)\b|sleep (?:sounds?|music|track|video|aid)|for sleep(?:ing)?\b|white noise|brown noise|pink noise"
+    r"|rain (?:sounds?|ambien\w*)|fireplace|crackling fire|study (?:music|beats|session)|lo-?fi (?:beats|radio|stream|loop)"
+    r"|relax(?:ing|ation) (?:music|sounds?|video)|meditation (?:music|sounds?|track|video)|\bfocus music|background (?:loop|ambience)"
+    r"|aquarium (?:video|loop)|\byule ?log\b|screensaver|\b\d+(?:[.,]\d+)?\s*(?:-|\s)?(?:hours?|hrs?|h)\s+(?:of|long)\b"
+    r"|эмбиент\w*|для сна|белый шум|розовый шум|коричневый шум|звук\w* (?:дождя|леса|океана|моря|камина|природы)|камин\w*"
+    r"|медитаци\w*|релакс\w*|для учёбы|для учебы|для концентрации|фонов\w* (?:музык|звук|видео)\w*|\d+\s*час\w* (?:звук|музык|видео)",
+    re.I,
+)
+W_TILEABLE = re.compile(
+    r"\btil(?:e|ing|eable|able)\b|tileable|seamless (?:texture|pattern|tile|background pattern|wallpaper|repeat)"
+    r"|repeat(?:ing)? pattern|(?:pbr|game|3d) (?:texture|material)s?|surface pattern|textile pattern|fabric print|wallpaper pattern"
+    r"|тайл\w*|бесшовн\w* (?:текстур|паттерн|узор|фон|рисун|обо)\w*|повторяющ\w* (?:узор|паттерн|рисун)\w*|текстур\w* для (?:игр|3d)",
+    re.I,
+)
+W_HALFTONE = re.compile(
+    r"half-?tone|moir[eé]|newspaper (?:photo|clipping|cutting|scan|image|picture|page|print)|(?:from|in|of) (?:an? |the |old )?(?:newspaper|magazine|book|brochure|catalog(?:ue)?|yearbook|postcard)s?\b"
+    r"|magazine (?:photo|scan|page|clipping|cutout|image|picture|print)|printed (?:photo|picture|image|page|brochure)|offset print"
+    r"|растр\w*|муар\w*|газетн\w*|из газет\w*|из журнал\w*|журнальн\w* (?:фото|снимк|страниц|вырезк|скан)\w*|из книг\w*|открытк\w*|полиграф\w*|печатн\w* (?:фото|снимк|оттиск)\w*",
+    re.I,
+)
+W_TIMELAPSE = re.compile(
+    r"time-?lapse|hyper-?lapse|interval (?:shooting|photos?|camera)|таймлапс\w*|тайм-лапс\w*|гиперлапс\w*|интервальн\w* съ[её]мк\w*",
+    re.I,
+)
+W_STYLE_SET = re.compile(
+    r"(?:same|consistent|consistency|unified|uniform|matching|coherent|cohesive|one|single|shared) (?:art |visual |illustration |graphic |brand |colou?r )?(?:style|look)\b"
+    r"|style (?:consistency|guide|sheet|reference|lock)|in the same (?:style|look)|look like (?:a|one) (?:set|series|family)|series of illustrations"
+    r"|единый стиль|едином стиле|в одном стиле|одинаков\w* стил\w*|единообразн\w*|одн\w* стилистик\w*|един\w* стилистик\w*|стилистически един\w*"
+    r"|в общем стиле|один и тот же стиль",
+    re.I,
+)
+W_NO_SPEECH = re.compile(
+    r"\bno (?:voice-?over|voiceover|vo|narration|narrator|speech|talking|dialogue|spoken words|words spoken|one speaks|one talks)\b"
+    r"|without (?:a |any )?(?:voice-?over|voiceover|narration|narrator|speech|talking|dialogue|spoken words|words)\b|wordless"
+    r"|(?:music|text|captions?) only\b|only (?:music|text|captions)\b|nobody (?:speaks|talks)|no-?speech|non-?verbal"
+    r"|без (?:слов|голоса|озвучк\w*|диктор\w*|закадров\w*|речи|разговор\w*|текста диктора)|только музык\w*|никто не говорит|без закадра",
+    re.I,
+)
+W_ANONYMISE = re.compile(
+    r"anonymi[sz]\w*|de-?identif\w*|blur(?:ring)? (?:out )?(?:the |all )?(?:faces|passers|people|bystanders|pedestrians|crowd|strangers)"
+    r"|(?:hide|mask|obscure|pixelate) (?:the |all )?(?:faces|passers|bystanders|pedestrians)|pixelat\w*|face[- ]blur\w*|\bgdpr\b|\bdsgvo\b|\brgpd\b"
+    r"|passers-?by|bystanders|(?:replace|swap) (?:the )?faces of (?:the )?(?:passers|people|bystanders|pedestrians|strangers|crowd)"
+    r"|анонимиз\w*|обезличи\w*|размы\w* лиц\w*|размытие лиц|скры\w* лиц\w*|замаз\w* лиц\w*|пикселиз\w*|прохож\w*|случайн\w* люд\w*",
+    re.I,
+)
+#: Jobs that start from an existing picture (a halftone scan matters there).
+SCAN_JOBS: frozenset[str] = frozenset({"restore", "colorize", "image_edit"}) | UPSCALE
+#: Jobs whose deliverable is speech or a talking face (a no-speech short has none of them).
+SPEECH_JOBS: frozenset[str] = frozenset({"tts", "dub", "voice_clone", "lipsync", "avatar", "sing"})
+
+
+def _cover_song(c: Ctx) -> bool:
+    """A known (third-party) song is covered or used: a not-owned audio input with singing, or the words."""
+    if not (c.steps or c.jobs):
+        return False
+    if c.says(W_COVER_SONG):
+        return True
+    чужой_звук = any(з.get("kind") == "audio" and з.get("owned") is False for з in c.spec.input_items)
+    return чужой_звук and (bool(c.jobs & {"sing", "lipsync", "music"}) or c.says(W_SINGING)) and not c.says(W_OWN_SONG)
+
+
+def _ambient_long(c: Ctx) -> dict[str, str] | None:
+    """A long ambient / looping deliverable (audio or video), at least `AMBIENT_LOOP_MIN_S`."""
+    s = c.seconds
+    if s < AMBIENT_LOOP_MIN_S or not (c.steps or c.jobs):
+        return None
+    if not (c.video or c.jobs & {"music", "sfx"} or c.outputs & {"music", "sfx", "audio"}):
+        return None
+    if output_flag(c.spec, "loop") or c.says(W_LOOP) or c.says(W_AMBIENT):
+        return {"hours": f"{s / 3600:.3g}"}
+    return None
+
+
+def _tileable(c: Ctx) -> bool:
+    if output_flag(c.spec, "tileable"):
+        return True
+    return c.visual and bool(c.steps or c.jobs) and c.says(W_TILEABLE)
+
+
+def _halftone(c: Ctx) -> bool:
+    return bool(c.jobs & SCAN_JOBS) and c.says(W_HALFTONE)
+
+
+def _timelapse_interp(c: Ctx) -> bool:
+    return "interpolate" in c.jobs and c.says(W_TIMELAPSE)
+
+
+def _style_set(c: Ctx) -> dict[str, str] | None:
+    """Several images or shots that must share one style (`spec.consistency` has 'style', or the words)."""
+    штук = max(int(c.spec.shots or 0), *(int(з.get("count") or 0) for з in c.spec.input_items), 0)
+    if штук < STYLE_SET_MIN or not c.jobs & (STILL_GEN | VIDEO_GEN | {"i2v"}):
+        return None
+    if "style" in consistency(c.spec) or c.says(W_STYLE_SET):
+        return {"n": str(штук)}
+    return None
+
+
+def _no_speech_short(c: Ctx) -> bool:
+    """A short video where nobody speaks: `people[].speaks` all false, or the words."""
+    if not c.video or "speech" in c.outputs or c.jobs & SPEECH_JOBS:
+        return False
+    if c.seconds > NO_SPEECH_SHORT_MAX_S or c.jobs & ({"restore", "colorize", "interpolate"} | UPSCALE):
+        return False
+    говорят = people_flag(c.spec, "speaks")
+    if говорят and all(г is False for г in говорят):
+        return True
+    return c.says(W_NO_SPEECH)
+
+
+def _anonymise(c: Ctx) -> bool:
+    """Faces of bystanders hidden or swapped in the customer's footage (GDPR)."""
+    return c.visual and bool(c.steps or c.jobs) and c.says(W_ANONYMISE) and bool(
+        re.search(r"anonymi|de-?identif|blur|pixel|hide|mask|obscure|gdpr|dsgvo|rgpd|swap|replac|анонимиз|обезлич|размы|скры|замаз|пиксел|замен", c.text)
+    )
+
+
+RULES_R15: tuple[Rule, ...] = (
+    _r(
+        "cover_song_rights",
+        [],
+        "a cover or a known song in the video: you need the SYNC licence (the composition set to picture) from the "
+        "song's publisher(s) — a mechanical licence covers only an audio-only cover release (in the US the "
+        "compulsory section 115 licence), never a video — plus a MASTER-use licence from the label if the "
+        "original recording is used; changed lyrics, a translation or a parody need the publisher's approval as a "
+        "derivative; find every co-publisher (splits) before release; on YouTube a cover is matched by Content ID "
+        "and the publisher may monetise, block or share revenue; TikTok / Instagram libraries clear only personal "
+        "use, not ads; an AI voice imitating the original singer adds a likeness / voice claim",
+        "кавер или известная песня в ролике: нужна СИНХРОНИЗАЦИОННАЯ лицензия (произведение под картинку) от "
+        "издателя(ей) песни — механическая лицензия покрывает только аудиорелиз кавера (в США принудительная "
+        "лицензия по разделу 115), а не видео, — плюс лицензия на ФОНОГРАММУ от лейбла, если используется "
+        "оригинальная запись; изменённый текст, перевод или пародия требуют согласия издателя как переработка; "
+        "найдите всех соиздателей (доли) до выпуска; на YouTube кавер распознаёт Content ID, и издатель может "
+        "монетизировать, заблокировать или делить доход; библиотеки TikTok и Instagram покрывают только личные "
+        "публикации, не рекламу; ИИ-голос, подражающий исполнителю оригинала, добавляет претензию на голос и образ",
+        R,
+        _cover_song,
+        ("inputs", "conditions"),
+        "spec.inputs[].rights = 'third-party-song'",
+        (S_COPYRIGHT_OFFICE_MECH, S_YT_COVERS, S_CONTENT_ID),
+    ),
+    _r(
+        "long_ambient_loop",
+        [],
+        "a long ambient piece (~{hours} h) is NOT generated end to end: generate one loopable segment (a few "
+        "minutes of audio, or a 5-20 s clip) — or 2-3 variations to break audible repetition — make the tail "
+        "meet the head (crossfade 2-5 s on a zero crossing / matched frames), check the loop point on headphones "
+        "and at full speed, then repeat it at assembly (ffmpeg -stream_loop, acrossfade / xfade) — 0 usd; "
+        "master to the platform loudness once, and note that YouTube may limit monetisation of repetitive content",
+        "длинный фоновый материал (~{hours} ч) НЕ генерируется целиком: сгенерируйте один зацикливаемый отрезок "
+        "(несколько минут звука или клип 5-20 с) — или 2-3 вариации, чтобы повтор не был слышен, — сведите "
+        "хвост с началом (наплыв 2-5 с в нуле волны / по совпадающим кадрам), проверьте точку петли в наушниках "
+        "и на полной скорости, затем повторите отрезок при сборке (ffmpeg -stream_loop, acrossfade / xfade) — "
+        "0 usd; громкость под площадку выставляется один раз, а YouTube может ограничить монетизацию "
+        "однообразного контента",
+        E,
+        _ambient_long,
+        ("duration_s", "outputs"),
+        "spec.outputs[].loop = true",
+        (S_FFMPEG_FILTERS, S_YT_REPETITIVE),
+    ),
+    _r(
+        "tileable_texture",
+        [],
+        "tileable texture: generate with seamless tiling on (circular padding / the 'tiling' option of SD-type "
+        "pipelines, or a tile-capable texture model), then CHECK the seam with a 50 % offset (wrap-around) and a "
+        "3x3 repeat — fix the cross with an inpaint over the offset seams; keep the light flat and even (no baked "
+        "perspective, vanishing lines, directional shadows, vignette or a single dominant feature that repeats "
+        "visibly), deliver a power-of-two square (1024 / 2048 / 4096) and derive normal / roughness maps from the "
+        "albedo for PBR",
+        "бесшовная текстура: генерируйте с включённым тайлингом (круговой паддинг / опция «tiling» в "
+        "SD-конвейерах или модель, умеющая тайлы), затем ПРОВЕРЬТЕ шов сдвигом на 50 % (с переносом) и "
+        "повтором 3x3 — крест на швах закрывается инпейнтом по сдвинутым швам; свет ровный и плоский (без "
+        "перспективы, линий схода, направленных теней, виньетки и одной броской детали, которая заметно "
+        "повторяется), сдача — квадрат со стороной степени двойки (1024 / 2048 / 4096), карты нормалей и "
+        "шероховатости для PBR выводятся из альбедо",
+        E,
+        _tileable,
+        ("outputs", "conditions"),
+        "spec.outputs[].tileable = true",
+        (S_GIMP_TILE,),
+    ),
+    _r(
+        "descreen_halftone",
+        [],
+        "a print scan (newspaper, magazine, book, postcard) carries a halftone dot screen: DESCREEN it before any "
+        "restoration or upscale — an upscaler or a face restorer sharpens the dots into moire and fake texture; "
+        "scan at 2x the target resolution (600-1200 dpi), remove the screen (an FFT notch filter, a descreen filter "
+        "in the scanner software, or a light blur + downscale), then restore, upscale and colour; check skin and "
+        "flat skies at 100 % for leftover rosettes",
+        "скан печати (газета, журнал, книга, открытка) несёт растровую сетку точек: УБЕРИТЕ РАСТР до любой "
+        "реставрации и апскейла — апскейлер или восстановитель лиц заостряет точки в муар и ложную фактуру; "
+        "сканируйте в 2 раза выше целевого разрешения (600-1200 dpi), снимите растр (режекторный фильтр по "
+        "спектру FFT, фильтр «descreen» в программе сканера или лёгкое размытие + уменьшение), затем "
+        "реставрация, апскейл и цвет; проверьте кожу и ровное небо в 100 % на остатки розеток",
+        E,
+        _halftone,
+        ("task", "conditions"),
+        "spec.inputs[].source = 'print-scan'",
+        (S_IMAGEMAGICK_FFT,),
+    ),
+    _r(
+        "timelapse_interpolation",
+        [],
+        "interpolating a timelapse: the motion between two frames is huge (clouds, cars, people jump), so a "
+        "flow interpolator warps and ghosts them — DEFLICKER first (exposure jumps become pulsing), keep the "
+        "factor low (2x, not 4-8x), use a large-motion / optical-flow-aware model (FILM, RIFE with scene-cut "
+        "detection) or frame blending for crowds and traffic, or simply play the timelapse at its native rate; "
+        "check moving people and vehicles frame by frame",
+        "интерполяция таймлапса: движение между двумя кадрами огромно (облака, машины, люди прыгают), и "
+        "интерполятор по оптическому потоку их коверкает и двоит — сначала УБЕРИТЕ МЕРЦАНИЕ (скачки экспозиции "
+        "превращаются в пульсацию), держите коэффициент низким (2x, а не 4-8x), берите модель для большого "
+        "движения с учётом оптического потока (FILM, RIFE с детекцией склеек) или смешивание кадров для толпы "
+        "и транспорта — или просто играйте таймлапс в родной частоте; проверьте людей и машины по кадрам",
+        E,
+        _timelapse_interp,
+        ("task", "conditions"),
+        "spec.inputs[].capture = 'timelapse'",
+        (S_FFMPEG_FILTERS,),
+    ),
+    _r(
+        "style_consistency_set",
+        [],
+        "{n} images in one style: lock the style before the batch — ONE model and version for every item (a "
+        "checkpoint update changes the look), a written style sheet (palette hex codes, line and lighting, "
+        "medium, framing, negative prompt), the same style reference image(s) or a style LoRA at a fixed weight, "
+        "fixed sampler / steps / CFG and logged seeds; make 2-3 pilots, approve them, then batch; review the set "
+        "side by side as a contact sheet and regenerate outliers, not the whole set",
+        "{n} изображений в одном стиле: зафиксируйте стиль до серии — ОДНА модель и версия на все кадры "
+        "(обновление чекпойнта меняет вид), письменный стайлгайд (палитра в hex-кодах, линия и свет, техника, "
+        "кадрирование, негативный промпт), одни и те же референсы стиля или LoRA стиля с постоянным весом, "
+        "постоянные сэмплер / шаги / CFG и записанные сиды; сделайте 2-3 пробы, утвердите их и только потом "
+        "серию; смотрите набор бок о бок контактным листом и перегенерируйте выбивающиеся кадры, а не всю серию",
+        E,
+        _style_set,
+        ("shots", "inputs", "consistency"),
+        "spec.consistency = ['style']",
+    ),
+    _r(
+        "no_speech_short",
+        [],
+        "a short without speech: the message is carried by on-screen text and captions (large, high-contrast, "
+        "inside the safe area, ~3 s per line, readable muted), music and sound design (whooshes, impacts, "
+        "ambience under every cut) — so no TTS, voice-over or lip sync steps; the music needs a licence that "
+        "covers the use (platform commercial library or a licensed / generated track with commercial rights), "
+        "and the visual story must read without a word",
+        "шортс без речи: смысл несут текст в кадре и подписи (крупно, контрастно, в безопасной зоне, ~3 с на "
+        "строку, читается без звука), музыка и звуковой дизайн (вжухи, удары, атмосфера под каждой склейкой) — "
+        "поэтому никаких шагов синтеза речи, закадра или липсинка; на музыку нужна лицензия на такое "
+        "использование (коммерческая библиотека площадки или лицензированный / сгенерированный трек с "
+        "коммерческими правами), а история должна читаться без единого слова",
+        E,
+        _no_speech_short,
+        ("outputs", "people"),
+        "spec.people[].speaks = false",
+        (S_TIKTOK_CML,),
+    ),
+    _r(
+        "anonymisation_gdpr",
+        [],
+        "anonymising bystanders (GDPR): filming identifiable people in public is processing personal data — "
+        "document the legal basis (legitimate interest, art. 6(1)(f), with a balancing test) and run a DPIA "
+        "(art. 35) for systematic or large-scale footage; only IRREVERSIBLE anonymisation takes the result out of "
+        "GDPR (recital 26): strong blur / pixelation or a synthetic replacement face, with licence plates, "
+        "tattoos, name badges and distinctive voices handled too — a face swap that keeps the raw footage, or a "
+        "reversible blur, is only PSEUDONYMISATION and the data stays personal; keep the originals encrypted with "
+        "a deletion date; face detection misses small, profile and occluded faces, so track faces across frames "
+        "and review every frame before release",
+        "анонимизация прохожих (GDPR): съёмка узнаваемых людей на улице — обработка персональных данных; "
+        "запишите правовое основание (законный интерес, ст. 6(1)(f), с проверкой баланса интересов) и проведите "
+        "оценку воздействия DPIA (ст. 35) для систематической или массовой съёмки; из-под GDPR выводит только "
+        "НЕОБРАТИМАЯ анонимизация (преамбула 26): сильное размытие / пикселизация или синтетическое лицо на "
+        "замену, плюс номера машин, татуировки, бейджи и узнаваемые голоса — замена лица при сохранённом "
+        "исходнике или обратимое размытие — это лишь ПСЕВДОНИМИЗАЦИЯ, и данные остаются персональными; "
+        "исходники храните зашифрованными с датой удаления; детектор лиц пропускает мелкие, профильные и "
+        "закрытые лица — ведите лица трекингом по кадрам и проверьте каждый кадр до публикации",
+        R,
+        _anonymise,
+        ("conditions",),
+        "spec.edit.target = 'bystander-faces'",
+        (S_GDPR, S_EDPB_VIDEO, S_ICO_ANON),
+    ),
+)
+
+RULES_LIST = RULES_LIST + RULES_R15
+
 RULES: dict[str, Rule] = {р.id: р for р in RULES_LIST}
 
 
