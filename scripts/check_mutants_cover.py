@@ -87,6 +87,10 @@ ROOT = Path(__file__).resolve().parents[1]
     # модели, дотяг апскейлера по проверенному пределу, альфа только по заказу,
     # синтетический ведущий своей программы.
     "scripts/mutate_round14_models.py",
+    # Пятнадцатый круг (решения по полям spec): live, edit_target, губы и исполнитель по
+    # people[].on_screen/speaks и lipsync, cast_together, single_take_s, training_use,
+    # consistency, dataset_count, outputs[].loop/alpha, audience, shots — поле старше слов.
+    "scripts/mutate_round15_spec.py",
 )
 ПУТЬ_В_ТАБЛИЦЕ = re.compile(r'"((?:studio|scripts|lipsync)/[\w/]+\.py)"')
 

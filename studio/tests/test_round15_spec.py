@@ -236,6 +236,17 @@ class ГубыПоПолям(unittest.TestCase):
                          _steps("Animated series: two characters talk to each other", **SERIES, languages=["en"]))
         self.assertEqual(NO_LIPS, _steps("Serie animada: dos personajes", **SERIES, languages=["es"]))
 
+    def test_короткий_клип_голос_модели_по_полю(self) -> None:
+        """An 8 s clip: someone speaking on screen -> native audio (the video model makes voice and lips)."""
+        clip = dict(task="generate", inputs=[], outputs=["video", "speech"], duration_s=8, languages=["zh"])
+        chef = [{"name": "chef", "real": False, "on_screen": True, "speaks": True}]
+        self.assertEqual("native", _defaults("厨师对着镜头说欢迎光临", **clip, people=chef).audio)
+        self.assertEqual("voiceover", _defaults("厨师对着镜头说欢迎光临", **clip).audio)
+        mute = [{**chef[0], "speaks": False}]
+        en = {**clip, "languages": ["en"]}
+        self.assertEqual("voiceover", _defaults("8 seconds: a chef says 'welcome'", **en, people=mute).audio)
+        self.assertEqual("native", _defaults("8 seconds: a chef says 'welcome'", **en).audio)
+
     def test_молчащий_в_кадре_без_губ(self) -> None:
         mute = [{"name": "host", "real": False, "on_screen": True, "speaks": False}]
         spec = _defaults("A presenter explains our app", task="generate", inputs=[], outputs=["video", "speech"],
@@ -372,6 +383,12 @@ class ДатасетЗаменыЛиц(unittest.TestCase):
                               _fired(brief, ["замена_лица_изображения"], **FS, training_use=True))
                 self.assertNotIn("face_swap_dataset_consent", _fired(brief, ["замена_лица_изображения"], **FS))
 
+    def test_малый_датасет_полем(self) -> None:
+        spec = _spec(**FS, dataset_count=12)
+        self.assertEqual([("face_swap_dataset_consent", {"n": "12"})],
+                         [(i, f) for i, f in cl.fire(spec, ["замена_лица_изображения"], text="换脸数据集")
+                          if i == "face_swap_dataset_consent"])
+
     def test_поле_старше_слов(self) -> None:
         self.assertNotIn("face_swap_dataset_consent", _fired("face swap for our detector's training data",
                                                                ["замена_лица_изображения"], **FS, training_use=False))
@@ -466,6 +483,27 @@ class Прозрачность(unittest.TestCase):
         self.assertEqual(True, rc.wants_alpha(_spec(outputs=["image"]), "product shot on a transparent background, PNG"))
         self.assertEqual(True, rc.wants_alpha(_spec(outputs=["image"]), "товар на прозрачном фоне"))
         self.assertEqual(False, rc.wants_alpha(_spec(outputs=["image"]), "a perfume bottle made of transparent glass"))
+
+
+class ЧислоКартинок(unittest.TestCase):
+    """spec.shots decides how many pictures are priced; "6 images" in the words only when it is absent."""
+
+    IMG = dict(task="generate", inputs=[], outputs=["image"], people=[])
+
+    @staticmethod
+    def _price(answer: dict) -> str:
+        return str(answer["steps"][0]["chosen"]["price"])
+
+    def test_поле_решает_на_любом_языке(self) -> None:
+        self.assertRegex(self._price(_plan("我们咖啡杯的产品图", **self.IMG, shots=6)), r"\b6 image\(s\)")
+
+    def test_поле_старше_слов(self) -> None:
+        self.assertRegex(self._price(_plan("6 images of our coffee mug on a table", **self.IMG, shots=2)),
+                         r"\b2 image\(s\)")
+
+    def test_без_поля_слова(self) -> None:
+        answer = json.loads(server.план_по_тексту("6 images of our coffee mug on a table", spec=dict(self.IMG)))
+        self.assertRegex(self._price(answer), r"\b6 image\(s\)")
 
 
 # --- 9. audience (existing field) -----------------------------------------------------------------

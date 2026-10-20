@@ -556,3 +556,87 @@ shape and is written to survive a shape it does not recognise. The first real
 call is the test, and it belongs to the owner. One documented wrinkle is
 handled up front: the URLs in `groundingChunks` are Google redirect links, not
 publisher addresses, so the host is taken from `web.title` instead.
+
+## `plan_pipeline`: decisions read from the spec first (round 15)
+
+The product contract is that the CALLING model fills `spec` — it reads the
+customer's brief in any language — and `plan_pipeline` plans from `spec`. Round
+15's hidden set showed what happened when a decision was keyed on words of the
+brief instead: the round 13-14 fixes worked in English and Russian and failed on
+the same orders written in Chinese, Japanese, Korean, Spanish, Portuguese,
+German and French (a single-take length caveat, a training-data licence caveat,
+cross-shot light, lettering edits routed to a character swap, a face-swap data
+set, series dialogue without lip sync, a visualiser given a lip-sync step).
+
+The rule now, for every decision below: **the spec field decides when the caller
+filled it; the EN/RU words are read only when it is absent; when the field and
+the words disagree, the field wins.** Each new field is typed and strict (an
+unknown value is a spec error naming the allowed list), is listed in the tool
+description, in `spec_needed.allowed`, and — for a text-only call answered with
+`нужна_спецификация` — in `spec_needed.draft.decision_fields` with what the
+fallback words would have read (`read_from_text`; null on a brief the words do
+not cover, which is exactly when the caller must fill it).
+
+### Inventory: decision -> spec field -> fallback words
+
+New fields of round 15 are in **bold**. Tests: `studio/tests/test_round15_spec.py`
+(each decision: the field alone with a zh/ja/ko/es/pt/de/fr brief, the field
+against contradicting words both ways, the words with the field absent);
+mutants: `scripts/mutate_round15_spec.py`.
+
+| decision (module) | spec field (first) | fallback words (only when the field is absent) |
+|---|---|---|
+| live / interactive system is a recorded gap, not a batch plan (`realtime.applies`) | **`live`** | `realtime.LIVE`, `SPEED` + `INTERACTIVE` |
+| lettering edit is a video edit, not a character swap (`edit_intent.wants_text_edit`, `reroute`) | `edit: ["replace-text"]`, then **`edit_target`** (`text` / `person` / …) | `edit_intent.TEXT_EDIT_WORDS`, `PERSON_EDIT` |
+| on-screen speaker gets a lip-sync step — presenter, series dialogue, cutscene (`brief_spec.говорят_в_кадре`) | `lipsync` on a generated clip, then **`people[].on_screen` + `people[].speaks`** | `ON_SCREEN_SPEAKER`, `SPEAKING_IN_FRAME`, `DIALOGUE`, `CHARACTER_VOICES`, `CUTSCENE`, `VOICE_OFF_FRAME` |
+| performer sings the customer's track on camera -> lip sync (`brief_spec.поют_в_кадре`) | `lipsync`, **`people[].on_screen` + `people[].speaks`** | `SINGING` minus `NO_PERFORMER`, `PERFORMER_NOT_ON_SCREEN`, **`NO_LIPSYNC`** |
+| music video with one performer -> performer reference (`brief_spec.клип_с_исполнителем`) | **`people[].on_screen`**, `lipsync` | `PERFORMER`, `SINGING` |
+| visualiser with nobody on screen: loops, no performer, no lip sync (`brief_spec.визуализатор`) | `task: music-visualiser`; a person with **`on_screen: false`** does not block it; `lipsync: false` | `VISUALISER_WORDS` |
+| short generated clip where someone speaks -> native audio (`brief_spec.говорящий_ролик`) | `audio`, then `lipsync` / **`people[].on_screen` + `speaks`** | `SPEAKING_IN_FRAME`, `VOICE_OFF_FRAME` |
+| characters share the frame -> keyframe edit per shot (`brief_spec.персонажи_в_одном_кадре`) | **`cast_together`** | `CAST_TOGETHER`, `DIALOGUE`, `NO_DIALOGUE` |
+| recurring character -> one reference + edits (`brief_spec.персонажи_по_умолчанию`) | `characters`, `people[].real: false`, **`consistency: ["character"]`** | `RECURRING_CHARACTER`, `SERIES_WORDS` + `SERIES_HERO`, `клип_с_исполнителем` |
+| single take longer than one run (`checklist.single_take_limit`) | **`single_take_s`** (else `per_shot_s` / `duration_s` / `shots`, and the chosen model's `run_limit`) | — (structure only) |
+| outputs used as ML training data (`checklist.outputs_as_training_data`) | **`training_use`** | `checklist.W_TRAINING_DATA` |
+| face-swap data set: consent per identity (`checklist.face_swap_dataset_consent`) and its size (`brief_spec.face_swap_items`) | **`dataset_count`**, **`training_use`**, `shots`, `inputs[].count` | `W_TRAINING_DATA` |
+| relighting / one light across shots (`checklist.relight_limits`) | `edit: ["relight"]`, **`consistency: ["light"]`**, **`edit_target: "light"`** | `checklist.W_RELIGHT` |
+| seamless loop caveat (`checklist.seamless_loop`) and loop clip length (`apply.loop_seconds`) | **`outputs[].loop`** | `checklist.W_LOOP`, `apply.LOOP`, `LOOP_LENGTH` (the length) |
+| tileable texture | **`outputs[].tileable`** (parsed for the round-15 knowledge rules) | — |
+| transparent background: alpha delivery, no alpha-only upscaler on an opaque frame (`apply.wants_alpha`, `upscale_reach.alpha_specialised`) | **`outputs[].alpha`** | `apply.ALPHA`, `ALPHA_EXPLICIT`, `checklist.W_HOLOGRAM` |
+| made for kids (`checklist.made_for_kids`) | `audience` (`children`) | `checklist.W_KIDS` |
+| how many pictures are priced (`planner.кадров_заказано`) | `shots` | `_КАДРОВ_ЗАКАЗАНО` ("6 images") |
+| frame rate (`planner.fps_из_брифа`) | `fps` | `_FPS_В_БРИФЕ` |
+| length of the clip / one shot (`planner.длительности_плана`) | `duration_s`, `per_shot_s`, `inputs[].duration_s` | `duration.просят` |
+| what the customer brings (`planner.входы_плана`) | `inputs` | `inputs_of` (HAVE_*_CUES) |
+| own presenter reading own newsroom's news is planned (`inhouse_news.decide`) | `people[].role`, `consent`, `claim`; `claims[].own_brand`, `fabricated`, `real_brand` | none — structured only |
+| synthetic presenter of own programme is planned (`synthetic_presenter.decide`) | `people[].real: false`; `claims[].own_brand`, `fabricated`, `parody`, `brand` | none open it; `FABRICATED_WORDS`, `broadcast_marks.BROADCASTER` in the brief only CLOSE it (a refusal guard, never a door) |
+| video edit by assembly (trim, LUT, crop, burn captions …) (`brief_spec.правки_монтажа`) | `edit` | `монтажные_правки_словами`, `KEEP_WHOLE_FRAME`, `STYLE_WORDS` |
+| sign language is a recorded gap (`brief_spec.sign_language`) | `languages` (`ase`, `bfi` …) | `SIGN_WORDS` |
+| upscaler reach, per-frame upscalers, alpha upscalers (`upscale_reach`) | — | reads the MODEL's recorded rows, not the brief |
+
+The plan's text-only path (`план_по_тексту`, golden set and rendering tests) and
+the draft of the spec question still read everything from words
+(`planner.OPERATIONS[*].cues`, `brief_spec.from_text`, `DRAFT_*_CUES`): the draft
+is never a plan, and `plan_pipeline` plans only from spec.
+
+### Still words only — the field each would need
+
+The expert caveats in `studio/recipes/checklist.py` that read conditions the
+spec has no field for name that field in their `spec_field`
+(`checklist.spec_fields_to_add()`): `delivery.platform` (broadcast, cinema,
+streaming-premium, podcast, audiobook, telephony, voice-agent, game-engine,
+marketplace, print, vfx, editorial, app-store, music-distribution, YouTube /
+TikTok / Instagram / Shorts), `domain` (advertising, health / financial
+advertising, news, real-estate, political), `style` (limited-animation,
+photoreal), `subject` (product, reflective / transparent material, stylised
+face), `source.era` (archival), `inputs[].keying`, `inputs[].licence`,
+`inputs[].fps`, `inputs[].kind = slides`, `delivery.dynamic_range`,
+`delivery.stems`, `accessibility`, `display = additive` (hologram),
+`audio_content = song`, `conditions[] = flashing`, `task = audio-cleanup`.
+These are caveats on an otherwise correct plan (a note, never a step or a
+refusal); they stay EN/RU words until each gets its field. The recipe words in
+`studio/recipes/apply.py` that still have no field: `LOGO`, `SCENES`, `BLUR`,
+`MESH`, `ANIMATE_ART`, `TEXT_EXACT`, `CHARACTER` / `FACE_ONLY` (whole-character
+replacement; `people[].real: false` with a character name is read first),
+`TRY_ON` / `GARMENT`, `WALKTHROUGH`, `DRAWN`, `LOCAL_ONLY` (`self_host` /
+`open_weights` are read first), `FOLLOWS_PICTURE`; and in the planner
+`COMMUNITY_ASKED` (community LoRA / workflows wanted).
