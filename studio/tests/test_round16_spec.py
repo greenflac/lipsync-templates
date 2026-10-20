@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import unittest
 from typing import Any
 
@@ -116,6 +117,11 @@ class ПоляРазбираются(unittest.TestCase):
         self.assertEqual({"faces": True, "voice": False, "method": "swap"}, dict(_spec(anonymise={"faces": True}).anonymise))
         self.assertEqual({"faces": False, "voice": True, "method": None},
                          dict(_spec(anonymise={"method": "voice-replace"}).anonymise))
+
+    def test_рынки(self) -> None:
+        self.assertEqual(("FR", "DE"), _spec(delivery={"markets": ["fr", "DE"]}).delivery["markets"])
+        self.assertEqual(["spec.delivery.markets: FRANCE — ISO 3166-1 alpha-2 country codes (FR, DE, US)"],
+                         bs.parse_spec({"delivery": {"markets": ["France"]}})[1])
 
     def test_строгость(self) -> None:
         _, errors = bs.parse_spec({
@@ -378,6 +384,11 @@ class ПравилаПоПолю(unittest.TestCase):
             with self.subTest(rules=rules):
                 self.assertEqual(set(rules), set(rules) & _fired(brief, steps, base))
 
+    def test_обложка_без_выхода_картинки_словами(self) -> None:
+        """The thumbnail field is one-sided: outputs without an image leave the words to decide."""
+        self.assertIn("platform_thumbnail", _fired("a YouTube video with a thumbnail", ["генерация_видео"],
+                                                   {"task": "generate", "outputs": ["video"]}))
+
     def test_мерцание_через_условия(self) -> None:
         """Flashing: the existing `conditions` field carries it (an EN phrase the caller writes)."""
         base, steps = VID
@@ -413,6 +424,8 @@ class ШортсБезРечи(unittest.TestCase):
         """The short is judged by its own length (per_shot_s), not by the 40-minute source."""
         base, steps = SHORTS
         self.assertIn("no_speech_short", _fired("x", steps, _merge(base, {"voiceover": False})))
+        # ten shorts of 30 s: 300 s in all, each one short
+        self.assertIn("no_speech_short", _fired("x", steps, _merge(base, {"voiceover": False, "shots": 10, "duration_s": 300})))
         self.assertNotIn("no_speech_short", _fired("x", steps, _merge(base, {"voiceover": False, "per_shot_s": 240, "shots": 1})))
 
     def test_план(self) -> None:
@@ -449,6 +462,15 @@ class АнонимизацияМаршруты(unittest.TestCase):
         steps, assembly = _route("La voz del testigo no debe ser reconocible", **WITNESS, anonymise={"voice": True})
         self.assertEqual(("расшифровка", "озвучка"), steps)
         self.assertEqual((an.ASSEMBLY_VOICE[0],), assembly)
+        spec = bs.with_defaults(_spec(**WITNESS, lipsync=False, anonymise={"voice": True}), ролик=True, текст="x")
+        applied = rc.rewrite(spec, bs.route(spec), "x")
+        self.assertEqual(((), an.CLONE_ONLY_MODELS), (applied.route.сборка, applied.avoid["озвучка"]))
+        self.assertEqual((True, False), (bool(re.search(an.CLONE_ONLY_MODELS, "elevenlabs-instant-voice-clone")),
+                                         bool(re.search(an.CLONE_ONLY_MODELS, "kokoro-without-voice-cloning"))))
+
+    def test_допущение_выключается(self) -> None:
+        steps, _ = _route("x", **WITNESS, lipsync=False, anonymise={"voice": True}, priors={"anonymise_voice_replace": False})
+        self.assertEqual(("дубляж",), steps)
 
     def test_оба(self) -> None:
         steps, assembly = _route("Tanığın yüzü ve sesi tanınmamalı", **WITNESS, anonymise={"faces": True, "voice": True})
@@ -482,6 +504,11 @@ class АнонимизацияМаршруты(unittest.TestCase):
                        **STREET, anonymise={"faces": True})
         self.assertEqual(("wavespeed-video-face-swap", True), _chosen(answer)["замена_персонажа"])
         self.assertIn("anonymisation_gdpr", _note_ids(answer))
+
+    def test_план_строка_монтажа_одна(self) -> None:
+        answer = _plan("Tanığın yüzü ve sesi tanınmamalı", **{**WITNESS, "languages": ["tr"]},
+                       anonymise={"faces": True, "voice": True, "method": "pixelate"})
+        self.assertEqual(1, answer["assembly"]["why"].count(an.ASSEMBLY_PIXELATE[1]))
 
     def test_план_голос(self) -> None:
         answer = _plan("Entrevista con un testigo: la voz no debe ser reconocible, mismo idioma", **WITNESS,
@@ -529,6 +556,7 @@ class РецептыПоПолю(unittest.TestCase):
     def test_визуализатор(self) -> None:
         self.assertEqual((True, False), (rc.scenes_named(_spec(outputs=[{"kind": "video", "loop": False}])),
                                          rc.scenes_named(_spec(outputs=[{"kind": "video", "loop": True}], conditions=["scenes"]))))
+        self.assertEqual(True, rc.art_moves(_spec(outputs=[{"kind": "video", "loop": True}])))
         self.assertEqual((True, False, True), (rc.art_moves(_spec(animate_input=True)),
                                                rc.art_moves(_spec(animate_input=False, conditions=["animate it"])),
                                                rc.art_moves(_spec(conditions=["animate it"]))))

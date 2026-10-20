@@ -32,7 +32,8 @@ step is now chosen and priced with that reference counted as brought
 (`assumed_inputs`).
 
 DECISION CONSTANTS (mutated both ways by `scripts/mutate_round16_spec.py`):
-`FACE_DEFAULT_METHOD`, `VOICE_DROPS`, `VOICE_STEPS`.
+`VOICE_DROPS`, `VOICE_STEPS`, `REFERENCE_FACE_STEPS` (the default face method is
+`brief_spec.FACE_ANON_METHODS[0]`, swap).
 """
 
 from __future__ import annotations
@@ -42,8 +43,6 @@ from typing import Any
 
 from studio import spec_first as sf
 
-#: The face method when `anonymise.faces` is named without one (a priced model route, the blur named beside it).
-FACE_DEFAULT_METHOD = "swap"
 #: Steps a voice anonymisation removes: dubbing keeps the speaker's timbre, a clone copies it, lip sync
 #: fits the real face to the new voice.
 VOICE_DROPS: frozenset[str] = frozenset({"дубляж", "клонирование_голоса", "липсинк"})
@@ -66,7 +65,7 @@ def face_method(spec: Any, text: str = "") -> str | None:
     if поле is False:
         return None
     if isinstance(поле, str):
-        return поле or FACE_DEFAULT_METHOD
+        return поле
     from studio import expert_r15 as x15
 
     return x15.anonymise_method(spec, text)

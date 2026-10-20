@@ -618,25 +618,73 @@ the draft of the spec question still read everything from words
 (`planner.OPERATIONS[*].cues`, `brief_spec.from_text`, `DRAFT_*_CUES`): the draft
 is never a plan, and `plan_pipeline` plans only from spec.
 
-### Still words only — the field each would need
+### Round 16: the rest of the words-only list moved to fields
 
-The expert caveats in `studio/recipes/checklist.py` that read conditions the
-spec has no field for name that field in their `spec_field`
-(`checklist.spec_fields_to_add()`): `delivery.platform` (broadcast, cinema,
-streaming-premium, podcast, audiobook, telephony, voice-agent, game-engine,
-marketplace, print, vfx, editorial, app-store, music-distribution, YouTube /
-TikTok / Instagram / Shorts), `domain` (advertising, health / financial
-advertising, news, real-estate, political), `style` (limited-animation,
-photoreal), `subject` (product, reflective / transparent material, stylised
-face), `source.era` (archival), `inputs[].keying`, `inputs[].licence`,
-`inputs[].fps`, `inputs[].kind = slides`, `delivery.dynamic_range`,
-`delivery.stems`, `accessibility`, `display = additive` (hologram),
-`audio_content = song`, `conditions[] = flashing`, `task = audio-cleanup`.
-These are caveats on an otherwise correct plan (a note, never a step or a
-refusal); they stay EN/RU words until each gets its field. The recipe words in
-`studio/recipes/apply.py` that still have no field: `LOGO`, `SCENES`, `BLUR`,
-`MESH`, `ANIMATE_ART`, `TEXT_EXACT`, `CHARACTER` / `FACE_ONLY` (whole-character
-replacement; `people[].real: false` with a character name is read first),
-`TRY_ON` / `GARMENT`, `WALKTHROUGH`, `DRAWN`, `LOCAL_ONLY` (`self_host` /
-`open_weights` are read first), `FOLLOWS_PICTURE`; and in the planner
-`COMMUNITY_ASKED` (community LoRA / workflows wanted).
+Round 15 left the expert caveats of `studio/recipes/checklist.py`, the recipe words
+of `studio/recipes/apply.py` and the planner's community words on EN/RU keywords
+(each caveat named the field it would need in `spec_field`). The round-16 hidden
+set failed exactly there: a halftone newspaper scan in Spanish got no descreen
+note; passers-by anonymised in German got no model and no GDPR note; a witness
+whose voice had to be unrecognisable was planned as a DUB (a dubbing endpoint is
+built to keep the speaker's timbre); a documentary face swap got no model and no
+price; a cut into shorts with no voice-over got no no-speech note.
+
+Every decision below now has its field, with the same rule as round 15: **the
+field decides when the caller filled it, the EN/RU words are read only when it is
+absent, a named field wins both ways.** The readers live in `studio/spec_first.py`
+(each returns None when the field is not named); the caveats read them through
+`checklist.SPEC_FOR_WORDS` (one line per word set). All new fields are strict (an
+unknown value is a spec error with the allowed list), listed in the
+`plan_pipeline` description, in `spec_needed.allowed` (`brief_spec.OPTIONAL_HELP`)
+and in `spec_needed.draft.decision_fields` with what the fallback words read
+(`brief_spec.DECISION_FIELDS_R16`). Tests: `studio/tests/test_round16_spec.py`
+(every caveat of `spec_fields_to_add()` with the field alone in a zh / ja / ko /
+es / pt / de / fr / it / tr / ar brief, the named "no" against EN words, the EN
+words without the field, and the same foreign brief without the field silent);
+mutants: `scripts/mutate_round16_spec.py` (59, both ways).
+
+| decision | spec field (round 16) | fallback words |
+|---|---|---|
+| anonymisation route and the GDPR caveat (`anonymise.face_method` / `voice`, `checklist.anonymisation_gdpr`, `voice_anonymisation`) | **`anonymise`** `{faces, voice, method: swap \| blur \| pixelate \| voice-replace}` or `false` | `W_ANONYMISE`, `expert_r15.SWAP_WORDS` / `BLUR_WORDS`, **`W_VOICE_ANON`** (anonymity words only — «change the voice» is not one) |
+| no-speech short (`no_speech_short`) | **`voiceover: false`**, then **`audio_content`** without `speech`, then `people[].speaks` | `W_NO_SPEECH` — structure alone (a cut from own footage) does not decide |
+| platform caveats: broadcast, cinema / DCP, premium streaming, podcast, audiobook, telephony, voice agent, game engine, marketplace, print, VFX, editorial, app store, music distribution, social encode / thumbnail / short-form cap | **`delivery.platform`** | `W_BROADCAST`, `W_CINEMA`, `W_STREAMING`, `W_PODCAST`, `W_AUDIOBOOK`, `W_TELEPHONY`, `W_VOICE_BOT`, `W_GAME`, `W_MARKETPLACE`, `delivery.PRINT`, `W_VFX`, `W_EDITORIAL`, `W_APP_STORE`, `W_DISTRIBUTION`, `W_MONETISE`, `W_PLATFORM` |
+| HDR master; M&E stems; outbound AI calls; 3D model delivery; the French retouched-photo label | **`delivery.dynamic_range`**, **`delivery.stems`**, **`delivery.direction`**, **`delivery.format`** (glb / usdz …), **`delivery.markets`** (FR) | `W_HDR`, `W_LOCALISE`, `W_OUTBOUND`, `apply.MESH`, `W_FRANCE` |
+| advertising, health / financial ads, branded content, news / documentary label, real estate, political | **`domain`** | `W_AD`, `W_HEALTH`, `W_FINANCE`, `W_SPONSORED`, `W_NEWS`, `W_REAL_ESTATE`, `W_POLITICAL` |
+| photoreal disclosure, anime on twos, drawn / stylised faces (lip sync model, drawn dub) | **`style`** (photoreal \| stylised \| limited-animation) | `W_REALISTIC`, `W_ANIMATION_TWOS`, `W_STYLISED_FACE`, `apply.DRAWN` |
+| product fidelity, cosmetics, reflective / transparent material, before-after, logo / exact text, try-on garment, property walkthrough, mascot (whole-character swap), retouched person | **`subject`** (and `edit_target: person` for a retouch; `domain: real-estate` also opens the walkthrough) | `W_PRODUCT`, `W_COSMETIC`, `W_REFLECTIVE`, `W_BEFORE_AFTER`, `apply.LOGO` / `TEXT_EXACT`, `W_TEXT_IN_FRAME`, `apply.TRY_ON` + `GARMENT`, `apply.WALKTHROUGH`, `apply.CHARACTER` / `FACE_ONLY`, `W_RETOUCH` |
+| captions / audio description (WCAG) — now per need | **`accessibility`** | `W_A11Y` (both rules) |
+| hologram on black | **`display: additive`** | `W_HOLOGRAM` |
+| vocal stem of a song | **`audio_content: ["song"]`** | `W_SINGING` |
+| print scan descreen; audio clean-up; deblur on archive film | **`inputs[].defects`** (halftone \| noise \| hum \| echo \| blur …), `inputs[].source: print-scan` | `W_HALFTONE`, `W_AUDIO_CLEAN`, `apply.BLUR` |
+| slides / screen recording, archival grain and disclosure, cine film speed, timelapse, green screen, stock licence, cover song | **`inputs[].source`**, **`inputs[].fps`** (≤ 20 = cine film) | `W_SLIDES`, `W_ARCHIVAL`, `W_CINE_FILM`, `W_TIMELAPSE`, `W_GREEN_SCREEN`, `W_STOCK`, `W_COVER_SONG` |
+| sound follows the brought picture (video-to-audio) | **`follows_picture`** | `apply.FOLLOWS_PICTURE` |
+| visualiser: static audiogram vs animated art; loops vs scenes | **`animate_input`**, `outputs[].loop` (false = scenes) | `apply.ANIMATE_ART`, `apply.SCENES` (in `conditions`) |
+| community checkpoints / LoRA / workflows | **`community`** | `planner.COMMUNITY_ASKED`, `endpoints.COMMUNITY_ASKED` |
+| everything on the customer's machine | `self_host` (now: `self_host: false` is a named no), `open_weights` | `apply.LOCAL_ONLY` |
+| flashing / strobe content | `conditions: ["flashing"]` (existing field; a caller-written EN phrase) | `W_FLASH` |
+
+**Routes (spec-driven, `studio/anonymise.py`).** Faces: `swap` (the default) = one
+generated synthetic face + a video face swap, priced per second, with the blur
+named as the irreversible alternative; `blur` / `pixelate` = at assembly, 0 usd.
+Voice: the speech is transcribed (redacted before synthesis) and re-spoken by a
+DIFFERENT stock TTS voice — dubbing, voice cloning and lip sync steps are removed,
+clone endpoints are ranked last on the TTS step, and a same-language
+`dub-translate` with `anonymise.voice` takes this route (its checklist no longer
+carries the dub's translation caveats). Both = both. The GDPR caveat
+(`anonymisation_gdpr` on pictures, `voice_anonymisation` on voices) names
+irreversibility, missed faces / voices and the DPIA.
+
+**Face swap with no face image listed (documentary, consented).** `task:
+face-replace` on the customer's video with no image in `inputs` had no candidate:
+every video face-swap endpoint `requires_inputs` an image, and the candidate
+filter did not count the reference the route already names as an assumption
+("the new face comes from YOUR reference image — attach it"). It is counted now
+(`anonymise.assumed_inputs`), so the step gets its face-swap model and clip price;
+the assumption line still asks the customer to attach the photo.
+
+Still words only, by design: the text-only path (`план_по_тексту`, the draft of
+the spec question) reads everything from words — it is never a plan. Flashing
+content uses the existing free-text `conditions`. `W_SELL_STOCK` (the outputs
+are SOLD to a stock site — it only silences the stock-licence caveat) and
+`checklist.W_INTERVIEW` / `W_DIALOGUE` (read beside `people` and `characters`,
+which decide first) keep their words.
