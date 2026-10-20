@@ -4888,7 +4888,11 @@ def нужда_шага(
         megapixels=(кадр[0] * кадр[1] / 1e6) if кадр else 1.0,
         mode=РЕЖИМ_ШАГА.get(op.name, ""),
         fps=fps,
-        shots=штук if (штук is not None and not картинка) else клипов if (клипов and op.клипами and not картинка) else 1,
+        shots=штук
+        if (штук is not None and not картинка)
+        else клипов
+        if (клипов and (op.клипами or op.name in x15.BATCH_PRICED_STEPS) and not картинка)
+        else 1,
         jobs=языков if (секунды is not None and языков > 1) else 1,
         clone_only=op.name == "клонирование_голоса" and not начитка,
     )

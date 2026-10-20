@@ -247,3 +247,8 @@ def made_inputs(step: str, plan_steps: Sequence[str], image_artefact: str) -> se
     if step in IMAGE_FED_STEPS and "генерация_изображения" in plan_steps:
         return {image_artefact}
     return set()
+
+
+#: Steps that are ONE CALL PER CLIP in a batch (UGC lip-sync to N scripts): their per-clip fees,
+#: minimums and rounding blocks apply to every clip, not once to the summed seconds.
+BATCH_PRICED_STEPS: frozenset[str] = frozenset({"липсинк"})
