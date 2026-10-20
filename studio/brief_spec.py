@@ -34,6 +34,7 @@ from dataclasses import dataclass, field, replace
 from typing import Any, Mapping
 
 from studio import endpoints as ep
+from studio import expert_r16 as x16
 from studio import hardneed as hn
 from studio import pipeline as pl
 
@@ -2630,6 +2631,14 @@ def _маршрут_одной(spec: Spec, на_сборке: frozenset[str] = f
             # выведены из длительности (прежде — картинка на каждый клип).
             _дорожки(spec, шаги)
             return Маршрут(tuple(dict.fromkeys(шаги)), пометки, штук={"генерация_изображения": SINGLE_REFERENCE})
+        elif x16.key_visual_series(spec):
+            # ШЕСТНАДЦАТЫЙ КРУГ: серия / объясняющий ролик из N шотов в ОДНОМ стиле
+            # без персонажей — ключевые кадры (картинка на шот, утверждаются до видео),
+            # затем каждый оживляется (`expert_r16.key_visual_series`).
+            шаги += ["генерация_изображения", "оживление"]
+            пометки["генерация_изображения"] = x16.NOTE_KEY_VISUALS[0]
+            _дорожки(spec, шаги)
+            return Маршрут(tuple(dict.fromkeys(шаги)), пометки, штук={"генерация_изображения": int(spec.shots or 1)})
         else:
             шаги.append("генерация_видео")
     elif "image" in выходы:
@@ -2707,7 +2716,9 @@ PERFORMER = re.compile(
     re.I,
 )
 #: Голос ЗА кадром назван словами — говорящего в кадре нет.
-VOICE_OFF_FRAME = re.compile(r"voice-?over|narrat\w*|off-?screen|озвучк\w*|закадров\w*|диктор\w*|配音", re.I)
+VOICE_OFF_FRAME = re.compile(
+    r"voice-?over|narrat\w*|off-?screen|озвучк\w*|закадров\w*|за кадром|рассказчик\w*|диктор\w*|配音", re.I
+)
 #: Четырнадцатый круг: голоса ПЕРСОНАЖЕЙ («озвучка персонажей», «voiced lines») —
 #: это не закадр: говорят персонажи, и в кадре. Старше `VOICE_OFF_FRAME`.
 CHARACTER_VOICES = re.compile(
@@ -2774,6 +2785,10 @@ def говорят_в_кадре(spec: Spec, текст: str = "") -> bool:
     решено = говорящий_по_spec(spec)
     if решено is not None:
         return решено
+    # ШЕСТНАДЦАТЫЙ КРУГ: голос за кадром НАЗВАН полем (`spec.audio = "voiceover"`) — рассказчик
+    # не в кадре, губ не двигает никто; слова брифа тогда не читаются (`expert_r16.voiceover_named`).
+    if x16.voiceover_named(spec):
+        return False
     сказано = " ".join(str(у) for у in (*spec.conditions, текст) if у)
     if ON_SCREEN_SPEAKER.search(сказано):
         return True
@@ -3065,6 +3080,17 @@ def with_defaults(spec: Spec, ролик: bool, текст: str = "") -> Spec:
         поля["characters"] = персонажей
         источник["characters"] = SOURCE_DEFAULT
         допущения.append(почему)
+    # ШЕСТНАДЦАТЫЙ КРУГ: озвученная серия / объясняющий ролик из многих шотов без
+    # персонажей словами брифа — один стиль на все шоты (поле `consistency` не названо).
+    if (
+        x16.key_visual_words(spec, текст)
+        and not поля["characters"]
+        and int(spec.shots or 0) >= x16.KEY_VISUAL_SHOTS_MIN
+        and x16.key_visual_series(replace(spec, consistency=("style",)))
+    ):
+        поля["consistency"] = ("style",)
+        источник["consistency"] = SOURCE_DEFAULT
+        допущения.append(x16.ASSUMPTION_KEY_VISUALS.format(n=spec.shots))
     if персонажи_в_одном_кадре(replace(spec, characters=поля["characters"]), текст):
         поля["cast_together"] = True
     if говорящий_ролик(spec, текст):

@@ -897,6 +897,18 @@ EN: tuple[tuple[str, str], ...] = (
     ('длинный\\ фоновый\\ звук:\\ генерируется\\ ОДИН\\ зацикливаемый\\ отрезок\\ (\\d+(?:\\.\\d+)?)\\ с,\\ длину\\ даёт\\ повтор\\ при\\ сборке',
      'long ambient audio: ONE loopable segment of \\1 s is generated, the length comes from repeating it at assembly'),
     # --- конец круга 15
+    # --- круг 16: пометки маршрутов и рецептов (`expert_r16.NOTE_PAIRS`, `recipes.apply.R16_NOTE_PAIRS`)
+    ('рисованный\\ ролик:\\ дубляж\\ ведётся\\ адаптацией\\ текста\\ под\\ существующие\\ рты\\ \\(длина\\ реплик\\ и\\ открытые\\ гласные\\ под\\ артикуляцию,\\ как\\ в\\ студиях\\ дубляжа\\ аниме\\),\\ губы\\ не\\ перерисовываются;\\ визуальный\\ липсинк\\ —\\ НЕОБЯЗАТЕЛЬНОЕ\\ улучшение,\\ его\\ цена\\ указана\\ отдельно\\ и\\ в\\ цену\\ плана\\ не\\ входит',
+     'drawn footage: the dub adapts the script to the existing mouth flaps (line length and open vowels matched to the articulation, as anime dubbing studios do) and the mouths are not redrawn; visual lip sync is an OPTIONAL upgrade priced separately, not in the plan price'),
+    ('НЕОБЯЗАТЕЛЬНО:\\ улучшение\\ по\\ желанию\\ —\\ в\\ цену\\ ролика\\ и\\ вердикт\\ бюджета\\ не\\ входит',
+     'OPTIONAL: an upgrade on request — not in the clip price or the budget verdict'),
+    ('ключевые\\ кадры\\ серии:\\ по\\ картинке\\ на\\ шот\\ в\\ одном\\ стиле\\ \\(утверждаются\\ до\\ видео\\),\\ затем\\ каждый\\ оживляется',
+     'key visuals of the series: one still per shot in one look (approved before any video), then each is animated'),
+    ('открытые\\ веса\\ без\\ API\\-маршрута:\\ шаг\\ идёт\\ на\\ вашем\\ GPU\\ \\(API\\ 0\\ usd\\),\\ время\\ GPU\\ —\\ отдельной\\ оценкой',
+     'open weights with no API route: the step runs on your GPU (API 0 usd), GPU time is a separate estimate'),
+    ('новая\\ дорожка,\\ адаптированная\\ под\\ существующие\\ рты,\\ заменяет\\ речь\\ ВАШЕГО\\ ролика\\ \\(ffmpeg\\);\\ картинка\\ не\\ перерисовывается\\ —\\ 0\\ usd\\ за\\ сборку',
+     'the new track, adapted to the existing mouth flaps, replaces the speech of YOUR video (ffmpeg); the picture is not redrawn — 0 usd for the assembly'),
+    # --- конец круга 16
     # --- круг 14: пометки маршрутов (`brief_spec.NOTE_FRAMES_FROM_VIDEO`, `ASSEMBLY_REASONS`)
     ('кадры\\ вынимаются\\ из\\ вашего\\ видео\\ ffmpeg\\ \\(fps=…\\ или\\ select\\ по\\ сценам\\)\\ —\\ 0\\ usd;\\ лицо\\ меняется\\ на\\ каждом\\ снимке',
      'the frames are extracted from your video with ffmpeg (fps=… or select by scene) — 0 usd; the face is swapped on each still'),

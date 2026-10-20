@@ -234,6 +234,7 @@ from studio import clarify
 from studio import duration as dur
 from studio import edit_intent as ei
 from studio import expert_r15 as x15
+from studio import expert_r16 as x16
 from studio import endpoints as ep
 from studio import l10n
 from studio import factaxis as fa
@@ -10073,17 +10074,23 @@ def цена_полная(c: Candidate, op: Operation | None = None) -> bool:
 
 
 def дешевле_в_полосе(
-    выбран: Candidate | None, найдены: Sequence[Candidate], op: Operation | None = None
+    выбран: Candidate | None,
+    найдены: Sequence[Candidate],
+    op: Operation | None = None,
+    годен: Callable[[Candidate], bool] | None = None,
 ) -> Candidate | None:
     """Самый дешёвый кандидат ТОЙ ЖЕ полосы, что выбранный, если он дешевле. Иначе None.
 
     Кандидат с неполной ценой (`цена_полная`) не берётся: минимум по нижней
-    границе — не минимум цены.
+    границе — не минимум цены. `годен` — ещё один фильтр (шестнадцатый круг:
+    кадр тарифа не ниже заказанного, `expert_r16.adequate_frame`).
     """
     if выбран is None or выбран.cost is None:
         return None
     своя = полоса(выбран)
-    равные = [c for c in найдены if цена_полная(c, op) and полоса(c) == своя]
+    равные = [
+        c for c in найдены if цена_полная(c, op) and полоса(c) == своя and (годен is None or годен(c))
+    ]
     if not равные:
         return None
     лучший = min(равные, key=lambda c: (c.cost.default.usd if c.cost else 0.0, найдены.index(c)))
@@ -10105,7 +10112,11 @@ CHEAP_OFFER_RATIO = 5.0
 
 
 def дешёвый_вне_полосы(
-    выбран: Candidate | None, найдены: Sequence[Candidate], op: Operation | None = None
+    выбран: Candidate | None,
+    найдены: Sequence[Candidate],
+    op: Operation | None = None,
+    во_сколько_раз: float | None = None,
+    годен: Callable[[Candidate], bool] | None = None,
 ) -> Candidate | None:
     """Самый дешёвый ГОДНЫЙ кандидат ниже по доводам, если выбранный дороже его больше чем в `CHEAP_OFFER_RATIO` раз.
 
@@ -10128,11 +10139,13 @@ def дешёвый_вне_полосы(
         and sign_rank(c) != SIGN_AGAINST
         and c.kind_rank <= выбран.kind_rank
         and not c.foreign
+        and (годен is None or годен(c))
     ]
     if not годные:
         return None
     лучший = min(годные, key=lambda c: (c.cost.default.usd if c.cost else 0.0, найдены.index(c)))
-    if лучший.cost is None or выбран.cost.default.usd <= CHEAP_OFFER_RATIO * лучший.cost.default.usd:
+    порог = CHEAP_OFFER_RATIO if во_сколько_раз is None else во_сколько_раз
+    if лучший.cost is None or выбран.cost.default.usd <= порог * лучший.cost.default.usd:
         return None
     return лучший
 
@@ -11238,7 +11251,9 @@ def сводка(итог: dict) -> str:
             хвост.append(
                 ("added by plan: " if англ else "дописан планом: ") + _коротко(дописан, 90)
             )
-        if шаг.get("conditional"):
+        if шаг.get("optional"):
+            хвост.append(x16.NOTE_OPTIONAL_STEP[1 if англ else 0])
+        elif шаг.get("conditional"):
             хвост.append(
                 "CONDITIONAL: not in the clip price or the budget verdict — needed only if the "
                 "previous step's output turns out smaller than the frame asked"
@@ -11248,9 +11263,16 @@ def сводка(итог: dict) -> str:
             )
         обмен_шага = шаг.get("budget_swap") or {}
         if обмен_шага:
+            причина_обмена = обмен_шага.get("reason") or ("", "")
             хвост.append(
                 (
-                    f"re-selected for the budget: {обмен_шага['from']} {обмен_шага['from_usd']:.2f} -> "
+                    f"re-selected ({причина_обмена[1]}): {обмен_шага['from']} {обмен_шага['from_usd']:.2f} -> "
+                    f"{обмен_шага['to']} {обмен_шага['to_usd']:.2f} usd; traded off: "
+                    if англ and причина_обмена[1]
+                    else f"перевыбрано ({причина_обмена[0]}): {обмен_шага['from']} {обмен_шага['from_usd']:.2f} -> "
+                    f"{обмен_шага['to']} {обмен_шага['to_usd']:.2f} usd; отдано: "
+                    if причина_обмена[0]
+                    else f"re-selected for the budget: {обмен_шага['from']} {обмен_шага['from_usd']:.2f} -> "
                     f"{обмен_шага['to']} {обмен_шага['to_usd']:.2f} usd; traded off: "
                     if англ
                     else f"перевыбрано под бюджет: {обмен_шага['from']} {обмен_шага['from_usd']:.2f} -> "
@@ -11473,7 +11495,13 @@ def сводка(итог: dict) -> str:
     for у in (итог.get("pipeline_price") or {}).get("conditional_steps") or []:
         строки.append(
             (
-                f"CONDITIONAL (not in the price): {_имя_шага(у.get('step'), True)} {у.get('model')}"
+                (
+                    f"OPTIONAL UPGRADE (not in the price): {_имя_шага(у.get('step'), True)} {у.get('model')}"
+                    if англ
+                    else f"НЕОБЯЗАТЕЛЬНОЕ УЛУЧШЕНИЕ (не в цене): {_имя_шага(у.get('step'), False)} {у.get('model')}"
+                )
+                if у.get("optional")
+                else f"CONDITIONAL (not in the price): {_имя_шага(у.get('step'), True)} {у.get('model')}"
                 if англ
                 else f"УСЛОВНО (не в цене): {_имя_шага(у.get('step'), False)} {у.get('model')}"
             )
@@ -12425,6 +12453,10 @@ def plan(
         " ; ".join((brief, *понято.conditions)), длительность.секунды if длительность.разобрано else None
     )
     заявленные_условия, условия_не_поняты = заявленные(понято, spec, brief)
+    # ШЕСТНАДЦАТЫЙ КРУГ: картинка, чья работа — точные надписи (постер, упаковка,
+    # вывеска), ранжируется по ЗАПИСАННОЙ отрисовке текста (`expert_r16.text_heavy`).
+    if x16.TEXT_CONDITION not in заявленные_условия and x16.text_heavy(понято, текст):
+        заявленные_условия = (*заявленные_условия, x16.TEXT_CONDITION)
     #: Самая дешёвая записанная стоимость шага среди ВСЕХ его кандидатов —
     #: для ответа на «бюджет 0»: выбранный может быть без цены, а работа всё
     #: равно не бесплатна, и это видно по соседям.
@@ -12563,6 +12595,19 @@ def plan(
                 else длительность
             )
             шаг_прогон = длительность_шота
+        найдены = _искать(op, шаг_всего, шаг_прогон, жёсткие)
+        # ШЕСТНАДЦАТЫЙ КРУГ: открытые веса заказаны без своего GPU, а API-маршрута у
+        # работы нет (Whisper / faster-whisper / Parakeet на расшифровке) — веса
+        # запускаются на GPU заказчика, а не «кандидата нет» (`expert_r16.open_weights_route`).
+        if not найдены and (свой_gpu := x16.open_weights_route(жёсткие)) is not None:
+            найдены = _искать(op, шаг_всего, шаг_прогон, свой_gpu)
+            if найдены:
+                шаги_на_своём_gpu.add(op.name)
+        return найдены
+
+    шаги_на_своём_gpu: set[str] = set()
+
+    def _искать(op: Operation, шаг_всего: "dur.Запрос", шаг_прогон: "dur.Запрос", жёсткие_шага: "hn.Hard") -> list[Candidate]:
         return candidates_for(
             op,
             индекс,
@@ -12590,7 +12635,7 @@ def plan(
             условия,
             юрисдикции,
             заказанный_кадр or кадр,
-            жёсткие,
+            жёсткие_шага,
             stated_conditions=заявленные_условия,
             edit_intents=маршрут.правки if маршрут.правки is not None else понято.edit,
             requested_flags=tuple(ep.requested_flags(brief)),
@@ -12814,6 +12859,12 @@ def plan(
                     if лучший is not None and op.name == x15.TRANSCRIBE_STEP and x15.needs_diarisation(понято, текст)
                     else ""
                 ),
+                # ШЕСТНАДЦАТЫЙ КРУГ: открытые веса без API-маршрута — шаг на вашем GPU.
+                **(
+                    {"own_gpu_route": x16.NOTE_OPEN_WEIGHTS_GPU[1 if по_английски else 0]}
+                    if op.name in шаги_на_своём_gpu and лучший is not None
+                    else {}
+                ),
             }
         )
 
@@ -12855,6 +12906,13 @@ def plan(
             счёт[к] = 0
         for op in операции:
             _шаг(op)
+        # ШЕСТНАДЦАТЫЙ КРУГ: НЕОБЯЗАТЕЛЬНЫЙ шаг рецепта (липсинк рисованного дубляжа) —
+        # в плане со своей ценой, но в цену ролика и вердикт бюджета не входит.
+        for строка in строки_шагов:
+            if строка["step"] in getattr(рецепт, "optional", ()):
+                условные.add(строка["step"])
+                строка["conditional"] = True
+                строка["optional"] = True
         # АПСКЕЙЛ ПО РАЗРЕШЕНИЮ (2026-10-14; 2026-10-15 — проход и условность,
         # см. `решить_апскейл`): решает запись базы, а не наша уверенность.
         пронесено[0] = ""
@@ -12949,9 +13007,40 @@ def plan(
             if к is not None and op.name in подобраны:
                 принудительно[op.name] = подобраны[op.name].model
                 обмены.append(обмен(op.name, к, подобраны[op.name]))
-    if обмены:
+    # ШЕСТНАДЦАТЫЙ КРУГ (`expert_r16`): правка видео берёт самый дешёвый ГОДНЫЙ кандидат
+    # своей полосы (кадр тарифа не ниже заказа), пачка липсинка / аватаров — самый
+    # дешёвый годный, когда выбранный дороже в `BATCH_CHEAP_RATIO` раз; цель
+    # «качество» оставляет выбор как есть.
+    обмены_эксперта: list[dict] = []
+    if not дешевле_просят:
+        for op, к in list(выбор):
+            if к is None or op.name in условные or op.name in принудительно:
+                continue
+            найдены_шага = найдено_на_шаг.get(op.name, [])
+            if x16.edit_tier_applies(op.name, жёсткие.objective):
+                замена = дешевле_в_полосе(к, найдены_шага, op, годен=x16.adequate_frame)
+                if замена is not None and x16.adequate_frame(к):
+                    принудительно[op.name] = замена.model
+                    обмены_эксперта.append({**обмен(op.name, к, замена), "reason": x16.REASON_EDIT_TIER})
+            elif x16.batch_cheap_applies(op.name, клипов, жёсткие.objective):
+                # ГОДНЫЙ на пачке: кадр тарифа не ниже заказа и вид выхода ЗАПИСАН
+                # (модель без единой записи о том, что она отдаёт, — не «годная», а «неизвестная»).
+                def _годен_в_пачке(c: Candidate) -> bool:
+                    return x16.adequate_frame(c) and c.out_state == OUT_YES
+
+                замена = дешевле_в_полосе(к, найдены_шага, op, годен=_годен_в_пачке)
+                вне = дешёвый_вне_полосы(
+                    замена or к, найдены_шага, op, во_сколько_раз=x16.BATCH_CHEAP_RATIO, годен=_годен_в_пачке
+                )
+                if вне is not None:
+                    принудительно[op.name] = вне.model
+                    обмены_эксперта.append({**обмен_вне_полосы(op.name, к, вне), "reason": x16.REASON_BATCH})
+                elif замена is not None:
+                    принудительно[op.name] = замена.model
+                    обмены_эксперта.append({**обмен(op.name, к, замена), "reason": x16.REASON_BATCH})
+    if обмены or обмены_эксперта:
         _собрать()
-        по_шагу = {о["step"]: о for о in обмены}
+        по_шагу = {о["step"]: о for о in (*обмены, *обмены_эксперта)}
         for строка in строки_шагов:
             if строка["step"] in по_шагу:
                 строка["budget_swap"] = по_шагу[строка["step"]]
@@ -13084,8 +13173,13 @@ def plan(
                 "step": op.name,
                 "model": к.model if к else None,
                 "usd": round(к.cost.default.usd, 4) if к and к.cost else None,
-                "note": "не входит в цену ролика и в вердикт бюджета: нужен, только если "
-                "выход предыдущего шага окажется меньше заказанного кадра",
+                "note": (
+                    x16.NOTE_OPTIONAL_STEP[0]
+                    if op.name in getattr(рецепт, "optional", ())
+                    else "не входит в цену ролика и в вердикт бюджета: нужен, только если "
+                    "выход предыдущего шага окажется меньше заказанного кадра"
+                ),
+                **({"optional": True} if op.name in getattr(рецепт, "optional", ()) else {}),
             }
             for op, к in выбор
             if op.name in условные
@@ -13465,6 +13559,8 @@ def сжать(ответ: dict) -> dict:
                     к: ш.get(к)
                     for к in (
                         "conditional",
+                        "optional",
+                        "own_gpu_route",
                         "budget_swap",
                         "languages_multiplier",
                         "language_support",

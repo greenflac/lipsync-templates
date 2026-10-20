@@ -26,6 +26,7 @@ from dataclasses import dataclass, field, replace
 from typing import Callable, Mapping, Sequence
 
 from studio import brief_spec as bs
+from studio import expert_r16 as x16
 from studio.recipes import checklist, delivery
 from studio.recipes.table import (
     ASPECT_TOLERANCE,
@@ -388,6 +389,14 @@ ASSEMBLY_DRAWN_DUB = (
     "for the assembly",
 )
 R15_NOTE_PAIRS = R15_NOTE_PAIRS + (ASSEMBLY_DRAWN_DUB,)
+#: Round 16: the base plan of a drawn dub — the new track over the untouched picture, no lip sync.
+ASSEMBLY_DRAWN_ADAPT = (
+    "новая дорожка, адаптированная под существующие рты, заменяет речь ВАШЕГО ролика (ffmpeg); картинка не "
+    "перерисовывается — 0 usd за сборку",
+    "the new track, adapted to the existing mouth flaps, replaces the speech of YOUR video (ffmpeg); the picture "
+    "is not redrawn — 0 usd for the assembly",
+)
+R16_NOTE_PAIRS: tuple[tuple[str, str], ...] = (ASSEMBLY_DRAWN_ADAPT,)
 ASSEMBLY_LOCAL_DUB = (
     "голос отделяется от музыки и шумов (Demucs), новая речь сводится поверх них и кладётся в ВАШЕ видео "
     "(ffmpeg) — всё на вашем GPU, 0 usd",
@@ -465,6 +474,8 @@ class Applied:
     avoid: Mapping[str, str] = field(default_factory=dict)
     #: Round 15: ops whose candidates that RECORD drawn / stylised face support rank first (a cartoon dub).
     prefer_stylised: tuple[str, ...] = ()
+    #: Round 16: steps that are an OPTIONAL upgrade (drawn dub lip sync): kept in the plan, priced apart.
+    optional: tuple[str, ...] = ()
     #: (ru, en) assembly reasons — free tools, 0 usd.
     assembly: tuple[tuple[str, str], ...] = ()
     #: 0 budget: the plan offers the open-weights route.
@@ -549,6 +560,7 @@ def rewrite(spec: "bs.Spec", route: "bs.Маршрут", text: str = "") -> Appl
     prefer: dict[str, str] = {}
     avoid: dict[str, str] = {}
     stylised: list[str] = []
+    optional: list[str] = []
     anonymise_assembly: tuple[str, ...] = ()
     inputs = set(spec.inputs)
     outputs = set(spec.outputs)
@@ -642,7 +654,15 @@ def rewrite(spec: "bs.Spec", route: "bs.Маршрут", text: str = "") -> Appl
             notes["липсинк"] = NOTE_DRAWN_DUB[0]
             if ANIMAL_CHARACTERS.search(" ".join((*map(str, spec.conditions), text))):
                 notes["липсинк"] = NOTE_DRAWN_DUB_ANIMAL[0]
-            acc.assembly.append(ASSEMBLY_DRAWN_DUB)
+            # Round 16: long anime / cartoon dubs adapt the script to the existing mouth flaps; visual
+            # lip sync is an OPTIONAL upgrade priced apart (`expert_r16.optional_lips`), required only
+            # when `spec.lipsync` is true.
+            if x16.optional_lips(spec, drawn=True):
+                optional.append(x16.OPTIONAL_LIPS_STEP)
+                notes["дубляж"] = x16.NOTE_DRAWN_ADAPT[0]
+                acc.assembly.append(ASSEMBLY_DRAWN_ADAPT)
+            else:
+                acc.assembly.append(ASSEMBLY_DRAWN_DUB)
 
     # --- round 12: a dub that must run on the customer's own machine --------------------
     # Hosted dubbing endpoints are one call; on own hardware the same job is a chain.
@@ -855,6 +875,7 @@ def rewrite(spec: "bs.Spec", route: "bs.Маршрут", text: str = "") -> Appl
         prefer_input=prefer,
         avoid=avoid,
         prefer_stylised=tuple(stylised),
+        optional=tuple(optional),
         assembly=tuple(dict.fromkeys(acc.assembly)),
         free_route=free,
         local_only=local,
