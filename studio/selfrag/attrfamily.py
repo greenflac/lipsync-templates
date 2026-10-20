@@ -611,6 +611,9 @@ import re
             "face_styles",
             "diarization",
             "diarization_price_gap",
+            # Шестнадцатый круг: пробел о записанной отрисовке текста (хост закрыт или
+            # страница рисуется скриптом) — строка-пробел, не способность.
+            "text_rendering_gap",
             # Девятый круг: во сколько раз апскейлер увеличивает и в каком
             # множителе он рассчитан. НЕ в семье `resolution`: множитель — не
             # предел кадра, и `planner.limit_facts` не должен читать его так.
@@ -1350,6 +1353,13 @@ def variant_slice(value: str, words: tuple[str, ...] | list[str]) -> str:
         "семьи": (),
         "бенчмарки": ("vtr-bench",),
         "тема": "текст в кадре",
+        # ШЕСТНАДЦАТЫЙ КРУГ: строка `text_rendering` без объявленного знака читается
+        # «за» ТОЛЬКО на этом условии, когда значение называет сильную отрисовку
+        # текста (`capability.condition_state`); общий ранг модели она не трогает.
+        "за": (
+            r"exceptional\w* (?:typograph|text|at)|specialized for typography|excels? at rendering text"
+            r"|excels? at text|legible, stylized text|exceptionally well in alphabetic|readable text and clean typography"
+        ),
     },
     "hands": {"имена": (), "семьи": (), "бенчмарки": (), "тема": "руки"},
     "multiple_people": {"имена": (), "семьи": (), "бенчмарки": (), "тема": "несколько людей"},

@@ -250,7 +250,8 @@ class ПроходПоСнимкам(unittest.TestCase):
 
 
 class ДубляжРисованного(unittest.TestCase):
-    """Drawn footage keeps lip sync, on a model recorded for drawn / stylised faces (round 15)."""
+    """Drawn footage: lip sync on a model recorded for drawn / stylised faces (round 15) is an OPTIONAL
+    upgrade priced apart; the base dub adapts the script to the mouth flaps (round 16)."""
 
     def _дубляж(self, brief: str, **extra: Any) -> rc.Applied:
         raw: dict[str, Any] = {"task": "dub-translate", "inputs": [V], "outputs": ["video"], "duration_s": 300, "languages": ["en"]}
@@ -261,6 +262,13 @@ class ДубляжРисованного(unittest.TestCase):
         а = self._дубляж("Dub my 5-minute anime episode from Japanese into English")
         self.assertEqual(("дубляж", "липсинк"), а.route.шаги)
         self.assertEqual(("липсинк",), а.prefer_stylised)
+        self.assertEqual(("липсинк",), а.optional)
+        self.assertIn(rc.ASSEMBLY_DRAWN_ADAPT, а.assembly)
+        self.assertNotIn(rc.ASSEMBLY_DRAWN_DUB, а.assembly)
+
+    def test_аниме_липсинк_заказан(self) -> None:
+        а = self._дубляж("Dub my 5-minute anime episode from Japanese into English", lipsync=True)
+        self.assertEqual((), а.optional)
         self.assertIn(rc.ASSEMBLY_DRAWN_DUB, а.assembly)
 
     def test_мультфильм_ru(self) -> None:

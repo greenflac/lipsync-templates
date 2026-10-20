@@ -95,7 +95,7 @@ class ПоляРазбираются(unittest.TestCase):
         })
         self.assertEqual(
             [
-                "spec.outputs[0]: unknown field(s) fps (known: kind, loop, tileable, alpha)",
+                "spec.outputs[0]: unknown field(s) fps (known: kind, loop, tileable, alpha, spatial)",
                 "spec.outputs[0].loop='yes': must be true or false",
                 "spec.people[0].on_screen=1: must be true or false",
                 "spec.live='maybe': must be true or false",
@@ -586,10 +586,11 @@ class ЧерновикПредлагаетПоля(unittest.TestCase):
         self.assertIn("draft.decision_fields", answer["spec_needed"]["instruction"])
 
     def test_слова_подсказывают(self) -> None:
-        # Round 16 fields are cased in `test_round16_spec`.
+        # Round 16 fields are cased in `test_round16_spec` / `test_round16_integration`.
         got = {f["field"]: f["read_from_text"] for f in bs.decision_fields(
             "A live avatar; replace the text on the sign; a seamless loop; training data; no lip sync; "
-            "keep the lighting consistent") if f["field"] not in bs.DECISION_FIELDS_R16}
+            "keep the lighting consistent")
+            if f["field"] not in (*bs.DECISION_FIELDS_R16, *bs.DECISION_FIELDS_R16_OUTPUTS)}
         self.assertEqual(
             {"live": True, "edit_target": "text", "outputs[].loop": True, "outputs[].tileable": None, "outputs[].alpha": None,
              "people[].on_screen": None, "people[].speaks": None, "lipsync": False, "cast_together": None,

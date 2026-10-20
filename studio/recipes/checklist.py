@@ -3829,6 +3829,40 @@ def _voice_anon(c: Ctx) -> bool:
     if поле is not None:
         return поле
     return c.says(W_VOICE_ANON)
+# --- round 16: model expertise (`studio/expert_r16.py`) ------------------------------------
+
+S_YT_SPATIAL = "https://support.google.com/youtube/answer/6395969"
+S_PYANNOTE = "https://huggingface.co/pyannote/speaker-diarization-3.1"
+S_FASTER_WHISPER = "https://github.com/SYSTRAN/faster-whisper"
+
+
+def _confidential_transcription(c: Ctx) -> bool:
+    """Transcription of sensitive material: `self_host` / `open_weights` first, then the words."""
+    from studio import expert_r16 as x16
+
+    return bool(c.jobs & {"transcribe", "captions", "shorts"}) and x16.sensitive_material(c.spec, c.text)
+
+
+def _text_heavy_image(c: Ctx) -> bool:
+    """A still whose job is exact lettering (`conditions` in any language first, then the words)."""
+    from studio import expert_r16 as x16
+
+    return "t2i" in c.jobs and x16.text_heavy(c.spec, c.text, c.steps)
+
+
+def _spatial_audio(c: Ctx) -> bool:
+    """Spatial sound delivery: `outputs[].spatial` first, then the words."""
+    from studio import expert_r16 as x16
+
+    return x16.spatial_audio(c.spec, c.text)
+
+
+def _drawn_dub_adaptation(c: Ctx) -> bool:
+    """A drawn-footage dub whose visual lip sync is the optional upgrade."""
+    from studio import expert_r16 as x16
+    from studio.recipes import apply as ra
+
+    return "dub" in c.jobs and x16.optional_lips(c.spec, ra.drawn(c.spec, c.text))
 
 
 RULES_R16: tuple[Rule, ...] = (
@@ -3857,6 +3891,95 @@ RULES_R16: tuple[Rule, ...] = (
         ("anonymise", "conditions"),
         "",
         (S_GDPR, S_ICO_ANON),
+    ),
+    _r(
+        "confidential_transcription",
+        [],
+        "sensitive recordings (court, legal, medical, confidential): keep the audio and the transcript under your "
+        "control — open-weights ASR on your own GPU (faster-whisper / Whisper large-v3 / Parakeet TDT 0.6B v3 for "
+        "25 European languages) priced as GPU time, not an API fee; speaker labels by a separate pass (pyannote "
+        "speaker-diarization 3.1, MIT, gated on Hugging Face) aligned to the ASR timestamps; if a hosted API is "
+        "used anyway, only under a signed DPA / BAA with zero data retention and the region named; an ASR "
+        "transcript is a draft — names, numbers and every legally relevant line are checked against the audio by "
+        "a person (a court-certified transcript needs a certified reporter); store audio and text encrypted with "
+        "access logging and a deletion date, and redact personal data before sharing",
+        "чувствительные записи (суд, юридические, медицинские, конфиденциальные): звук и расшифровка остаются "
+        "под вашим контролем — распознавание с открытыми весами на своём GPU (faster-whisper / Whisper large-v3 / "
+        "Parakeet TDT 0.6B v3 для 25 европейских языков), цена — время GPU, а не плата API; метки говорящих — "
+        "отдельным проходом (pyannote speaker-diarization 3.1, MIT, доступ по форме на Hugging Face) по таймингам "
+        "распознавания; если всё же внешний API — только с подписанным DPA / BAA, без хранения данных и с "
+        "названным регионом; расшифровка ASR — черновик: имена, числа и каждая юридически значимая фраза "
+        "сверяются с записью человеком (заверенная стенограмма суда требует аккредитованного стенографиста); "
+        "звук и текст храните зашифрованными, с журналом доступа и датой удаления, персональные данные "
+        "обезличиваются до передачи",
+        R,
+        _confidential_transcription,
+        ("self_host", "open_weights", "conditions"),
+        "",
+        (S_FASTER_WHISPER, S_PYANNOTE, S_GDPR),
+    ),
+    _r(
+        "text_heavy_image",
+        [],
+        "a picture whose job is lettering (poster, packaging, signage): the model is chosen by its RECORDED text "
+        "rendering; put the exact words in quotes in the prompt, keep each line short, name the font style, size "
+        "and placement, and generate several variants; check every letter, accent and diacritic (é, ñ, ü, ą, ł, "
+        "ç) and every non-Latin glyph at 100 % — models drop accents, swap look-alike letters and invent glyphs; "
+        "when the copy must be exact (legal text, prices, ingredients, small print, a wordmark), render the "
+        "picture without the text and set the final text in layout (Figma / Illustrator / InDesign) with the real "
+        "font — vector text over the raster for print",
+        "картинка, чья работа — надписи (постер, упаковка, вывеска): модель выбирается по ЗАПИСАННОЙ отрисовке "
+        "текста; точные слова — в кавычках в промпте, строки короткие, назван стиль шрифта, размер и место, "
+        "вариантов несколько; каждую букву, акцент и диакритику (é, ñ, ü, ą, ł, ç) и каждый нелатинский знак "
+        "проверьте в 100 % — модели теряют акценты, подменяют похожие буквы и выдумывают знаки; когда текст "
+        "обязан быть точным (юридический текст, цены, состав, мелкий шрифт, словесный знак), картинка делается "
+        "без текста, а финальный текст ставится в вёрстке (Figma / Illustrator / InDesign) настоящим шрифтом — "
+        "для печати векторный текст поверх растра",
+        E,
+        _text_heavy_image,
+        ("outputs", "conditions"),
+        "",
+    ),
+    _r(
+        "spatial_audio",
+        [],
+        "spatial / VR / 360 sound: generative audio models output mono or stereo, never ambisonics — generate dry "
+        "mono stems per source (one sound per call) and place them with a spatialiser at assembly (encode to "
+        "ambisonics: AmbiX, ACN order, SN3D — IEM Plugin Suite, Reaper / Facebook 360 Spatial Workstation), with "
+        "a stereo bed only for non-directional air; head-tracked playback needs ambisonics (the player renders "
+        "binaural from it), while a fixed binaural stereo file is for headphones without head tracking; YouTube "
+        "360 takes first-order ambisonics (4 channels W, Y, Z, X, 48 kHz) plus optional head-locked stereo; a "
+        "game engine wants mono sources and its own spatialiser",
+        "пространственный звук / VR / 360: генеративные аудиомодели отдают моно или стерео, не амбисонику — "
+        "генерируйте «сухие» моно-стемы по источникам (один звук на вызов) и расставляйте их спатиализатором при "
+        "сборке (кодирование в амбисонику: AmbiX, порядок ACN, SN3D — IEM Plugin Suite, Reaper / Facebook 360 "
+        "Spatial Workstation), стерео-подложка — только для ненаправленного «воздуха»; воспроизведение с "
+        "трекингом головы требует амбисонику (бинаурал из неё строит плеер), а готовый бинауральный стерео-файл "
+        "— для наушников без трекинга; YouTube 360 берёт амбисонику первого порядка (4 канала W, Y, Z, X, 48 кГц) "
+        "и, по желанию, стерео, привязанное к голове; игровой движок ждёт моно-источники и свой спатиализатор",
+        E,
+        _spatial_audio,
+        ("outputs", "conditions"),
+        "",
+        (S_YT_SPATIAL,),
+    ),
+    _r(
+        "drawn_dub_adaptation",
+        [],
+        "dubbing drawn footage: the industry route is script ADAPTATION to the existing mouth flaps — the "
+        "translation is rewritten to each line's length, open vowels land on open mouths and labials (b, m, p) on "
+        "closed ones, and the director checks sync in the recording session; the picture is not touched; visual "
+        "lip sync on drawn mouths is an optional upgrade (priced apart) — photoreal lip-sync models can break "
+        "line art, so test 5 s before buying it for a whole episode",
+        "дубляж рисованного ролика: путь индустрии — АДАПТАЦИЯ текста под существующие рты: перевод "
+        "переписывается под длину каждой реплики, открытые гласные ложатся на открытый рот, губные (б, м, п) — на "
+        "закрытый, синхрон проверяет режиссёр на записи; картинка не трогается; визуальный липсинк нарисованных "
+        "ртов — необязательное улучшение (цена отдельно): модели липсинка для фото могут ломать контур, "
+        "проверьте 5 с, прежде чем брать его на весь эпизод",
+        E,
+        _drawn_dub_adaptation,
+        ("task", "lipsync", "conditions"),
+        "",
     ),
 )
 

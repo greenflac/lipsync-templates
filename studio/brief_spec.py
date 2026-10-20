@@ -34,6 +34,7 @@ from dataclasses import dataclass, field, replace
 from typing import Any, Mapping
 
 from studio import endpoints as ep
+from studio import expert_r16 as x16
 from studio import hardneed as hn
 from studio import pipeline as pl
 
@@ -114,6 +115,8 @@ EDIT_TARGETS: tuple[str, ...] = ("text", "person", "object", "background", "sky"
 CONSISTENCY_AXES: tuple[str, ...] = ("light", "style", "character")
 #: Пятнадцатый круг: поля записи выхода (`spec.outputs[]` объектом).
 OUTPUT_ITEM_FIELDS: tuple[str, ...] = ("kind", "loop", "tileable", "alpha")
+#: Шестнадцатый круг (`expert_r16.spatial_audio`): флаг выхода-звука — пространственная сдача.
+OUTPUT_ITEM_FLAGS_R16: tuple[str, ...] = ("spatial",)
 
 # --- ШЕСТНАДЦАТЫЙ КРУГ: поля решений, которые пятнадцатый круг оставил словам ---------------
 # Каждое решение ниже прежде читалось ТОЛЬКО из английских и русских слов брифа
@@ -628,6 +631,8 @@ class Spec:
     tileable: bool | None = None
     #: Выход с прозрачным фоном (альфа-канал: PNG, WebM, ProRes 4444) — `outputs[].alpha`.
     alpha: bool | None = None
+    #: Шестнадцатый круг: звук сдаётся ПРОСТРАНСТВЕННЫМ (амбисоника / бинаурал для VR и 360) — `outputs[].spatial`.
+    spatial: bool | None = None
     #: Записи выходов, как названы объектами: {kind, loop?, tileable?}.
     output_items: tuple[Mapping[str, Any], ...] = ()
     #: Самый длинный НЕПРЕРЫВНЫЙ дубль, секунды (без склейки внутри).
@@ -1120,16 +1125,16 @@ def _выходы_spec(raw: Any, поля: dict[str, Any], ошибки: list[st
     """
     виды: list[str] = []
     записи: list[dict[str, Any]] = []
-    флаги: dict[str, list[bool]] = {ключ: [] for ключ in OUTPUT_ITEM_FIELDS[1:]}
+    флаги: dict[str, list[bool]] = {ключ: [] for ключ in (*OUTPUT_ITEM_FIELDS[1:], *OUTPUT_ITEM_FLAGS_R16)}
     плохие: list[str] = []
     for i, выход in enumerate(_список(raw)):
         запись: dict[str, Any] = {}
         if isinstance(выход, Mapping):
-            лишние = set(выход) - set(OUTPUT_ITEM_FIELDS)
+            лишние = set(выход) - set(OUTPUT_ITEM_FIELDS) - set(OUTPUT_ITEM_FLAGS_R16)
             if лишние:
                 ошибки.append(
                     f"spec.outputs[{i}]: unknown field(s) {', '.join(sorted(map(str, лишние)))} "
-                    f"(known: {', '.join(OUTPUT_ITEM_FIELDS)})"
+                    f"(known: {', '.join((*OUTPUT_ITEM_FIELDS, *OUTPUT_ITEM_FLAGS_R16))})"
                 )
             вид = str(выход.get("kind") or "").strip().lower()
             for ключ in флаги:
@@ -2859,6 +2864,14 @@ def _маршрут_одной(spec: Spec, на_сборке: frozenset[str] = f
             # выведены из длительности (прежде — картинка на каждый клип).
             _дорожки(spec, шаги)
             return Маршрут(tuple(dict.fromkeys(шаги)), пометки, штук={"генерация_изображения": SINGLE_REFERENCE})
+        elif x16.key_visual_series(spec):
+            # ШЕСТНАДЦАТЫЙ КРУГ: серия / объясняющий ролик из N шотов в ОДНОМ стиле
+            # без персонажей — ключевые кадры (картинка на шот, утверждаются до видео),
+            # затем каждый оживляется (`expert_r16.key_visual_series`).
+            шаги += ["генерация_изображения", "оживление"]
+            пометки["генерация_изображения"] = x16.NOTE_KEY_VISUALS[0]
+            _дорожки(spec, шаги)
+            return Маршрут(tuple(dict.fromkeys(шаги)), пометки, штук={"генерация_изображения": int(spec.shots or 1)})
         else:
             шаги.append("генерация_видео")
     elif "image" in выходы:
@@ -2936,7 +2949,9 @@ PERFORMER = re.compile(
     re.I,
 )
 #: Голос ЗА кадром назван словами — говорящего в кадре нет.
-VOICE_OFF_FRAME = re.compile(r"voice-?over|narrat\w*|off-?screen|озвучк\w*|закадров\w*|диктор\w*|配音", re.I)
+VOICE_OFF_FRAME = re.compile(
+    r"voice-?over|narrat\w*|off-?screen|озвучк\w*|закадров\w*|за кадром|рассказчик\w*|диктор\w*|配音", re.I
+)
 #: Четырнадцатый круг: голоса ПЕРСОНАЖЕЙ («озвучка персонажей», «voiced lines») —
 #: это не закадр: говорят персонажи, и в кадре. Старше `VOICE_OFF_FRAME`.
 CHARACTER_VOICES = re.compile(
@@ -3294,6 +3309,18 @@ def with_defaults(spec: Spec, ролик: bool, текст: str = "") -> Spec:
         поля["characters"] = персонажей
         источник["characters"] = SOURCE_DEFAULT
         допущения.append(почему)
+    # ШЕСТНАДЦАТЫЙ КРУГ: озвученная серия / объясняющий ролик из многих шотов без
+    # персонажей словами брифа — один стиль на все шоты (поле `consistency` не названо).
+    if (
+        x16.key_visual_words(spec, текст)
+        and not поля["characters"]
+        and not говорят_в_кадре(spec, текст)
+        and int(spec.shots or 0) >= x16.KEY_VISUAL_SHOTS_MIN
+        and x16.key_visual_series(replace(spec, consistency=("style",)))
+    ):
+        поля["consistency"] = ("style",)
+        источник["consistency"] = SOURCE_DEFAULT
+        допущения.append(x16.ASSUMPTION_KEY_VISUALS.format(n=spec.shots))
     if персонажи_в_одном_кадре(replace(spec, characters=поля["characters"]), текст):
         поля["cast_together"] = True
     if говорящий_ролик(spec, текст):
@@ -3557,6 +3584,10 @@ OPTIONAL_HELP: dict[str, str] = {
     ),
     "outputs[].loop": "true when the output is a seamless loop (last frame flows into the first): outputs=[{\"kind\": \"video\", \"loop\": true}]",
     "outputs[].tileable": "true when the output is a seamless tileable texture: outputs=[{\"kind\": \"image\", \"tileable\": true}]",
+    "outputs[].spatial": (
+        "true when the SOUND is delivered spatial (ambisonics / binaural for VR, 360 video, head-tracked playback): "
+        "outputs=[{\"kind\": \"sfx\", \"spatial\": true}]"
+    ),
     "outputs[].alpha": (
         "true when the output must have a TRANSPARENT background (alpha channel: PNG, WebM, ProRes 4444); false "
         "for an opaque frame (a hologram / transparent-LED display wants black, not alpha)"
@@ -4357,7 +4388,9 @@ DECISION_FIELDS_R16: tuple[str, ...] = (
     "inputs[].defects",
     "inputs[].fps",
 )
-DECISION_FIELDS = (*DECISION_FIELDS, *DECISION_FIELDS_R16)
+#: Шестнадцатый круг (экспертиза, `expert_r16.spatial_audio`): флаг записи выхода-звука.
+DECISION_FIELDS_R16_OUTPUTS: tuple[str, ...] = tuple(f"outputs[].{флаг}" for флаг in OUTPUT_ITEM_FLAGS_R16)
+DECISION_FIELDS = (*DECISION_FIELDS, *DECISION_FIELDS_R16, *DECISION_FIELDS_R16_OUTPUTS)
 
 
 def _прочитано_словами(brief: str, низ: str) -> dict[str, Any]:
@@ -4378,6 +4411,10 @@ def _прочитано_словами(brief: str, низ: str) -> dict[str, Any
         прочитано["outputs[].loop"] = True
     if rc.wants_alpha(Spec(), brief):
         прочитано["outputs[].alpha"] = True
+    from studio import expert_r16 as x16
+
+    if x16.W_SPATIAL.search(brief):
+        прочитано["outputs[].spatial"] = True
     if NO_LIPSYNC.search(brief):
         прочитано["lipsync"] = False
     elif SINGING.search(исполнитель_словами(brief)) or ON_SCREEN_SPEAKER.search(brief):

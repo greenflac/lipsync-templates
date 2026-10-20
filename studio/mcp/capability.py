@@ -634,6 +634,10 @@ def _fps_строки(значение: str, атрибут: str) -> list[float]
     return числа
 
 
+#: Откуда знак строки на ЗАЯВЛЕННОМ условии: значение названо сильной стороной условия (шестнадцатый круг).
+POLARITY_CONDITION = "condition value"
+
+
 def знак(f: Fact, вопрос: Вопрос | None = None) -> tuple[str, str, str]:
     """(знак, откуда знак, почему). Строка без объявленного знака — информация.
 
@@ -781,6 +785,12 @@ def condition_state(rows: Sequence[Fact], условия: Sequence[str]) -> tupl
             if not _об_условии(f, у):
                 continue
             з, откуда, _ = знак(f)
+            # ШЕСТНАДЦАТЫЙ КРУГ: значение без объявленного знака, которое называет сильную
+            # сторону ИМЕННО по этому условию (`attrfamily.УСЛОВИЯ[у]["за"]`), — «за» на нём.
+            if з == INFO and (за_условия := attrfamily.УСЛОВИЯ.get(у, {}).get("за")) and re.search(
+                за_условия, _норм(f.value), re.I
+            ):
+                з, откуда = GOOD, POLARITY_CONDITION
             if з == GOOD:
                 за.append((у, f, откуда))
             elif з == BAD:
