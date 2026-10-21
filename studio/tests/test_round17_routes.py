@@ -277,11 +277,16 @@ class ТрёхмерныйТур(unittest.TestCase):
         self.assertIn("GPU minutes per scene are not recorded", assembly(d))
         self.assertIn("ns-render", assembly(d))
 
+    def test_оговорка_в_обе_стороны(self) -> None:
+        self.assertIn("splat_scene_capture", fired(TOUR, ["реконструкция_3d"], "Visite"))
+        raw = w(TOUR, reconstruct_3d=False)
+        self.assertNotIn("splat_scene_capture", fired(raw, ["оживление"], "A gaussian splat tour"))
+
     def test_факты_и_пробелы_записаны(self) -> None:
         строки = {(f.model, f.attribute): f.value for f in load_facts()}
-        self.assertEqual("Apache-2.0", строки[("gsplat", "licence")])
+        self.assertEqual("Apache-2.0", строки[("gsplat", "license")])
         self.assertIn("~6 GB", строки[("nerfstudio-splatfacto", "vram_gb")])
-        self.assertIn("non-commercial", строки[("gaussian-splatting-inria", "licence")])
+        self.assertIn("non-commercial", строки[("gaussian-splatting-inria", "license")])
         for gap in (("postshot", "price_gap"), ("polycam", "price_gap"), ("luma-3d-capture", "price_gap"),
                     ("gaussian-splat-training", "gpu_seconds_gap")):
             self.assertTrue(строки[gap].startswith("not recorded"), gap)

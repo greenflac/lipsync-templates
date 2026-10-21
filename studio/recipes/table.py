@@ -502,7 +502,7 @@ PRIORS_LIST = (
             ),
             Source(
                 "gsplat",
-                "licence",
+                "license",
                 "https://raw.githubusercontent.com/nerfstudio-project/gsplat/main/LICENSE",
                 "Apache-2.0",
             ),
