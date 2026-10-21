@@ -975,7 +975,7 @@ def find_models(
     :param function: a job of the endpoint registry — t2v | i2v | r2v |
         v2v-edit | lipsync | talking-avatar | face-swap | dub-translate | tts |
         voice-clone | music | sfx | t2i | image-edit | bg-remove | upscale-image
-        | upscale-video | restore | colorize | frame-interpolate |
+        | upscale-video | restore | face-restore | colorize | frame-interpolate |
         transcribe-diarize | captions | turntable-360 | image-to-3d | character-replace |
         virtual-try-on | motion-transfer — or a word for one
         ("faceswap", "background removal"). Restoration (noise, scratches,

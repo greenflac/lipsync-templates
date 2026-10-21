@@ -490,8 +490,8 @@ class ТанцевальныйНомер(unittest.TestCase):
         строки = {(f.model, f.attribute): f.value for f in load_facts()}
         self.assertIn("dance", строки[("kling-2.6-motion-control", "best_for")])
         self.assertIn("portraits and simple animations", строки[("kling-video-v3-standard-motion-control", "best_for")])
-        self.assertIn("NON-COMMERCIAL", строки[("codeformer-upstream", "licence")])
-        self.assertIn("Apache-2.0", строки[("gfpgan", "licence")])
+        self.assertIn("NON-COMMERCIAL", строки[("codeformer-upstream", "license")])
+        self.assertIn("Apache-2.0", строки[("gfpgan", "license")])
 
 
 # --- 8. residuals ---------------------------------------------------------------------------------------------
