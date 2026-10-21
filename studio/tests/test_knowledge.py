@@ -8,16 +8,20 @@ dense channel is therefore always stubbed rather than downloaded.
 from __future__ import annotations
 
 import json
+import os
 import socket
 import sqlite3
 import tempfile
+import threading
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from lipsync.fork_identity import FAIL, PASS, UNMEASURED
 from studio import knowledge as K
 from studio.knowledge import (
     KIND_CORE,
+    KIND_GALLERY_PROMPT,
     KIND_OUR_PROMPT,
     KIND_STYLE_CARD,
     KnowledgeIndex,
@@ -87,8 +91,13 @@ CARDS = [
 
 
 def tiny_index() -> KnowledgeIndex:
-    """Build an in-memory index over the hand-written corpus above."""
-    conn = sqlite3.connect(":memory:")
+    """Build an in-memory index over the hand-written corpus above.
+
+    The connection is opened the same way `build_index` opens it, thread flag
+    included. A helper that connects differently from production is a helper
+    that tests a different object.
+    """
+    conn = sqlite3.connect(":memory:", check_same_thread=False)
     conn.executescript(K.SCHEMA)
     index = KnowledgeIndex(conn)
     index.add(
@@ -219,6 +228,8 @@ class Building(unittest.TestCase):
             our_prompts=Path("/nowhere/gen"),
             reference_cards=Path("/nowhere/refs"),
             gallery_prompts=Path("/nowhere/gallery.jsonl"),
+            community_prompts=Path("/nowhere/community.jsonl"),
+            craft_records=Path("/nowhere/craft"),
         )
         self.assertEqual(index.build_report["outcome"], UNMEASURED)
         self.assertEqual(index.build_report["checked"], 0)
@@ -237,21 +248,450 @@ class Building(unittest.TestCase):
                 our_prompts=Path("/nowhere/gen"),
                 reference_cards=Path("/nowhere/refs"),
                 gallery_prompts=gallery,
+                community_prompts=Path("/nowhere/community.jsonl"),
             )
         self.assertEqual(index.build_report["outcome"], FAIL)
         self.assertEqual(index.build_report["violations"], 1)
         self.assertEqual(index.build_report["per_source"]["gallery"], 1)
 
-    def test_core_rules_alone_build_and_pass(self) -> None:
+    def test_core_rules_alone_are_not_a_built_index(self) -> None:
+        """This test used to assert PASS, and that assertion is what let the
+        real defect hide for a session: with both example corpora behind
+        absolute paths to one machine, every other machine built exactly this
+        index — 12 core rules, 0 examples — and was told it had passed. Such an
+        index cannot answer a single retrieval query and `evaluate` cannot run
+        against it, so the honest verdict is "could not measure"."""
         index = build_index(
             core_rules=KNOWLEDGE_DIR / "core_rules.md",
             our_prompts=Path("/nowhere/gen"),
             reference_cards=Path("/nowhere/refs"),
             gallery_prompts=Path("/nowhere/gallery.jsonl"),
+            community_prompts=Path("/nowhere/community.jsonl"),
+            craft_records=Path("/nowhere/craft"),
         )
-        self.assertEqual(index.build_report["outcome"], PASS)
+        self.assertEqual(index.build_report["outcome"], UNMEASURED)
+        self.assertIn("0 examples", index.build_report["note"])
         self.assertGreaterEqual(index.build_report["per_source"]["core"], 10)
-        self.assertEqual(index.build_report["unmeasured"], 3)
+        # Five sources absent, not four: the knowledge lane joined them on
+        # 2026-08-28. This number moves only when a SOURCE is added, which is a
+        # deliberate act, so it is worth pinning.
+        self.assertEqual(index.build_report["unmeasured"], 5)
+
+    def test_one_example_is_enough_to_make_it_a_built_index(self) -> None:
+        """The other side of the mutation above: add a single example and the
+        verdict must flip. A floor nothing can cross is a floor nobody has
+        measured."""
+        with tempfile.TemporaryDirectory() as tmp:
+            gallery = Path(tmp) / "gallery.jsonl"
+            gallery.write_text(
+                json.dumps({"prompt": "amber golden-hour light, film-grain texture"}) + "\n",
+                encoding="utf-8",
+            )
+            index = build_index(
+                core_rules=KNOWLEDGE_DIR / "core_rules.md",
+                our_prompts=Path("/nowhere/gen"),
+                reference_cards=Path("/nowhere/refs"),
+                gallery_prompts=gallery,
+                community_prompts=Path("/nowhere/community.jsonl"),
+            )
+        self.assertEqual(index.build_report["outcome"], PASS)
+
+    def test_the_corpus_directories_are_not_one_machine(self) -> None:
+        """They were absolute paths into one developer's home directory, so
+        every other clone built an empty index. The resolver now takes an
+        environment override first, then a path inside this repository, and
+        only then the original absolute path."""
+        with tempfile.TemporaryDirectory() as tmp:
+            here = Path(tmp)
+            (here / "gen").mkdir()
+            with mock.patch.dict(os.environ, {K.OUR_PROMPTS_ENV: str(here / "gen")}, clear=False):
+                self.assertEqual(
+                    K._resolve_dir(
+                        K.OUR_PROMPTS_ENV, Path("/nowhere/in-repo"), Path("/nowhere/legacy")
+                    ),
+                    here / "gen",
+                )
+        # With nothing set and nothing on disk, the path it names belongs to
+        # this repository — a reader can create it. Naming a stranger's home
+        # directory is what made the original failure unactionable.
+        with mock.patch.dict(os.environ, {K.OUR_PROMPTS_ENV: ""}, clear=False):
+            fallback = K._resolve_dir(
+                K.OUR_PROMPTS_ENV, Path("/nowhere/in-repo"), Path("/nowhere/legacy")
+            )
+        self.assertEqual(fallback, Path("/nowhere/in-repo"))
+
+    def test_retrieve_is_safe_from_several_threads(self) -> None:
+        """Every route in studio/app.py is a plain `def`, which FastAPI runs in
+        a threadpool worker. With sqlite3's default check_same_thread the first
+        such call raises ProgrammingError. Nothing calls retrieve() from the web
+        layer yet, so this guards the commit that will."""
+        index = tiny_index()
+        errors: list[BaseException] = []
+
+        def query() -> None:
+            try:
+                for _ in range(10):
+                    retrieve("amber golden-hour light film-grain", index=index)
+            except BaseException as exc:  # noqa: BLE001 - the point is to catch it
+                errors.append(exc)
+
+        threads = [threading.Thread(target=query) for _ in range(4)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+        self.assertEqual(errors, [], f"threaded retrieval raised {errors[:1]}")
+
+    @staticmethod
+    def _незапертые(source: str) -> list[int]:
+        """Строки с запросом к ОБЩЕМУ соединению вне замка. Вынесено (Т5),
+        чтобы негативный контроль гонял тот же код, а не его копию."""
+        import ast
+
+        tree = ast.parse(source)
+
+        def на_общем(func: ast.Attribute) -> bool:
+            цель = func.value
+            return (
+                isinstance(цель, ast.Attribute)
+                and цель.attr == "conn"
+                and isinstance(цель.value, ast.Name)
+                and цель.value.id == "self"
+            )
+
+        def executes(node: ast.AST, *, locked: bool) -> list[tuple[int, bool]]:
+            found: list[tuple[int, bool]] = []
+            for child in ast.iter_child_nodes(node):
+                here = locked
+                if isinstance(child, ast.With):
+                    here = locked or any(
+                        "lock" in ast.dump(item.context_expr) for item in child.items
+                    )
+                if (
+                    isinstance(child, ast.Call)
+                    and isinstance(child.func, ast.Attribute)
+                    and child.func.attr in ("execute", "executemany")
+                    and на_общем(child.func)
+                ):
+                    found.append((child.lineno, here))
+                found.extend(executes(child, locked=here))
+            return found
+
+        unlocked: list[int] = []
+        for node in ast.walk(tree):
+            if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                continue
+            if node.name == "build_index":
+                continue
+            unlocked += [line for line, locked in executes(node, locked=False) if not locked]
+        return unlocked
+
+    def test_сужение_не_ослепило_правило(self) -> None:
+        """И5 к сужению: правило обязано ловить незапертый запрос к общему
+        соединению и молчать на своём собственном."""
+        плохо = "class I:\n    def m(self):\n        self.conn.execute('SELECT 1')\n"
+        хорошо = "def f(path):\n    conn = open_it(path)\n    conn.execute('SELECT 1')\n"
+        под_замком = (
+            "class I:\n    def m(self):\n        with self.lock:\n"
+            "            self.conn.execute('SELECT 1')\n"
+        )
+        self.assertEqual(len(self._незапертые(плохо)), 1)
+        self.assertEqual(self._незапертые(хорошо), [])
+        self.assertEqual(self._незапертые(под_замком), [])
+
+    def test_every_query_touches_the_connection_under_the_lock(self) -> None:
+        """The test that would have caught it, and does not need a race to.
+
+        CI went red on 2026-08-27 with `ValueError: not enough values to
+        unpack (expected 1, got 0)` inside `_channel_phrase`, on Python 3.12,
+        in the threaded test above. It cannot be reproduced on this machine:
+        MEASURED here, `sqlite3.threadsafety == 3`, which is the SERIALIZED
+        build — it locks the shared connection for us, so one missing lock in
+        our own code is invisible. The runner's build evidently does not, and
+        a guarantee that depends on how somebody compiled sqlite is not one.
+
+        So this asserts the property directly, by reading the source: every
+        query on the index's SHARED connection is either inside a
+        `with ... lock` block or in `build_index`, which runs before any
+        thread exists. It is deterministic — it was red on the unlocked line
+        and green after — and it covers the NEXT query somebody adds, which a
+        timing test never reliably would.
+
+        Сужено 2026-09-02 до `self.conn` — до того, о чём правило и написано.
+        Кэш векторов открывает СВОЁ короткоживущее соединение к отдельному
+        файлу и ни с кем его не делит; замок индекса ему не нужен, а взять его
+        было бы прямо вредно — он держал бы весь индекс на время записи 27 МБ.
+        Негативный контроль на сужение — `test_сужение_не_ослепило_правило`.
+        """
+        unlocked = self._незапертые(Path(K.__file__).read_text(encoding="utf-8"))
+        self.assertEqual(
+            unlocked,
+            [],
+            "these lines run a statement on the shared connection without the "
+            f"index lock: {unlocked}. On a serialized sqlite build that is "
+            "invisible; on the CI runner's it corrupts a row.",
+        )
+
+    def test_the_thread_guard_would_notice_the_old_connection(self) -> None:
+        """The mutation: a connection opened the old way must fail from another
+        thread, or the test above proves nothing."""
+        conn = sqlite3.connect(":memory:", check_same_thread=True)
+        conn.execute("CREATE TABLE t (x INTEGER)")
+        errors: list[BaseException] = []
+
+        def touch() -> None:
+            try:
+                conn.execute("SELECT * FROM t").fetchall()
+            except BaseException as exc:  # noqa: BLE001
+                errors.append(exc)
+
+        thread = threading.Thread(target=touch)
+        thread.start()
+        thread.join()
+        self.assertEqual(len(errors), 1)
+        self.assertIsInstance(errors[0], sqlite3.ProgrammingError)
+
+    def test_below_floor_candidates_are_not_reported_as_violations(self) -> None:
+        """An entry that scored but did not clear the admission floor is the
+        floor working. Counting it as a violation made that field unreadable
+        against every other module's use of it."""
+        index = tiny_index()
+        out = retrieve("amber golden-hour light film-grain", index=index)
+        self.assertEqual(out["violations"], 0)
+        self.assertIn("below_floor", out)
+        self.assertGreaterEqual(out["below_floor"], 0)
+
+    def test_a_namespaced_provenance_counts_as_its_own_source(self) -> None:
+        """MEASURED 2026-08-27. A community corpus was collected with one
+        provenance per uploader — 1409 rows across 106 people — precisely so
+        the per-answer quota would see many sources. The loader then collapsed
+        every provenance it did not recognise into PROVENANCE_GALLERY, so all
+        106 became one and the quota capped every answer at 2 again. The corpus
+        had done the right thing and the reader undid it.
+
+        The guard itself was never the problem and is NOT relaxed here: it
+        still admits at most MAX_PER_PROVENANCE per source. It just sees the
+        sources now.
+        """
+        conn = sqlite3.connect(":memory:", check_same_thread=False)
+        conn.executescript(K.SCHEMA)
+        index = KnowledgeIndex(conn)
+        index.add(
+            [
+                {
+                    "kind": KIND_GALLERY_PROMPT,
+                    "text": f"warm amber golden hour light soft film grain variant {n}",
+                    "provenance": f"civitai:author{n % 9}",
+                    "source": f"c-{n}",
+                }
+                for n in range(18)
+            ]
+        )
+        index.reload()
+        out = retrieve("warm amber golden hour light soft film grain", index=index, k=6)
+        self.assertEqual(len(out["examples"]), 6)
+        self.assertEqual(out["quota_blocked"], 0)
+        self.assertEqual(len({e["provenance"] for e in out["examples"]}), 6)
+
+    def test_the_LOADER_keeps_a_namespaced_provenance(self) -> None:
+        """The defect site itself, and the reason this test exists separately.
+
+        Found by mutation: restoring the old collapse left every test above
+        GREEN, because they all call `index.add()` directly and the flattening
+        lives in the JSONL loader. A test that does not go through the code
+        that broke is not a test of it.
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "community.jsonl"
+            path.write_text(
+                "\n".join(
+                    json.dumps(
+                        {
+                            "prompt": f"warm amber golden hour light variant {n}",
+                            "provenance": f"civitai:author{n}",
+                            "rights": "owner_authorisation_2026-08-27",
+                            "id": f"c-{n}",
+                        }
+                    )
+                    for n in range(4)
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            rows = K.load_gallery_prompts(path)
+        self.assertEqual(len(rows), 4)
+        self.assertEqual(
+            sorted(r["provenance"] for r in rows),
+            ["civitai:author0", "civitai:author1", "civitai:author2", "civitai:author3"],
+        )
+
+    def test_the_LOADER_still_collapses_a_family_nobody_declared(self) -> None:
+        """The negative control on the loader: namespacing is not a bypass."""
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "odd.jsonl"
+            path.write_text(
+                json.dumps({"prompt": "amber light", "provenance": "madeup:someone", "id": "x"})
+                + "\n",
+                encoding="utf-8",
+            )
+            rows = K.load_gallery_prompts(path)
+        self.assertEqual(rows[0]["provenance"], K.PROVENANCE_GALLERY)
+
+    def test_one_namespaced_author_is_still_capped(self) -> None:
+        """The negative control, and the whole reason the guard exists. Naming
+        a source more precisely must not become a way around the quota: 18 rows
+        from ONE uploader still yield MAX_PER_PROVENANCE."""
+        conn = sqlite3.connect(":memory:", check_same_thread=False)
+        conn.executescript(K.SCHEMA)
+        index = KnowledgeIndex(conn)
+        index.add(
+            [
+                {
+                    "kind": KIND_GALLERY_PROMPT,
+                    "text": f"warm amber golden hour light soft film grain variant {n}",
+                    "provenance": "civitai:one-prolific-person",
+                    "source": f"c-{n}",
+                }
+                for n in range(18)
+            ]
+        )
+        index.reload()
+        out = retrieve("warm amber golden hour light soft film grain", index=index, k=6)
+        self.assertEqual(len(out["examples"]), K.MAX_PER_PROVENANCE)
+        self.assertGreater(out["quota_blocked"], 0)
+
+    def test_the_family_carries_the_weight_and_the_whole_string_the_identity(self) -> None:
+        """Two halves of one rule, as literals. Trust is a property of the KIND
+        of source; "no single source fills the answer" is a statement about
+        people."""
+        self.assertEqual(K.provenance_family("civitai:Lykon"), "civitai")
+        self.assertEqual(K.provenance_family("ours"), "ours")
+        self.assertEqual(K.provenance_weight("civitai:Lykon"), 0.6)
+        self.assertEqual(K.provenance_weight("civitai:Merjic"), 0.6)
+        self.assertEqual(K.provenance_weight("ours"), 0.9)
+
+    def test_an_author_name_containing_the_separator_still_lands_in_its_family(self) -> None:
+        self.assertEqual(K.provenance_family("civitai:odd:name"), "civitai")
+        self.assertEqual(K.provenance_weight("civitai:odd:name"), 0.6)
+
+    def test_a_provenance_from_no_known_family_is_still_collapsed(self) -> None:
+        """The other negative control: namespacing is not a blank cheque. A
+        family nobody has classified does not get to invent itself a rung."""
+        self.assertFalse(K._known_provenance("madeup:someone"))
+        self.assertEqual(K.provenance_weight("madeup:someone"), 0.5)
+
+    def test_a_single_source_index_says_the_quota_capped_the_answer(self) -> None:
+        """MEASURED 2026-08-26 on a real 4601-row corpus: every row shared one
+        provenance, so the quota capped every answer at MAX_PER_PROVENANCE
+        however large k was, and the result did not say so. A caller asking for
+        5 and getting 2 could not tell "the corpus has no more" from "the guard
+        stopped counting"."""
+        conn = sqlite3.connect(":memory:", check_same_thread=False)
+        conn.executescript(K.SCHEMA)
+        index = KnowledgeIndex(conn)
+        index.add(
+            [
+                {
+                    "kind": KIND_CORE,
+                    "text": CORE_TEXT,
+                    "provenance": K.PROVENANCE_CORE,
+                    "source": "core_rules.md",
+                }
+            ]
+        )
+        index.add(
+            [
+                {
+                    "kind": KIND_GALLERY_PROMPT,
+                    "text": f"warm amber golden hour light with soft film grain, variant {n}",
+                    "provenance": K.PROVENANCE_THIRD_PARTY,
+                    "source": f"g-{n}",
+                }
+                for n in range(8)
+            ]
+        )
+        index.reload()
+        out = retrieve("warm amber golden hour light soft film grain", index=index, k=5)
+        self.assertEqual(out["outcome"], PASS)
+        self.assertEqual(len(out["examples"]), K.MAX_PER_PROVENANCE)
+        self.assertGreater(out["quota_blocked"], 0)
+        self.assertIn("quota", out["note"])
+
+    def test_a_multi_source_index_fills_k_without_the_quota_note(self) -> None:
+        """The other direction: with enough distinct sources the quota never
+        bites, and the note must not claim it did."""
+        conn = sqlite3.connect(":memory:", check_same_thread=False)
+        conn.executescript(K.SCHEMA)
+        index = KnowledgeIndex(conn)
+        index.add(
+            [
+                {
+                    "kind": KIND_CORE,
+                    "text": CORE_TEXT,
+                    "provenance": K.PROVENANCE_CORE,
+                    "source": "core_rules.md",
+                }
+            ]
+        )
+        for n, provenance in enumerate(
+            (K.PROVENANCE_OURS, K.PROVENANCE_REFERENCE_CARD, K.PROVENANCE_THIRD_PARTY)
+        ):
+            index.add(
+                [
+                    {
+                        "kind": KIND_GALLERY_PROMPT,
+                        "text": f"warm amber golden hour light with soft film grain, take {n}{m}",
+                        "provenance": provenance,
+                        "source": f"s-{n}-{m}",
+                    }
+                    for m in range(2)
+                ]
+            )
+        index.reload()
+        out = retrieve("warm amber golden hour light soft film grain", index=index, k=5)
+        self.assertEqual(len(out["examples"]), 5)
+        self.assertNotIn("quota", out["note"])
+
+    def test_the_community_corpus_is_a_source_of_the_index(self) -> None:
+        """The counter before the knob. Without this, deleting the community
+        line from `build_index` leaves every other test green — the corpus is
+        gitignored, so on a fresh clone nothing would notice it stopped being
+        loaded, and the whole point of collecting it would quietly lapse."""
+        with tempfile.TemporaryDirectory() as tmp:
+            corpus = Path(tmp) / "civitai_prompts.jsonl"
+            corpus.write_text(
+                "\n".join(
+                    json.dumps(
+                        {
+                            "prompt": f"amber golden-hour light on film grain, take {n}",
+                            "provenance": f"civitai:author{n}",
+                            "rights": "owner_authorisation_2026-08-27",
+                            "source_url": f"https://civitai.com/api/v1/model-versions/{n}",
+                        }
+                    )
+                    for n in range(3)
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            index = build_index(
+                core_rules=KNOWLEDGE_DIR / "core_rules.md",
+                our_prompts=Path("/nowhere/gen"),
+                reference_cards=Path("/nowhere/refs"),
+                gallery_prompts=Path("/nowhere/gallery.jsonl"),
+                community_prompts=corpus,
+            )
+            self.assertEqual(index.build_report["per_source"]["community"], 3)
+            self.assertEqual(index.build_report["outcome"], PASS)
+            out = retrieve("amber golden hour light film grain", index=index, k=5)
+            # Three authors, quota two per provenance: all three survive only
+            # because the namespace makes them three sources, not one corpus.
+            self.assertEqual(len(out["examples"]), 3, out["note"])
+            sources = {e["source"] for e in out["examples"]}
+            self.assertTrue(
+                all("civitai.com/api/v1/model-versions/" in s for s in sources),
+                f"a row must cite where it can be re-read, got {sources}",
+            )
 
     def test_a_missing_gallery_file_is_reported_not_fatal(self) -> None:
         index = build_index(
@@ -259,6 +699,8 @@ class Building(unittest.TestCase):
             our_prompts=Path("/nowhere/gen"),
             reference_cards=Path("/nowhere/refs"),
             gallery_prompts=Path("/nowhere/gallery.jsonl"),
+            community_prompts=Path("/nowhere/community.jsonl"),
+            craft_records=Path("/nowhere/craft"),
         )
         self.assertIn("gallery", index.build_report["note"])
 
@@ -268,6 +710,8 @@ class Building(unittest.TestCase):
             our_prompts=Path("/nowhere/gen"),
             reference_cards=Path("/nowhere/refs"),
             gallery_prompts=Path("/nowhere/gallery.jsonl"),
+            community_prompts=Path("/nowhere/community.jsonl"),
+            craft_records=Path("/nowhere/craft"),
         )
         self.assertEqual(index.dense_report["outcome"], UNMEASURED)
         self.assertEqual(index.dense_report["error_code"], "OFF")

@@ -108,6 +108,29 @@ actually happened — the test name says which one. Decision thresholds are
 covered by mutation: changing a threshold in either direction makes tests
 fail.
 
+## Prompt engineering for other models
+
+`studio/selfrag/` writes prompts for third-party generation models — Flux,
+Kling, Veo, Runway, Wan, Seedance — grounded in a corpus of prompts that were
+actually run and rated, and graded against a rule table before they ship.
+
+```
+python -m studio.selfrag cards      # what each model accepts, and how sure we are
+python -m studio.selfrag write --model veo --text "..." --subject "..." --action "..."
+python -m studio.selfrag eval       # recall and precision, with negative controls
+python -m studio.selfrag report     # how the agent has been doing
+```
+
+Exit codes are the three outcomes: 0 pass, 1 fail, 2 could not measure.
+
+- `docs/SELFRAG.md` — how to run it, feed it and watch it
+- `docs/SELFRAG_REVIEW.md` — review of the existing retrieval layer, with what was measured
+- `docs/SELFRAG_RESEARCH.md` — where the model facts came from, and how good they are
+
+Every model card in that registry is second-hand: the vendor documentation was
+unreachable when it was assembled. Good enough to shape a prompt and to refuse
+an impossible request; not good enough to bill against.
+
 ## Licence
 
 The source is public so it can be read and audited, but this is **not** open

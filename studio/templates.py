@@ -58,10 +58,27 @@ def _entry(template_id: str, name: str, first: int) -> MotionTemplate:
 
 # CHOSEN by the owner: the shortlist the studio offers at launch. `first` is a
 # placeholder start frame, not a measurement — see WINDOW_FRAMES above.
+#
+# RENAMED 2026-08-28, by the owner, after the clips arrived and were OPENED AND
+# LOOKED AT rather than trusted by filename (house rule P3). The three ids used
+# to read `walk_city` / `turn_smile` / `sit_talk`; not one of the delivered
+# clips is any of those. What arrived is three dance clips shot indoors, and a
+# catalogue entry saying "Walking down a city street" over a woman dancing in a
+# kitchen is a label contradicting its own evidence — the thing rule E2 exists
+# to stop. The names below say what the frames show.
+#
+# OBSERVED at frames 0/50/100/149, which is the window the engine actually cuts:
+#   dance_hallway  a man facing the camera in a hallway, face visible throughout
+#   dance_kitchen  a woman dancing in a kitchen; full body, the face is small
+#   spin_dress     a woman spinning; heavy motion blur, face turned away in 3
+#                  of the 4 sampled frames
+# The last two are a real concern for a LIPSYNC driving clip and are recorded
+# here rather than discovered later: only `dance_hallway` holds a camera-facing
+# face across the window. Nobody has measured what that costs the result yet.
 CATALOGUE: tuple[MotionTemplate, ...] = (
-    _entry("walk_city", "Walking down a city street", 0),
-    _entry("turn_smile", "Turn to camera and smile", 0),
-    _entry("sit_talk", "Sitting and talking to camera", 0),
+    _entry("dance_hallway", "Dancing in a hallway, facing camera", 0),
+    _entry("dance_kitchen", "Dancing in a kitchen", 0),
+    _entry("spin_dress", "Spinning in a dress", 0),
 )
 
 
@@ -75,7 +92,7 @@ def as_dict(template: MotionTemplate) -> dict:
 
     Example:
         >>> as_dict(CATALOGUE[0])["id"]
-        'walk_city'
+        'dance_hallway'
     """
     data = asdict(template)
     data["available"] = _exists(template.video_path)

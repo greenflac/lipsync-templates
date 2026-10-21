@@ -1,0 +1,125 @@
+{
+ "briefs": "briefs.jsonl",
+ "total": {
+  "n": 150,
+  "correct": 147,
+  "pct": 98.0
+ },
+ "classes": {
+  "animate": {
+   "n": 4,
+   "correct": 4,
+   "pct": 100.0
+  },
+  "audio": {
+   "n": 5,
+   "correct": 5,
+   "pct": 100.0
+  },
+  "avatar": {
+   "n": 10,
+   "correct": 9,
+   "pct": 90.0
+  },
+  "budget": {
+   "n": 13,
+   "correct": 12,
+   "pct": 92.3
+  },
+  "dub": {
+   "n": 8,
+   "correct": 8,
+   "pct": 100.0
+  },
+  "edit_image": {
+   "n": 5,
+   "correct": 5,
+   "pct": 100.0
+  },
+  "edit_video": {
+   "n": 9,
+   "correct": 9,
+   "pct": 100.0
+  },
+  "faceswap": {
+   "n": 3,
+   "correct": 3,
+   "pct": 100.0
+  },
+  "fps": {
+   "n": 6,
+   "correct": 6,
+   "pct": 100.0
+  },
+  "generate_image": {
+   "n": 2,
+   "correct": 2,
+   "pct": 100.0
+  },
+  "generate_video": {
+   "n": 8,
+   "correct": 7,
+   "pct": 87.5
+  },
+  "lipsync": {
+   "n": 4,
+   "correct": 4,
+   "pct": 100.0
+  },
+  "logo_text": {
+   "n": 6,
+   "correct": 6,
+   "pct": 100.0
+  },
+  "product360": {
+   "n": 4,
+   "correct": 4,
+   "pct": 100.0
+  },
+  "restore": {
+   "n": 5,
+   "correct": 5,
+   "pct": 100.0
+  },
+  "safety": {
+   "n": 16,
+   "correct": 16,
+   "pct": 100.0
+  },
+  "self_host": {
+   "n": 11,
+   "correct": 11,
+   "pct": 100.0
+  },
+  "series": {
+   "n": 5,
+   "correct": 5,
+   "pct": 100.0
+  },
+  "shorts": {
+   "n": 4,
+   "correct": 4,
+   "pct": 100.0
+  },
+  "speech": {
+   "n": 7,
+   "correct": 7,
+   "pct": 100.0
+  },
+  "upscale": {
+   "n": 6,
+   "correct": 6,
+   "pct": 100.0
+  },
+  "utility": {
+   "n": 5,
+   "correct": 5,
+   "pct": 100.0
+  },
+  "visualiser": {
+   "n": 4,
+   "correct": 4,
+   "pct": 100.0
+  }
+ }
+}

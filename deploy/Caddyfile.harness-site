@@ -1,0 +1,37 @@
+# The studio site block in the HARNESS Caddy: a byte copy of the block that green_harness
+# deploy/Caddyfile carries since REVISION 10 (local branch studio-connector-site).
+#
+# On the shared VPS the harness Caddy owns 80/443. It proxies studio.greenflac.online to
+# this repository's server over the internal docker network harness-studio-edge, where the
+# studio compose project names the server `studio-server` (deploy/compose.yaml).
+# studio/mcp/tests/test_connector_deploy.py keeps the path list equal to the app's routes.
+# A change here is also a change in green_harness deploy/Caddyfile.
+
+studio.greenflac.online {
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "no-referrer"
+		Content-Security-Policy "default-src 'none'; frame-ancestors 'none'"
+		Cross-Origin-Resource-Policy "same-origin"
+		-Server
+	}
+
+	request_body {
+		max_size 2MB
+	}
+
+	@studio path /mcp /mcp/* /healthz /.well-known/oauth-authorization-server /.well-known/oauth-protected-resource/mcp /register /authorize /token /revoke /oauth/login
+	handle @studio {
+		reverse_proxy studio-server:8770
+	}
+	handle {
+		respond "not found" 404
+	}
+
+	log {
+		output stdout
+		format json
+	}
+}

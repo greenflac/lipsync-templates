@@ -1,0 +1,75 @@
+# The lipsync-studio connector on the green-harness VPS (owner decision 2026-10-19).
+# Shape and conventions from green-harness deploy/compose.yaml: the image is pinned by DIGEST
+# in state/release.env, which only release.sh writes; secrets are files under
+# ${STUDIO_SECRETS_DIR}, never variables.
+#
+#   docker compose --project-directory /srv/studio -f /srv/studio/compose.yaml \
+#     --env-file /srv/studio/.env --env-file /srv/studio/state/release.env up -d
+#
+# No Caddy here. The harness Caddy already holds 80/443 on this VPS. It serves
+# studio.greenflac.online with the site block in deploy/Caddyfile.harness-site (committed
+# to green_harness deploy/Caddyfile, REVISION 10) and reaches this server over the harness
+# network `harness-studio-edge`, under the alias `studio-server`.
+
+name: studio
+
+services:
+  server:
+    image: ${STUDIO_IMAGE:?state/release.env must set STUDIO_IMAGE}
+    restart: unless-stopped
+    environment:
+      STUDIO_DOMAIN: ${STUDIO_DOMAIN:?.env must set STUDIO_DOMAIN}
+      STUDIO_KEY_PEPPER_FILE: /run/secrets/key_pepper
+      STUDIO_VENDOR_ENV_FILE: /run/secrets/vendor_env
+      # The harness Caddy's fixed address on harness-studio-edge (green_harness
+      # deploy/compose.yaml). X-Forwarded-For is believed from that address only.
+      STUDIO_TRUSTED_PROXIES: 172.31.251.2
+      STUDIO_SELFRAG_STATE: /data/selfrag_state.sqlite3
+      # The dense channel needs sentence-transformers and its weights, which this image
+      # does not carry. The index is lexical + phrase + structural (knowledge.py).
+      STUDIO_MCP_DENSE: "0"
+    secrets:
+      - key_pepper
+      - vendor_env
+    volumes:
+      - data:/data
+      - knowledge:/app/studio/knowledge
+    ports:
+      # Loopback only, for the owner's own checks on the VPS. The public side is the
+      # harness Caddy over harness-studio-edge.
+      - "127.0.0.1:${STUDIO_LOCAL_PORT:-8770}:8770"
+    networks:
+      edge:
+        aliases: [studio-server]
+      # The way out, for fetch_url, search_web and probe_model_limit. harness-studio-edge
+      # is internal and has no route out.
+      egress: {}
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 1g
+    logging:
+      driver: json-file
+      options: {max-size: "10m", max-file: "5"}
+
+networks:
+  edge:
+    # Created by the harness compose project (green_harness REVISION 10). `up` fails with
+    # "network harness-studio-edge not found" until the harness has been redeployed with it.
+    name: harness-studio-edge
+    external: true
+  egress: {}
+
+volumes:
+  data:
+  # Seeded from the image's studio/knowledge on first creation. From then on it is the live
+  # base the connector writes to (docs/CONNECTOR.md, "The knowledge base on the server").
+  knowledge:
+
+secrets:
+  key_pepper:
+    file: ${STUDIO_SECRETS_DIR:-/srv/studio/secrets}/key_pepper
+  vendor_env:
+    file: ${STUDIO_SECRETS_DIR:-/srv/studio/secrets}/vendor.env

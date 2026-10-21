@@ -1,0 +1,14 @@
+{
+  "url": "https://api.klingai.com/v1/videos/text2video",
+  "тело_запроса": {
+    "model_name": "kling-v3",
+    "prompt": "a static wide shot of an empty wooden table in daylight",
+    "duration": "15",
+    "mode": "std",
+    "aspect_ratio": "16:9"
+  },
+  "http": 429,
+  "ответ": "{\"code\":1102,\"message\":\"Account balance not enough\",\"request_id\":\"30f7388b-474c-49bd-a2ee-2afeaf9705e3\"}",
+  "секунд": 1.33,
+  "когда": "2026-09-05T08:26:49Z"
+}

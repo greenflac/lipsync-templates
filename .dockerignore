@@ -1,0 +1,22 @@
+# The connector image (deploy/Dockerfile) copies studio/ and lipsync/ only.
+# Everything else stays out of the build context, and so do private and local
+# files that are gitignored (the corpus, harvested prompts, runtime state).
+.git
+.github
+.claude
+.ruff_cache
+.mypy_cache
+**/__pycache__
+**/*.pyc
+work/
+corpus/
+assets/
+productions/
+docs/
+studio/uploads/
+**/*.sqlite3
+studio/knowledge/gallery_prompts.jsonl
+studio/knowledge/civitai_prompts.jsonl
+.env
+deploy/.env
+deploy/secrets/

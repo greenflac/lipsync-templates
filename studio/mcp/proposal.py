@@ -1,0 +1,846 @@
+"""Ask the operator to pay for a measurement, and never decide it yourself.
+
+THE CORRECTION THIS MODULE IS
+
+The base can be grown for free up to a point. Past that point the only way to
+learn something is to run the generation and look at it, and running the
+generation costs money on somebody's account. The owner's ruling, 2026-08-27:
+
+    реальные замеры будем делать под конкретные задачи и с одобрения оператора
+
+So a paid measurement is neither forbidden nor budgeted in advance. It is
+PROPOSED — against a concrete task, with the exact test written out and the
+price named — and then it waits. The agent files; a human decides.
+
+WHY THE APPROVAL IS NOT A TOOL
+
+`server.py` exposes `propose_measurement` and `measurement_proposals`. It does
+NOT expose approval, and it never will: an agent that can approve its own
+proposal has not been asked for permission, it has been given a wallet. The
+only door to `approve` is `scripts/measurement.py`, run by the person whose
+account is charged.
+
+That is the same shape as `probe.py`'s absurd-value guard — the property
+"it could not have spent this on its own" is something a reader can check in
+the code rather than something a prompt promised.
+
+WHAT A PROPOSAL MUST CARRY, AND WHY EACH PART IS REFUSED WHEN MISSING
+
+`gap`      — what the base cannot answer today. Without it the measurement is
+             a habit, not a question.
+`test`     — the exact request to send and what to look at afterwards. A
+             proposal nobody else could execute is a request for trust.
+`cost_usd` — the price. "Name the price" was the instruction; an unnamed price
+             is an unbounded one.
+`cost_basis` — where that number came from (a published rate, a prior
+             invoice). A price with no basis is a guess wearing a decimal
+             point, and house rule I4 applies to it like any other constant.
+`decides`  — what the two possible results would each mean. If both answers
+             lead to the same next step, the measurement buys nothing.
+
+AND ONE REFUSAL THAT IS NOT ABOUT PAPERWORK
+
+A proposal for a claim the base already holds, freshly and uncontested, is
+refused before it reaches the operator. Money spent re-learning a standing
+fact is the failure this whole package was built to make visible.
+
+WHAT HAPPENS TO AN OVERSPEND
+
+If the measurement runs and costs more than was approved, the fact is STILL
+written — the money is already gone and withholding the result wastes it
+twice — but the outcome is `fail` and the violation names the overspend. A
+guard that quietly swallowed it would report a clean ledger over a surprised
+operator.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import json
+from datetime import date
+from pathlib import Path
+
+from lipsync.fork_identity import FAIL, PASS, UNMEASURED
+
+from studio.mcp import advice
+from studio.selfrag.facts import TIER_PROBE
+from studio.selfrag.modelnames import fold
+
+__all__ = [
+    "propose",
+    "decide",
+    "record_result",
+    "proposals",
+    "STATES",
+    "STATE_PROPOSED",
+    "STATE_APPROVED",
+    "STATE_DECLINED",
+    "STATE_RECORDED",
+    "STATE_ANSWERED",
+    "DEFAULT_LEDGER_PATH",
+    "answered_by_base",
+    "close_answered",
+]
+
+DEFAULT_LEDGER_PATH = (
+    Path(__file__).resolve().parents[2] / "studio" / "knowledge" / "measurements.jsonl"
+)
+
+STATE_PROPOSED = "proposed"
+STATE_APPROVED = "approved"
+STATE_DECLINED = "declined"
+STATE_RECORDED = "recorded"
+#: Закрыта, потому что база ТЕПЕРЬ отвечает на вопрос заявки без оплаты.
+#: НАЙДЕНО валидатором 2026-10-14 (G14): `mp-5617b65d91` (veo-3.1
+#: max_resolution) висела открытой, хотя база уже отвечала на уровне vendor —
+#: оператор видел просьбу заплатить за то, что известно. Пятое состояние, а не
+#: `declined`: никто не отказывал, вопрос закрылся сам, и это разные события.
+#: Строка ДОПИСЫВАЕТСЯ (журнал append-only); прежние строки не трогаются.
+STATE_ANSWERED = "answered_by_base"
+
+#: The whole ladder a proposal can walk. Kept as a tuple so a typo in a
+#: decision is refused rather than creating a state nobody reads.
+STATES: tuple[str, ...] = (
+    STATE_PROPOSED,
+    STATE_APPROVED,
+    STATE_DECLINED,
+    STATE_RECORDED,
+    STATE_ANSWERED,
+)
+
+#: The decisions the operator may hand down. `recorded` is not among them —
+#: that state is reached by a result arriving, never by somebody saying so.
+DECISIONS: tuple[str, ...] = (STATE_APPROVED, STATE_DECLINED)
+
+#: CHOSEN. A test description shorter than this cannot name a request, a
+#: model and a thing to look at. Not measured — it is a floor against the
+#: one-line proposal ("try kling and see"), which is the shape that would make
+#: this whole gate ceremonial.
+MIN_TEST_CHARS = 60
+
+#: CHOSEN, same reasoning, for the sentence explaining where the price came
+#: from and for what the result would decide.
+MIN_BASIS_CHARS = 12
+MIN_DECIDES_CHARS = 20
+
+#: Слова, которыми в `decides` начинается ВЕТВЬ — «если так», «а если иначе».
+#: Список ВЫБРАН (И4) по тому, как ветвь пишут по-русски и по-английски.
+_МАРКЕРЫ_ВЕТВЕЙ = ("если ", "а если ", "иначе", "if ", "otherwise", "else ")
+
+#: Чем в ветви отделяется УСЛОВИЕ от ДЕЙСТВИЯ. Сравнивается именно действие:
+#: условия у двух ветвей разные всегда («держит» / «не держит»), а покупает
+#: измерение только РАЗНОЕ ДЕЙСТВИЕ.
+_РАЗДЕЛИТЕЛИ_ДЕЙСТВИЯ = ("—", "–", "->", "→", " то ", ":", " then ")
+
+#: Слова, которые в действии ничего не меняют и ровно ими маскируют
+#: одинаковый исход: «всё равно берём latentsync».
+_ПУСТЫЕ_СЛОВА = ("всё равно", "все равно", "тоже", "по-прежнему", "так же", "anyway", "still")
+
+
+def _действие(ветвь: str) -> str:
+    """Что предлагается СДЕЛАТЬ в этой ветви, приведённое к сравнимому виду."""
+    текст = ветвь
+    for разделитель in _РАЗДЕЛИТЕЛИ_ДЕЙСТВИЯ:
+        если_есть = текст.find(разделитель)
+        if если_есть != -1:
+            текст = текст[если_есть + len(разделитель) :]
+            break
+    низ = " ".join(текст.lower().split())
+    for пустое in _ПУСТЫЕ_СЛОВА:
+        низ = низ.replace(пустое, " ")
+    return " ".join(низ.split()).strip(" .,;:!—–-")
+
+
+def ветви(decides: str) -> list[str]:
+    """Разложить `decides` на ветви. Меньше двух — прибор судить не может."""
+    низ = " ".join(str(decides or "").split())
+    места = []
+    поиск = низ.lower()
+    for маркер in _МАРКЕРЫ_ВЕТВЕЙ:
+        начало = 0
+        while True:
+            место = поиск.find(маркер, начало)
+            if место == -1:
+                break
+            места.append(место)
+            начало = место + 1
+    места = sorted(set(места))
+    if not места:
+        return []
+    куски = [низ[начало:конец] for начало, конец in zip(места, места[1:] + [len(низ)])]
+    return [к for к in куски if к.strip()]
+
+
+def один_и_тот_же_шаг(decides: str) -> bool | None:
+    """Ведут ли обе ветви к ОДНОМУ действию. Три исхода (Р1): да, нет, не смогли.
+
+    ЧТО ЭТОТ ПРИБОР УМЕЕТ, СКАЗАНО УЗКО НАРОЧНО. Обещание пакета — «если оба
+    ответа ведут к одному шагу, измерение не покупает ничего» — до 2026-09-07
+    держалось СЛОВАМИ: единственной проверкой была длина текста в 20 символов.
+    ВОСПРОИЗВЕДЕНО в тот день: «если держит личность — берём latentsync, если
+    не держит — всё равно берём latentsync» подавалось наравне с настоящим
+    решением, и «просто для общего понимания» тоже.
+
+    Судить «ведут ли ответы к разному» в общем виде значит понимать задачу;
+    машине здесь доступен один случай, зато безошибочно: ветви РАЗОБРАНЫ и
+    ДЕЙСТВИЯ в них совпадают дословно. Его и ловим. Всё остальное — `None`,
+    то есть «не смогли проверить», и это говорится вслух, а не выдаётся за
+    проверенное: ложный отказ здесь дороже пропуска, потому что отвергнутая
+    заявка — это НЕ СДЕЛАННЫЙ замер, а замеров у проекта и так нет.
+    """
+    разобранные = ветви(decides)
+    if len(разобранные) < 2:
+        return None
+    действия = {_действие(в) for в in разобранные}
+    действия.discard("")
+    if len(действия) < 2:
+        return True
+    return False
+
+
+#: CHOSEN. A proposal must be for a real task, so the task reference is
+#: required and must be more than a word.
+MIN_TASK_CHARS = 8
+
+
+def _identity(model: str, attribute: str, test: str) -> str:
+    """A proposal IS its (model, attribute, test). Filing the same one twice
+    returns the standing row instead of a second one, so an agent that retries
+    does not put three identical asks in front of the operator."""
+    seed = "|".join(
+        (
+            str(model or "").strip().lower(),
+            str(attribute or "").strip().lower(),
+            " ".join(str(test or "").split()).lower(),
+        )
+    )
+    return "mp-" + hashlib.sha256(seed.encode("utf-8")).hexdigest()[:10]
+
+
+def _rows(path: Path) -> list[dict]:
+    if not path.is_file():
+        return []
+    out: list[dict] = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("//"):
+            continue
+        try:
+            row = json.loads(line)
+        except ValueError:
+            continue
+        if isinstance(row, dict) and row.get("id"):
+            out.append(row)
+    return out
+
+
+def _latest(path: Path) -> dict[str, dict]:
+    """The ledger is a log; the last row for an id is its current state."""
+    latest: dict[str, dict] = {}
+    for row in _rows(path):
+        latest[str(row["id"])] = row
+    return latest
+
+
+def _append(path: Path, row: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n")
+
+
+#: Состояния, в которых заявка ещё ОТКРЫТА: ждёт решения или выполнения.
+OPEN_STATES: tuple[str, ...] = (STATE_PROPOSED, STATE_APPROVED)
+
+
+def _family_of(name: str, store: object | None) -> set[str]:
+    """Свёртки имён, с которыми `name` — ОДНА модель для слоя имён.
+
+    Сама свёртка плюс семья, вариантом которой имя является (`FactStore.parent`:
+    `chatterbox-tts` -> `chatterbox`). Слой имён — чужой модуль: его зовут, а не
+    правят, и при его отсутствии (старый склад без `parent`) остаётся одна
+    свёртка — то есть прежнее поведение, а не исключение.
+    """
+    свои = {fold(name)}
+    parent = getattr(store, "parent", None)
+    if callable(parent):
+        try:
+            свои |= {fold(str(n)) for n in (parent(name) or [])}
+        except Exception:  # noqa: BLE001 - слой имён не должен ронять заявку
+            pass
+    return свои
+
+
+def _same_model(a: str, b: str, store: object | None) -> bool:
+    """Одна ли это модель: по свёртке ИЛИ потому что одно — вариант другого.
+
+    НАЙДЕНО валидатором 2026-10-14 (G14): `chatterbox` и `chatterbox-tts` —
+    одно и то же для слоя имён (`variant-of`), а дубль заявок их не склеивал.
+    ЦЕНА, СКАЗАННАЯ ВСЛУХ: `veo-3.1-lite` для слоя имён тоже вариант `veo-3.1`,
+    и его открытая заявка теперь будет названа дублем заявки семьи. Нота
+    дубля это говорит и велит сказать оператору, если вариант меряет другое.
+    """
+    if fold(a) == fold(b):
+        return True
+    return bool(_family_of(a, store) & _family_of(b, store))
+
+
+def _open_twin(
+    latest: dict[str, dict], model: str, attribute: str, store: object | None = None
+) -> dict | None:
+    """Открытая заявка на ту же модель (свёртка или семья) и тот же атрибут."""
+    want_attr = " ".join(str(attribute or "").split()).casefold()
+    for row in sorted(latest.values(), key=lambda r: str(r.get("filed_on", ""))):
+        if str(row.get("state")) not in OPEN_STATES:
+            continue
+        if not _same_model(str(row.get("model", "")), model, store):
+            continue
+        if " ".join(str(row.get("attribute", "")).split()).casefold() != want_attr:
+            continue
+        return row
+    return None
+
+
+def _already_known(model: str, attribute: str, facts_path: Path | None) -> str:
+    """ "" when the base cannot answer this. A sentence when it can.
+
+    Only a SETTLED answer blocks a proposal, and settled means three things at
+    once: the sources agree (`pass` — `fail` is contradiction, which is one of
+    the better reasons to go and measure), none of them is stale, and the best
+    of them stands above blog tier (`claims` already reports blog-only as
+    `could not measure`).
+    """
+    verdict = advice.store_for(facts_path).claims(model, attribute)
+    if verdict.get("outcome") != PASS:
+        return ""
+    if verdict.get("unmeasured"):
+        return ""
+    rows = verdict.get("claims") or []
+    best = rows[0] if rows else {}
+    return (
+        f"the base already answers {model}.{attribute} as {best.get('value')!r} at tier "
+        f"{best.get('best_tier')}, from {verdict.get('checked')} agreeing source(s), none "
+        "of them stale — withdraw or contest that claim if it is wrong, rather than paying "
+        "to re-learn it"
+    )
+
+
+def propose(
+    model: str,
+    attribute: str,
+    *,
+    task: str,
+    gap: str,
+    test: str,
+    cost_usd: float,
+    cost_basis: str,
+    decides: str,
+    path: Path | None = None,
+    facts_path: Path | None = None,
+) -> dict:
+    """File one paid measurement for the operator to approve or decline.
+
+    Writes nothing to the fact base. The outcome is never `pass`: a filed
+    proposal has measured nothing, so it reports `could not measure` with the
+    id the operator will quote back.
+
+    :param task: the concrete job that needs this. Approval is per task.
+    :param cost_usd: what running it will cost, in dollars. 0.0 is allowed and
+        means the test is free — it still goes past the operator, because a
+        free test can still burn a rate limit on their account.
+    """
+    fields = {
+        "model": str(model or "").strip(),
+        "attribute": str(attribute or "").strip(),
+        "task": str(task or "").strip(),
+        "gap": str(gap or "").strip(),
+        "test": " ".join(str(test or "").split()),
+        "cost_basis": str(cost_basis or "").strip(),
+        "decides": str(decides or "").strip(),
+    }
+    violations: list[str] = []
+    for name, text in fields.items():
+        if not text:
+            violations.append(f"{name} is empty")
+    try:
+        price = float(cost_usd)
+    except (TypeError, ValueError):
+        price = -1.0
+        violations.append("cost_usd is not a number — name the price")
+    if price < 0:
+        violations.append("cost_usd is negative")
+    if fields["test"] and len(fields["test"]) < MIN_TEST_CHARS:
+        violations.append(
+            f"test is {len(fields['test'])} characters; under {MIN_TEST_CHARS} it cannot "
+            "name a request, a model and a thing to look at"
+        )
+    if fields["cost_basis"] and len(fields["cost_basis"]) < MIN_BASIS_CHARS:
+        violations.append("cost_basis does not say where the price came from")
+    if fields["decides"] and len(fields["decides"]) < MIN_DECIDES_CHARS:
+        violations.append("decides does not say what each result would mean")
+    # ОБЕЩАНИЕ, КОТОРОЕ ДО 2026-09-07 ДЕРЖАЛОСЬ СЛОВАМИ. Пакет обещает: «если
+    # оба ответа ведут к одному шагу, измерение не покупает ничего» — а
+    # проверялась только длина. Теперь проверяется тот единственный случай,
+    # который машина видит безошибочно: ветви разобраны, действия в них
+    # совпадают. Остальное — третий исход, и он говорится вслух ниже, а не
+    # выдаётся за проверенное.
+    if fields["decides"] and один_и_тот_же_шаг(fields["decides"]) is True:
+        violations.append(
+            "оба ответа в decides ведут к ОДНОМУ И ТОМУ ЖЕ действию "
+            f"({_действие(ветви(fields['decides'])[0])!r}) — такое измерение не "
+            "покупает решения, а деньги оператора тратит"
+        )
+    if fields["task"] and len(fields["task"]) < MIN_TASK_CHARS:
+        violations.append("task does not name a concrete job")
+
+    if violations:
+        return {
+            "outcome": FAIL,
+            "checked": len(fields) + 1,
+            "violations": len(violations),
+            "unmeasured": 0,
+            "id": "",
+            "note": "not filed: " + "; ".join(violations),
+        }
+
+    settled = _already_known(fields["model"], fields["attribute"], facts_path)
+    if settled:
+        return {
+            "outcome": FAIL,
+            "checked": len(fields) + 2,
+            "violations": 1,
+            "unmeasured": 0,
+            "id": "",
+            "note": "not filed: " + settled,
+        }
+
+    ledger = path or DEFAULT_LEDGER_PATH
+    identity = _identity(fields["model"], fields["attribute"], fields["test"])
+    latest = _latest(ledger)
+    standing = latest.get(identity)
+    # ДУБЛЬ ПО СУТИ, А НЕ ПО БУКВАМ. НАЙДЕНО живым прогоном 2026-10-14: заявка
+    # на `veo-3.1 max_resolution` легла второй строкой (`mp-36c46e6926`) рядом
+    # с открытой `mp-5617b65d91` — тест был сформулирован другими словами, и
+    # тождество по (модель, атрибут, ТЕКСТ теста) их не склеило. Оператор
+    # видел бы две просьбы заплатить за один вопрос. Открытая заявка на ту же
+    # модель (по свёртке имени) и тот же атрибут — это та же заявка.
+    twin = False
+    if standing is None:
+        try:
+            store = advice.store_for(facts_path)
+        except Exception:  # noqa: BLE001 - без склада дубль ищется по свёртке
+            store = None
+        standing = _open_twin(latest, fields["model"], fields["attribute"], store)
+        if standing is not None:
+            identity = str(standing["id"])
+            twin = True
+    if standing is not None:
+        return {
+            "outcome": UNMEASURED,
+            "checked": 1,
+            "violations": 0,
+            "unmeasured": 1,
+            "id": identity,
+            "state": str(standing.get("state", "")),
+            "note": (
+                f"already filed as {identity}, state {standing.get('state')!r} — "
+                "not filed twice, so the operator sees one ask"
+                + (
+                    f". It is an OPEN proposal for the same question "
+                    f"({standing.get('model')}.{standing.get('attribute')}) with a "
+                    "differently worded test; if yours measures something it does not, "
+                    "say so to the operator rather than filing a second ask"
+                    if twin
+                    else ""
+                )
+            ),
+            "duplicate_of_open": twin,
+        }
+
+    row = {
+        "id": identity,
+        "state": STATE_PROPOSED,
+        "model": fields["model"],
+        "attribute": fields["attribute"],
+        "task": fields["task"],
+        "gap": fields["gap"],
+        "test": fields["test"],
+        "cost_usd": round(price, 4),
+        "cost_basis": fields["cost_basis"],
+        "decides": fields["decides"],
+        "filed_on": date.today().isoformat(),
+    }
+    _append(ledger, row)
+    # Р1: «ветви не разобрались» — не то же самое, что «ветви разные». Первое
+    # печатается рядом с заявкой, чтобы человек, читающий её перед оплатой,
+    # знал, что этой проверки прибор не делал.
+    ветви_различны = один_и_тот_же_шаг(fields["decides"]) is False
+    return {
+        "outcome": UNMEASURED,
+        "checked": 1,
+        "violations": 0,
+        "unmeasured": 1,
+        "branches_differ": ветви_различны,
+        "id": identity,
+        "state": STATE_PROPOSED,
+        "note": (
+            f"filed {identity}: {fields['model']}.{fields['attribute']} for ${price:.2f}. "
+            "Nothing has been measured and nothing will run until the operator approves it "
+            "with `python scripts/measurement.py approve "
+            + identity
+            + "`."
+            + (
+                ""
+                if ветви_различны
+                else " ПРОВЕРКА НЕ СДЕЛАНА: разобрать `decides` на две ветви не "
+                "удалось, поэтому «оба ответа ведут к разным шагам» здесь НЕ "
+                "проверено — прочитайте это глазами перед оплатой."
+            )
+        ),
+    }
+
+
+def decide(
+    proposal_id: str,
+    decision: str,
+    *,
+    operator: str,
+    note: str = "",
+    path: Path | None = None,
+) -> dict:
+    """Record the operator's answer. NOT reachable from the MCP server.
+
+    Kept in this module rather than in the script so the state machine has one
+    home, but the only caller is `scripts/measurement.py`, which a person runs.
+    """
+    ledger = path or DEFAULT_LEDGER_PATH
+    verdict = str(decision or "").strip().lower()
+    who = str(operator or "").strip()
+    if verdict not in DECISIONS:
+        return {
+            "outcome": FAIL,
+            "checked": 1,
+            "violations": 1,
+            "unmeasured": 0,
+            "note": f"{decision!r} is not one of {', '.join(DECISIONS)}",
+        }
+    if not who:
+        return {
+            "outcome": FAIL,
+            "checked": 1,
+            "violations": 1,
+            "unmeasured": 0,
+            "note": "an approval with nobody's name on it is not an approval",
+        }
+    standing = _latest(ledger).get(str(proposal_id).strip())
+    if standing is None:
+        return {
+            "outcome": FAIL,
+            "checked": 1,
+            "violations": 1,
+            "unmeasured": 0,
+            "note": f"no proposal {proposal_id!r} in {ledger}",
+        }
+    if standing.get("state") == STATE_RECORDED:
+        return {
+            "outcome": FAIL,
+            "checked": 1,
+            "violations": 1,
+            "unmeasured": 0,
+            "note": (
+                f"{proposal_id} has already been measured and recorded; approving it now "
+                "would say the spend was authorised before it happened"
+            ),
+        }
+    row = dict(standing)
+    row["state"] = verdict
+    row["decided_by"] = who
+    row["decided_on"] = date.today().isoformat()
+    row["decision_note"] = str(note or "").strip()
+    _append(ledger, row)
+    return {
+        "outcome": PASS,
+        "checked": 1,
+        "violations": 0,
+        "unmeasured": 0,
+        "id": row["id"],
+        "state": verdict,
+        "note": f"{proposal_id} is {verdict} by {who}",
+    }
+
+
+def record_result(
+    proposal_id: str,
+    value: str,
+    source_url: str,
+    measured_on: str,
+    *,
+    evidence: str,
+    actual_cost_usd: float,
+    path: Path | None = None,
+    facts_path: Path | None = None,
+) -> dict:
+    """Put an approved measurement's result into the base at `probe` tier.
+
+    Refuses outright unless the proposal stands `approved`. That refusal is
+    the whole mechanism: an agent that ran the generation anyway has no door
+    through which to make the result look sanctioned.
+
+    :param source_url: where the result can be seen — the API response saved to
+        the repository, the job URL, the rendered file. `probe` is a method
+        rung and taken as stated, but the URL still has to exist so somebody
+        else can go and disagree.
+    :param actual_cost_usd: what it really cost. Over the approved figure the
+        fact is still written and the outcome is `fail`, so the overspend is
+        reported rather than absorbed.
+    """
+    ledger = path or DEFAULT_LEDGER_PATH
+    standing = _latest(ledger).get(str(proposal_id).strip())
+    if standing is None:
+        return {
+            "outcome": FAIL,
+            "checked": 1,
+            "violations": 1,
+            "unmeasured": 0,
+            "note": f"no proposal {proposal_id!r} in {ledger}",
+        }
+    state = str(standing.get("state", ""))
+    if state != STATE_APPROVED:
+        return {
+            "outcome": FAIL,
+            "checked": 1,
+            "violations": 1,
+            "unmeasured": 0,
+            "note": (
+                f"{proposal_id} stands {state!r}, not {STATE_APPROVED!r} — a result cannot "
+                "be recorded against a spend nobody authorised"
+            ),
+        }
+    fields = {
+        "value": str(value or "").strip(),
+        "source_url": str(source_url or "").strip(),
+        "measured_on": str(measured_on or "").strip(),
+        "evidence": str(evidence or "").strip(),
+    }
+    missing = [name for name, text in fields.items() if not text]
+    if missing:
+        return {
+            "outcome": FAIL,
+            "checked": len(fields),
+            "violations": len(missing),
+            "unmeasured": 0,
+            "note": "not recorded: empty " + ", ".join(missing),
+        }
+
+    written = advice.record(
+        str(standing["model"]),
+        str(standing["attribute"]),
+        fields["value"],
+        fields["source_url"],
+        TIER_PROBE,
+        fields["measured_on"],
+        note=(
+            f"MEASURED under approved proposal {proposal_id} for task "
+            f"{standing.get('task')!r}; test: {standing.get('test')}; observed: "
+            f"{fields['evidence']}"
+        ),
+        read_directly=True,
+        path=facts_path,
+    )
+    if written.get("outcome") != PASS:
+        return {
+            "outcome": FAIL,
+            "checked": 1,
+            "violations": 1,
+            "unmeasured": 0,
+            "note": "the fact base refused the result: " + str(written.get("note", "")),
+        }
+
+    try:
+        spent = float(actual_cost_usd)
+    except (TypeError, ValueError):
+        spent = -1.0
+    approved = float(standing.get("cost_usd") or 0.0)
+    overspent = spent < 0 or spent > approved
+
+    row = dict(standing)
+    row["state"] = STATE_RECORDED
+    row["value"] = fields["value"]
+    row["result_url"] = fields["source_url"]
+    row["measured_on"] = fields["measured_on"]
+    row["evidence"] = fields["evidence"]
+    row["actual_cost_usd"] = round(spent, 4)
+    row["overspent"] = bool(overspent)
+    _append(ledger, row)
+
+    if overspent:
+        return {
+            "outcome": FAIL,
+            "checked": 2,
+            "violations": 1,
+            "unmeasured": 0,
+            "id": row["id"],
+            "state": STATE_RECORDED,
+            "note": (
+                f"the fact IS recorded — the money is already spent and withholding the "
+                f"result would waste it twice — but ${spent:.2f} was charged against an "
+                f"approval for ${approved:.2f}"
+            ),
+        }
+    return {
+        "outcome": PASS,
+        "checked": 2,
+        "violations": 0,
+        "unmeasured": 0,
+        "id": row["id"],
+        "state": STATE_RECORDED,
+        "note": (
+            f"{standing['model']}.{standing['attribute']} = {fields['value']!r} recorded at "
+            f"tier {TIER_PROBE} for ${spent:.2f}"
+        ),
+    }
+
+
+def answered_by_base(*, path: Path | None = None, facts_path: Path | None = None) -> list[dict]:
+    """Открытые заявки, на вопрос которых база УЖЕ отвечает. Только чтение.
+
+    «Отвечает» — тот же критерий, что не даёт подать такую заявку (`propose`):
+    источники согласны, ни один не устарел, лучший выше blog. Один критерий на
+    вход и на выход (Е1): иначе заявку, которую нельзя подать, можно было бы
+    держать открытой вечно.
+    """
+    ledger = path or DEFAULT_LEDGER_PATH
+    out: list[dict] = []
+    for row in sorted(_latest(ledger).values(), key=lambda r: str(r.get("id", ""))):
+        if str(row.get("state")) not in OPEN_STATES:
+            continue
+        why = _already_known(str(row.get("model", "")), str(row.get("attribute", "")), facts_path)
+        if why:
+            out.append({"id": str(row["id"]), "state": str(row.get("state")), "why": why})
+    return out
+
+
+def close_answered(
+    *, path: Path | None = None, facts_path: Path | None = None, dry_run: bool = False
+) -> dict:
+    """Закрыть ПРЕДЛОЖЕННЫЕ заявки, на которые база уже отвечает. Дописыванием.
+
+    Закрываются только `proposed`. `approved` — решение человека, и машина его
+    не отменяет: такие заявки перечислены в `left_approved`, чтобы оператор
+    решил сам. Ничего не удаляется: пишется новая строка с состоянием
+    `answered_by_base` и причиной.
+    """
+    ledger = path or DEFAULT_LEDGER_PATH
+    latest = _latest(ledger)
+    closed: list[str] = []
+    left: list[dict] = []
+    for item in answered_by_base(path=ledger, facts_path=facts_path):
+        if item["state"] != STATE_PROPOSED:
+            left.append(item)
+            continue
+        if not dry_run:
+            row = dict(latest[item["id"]])
+            row["state"] = STATE_ANSWERED
+            row["closed_on"] = date.today().isoformat()
+            row["closed_because"] = item["why"]
+            _append(ledger, row)
+        closed.append(item["id"])
+    return {
+        "outcome": PASS if closed or left else UNMEASURED,
+        "checked": len(closed) + len(left),
+        "violations": 0,
+        "unmeasured": 0 if closed or left else 1,
+        "closed": closed,
+        "left_approved": left,
+        "dry_run": bool(dry_run),
+        "note": (
+            f"{'would close' if dry_run else 'closed'} {len(closed)} proposal(s) the base now "
+            f"answers: {', '.join(closed) or 'none'}"
+            + (
+                f"; {len(left)} APPROVED proposal(s) are answered too and were left for the "
+                f"operator: {', '.join(i['id'] for i in left)}"
+                if left
+                else ""
+            )
+            if closed or left
+            else "no open proposal is answered by the base today"
+        ),
+    }
+
+
+def proposals(*, state: str = "", path: Path | None = None, facts_path: Path | None = None) -> dict:
+    """What is filed, and what is waiting on a person.
+
+    `pass` when something stands, `could not measure` when the ledger is empty
+    — never `pass` on nothing, because "no proposals" and "no pending
+    proposals" are answers a reader would otherwise confuse.
+    """
+    ledger = path or DEFAULT_LEDGER_PATH
+    wanted = str(state or "").strip().lower()
+    if wanted and wanted not in STATES:
+        return {
+            "outcome": FAIL,
+            "checked": 1,
+            "violations": 1,
+            "unmeasured": 0,
+            "proposals": [],
+            "note": f"{state!r} is not one of {', '.join(STATES)}",
+        }
+    rows = sorted(_latest(ledger).values(), key=lambda row: str(row.get("id", "")))
+    shown = [row for row in rows if not wanted or str(row.get("state")) == wanted]
+    counts: dict[str, int] = {}
+    for row in rows:
+        counts[str(row.get("state"))] = counts.get(str(row.get("state")), 0) + 1
+    if not rows:
+        return {
+            "outcome": UNMEASURED,
+            "checked": 0,
+            "violations": 0,
+            "unmeasured": 1,
+            "proposals": [],
+            "by_state": {},
+            "note": f"no measurement proposals have ever been filed ({ledger})",
+        }
+    waiting = counts.get(STATE_PROPOSED, 0)
+    # ОТКРЫТАЯ ЗАЯВКА, НА КОТОРУЮ БАЗА УЖЕ ОТВЕЧАЕТ, ПОМЕЧАЕТСЯ В ЛИСТИНГЕ.
+    # Листинг — чтение, поэтому он НЕ закрывает (это делает
+    # `scripts/measurement.py close-answered`), но и не молчит: оператор,
+    # читающий список перед оплатой, видит, что платить незачем.
+    отвечено = {
+        item["id"]: item["why"] for item in answered_by_base(path=ledger, facts_path=facts_path)
+    }
+    if отвечено:
+        shown = [
+            {**row, "answered_by_base": отвечено[str(row.get("id"))]}
+            if str(row.get("id")) in отвечено
+            else row
+            for row in shown
+        ]
+    # НОТА ГОВОРИТ О ТОМ, ЧТО ПОКАЗАНО. До 2026-10-14 она была одной и той же
+    # при любом фильтре — «13 proposal(s)» над списком из трёх, — и читатель
+    # не мог понять, отфильтровано ли вообще.
+    shown_part = (
+        f"{len(shown)} shown with state {wanted!r} out of {len(rows)} proposal(s)"
+        if wanted
+        else f"{len(rows)} proposal(s), all shown"
+    )
+    return {
+        "outcome": PASS,
+        "checked": len(rows),
+        "violations": 0,
+        "unmeasured": 0,
+        "proposals": shown,
+        "state_filter": wanted,
+        "by_state": counts,
+        "answered_by_base": sorted(отвечено),
+        "note": (
+            f"{shown_part}; {waiting} waiting on the operator; "
+            f"${sum(float(r.get('actual_cost_usd') or 0.0) for r in rows):.2f} spent so far"
+            + (
+                f"; {len(отвечено)} OPEN proposal(s) are already answered by the base "
+                f"({', '.join(sorted(отвечено))}) — do not pay for them; close with "
+                "`python scripts/measurement.py close-answered`"
+                if отвечено
+                else ""
+            )
+        ),
+    }

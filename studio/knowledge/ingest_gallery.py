@@ -36,14 +36,41 @@ def normalise(row: dict) -> dict | None:
     text = str(row.get("prompt") or row.get("text") or row.get("wording") or "").strip()
     if len(text.split()) < MIN_WORDS:
         return None
+    # The source URL is not decoration: it is the mechanism by which an exact
+    # removal stays possible if the gallery's owner asks for one. A harvester
+    # that calls the field `page` used to lose it here silently.
+    source_url = row.get("source_url") or row.get("url") or row.get("page")
+    kind = row.get("kind") or ""
+    image_url = row.get("image_url") or ""
     return {
         "id": row.get("id") or row.get("reference_id"),
         "prompt": text,
-        "source_url": row.get("source_url") or row.get("url"),
+        "source_url": source_url,
         "section": row.get("section") or row.get("category"),
-        "harvested": row.get("harvested") or "2026-08-25",
+        "harvested": row.get("harvested") or row.get("retrieved") or "2026-08-25",
         "provenance": row.get("provenance") or PROVENANCE,
         "rights": row.get("rights") or RIGHTS,
+        # Position on the source page. PROVENANCE.md calls this pair the
+        # card's identity, so it travels with the row rather than being
+        # recomputed later by something heuristic.
+        "record": row.get("record"),
+        "element": row.get("element"),
+        "ordinal": row.get("ordinal"),
+        "kind": kind,
+        "image_url": image_url,
+        "date": row.get("date"),
+        # `result` and `tags` are what studio/selfrag/corpus.py reads. The
+        # picture a prompt produced IS its result, so this is a rename, not a
+        # new claim.
+        "result": image_url,
+        "tags": [t for t in (row.get("section") or row.get("category"), kind) if t],
+        # Only the Midjourney flag syntax (--ar, --v, --sref) is evidence of a
+        # target model, and the harvester already decided that when it set
+        # `kind`. Prose rows get no model rather than a guessed one: the source
+        # is half Midjourney and half nano-banana, and inventing a label for
+        # the half nobody marked would be a claim, not a reading.
+        "model": "midjourney" if kind == "flagged" else "",
+        "model_marker": row.get("model"),
     }
 
 
@@ -60,7 +87,7 @@ def ingest(path: str | Path) -> dict:
         }
 
     kept: list[dict] = []
-    seen: set[str] = set()
+    seen: set[tuple[str, str]] = set()
     checked = dropped = duplicates = 0
     for line in src.read_text(encoding="utf-8").splitlines():
         line = line.strip()
@@ -76,10 +103,16 @@ def ingest(path: str | Path) -> dict:
         if out is None:
             dropped += 1
             continue
-        if out["prompt"] in seen:
+        # Deduplicate on (wording, image), not on wording alone. The same
+        # prompt shown against two different results is two records on purpose
+        # — for --sref and --cref that distinction is the entire point — and
+        # collapsing them here would silently discard 539 of this corpus's
+        # 4601 rows. Only a pair reprinted verbatim collapses.
+        key = (out["prompt"], str(out.get("image_url") or ""))
+        if key in seen:
             duplicates += 1
             continue
-        seen.add(out["prompt"])
+        seen.add(key)
         kept.append(out)
 
     if not kept:

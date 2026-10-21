@@ -1,0 +1,246 @@
+{
+ "title": "MAIN EVENT v2",
+ "look": "Real live pay-per-view MMA broadcast footage, not a commercial: bright even overhead TV lighting, a white octagon canvas, black padded posts, black chain-link cage fence, a dark packed arena beyond with phone lights in the crowd. Broadcast-camera image with natural motion blur and slight lens breathing.",
+ "league": "SECURITY ARENA",
+ "width": 768,
+ "height": 1344,
+ "characters": {
+  "august": {
+   "name": "AUGUST",
+   "face": "refs/august_face.png",
+   "refs": [
+    {
+     "file": "refs/print_august.png",
+     "what": "one large yellow sponsor wordmark printed flat across the center of his jersey chest, the only print on the jersey"
+    }
+   ],
+   "height_m": 1.78,
+   "weight_kg": 77,
+   "description": "a lean athletic blond fighter with a very short buzzcut and pale blue eyes; wearing a fitted black short-sleeve fight jersey with a subtle dark grey geometric pattern and a thin yellow trim, black fight shorts with a yellow waistband, plain black fingerless MMA gloves; calm, focused, economical in every movement"
+  },
+  "adgar": {
+   "name": "ADGAR",
+   "face": "refs/adgar_face.png",
+   "refs": [
+    {
+     "file": "refs/print_freevpn.png",
+     "what": "one large white sponsor logo (a shield mark above a lowercase word) printed flat across the center of his jersey chest, the only print on the jersey"
+    }
+   ],
+   "height_m": 2.05,
+   "weight_kg": 150,
+   "description": "a giant super-heavyweight with a thick dark beard, massive shoulders and a heavy frame; wearing a fitted dark red and black short-sleeve fight jersey with an angular camouflage pattern, black fight shorts with a dark red waistband, plain black fingerless MMA gloves; intimidating, aggressive, sure of himself"
+  },
+  "announcer": {
+   "name": "THE ANNOUNCER",
+   "face": "refs/announcer_face.png",
+   "description": "a charismatic ring announcer with slicked back silver hair in a black tuxedo with a black bow tie, holding a silver handheld microphone"
+  },
+  "referee": {
+   "name": "THE REFEREE",
+   "face": "refs/referee_face.png",
+   "height_m": 1.8,
+   "weight_kg": 85,
+   "description": "a bald referee in a plain black short-sleeve shirt and black trousers, wearing thin black latex gloves"
+  },
+  "caster_a": {
+   "name": "THE PLAY-BY-PLAY COMMENTATOR",
+   "description": "a middle-aged commentator in a dark suit with a broadcast headset microphone"
+  },
+  "caster_b": {
+   "name": "THE COLOR COMMENTATOR",
+   "description": "a retired fighter turned commentator with a shaved head and a tight black polo shirt, wearing a broadcast headset microphone"
+  }
+ },
+ "set_refs": [
+  {
+   "file": "refs/ref_canvas_security_arena.png",
+   "what": "the white octagon canvas with the black shield emblem and the words SECURITY ARENA in its center",
+   "scenes": [
+    "announce",
+    "octagon"
+   ]
+  },
+  {
+   "file": "refs/ref_padding_security_arena.png",
+   "what": "the black padding on top of the cage fence and on the posts, printed only with this repeating SECURITY ARENA pattern",
+   "scenes": [
+    "announce",
+    "octagon"
+   ]
+  }
+ ],
+ "extra_brands": [],
+ "reveal_from": "S07",
+ "secret_words": [
+  "vpn",
+  "впн*",
+  "free connection",
+  "бесплатн*",
+  "connection",
+  "соединени*",
+  "buffering",
+  "буфер*",
+  "disconnect*",
+  "отключ*",
+  "lag",
+  "lagged",
+  "лаг*",
+  "wifi",
+  "internet",
+  "интернет*",
+  "сигнал*"
+ ],
+ "shots": [
+  {
+   "id": "S01",
+   "scene": "octagon",
+   "seconds": 5,
+   "rig": "high_wide_tele",
+   "purpose": "Арена, свет, пиротехника",
+   "blocking": [
+    {
+     "who": "august",
+     "screen": "center",
+     "faces": "camera"
+    }
+   ],
+   "beats": []
+  },
+  {
+   "id": "S02",
+   "scene": "octagon",
+   "seconds": 5,
+   "rig": "high_wide_tele",
+   "purpose": "Анонсер: главный бой",
+   "blocking": [
+    {
+     "who": "august",
+     "screen": "center",
+     "faces": "camera"
+    }
+   ],
+   "beats": []
+  },
+  {
+   "id": "S03",
+   "scene": "octagon",
+   "seconds": 5,
+   "rig": "high_wide_tele",
+   "purpose": "Август в углу, представление",
+   "blocking": [
+    {
+     "who": "august",
+     "screen": "center",
+     "faces": "camera"
+    }
+   ],
+   "beats": []
+  },
+  {
+   "id": "S04",
+   "scene": "octagon",
+   "seconds": 5,
+   "rig": "high_wide_tele",
+   "purpose": "Адгар в углу, представление",
+   "blocking": [
+    {
+     "who": "august",
+     "screen": "center",
+     "faces": "camera"
+    }
+   ],
+   "beats": []
+  },
+  {
+   "id": "S05",
+   "scene": "octagon",
+   "seconds": 5,
+   "rig": "high_wide_tele",
+   "purpose": "Фейс-офф, касание перчаток, 73 кг",
+   "blocking": [
+    {
+     "who": "august",
+     "screen": "center",
+     "faces": "camera"
+    }
+   ],
+   "beats": []
+  },
+  {
+   "id": "S06",
+   "scene": "octagon",
+   "seconds": 5,
+   "rig": "high_wide_tele",
+   "purpose": "Гонг",
+   "blocking": [
+    {
+     "who": "august",
+     "screen": "center",
+     "faces": "camera"
+    }
+   ],
+   "beats": []
+  },
+  {
+   "id": "S07",
+   "scene": "octagon",
+   "seconds": 5,
+   "rig": "high_wide_tele",
+   "purpose": "Адгар завис, загрузка, модем, падение доской",
+   "blocking": [
+    {
+     "who": "august",
+     "screen": "center",
+     "faces": "camera"
+    }
+   ],
+   "beats": []
+  },
+  {
+   "id": "S09",
+   "scene": "octagon",
+   "seconds": 5,
+   "rig": "high_wide_tele",
+   "purpose": "Пиксели, динозаврик убегает",
+   "blocking": [
+    {
+     "who": "august",
+     "screen": "center",
+     "faces": "camera"
+    }
+   ],
+   "beats": []
+  },
+  {
+   "id": "S10",
+   "scene": "octagon",
+   "seconds": 5,
+   "rig": "high_wide_tele",
+   "purpose": "WIN BY DISCONNECT, бровь Августа",
+   "blocking": [
+    {
+     "who": "august",
+     "screen": "center",
+     "faces": "camera"
+    }
+   ],
+   "beats": []
+  },
+  {
+   "id": "S11",
+   "scene": "octagon",
+   "seconds": 5,
+   "rig": "high_wide_tele",
+   "purpose": "Комментаторы: work fast / work for free",
+   "blocking": [
+    {
+     "who": "august",
+     "screen": "center",
+     "faces": "camera"
+    }
+   ],
+   "beats": []
+  }
+ ]
+}
