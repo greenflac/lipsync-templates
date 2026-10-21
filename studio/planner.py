@@ -12694,6 +12694,7 @@ def plan(
                 есть
                 | x15.made_inputs(op.name, [оп.name for оп in операции], ARTEFACT_IMAGE)
                 | r17.made_inputs(op.name, [оп.name for оп in операции], ARTEFACT_IMAGE)
+                | r18.made_inputs(op.name, рецепт.priors, ARTEFACT_VIDEO)
                 | anonymise.assumed_inputs(op.name, понято, ARTEFACT_IMAGE)
             ),
             языки if op.name in SPEECH_STEPS else (),

@@ -137,7 +137,7 @@ W_GARMENTS = re.compile(
     re.I,
 )
 NOTE_TRY_ON_BASE = (
-    "база «на модели»: одна сгенерированная модель (одна внешность, один seed / референс) — по кадру на ракурс, "
+    "база на модели: одна сгенерированная модель (одна внешность, один seed / референс) — по кадру на ракурс, "
     "общая для всех вещей; ваше фото модели заменяет этот шаг",
     "the on-model base: ONE generated model (one identity, one seed / reference) — a still per view, shared by "
     "every garment; a photo of your own model replaces this step",
@@ -398,7 +398,7 @@ def speech_batch(spec: Any, text: str = "") -> bool:
 def line_seconds(spec: Any, takes: int) -> float:
     if spec.per_shot_s:
         return float(spec.per_shot_s)
-    if spec.duration_s and _named(spec, "duration_s") and takes:
+    if spec.duration_s and spec.source.get("duration_s") == "spec" and takes:
         return max(0.5, float(spec.duration_s) / takes)
     for площадка in _delivery(spec).get("platform") or ():
         if площадка in LINE_S_BY_PLATFORM:
@@ -567,7 +567,6 @@ W_COMIC = re.compile(
     r"\bcomic|manga|manhwa|manhua|webtoon|graphic novel|\bpanels?\b|motion comic|комикс\w*|манг[аиу]\b|манхв\w*|вебтун\w*|панел\w* комикс",
     re.I,
 )
-W_SFX = re.compile(r"\bsfx\b|sound effects?|foley|sound design|\bsounds?\b|звуков\w* эффект\w*|шум\w*|звук\w*", re.I)
 W_NARRATION = re.compile(r"narrat\w*|voice[- ]?over|\bvo\b|voiced|dialogue|voice acting|озвуч\w*|закадр\w*|диалог\w*|голос\w*", re.I)
 #: Steps a motion comic does not use: no talking avatar, no lip sync, no stills (the panels are brought).
 COMIC_DROPS: frozenset[str] = frozenset(
@@ -811,6 +810,22 @@ def l10n_pairs() -> tuple[tuple[str, str], ...]:
     return tuple(ряды)
 
 
+def made_inputs(step: str, priors: Sequence[str], video_artefact: str) -> set[str]:
+    """A dance's motion transfer is fed by the driving dance video the customer films (an assembly line)."""
+    if step == "перенос_движения" and "dance_motion_transfer" in priors:
+        return {video_artefact}
+    return set()
+
+
+def dropped_assembly(priors: Sequence[str]) -> tuple[str, ...]:
+    """Route assembly lines a round-18 route no longer describes (the visualiser's under a podcast audiogram)."""
+    if "podcast_audiogram" not in priors:
+        return ()
+    from studio import brief_spec as bs
+
+    return (bs.NOTE_VISUALISER, bs.NOTE_VISUALISER_SYNC, bs.NOTE_VISUALISER_NO_TRACK)
+
+
 # --- the rewrite (called from `recipes.apply.rewrite`) ---------------------------------------------------------
 
 
@@ -943,7 +958,8 @@ def rewrite(
                 steps.append("озвучка")
             notes["озвучка"] = NOTE_COMIC_VO[0]
             step_seconds.setdefault("озвучка", (секунд, секунд))
-        if spec.audio != "none" and ("sfx" in set(spec.outputs) or not _named(spec, "outputs") or W_SFX.search(_words(spec, text))):
+        # A motion comic is sound-designed: effects unless the piece is named silent (`audio: none`).
+        if spec.audio != "none":
             if "звук_фон" not in steps:
                 steps.append("звук_фон")
             notes["звук_фон"] = NOTE_COMIC_SFX[0]

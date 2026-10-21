@@ -977,6 +977,7 @@ def rewrite(spec: "bs.Spec", route: "bs.Маршрут", text: str = "") -> Appl
     # Try-on batch, the restoration chain's faces, a speech batch, a podcast audiogram, a vertical reframe's
     # captions, a motion comic, a dance performance, one presenter still — spec first, EN/RU words fallback.
     steps = r18.rewrite(spec, steps, notes, counts, step_seconds, acc, text, avoid=avoid, shared=shared)
+    drop_assembly = (*drop_assembly, *r18.dropped_assembly(acc.priors))
     # Round-17 integration: with the burned-subtitle route the new subtitles come from the transcript and
     # its own burn-in line; "your SRT burned in — no transcription needed" no longer describes the plan.
     if "burned_subtitles_replace" in acc.priors:
