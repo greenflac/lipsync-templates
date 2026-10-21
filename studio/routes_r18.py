@@ -437,7 +437,8 @@ def _speech_batch_line(lines: int, voices: int, variations: int, chars: int) -> 
 
 # --- 4. podcast -> video ---------------------------------------------------------------------------------
 
-PODCAST_TASKS: frozenset[str | None] = frozenset({None, "generate", "animate", "music-visualiser", "r2v"})
+#: Integration (round 18): `captions` of a brought recording with a video out is an audiogram too.
+PODCAST_TASKS: frozenset[str | None] = frozenset({None, "generate", "animate", "music-visualiser", "r2v", "captions"})
 W_PODCAST = re.compile(
     r"podcast|episode|interview|radio show|talk show|lecture|sermon|webinar|audio ?book chapter|panel discussion"
     r"|подкаст\w*|выпуск\w*|интервью|радиошоу|лекци\w*|проповед\w*|вебинар\w*|эфир\w*",
@@ -503,6 +504,9 @@ def podcast_video(spec: Any, text: str = "") -> bool:
         return False
     if getattr(spec, "animate_input", None) is True:
         return False
+    if spec.task == "captions" and "song" not in set(getattr(spec, "audio_content", None) or ()):
+        # Captions of a recording with a video out: the picture is the cover and the waveform.
+        return True
     if _named(spec, "audio_content"):
         return "speech" in set(spec.audio_content) and not set(spec.audio_content) & {"song"}
     if "podcast" in set(_delivery(spec).get("platform") or ()):
@@ -814,6 +818,10 @@ def derived_task(spec: Any, text: str = "") -> str | None:
     return None
 
 
+ASSUMPTION_CAPTIONS_AUDIOGRAM = (
+    "spec.task captions on a recording with no video: the video is an audiogram (your cover or a generated one + "
+    "the waveform + the captions from the transcript) — bring a video to caption it instead"
+)
 ASSUMPTION_TASK = "spec.task not named — '{task}' read from the inputs and outputs ({why}); pass spec.task to change it"
 
 
@@ -835,6 +843,11 @@ def spec_transform(spec: Any, text: str = "") -> Any:
     задача = derived_task(spec, text)
     if задача:
         spec = _assume(spec, ASSUMPTION_TASK.format(task=задача, why=task_reason(spec, text)), task=задача)
+    if spec.task == "captions" and podcast_video(spec, text):
+        # Integration (round 18): captions of a brought recording, a video out — planned as the audiogram.
+        # Captions are of speech: the recording's content is speech unless the caller named it.
+        говорит = {} if _named(spec, "audio_content") else {"audio_content": ("speech",)}
+        spec = _assume(spec, ASSUMPTION_CAPTIONS_AUDIOGRAM, task="generate", **говорит)
     spec = with_restore_chain(spec, text)
     spec = with_reframe(spec, text)
     spec = with_tour(spec, text)

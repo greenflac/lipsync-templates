@@ -822,7 +822,7 @@ it is absent. Tests: `studio/tests/test_round18_routes.py`; mutants: `scripts/mu
 | route | spec field (first) | fallback words | plan |
 |---|---|---|---|
 | on-model product images | **`inputs[].role`** (model / garment / product), `products`, **`views`** | `W_MODEL_PHOTO`, `W_NO_MODEL`, `W_GARMENTS`, `W_VIEWS` | no model photo: ONE generated model, a still per view (shared asset) -> `примерка` per SKU × view (e.g. 6 × 3 = 18 try-ons at 0.04 usd = 0.72 usd + 3 base stills); a model photo: try-on only. Without a role, one photo item of N = N garments; two items = garment + model (the r10 reading) |
-| archival photo / film restoration | `task` chain (a named chain is kept), **`colorize`**, `resolution` vs `inputs[].resolution`, `fps` vs `inputs[].fps`, `inputs[].source / defects`, `people` / `subject: person` | `W_COLORIZE` / `W_KEEP_BW`, `W_UPSCALE`, `W_INTERP`, `W_RESTORE`, `W_FACES` | restore -> `восстановление_лиц` (new step, registry job `face-restore`: codeformer on fal, 0.0021 usd/MP) on photos with faces -> colourise -> upscale to the delivery frame (named `resolution` above `inputs[].resolution`; with the source frame unknown only a 4K-class delivery; colour before upscale is the r8 order: colourise at the source frame) -> film: deflicker / true speed at assembly, interpolation only when `fps` is above the source's; faces in film are a self-host line (no video endpoint recorded) |
+| archival photo / film restoration | `task` chain (a named chain is kept), **`colorize`**, `resolution` vs `inputs[].resolution`, `fps` vs `inputs[].fps`, `inputs[].source / defects`, `people` / `subject: person` | `W_COLORIZE` / `W_KEEP_BW`, `W_UPSCALE`, `W_INTERP`, `W_RESTORE`, `W_FACES` | restore -> `восстановление_лиц` (a PASS of the restoration: shown in the answer inside the restore step's `passes`, `planner.проходы_в_шаг`; registry job `face-restore`: codeformer on fal, 0.0021 usd/MP) on photos with faces -> colourise -> upscale to the delivery frame (named `resolution` above `inputs[].resolution`; with the source frame unknown only a 4K-class delivery; colour before upscale is the r8 order: colourise at the source frame) -> film: deflicker / true speed at assembly, interpolation only when `fps` is above the source's; faces in film are a self-host line (no video endpoint recorded) |
 | batch of speech lines | **`lines`**, **`variations`**, `characters` (voices), `shots` on a speech-only order | `W_LINES`, `W_VARIATIONS` | one `озвучка` step priced on lines × voices × variations × the line's characters (line length: `per_shot_s`, else game 2 s / telephony 6 s / web or education 8 s / 4 s); the Runway eleven_v3 per-request minimum (1 credit = 50 chars) priced beside it; one file per line + a manifest |
 | podcast / interview audio -> video | `audio_content` (speech, not song), `delivery.platform` podcast; an avatar only with `lipsync` / task `avatar` / people on screen speaking | `W_PODCAST` vs `W_SONG`, `W_AVATAR` | one cover still (none when brought) + a transcript of the whole episode (priced) -> cover + waveform + captions at assembly (soft track for youtube, burned for tiktok / reels); the clip price is the plan price (`ASSEMBLED_CLIP_PRIORS`) |
 | vertical cut of horizontal footage | `aspect` (W:H < 1) over `inputs[].resolution` not vertical, no `edit` named | — | `edit: reframe` derived -> the tracked crop at assembly; a transcript + burned captions for `SOCIAL_BURN_PLATFORMS`; the recorded `ltx-2.3-reframe` (0.10 / 0.20 usd per s) priced as the fallback line |
@@ -896,3 +896,25 @@ www.naturalearthdata.com, vega.github.io, www.remotion.dev, developer.chrome.com
 eur-lex.europa.eu, www.izotope.com, partnerhelp.netflixstudios.com, developer.mozilla.org,
 www.sony.net (the rules cite the canonical URLs; WCAG sign-language, jlreq / clreq, Noto CJK and
 MDN writing-mode were read from their GitHub sources).
+
+## `plan_pipeline`: round-18 integration (routes × knowledge)
+
+Tests: `studio/tests/test_round18_integration.py`; mutants: `scripts/mutate_round18_integration.py`.
+The scorer (`scripts/eval_plans.py`) is unchanged from round 17: a new planner step is not given a
+scorer mapping; the answer is shaped so the existing scorer reads it.
+
+| interaction | plan |
+|---|---|
+| try-on batch + `subject` garment / transparent | the try-on route and both caveats (`garment_print_drape`, `glass_liquid_optics`); the try-on step alone makes a garment order; a real person listed on screen (`people[].real`, `on_screen` not false) is in the customer's own photos — no generated on-model base |
+| restoration chain with faces + `domain` medical / science | the chain unchanged, the face pass shown INSIDE the restoration step (`steps[].passes`, its own model and price; the estimate and the clip price still count it), and `medical_science_review`; the domain never decides the face pass (the subject does) |
+| speech batch for `game-engine` | one TTS step for the batch, `nonverbal_vocalisations`, and the game loudness target (ASWG-R001, marked from memory) |
+| podcast -> video | the customer's own recording is the video's sound: the platform's loudness target is stated (`checklist._audio_made`); the transcript step only when captions are due (`routes_r18.podcast_captions`: `accessibility` captions, a text output, a named platform, an srt delivery, then the words); without them the cover + waveform is assembly only (`только_монтаж`); `task: captions` on a recording with no video is planned as this audiogram (task generate, content speech unless named; `ASSUMPTION_CAPTIONS_AUDIOGRAM`) instead of asking for a video |
+| vertical reframe + RTL / CJK languages | the tracked crop with burned captions, plus `rtl_graphics_fonts`, `cjk_locale_glyphs`, `cjk_vertical_text` and `vertical_safe_zone` |
+| motion comic + 2+ markets / languages | `textless_master` and an assembly line: the lettering is part of the art, each market is re-lettered over unlettered panels (`ASSEMBLY_COMIC_LETTERING`); effects only with sound in the piece (a voice-over, `audio`, an sfx / music / speech output, or the words) |
+| sign-language accessibility + podcast / explainer | the round-7 gap stays the outcome and carries `sign_language_access` with the named regional sign language |
+| upscale with a delivery `fps` and the source rate unknown | a frame-rate number in the words is not a request for interpolation; interpolation words or a known lower source rate are |
+
+Figures put into caveats from memory because their sources were refused by the proxy (SCORM
+suspend_data limits, the Ofcom signer inset, AES TD1004 web loudness, ASWG-R001 game loudness)
+carry "(from memory — source not reachable; verify)" / "(по памяти — источник недоступен; проверить)"
+in both languages; a test pins the marker.

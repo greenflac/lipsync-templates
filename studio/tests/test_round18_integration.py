@@ -223,6 +223,21 @@ class ПодкастЮтуб(unittest.TestCase):
         self.assertEqual(["расшифровка"], steps_of(plan("Waveform video", w(raw, delivery={"platform": ["youtube"]}))))
         self.assertEqual(["расшифровка"], steps_of(plan("Waveform video", w(raw, outputs=["video", "text"]))))
 
+    def test_задача_субтитры_к_записи(self) -> None:
+        raw = {"task": "captions", "inputs": [{"kind": "audio", "owned": True, "duration_s": 1800}, P()],
+               "outputs": ["video"], "duration_s": 1800, "languages": ["en"], "accessibility": ["captions"],
+               "delivery": {"platform": ["youtube"]}, "people": []}
+        for brief in ("Captions for our episode as a YouTube video", "Субтитры к выпуску, видео для YouTube",
+                      "Sous-titres de notre épisode pour YouTube"):
+            d = plan(brief, raw)
+            self.assertEqual(["расшифровка"], steps_of(d), brief)
+            self.assertIn("showwaves", assembly(d), brief)
+        # A song is a music visualiser's job, not an audiogram.
+        self.assertFalse(r18.podcast_video(_spec(w(raw, audio_content=["song"])), "x"))
+        # Captions of the customer's own video are not an audiogram.
+        own = w(raw, inputs=[{"kind": "video", "owned": True, "duration_s": 60}])
+        self.assertFalse(r18.podcast_video(_spec(own), "x"))
+
     def test_субтитры_подкаста_по_полям(self) -> None:
         base = _spec({"task": "generate", "inputs": [{"kind": "audio", "owned": True, "duration_s": 60}],
                       "outputs": ["video"], "duration_s": 60, "people": []})

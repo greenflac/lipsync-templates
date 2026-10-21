@@ -95,6 +95,8 @@ class АнглийскийОтвет(Набор):
         встречено = set()
         for ответ in self.планы_en.values():
             встречено |= {ш.get("step") for ш in ответ.get("steps") or []}
+            # Round-18 integration: a pass (the face pass of a restoration) is shown inside its host step.
+            встречено |= {п.get("step") for ш in ответ.get("steps") or [] for п in ш.get("passes") or []}
             встречено.add((ответ.get("native_audio_variant") or {}).get("step"))
         self.assertEqual(set(), виды - встречено)
         self.assertIn(planner.NATIVE_AUDIO_STEP, встречено)
