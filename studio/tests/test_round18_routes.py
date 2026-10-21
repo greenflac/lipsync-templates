@@ -237,12 +237,16 @@ class ЦепочкаРеставрации(unittest.TestCase):
 
     def test_план_и_цена(self) -> None:
         d = plan("Restaurar, colorear y ampliar a 4K la foto de mi abuela", OLD)
-        self.assertEqual(
-            ["реставрация_изображения", "восстановление_лиц", "раскраска_изображения", "апскейл_изображения"],
-            steps_of(d),
-        )
-        self.assertEqual("codeformer", model_of(d, "восстановление_лиц"))
-        self.assertIn("0.0021 usd", price_of(d, "восстановление_лиц"))
+        # The face pass is shown INSIDE the restoration step (`planner.проходы_в_шаг`): one restoration in the
+        # answer, its passes listed; the pass keeps its own model and price, and the clip price counts it.
+        self.assertEqual(["реставрация_изображения", "раскраска_изображения", "апскейл_изображения"], steps_of(d))
+        проходы = step(d, "реставрация_изображения").get("passes") or []
+        self.assertEqual(["восстановление_лиц"], [п["step"] for п in проходы])
+        лица = проходы[0]
+        self.assertEqual("codeformer", (лица.get("chosen") or {}).get("model"))
+        self.assertIn("0.0021 usd", str((лица.get("chosen") or {}).get("price")))
+        сметы = [с["step"] for с in d["pipeline_price"]["смета"]["steps"]]
+        self.assertIn("восстановление_лиц", сметы)
         for s in ("раскраска_изображения", "апскейл_изображения"):
             self.assertIn("usd", price_of(d, s))
 

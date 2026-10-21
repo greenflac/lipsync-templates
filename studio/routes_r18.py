@@ -168,6 +168,9 @@ def model_brought(spec: Any, text: str = "") -> bool:
     роли = _roles(spec)
     if роли:
         return bool(роли & {"model", "person"})
+    # A real person listed on screen is in the customer's own photos: a real person is never generated.
+    if any(п.get("real") is True and п.get("on_screen") is not False for п in getattr(spec, "people", None) or ()):
+        return True
     слова = _words(spec, text)
     if W_NO_MODEL.search(слова):
         return False
@@ -227,6 +230,10 @@ W_UPSCALE = re.compile(r"upscal\w*|super[- ]?resolution|\b(?:4k|8k|2160p|uhd)\b|
 W_INTERP = re.compile(
     r"frame interpolation|interpolat\w*|smooth(?:er)? motion|\b(?:48|50|60)\s?fps\b|slow[- ]motion|интерполяц\w*|плавн\w* движ\w*",
     re.I,
+)
+#: Interpolation asked in words, without the bare frame-rate numbers of `W_INTERP`.
+W_INTERP_ASKED = re.compile(
+    r"frame interpolation|interpolat\w*|smooth(?:er)? motion|slow[- ]motion|интерполяц\w*|плавн\w* движ\w*", re.I
 )
 W_RESTORE = re.compile(r"restor\w*|repair\w*|scratch\w*|dust|tears?\b|damaged|реставр\w*|восстанов\w*|царапин\w*|повреж\w*", re.I)
 W_FACES = re.compile(
@@ -296,6 +303,9 @@ def interpolate_wanted(spec: Any, text: str = "") -> bool:
         исходные = [float(з.get("fps")) for з in _items(spec, "video") if з.get("fps")]
         if исходные:
             return float(spec.fps) > max(исходные)
+        # Integration (round 18): the delivery rate named, the source's unknown — a frame-rate number in the words
+        # is that delivery rate (or the source's own), not a request; only interpolation words ask for it.
+        return bool(W_INTERP_ASKED.search(_words(spec, text)))
     return bool(W_INTERP.search(_words(spec, text)))
 
 
@@ -501,6 +511,23 @@ def podcast_video(spec: Any, text: str = "") -> bool:
     return bool(W_PODCAST.search(слова)) and not W_SONG.search(слова)
 
 
+#: Integration (round 18): captions of an audiogram named in words (EN/RU) when no field carries them.
+W_CAPTIONS = re.compile(
+    r"caption\w*|subtitl\w*|transcri\w*|\bchapters?\b|\bsrt\b|субтитр\w*|расшифров\w*|титр\w*|глав[аыу]?\b", re.I
+)
+
+
+def podcast_captions(spec: Any, text: str = "") -> bool:
+    """The audiogram carries captions (a transcript step): `accessibility` captions, a text output, a named
+    platform or an srt delivery first, then the words; none of them — the cover and the waveform alone."""
+    if "captions" in set(getattr(spec, "accessibility", None) or ()) or "text" in set(spec.outputs):
+        return True
+    сдача = _delivery(spec)
+    if сдача.get("platform") or "srt" in set(сдача.get("format") or ()):
+        return True
+    return bool(W_CAPTIONS.search(_words(spec, text)))
+
+
 # --- 5. vertical reframe -------------------------------------------------------------------------------------
 
 REFRAME_TASKS: frozenset[str | None] = frozenset({"video-edit", "edit"})
@@ -614,6 +641,12 @@ ASSEMBLY_COMIC_LETTERING = (
     "versions for several markets: the balloon text is part of the art, so the textless master needs the panels "
     "without lettering (the art before lettering, or the lettering on its own layer); each market is re-lettered "
     "over the clean panels, cleaning balloons by inpainting is the expensive fallback — 0 usd",
+)
+
+
+#: Sound named for a motion comic (EN/RU): effects, ambience, a soundtrack.
+W_COMIC_SOUND = re.compile(
+    r"\bsfx\b|sound|effects?|ambien\w*|foley|audio|music|soundtrack|звук\w*|эффект\w*|шум\w*|музык\w*", re.I
 )
 
 
@@ -933,15 +966,19 @@ def rewrite(
             новые.append("генерация_изображения")
             counts["генерация_изображения"] = 1
             notes["генерация_изображения"] = NOTE_PODCAST_COVER[0]
-        новые.append("расшифровка")
-        notes["расшифровка"] = NOTE_PODCAST_TRANSCRIPT[0]
-        if секунд:
-            step_seconds["расшифровка"] = (секунд, секунд)
+        субтитры = podcast_captions(spec, text)
+        if субтитры:
+            новые.append("расшифровка")
+            notes["расшифровка"] = NOTE_PODCAST_TRANSCRIPT[0]
+            if секунд:
+                step_seconds["расшифровка"] = (секунд, секунд)
         steps = [*новые, *(s for s in steps if s not in новые)]
         # The visualiser's loop / beat lines no longer describe the plan.
         acc.assembly[:] = [а for а in acc.assembly if not re.search(r"loop|beat|reactiv|петл|бит|реактив", а[1] + а[0], re.I)]
         acc.assembly.append(ASSEMBLY_AUDIOGRAM)
         acc.assembly.append(ASSEMBLY_CAPTIONS_SOFT if r17.soft_subtitles(spec) and not social_burn(spec) else ASSEMBLY_CAPTIONS_BURN)
+        if not субтитры:
+            acc.assembly.pop()
         acc.assembly.append(ASSEMBLY_PODCAST_AVATAR)
     # 5. vertical reframe: captions for social
     if set(spec.edit) & {EDIT_REFRAME, EDIT_CROP} and "video" in set(spec.inputs) and vertical_target(spec):
@@ -985,6 +1022,12 @@ def rewrite(
             if "звук_фон" not in steps:
                 steps.append("звук_фон")
             notes["звук_фон"] = NOTE_COMIC_SFX[0]
+        # Integration (round 18): effects only with sound in the piece — the voice-over, a named audio / sfx
+        # output, or the words; panels alone with nothing said about sound stay a picture job.
+        if not (голос or spec.audio or set(spec.outputs) & {"sfx", "music", "speech"}
+                or W_COMIC_SOUND.search(_words(spec, text))):
+            steps = [s for s in steps if s != "звук_фон"]
+            notes.pop("звук_фон", None)
         acc.assembly[:] = [а for а in acc.assembly if а not in (ASSEMBLY_COMIC_SPLIT,)]
         acc.assembly += [ASSEMBLY_COMIC_SPLIT, ASSEMBLY_COMIC_PARALLAX, ASSEMBLY_COMIC_EDIT]
         from studio import expert_r18 as x18

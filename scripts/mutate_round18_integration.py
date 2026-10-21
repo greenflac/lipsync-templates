@@ -25,6 +25,7 @@ ROOT = Path(__file__).resolve().parents[1]
 CL = "studio/recipes/checklist.py"
 R18 = "studio/routes_r18.py"
 X18 = "studio/expert_r18.py"
+PN = "studio/planner.py"
 
 #: (файл, было, стало, что ломается)
 MUTANTS: tuple[tuple[str, str, str, str], ...] = (
@@ -37,6 +38,23 @@ MUTANTS: tuple[tuple[str, str, str, str], ...] = (
     (R18, "        if x18.textless_needed(spec, text):\n            acc.assembly.append(ASSEMBLY_COMIC_LETTERING)\n", "",
      "комикс для нескольких рынков без леттеринга"),
     (R18, "        if x18.textless_needed(spec, text):\n", "        if True:\n", "леттеринг и для одного рынка"),
+    (PN, 'ШАГ_ПРОХОДА: dict[str, tuple[str, ...]] = {"восстановление_лиц": ("реставрация_изображения",)}',
+     "ШАГ_ПРОХОДА: dict[str, tuple[str, ...]] = {}", "проход лиц снова отдельным шагом"),
+    (PN, '            итог[где] = {**итог[где], "passes": [*(итог[где].get("passes") or []), ш]}\n',
+     '            итог[где] = {**итог[где], "passes": [*(итог[где].get("passes") or []), ш]}\n            итог.append(ш)\n',
+     "проход и внутри, и отдельно"),
+    (PN, "    if not маршрут.шаги and рецепт.assembly and set(рецепт.priors) & r18.ASSEMBLED_CLIP_PRIORS:\n",
+     "    if False:\n", "аудиограмма без шагов снова вопрос"),
+    (R18, '    if сдача.get("platform") or "srt" in set(сдача.get("format") or ()):\n        return True\n', "",
+     "площадка не даёт субтитров аудиограмме"),
+    (R18, "        субтитры = podcast_captions(spec, text)\n", "        субтитры = True\n",
+     "аудиограмма всегда с расшифровкой"),
+    (R18, '    if any(п.get("real") is True and п.get("on_screen") is not False for п in getattr(spec, "people", None) or ()):\n'
+          "        return True\n", "", "реальная модель в кадре — база генерируется"),
+    (R18, "        return bool(W_INTERP_ASKED.search(_words(spec, text)))\n", "",
+     "число кадров в словах снова просьба интерполяции"),
+    (R18, '            steps = [s for s in steps if s != "звук_фон"]\n', "", "комикс без звука получает эффекты"),
+    (R18, "        if not (голос or spec.audio or", "        if not (spec.audio or", "голос комикса не даёт эффектов"),
     (CL, "keeps 64,000 characters (both limits from memory — source not reachable; verify)",
      "keeps 64,000 characters", "SCORM без пометки «по памяти» (EN)"),
     (CL, "64 000 символов (оба предела по памяти — источник недоступен; проверить)", "64 000 символов",

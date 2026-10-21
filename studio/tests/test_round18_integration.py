@@ -50,6 +50,13 @@ def says(d: dict, rid: str) -> str:
     return next(str(н.get("says")) for н in d.get("production_notes") or [] if н.get("id") == rid)
 
 
+def passes(d: dict, name: str) -> list[str]:
+    for ш in d.get("steps") or []:
+        if ш.get("step") == name:
+            return [str(п.get("step")) for п in ш.get("passes") or []]
+    raise AssertionError(f"no step {name}: {steps_of(d)}")
+
+
 def assembly(d: dict) -> str:
     return " | ".join(str(с) for с in (d.get("assembly") or {}).get("why") or [])
 
@@ -91,6 +98,20 @@ class ПримеркаОдеждаСтекло(unittest.TestCase):
             self.assertIn("garment_print_drape", notes(d), brief)
             self.assertIn("glass_liquid_optics", notes(d), brief)
 
+    def test_реальная_модель_в_своих_фото(self) -> None:
+        # A real person listed on screen is in the customer's photos: no generated on-model base.
+        talent = [{"name": "models", "real": True, "public_figure": False, "consent": "stated", "role": "talent",
+                   "on_screen": True, "speaks": False}]
+        raw = w(TRY, inputs=[P(count=15)], subject=["person", "garment"], people=talent, task="edit")
+        raw = {k: v for k, v in raw.items() if k != "views"}
+        for brief in ("Retouchez nos maillots portés par nos mannequins", "Отретушировать купальники на наших моделях",
+                      "Retouch the swimsuits on our models"):
+            а = applied(brief, raw)
+            self.assertNotIn("генерация_изображения", а.route.шаги, brief)
+        # Not on screen (a voice, a name in the credits): the base is generated as before.
+        а = applied("Our swimsuits", w(raw, people=[{**talent[0], "on_screen": False}]))
+        self.assertIn("генерация_изображения", а.route.шаги)
+
     def test_примерка_сама_несёт_одежду(self) -> None:
         # No `subject` garment and no garment words: the try-on step alone makes it a garment order.
         raw = w(TRY, subject=["transparent"])
@@ -113,7 +134,7 @@ OLD = {"task": "restore", "inputs": [P(source=["archival"], defects=["scratches"
 
 
 class РеставрацияМедицина(unittest.TestCase):
-    CHAIN = ["реставрация_изображения", "восстановление_лиц", "раскраска_изображения", "апскейл_изображения"]
+    CHAIN = ["реставрация_изображения", "раскраска_изображения", "апскейл_изображения"]
 
     def test_цепочка_и_проверка_эксперта(self) -> None:
         for brief in ("Restore the portrait of our hospital's founding surgeon",
@@ -121,21 +142,23 @@ class РеставрацияМедицина(unittest.TestCase):
                       "Restaurer le portrait du fondateur de notre hôpital"):
             d = plan(brief, OLD)
             self.assertEqual(self.CHAIN, steps_of(d), brief)
+            self.assertEqual(["восстановление_лиц"], passes(d, "реставрация_изображения"), brief)
             self.assertIn("medical_science_review", notes(d), brief)
             self.assertIn("restore_chain", notes(d), brief)
 
     def test_наука_тоже(self) -> None:
         d = plan("Restore the lab photo of the 1950s research team", w(OLD, domain=["science"]))
         self.assertEqual(self.CHAIN, steps_of(d))
+        self.assertEqual(["восстановление_лиц"], passes(d, "реставрация_изображения"))
         self.assertIn("medical_science_review", notes(d))
 
     def test_область_не_трогает_лица(self) -> None:
         # The domain adds a caveat; the face pass is still decided by the subject.
         d = plan("Restore the specimen plate", w(OLD, subject=["other"]))
-        self.assertNotIn("восстановление_лиц", steps_of(d))
+        self.assertEqual([], passes(d, "реставрация_изображения"))
         self.assertIn("medical_science_review", notes(d))
         d = plan("Restore the portrait", w(OLD, domain=["education"]))
-        self.assertIn("восстановление_лиц", steps_of(d))
+        self.assertEqual(["восстановление_лиц"], passes(d, "реставрация_изображения"))
         self.assertNotIn("medical_science_review", notes(d))
 
 
@@ -181,6 +204,34 @@ class ПодкастЮтуб(unittest.TestCase):
             self.assertIn("-14 LUFS", says(d, "loudness_measure_after_mix"), brief)
             self.assertIn("wcag_captions", notes(d), brief)
             self.assertIn("showwaves", assembly(d), brief)
+
+    def test_без_площадки_и_субтитров_только_сборка(self) -> None:
+        # A cover brought, no platform, no captions asked: the cover + the waveform is pure assembly.
+        raw = {"task": "music-visualiser", "inputs": [{"kind": "audio", "owned": True, "duration_s": 3000}, P()],
+               "outputs": ["video"], "duration_s": 3000, "aspect": "16:9", "people": [], "audio_content": ["speech"]}
+        for brief in ("A waveform video of our podcast episode over our cover", "Видео-волна нашего подкаста на обложке",
+                      "Une vidéo en forme d'onde de notre podcast"):
+            d = plan(brief, raw)
+            self.assertEqual([], steps_of(d), brief)
+            self.assertEqual("только_монтаж", d.get("reason"), brief)
+            self.assertIn("showwaves", json.dumps(d, ensure_ascii=False), brief)
+            self.assertNotIn("расшифровк", json.dumps(d.get("steps"), ensure_ascii=False), brief)
+        # Captions named by a field or by the words: the transcript comes back.
+        self.assertEqual(["расшифровка"], steps_of(plan("Waveform video", w(raw, accessibility=["captions"]))))
+        self.assertEqual(["расшифровка"], steps_of(plan("Waveform video with subtitles", raw)))
+        self.assertEqual(["расшифровка"], steps_of(plan("Видео-волна с субтитрами", raw)))
+        self.assertEqual(["расшифровка"], steps_of(plan("Waveform video", w(raw, delivery={"platform": ["youtube"]}))))
+        self.assertEqual(["расшифровка"], steps_of(plan("Waveform video", w(raw, outputs=["video", "text"]))))
+
+    def test_субтитры_подкаста_по_полям(self) -> None:
+        base = _spec({"task": "generate", "inputs": [{"kind": "audio", "owned": True, "duration_s": 60}],
+                      "outputs": ["video"], "duration_s": 60, "people": []})
+        self.assertFalse(r18.podcast_captions(base, "our episode"))
+        self.assertTrue(r18.podcast_captions(base, "our episode with chapters"))
+        self.assertTrue(r18.podcast_captions(base, "наш выпуск, расшифровка"))
+        self.assertTrue(r18.podcast_captions(_spec({"task": "generate", "inputs": [{"kind": "audio", "owned": True}],
+                                                     "outputs": ["video"], "people": [],
+                                                     "delivery": {"format": ["srt"]}}), "x"))
 
     def test_без_звука_нет_громкости(self) -> None:
         d = plan("A silent cover video for our episode", w(POD, audio="none"))
@@ -281,6 +332,67 @@ class ЯзыкЖестовМаршруты(unittest.TestCase):
         d = plan("Turn our episode into a YouTube video", w(SIGN_POD, accessibility=["captions"], languages=["en"]))
         self.assertEqual(["генерация_изображения", "расшифровка"], steps_of(d))
         self.assertNotIn("sign_language_access", notes(d))
+
+
+# --- j. residuals of the routes on older sets -------------------------------------------------------------------
+
+
+class ОстаткиМаршрутов(unittest.TestCase):
+    def test_интерполяция_без_кадров_исходника(self) -> None:
+        clip = {"task": "upscale", "inputs": [{"kind": "video", "owned": True, "duration_s": 600, "resolution": "1920x1080"}],
+                "outputs": ["video"], "duration_s": 600, "resolution": "4k", "fps": 60, "people": []}
+        # The delivery rate named, the source rate unknown: "60 fps" in the words is not a request.
+        for brief in ("Upscale our 60 fps gameplay to 4K", "Апскейл нашего геймплея 60 fps в 4K", "Gameplay 60fps en 4K"):
+            self.assertNotIn("интерполяция_кадров", applied(brief, clip).route.шаги, brief)
+        self.assertIn("интерполяция_кадров", applied("Upscale to 4K and interpolate to 60 fps", clip).route.шаги)
+        self.assertIn("интерполяция_кадров", applied("Апскейл и плавное движение", clip).route.шаги)
+        # The source rate known: the fields decide both ways.
+        own = w(clip, inputs=[{**clip["inputs"][0], "fps": 30}])
+        self.assertIn("интерполяция_кадров", applied("x", own).route.шаги)
+        own = w(clip, inputs=[{**clip["inputs"][0], "fps": 60}])
+        self.assertNotIn("интерполяция_кадров", applied("smooth motion", own).route.шаги)
+
+    def test_комикс_без_звука_без_эффектов(self) -> None:
+        raw = {"task": "animate", "inputs": [P(count=40, source=["comic"])], "outputs": ["video"], "shots": 40,
+               "per_shot_s": 4, "aspect": "9:16", "people": []}
+        for brief in ("Animate our 40 comic panels", "Оживить 40 панелей комикса", "Animar 40 viñetas"):
+            self.assertEqual(("оживление",), applied(brief, raw).route.шаги, brief)
+        self.assertIn("звук_фон", applied("Animate our panels with sound effects", raw).route.шаги)
+        self.assertIn("звук_фон", applied("Оживить панели со звуком", raw).route.шаги)
+        self.assertIn("звук_фон", applied("x", w(raw, audio="native")).route.шаги)
+        self.assertIn("звук_фон", applied("x", w(raw, outputs=["video", "sfx"])).route.шаги)
+        # A voice-over makes it a sound-designed piece.
+        self.assertIn("звук_фон", applied("x", w(raw, voiceover=True)).route.шаги)
+
+
+# --- i. a pass is shown inside its host step ---------------------------------------------------------------------
+
+
+class ПроходВШаге(unittest.TestCase):
+    def test_проход_внутрь(self) -> None:
+        from studio import planner
+
+        ответ = {"steps": [{"step": "реставрация_изображения"}, {"step": "восстановление_лиц", "chosen": {"model": "c"}},
+                           {"step": "раскраска_изображения"}]}
+        got = planner.проходы_в_шаг(ответ)
+        self.assertEqual(["реставрация_изображения", "раскраска_изображения"], steps_of(got))
+        self.assertEqual([{"step": "восстановление_лиц", "chosen": {"model": "c"}}], got["steps"][0]["passes"])
+        # The original answer is not changed in place.
+        self.assertEqual(3, len(ответ["steps"]))
+
+    def test_без_хозяина_как_было(self) -> None:
+        from studio import planner
+
+        ответ = {"steps": [{"step": "восстановление_лиц"}, {"step": "апскейл_изображения"}]}
+        self.assertEqual(ответ, planner.проходы_в_шаг(ответ))
+        ответ = {"steps": [{"step": "апскейл_изображения"}, {"step": "восстановление_лиц"}]}
+        self.assertEqual(["апскейл_изображения", "восстановление_лиц"], steps_of(planner.проходы_в_шаг(ответ)))
+
+    def test_цена_ролика_считает_проход(self) -> None:
+        d = plan("Restore the portrait of our founder", w(OLD, domain=["education"]))
+        сметы = {с["step"]: float(с["usd"]) for с in d["pipeline_price"]["смета"]["steps"]}
+        self.assertIn("восстановление_лиц", сметы)
+        self.assertAlmostEqual(sum(сметы.values()), float(d["pipeline_price"]["смета"]["usd"]), places=2)
 
 
 # --- h. figures from memory are marked ---------------------------------------------------------------------------

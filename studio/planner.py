@@ -11886,6 +11886,7 @@ def только_монтаж(
     creative: str,
     бюджет: "Budget",
     заметки: Sequence[Mapping[str, Any]] = (),
+    рецепта: Sequence[tuple[str, str]] = (),
 ) -> dict:
     """План БЕЗ модели: работа целиком монтажная (стабилизация без эндпоинта). Цена 0.
 
@@ -11895,7 +11896,7 @@ def только_монтаж(
     """
     почему = [
         bs.ASSEMBLY_REASONS[н][1 if по_английски else 0] for н in маршрут.сборка if н in bs.ASSEMBLY_REASONS
-    ]
+    ] + [пара[1 if по_английски else 0] for пара in рецепта]
     сборка = {
         "step": ASSEMBLY_STEP,
         "tool": ASSEMBLY_TOOL,
@@ -12303,6 +12304,20 @@ def plan(
             creative,
             бюджет,
             заметки=rc.notes(понято_монтажа, (), по_английски, text=текст, applied=рецепт),
+        )
+    if not маршрут.шаги and рецепт.assembly and set(рецепт.priors) & r18.ASSEMBLED_CLIP_PRIORS:
+        # Сведение 18-го круга: аудиограмма со своей обложкой и без субтитров — обложка + волна целиком на
+        # монтаже; строки сборки несёт рецепт (`routes_r18`), а не маршрут.
+        понято_монтажа = bs.with_defaults(понято, ролик=True, текст=текст)
+        return только_монтаж(
+            маршрут,
+            понято_монтажа,
+            текст,
+            по_английски,
+            creative,
+            бюджет,
+            заметки=rc.notes(понято_монтажа, (), по_английски, text=текст, applied=рецепт),
+            рецепта=рецепт.assembly,
         )
     if маршрут.шаги:
         # МАРШРУТ ПО СТРУКТУРЕ: шаги — из того, ЧТО заказано и ИЗ ЧЕГО, а не из
@@ -14339,8 +14354,36 @@ def plan(brief: str, *args: Any, full: bool = False, **kwargs: Any) -> dict:  # 
     ответ = l10n.localise_payload(ответ, язык)
     if ответ.get("full") is True and not full:
         # Строки самого сжатия («omitted») — тем же путём.
-        return l10n.localise_payload(сжать(ответ), язык)
-    return ответ
+        return проходы_в_шаг(l10n.localise_payload(сжать(ответ), язык))
+    return проходы_в_шаг(ответ)
+
+
+#: Сведение 18-го круга: ПРОХОД, а не отдельная работа — шаг-проход показывается внутри шага, на чьём результате
+#: он работает (`passes`), чтобы в ответе была одна реставрация, а её проходы — списком в ней. Лица снимка
+#: (`routes_r18.FACE_RESTORE_STEP`, CodeFormer / GFPGAN) — проход реставрации; цена прохода остаётся в смете и
+#: в цене ролика, у прохода свои модель и цена.
+ШАГ_ПРОХОДА: dict[str, tuple[str, ...]] = {"восстановление_лиц": ("реставрация_изображения",)}
+
+
+def проходы_в_шаг(ответ: dict) -> dict:
+    """Шаги-проходы (`ШАГ_ПРОХОДА`) — в `passes` ближайшего предыдущего шага-хозяина; без хозяина — как были."""
+    шаги = ответ.get("steps")
+    if not isinstance(шаги, list) or not any(
+        isinstance(ш, dict) and ш.get("step") in ШАГ_ПРОХОДА for ш in шаги
+    ):
+        return ответ
+    итог: list[Any] = []
+    for ш in шаги:
+        хозяева = ШАГ_ПРОХОДА.get(ш.get("step")) if isinstance(ш, dict) else None
+        где = next(
+            (i for i in range(len(итог) - 1, -1, -1) if isinstance(итог[i], dict) and итог[i].get("step") in (хозяева or ())),
+            None,
+        )
+        if хозяева and где is not None:
+            итог[где] = {**итог[где], "passes": [*(итог[где].get("passes") or []), ш]}
+        else:
+            итог.append(ш)
+    return {**ответ, "steps": итог}
 
 
 plan.__doc__ = _план_на_языке_шаблонов.__doc__
