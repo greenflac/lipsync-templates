@@ -154,7 +154,8 @@ MUTANTS: tuple[tuple[str, str, str, str], ...] = (
     (CL, ' or (x18.condensed_cut(c.spec) and "правка_видео" not in c.steps)', "", "сжатая нарезка без выбора моментов"),
     (X18, "        if з.get(\"kind\") == \"audio\" and длина and (длина, штук) in видео:\n            continue\n", "",
      "звук видео — второй материал (x18)"),
-    (X15, "            if з.get(\"kind\") == \"audio\" and запись in видео:\n                continue\n", "",
+    (X15, '            if з.get("kind") == "audio" and (float(з["duration_s"]), max(1, int(з.get("count") or 1))) in видео:\n'
+     "                continue\n", "",
      "звук видео — вторая расшифровка"),
     (X17, "    всего = min(всего, x18.programme_seconds(spec)) if всего else всего\n", "", "паузы тифлокомментария по двум входам"),
     # --- поля и черновик
@@ -166,7 +167,8 @@ MUTANTS: tuple[tuple[str, str, str, str], ...] = (
 
 def clean() -> None:
     for p in ROOT.rglob("__pycache__"):
-        if ".claude" not in p.relative_to(ROOT).parts:
+        части = p.relative_to(ROOT).parts
+        if ".claude" not in части:
             shutil.rmtree(p, ignore_errors=True)
 
 
