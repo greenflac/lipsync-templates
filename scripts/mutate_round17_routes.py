@@ -47,8 +47,10 @@ MUTANTS: tuple[tuple[str, str, str, str], ...] = (
     (BS, "    spec = r17.with_narration(spec)\n", "", "озвучка не входит в выходы"),
     # 1. вшитые субтитры
     (R, '        return поле == "burned"\n', "        return True\n", "subtitles none считается вшитыми"),
-    (R, "    return bool(W_BURNED_SUBS.search(_words(spec, text)))\n\n\ndef soft_subtitles",
+    (R, "    return bool(W_BURNED_SUBS.search(слова))\n\n\ndef soft_subtitles",
      "    return False\n\n\ndef soft_subtitles", "слова о вшитых субтитрах не читаются"),
+    (R, "    if W_ADD_SUBS.search(слова) and not W_OLD_SUBS.search(слова):\n        return False\n", "",
+     "«добавьте вшитые субтитры» читается как старые вшитые"),
     (R, "    return bool(площадки) and площадки <= SOFT_SUB_PLATFORMS\n", "    return False\n",
      "площадка с дорожкой не даёт мягких субтитров"),
     (R, 'SOFT_SUB_FORMATS: frozenset[str] = frozenset({"srt"})', "SOFT_SUB_FORMATS: frozenset[str] = frozenset()",

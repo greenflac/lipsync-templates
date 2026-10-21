@@ -127,6 +127,18 @@ W_BURNED_SUBS = re.compile(
     r"|субтитр\w* (?:\w+ )?(?:вшиты|прожжены|встроены|впечатаны|зашиты) в (?:кадр|видео|картинку)|хардсаб\w*",
     re.I,
 )
+#: An order to ADD new burned captions ("add burned-in captions") is not footage that already has them —
+#: unless the words also speak of the old ones (translate / remove / replace / existing).
+W_ADD_SUBS = re.compile(
+    r"\b(?:add|create|generate|make|put|burn)\w*\s+(?:[\w-]+\s+){0,3}(?:sub(?:title)?s?|captions?)\b"
+    r"|(?:добав|сдела|созда|наложи|вше[йи])\w*\s+(?:[\w-]+\s+){0,2}субтитр\w*",
+    re.I,
+)
+W_OLD_SUBS = re.compile(
+    r"translat|remov|replac|existing|original|already|old (?:sub|caption)"
+    r"|перев[её]д|перевод|убер|убра|замен|стары\w* субтитр|уже",
+    re.I,
+)
 #: Platforms that take a separate subtitle track (soft subs); short-form social apps get them burned.
 SOFT_SUB_PLATFORMS: frozenset[str] = frozenset({"youtube", "streaming-premium", "broadcast", "web", "internal", "editorial"})
 #: Delivery formats that ARE a soft subtitle track.
@@ -172,7 +184,10 @@ def burned_subtitles(spec: Any, text: str = "") -> bool:
     поле = subtitle_state(spec)
     if поле is not None:
         return поле == "burned"
-    return bool(W_BURNED_SUBS.search(_words(spec, text)))
+    слова = _words(spec, text)
+    if W_ADD_SUBS.search(слова) and not W_OLD_SUBS.search(слова):
+        return False
+    return bool(W_BURNED_SUBS.search(слова))
 
 
 def soft_subtitles(spec: Any) -> bool:

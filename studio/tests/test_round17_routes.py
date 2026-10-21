@@ -122,6 +122,11 @@ class ВшитыеСубтитры(unittest.TestCase):
                       "Переведите ролик, субтитры вшиты в кадр"):
             а = applied(brief, w(SUBS, inputs=[V()]))
             self.assertIn("burned_subtitles_replace", а.priors, brief)
+        for brief in ("Add burned-in animated captions in Spanish to my reel", "Добавьте вшитые субтитры к ролику"):
+            а = applied(brief, w(SUBS, task="captions", outputs=["video", "text"], inputs=[V()]))
+            self.assertNotIn("burned_subtitles_replace", а.priors, brief)
+        а = applied("Replace the burned-in subtitles with English ones", w(SUBS, inputs=[V()]))
+        self.assertIn("burned_subtitles_replace", а.priors)
         а = applied("Traduce el anuncio, los subtítulos están quemados", w(SUBS, inputs=[V()]))
         self.assertNotIn("burned_subtitles_replace", а.priors)
 
