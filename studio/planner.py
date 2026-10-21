@@ -2452,7 +2452,7 @@ OPERATIONS: tuple[Operation, ...] = (
         anchors=("gaussian-splat", "3d-scene"),
         requires=(ARTEFACT_REFERENCE,),
         produces=(ARTEFACT_MESH,),
-        requirement="3D-сцена места по снимкам с перекрытием: геометрия и вид сходятся со всеми ракурсами съёмки",
+        requirement=r17.REQUIREMENT_SCENE_3D[0],
     ),
     Operation(
         name=bs.V2A_STEP,

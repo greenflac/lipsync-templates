@@ -1069,6 +1069,7 @@ EN: tuple[tuple[str, str], ...] = (
 from studio import routes_r17 as _r17  # noqa: E402
 
 EN = (*EN, *_r17.l10n_pairs())
+TERMS_EN.setdefault("3d-модель", "3D model")
 
 
 #: ОБРЫВКИ ШАБЛОНОВ — единицы цены, связки. Идут ПОСЛЕ целых оборотов и в

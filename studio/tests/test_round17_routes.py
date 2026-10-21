@@ -376,7 +376,7 @@ class ЗаменаЧеловекаЦеликом(unittest.TestCase):
         self.assertEqual(("замена_персонажа",), applied("Ersetze den Schauspieler komplett", raw).route.шаги)
 
     def test_названная_правка_старше_слов(self) -> None:
-        raw = w(SWAP, edit=["relight"], edit_target="light")
+        raw = w(SWAP, edit=["relight"], edit_target="person")
         self.assertNotIn("замена_фигуры", applied("Replace the whole body of the actor", raw).route.шаги)
 
     def test_план(self) -> None:

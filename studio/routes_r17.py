@@ -367,6 +367,11 @@ SCENE_3D_DROPS: frozenset[str] = frozenset(
     {"оживление", "генерация_видео", "перенос_движения", "оборот_360", "модель_3d", "видео_по_референсу", "генерация_изображения"}
 )
 SCENE_3D_STEP = "реконструкция_3d"
+#: The step's requirement (`planner.OPERATIONS`), both answer languages.
+REQUIREMENT_SCENE_3D = (
+    "3D-сцена места по снимкам с перекрытием: геометрия и вид сходятся со всеми ракурсами съёмки",
+    "a 3D scene of the place from overlapping photos: geometry and look agree with every capture angle",
+)
 #: A splat needs dozens of overlapping views (`recipes.apply.SPLAT_PHOTOS_MIN` is the same number).
 SPLAT_PHOTOS_MIN = 20
 SPLAT_FORMATS: tuple[str, ...] = ("ply", "splat", "spz")
@@ -563,7 +568,7 @@ def consented_drill(spec: Any, text: str = "") -> bool:
 NOTE_PAIRS: tuple[tuple[str, str], ...] = (
     NOTE_SUBS_TRANSCRIPT, NOTE_SUBS_REMOVE, ASSEMBLY_SUBS_BURN, ASSEMBLY_SUBS_SOFT, ASSEMBLY_SUBS_SOFT_ALT,
     NOTE_PERFORMER_REF, NOTE_PERFORMER_R2V, NOTE_PERFORMER_LIPS, NOTE_BROLL_STILLS, NOTE_BROLL_I2V, ASSEMBLY_PERFORMER,
-    NOTE_SCENE_3D, ASSEMBLY_SPLAT_RENDER, ASSEMBLY_SPLAT_VIEWER, GAP_SPLAT_COMPUTE,
+    NOTE_SCENE_3D, REQUIREMENT_SCENE_3D, ASSEMBLY_SPLAT_RENDER, ASSEMBLY_SPLAT_VIEWER, GAP_SPLAT_COMPUTE,
     NOTE_WHOLE_PERSON, NOTE_WHOLE_PERSON_REF, NOTE_UGC_STILLS, ASSEMBLY_SIM_WATERMARK,
 )  # fmt: skip
 
@@ -571,6 +576,13 @@ NOTE_PAIRS: tuple[tuple[str, str], ...] = (
 def l10n_pairs() -> tuple[tuple[str, str], ...]:
     """(ru regex, en) rows for `studio/l10n.py`, the templated assembly lines included."""
     ряды = [(re.escape(ru), en) for ru, en in NOTE_PAIRS]
+    # The whole-character step's bilingual requirement (`planner.OPERATIONS`), now on the whole-person route too.
+    ряды.append((
+        re.escape("персонаж заменён целиком: фигура, силуэт и движение исходного кадра, свет и цвет сцены сохранены; "
+                  "whole-character replacement preserving motion, lighting and colour"),
+        "whole-character replacement preserving the figure, silhouette and motion of the source shot, and the "
+        "scene's light and colour",
+    ))
     шаблон_ru, шаблон_en = ASSEMBLY_SPLAT_CAPTURE
     ряды.append((re.escape(шаблон_ru).replace(re.escape("{n}"), r"(\d+)"), шаблон_en.replace("{n}", r"\1")))
     return tuple(ряды)

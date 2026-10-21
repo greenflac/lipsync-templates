@@ -729,3 +729,30 @@ other (tests: `studio/tests/test_round16_integration.py`):
 | `anonymise.voice` on a drawn (anime / cartoon) dub | the voice route (transcript + a different stock voice) wins; no dub, no optional lip-sync upgrade, and the "adapted to the mouth flaps" assembly line is dropped with the dub (`recipes.apply.DUB_ONLY_ASSEMBLY`) |
 | a video edit whose `edit_target` is not the person + `anonymise.faces` | the edit stays on the route next to the face route (`recipes.apply.ANONYMISE_KEEPS_EDIT`) and keeps its own model choice, the edit-tier swap included; with `edit_target: person` or none the edit is the anonymisation and is replaced as before |
 | `voiceover: false` + series / explainer words | not a narrated series: the words do not switch to key visuals (`expert_r16.key_visual_words`); `consistency: ["style"]` still does |
+
+## `plan_pipeline`: the missing routes (round 17)
+
+A fresh hidden set found seven orders the planner had no route for. Each is now a route in
+`studio/routes_r17.py` (hooked into `recipes.apply.rewrite`, one prior and one recipe each in
+`recipes/table.py`), decided by a spec field in any brief language; the EN/RU words are read only
+when the field is absent, and a named field wins both ways. New fields were added only where no
+existing one could carry the decision; all are strict, listed in the `plan_pipeline` description,
+in `spec_needed.allowed` (`brief_spec.OPTIONAL_HELP`) and in `spec_needed.draft.decision_fields`
+(`brief_spec.DECISION_FIELDS_R17`, with what the words read). Tests:
+`studio/tests/test_round17_routes.py`; mutants: `scripts/mutate_round17_routes.py` (both ways).
+
+| route | spec field (first) | fallback words | plan |
+|---|---|---|---|
+| translate footage with BURNED-IN subtitles | **`inputs[].subtitles`** burned \| soft \| none (video item) | `routes_r17.W_BURNED_SUBS` | transcript (ASR, priced) + OCR of the strip and machine translation as priced assembly lines (Google Video Intelligence text detection $0.15/min over 1,000 free min; Cloud Translation NMT $20 / 1M chars over 500k free) -> the old band removed by a masked edit (`edit: remove-object`, `edit_target: text`, priced per step) -> new subtitles burned in at assembly, or a soft SRT / WebVTT track when `delivery.format` has srt or every `delivery.platform` takes one (`SOFT_SUB_PLATFORMS`); a dub-translate order keeps its dub and gets the removal step; caveat `burned_subtitles_translation` |
+| singer music video from a performer reference | `lipsync`, `people[].on_screen + speaks`; **`performer_shots`** | `brief_spec.SINGING` | performer photos (or one generated reference) -> reference-to-video on the performer shots -> lip sync on THOSE shots only (seconds = performer shots × shot length); the other shots: key stills -> image-to-video, no lips. The planner no longer folds lip sync + i2v into one avatar step when the plan has the r2v step |
+| 3D walkthrough / tour of a real place | **`reconstruct_3d`**; `delivery.format` **ply \| splat \| spz** | `routes_r17.W_SCENE_3D` | one step `реконструкция_3d` (gaussian splat: COLMAP poses, gsplat / nerfstudio splatfacto, Apache-2.0; the Inria original is non-commercial) with no orderable endpoint; capture guidance, a rendered camera path or a viewer file at assembly; the compute price is a RECORDED GAP (`gaussian-splat-training.gpu_seconds_gap`), never a guess; no video model on the route; caveat `splat_scene_capture` |
+| consented internal deepfake for security-awareness training | `domain` **security-awareness** + `delivery.platform` **internal** (only) + `people[]` real, consent stated, role employee / self | none open it; `consented_simulation.W_KEEP_REFUSED` (politics) only CLOSES it | `studio/consented_simulation.py` lifts ONLY the public-figure + news-statement refusal of the customer's own consenting staff, after the same order re-screened with that claim read as "other" passes every screen (the screens are called, never read or changed); voice clone + TTS + lip sync (or avatar) planned with a visible watermark line at assembly and caveat `consented_simulation_safeguards` (written consent record, C2PA, internal LMS only, debrief, deletion date). Missing consent, an external platform, an endorsement, a political claim, a hired actor: refused as before |
+| whole-person replacement vs face swap | `edit` **replace-person** | `routes_r17.W_WHOLE_PERSON` (beside a person edit, only when `edit` is not named) | `замена_фигуры` (Wan Animate replace class, e.g. wan-2.2-14b-animate-replace 720p $0.08/s), a generated character reference first when none is brought; `face-replace` without it stays a face swap |
+| UGC product batch | **`products`**; brought product photos with `subject: product` | `routes_r17.W_PRODUCTS` + `W_UGC` / `subject` | stills = one shared presenter + one packshot per product (not brought), never a still per clip; the stills are a shared asset |
+| narration named, no audio brought | `voiceover: true`, `audio: voiceover`, `audio_content: ["speech"]` (a named `voiceover: false` wins) | — | `speech` joins the outputs (`routes_r17.with_narration`), so the route has a TTS step; on the customer's own video only `voiceover` / `audio` name a narration (its own speech is not one) |
+
+Facts recorded 2026-10-20 (sources in each row): Google Cloud Translation NMT and Video Intelligence
+text-detection prices, gsplat licence and memory / time claim, nerfstudio splatfacto VRAM and export,
+the Inria gaussian-splatting non-commercial licence and 24 GB VRAM. Gaps recorded (hosts refused,
+`denied_hosts.jsonl`): Postshot (jawset.com), Polycam (poly.cam), Luma 3D capture (lumalabs.ai) prices
+and GPU minutes per splat scene (docs.gsplat.studio).
