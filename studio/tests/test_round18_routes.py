@@ -81,6 +81,11 @@ def applied(brief: str, raw: dict) -> ra.Applied:
     return ra.rewrite(spec, bs.route(spec), brief)
 
 
+def as_planner(brief: str, raw: dict) -> ra.Applied:
+    """As `planner.plan` calls the recipes: the PARSED spec over the route of the defaulted one."""
+    return ra.rewrite(_spec(raw), bs.route(defaults(brief, raw)), brief)
+
+
 def w(base: dict, **more: Any) -> dict:
     return {**base, **more}
 
@@ -128,6 +133,18 @@ class ПримеркаПартией(unittest.TestCase):
         а = applied("Наши 4 куртки на сгенерированной модели, 2 ракурса", raw)
         self.assertEqual({"генерация_изображения": 2, "примерка": 8}, dict(а.route.штук))
 
+    def test_модель_без_роли(self) -> None:
+        raw = {k: v for k, v in TRY.items() if k not in ("views", "shots")}
+        # One item of 4 photos + the words of a model photo: the model is brought.
+        а = applied("Put our 4 jackets on our model photo", w(raw, inputs=[P(count=4)]))
+        self.assertEqual(("примерка",), а.route.шаги)
+        self.assertEqual(4, а.route.штук["примерка"])
+        # Two photo items, no role, no words: garment + model (the r10 reading).
+        а = applied("x", w(raw, inputs=[P(count=4), P()]))
+        self.assertEqual(("примерка",), а.route.шаги)
+        # One item, no words: N garments, the base is generated.
+        self.assertIn("генерация_изображения", applied("x", w(raw, inputs=[P(count=4)])).route.шаги)
+
     def test_ракурсы_из_шотов(self) -> None:
         raw = {k: v for k, v in TRY.items() if k != "views"}
         self.assertEqual(3, r18.try_on_views(_spec(raw)))
@@ -174,7 +191,7 @@ class ЦепочкаРеставрации(unittest.TestCase):
         self.assertNotIn("раскраска_изображения", а.route.шаги)
         raw = {k: v for k, v in OLD.items() if k != "colorize"}
         self.assertIn("раскраска_изображения", applied("Restore and colourise", raw).route.шаги)
-        self.assertNotIn("раскраска_изображения", applied("Restore, keep it black and white", raw).route.шаги)
+        self.assertNotIn("раскраска_изображения", applied("Restore it, no colourising: keep it black and white", raw).route.шаги)
         self.assertNotIn("раскраска_изображения", applied("Restaurar y colorear", raw).route.шаги)
 
     def test_апскейл_по_кадру(self) -> None:
@@ -182,6 +199,9 @@ class ЦепочкаРеставрации(unittest.TestCase):
         raw = {k: v for k, v in OLD.items() if k != "resolution"}
         self.assertNotIn("апскейл_изображения", applied("x", raw).route.шаги)
         self.assertIn("апскейл_изображения", applied("restore and upscale it", raw).route.шаги)
+        # The archive's own frame unknown: a named delivery frame >= 720 is an upscale.
+        а = applied("x", w(OLD, inputs=[P(source=["archival"], defects=["scratches"])]))
+        self.assertIn("апскейл_изображения", а.route.шаги)
 
     def test_лица(self) -> None:
         self.assertNotIn("восстановление_лиц", applied("x", w(OLD, subject=["interior"])).route.шаги)
@@ -257,6 +277,12 @@ class ПартияРеплик(unittest.TestCase):
         а = applied("120 строк для курса", w(raw, delivery={"platform": ["web"]}))
         self.assertEqual((960.0, 8.0), а.step_seconds["озвучка"])
 
+    def test_озвучка_к_видео_не_партия(self) -> None:
+        raw = w(BARKS, task=None, inputs=[{"kind": "video", "owned": True, "duration_s": 60}, {"kind": "text", "owned": True}])
+        raw = {k: v for k, v in raw.items() if v is not None}
+        self.assertFalse(r18.speech_batch(_spec(raw)))
+        self.assertFalse(r18.speech_batch(_spec(w(BARKS, inputs=[P()]))))
+
     def test_не_партия(self) -> None:
         raw = {"task": "generate", "inputs": [{"kind": "text", "owned": True}], "outputs": ["speech"],
                "duration_s": 10800, "languages": ["en"], "people": []}
@@ -305,6 +331,11 @@ class ПодкастВВидео(unittest.TestCase):
         self.assertIn("podcast_audiogram", applied("Turn our podcast into a video", w(raw, task="generate")).priors)
         self.assertNotIn("podcast_audiogram", applied("Video for our new single", w(raw, task="generate", delivery={})).priors)
 
+    def test_строки_визуализатора_сняты(self) -> None:
+        а = as_planner("x", POD)
+        self.assertNotIn(bs.NOTE_VISUALISER, а.route.сборка)
+        self.assertNotIn(bs.NOTE_VISUALISER_SYNC, а.route.сборка)
+
     def test_без_задачи(self) -> None:
         raw = {k: v for k, v in POD.items() if k != "task"}
         self.assertEqual("generate", defaults("x", raw).task)
@@ -347,6 +378,10 @@ class ВертикальныйРефрейм(unittest.TestCase):
         а = applied("make it vertical", w(TALK, edit=["replace-sky"]))
         self.assertIn("правка_видео", а.route.шаги)
 
+    def test_горизонталь_не_рефрейм(self) -> None:
+        self.assertEqual((), defaults("x", w(TALK, aspect="16:9")).edit)
+        self.assertEqual((), defaults("x", w(TALK, aspect="1:1")).edit)
+
     def test_исходник_уже_вертикальный(self) -> None:
         raw = w(TALK, inputs=[{"kind": "video", "owned": True, "duration_s": 60, "resolution": "1080x1920"}])
         self.assertEqual((), defaults("x", raw).edit)
@@ -379,6 +414,15 @@ class МоушнКомикс(unittest.TestCase):
         а = applied("The hero speaks", raw)
         self.assertNotIn("говорящий_аватар", а.route.шаги)
         self.assertNotIn("липсинк", а.route.шаги)
+
+    def test_задача_аватар(self) -> None:
+        а = applied("x", w(COMIC, task="avatar"))
+        self.assertNotIn("говорящий_аватар", а.route.шаги)
+        self.assertIn("оживление", а.route.шаги)
+
+    def test_без_голоса_со_сценарием(self) -> None:
+        а = applied("Motion comic with narration", w(COMIC, voiceover=False))
+        self.assertNotIn("озвучка", а.route.шаги)
 
     def test_без_голоса(self) -> None:
         а = applied("x", w(COMIC, voiceover=False, inputs=[P(count=12, source=["comic"])]))
@@ -462,6 +506,10 @@ class Остатки(unittest.TestCase):
             self.assertEqual(("реконструкция_3d",), applied(brief, FLAT).route.шаги)
             self.assertTrue(any("3D reconstruction" in а for а in spec.assumptions))
         self.assertEqual([], bs.gaps(FLAT, "A virtual tour of our apartment")[2])
+
+    def test_тур_как_у_плановщика(self) -> None:
+        а = as_planner("A virtual tour of our apartment", w(FLAT, task="generate"))
+        self.assertEqual(("реконструкция_3d",), а.route.шаги)
 
     def test_тур_поле_нет(self) -> None:
         а = applied("A virtual tour", w(FLAT, task="generate", reconstruct_3d=False))
