@@ -622,7 +622,7 @@ PRIORS_LIST = (
         "вертикальная версия горизонтального материала — кроп, который следует за говорящим (трекинг лица / объекта) "
         "при сборке, и вшитые субтитры для лент без звука; генеративная правка перерисовывает людей; эндпоинт "
         "ИИ-рефрейма — платный запасной путь, когда кроп теряет объект",
-        TAG_ENGINEERING,
+        TAG_BASE_ROWS,
         (
             Source("ltx-2.3-reframe", "price_per_second_usd", "https://fal.ai/models/fal-ai/ltx-2.3/reframe",
                    "$0.10 per second at 720p, $0.20 at 1080p, billed on the input's duration"),

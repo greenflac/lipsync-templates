@@ -221,10 +221,16 @@ class ЦепочкаРеставрации(unittest.TestCase):
         for brief in ("Restaurar película de 8 mm", "Восстановить плёнку 8 мм", "8mm-Film restaurieren"):
             а = applied(brief, FILM)
             self.assertEqual(("реставрация", "апскейл"), а.route.шаги, brief)
-            self.assertIn(r18.ASSEMBLY_FILM_DEFLICKER, а.assembly)
+            self.assertNotIn("restore_faces_upscale_colour", а.priors)
         а = applied("x", w(FILM, colorize=True, fps=24))
         self.assertEqual(("реставрация", "раскраска", "апскейл", "интерполяция_кадров"), а.route.шаги)
         self.assertNotIn("интерполяция_кадров", applied("x", w(FILM, fps=18)).route.шаги)
+        self.assertIn(r18.ASSEMBLY_FILM_FACES, applied("our family film", FILM).assembly)
+
+    def test_плёнка_без_кадра_исходника(self) -> None:
+        item = {"kind": "video", "owned": True, "duration_s": 120, "source": ["cine-film"]}
+        self.assertNotIn("апскейл", applied("x", w(FILM, inputs=[item])).route.шаги)
+        self.assertIn("апскейл", applied("x", w(FILM, inputs=[item], resolution="4k")).route.шаги)
 
     def test_реестр_лиц(self) -> None:
         self.assertIn(ep.FACE_RESTORE, ep.build(load_facts()).get("codeformer").functions)
@@ -510,6 +516,14 @@ class Остатки(unittest.TestCase):
     def test_тур_как_у_плановщика(self) -> None:
         а = as_planner("A virtual tour of our apartment", w(FLAT, task="generate"))
         self.assertEqual(("реконструкция_3d",), а.route.шаги)
+
+    def test_обход_видео_и_снимки(self) -> None:
+        walk = {"kind": "video", "owned": True, "duration_s": 120}
+        self.assertTrue(r18.tour_3d(_spec(w(FLAT, inputs=[walk])), "a walkthrough of the flat"))
+        self.assertFalse(r18.tour_3d(_spec(w(FLAT, inputs=[P(count=6), walk])), "a walkthrough of the flat"))
+        # A photo SET with only "walkthrough video" stays the round-12 camera path.
+        self.assertFalse(r18.tour_3d(_spec(w(FLAT, inputs=[P(count=25)])), "a walkthrough video of the flat"))
+        self.assertTrue(r18.tour_3d(_spec(w(FLAT, inputs=[P(count=25)])), "a 3D walkthrough of the flat"))
 
     def test_тур_поле_нет(self) -> None:
         а = applied("A virtual tour", w(FLAT, task="generate", reconstruct_3d=False))

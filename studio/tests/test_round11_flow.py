@@ -212,14 +212,16 @@ class АрхивСнимков(unittest.TestCase):
             "Restore and colorize 12 old black-and-white family photos.",
             task=["restore", "colorize"], inputs=[{"kind": "image", "owned": True, "count": 12}], outputs=["image"], people=[],
         )
-        self.assertEqual(["реставрация_изображения", "раскраска_изображения"], _steps(answer))
+        # Round 18: family photos have faces — their own pass after the restore (`routes_r18`).
+        self.assertEqual(["реставрация_изображения", "восстановление_лиц", "раскраска_изображения"], _steps(answer))
 
     def test_одно_фото_без_count(self) -> None:
         answer = _plan(
             "Restore my great-grandfather's old photo.",
             task="restore", inputs=[{"kind": "image", "owned": True}], outputs=["image"], people=[],
         )
-        self.assertEqual(["реставрация_изображения"], _steps(answer))
+        # Round 18: a great-grandfather's photo has a face — its own pass (`routes_r18`).
+        self.assertEqual(["реставрация_изображения", "восстановление_лиц"], _steps(answer))
 
     def test_плёнка_остаётся_видео(self) -> None:
         answer = _plan(

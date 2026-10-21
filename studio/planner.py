@@ -2365,8 +2365,7 @@ OPERATIONS: tuple[Operation, ...] = (
         anchors=("face-restoration", "face restoration"),
         requires=(ARTEFACT_IMAGE,),
         produces=(ARTEFACT_RESTORED_IMAGE,),
-        requirement="лица на снимке восстановлены (глаза, черты, кожа) и остались похожи на людей со снимка; "
-        "face restoration keeping the likeness",
+        requirement=r18.REQUIREMENT_FACE_RESTORE[0],
     ),
     Operation(
         name="раскраска",

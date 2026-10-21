@@ -213,6 +213,8 @@ def try_on_views(spec: Any, text: str = "", skus: int | None = None) -> int:
 # --- 2. restoration chain ----------------------------------------------------------------------------
 
 RESTORE_TASKS: frozenset[str] = frozenset({"restore", "colorize", "upscale"})
+#: With the source's frame unknown, a delivery frame whose short edge reaches this is an upscale (4K class).
+UNKNOWN_SOURCE_UPSCALE_EDGE = 2160
 OLD_SOURCES: frozenset[str] = frozenset({"archival", "cine-film", "print-scan"})
 RESTORE_DEFECTS: frozenset[str] = frozenset({"halftone", "noise", "scratches", "flicker", "blur"})
 W_COLORIZE = re.compile(r"colou?ri[sz]\w*|colou?ri[sz]ation|in (?:full )?colou?r\b|раскрас\w*|в цвет[еу]?\b|цветн\w* верси", re.I)
@@ -234,6 +236,11 @@ W_FACES = re.compile(
 )
 #: The face-restoration step (planner operation, registry job `face-restore`).
 FACE_RESTORE_STEP = "восстановление_лиц"
+#: The face-restoration step's requirement (`planner.OPERATIONS`), both answer languages.
+REQUIREMENT_FACE_RESTORE = (
+    "лица на снимке восстановлены (глаза, черты, кожа) и остались похожи на людей со снимка",
+    "the faces of the photo restored (eyes, features, skin) and still looking like the people in it",
+)
 NOTE_FACE_RESTORE = (
     "лица на снимках восстанавливаются отдельным проходом (CodeFormer / GFPGAN) ПОСЛЕ реставрации и ДО апскейла; "
     "сила восстановления невысокая (fidelity ~0.7), иначе лицо перестаёт быть похожим",
@@ -245,12 +252,6 @@ ASSEMBLY_FILM_FACES = (
     "видео не записано; лицензия CodeFormer S-Lab — только некоммерческая (GFPGAN — Apache-2.0)",
     "faces in the film: frame-by-frame face restoration (CodeFormer --face_upsample on your own machine) — no "
     "video endpoint is recorded; the CodeFormer S-Lab licence is non-commercial only (GFPGAN is Apache-2.0)",
-)
-ASSEMBLY_FILM_DEFLICKER = (
-    "плёнка: мерцание экспозиции снимается при сборке до моделей (ffmpeg deflicker), скорость кадров плёнки "
-    "ставится первой — 0 usd",
-    "film: exposure flicker is removed at assembly before the models (ffmpeg deflicker), the film's true frame "
-    "rate is set first — 0 usd",
 )
 ASSUMPTION_CHAIN = (
     "restoration chain completed from the spec: {links} added (restore -> faces -> upscale to the delivery frame "
@@ -283,7 +284,8 @@ def upscale_wanted(spec: Any, text: str = "") -> bool:
         if исходник is not None:
             return цель > исходник
         старьё = any(set(з.get("source") or ()) & OLD_SOURCES for з in _items(spec, вид))
-        return цель >= 720 and (старьё or spec.task in ("restore", "colorize"))
+        # The source's frame unknown: a scan may already be HD — only a 4K-class delivery is an upscale.
+        return цель >= UNKNOWN_SOURCE_UPSCALE_EDGE and (старьё or spec.task in ("restore", "colorize"))
     return bool(W_UPSCALE.search(_words(spec, text)))
 
 
@@ -695,9 +697,17 @@ def performers(spec: Any) -> int:
 
 #: A photo SET for a 3D tour starts here (`routes_r17.SPLAT_PHOTOS_MIN`).
 TOUR_PHOTOS_MIN = 20
+#: A navigable / 3D tour named in words (EN/RU): with a photo SET it is the reconstruction route.
+W_TOUR_3D = re.compile(
+    r"virtual tour|\b3d\b|360[- ]?(?:tour|walk\w*|view)|navigable|explorable|dollhouse|matterport"
+    r"|explore the (?:space|flat|house|apartment|property)"
+    r"|виртуальн\w* (?:тур|прогулк\w*|экскурси\w*)|\b3[dд]\b|3[dд]-|360",
+    re.I,
+)
+#: A tour / walk-through in general (EN/RU): over a walk-through VIDEO it is the reconstruction route; over a
+#: few photos it stays the round-12 camera-path video.
 W_TOUR = re.compile(
-    r"virtual tour|\b3d\b|walk-?through|fly-?through|\btour\b|360[- ]?(?:tour|walk)|explore the (?:space|flat|house|apartment|property)"
-    r"|виртуальн\w* (?:тур|прогулк\w*|экскурси\w*)|3[dд]|прогулк\w* по|тур по|облёт|облет",
+    r"walk-?through|fly-?through|\btour\b|прогулк\w* по|тур по|облёт|облет|экскурси\w*",
     re.I,
 )
 ASSUMPTION_TOUR = (
@@ -720,8 +730,12 @@ def tour_3d(spec: Any, text: str = "") -> bool:
         return False
     if any(п.get("real") for п in spec.people):
         return False
-    набор = _count(_items(spec, "photo")) >= TOUR_PHOTOS_MIN or "video" in set(spec.inputs)
-    return набор and bool(W_TOUR.search(_words(spec, text)))
+    слова = _words(spec, text)
+    if _count(_items(spec, "photo")) >= TOUR_PHOTOS_MIN and W_TOUR_3D.search(слова):
+        return True
+    # A walk-through VIDEO of the place (no photos beside it) is the capture itself.
+    обход = "video" in set(spec.inputs) and "photo" not in set(spec.inputs)
+    return обход and bool(W_TOUR_3D.search(слова) or W_TOUR.search(слова))
 
 
 def with_tour(spec: Any, text: str = "") -> Any:
@@ -788,7 +802,7 @@ def spec_transform(spec: Any, text: str = "") -> Any:
 # --- notes, localisation -------------------------------------------------------------------------------------
 
 NOTE_PAIRS: tuple[tuple[str, str], ...] = (
-    NOTE_TRY_ON_BASE, NOTE_FACE_RESTORE, ASSEMBLY_FILM_FACES, ASSEMBLY_FILM_DEFLICKER, ASSEMBLY_SPEECH_FILES,
+    NOTE_TRY_ON_BASE, NOTE_FACE_RESTORE, REQUIREMENT_FACE_RESTORE, ASSEMBLY_FILM_FACES, ASSEMBLY_SPEECH_FILES,
     NOTE_PODCAST_COVER, NOTE_PODCAST_TRANSCRIPT, ASSEMBLY_AUDIOGRAM, ASSEMBLY_PODCAST_AVATAR, ASSEMBLY_CAPTIONS_BURN,
     ASSEMBLY_CAPTIONS_SOFT, NOTE_REFRAME_TRANSCRIPT, NOTE_COMIC_VO, NOTE_COMIC_SFX, ASSEMBLY_COMIC_SPLIT,
     ASSEMBLY_COMIC_PARALLAX, ASSEMBLY_COMIC_EDIT, NOTE_DANCE_REF, ASSEMBLY_DANCE_DRIVER, ASSEMBLY_DANCE_OWN_DRIVER,
@@ -875,12 +889,10 @@ def rewrite(
         notes[FACE_RESTORE_STEP] = NOTE_FACE_RESTORE[0]
         if "реставрация_изображения" in counts:
             counts[FACE_RESTORE_STEP] = counts["реставрация_изображения"]
-    if "реставрация" in steps and "video" in set(spec.inputs):
+    # Film: the deflicker / true-speed line is the round-8 one (`film_damage_not_blur`); faces get a line.
+    if "реставрация" in steps and "video" in set(spec.inputs) and faces_present(spec, text):
         if acc.prior("restoration_chain", "restore_faces_upscale_colour"):
-            if any(set(з.get("source") or ()) & {"cine-film", "archival"} for з in _items(spec, "video")):
-                acc.assembly.append(ASSEMBLY_FILM_DEFLICKER)
-            if faces_present(spec, text):
-                acc.assembly.append(ASSEMBLY_FILM_FACES)
+            acc.assembly.append(ASSEMBLY_FILM_FACES)
     # 3. speech batch
     if speech_batch(spec, text) and "озвучка" in steps or speech_batch(spec, text) and "клонирование_голоса" in steps:
         if acc.prior("speech_batch", "speech_lines_per_file"):

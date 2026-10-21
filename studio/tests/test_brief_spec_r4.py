@@ -374,7 +374,7 @@ class СпецификацияСтаршеТекста(unittest.TestCase):
                 "budget, people, conditions, open_weights, edit, claims, lipsync, priors, audience, live, "
                 "edit_target, cast_together, single_take_s, training_use, consistency, dataset_count, anonymise, voiceover, "
                 "delivery, domain, style, subject, accessibility, display, audio_content, follows_picture, animate_input, "
-                "community, performer_shots, products, reconstruct_3d)",
+                "community, performer_shots, products, reconstruct_3d, views, lines, variations, colorize, dance)",
                 "spec.task: dance not in generate, animate, lipsync, dub-translate, face-replace, avatar, upscale, edit, "
                 "restore, remove-background, interpolate, transcribe, voice-clone, turntable, captions, "
                 "video-edit, r2v, music-visualiser, sing-photo, cut-to-shorts, colorize",
