@@ -994,7 +994,6 @@ def rewrite(spec: "bs.Spec", route: "bs.Маршрут", text: str = "") -> Appl
     if x17.recap_narration(spec, text) and vo_s and acc.prior("series_recap", "recap_short_vo"):
         if "озвучка" not in steps:
             steps = [*steps, "озвучка"]
-        step_seconds["озвучка"] = (vo_s, vo_s)
         notes["озвучка"] = x17.NOTE_RECAP_VO[0].format(n=f"{vo_s:g}")
         acc.assembly.append(x17.ASSEMBLY_RECAP)
     # A background blur (bokeh): a person matte and a lens blur at assembly — never a generative edit.

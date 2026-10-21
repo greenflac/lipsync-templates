@@ -220,11 +220,15 @@ def recap_narration(spec: Any, text: str = "") -> bool:
 
 
 def recap_vo_seconds(spec: Any) -> float | None:
-    """The narrator is priced for the RECAP's length (duration_s, or shots x per_shot_s), not the series."""
-    if getattr(spec, "source", {}).get("duration_s") == "spec" and spec.duration_s:
+    """The narrator's length: the RECAP's `duration_s` (the parser folds shots x per_shot_s into it), never the
+    series; None — not named.
+
+    The planner prices the voice-over on the ordered output length (the material's length is read only by
+    the transcript, `planner.ON_SOURCE_STEPS`), so a named recap length is the whole fix; with none named the
+    plan asks instead of pricing a narrator over the series.
+    """
+    if spec.duration_s:
         return float(spec.duration_s)
-    if spec.shots and spec.per_shot_s:
-        return float(spec.shots) * float(spec.per_shot_s)
     return None
 
 

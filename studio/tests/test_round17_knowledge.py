@@ -115,6 +115,7 @@ class Тифлокомментарий(unittest.TestCase):
         self.assertEqual(["расшифровка", "озвучка"], steps_of(d))
         # ONE transcript for captions, text and translation: 3600 s once, not per language.
         self.assertEqual(0.48, step_usd(d, "расшифровка"))
+        self.assertIn("the transcript is made ONCE", str(step(d, "расшифровка").get("inferred")))
         # The description voice: 15 % of the runtime (540 s) in each of the two languages, not 3600 s.
         self.assertIn("540 s", str(step(d, "озвучка").get("inferred")))
         self.assertEqual(0.89, clip_usd(d))
@@ -186,6 +187,10 @@ class СмешениеЯзыков(unittest.TestCase):
         self.assertEqual(0.04, clip_usd(d))
         self.assertEqual(0.07, clip_usd(двуязычный))
 
+    def test_каждое_слово_отдельно(self) -> None:
+        self.assertTrue(x17.code_switching(_spec(SPOT), "a Spanglish jingle"))
+        self.assertTrue(x17.code_switching(_spec(SPOT), "говорят вперемешку"))
+
     def test_ru_слова(self) -> None:
         self.assertIn("code_switching_speech", fired(w(ASR, languages=["ru", "en"]), ["расшифровка"],
                                                      "ведущие говорят вперемешку на русском и английском"))
@@ -216,6 +221,10 @@ class УсловияПровайдера(unittest.TestCase):
         rule = cl.RULES["provider_data_terms"]
         self.assertIn("X-Fal-Store-IO: 0", rule.en)
         self.assertIn("does not cover dubbing", rule.en)
+
+    def test_каждое_слово_отдельно(self) -> None:
+        self.assertTrue(x17.provider_data_terms(_spec(DUB), "клиентское видео"))
+        self.assertTrue(x17.provider_data_terms(_spec(DUB), "it is under NDA"))
 
     def test_клиент_ru(self) -> None:
         self.assertIn("provider_data_terms", fired(DUB, ["дубляж"], "переозвучить клиентское видео, оно под nda"))
@@ -281,6 +290,16 @@ class Пересказ(unittest.TestCase):
         # No narrator named (audio silent, German words not read): no voice-over step.
         self.assertEqual(["расшифровка"], steps_of(d))
 
+    def test_шорты_по_длине_пересказа(self) -> None:
+        шорты = w(RECAP, duration_s=None, shots=3, per_shot_s=30)
+        d = plan("Three 30-second recaps of our web drama with a narrator", шорты)
+        self.assertIn("(90 s)", str(step(d, "озвучка").get("inferred")))
+        self.assertEqual(0.11, round(step_usd(d, "озвучка"), 2))
+        self.assertEqual(1.07, clip_usd(d))
+        # With the defaults filled (the material's length derived), the narrator is still the recap's.
+        self.assertEqual(90.0, x17.recap_vo_seconds(bs.with_defaults(_spec(шорты), ролик=True, текст="")))
+        self.assertTrue(x17.highlight_selection(_spec(w(RECAP_EDIT, task="video-edit")), "нарезка из сериала"))
+
     def test_голос_по_полю_и_длине(self) -> None:
         self.assertTrue(x17.recap_narration(_spec(RECAP), ""))
         self.assertFalse(x17.recap_narration(_spec(w(RECAP, audio="native")), "with a voice-over"))
@@ -289,6 +308,11 @@ class Пересказ(unittest.TestCase):
         self.assertEqual(90.0, x17.recap_vo_seconds(_spec(шорты)))
         # No recap length named: the series length is not the narrator's.
         self.assertIsNone(x17.recap_vo_seconds(_spec(w(RECAP, duration_s=None))))
+        без_длины = ra.rewrite(_spec(w(RECAP, duration_s=None)), bs.Маршрут(("расшифровка",), {}), "")
+        self.assertNotIn("озвучка", без_длины.route.шаги)
+        с_длиной = ra.rewrite(_spec(RECAP), bs.Маршрут(("расшифровка",), {}), "")
+        self.assertEqual(("расшифровка", "озвучка"), с_длиной.route.шаги)
+        self.assertIn("recap_short_vo", с_длиной.priors)
 
     def test_правка_с_названной_правкой_не_пересказ(self) -> None:
         self.assertFalse(x17.recap_edit(_spec(w(RECAP_EDIT, edit=["stabilise"])), "a recap"))
@@ -320,6 +344,7 @@ class ЧастотаКадров(unittest.TestCase):
         без = w(DOC, inputs=[{"kind": "video", "owned": True, "duration_s": 1500}])
         self.assertIn("standards_conversion", fired(без, [], "convert our PAL master for NTSC"))
         self.assertIn("standards_conversion", fired(без, [], "чересстрочный исходник 50i для эфира"))
+        self.assertIn("standards_conversion", fired(без, [], "чересстрочный исходник"))
         self.assertNotIn("standards_conversion", fired(без, [], "trim the first minute"))
 
     def test_семейства(self) -> None:
