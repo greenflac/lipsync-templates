@@ -14,7 +14,10 @@ THE NARROW DOOR, ALL STRUCTURED (no word decides it; the brief's words never ope
 * every person the policy refused is real, with consent "stated", `role` employee or self (the
   customer's own staff or the customer), person-level claim "news", and was refused by the
   public-statement rule only;
-* `spec.claims[]` names no political claim (and the brief has no political words, `W_KEEP_REFUSED` —
+* no person is `minor`, the brief names no minor (`W_MINOR`, words only close), and `spec.audience` is
+  absent or `adults` (`INTERNAL_AUDIENCES`: the viewers are the customer's own staff) — round-17
+  integration safety review;
+* `spec.claims[]` names no fabricated claim (`fabricated: true`), no political claim (and the brief has no political words, `W_KEEP_REFUSED` —
   words only close the door) and no `real_brand: true` (another organisation's brand);
 * the SAME order screened again with those people's claim read as "other" passes every screen — so
   nothing else (no other ban of the topic screen, no other person, no political or endorsement claim)
@@ -55,6 +58,17 @@ W_KEEP_REFUSED = re.compile(
     re.I,
 )
 
+#: Round-17 integration (safety review): the viewers of a drill are the customer's own adult staff —
+#: `spec.audience` may be absent or `adults`; children, teens or the general public close the door.
+INTERNAL_AUDIENCES: frozenset[str] = frozenset({"adults"})
+#: Words that keep the refusal (EN/RU) because a minor is in the order — read only to close the door.
+W_MINOR = re.compile(
+    r"\b(?:child|children|kids?|minors?|teen(?:ager)?s?|daughter|son|schoolgirl|schoolboy|underage"
+    r"|(?:[1-9]|1[0-7])[- ]years?[- ]old)\b|ребён|ребен|\bдет(?:и|ей|ям|ьми|ях)\b|несовершеннолет|школьни|подрост"
+    r"|\bдоч(?:ь|ери|ерью)\b|\bсын(?:а|у|ом)?\b",
+    re.I,
+)
+
 DECISION_ALLOW = "allow"
 DECISION_NONE = "none"
 
@@ -88,6 +102,7 @@ def in_house(person: Mapping[str, Any]) -> bool:
         and str(person.get("consent") or "").lower() == "stated"
         and str(person.get("role") or "").lower() in IN_HOUSE_ROLES
         and str(person.get("claim") or "").lower() == LIFTED_CLAIM
+        and person.get("minor") is not True
     )
 
 
@@ -120,10 +135,15 @@ def decide(
     if screened.get("injection") or not internal_training(spec):
         return нет
     # Words only CLOSE the door (never open it): a political statement in any form stays refused.
-    if W_KEEP_REFUSED.search(str(brief or "")):
+    if W_KEEP_REFUSED.search(str(brief or "")) or W_MINOR.search(str(brief or "")):
+        return нет
+    # The viewers are the customer's own adult staff: children, teens or the general public close it.
+    if _strings(spec.get("audience")) - INTERNAL_AUDIENCES:
         return нет
     for з in _list(spec.get("claims")):
         if str(з.get("type") or "").lower() in KEEP_REFUSED_CLAIMS or з.get("real_brand") is True:
+            return нет
+        if з.get("fabricated") is True:
             return нет
     по_имени = {str(п.get("name") or "").strip().lower(): п for п in _list(spec.get("people"))}
     отказаны = [п for п in _list(policy.get("people")) if str(п.get("verdict")) == "refuse"]

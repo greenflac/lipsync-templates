@@ -969,6 +969,10 @@ def rewrite(spec: "bs.Spec", route: "bs.Маршрут", text: str = "") -> Appl
     from studio import routes_r17 as r17
 
     steps = r17.rewrite(spec, steps, notes, counts, step_seconds, acc, text)
+    # Round-17 integration: with the burned-subtitle route the new subtitles come from the transcript and
+    # its own burn-in line; "your SRT burned in — no transcription needed" no longer describes the plan.
+    if "burned_subtitles_replace" in acc.priors:
+        drop_assembly = (*drop_assembly, bs.NOTE_BURN_CAPTIONS)
     # An optional step the route no longer has is not offered.
     optional = [s for s in optional if s in steps]
 
@@ -992,9 +996,15 @@ def rewrite(spec: "bs.Spec", route: "bs.Маршрут", text: str = "") -> Appl
     # A recap of the customer's series: their footage is cut (a generative edit regenerates nothing that
     # is needed), and a narrator is priced by the RECAP's length, not the series'.
     if x17.recap_edit(spec, text) and "правка_видео" in steps and acc.prior("series_recap", "recap_short_vo"):
-        steps = _replace_step(steps, "правка_видео", "расшифровка")
-        notes.pop("правка_видео", None)
-        notes["расшифровка"] = bs.NOTE_SHORTS_TRANSCRIPT
+        if "burned_subtitles_replace" in acc.priors:
+            # Round-17 integration: the edit left is the removal of the burned-in subtitles (the recap
+            # is still cut at assembly) — the route keeps it and the transcript it already has.
+            if "расшифровка" not in steps:
+                steps = ["расшифровка", *steps]
+        else:
+            steps = _replace_step(steps, "правка_видео", "расшифровка")
+            notes.pop("правка_видео", None)
+            notes["расшифровка"] = bs.NOTE_SHORTS_TRANSCRIPT
         acc.assembly.append(x17.ASSEMBLY_RECAP)
     vo_s = x17.recap_vo_seconds(spec)
     if x17.recap_narration(spec, text) and vo_s and acc.prior("series_recap", "recap_short_vo"):
@@ -1003,8 +1013,14 @@ def rewrite(spec: "bs.Spec", route: "bs.Маршрут", text: str = "") -> Appl
         notes["озвучка"] = x17.NOTE_RECAP_VO[0].format(n=f"{vo_s:g}")
         acc.assembly.append(x17.ASSEMBLY_RECAP)
     # A background blur (bokeh): a person matte and a lens blur at assembly — never a generative edit.
-    if x17.background_blur(spec, text) and "правка_видео" in steps and acc.prior("background_blur", "matte_background_blur"):
-        steps = _replace_step(steps, "правка_видео", "удаление_фона_видео")
+    # Round-17 integration: beside a whole-person replacement (`замена_фигуры` took the edit's place) the
+    # matte is pulled over the replaced footage and the background blurred under it — both edits stay.
+    blur_from = "правка_видео" if "правка_видео" in steps else "замена_фигуры" if "замена_фигуры" in steps else None
+    if x17.background_blur(spec, text) and blur_from and acc.prior("background_blur", "matte_background_blur"):
+        if blur_from == "правка_видео":
+            steps = _replace_step(steps, "правка_видео", "удаление_фона_видео")
+        else:
+            steps = list(dict.fromkeys((*steps, "удаление_фона_видео")))
         notes.pop("правка_видео", None)
         notes["удаление_фона_видео"] = x17.NOTE_MATTE_BLUR[0]
         acc.assembly.append(x17.ASSEMBLY_BLUR)

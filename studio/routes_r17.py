@@ -145,6 +145,13 @@ SOFT_SUB_PLATFORMS: frozenset[str] = frozenset({"youtube", "streaming-premium", 
 SOFT_SUB_FORMATS: frozenset[str] = frozenset({"srt"})
 #: Tasks an order to translate burned subtitles comes under (the route becomes the video edit).
 SUBTITLE_EDIT_TASKS: frozenset[str | None] = frozenset({None, "video-edit", "edit", "captions", "face-replace", "generate"})
+#: Tasks whose route has no edit step of its own: the removal of the old band is ADDED (a dub keeps its
+#: dub; a recap / shorts cut keeps its cut — round-17 integration — and the removal covers its seconds).
+SHORTS_TASK = "cut-to-shorts"
+SUBTITLE_ADD_REMOVAL_TASKS: frozenset[str] = frozenset({"dub-translate", SHORTS_TASK})
+#: The "multiple languages" tag names the SOURCE's mixed speech (`expert_r17.MULTIPLE_LANGUAGES_TAG`),
+#: never a translation target.
+MIXED_LANGUAGE_TAG = "mul"
 #: Machine translation price (Google Cloud Translation NMT, `model_facts.jsonl` google-cloud-translation,
 #: READ 2026-10-20): $20 per million characters, the first 500,000 characters a month free.
 TRANSLATE_USD_PER_M_CHARS = 20.0
@@ -229,7 +236,8 @@ def with_subtitle_edit(spec: Any, text: str = "") -> Any:
 
 def _translation_line(spec: Any) -> tuple[str, str]:
     секунд = _seconds(spec)
-    языков = max(1, len(getattr(spec, "language_tags", ()) or ()))
+    цели = [т for т in getattr(spec, "language_tags", ()) or () if str(т).split("-")[0].lower() != MIXED_LANGUAGE_TAG]
+    языков = max(1, len(цели))
     знаков = math.ceil(секунд * CHARS_PER_SECOND) * языков
     usd = знаков * TRANSLATE_USD_PER_M_CHARS / 1_000_000
     сумма = f"≈{знаков} chars × {TRANSLATE_USD_PER_M_CHARS:g} usd per 1M = {usd:.2f} usd"
@@ -625,11 +633,15 @@ def rewrite(
     """Apply the round-17 routes to a route's steps; returns the new step list (notes / counts in place)."""
     steps = list(steps)
     # 1. burned-in subtitles
-    if burned_subtitles(spec, text) and (spec.task == "dub-translate" or "правка_видео" in steps):
+    if burned_subtitles(spec, text) and (spec.task in SUBTITLE_ADD_REMOVAL_TASKS or "правка_видео" in steps):
         if acc.prior("burned_subtitles", "burned_subtitles_replace"):
-            if spec.task == "dub-translate":
+            if spec.task in SUBTITLE_ADD_REMOVAL_TASKS:
                 steps = [*steps, "правка_видео"] if "правка_видео" not in steps else steps
-            elif _speech_heard(spec) and "расшифровка" not in steps:
+            if spec.task == SHORTS_TASK and spec.duration_s:
+                # Round-17 integration: only the cut's own seconds carry the old band, not the series.
+                штук = max(1, int(getattr(spec, "shots", None) or 1))
+                step_seconds["правка_видео"] = (float(spec.duration_s), float(spec.duration_s) / штук)
+            if spec.task != "dub-translate" and _speech_heard(spec) and "расшифровка" not in steps:
                 steps = ["расшифровка", *steps]
                 notes["расшифровка"] = NOTE_SUBS_TRANSCRIPT[0]
             notes["правка_видео"] = NOTE_SUBS_REMOVE[0]
