@@ -55,11 +55,11 @@
  },
  {
   "function": "face-swap",
-  "orderable": 6,
-  "priced": 2,
-  "priced_pct": 33.3,
+  "orderable": 7,
+  "priced": 3,
+  "priced_pct": 42.9,
   "with_run_length": 1,
-  "run_length_pct": 16.7,
+  "run_length_pct": 14.3,
   "video": true
  },
  {
@@ -118,27 +118,27 @@
  },
  {
   "function": "image-edit",
-  "orderable": 68,
-  "priced": 33,
-  "priced_pct": 48.5,
+  "orderable": 67,
+  "priced": 32,
+  "priced_pct": 47.8,
   "with_run_length": 1,
   "run_length_pct": 1.5,
   "video": false
  },
  {
   "function": "bg-remove",
-  "orderable": 5,
+  "orderable": 6,
   "priced": 4,
-  "priced_pct": 80.0,
+  "priced_pct": 66.7,
   "with_run_length": 0,
   "run_length_pct": 0.0,
   "video": false
  },
  {
   "function": "upscale-image",
-  "orderable": 17,
+  "orderable": 19,
   "priced": 15,
-  "priced_pct": 88.2,
+  "priced_pct": 78.9,
   "with_run_length": 0,
   "run_length_pct": 0.0,
   "video": false
@@ -162,6 +162,15 @@
   "video": true
  },
  {
+  "function": "face-restore",
+  "orderable": 3,
+  "priced": 1,
+  "priced_pct": 33.3,
+  "with_run_length": 0,
+  "run_length_pct": 0.0,
+  "video": false
+ },
+ {
   "function": "colorize",
   "orderable": 3,
   "priced": 2,
@@ -181,9 +190,9 @@
  },
  {
   "function": "transcribe-diarize",
-  "orderable": 9,
+  "orderable": 10,
   "priced": 3,
-  "priced_pct": 33.3,
+  "priced_pct": 30.0,
   "with_run_length": 0,
   "run_length_pct": 0.0,
   "video": false
