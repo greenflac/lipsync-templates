@@ -2220,6 +2220,18 @@ EDIT_VALUES: tuple[str, ...] = (*ep.EDIT_INTENTS, *ASSEMBLY_ONLY_EDITS)
 #: персонажа (класс Wan Animate replace), а не замена лица; маршрут ставит `studio/routes_r17.py`.
 EDIT_REPLACE_PERSON = "replace-person"
 EDIT_VALUES = (*EDIT_VALUES, EDIT_REPLACE_PERSON)
+#: СЕМНАДЦАТЫЙ КРУГ: размытие фона (боке) ВАШЕГО ролика — маска человека и размытие при сборке
+#: (`expert_r17.background_blur`, рецепт `background_blur`), не генеративная правка.
+from studio.expert_r17 import EDIT_BLUR_BACKGROUND  # noqa: E402
+
+EDIT_VALUES = (*EDIT_VALUES, EDIT_BLUR_BACKGROUND)
+EDIT_ALIASES.update({
+    "bokeh": EDIT_BLUR_BACKGROUND,
+    "background-blur": EDIT_BLUR_BACKGROUND,
+    "blur-bg": EDIT_BLUR_BACKGROUND,
+    "depth-of-field": EDIT_BLUR_BACKGROUND,
+    "defocus-background": EDIT_BLUR_BACKGROUND,
+})
 
 #: Монтажные правки СЛОВАМИ брифа — когда `spec.edit` о них молчит (правка ролика
 #: без названной правки уходила в генеративную правку по инструкции).

@@ -919,6 +919,22 @@ EN: tuple[tuple[str, str], ...] = (
     ('новая\\ дорожка,\\ адаптированная\\ под\\ существующие\\ рты,\\ заменяет\\ речь\\ ВАШЕГО\\ ролика\\ \\(ffmpeg\\);\\ картинка\\ не\\ перерисовывается\\ —\\ 0\\ usd\\ за\\ сборку',
      'the new track, adapted to the existing mouth flaps, replaces the speech of YOUR video (ffmpeg); the picture is not redrawn — 0 usd for the assembly'),
     # --- конец круга 16
+    # --- круг 17: пакет доступности, пересказ, размытие фона (`expert_r17.NOTE_PAIRS`, `NOTE_PATTERN_PAIRS`)
+    ('расшифровка\\ делается\\ ОДИН\\ раз:\\ из\\ неё\\ же\\ субтитры,\\ текстовая\\ расшифровка,\\ перевод\\ и\\ поиск\\ пауз\\ для\\ тифлокомментария',
+     'the transcript is made ONCE: the captions, the text transcript, the translation and the gaps for the audio description all come from it'),
+    ('маска\\ человека\\ по\\ ВАШЕМУ\\ ролику\\ \\(удаление\\ фона\\ видео,\\ альфа\\-канал\\)\\ —\\ фон\\ размывается\\ под\\ маской\\ при\\ сборке;\\ генеративная\\ правка\\ видео\\ не\\ нужна',
+     'a person matte over YOUR footage (video background removal, alpha channel) — the background is blurred under it at assembly; no generative video edit'),
+    ('тифлокомментарий\\ кладётся\\ в\\ паузы\\ речи\\ с\\ приглушением\\ программы\\ под\\ ним\\ и\\ сдаётся\\ ОТДЕЛЬНОЙ\\ дорожкой\\ \\(стем\\ и\\ звуковая\\ дорожка\\-язык\\),\\ плюс\\ сведённая\\ версия\\ —\\ 0\\ usd',
+     'the description is laid into the speech gaps with the programme ducked under it and delivered as a SEPARATE track (a stem and an audio language track) plus a mixed described version — 0 usd'),
+    ('моменты\\ выбираются\\ по\\ сменам\\ планов\\ и\\ расшифровке,\\ человек\\ утверждает\\ выбор,\\ затем\\ вырезка,\\ перекадрирование\\ и\\ склейка\\ под\\ закадровый\\ голос\\ \\(ffmpeg\\ /\\ монтажная\\ программа\\)\\ —\\ 0\\ usd',
+     'the moments are picked from shot changes and the transcript, a person approves the pick, then they are cut, reframed and joined under the voice-over (ffmpeg / an editor) — 0 usd'),
+    ('размытие\\ фона\\ по\\ маске\\ \\(или\\ по\\ карте\\ глубины\\)\\ при\\ сборке\\ —\\ ffmpeg\\ boxblur\\ /\\ gblur\\ под\\ альфой,\\ DaVinci\\ Resolve\\ /\\ After\\ Effects\\ Lens\\ Blur;\\ края\\ волос\\ проверяются\\ в\\ 100\\ %\\ —\\ 0\\ usd',
+     'the background is blurred under the matte (or a depth map) at assembly — ffmpeg boxblur / gblur under the alpha, DaVinci Resolve / After Effects Lens Blur; hair edges checked at 100 % — 0 usd'),
+    ('голос\\ тифлокомментария:\\ ДРУГОЙ\\ стоковый\\ голос\\ \\(не\\ голос\\ лектора\\ или\\ актёров\\)\\ читает\\ описание,\\ написанное\\ в\\ паузы\\ речи;\\ цена\\ —\\ за\\ секунды\\ пауз\\ \\(около\\ (\\d+(?:\\.\\d+)?)\\ %\\ длины,\\ (\\d+(?:\\.\\d+)?)\\ с\\),\\ а\\ не\\ за\\ весь\\ хронометраж',
+     "audio description voice: a DIFFERENT stock voice (not the lecturer's or the cast's) reads the description written into the gaps in speech; priced for the gap seconds (about \\1 % of the runtime, \\2 s), not the runtime"),
+    ('закадровый\\ голос\\ пересказа:\\ короткий\\ текст\\ по\\ выбранным\\ моментам,\\ цена\\ —\\ по\\ длине\\ пересказа\\ \\((\\d+(?:\\.\\d+)?)\\ с\\),\\ а\\ не\\ всего\\ сериала',
+     "recap voice-over: a short script over the picked moments, priced by the recap's length (\\1 s), not the series"),
+    # --- конец круга 17
     # --- круг 14: пометки маршрутов (`brief_spec.NOTE_FRAMES_FROM_VIDEO`, `ASSEMBLY_REASONS`)
     ('кадры\\ вынимаются\\ из\\ вашего\\ видео\\ ffmpeg\\ \\(fps=…\\ или\\ select\\ по\\ сценам\\)\\ —\\ 0\\ usd;\\ лицо\\ меняется\\ на\\ каждом\\ снимке',
      'the frames are extracted from your video with ffmpeg (fps=… or select by scene) — 0 usd; the face is swapped on each still'),

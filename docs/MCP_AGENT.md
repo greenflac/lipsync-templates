@@ -756,3 +756,41 @@ text-detection prices, gsplat licence and memory / time claim, nerfstudio splatf
 the Inria gaussian-splatting non-commercial licence and 24 GB VRAM. Gaps recorded (hosts refused,
 `denied_hosts.jsonl`): Postshot (jawset.com), Polycam (poly.cam), Luma 3D capture (lumalabs.ai) prices
 and GPU minutes per splat scene (docs.gsplat.studio).
+
+## `plan_pipeline`: specialist knowledge and pricing (round 17)
+
+`studio/expert_r17.py` holds the round's decisions; each reads an EXISTING spec field
+first and the EN/RU words only when the field is absent (no new top-level field; one new
+`edit` value). The caveats are `checklist.RULES_R17`, each with its source URLs and EN/RU
+text; the pricing is three recipes in `studio/recipes/apply.py` (priors in
+`recipes/table.py`, switchable with `spec.priors`). Tests:
+`studio/tests/test_round17_knowledge.py` (EN, RU and at least one other language per theme,
+both ways, literal totals); mutants: `scripts/mutate_round17_knowledge.py`.
+
+| decision | spec field (first) | fallback words |
+|---|---|---|
+| audio description is a production: script in the dialogue gaps, extended AD (SC 1.2.7) where gaps are short, a voice distinct from the cast, ducking, a separate AD stem + audio language track, captions apart (`audio_description_track`) | `accessibility: ["audio-description"]` (input or output video) | `W_AUDIO_DESCRIPTION` |
+| an accessibility package (captions / transcribe on the customer's video) with AD: ONE transcript (captions, text, translation and the gaps come from it) and a description voice (`озвучка`, clone-only models ranked last) priced for `AD_GAP_SHARE` = 15 % of the runtime, not the runtime (prior `ad_gap_voice`) | `task`, `accessibility` | as above |
+| code-switching speech: per-segment language ID (Whisper fixes one language from the first 30 s; Deepgram `language=multi`, faster-whisper `multilingual=True`), per-segment tags, a multilingual voice, ONE mixed track priced once (not × languages) (`code_switching_speech`) | the `mul` language tag; `conditions` | `W_CODE_SWITCH` |
+| client / personal / confidential uploads to hosted APIs: retention, training, region, DPA, deletion — OpenAI 30-day abuse logs, fal request history + public CDN URLs by default (`X-Fal-Store-IO: 0`), ElevenLabs Zero Retention Mode enterprise-only and not for dubbing (`provider_data_terms`); not on `self_host`, not beside `confidential_transcription` | `training_use: true`, `people[].minor`, `domain` ∩ {corporate, health-advertising, financial-advertising}, `self_host` silences | `W_CLIENT_DATA` |
+| highlight / recap moments: shot detection (PySceneDetect, TransNet V2) + transcript ranking, a human pick, tracked reframing, nothing regenerated (`highlight_selection`) | `task: cut-to-shorts` | `W_RECAP` |
+| a recap of the customer's series: the cut is assembly (a recap ordered as `video-edit` with no `edit` / `edit_target` loses the generative edit) and the narrator is priced by the RECAP length (`duration_s`, or `shots` × `per_shot_s`), never the series (prior `recap_short_vo`) | `audio: "voiceover"`, a script input with a speech output | `W_NARRATION` |
+| frame-rate standards conversion: motion-compensated 25 <-> 29.97, PAL speed-up with pitch correction for 23.976 -> 25, 2:3 pulldown, deinterlace first (`standards_conversion`) | `inputs[].fps` against `fps`, else `delivery.markets` (60 Hz markets `NTSC_MARKETS`; a web / social `delivery.platform` keeps the native rate) | `W_STANDARDS` |
+| stem separation: Demucs v4 / BS-RoFormer facts, artefacts, ask for the multitrack / M&E first, separation is not a licence (`stem_separation`) | `delivery.stems` on brought audio / video | `W_STEM_SEPARATION` |
+| background blur (bokeh) of own footage: a person matte (`удаление_фона_видео` step) + lens blur at assembly, never a generative video edit; hair halos, temporal stability (`background_blur`, prior `matte_background_blur`) | **`edit: ["blur-background"]`** (aliases bokeh, background-blur, depth-of-field), `edit_target` | `W_BACKGROUND_BLUR` |
+
+Measured on the round's own cases (no paid call): a 60-minute lecture package in two
+languages 0.89 usd (transcript 0.48 + 2 × 540 s of description voice), a 90-second recap of
+ten 12-minute episodes 1.07 usd (transcript of all 7200 s 0.96 + a 90 s narrator), a 3-minute
+bokeh interview 9.00 usd (a hosted matte at 0.05 usd/s; the generative edit it replaces was
+25.20 usd), a 30 s Spanglish spot 0.04 usd (one mixed track, 0.07 usd as two versions).
+
+New facts (read 2026-10-20, sources in each row): Demucs v4 (MIT, 9.0 / 9.2 dB SDR, stems,
+karaoke mode, unmaintained repo; fal Demucs 0.0007 usd/s), BS-RoFormer (9.80 dB SDR, SDX23
+first, arXiv 2309.02612), Robust Video Matting (GPL-3.0, recurrent, speeds), Video Depth
+Anything (Small Apache-2.0, Base / Large CC-BY-NC-4.0), SAM 2 (MIT), Whisper's 30-second
+language detection, faster-whisper's per-segment `multilingual`, Deepgram code-switching,
+ElevenLabs Zero Retention Mode coverage for Scribe v2, Eleven v3 and dubbing (new attribute
+`data_retention`, family `restrictions`). Refused by the egress proxy and recorded in
+`denied_hosts.jsonl`, not routed around: w3.org, ffmpeg.org, trac.ffmpeg.org, ada.gov,
+ecfr.gov, ebu.ch (the rules still cite the canonical URLs).

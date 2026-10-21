@@ -536,6 +536,37 @@ PRIORS_LIST = (
     ),
 )
 
+#: Round 17: an accessibility package's description voice, a recap's narrator, a background blur.
+PRIORS_LIST = (
+    *PRIORS_LIST,
+    Prior(
+        "ad_gap_voice",
+        "audio description in an accessibility package: the transcript is made once (captions, transcript and "
+        "translation reuse it) and a distinct stock voice reads the description written into the speech gaps — "
+        "priced for the gap seconds, not the runtime",
+        "тифлокомментарий в пакете доступности: расшифровка делается один раз (из неё субтитры, текст и перевод), "
+        "а описание, написанное в паузы речи, читает отдельный стоковый голос — цена за секунды пауз, а не за "
+        "весь хронометраж",
+        TAG_ENGINEERING,
+    ),
+    Prior(
+        "recap_short_vo",
+        "a recap of the customer's series is an edit of their footage: moments picked from shot changes and the "
+        "transcript, and a short narrator priced by the recap's length — nothing is regenerated",
+        "пересказ сериала заказчика — монтаж его материала: моменты по сменам планов и расшифровке и короткий "
+        "закадровый голос по длине пересказа — ничего не генерируется заново",
+        TAG_ENGINEERING,
+    ),
+    Prior(
+        "matte_background_blur",
+        "a background blur (bokeh) of the customer's footage is a person matte plus a lens blur at assembly — "
+        "never a generative video edit, which redraws the speaker",
+        "размытие фона (боке) на ролике заказчика — маска человека и размытие объектива при сборке, а не "
+        "генеративная правка видео, которая перерисовывает говорящего",
+        TAG_ENGINEERING,
+    ),
+)
+
 #: Tools and failure checks each prior brings (kept apart from the wording above).
 _PRIOR_TOOLS_FAILURES: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
     "t2i_native_max": ((), ("upscale_hallucination",)),
@@ -572,6 +603,9 @@ _PRIOR_TOOLS_FAILURES: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
     "gaussian_splat_scene": (("splat_render",), ("splat_floaters",)),
     "whole_person_replace": ((), ("character_motion_drift",)),
     "ugc_shared_references": ((), ()),
+    "ad_gap_voice": (("ad_mix",), ("ad_over_speech",)),
+    "recap_short_vo": (("scene_detect",), ("recap_cut_mid_shot",)),
+    "matte_background_blur": (("matte_blur",), ("matte_edge",)),
 }
 PRIORS_LIST = tuple(
     Prior(п.id, п.en, п.ru, п.tag, п.sources, *_PRIOR_TOOLS_FAILURES[п.id]) for п in PRIORS_LIST
@@ -626,6 +660,13 @@ TOOLS_LIST = (
     Tool("splat_render", "nerfstudio ns-render / SuperSplat", "render the camera path from the trained splat, or "
          "export it for a web viewer", "отрендерить путь камеры из обученного сплата или выгрузить его для "
          "веб-просмотрщика"),
+    Tool("ad_mix", "ffmpeg sidechaincompress / amix", "lay the description into the speech gaps, duck the programme "
+         "under it, and write the AD stem and track", "положить описание в паузы речи, приглушить программу под ним и "
+         "записать стем и дорожку тифлокомментария"),
+    Tool("scene_detect", "PySceneDetect / TransNet V2", "find the shot changes so every cut lands on a boundary",
+         "найти смены планов, чтобы каждая склейка ложилась на границу"),
+    Tool("matte_blur", "ffmpeg gblur under alpha / Resolve Lens Blur", "blur the background under the person matte",
+         "размыть фон под маской человека"),
 )
 TOOLS: dict[str, Tool] = {т.id: т for т in TOOLS_LIST}
 
@@ -711,6 +752,13 @@ FAILURES_LIST = (
     Failure("splat_floaters", "floaters and blur where the capture had few views (ceilings, corners, behind "
             "furniture)", "«облака» и размытие там, где мало ракурсов (потолок, углы, за мебелью)",
             "fly the camera path through every room before delivery", "пролететь путь камеры по каждой комнате до сдачи"),
+    Failure("ad_over_speech", "a description runs over dialogue or a gap is too short for it",
+            "описание налезает на речь или пауза для него слишком коротка",
+            "play every description with the programme and time it against the gap",
+            "прослушать каждое описание с программой и сверить его длину с паузой"),
+    Failure("recap_cut_mid_shot", "a picked moment is cut mid-shot or mid-line", "выбранный момент обрезан посреди плана или реплики",
+            "check every in and out point against the shot list and the transcript",
+            "сверить каждую точку входа и выхода со списком планов и расшифровкой"),
 )
 FAILURES: dict[str, Failure] = {ф.id: ф for ф in FAILURES_LIST}
 
@@ -1044,8 +1092,42 @@ RECIPES_LIST = (
         (),
         (),
     ),
+    Recipe(
+        "accessibility_package",
+        "captions, transcript, translation and audio description of the customer's video",
+        (
+            RecipeStep("расшифровка", "model", "one timed transcript: captions, text, translation and the speech gaps"),
+            RecipeStep("озвучка", "model", "a distinct stock voice reads the description, gap seconds only"),
+            RecipeStep("ad_mix", "tool", "the description laid into the gaps, programme ducked, AD stem and track"),
+        ),
+        ("ad_gap_voice",),
+        ("ad_mix",),
+        ("ad_over_speech",),
+    ),
+    Recipe(
+        "series_recap",
+        "a recap / highlight cut of the customer's series with a narrator",
+        (
+            RecipeStep("расшифровка", "model", "timed transcript of the episodes — the moments are ranked from it"),
+            RecipeStep("озвучка", "model", "a short narrator, the recap's length"),
+            RecipeStep("scene_detect", "tool", "shot changes, so every cut lands on a boundary"),
+        ),
+        ("recap_short_vo",),
+        ("scene_detect",),
+        ("recap_cut_mid_shot",),
+    ),
+    Recipe(
+        "background_blur",
+        "a background blur (bokeh) of the customer's footage",
+        (
+            RecipeStep("удаление_фона_видео", "model", "a person matte over the footage"),
+            RecipeStep("matte_blur", "tool", "the background blurred under the matte at assembly"),
+        ),
+        ("matte_background_blur",),
+        ("matte_blur",),
+        ("matte_edge",),
+    ),
 )
-
 RECIPES: dict[str, Recipe] = {р.id: р for р in RECIPES_LIST}
 
 # --- production notes (round 9) -----------------------------------------------------
