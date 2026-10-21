@@ -237,6 +237,7 @@ from studio import expert_r15 as x15
 from studio import anonymise
 from studio import expert_r16 as x16
 from studio import routes_r17 as r17
+from studio import routes_r18 as r18
 from studio import expert_r17 as x17
 from studio import endpoints as ep
 from studio import l10n
@@ -2357,6 +2358,17 @@ OPERATIONS: tuple[Operation, ...] = (
         requirement="старый снимок восстановлен (царапины, заломы, пятна, выцветание) без смены цвета и лица",
     ),
     Operation(
+        name="восстановление_лиц",
+        # Восемнадцатый круг (`studio/routes_r18.py`): лица старого снимка — свой проход после
+        # реставрации и до апскейла (CodeFormer / GFPGAN, работа реестра `face-restore`).
+        cues=(),
+        anchors=("face-restoration", "face restoration"),
+        requires=(ARTEFACT_IMAGE,),
+        produces=(ARTEFACT_RESTORED_IMAGE,),
+        requirement="лица на снимке восстановлены (глаза, черты, кожа) и остались похожи на людей со снимка; "
+        "face restoration keeping the likeness",
+    ),
+    Operation(
         name="раскраска",
         # Подсказки — только слова самой работы: «keep it black and white» её
         # не вызывает, «colorize the old footage» — вызывает.
@@ -2490,6 +2502,7 @@ OPERATIONS: tuple[Operation, ...] = (
     "замена_лица_изображения": ep.FACE_SWAP,
     "перенос_движения": ep.MOTION_TRANSFER,
     "реставрация_изображения": ep.RESTORE,
+    "восстановление_лиц": ep.FACE_RESTORE,
     "примерка": ep.TRY_ON,
     "звук_фон": ep.SFX,
     "музыка": ep.MUSIC,
@@ -7222,6 +7235,7 @@ def запасной_прогон(
         "раскраска",
         "раскраска_изображения",
         "реставрация_изображения",
+        "восстановление_лиц",
         "замена_лица_изображения",
         "перенос_движения",
         "интерполяция_кадров",
@@ -8911,6 +8925,7 @@ def _есть_кириллица(текст: str) -> bool:
     "раскраска": "colorize video",
     "раскраска_изображения": "colorize photos",
     "реставрация_изображения": "restore photos",
+    "восстановление_лиц": "restore faces",
     "замена_лица_изображения": "face swap on the image",
     "перенос_движения": "motion transfer (photo follows the driving video)",
     "интерполяция_кадров": "frame interpolation",
@@ -8950,6 +8965,7 @@ def _есть_кириллица(текст: str) -> bool:
     "раскраска": "раскраска видео",
     "раскраска_изображения": "раскраска снимков",
     "реставрация_изображения": "реставрация снимков",
+    "восстановление_лиц": "восстановление лиц",
     "замена_лица_изображения": "замена лица на снимке",
     "перенос_движения": "перенос движения (снимок повторяет ведущее видео)",
     "интерполяция_кадров": "интерполяция кадров",
@@ -13229,6 +13245,8 @@ def plan(
         # названный маршрутом (нарезка, стабилизация, дорожка дубляжа).
         (ролик_заказан(brief) or (spec_only and "video" in понято.outputs and понято.task != "captions"))
         and not маршрут.сборка
+        # ВОСЕМНАДЦАТЫЙ КРУГ: ролик аудиограммы собирает монтаж (обложка + волна + субтитры).
+        and not set(рецепт.priors) & r18.ASSEMBLED_CLIP_PRIORS
         # ДВЕНАДЦАТЫЙ КРУГ: ролик — ВАШЕ видео (дубляж поверх рисованного ролика,
         # голос поверх своего): новая дорожка кладётся в него при сборке, и цена
         # плана — цена ролика, а не «цены ролика нет».

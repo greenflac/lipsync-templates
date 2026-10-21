@@ -56,9 +56,11 @@ VIDEO_GENERATORS: frozenset[str] = frozenset({"генерация_видео", "
 #: Steps that consume speech.
 SPEECH_CONSUMERS: frozenset[str] = frozenset({"говорящий_аватар", "липсинк"})
 #: Order of operations over footage (rank; lower first). Upscale of a still ranks with video upscale.
-CHAIN_RANK: dict[str, int] = {
+CHAIN_RANK: dict[str, float] = {
     "реставрация": 1,
     "реставрация_изображения": 1,
+    # Round 18 (`studio/routes_r18.py`): faces after the restore, before the upscale.
+    "восстановление_лиц": 1.5,
     "раскраска": 2,
     "раскраска_изображения": 2,
     "апскейл": 3,
@@ -967,8 +969,14 @@ def rewrite(spec: "bs.Spec", route: "bs.Маршрут", text: str = "") -> Appl
     # Burned-in subtitles, a singer's music video from a performer reference, a 3D reconstruction of a
     # place, a whole-person replacement, a UGC product batch — spec first, EN/RU words only as fallback.
     from studio import routes_r17 as r17
+    from studio import routes_r18 as r18
 
-    steps = r17.rewrite(spec, steps, notes, counts, step_seconds, acc, text)
+    # Round 18: a tour over a photo SET / walk-through video is the 3D route (assumption named).
+    steps = r17.rewrite(r18.with_tour(spec, text), steps, notes, counts, step_seconds, acc, text)
+    # --- round 18: routes & decomposition (`studio/routes_r18.py`) ----------------------------------
+    # Try-on batch, the restoration chain's faces, a speech batch, a podcast audiogram, a vertical reframe's
+    # captions, a motion comic, a dance performance, one presenter still — spec first, EN/RU words fallback.
+    steps = r18.rewrite(spec, steps, notes, counts, step_seconds, acc, text, avoid=avoid, shared=shared)
     # Round-17 integration: with the burned-subtitle route the new subtitles come from the transcript and
     # its own burn-in line; "your SRT burned in — no transcription needed" no longer describes the plan.
     if "burned_subtitles_replace" in acc.priors:
@@ -1300,6 +1308,10 @@ NOTES_EN: dict[str, str] = dict(
 from studio import routes_r17 as _r17  # noqa: E402
 
 NOTES_EN.update(dict(_r17.NOTE_PAIRS))
+# Round 18: the route notes of `studio/routes_r18.py`.
+from studio import routes_r18 as _r18  # noqa: E402
+
+NOTES_EN.update(dict(_r18.NOTE_PAIRS))
 
 
 # --- production notes (round 9) --------------------------------------------------------

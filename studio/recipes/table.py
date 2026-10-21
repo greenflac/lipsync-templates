@@ -567,6 +567,93 @@ PRIORS_LIST = (
     ),
 )
 
+#: Round 18: routes & decomposition (`studio/routes_r18.py`).
+PRIORS_LIST = (
+    *PRIORS_LIST,
+    Prior(
+        "try_on_shared_model",
+        "on-model product images: with no model photo brought, ONE model is generated (one identity, a still per "
+        "view) and shared by every SKU; each garment is then put on it by a virtual try-on — priced per SKU × view; "
+        "a model photo brought skips the generation",
+        "кадры товара на модели: если фото модели не принесено, генерируется ОДНА модель (одна внешность, по кадру на "
+        "ракурс), общая для всех вещей; каждая вещь надевается на неё виртуальной примеркой — цена за вещь × ракурс; "
+        "принесённое фото модели снимает генерацию",
+        TAG_ENGINEERING,
+    ),
+    Prior(
+        "restore_faces_upscale_colour",
+        "an archival photo or film is a chain: restore (denoise, scratches, descreen) -> faces restored in their own "
+        "pass -> upscale to the delivery frame -> colourise when asked; film gets its deflicker and true speed at "
+        "assembly and frame interpolation only when asked",
+        "архивное фото или плёнка — цепочка: реставрация (шум, царапины, растр) -> лица отдельным проходом -> апскейл "
+        "до кадра сдачи -> раскраска, когда её просят; плёнке — снятие мерцания и настоящая скорость при сборке, "
+        "интерполяция кадров только по просьбе",
+        TAG_BASE_ROWS,
+        (
+            Source("codeformer", "best_for", "https://fal.ai/models/fal-ai/codeformer",
+                   "restores degraded facial images, $0.0021 per megapixel"),
+        ),
+    ),
+    Prior(
+        "speech_lines_per_file",
+        "a batch of speech lines (game barks, IVR prompts, e-learning lines) is N separate TTS requests — lines × "
+        "voices × variations, priced per line by its characters (a per-request minimum where recorded) and delivered "
+        "one file per line; one long render cut apart loses the takes and the naming",
+        "партия реплик (реплики игры, подсказки IVR, строки курса) — N отдельных запросов синтеза: строки × голоса × "
+        "варианты, цена по знакам каждой реплики (с минимумом за запрос, где он записан), сдача по файлу на реплику; "
+        "один длинный рендер, разрезанный потом, теряет дубли и имена",
+        TAG_ENGINEERING,
+    ),
+    Prior(
+        "podcast_audiogram",
+        "a podcast or interview to a video platform is an audiogram: a static cover, a waveform and captions from a "
+        "transcript laid over the audio at assembly — a generated film of the whole episode costs its length in video "
+        "seconds and shows nothing that was said; an avatar only when asked",
+        "подкаст или интервью на видеоплощадку — аудиограмма: статичная обложка, волна звука и субтитры по расшифровке "
+        "поверх звука при сборке; сгенерированный ролик на весь выпуск стоит его длину в секундах видео и ничего из "
+        "сказанного не показывает; аватар — только по просьбе",
+        TAG_ENGINEERING,
+    ),
+    Prior(
+        "reframe_tracked_crop",
+        "a vertical cut of horizontal footage is a crop that follows the speaker (face / subject tracking) at assembly, "
+        "with captions burned in for muted social feeds — a generative video edit redraws the people; an AI reframe "
+        "endpoint is the priced fallback when a crop loses the subject",
+        "вертикальная версия горизонтального материала — кроп, который следует за говорящим (трекинг лица / объекта) "
+        "при сборке, и вшитые субтитры для лент без звука; генеративная правка перерисовывает людей; эндпоинт "
+        "ИИ-рефрейма — платный запасной путь, когда кроп теряет объект",
+        TAG_ENGINEERING,
+        (
+            Source("ltx-2.3-reframe", "price_per_second_usd", "https://fal.ai/models/fal-ai/ltx-2.3/reframe",
+                   "$0.10 per second at 720p, $0.20 at 1080p, billed on the input's duration"),
+        ),
+    ),
+    Prior(
+        "comic_panel_motion",
+        "a motion comic moves the brought panels: pages split into panels, each panel animated image-to-video (or a "
+        "2.5D parallax of its layers), a voice-over of the text and sound effects — no talking avatar and no lip sync "
+        "on drawn faces",
+        "моушн-комикс двигает принесённые панели: страницы режутся на панели, каждая оживляется по кадру (или 2.5D-"
+        "параллаксом слоёв), текст озвучивается, добавляются звуковые эффекты — без говорящего аватара и без липсинка "
+        "на рисованных лицах",
+        TAG_ENGINEERING,
+    ),
+    Prior(
+        "dance_motion_transfer",
+        "a dance performance is motion transfer: one full-length reference per performer and a driving dance video "
+        "carry the whole-body choreography; a video model asked to 'dance' invents the moves and a still per shot "
+        "drifts the performer",
+        "танцевальный номер — перенос движения: один референс в полный рост на исполнителя и ведущее видео танца "
+        "переносят хореографию всего тела; видеомодель, которой сказали «танцуй», выдумывает движения, а кадр на "
+        "каждый шот уводит внешность",
+        TAG_BASE_ROWS,
+        (
+            Source("kling-2.6-motion-control", "best_for", "https://kling.ai/blog/ai-motion-transfer-video-tutorial",
+                   "full-body motion transfer incl. intricate dance routines from a 3-30 s motion reference"),
+        ),
+    ),
+)
+
 #: Tools and failure checks each prior brings (kept apart from the wording above).
 _PRIOR_TOOLS_FAILURES: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
     "t2i_native_max": ((), ("upscale_hallucination",)),
@@ -606,6 +693,13 @@ _PRIOR_TOOLS_FAILURES: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
     "ad_gap_voice": (("ad_mix",), ("ad_over_speech",)),
     "recap_short_vo": (("scene_detect",), ("recap_cut_mid_shot",)),
     "matte_background_blur": (("matte_blur",), ("matte_edge",)),
+    "try_on_shared_model": ((), ("garment_detail_lost", "reference_drift")),
+    "restore_faces_upscale_colour": (("deflicker", "descratch"), ("face_likeness_lost", "upscale_hallucination")),
+    "speech_lines_per_file": (("line_manifest",), ("line_take_mismatch",)),
+    "podcast_audiogram": (("showwaves", "captions_burn"), ()),
+    "reframe_tracked_crop": (("tracked_crop", "captions_burn"), ("subject_cut_off",)),
+    "comic_panel_motion": (("ffmpeg_concat",), ("panel_art_redrawn",)),
+    "dance_motion_transfer": (("ffmpeg_concat",), ("character_motion_drift",)),
 }
 PRIORS_LIST = tuple(
     Prior(п.id, п.en, п.ru, п.tag, п.sources, *_PRIOR_TOOLS_FAILURES[п.id]) for п in PRIORS_LIST
@@ -667,6 +761,13 @@ TOOLS_LIST = (
          "найти смены планов, чтобы каждая склейка ложилась на границу"),
     Tool("matte_blur", "ffmpeg gblur under alpha / Resolve Lens Blur", "blur the background under the person matte",
          "размыть фон под маской человека"),
+)
+TOOLS_LIST = (
+    *TOOLS_LIST,
+    Tool("line_manifest", "a CSV manifest + per-line export", "one file per line named character_id_vN with a "
+         "manifest of id -> text", "по файлу на реплику с именем персонаж_id_vN и таблицей id -> текст"),
+    Tool("tracked_crop", "ffmpeg crop driven by a tracker (MediaPipe / AutoFlip)", "a vertical crop that follows the "
+         "speaker's face", "вертикальный кроп, который следует за лицом говорящего"),
 )
 TOOLS: dict[str, Tool] = {т.id: т for т in TOOLS_LIST}
 
@@ -759,6 +860,22 @@ FAILURES_LIST = (
     Failure("recap_cut_mid_shot", "a picked moment is cut mid-shot or mid-line", "выбранный момент обрезан посреди плана или реплики",
             "check every in and out point against the shot list and the transcript",
             "сверить каждую точку входа и выхода со списком планов и расшифровкой"),
+)
+FAILURES_LIST = (
+    *FAILURES_LIST,
+    Failure("face_likeness_lost", "the face restorer invents a face that no longer looks like the person",
+            "восстановление лица выдумывает лицо, непохожее на человека", "compare every restored face with the "
+            "original at the same size; lower the strength where it drifts",
+            "сравнить каждое восстановленное лицо с исходным в том же размере; снизить силу там, где уводит"),
+    Failure("line_take_mismatch", "a file holds the wrong line or variation (ids shifted)",
+            "в файле не та реплика или не тот вариант (сдвиг id)", "spot-check files against the manifest text",
+            "выборочно сверить файлы с текстом таблицы"),
+    Failure("subject_cut_off", "the crop loses the speaker or cuts a second person in half",
+            "кроп теряет говорящего или режет второго человека пополам", "watch every speaker change in the vertical cut",
+            "просмотреть каждую смену говорящего в вертикальной версии"),
+    Failure("panel_art_redrawn", "image-to-video redraws the panel's art, lettering or faces",
+            "оживление перерисовывает рисунок, надписи или лица панели", "compare the first frame of every clip with its panel",
+            "сравнить первый кадр каждого клипа с его панелью"),
 )
 FAILURES: dict[str, Failure] = {ф.id: ф for ф in FAILURES_LIST}
 
@@ -1126,6 +1243,93 @@ RECIPES_LIST = (
         ("matte_background_blur",),
         ("matte_blur",),
         ("matte_edge",),
+    ),
+)
+RECIPES_LIST = (
+    *RECIPES_LIST,
+    Recipe(
+        "virtual_try_on_batch",
+        "garments on a model, per SKU and view",
+        (
+            RecipeStep("генерация_изображения", "model", "ONE model, a still per view, when no model photo is brought"),
+            RecipeStep("примерка", "model", "every SKU on the model in every view"),
+        ),
+        ("try_on_shared_model",),
+        (),
+        ("garment_detail_lost", "reference_drift"),
+    ),
+    Recipe(
+        "restoration_chain",
+        "an archival photo / film restored, faces, upscaled, colourised",
+        (
+            RecipeStep("реставрация_изображения", "model", "damage removed (photo; `реставрация` for film)"),
+            RecipeStep("восстановление_лиц", "model", "faces of the photo in their own pass"),
+            RecipeStep("апскейл_изображения", "model", "up to the delivery frame"),
+            RecipeStep("раскраска_изображения", "model", "colour, when asked"),
+            RecipeStep("deflicker", "tool", "film: flicker and the true frame rate first"),
+        ),
+        ("restore_faces_upscale_colour",),
+        ("deflicker", "descratch"),
+        ("face_likeness_lost", "upscale_hallucination"),
+    ),
+    Recipe(
+        "speech_batch",
+        "a batch of separate speech lines",
+        (
+            RecipeStep("озвучка", "model", "one request per line × voice × variation"),
+            RecipeStep("line_manifest", "tool", "one file per line, a manifest"),
+        ),
+        ("speech_lines_per_file",),
+        ("line_manifest",),
+        ("line_take_mismatch",),
+    ),
+    Recipe(
+        "podcast_video",
+        "a podcast / interview audio to a video platform",
+        (
+            RecipeStep("генерация_изображения", "model", "one cover, when none is brought"),
+            RecipeStep("расшифровка", "model", "timed transcript for the captions"),
+            RecipeStep("showwaves", "tool", "cover + waveform + captions at assembly"),
+        ),
+        ("podcast_audiogram",),
+        ("showwaves", "captions_burn"),
+        (),
+    ),
+    Recipe(
+        "vertical_reframe",
+        "a vertical version of horizontal footage",
+        (
+            RecipeStep("tracked_crop", "tool", "a crop following the speaker"),
+            RecipeStep("расшифровка", "model", "captions for muted social feeds"),
+        ),
+        ("reframe_tracked_crop",),
+        ("tracked_crop", "captions_burn"),
+        ("subject_cut_off",),
+    ),
+    Recipe(
+        "motion_comic",
+        "brought comic panels made to move",
+        (
+            RecipeStep("оживление", "model", "every panel image-to-video (or a 2.5D parallax)"),
+            RecipeStep("озвучка", "model", "the text voiced"),
+            RecipeStep("звук_фон", "model", "sound effects"),
+            RecipeStep("ffmpeg_concat", "tool", "panels cut to the voice-over"),
+        ),
+        ("comic_panel_motion",),
+        ("ffmpeg_concat",),
+        ("panel_art_redrawn",),
+    ),
+    Recipe(
+        "dance_performance",
+        "a dance / idol performance from performer references",
+        (
+            RecipeStep("генерация_изображения", "model", "one full-length reference per performer, when none is brought"),
+            RecipeStep("перенос_движения", "model", "the driving dance video carried onto each performer"),
+            RecipeStep("ffmpeg_concat", "tool", "performers composited, the track laid under"),
+        ),
+        ("dance_motion_transfer",),
+        ("ffmpeg_concat",),
+        ("character_motion_drift",),
     ),
 )
 RECIPES: dict[str, Recipe] = {р.id: р for р in RECIPES_LIST}

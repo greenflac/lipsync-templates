@@ -194,6 +194,13 @@ DOMAIN_SECURITY_AWARENESS = "security-awareness"
 DOMAINS = (*DOMAINS, DOMAIN_SECURITY_AWARENESS)
 #: Поля верхнего уровня семнадцатого круга (числа и флаг).
 SPEC_FIELDS_R17: tuple[str, ...] = ("performer_shots", "products", "reconstruct_3d")
+# --- ВОСЕМНАДЦАТЫЙ КРУГ: поля маршрутов и раскладок (`studio/routes_r18.py`) ----------------------
+#: `spec.inputs[].role` — чем принесённое является в заказе (модель, вещь, панель комикса, ведущее видео…).
+INPUT_ROLES: tuple[str, ...] = ("model", "garment", "product", "person", "panel", "motion", "cover")
+#: `spec.inputs[].source: comic` — страницы / панели комикса (манга, вебтун).
+INPUT_SOURCES = (*INPUT_SOURCES, "comic")
+#: Поля верхнего уровня восемнадцатого круга: ракурсы, реплики, варианты, раскраска, танец.
+SPEC_FIELDS_R18: tuple[str, ...] = ("views", "lines", "variations", "colorize", "dance")
 
 #: Все поля `spec`, которые плановщик принимает. Неизвестное поле — ошибка, а
 #: не молчание: вызывающий, написавший `durations`, должен узнать, что его не
@@ -259,6 +266,8 @@ SPEC_FIELDS: tuple[str, ...] = (
     "community",
     # СЕМНАДЦАТЫЙ КРУГ (`studio/routes_r17.py`): внутри записей входа — `inputs[].subtitles`.
     *SPEC_FIELDS_R17,
+    # ВОСЕМНАДЦАТЫЙ КРУГ (`studio/routes_r18.py`): внутри записей входа — `inputs[].role`.
+    *SPEC_FIELDS_R18,
 )
 
 SOURCE_SPEC = "spec"
@@ -688,6 +697,17 @@ class Spec:
     products: int | None = None
     #: Результат — 3D-реконструкция реального места (гауссов сплат / NeRF) или облёт, отрендеренный из неё.
     reconstruct_3d: bool | None = None
+    # --- восемнадцатый круг (`studio/routes_r18.py`) ---------------------------------------------
+    #: Ракурсов на вещь (примерка): кадров = вещей × ракурсов.
+    views: int | None = None
+    #: Отдельных реплик синтеза речи (реплики игры, подсказки IVR, строки курса).
+    lines: int | None = None
+    #: Вариантов (дублей) на реплику.
+    variations: int | None = None
+    #: Раскрасить реставрируемый материал (False — оставить чёрно-белым).
+    colorize: bool | None = None
+    #: Танец / хореография всем телом (перенос движения с ведущего видео).
+    dance: bool | None = None
 
     def has(self, имя: str) -> bool:
         значение = getattr(self, имя)
@@ -907,7 +927,7 @@ NOTE_APPLE = (
 )
 
 _INPUT_FIELDS = frozenset(
-    {"kind", "owned", "duration_s", "count", "resolution", "note", "source", "defects", "fps", "subtitles"}
+    {"kind", "owned", "duration_s", "count", "resolution", "note", "source", "defects", "fps", "subtitles", "role"}
 )
 
 
@@ -976,6 +996,13 @@ def _входы_spec(raw: Any, ошибки: list[str]) -> tuple[tuple[str, ...]
                 ошибки.append(f"spec.inputs[{i}].subtitles: {з} not in {', '.join(INPUT_SUBTITLES)}")
             else:
                 запись["subtitles"] = з
+        # ВОСЕМНАДЦАТЫЙ КРУГ: чем принесённое является в заказе.
+        if вход.get("role") is not None:
+            з = str(вход["role"]).strip().lower()
+            if з not in INPUT_ROLES:
+                ошибки.append(f"spec.inputs[{i}].role: {з} not in {', '.join(INPUT_ROLES)}")
+            else:
+                запись["role"] = з
         виды.append(вид)
         подробно.append(запись)
     return tuple(dict.fromkeys(виды)), tuple(подробно)
@@ -1342,6 +1369,7 @@ def parse_spec(raw: Mapping[str, Any] | None) -> tuple[Spec, list[str]]:
         поля["consistency"] = tuple(dict.fromkeys(з for з in оси if з in CONSISTENCY_AXES))
     _поля_r16(raw, поля, ошибки)
     _поля_r17(raw, поля, ошибки)
+    _поля_r18(raw, поля, ошибки)
     if raw.get("open_weights") is not None:
         if not isinstance(raw["open_weights"], bool):
             ошибки.append(f"spec.open_weights={raw['open_weights']!r}: must be true or false")
@@ -1460,6 +1488,22 @@ def _поля_r17(raw: Mapping[str, Any], поля: dict[str, Any], ошибки
             ошибки.append(f"spec.reconstruct_3d={raw['reconstruct_3d']!r}: must be true or false")
         else:
             поля["reconstruct_3d"] = raw["reconstruct_3d"]
+
+
+def _поля_r18(raw: Mapping[str, Any], поля: dict[str, Any], ошибки: list[str]) -> None:
+    """Поля восемнадцатого круга: ракурсы, реплики, варианты (целые > 0); раскраска и танец (да / нет)."""
+    for ключ in ("views", "lines", "variations"):
+        if raw.get(ключ) is not None:
+            try:
+                поля[ключ] = _положительное(raw[ключ], True)
+            except ValueError as e:
+                ошибки.append(f"spec.{ключ}={raw[ключ]!r}: {e}")
+    for ключ in ("colorize", "dance"):
+        if raw.get(ключ) is not None:
+            if not isinstance(raw[ключ], bool):
+                ошибки.append(f"spec.{ключ}={raw[ключ]!r}: must be true or false")
+            else:
+                поля[ключ] = raw[ключ]
 
 
 def _поля_r16(raw: Mapping[str, Any], поля: dict[str, Any], ошибки: list[str]) -> None:
@@ -3346,6 +3390,11 @@ def with_defaults(spec: Spec, ролик: bool, текст: str = "") -> Spec:
     # СЕМНАДЦАТЫЙ КРУГ (`studio/routes_r17.py`): закадровый текст назван полем (voiceover: true,
     # audio: voiceover, audio_content: speech), а звука не принесли — речь входит в выходы (шаг озвучки);
     # вшитые субтитры — снятие старого текста правкой, новые вшиваются при сборке.
+    from studio import routes_r18 as r18
+
+    # ВОСЕМНАДЦАТЫЙ КРУГ (`studio/routes_r18.py`): цепочка реставрации, рефрейм по вертикали, 3D-тур
+    # по набору снимков, озвучка объясняющего ролика по сценарию — допущения названы.
+    spec = r18.spec_transform(spec, текст)
     spec = r17.with_narration(spec)
     spec = r17.with_subtitle_edit(spec, текст)
     допущения = list(spec.assumptions)
@@ -3879,6 +3928,13 @@ def gaps(raw: Mapping[str, Any] | None, текст: str = "") -> tuple[Spec, lis
         # ТРИНАДЦАТЫЙ КРУГ: работа целиком монтажная — длина и язык цены не решают
         # (0 usd), вопрос о них только задержал бы план.
         return spec, ошибки, []
+    from studio import routes_r18 as r18
+
+    выведено = r18.derived_task(spec, текст)
+    if выведено:
+        # ВОСЕМНАДЦАТЫЙ КРУГ: работа видна по входам и выходам (3D-тур, аудиограмма, партия реплик,
+        # комикс, танец) — план с допущением, а не вопрос.
+        spec = replace(spec, task=выведено, source={**dict(spec.source), "task": SOURCE_DERIVED})
     работы = (spec.task, *spec.then_tasks) if spec.task else ()
     if not spec.task and not звук_к_своему_видео(spec):
         # Тринадцатый круг: звук к принесённому видео — работа видна по входу и выходу.
