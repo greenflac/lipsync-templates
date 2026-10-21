@@ -119,7 +119,8 @@ def with_narration(spec: Any) -> Any:
 
 #: Burned-in (hard / open) subtitles named in words (EN/RU) — read only when no video item names `subtitles`.
 W_BURNED_SUBS = re.compile(
-    r"burn(?:ed|t)[- ]?in (?:\w+ )?(?:sub(?:title)?s?|captions?)|hard[- ]?(?:coded|burned|burnt)? ?(?:sub(?:title)?s?|captions)\b"
+    r"burn(?:ed|t)[- ]?in (?:\w+ ){0,2}(?:sub(?:title)?s?|captions?)|hard[- ]?(?:coded|burned|burnt) (?:\w+ ){0,2}(?:sub(?:title)?s?|captions?)"
+    r"|\bhard[- ]?subs?\b|\bhard (?:sub(?:title)?s|captions)\b"
     r"|hard[- ]?subbed|hardsub\w*|open captions?"
     r"|(?:sub(?:title)?s?|captions?) (?:are |is )?(?:burned|burnt|baked|embedded|printed|hard[- ]?coded) (?:in|into|on)"
     r"|(?:вшит|прожж[её]нн|прошит|встроенн|зашит|вжжен|вожжен|впечатанн)\w* (?:в (?:кадр|видео|картинку) )?субтитр\w*"
@@ -527,13 +528,43 @@ def ugc_stills(spec: Any, text: str = "") -> int:
     return ведущий + (0 if packshots_brought else товаров)
 
 
+# --- 4. consented internal deepfake (security awareness) ------------------------------------------------
+
+W_SECURITY_TRAINING = re.compile(
+    r"security[- ]awareness|phishing (?:simulation|test|drill|training|exercise)|vishing|smishing"
+    r"|social[- ]engineering (?:test|drill|training|exercise|simulation)|red[- ]team\w*|ceo fraud|\bbec\b"
+    r"|deepfake (?:awareness|training|drill|simulation)|spot (?:a |the )?deepfakes?"
+    r"|учени\w* по (?:фишинг\w*|безопасност\w*|социальн\w*)|фишинг\w* (?:учени\w*|тренинг\w*|симуляц\w*)"
+    r"|обучени\w* (?:по )?(?:информационной |кибер)?безопасност\w*|распознава\w* дипфейк\w*",
+    re.I,
+)
+ASSEMBLY_SIM_WATERMARK = (
+    "видимый водяной знак СИМУЛЯЦИЯ (создано ИИ) в каждом кадре (ffmpeg drawtext) и C2PA; ролик выкладывается "
+    "только во внутренний LMS / интранет за логином — 0 usd",
+    "a visible SIMULATION (AI-generated) watermark in every frame (ffmpeg drawtext) and C2PA credentials; the "
+    "clip goes only to the internal LMS / intranet behind a login — 0 usd",
+)
+
+
+def security_training(spec: Any, text: str = "") -> bool:
+    """A security-awareness drill: `domain` named decides, the words only when it is absent."""
+    if _named(spec, "domain"):
+        return "security-awareness" in set(getattr(spec, "domain", None) or ())
+    return bool(W_SECURITY_TRAINING.search(_words(spec, text)))
+
+
+def consented_drill(spec: Any, text: str = "") -> bool:
+    """A real person's likeness made for a security-awareness drill (the safeguard caveat)."""
+    return security_training(spec, text) and any(п.get("real") is True for п in getattr(spec, "people", None) or ())
+
+
 # --- notes, localisation -------------------------------------------------------------------------------
 
 NOTE_PAIRS: tuple[tuple[str, str], ...] = (
     NOTE_SUBS_TRANSCRIPT, NOTE_SUBS_REMOVE, ASSEMBLY_SUBS_BURN, ASSEMBLY_SUBS_SOFT, ASSEMBLY_SUBS_SOFT_ALT,
     NOTE_PERFORMER_REF, NOTE_PERFORMER_R2V, NOTE_PERFORMER_LIPS, NOTE_BROLL_STILLS, NOTE_BROLL_I2V, ASSEMBLY_PERFORMER,
     NOTE_SCENE_3D, ASSEMBLY_SPLAT_RENDER, ASSEMBLY_SPLAT_VIEWER, GAP_SPLAT_COMPUTE,
-    NOTE_WHOLE_PERSON, NOTE_WHOLE_PERSON_REF, NOTE_UGC_STILLS,
+    NOTE_WHOLE_PERSON, NOTE_WHOLE_PERSON_REF, NOTE_UGC_STILLS, ASSEMBLY_SIM_WATERMARK,
 )  # fmt: skip
 
 
@@ -643,6 +674,9 @@ def rewrite(
                 notes["генерация_изображения"] = NOTE_WHOLE_PERSON_REF[0]
             notes["замена_фигуры"] = NOTE_WHOLE_PERSON[0]
             steps = [*новые, *steps]
+    # 4. consented internal drill: the watermark is assembly work, 0 usd
+    if consented_drill(spec, text) and steps:
+        acc.assembly.append(ASSEMBLY_SIM_WATERMARK)
     # 6. UGC product batch
     if ugc_batch(spec, text):
         стиллов = ugc_stills(spec, text)

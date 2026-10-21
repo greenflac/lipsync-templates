@@ -3986,6 +3986,98 @@ RULES_R16: tuple[Rule, ...] = (
 
 RULES_LIST = RULES_LIST + RULES_R16
 
+
+# --- round 17: caveats of the missing routes (`studio/routes_r17.py`; spec first, words fallback) ---
+
+
+def _burned_subtitles(c: Ctx) -> bool:
+    from studio import routes_r17 as r17
+
+    return r17.burned_subtitles(c.spec, c.text)
+
+
+def _consented_drill(c: Ctx) -> bool:
+    from studio import routes_r17 as r17
+
+    return r17.consented_drill(c.spec, c.text)
+
+
+def _scene_3d(c: Ctx) -> bool:
+    from studio import routes_r17 as r17
+
+    return "реконструкция_3d" in c.steps or r17.reconstruct_3d(c.spec, c.text) and "3d" in c.jobs
+
+
+S_NETFLIX_TT_EN = "https://partnerhelp.netflixstudios.com/hc/en-us/articles/217350977-English-Timed-Text-Style-Guide"
+S_GS_LICENCE = "https://raw.githubusercontent.com/graphdeco-inria/gaussian-splatting/main/LICENSE.md"
+
+RULES_R17_ROUTES: tuple[Rule, ...] = (
+    _r(
+        "burned_subtitles_translation",
+        [],
+        "burned-in subtitles: the old text is part of the picture — remove it (masked inpaint of the subtitle band, "
+        "or a box / crop at assembly) BEFORE the new subtitles go in, or both show; take the wording and timing "
+        "from the transcript and an OCR of the strip (the burned text is often an edited translation, not the "
+        "speech), translate, then have a native speaker proofread; keep the target script's reading rules (about "
+        "42 characters a line, two lines, ~17 characters a second; a font with every glyph of the script), and "
+        "deliver a soft track (SRT / WebVTT) wherever the platform takes one — burning in is for platforms that do not",
+        "вшитые субтитры: старый текст — часть картинки; уберите его (инпейнт по маске полосы субтитров или плашка / "
+        "кадрирование при сборке) ДО того, как лягут новые, иначе видны оба; формулировку и тайминги берите из "
+        "расшифровки и OCR строки (вшитый текст часто — отредактированный перевод, а не речь), переводите и отдавайте "
+        "на вычитку носителю; держите правила чтения целевого письма (около 42 знаков в строке, две строки, ~17 знаков "
+        "в секунду; шрифт со всеми глифами), и сдавайте отдельную дорожку (SRT / WebVTT) везде, где площадка её "
+        "принимает, — вшивают только для площадок, которые её не берут",
+        E,
+        _burned_subtitles,
+        ("inputs", "delivery", "edit"),
+        "",
+        (S_NETFLIX_TT_EN,),
+    ),
+    _r(
+        "consented_simulation_safeguards",
+        [],
+        "a deepfake of a real colleague for security-awareness training: plan it only with that person's WRITTEN "
+        "consent kept with the project (the script, the use, the duration, how to revoke it); burn a visible "
+        "'SIMULATION — AI-generated' watermark into every frame and attach C2PA content credentials; show it "
+        "INTERNALLY only (the LMS / intranet behind a login, no public upload, no sharing outside the drill); "
+        "debrief every participant after the drill; delete the clips, the voice clone and any trained voice model "
+        "on a set date; and check the voice / avatar provider's use policy (cloning needs the speaker's consent)",
+        "дипфейк реального коллеги для обучения безопасности: только с ПИСЬМЕННЫМ согласием этого человека, которое "
+        "хранится с проектом (текст, использование, срок, как отозвать); видимый водяной знак «СИМУЛЯЦИЯ — создано "
+        "ИИ» в каждом кадре и C2PA; показ ТОЛЬКО внутри (LMS / интранет за логином, без публикации и пересылки вне "
+        "учений); разбор с каждым участником после учений; удаление роликов, клона голоса и обученной модели голоса "
+        "в назначенную дату; и правила сервиса голоса / аватара (клон требует согласия говорящего)",
+        R,
+        _consented_drill,
+        ("domain", "delivery", "people"),
+        "",
+        (S_C2PA, S_ELEVEN_POLICY),
+    ),
+    _r(
+        "splat_scene_capture",
+        [],
+        "a 3D tour is a reconstruction, not a generated clip: shoot dozens of overlapping views (60-80 % overlap, "
+        "locked exposure, no moving people), solve the camera poses (COLMAP), train the splat with an Apache-2.0 "
+        "trainer (gsplat / nerfstudio splatfacto: ~6 GB VRAM, ~12 GB for splatfacto-big) — the original Inria "
+        "gaussian-splatting code is research / non-commercial only; expect floaters where the views were few, "
+        "render the camera path or ship the .ply / .spz to a web viewer; no orderable endpoint trains a splat, so "
+        "the step's compute price is a recorded gap",
+        "3D-тур — это реконструкция, а не сгенерированный ролик: десятки снимков с перекрытием (60-80 %, "
+        "фиксированная экспозиция, без движущихся людей), позы камер (COLMAP), обучение сплата тренером под "
+        "Apache-2.0 (gsplat / nerfstudio splatfacto: ~6 ГБ VRAM, ~12 ГБ у splatfacto-big) — оригинальный код Inria "
+        "только для исследований / некоммерческий; «облака» там, где мало ракурсов; путь камеры рендерится или "
+        ".ply / .spz отдаётся в веб-просмотрщик; заказываемого эндпоинта, обучающего сплат, нет — цена вычислений "
+        "шага записана пробелом",
+        E,
+        _scene_3d,
+        ("reconstruct_3d", "delivery", "inputs"),
+        "",
+        (S_GS_LICENCE,),
+    ),
+)
+
+RULES_LIST = RULES_LIST + RULES_R17_ROUTES
+
 RULES: dict[str, Rule] = {р.id: р for р in RULES_LIST}
 
 # --- round 15: spec first ------------------------------------------------------------------

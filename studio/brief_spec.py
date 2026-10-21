@@ -3734,6 +3734,25 @@ OPTIONAL_HELP: dict[str, str] = {
         "(descreen before restore / upscale), noise / hum / echo = an audio clean-up chain, blur = a deblur model"
     ),
     "inputs[].fps": "frames per second of the brought footage (16-18 = cine film: set the true speed first)",
+    # Семнадцатый круг (`studio/routes_r17.py`).
+    "inputs[].subtitles": (
+        " | ".join(INPUT_SUBTITLES) + " — on a brought VIDEO: burned = subtitles burned into the picture (to translate: "
+        "transcript / OCR -> machine translation -> the old band removed by a masked edit -> new subtitles burned "
+        "in, or a soft track where delivery.platform / format takes one)"
+    ),
+    "performer_shots": (
+        "how many of the shots show the performer SINGING on camera (lip sync to the track on those shots only; "
+        "the rest are animated without lips); 0 = nobody sings on screen"
+    ),
+    "products": (
+        "how many DISTINCT products a batch of clips is about (UGC / shop clips): one packshot per product and one "
+        "shared presenter, reused by every clip"
+    ),
+    "reconstruct_3d": (
+        "true | false — the deliverable is a 3D reconstruction of a real place (a gaussian splat / NeRF: a 3D tour, "
+        "a walkthrough you can navigate, or a fly-through rendered from it) from overlapping photos or a "
+        "walk-through video; false = a flat camera-move video"
+    ),
 }
 
 #: Полный пример — печатается в вопросе и в описании инструмента (Е1: один текст).
@@ -3758,7 +3777,8 @@ SPEC_INSTRUCTION = (
     "(live, edit_target, outputs[].loop / tileable, people[].on_screen / speaks, lipsync, cast_together, "
     "single_take_s, training_use, consistency, dataset_count, anonymise, voiceover, delivery, domain, style, "
     "subject, accessibility, display, audio_content, follows_picture, animate_input, community, "
-    "inputs[].source / defects / fps): in a brief in any language they decide what "
+    "inputs[].source / defects / fps / subtitles, performer_shots, products, reconstruct_3d): in a brief in any "
+    "language they decide what "
     "the keyword parser can only read in English or Russian."
 )
 
@@ -4456,10 +4476,13 @@ DECISION_FIELDS_R16: tuple[str, ...] = (
     "inputs[].defects",
     "inputs[].fps",
 )
+#: Семнадцатый круг (`studio/routes_r17.py`): поля недостающих маршрутов.
+DECISION_FIELDS_R17: tuple[str, ...] = ("inputs[].subtitles", "performer_shots", "products", "reconstruct_3d")
 #: Шестнадцатый круг (экспертиза, `expert_r16.spatial_audio`): флаг записи выхода-звука.
 DECISION_FIELDS_R16_OUTPUTS: tuple[str, ...] = tuple(f"outputs[].{флаг}" for флаг in OUTPUT_ITEM_FLAGS_R16)
 DECISION_FIELDS = (*DECISION_FIELDS, *DECISION_FIELDS_R16)
 DECISION_FIELDS = (*DECISION_FIELDS, *DECISION_FIELDS_R16_OUTPUTS)
+DECISION_FIELDS = (*DECISION_FIELDS, *DECISION_FIELDS_R17)
 
 
 def _прочитано_словами(brief: str, низ: str) -> dict[str, Any]:
@@ -4496,7 +4519,23 @@ def _прочитано_словами(brief: str, низ: str) -> dict[str, Any
     if оси:
         прочитано["consistency"] = оси
     прочитано.update(_прочитано_словами_r16(brief, низ))
+    прочитано.update(_прочитано_словами_r17(brief))
     return прочитано
+
+
+def _прочитано_словами_r17(brief: str) -> dict[str, Any]:
+    """Семнадцатый круг: что запасные слова (EN/RU) дают полям недостающих маршрутов."""
+    from studio import routes_r17 as r17
+
+    п: dict[str, Any] = {}
+    if r17.W_BURNED_SUBS.search(brief):
+        п["inputs[].subtitles"] = "burned"
+    if r17.W_SCENE_3D.search(brief):
+        п["reconstruct_3d"] = True
+    товары = r17.W_PRODUCTS.search(brief)
+    if товары:
+        п["products"] = int(товары.group(1))
+    return п
 
 
 def _прочитано_словами_r16(brief: str, низ: str) -> dict[str, Any]:
