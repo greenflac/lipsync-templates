@@ -230,7 +230,7 @@ class ЯзыкЖестов(unittest.TestCase):
         self.assertEqual("ASL", x18.SIGN_LANGUAGE_NAMES["ase"])
         self.assertEqual("RSL", x18.SIGN_LANGUAGE_NAMES["rsl"])
         self.assertEqual(["RSL (rsl)"], x18.sign_languages(_spec(w(OWN, languages=["ru", "rsl"]))))
-        self.assertEqual("sign-language", x18.SIGN_LANGUAGE_NEED)
+        self.assertEqual("sign-language", bs.ACCESSIBILITY_SIGN_LANGUAGE)
         self.assertIn("sign-language", bs.ACCESSIBILITY_NEEDS)
 
     def test_язык_жестов_не_версия(self) -> None:
@@ -322,6 +322,11 @@ class Неречевые(unittest.TestCase):
         self.assertIn(self.RID, notes(d))
         self.assertIn("[laughs]", says(d, self.RID))
         self.assertIn("3-5 takes per bark", says(d, self.RID))
+
+    def test_площадка_игры_de(self) -> None:
+        игра = w(VO, delivery={"platform": ["game-engine"]})
+        self.assertIn(self.RID, fired(игра, ["озвучка"], "Sprachaufnahmen für unseren Helden"))
+        self.assertNotIn(self.RID, fired(w(игра, delivery={"platform": ["web"]}), ["озвучка"], "Sprachaufnahmen"))
 
     def test_поля_ru_es(self) -> None:
         self.assertIn(self.RID, fired(w(VO, domain=["entertainment"]), ["озвучка"], "радиоспектакль"))

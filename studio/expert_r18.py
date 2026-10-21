@@ -17,7 +17,8 @@ CAVEATS (`checklist.RULES_R18`):
 2. MEDICAL / SCIENTIFIC explainers: expert review, no invented anatomy or data, cited sources,
    regulated drug claims (`medical_science`); `claims_policy` decides claims unchanged.
 3. SIGN LANGUAGE: the regional sign language, native Deaf signers over avatars, a Deaf reviewer
-   (`sign_language_access`; the round-7 gap stays the outcome and now carries this note).
+   (`sign_language_access`; the round-7 gap stays the outcome and now carries this note;
+   `brief_spec.sign_language` reads `accessibility` before the words).
 4. LOUDNESS by `delivery.platform`, measured on the final mix (`loudness_target`).
 5. ROOM TONE / ADR matching of replaced dialogue (`replaced_dialogue`) and NONVERBAL sounds for
    TTS / dubbing / game barks (`nonverbal_needed`).
@@ -36,7 +37,7 @@ b. one programme brought twice — an audio file as long as a video (its own tra
    recorder) — is transcribed ONCE (`programme_seconds`).
 
 DECISION CONSTANTS (mutated both ways by `scripts/mutate_round18_knowledge.py`):
-`ELEARNING_FORMATS`, `SCIENCE_DOMAINS`, `SIGN_LANGUAGE_NEED`, `SIGN_LANGUAGE_NAMES`,
+`ELEARNING_FORMATS`, `SCIENCE_DOMAINS`, `SIGN_LANGUAGE_NAMES` (and `brief_spec.ACCESSIBILITY_SIGN_LANGUAGE`),
 `LOUDNESS_TARGETS`, `CONDENSE_SHARE`, `PLURICENTRIC`, `BARE_UNDECIDED`, `VERTICAL_CJK`, `DATA_SUBJECTS`,
 `GLASS_SUBJECTS`.
 """
@@ -124,8 +125,6 @@ def medical_science(spec: Any, text: str = "") -> bool:
 
 # --- 3. sign language --------------------------------------------------------------------------
 
-#: The `accessibility` need of a sign-language version (round 18).
-SIGN_LANGUAGE_NEED = "sign-language"
 #: ISO 639-3 sign-language codes -> the name a Deaf viewer knows (`brief_spec.SIGN_LANGUAGE_CODES` are the
 #: codes the planner reads; these are the names said back).
 SIGN_LANGUAGE_NAMES: dict[str, str] = {
@@ -144,10 +143,6 @@ def sign_languages(spec: Any) -> list[str]:
             out.append(f"{SIGN_LANGUAGE_NAMES[код]} ({код})")
     return list(dict.fromkeys(out))
 
-
-def sign_language_field(spec: Any) -> bool | None:
-    """`accessibility` names the sign-language need; None — the field is not named."""
-    return sf.accessibility(spec, SIGN_LANGUAGE_NEED)
 
 
 # --- 4. loudness ----------------------------------------------------------------------------------
