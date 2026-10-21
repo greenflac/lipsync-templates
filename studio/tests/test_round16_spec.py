@@ -131,7 +131,7 @@ class ПоляРазбираются(unittest.TestCase):
         self.assertEqual(
             [
                 "spec.inputs[0].source: vhs not in print-scan, archival, cine-film, timelapse, green-screen, stock, "
-                "third-party-song, screen-recording, slides, own",
+                "third-party-song, screen-recording, slides, own, comic",
                 "spec.inputs[0].defects: dust not in halftone, blur, noise, hum, echo, scratches, flicker",
                 "spec.anonymise: unknown field(s) x (known: faces, voice, method)",
                 "spec.anonymise.faces='y': must be true or false",

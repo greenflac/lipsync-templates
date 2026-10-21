@@ -590,7 +590,8 @@ class ЧерновикПредлагаетПоля(unittest.TestCase):
         got = {f["field"]: f["read_from_text"] for f in bs.decision_fields(
             "A live avatar; replace the text on the sign; a seamless loop; training data; no lip sync; "
             "keep the lighting consistent")
-            if f["field"] not in (*bs.DECISION_FIELDS_R16, *bs.DECISION_FIELDS_R16_OUTPUTS, *bs.DECISION_FIELDS_R17)}
+            if f["field"] not in (*bs.DECISION_FIELDS_R16, *bs.DECISION_FIELDS_R16_OUTPUTS, *bs.DECISION_FIELDS_R17,
+                              *bs.DECISION_FIELDS_R18)}
         self.assertEqual(
             {"live": True, "edit_target": "text", "outputs[].loop": True, "outputs[].tileable": None, "outputs[].alpha": None,
              "people[].on_screen": None, "people[].speaks": None, "lipsync": False, "cast_together": None,

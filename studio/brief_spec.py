@@ -194,6 +194,13 @@ DOMAIN_SECURITY_AWARENESS = "security-awareness"
 DOMAINS = (*DOMAINS, DOMAIN_SECURITY_AWARENESS)
 #: Поля верхнего уровня семнадцатого круга (числа и флаг).
 SPEC_FIELDS_R17: tuple[str, ...] = ("performer_shots", "products", "reconstruct_3d")
+# --- ВОСЕМНАДЦАТЫЙ КРУГ: поля маршрутов и раскладок (`studio/routes_r18.py`) ----------------------
+#: `spec.inputs[].role` — чем принесённое является в заказе (модель, вещь, панель комикса, ведущее видео…).
+INPUT_ROLES: tuple[str, ...] = ("model", "garment", "product", "person", "panel", "motion", "cover")
+#: `spec.inputs[].source: comic` — страницы / панели комикса (манга, вебтун).
+INPUT_SOURCES = (*INPUT_SOURCES, "comic")
+#: Поля верхнего уровня восемнадцатого круга: ракурсы, реплики, варианты, раскраска, танец.
+SPEC_FIELDS_R18: tuple[str, ...] = ("views", "lines", "variations", "colorize", "dance")
 
 #: Все поля `spec`, которые плановщик принимает. Неизвестное поле — ошибка, а
 #: не молчание: вызывающий, написавший `durations`, должен узнать, что его не
@@ -259,6 +266,8 @@ SPEC_FIELDS: tuple[str, ...] = (
     "community",
     # СЕМНАДЦАТЫЙ КРУГ (`studio/routes_r17.py`): внутри записей входа — `inputs[].subtitles`.
     *SPEC_FIELDS_R17,
+    # ВОСЕМНАДЦАТЫЙ КРУГ (`studio/routes_r18.py`): внутри записей входа — `inputs[].role`.
+    *SPEC_FIELDS_R18,
 )
 
 SOURCE_SPEC = "spec"
@@ -688,6 +697,17 @@ class Spec:
     products: int | None = None
     #: Результат — 3D-реконструкция реального места (гауссов сплат / NeRF) или облёт, отрендеренный из неё.
     reconstruct_3d: bool | None = None
+    # --- восемнадцатый круг (`studio/routes_r18.py`) ---------------------------------------------
+    #: Ракурсов на вещь (примерка): кадров = вещей × ракурсов.
+    views: int | None = None
+    #: Отдельных реплик синтеза речи (реплики игры, подсказки IVR, строки курса).
+    lines: int | None = None
+    #: Вариантов (дублей) на реплику.
+    variations: int | None = None
+    #: Раскрасить реставрируемый материал (False — оставить чёрно-белым).
+    colorize: bool | None = None
+    #: Танец / хореография всем телом (перенос движения с ведущего видео).
+    dance: bool | None = None
 
     def has(self, имя: str) -> bool:
         значение = getattr(self, имя)
@@ -907,7 +927,7 @@ NOTE_APPLE = (
 )
 
 _INPUT_FIELDS = frozenset(
-    {"kind", "owned", "duration_s", "count", "resolution", "note", "source", "defects", "fps", "subtitles"}
+    {"kind", "owned", "duration_s", "count", "resolution", "note", "source", "defects", "fps", "subtitles", "role"}
 )
 
 
@@ -976,6 +996,13 @@ def _входы_spec(raw: Any, ошибки: list[str]) -> tuple[tuple[str, ...]
                 ошибки.append(f"spec.inputs[{i}].subtitles: {з} not in {', '.join(INPUT_SUBTITLES)}")
             else:
                 запись["subtitles"] = з
+        # ВОСЕМНАДЦАТЫЙ КРУГ: чем принесённое является в заказе.
+        if вход.get("role") is not None:
+            з = str(вход["role"]).strip().lower()
+            if з not in INPUT_ROLES:
+                ошибки.append(f"spec.inputs[{i}].role: {з} not in {', '.join(INPUT_ROLES)}")
+            else:
+                запись["role"] = з
         виды.append(вид)
         подробно.append(запись)
     return tuple(dict.fromkeys(виды)), tuple(подробно)
@@ -1342,6 +1369,7 @@ def parse_spec(raw: Mapping[str, Any] | None) -> tuple[Spec, list[str]]:
         поля["consistency"] = tuple(dict.fromkeys(з for з in оси if з in CONSISTENCY_AXES))
     _поля_r16(raw, поля, ошибки)
     _поля_r17(raw, поля, ошибки)
+    _поля_r18(raw, поля, ошибки)
     if raw.get("open_weights") is not None:
         if not isinstance(raw["open_weights"], bool):
             ошибки.append(f"spec.open_weights={raw['open_weights']!r}: must be true or false")
@@ -1460,6 +1488,22 @@ def _поля_r17(raw: Mapping[str, Any], поля: dict[str, Any], ошибки
             ошибки.append(f"spec.reconstruct_3d={raw['reconstruct_3d']!r}: must be true or false")
         else:
             поля["reconstruct_3d"] = raw["reconstruct_3d"]
+
+
+def _поля_r18(raw: Mapping[str, Any], поля: dict[str, Any], ошибки: list[str]) -> None:
+    """Поля восемнадцатого круга: ракурсы, реплики, варианты (целые > 0); раскраска и танец (да / нет)."""
+    for ключ in ("views", "lines", "variations"):
+        if raw.get(ключ) is not None:
+            try:
+                поля[ключ] = _положительное(raw[ключ], True)
+            except ValueError as e:
+                ошибки.append(f"spec.{ключ}={raw[ключ]!r}: {e}")
+    for ключ in ("colorize", "dance"):
+        if raw.get(ключ) is not None:
+            if not isinstance(raw[ключ], bool):
+                ошибки.append(f"spec.{ключ}={raw[ключ]!r}: must be true or false")
+            else:
+                поля[ключ] = raw[ключ]
 
 
 def _поля_r16(raw: Mapping[str, Any], поля: dict[str, Any], ошибки: list[str]) -> None:
@@ -3346,6 +3390,11 @@ def with_defaults(spec: Spec, ролик: bool, текст: str = "") -> Spec:
     # СЕМНАДЦАТЫЙ КРУГ (`studio/routes_r17.py`): закадровый текст назван полем (voiceover: true,
     # audio: voiceover, audio_content: speech), а звука не принесли — речь входит в выходы (шаг озвучки);
     # вшитые субтитры — снятие старого текста правкой, новые вшиваются при сборке.
+    from studio import routes_r18 as r18
+
+    # ВОСЕМНАДЦАТЫЙ КРУГ (`studio/routes_r18.py`): цепочка реставрации, рефрейм по вертикали, 3D-тур
+    # по набору снимков, озвучка объясняющего ролика по сценарию — допущения названы.
+    spec = r18.spec_transform(spec, текст)
     spec = r17.with_narration(spec)
     spec = r17.with_subtitle_edit(spec, текст)
     допущения = list(spec.assumptions)
@@ -3760,6 +3809,23 @@ OPTIONAL_HELP: dict[str, str] = {
         "how many DISTINCT products a batch of clips is about (UGC / shop clips): one packshot per product and one "
         "shared presenter, reused by every clip"
     ),
+    # Восемнадцатый круг (`studio/routes_r18.py`).
+    "inputs[].role": (
+        " | ".join(INPUT_ROLES) + " — what a brought item IS: model = a photo of the person who wears the garments "
+        "(no model item = one on-model base is generated), garment / product = the SKUs, panel = comic panels, "
+        "motion = a driving (dance) video, cover = cover art"
+    ),
+    "views": "views / angles per SKU of an on-model batch: images = SKUs × views",
+    "lines": (
+        "how many SEPARATE speech lines (game barks, IVR prompts, e-learning lines): one TTS request and one file "
+        "per line, priced per line"
+    ),
+    "variations": "takes / variations per speech line (lines × characters × variations requests)",
+    "colorize": "true | false — colourise the restored material (false = keep it black and white)",
+    "dance": (
+        "true | false — a dance / choreography performance: one full-length reference per performer and motion "
+        "transfer from a driving dance video"
+    ),
     "reconstruct_3d": (
         "true | false — the deliverable is a 3D reconstruction of a real place (a gaussian splat / NeRF: a 3D tour, "
         "a walkthrough you can navigate, or a fly-through rendered from it) from overlapping photos or a "
@@ -3789,7 +3855,8 @@ SPEC_INSTRUCTION = (
     "(live, edit_target, outputs[].loop / tileable, people[].on_screen / speaks, lipsync, cast_together, "
     "single_take_s, training_use, consistency, dataset_count, anonymise, voiceover, delivery, domain, style, "
     "subject, accessibility, display, audio_content, follows_picture, animate_input, community, "
-    "inputs[].source / defects / fps / subtitles, performer_shots, products, reconstruct_3d): in a brief in any "
+    "inputs[].source / defects / fps / subtitles / role, performer_shots, products, reconstruct_3d, views, lines, "
+    "variations, colorize, dance): in a brief in any "
     "language they decide what "
     "the keyword parser can only read in English or Russian."
 )
@@ -3879,6 +3946,13 @@ def gaps(raw: Mapping[str, Any] | None, текст: str = "") -> tuple[Spec, lis
         # ТРИНАДЦАТЫЙ КРУГ: работа целиком монтажная — длина и язык цены не решают
         # (0 usd), вопрос о них только задержал бы план.
         return spec, ошибки, []
+    from studio import routes_r18 as r18
+
+    выведено = r18.derived_task(spec, текст)
+    if выведено:
+        # ВОСЕМНАДЦАТЫЙ КРУГ: работа видна по входам и выходам (3D-тур, аудиограмма, партия реплик,
+        # комикс, танец) — план с допущением, а не вопрос.
+        spec = replace(spec, task=выведено, source={**dict(spec.source), "task": SOURCE_DERIVED})
     работы = (spec.task, *spec.then_tasks) if spec.task else ()
     if not spec.task and not звук_к_своему_видео(spec):
         # Тринадцатый круг: звук к принесённому видео — работа видна по входу и выходу.
@@ -4495,6 +4569,9 @@ DECISION_FIELDS_R16_OUTPUTS: tuple[str, ...] = tuple(f"outputs[].{флаг}" for
 DECISION_FIELDS = (*DECISION_FIELDS, *DECISION_FIELDS_R16)
 DECISION_FIELDS = (*DECISION_FIELDS, *DECISION_FIELDS_R16_OUTPUTS)
 DECISION_FIELDS = (*DECISION_FIELDS, *DECISION_FIELDS_R17)
+#: Восемнадцатый круг (`studio/routes_r18.py`): поля маршрутов и раскладок.
+DECISION_FIELDS_R18: tuple[str, ...] = ("inputs[].role", *SPEC_FIELDS_R18)
+DECISION_FIELDS = (*DECISION_FIELDS, *DECISION_FIELDS_R18)
 
 
 def _прочитано_словами(brief: str, низ: str) -> dict[str, Any]:
@@ -4532,7 +4609,30 @@ def _прочитано_словами(brief: str, низ: str) -> dict[str, Any
         прочитано["consistency"] = оси
     прочитано.update(_прочитано_словами_r16(brief, низ))
     прочитано.update(_прочитано_словами_r17(brief))
+    прочитано.update(_прочитано_словами_r18(brief))
     return прочитано
+
+
+def _прочитано_словами_r18(brief: str) -> dict[str, Any]:
+    """Восемнадцатый круг: что запасные слова (EN/RU) дают полям маршрутов и раскладок."""
+    from studio import routes_r18 as r18
+
+    п: dict[str, Any] = {}
+    for поле, образец in (("views", r18.W_VIEWS), ("lines", r18.W_LINES), ("variations", r18.W_VARIATIONS)):
+        м = образец.search(brief)
+        if м:
+            п[поле] = int(next(г for г in м.groups() if г))
+    if r18.W_KEEP_BW.search(brief):
+        п["colorize"] = False
+    elif r18.W_COLORIZE.search(brief):
+        п["colorize"] = True
+    if r18.W_DANCE.search(brief):
+        п["dance"] = True
+    if r18.W_COMIC.search(brief):
+        п["inputs[].source"] = ["comic"]
+    if r18.W_MODEL_PHOTO.search(brief):
+        п["inputs[].role"] = "model"
+    return п
 
 
 def _прочитано_словами_r17(brief: str) -> dict[str, Any]:

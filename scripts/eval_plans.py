@@ -78,6 +78,8 @@ STEP_JOB: dict[str, str] = {
     "раскраска_изображения": "colorize",
     # Round 11: photo restoration, a face swap on a still, motion transfer.
     "реставрация_изображения": "restore",
+    # Round 18: the faces of a restored photo in their own pass.
+    "восстановление_лиц": "restore",
     "замена_лица_изображения": "face_swap",
     "перенос_движения": "i2v",
     "интерполяция_кадров": "interpolate",

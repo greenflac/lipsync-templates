@@ -86,6 +86,9 @@ UPSCALE_VIDEO = "upscale-video"
 #: раскрашивает, но не реставрирует. Общая работа «restore-colorize» отдавала
 #: реставратор на шаг раскраски.
 RESTORE = "restore"
+#: Восемнадцатый круг: восстановление ЛИЦ на старом снимке (CodeFormer, GFPGAN) — свой проход
+#: после реставрации и до апскейла; реставратор кадра лица не восстанавливает.
+FACE_RESTORE = "face-restore"
 COLORIZE = "colorize"
 INTERPOLATE = "frame-interpolate"
 TRANSCRIBE = "transcribe-diarize"
@@ -125,6 +128,7 @@ FUNCTIONS: tuple[str, ...] = (
     UPSCALE_IMAGE,
     UPSCALE_VIDEO,
     RESTORE,
+    FACE_RESTORE,
     COLORIZE,
     INTERPOLATE,
     TRANSCRIBE,
@@ -210,6 +214,8 @@ JOB_RULES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ),
     # `ddcolor`/`deoldify` — модели раскраски, названные по себе, без слова «colorize».
     (r"coloriz\w*|colouriz\w*|colorization|ddcolor|deoldify", (COLORIZE,)),
+    # Восемнадцатый круг: модели восстановления лиц, названные по себе.
+    (r"codeformer|gfpgan|restoreformer|face-?restor\w*", (FACE_RESTORE,)),
     (r"restor\w*", (RESTORE,)),
     # Шумодав, удаление смаза и артефактов сжатия — реставрация (седьмой
     # круг): `topaz/denoise/video`, `fal-ai/ltx-2.3-quality/deblur` и
@@ -353,6 +359,7 @@ SIGNATURES: dict[str, tuple[frozenset[str], frozenset[str]]] = {
     UPSCALE_IMAGE: (frozenset({_КАРТИНКА, _ТЕКСТ}), frozenset({_КАРТИНКА})),
     UPSCALE_VIDEO: (frozenset({_ВИДЕО, _ТЕКСТ}), frozenset({_ВИДЕО})),
     RESTORE: (frozenset({_КАРТИНКА, _ВИДЕО, _ТЕКСТ}), frozenset({_КАРТИНКА, _ВИДЕО})),
+    FACE_RESTORE: (frozenset({_КАРТИНКА, _ТЕКСТ}), frozenset({_КАРТИНКА})),
     COLORIZE: (frozenset({_КАРТИНКА, _ВИДЕО, _ТЕКСТ}), frozenset({_КАРТИНКА, _ВИДЕО})),
     INTERPOLATE: (frozenset({_КАРТИНКА, _ВИДЕО}), frozenset({_ВИДЕО})),
     TRANSCRIBE: (frozenset({_ЗВУК, _ВИДЕО}), frozenset({_ТЕКСТ})),
@@ -1448,6 +1455,7 @@ JOB_WORDS: dict[str, tuple[str, ...]] = {
     UPSCALE_IMAGE: ("upscale-image", "image upscale", "upscale image", "апскейл изображен"),
     UPSCALE_VIDEO: ("upscale-video", "video upscale", "upscale video", "апскейл видео"),
     RESTORE: ("restore", "restoration", "реставрац"),
+    FACE_RESTORE: ("face-restore", "face restoration", "restore faces", "восстановление лиц"),
     COLORIZE: ("colorize", "colourise", "colorization", "раскрас"),
     INTERPOLATE: ("frame-interpolate", "frame interpolation", "interpolation", "slow motion", "интерполяц"),
     TRANSCRIBE: (

@@ -118,7 +118,8 @@ MUTANTS: tuple[tuple[str, str, str, str], ...] = (
     # контракт и вызовы
     (BS, "DECISION_FIELDS = (*DECISION_FIELDS, *DECISION_FIELDS_R17)\n", "", "поля семнадцатого круга не в черновике"),
     (BS, "    прочитано.update(_прочитано_словами_r17(brief))\n", "", "слова не подсказывают поля семнадцатого круга"),
-    (RA, "    steps = r17.rewrite(spec, steps, notes, counts, step_seconds, acc, text)\n", "", "маршруты не применяются"),
+    (RA, "    steps = r17.rewrite(r18.with_tour(spec, text), steps, notes, counts, step_seconds, acc, text)\n", "",
+     "маршруты не применяются"),
     (CL, "RULES_R17: tuple[Rule, ...] = RULES_R17_ROUTES + RULES_R17_KNOWLEDGE\n", "RULES_R17: tuple[Rule, ...] = RULES_R17_KNOWLEDGE\n", "оговорки семнадцатого круга не в списке"),
 )
 

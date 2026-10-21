@@ -975,7 +975,7 @@ def find_models(
     :param function: a job of the endpoint registry — t2v | i2v | r2v |
         v2v-edit | lipsync | talking-avatar | face-swap | dub-translate | tts |
         voice-clone | music | sfx | t2i | image-edit | bg-remove | upscale-image
-        | upscale-video | restore | colorize | frame-interpolate |
+        | upscale-video | restore | face-restore | colorize | frame-interpolate |
         transcribe-diarize | captions | turntable-360 | image-to-3d | character-replace |
         virtual-try-on | motion-transfer — or a word for one
         ("faceswap", "background removal"). Restoration (noise, scratches,
@@ -1457,6 +1457,26 @@ def plan_pipeline(
                   delivery.platform internal + people (role employee,
                   consent stated) = a consented internal deepfake drill,
                   planned with watermark and disclosure.
+    DECISION FIELDS (round 18) — the same rule: field first, words second.
+        inputs[].role  model | garment | product | person | panel | motion
+                  | cover: what a brought item IS. Garments with no
+                  `model` item = ONE on-model base generated (a still per
+                  view, shared) + a try-on per SKU × view (`products` SKUs,
+                  `views` per SKU); a model photo = try-on only.
+        colorize  true | false on a restore chain: restore -> faces (photos
+                  with people) -> upscale to `resolution` -> colourise;
+                  interpolation only when `fps` is above the source's.
+        lines / variations  a batch of SEPARATE speech lines (game barks,
+                  IVR prompts, course lines; `characters` = voices): one TTS
+                  request and one file per line, priced per line.
+        dance     true = a dance / choreography performance: one reference
+                  per performer + motion transfer from a driving dance video.
+        inputs[].source comic = comic panels made to move (image-to-video
+                  or parallax per panel, VO, SFX; no avatar, no lip sync).
+        Speech audio only to a video (a podcast) = cover + waveform +
+                  captions at assembly; an avatar only with lipsync / task
+                  avatar. A vertical `aspect` over horizontal footage = a
+                  tracked crop (captions burned in for tiktok / reels).
     OPTIONAL (also listed with values in `spec_needed.allowed`):
         edit      for video-edit: [reframe | replace-object | remove-object |
                   replace-sky | stabilise | relight | restyle]; unnamed = edit

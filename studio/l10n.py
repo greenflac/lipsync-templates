@@ -1085,6 +1085,10 @@ EN: tuple[tuple[str, str], ...] = (
 from studio import routes_r17 as _r17  # noqa: E402
 
 EN = (*EN, *_r17.l10n_pairs())
+# --- круг 18: пометки и строки сборки маршрутов и раскладок (`routes_r18.NOTE_PAIRS`; модуль без импортов studio)
+from studio import routes_r18 as _r18  # noqa: E402
+
+EN = (*EN, *_r18.l10n_pairs())
 TERMS_EN.setdefault("3d-модель", "3D model")
 
 
