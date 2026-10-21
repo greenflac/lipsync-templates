@@ -4524,22 +4524,22 @@ RULES_R18: tuple[Rule, ...] = (
         [],
         "e-learning package for an LMS: decide SCORM 1.2, SCORM 2004 (4th edition) or xAPI / cmi5 with the LMS "
         "owner first — SCORM 1.2 stores at most 4,096 characters of suspend_data and one lesson_status, SCORM "
-        "2004 keeps 64,000 characters and reports completion and success separately, xAPI sends statements to "
+        "2004 (3rd / 4th edition) keeps 64,000 characters and reports completion and success separately, xAPI sends statements to "
         "a Learning Record Store (LRS) the LMS must have; zip with imsmanifest.xml at the root and test the "
         "package in the target LMS (or SCORM Cloud) before delivery; video as H.264 / AAC MP4 with "
         "progressive download, within the LMS's upload limit (ask the administrator), never autoplaying with "
         "sound (browsers block it — Chrome allows only muted autoplay before a click); captions as WebVTT "
-        "<track> files plus a text transcript (WCAG 2.2 SC 1.2.2 / 1.2.1); one file per slide or scene named "
+        "<track> files (WCAG 2.2 SC 1.2.2) plus a text transcript (SC 1.2.3 / 1.2.8); one file per slide or scene named "
         "by a fixed scheme (course_module_slide_lang, e.g. c01_m02_s03_en.mp4) so a single slide is re-voiced "
         "or re-cut without re-rendering the course",
         "пакет электронного курса для СДО: сначала с владельцем СДО выбрать SCORM 1.2, SCORM 2004 (4-я редакция) "
         "или xAPI / cmi5 — SCORM 1.2 хранит не больше 4096 символов suspend_data и один lesson_status, SCORM "
-        "2004 — 64 000 символов и отдельно завершение и успешность, xAPI шлёт записи в хранилище учебных записей "
+        "2004 (3-я / 4-я редакция) — 64 000 символов и отдельно завершение и успешность, xAPI шлёт записи в хранилище учебных записей "
         "(LRS), которое должно быть у СДО; архив zip с imsmanifest.xml в корне, пакет проверяется в целевой СДО "
         "(или SCORM Cloud) до сдачи; видео — MP4 H.264 / AAC с прогрессивной загрузкой, в пределах лимита "
         "загрузки СДО (спросить администратора), без автозапуска со звуком (браузеры его блокируют — Chrome "
         "до щелчка разрешает только беззвучный автозапуск); субтитры — файлы WebVTT в <track> плюс текстовая "
-        "расшифровка (WCAG 2.2, критерии 1.2.2 / 1.2.1); по файлу на слайд или сцену с именами по одной схеме "
+        "расшифровка (WCAG 2.2: субтитры — критерий 1.2.2, расшифровка — 1.2.3 / 1.2.8); по файлу на слайд или сцену с именами по одной схеме "
         "(курс_модуль_слайд_язык, например c01_m02_s03_en.mp4), чтобы переозвучить или перемонтировать один "
         "слайд без пересборки курса",
         P,

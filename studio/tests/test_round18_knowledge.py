@@ -549,6 +549,8 @@ class СмешаннаяОзвучка(unittest.TestCase):
         asr = {"task": "transcribe", "inputs": [{"kind": "audio", "owned": True, "duration_s": 600}], "outputs": ["text"],
                "languages": ["hi", "en", "mul"], "people": []}
         self.assertIn("translation_review", fired(asr, ["расшифровка"]))
+        # ... also when a voice follows the transcript (a translated voice-over of mixed speech).
+        self.assertIn("translation_review", fired(w(asr, outputs=["text", "speech"]), ["расшифровка", "озвучка"]))
         self.assertEqual({"hi", "en"}, cl.context(_spec(asr), []).langs)
 
 
