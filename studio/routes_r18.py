@@ -605,6 +605,16 @@ ASSEMBLY_COMIC_EDIT = (
     "the panels are cut to the voice-over (timed to the lines, transitions between panels), effects laid to the "
     "frames — 0 usd",
 )
+#: Integration (round 18): a motion comic released in several markets — the lettering is part of the art, so a
+#: textless master needs the panels without it (`expert_r18.textless_needed`).
+ASSEMBLY_COMIC_LETTERING = (
+    "версии для нескольких рынков: текст пузырей — часть рисунка, поэтому для мастера без титров нужны панели без "
+    "леттеринга (рисунок до леттеринга или леттеринг отдельным слоем); каждый рынок летерится заново поверх "
+    "чистых панелей, зачистка пузырей дорисовкой — дорогой запасной путь — 0 usd",
+    "versions for several markets: the balloon text is part of the art, so the textless master needs the panels "
+    "without lettering (the art before lettering, or the lettering on its own layer); each market is re-lettered "
+    "over the clean panels, cleaning balloons by inpainting is the expensive fallback — 0 usd",
+)
 
 
 def motion_comic(spec: Any, text: str = "") -> bool:
@@ -806,7 +816,7 @@ NOTE_PAIRS: tuple[tuple[str, str], ...] = (
     NOTE_PODCAST_COVER, NOTE_PODCAST_TRANSCRIPT, ASSEMBLY_AUDIOGRAM, ASSEMBLY_PODCAST_AVATAR, ASSEMBLY_CAPTIONS_BURN,
     ASSEMBLY_CAPTIONS_SOFT, NOTE_REFRAME_TRANSCRIPT, NOTE_COMIC_VO, NOTE_COMIC_SFX, ASSEMBLY_COMIC_SPLIT,
     ASSEMBLY_COMIC_PARALLAX, ASSEMBLY_COMIC_EDIT, NOTE_DANCE_REF, ASSEMBLY_DANCE_DRIVER, ASSEMBLY_DANCE_OWN_DRIVER,
-    ASSEMBLY_DANCE_COMPOSITE,
+    ASSEMBLY_DANCE_COMPOSITE, ASSEMBLY_COMIC_LETTERING,
 )  # fmt: skip
 #: Templated pairs: ({name} -> a number) in both languages.
 TEMPLATE_PAIRS: tuple[tuple[str, str], ...] = (NOTE_TRY_ON_SKU, NOTE_SPEECH_BATCH, NOTE_COMIC_I2V, NOTE_DANCE_MOTION)
@@ -977,6 +987,10 @@ def rewrite(
             notes["звук_фон"] = NOTE_COMIC_SFX[0]
         acc.assembly[:] = [а for а in acc.assembly if а not in (ASSEMBLY_COMIC_SPLIT,)]
         acc.assembly += [ASSEMBLY_COMIC_SPLIT, ASSEMBLY_COMIC_PARALLAX, ASSEMBLY_COMIC_EDIT]
+        from studio import expert_r18 as x18
+
+        if x18.textless_needed(spec, text):
+            acc.assembly.append(ASSEMBLY_COMIC_LETTERING)
     # 7. dance performance
     if dance_video(spec, text) and acc.prior("dance_performance", "dance_motion_transfer"):
         исполнителей = performers(spec)

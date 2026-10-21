@@ -175,23 +175,23 @@ LOUDNESS_TARGETS: dict[str, tuple[str, str]] = {
                            "Spotify нормализует к -14 LUFS интегрально; истинный пик не выше -1 dBTP (-2 dBTP для "
                            "мастера громче -14 LUFS)"),
     "web": ("web / e-learning video: -16 LUFS integrated (AES TD1004: -16 to -20 LUFS for streamed and file "
-            "playback), true peak at most -1 dBTP",
+            "playback; from memory — source not reachable; verify), true peak at most -1 dBTP",
             "веб-видео и электронные курсы: -16 LUFS интегрально (AES TD1004: от -16 до -20 LUFS для потокового "
-            "и файлового воспроизведения), истинный пик не выше -1 dBTP"),
-    "internal": ("internal / LMS video: -16 LUFS integrated (AES TD1004: -16 to -20 LUFS for file playback), "
+            "и файлового воспроизведения; по памяти — источник недоступен; проверить), истинный пик не выше -1 dBTP"),
+    "internal": ("internal / LMS video: -16 LUFS integrated (AES TD1004: -16 to -20 LUFS for file playback; from memory — source not reachable; verify), "
                  "true peak at most -1 dBTP",
                  "внутреннее видео и СДО: -16 LUFS интегрально (AES TD1004: от -16 до -20 LUFS для файлового "
-                 "воспроизведения), истинный пик не выше -1 dBTP"),
-    "app-store": ("app preview: -16 LUFS integrated (AES TD1004 file playback), true peak at most -1 dBTP",
-                  "превью приложения: -16 LUFS интегрально (AES TD1004, файловое воспроизведение), истинный пик "
+                 "воспроизведения; по памяти — источник недоступен; проверить), истинный пик не выше -1 dBTP"),
+    "app-store": ("app preview: -16 LUFS integrated (AES TD1004 file playback; from memory — source not reachable; verify), true peak at most -1 dBTP",
+                  "превью приложения: -16 LUFS интегрально (AES TD1004, файловое воспроизведение; по памяти — источник недоступен; проверить), истинный пик "
                   "не выше -1 dBTP"),
-    "marketplace": ("marketplace video: -16 LUFS integrated (AES TD1004 file playback), true peak at most -1 dBTP",
-                    "видео маркетплейса: -16 LUFS интегрально (AES TD1004, файловое воспроизведение), истинный "
+    "marketplace": ("marketplace video: -16 LUFS integrated (AES TD1004 file playback; from memory — source not reachable; verify), true peak at most -1 dBTP",
+                    "видео маркетплейса: -16 LUFS интегрально (AES TD1004, файловое воспроизведение; по памяти — источник недоступен; проверить), истинный "
                     "пик не выше -1 dBTP"),
     "game-engine": ("game audio (Sony ASWG-R001): -24 LUFS +-2 LU for console / PC, -18 LUFS for mobile, measured "
-                    "over a long stretch of play",
+                    "over a long stretch of play (from memory — source not reachable; verify)",
                     "звук игры (Sony ASWG-R001): -24 LUFS +-2 LU для консоли и ПК, -18 LUFS для мобильных, мерить "
-                    "на длинном отрезке игры"),
+                    "на длинном отрезке игры (по памяти — источник недоступен; проверить)"),
 }  # fmt: skip
 #: No platform named: the usual targets, the caller picks (en, ru).
 LOUDNESS_ASK = (

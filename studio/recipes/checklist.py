@@ -4414,6 +4414,9 @@ def _audio_made(c: Ctx) -> bool:
     """The deliverable carries sound the plan makes or mixes."""
     if c.jobs & (SPEECH_MAKE | {"music", "sfx", "v2a", "dub", "visualiser"}) or c.outputs & {"speech", "music", "sfx"}:
         return True
+    # The customer's own recording (a podcast episode, a narration) laid under a made video is its sound.
+    if c.video and "audio" in c.spec.inputs and c.spec.audio != "none":
+        return True
     # The customer's own footage keeps its sound unless the order says there is none.
     return c.video and "video" in c.spec.inputs and c.spec.audio != "none"
 
@@ -4524,7 +4527,7 @@ RULES_R18: tuple[Rule, ...] = (
         [],
         "e-learning package for an LMS: decide SCORM 1.2, SCORM 2004 (4th edition) or xAPI / cmi5 with the LMS "
         "owner first — SCORM 1.2 stores at most 4,096 characters of suspend_data and one lesson_status, SCORM "
-        "2004 (3rd / 4th edition) keeps 64,000 characters and reports completion and success separately, xAPI sends statements to "
+        "2004 (3rd / 4th edition) keeps 64,000 characters (both limits from memory — source not reachable; verify) and reports completion and success separately, xAPI sends statements to "
         "a Learning Record Store (LRS) the LMS must have; zip with imsmanifest.xml at the root and test the "
         "package in the target LMS (or SCORM Cloud) before delivery; video as H.264 / AAC MP4 with "
         "progressive download, within the LMS's upload limit (ask the administrator), never autoplaying with "
@@ -4534,7 +4537,7 @@ RULES_R18: tuple[Rule, ...] = (
         "or re-cut without re-rendering the course",
         "пакет электронного курса для СДО: сначала с владельцем СДО выбрать SCORM 1.2, SCORM 2004 (4-я редакция) "
         "или xAPI / cmi5 — SCORM 1.2 хранит не больше 4096 символов suspend_data и один lesson_status, SCORM "
-        "2004 (3-я / 4-я редакция) — 64 000 символов и отдельно завершение и успешность, xAPI шлёт записи в хранилище учебных записей "
+        "2004 (3-я / 4-я редакция) — 64 000 символов (оба предела по памяти — источник недоступен; проверить) и отдельно завершение и успешность, xAPI шлёт записи в хранилище учебных записей "
         "(LRS), которое должно быть у СДО; архив zip с imsmanifest.xml в корне, пакет проверяется в целевой СДО "
         "(или SCORM Cloud) до сдачи; видео — MP4 H.264 / AAC с прогрессивной загрузкой, в пределах лимита "
         "загрузки СДО (спросить администратора), без автозапуска со звуком (браузеры его блокируют — Chrome "
@@ -4588,7 +4591,7 @@ RULES_R18: tuple[Rule, ...] = (
         "upper body in frame — facial grammar, mouthing and role shift carry meaning that avatars still lose, "
         "so the WFD and WASLI ask that avatars not replace human signers (at most short fixed announcements, "
         "Deaf-reviewed); composite the signer as an inset large enough to read (UK Ofcom guidance: no smaller "
-        "than about a sixth of the picture) or side by side, never over burned-in captions; a Deaf reviewer "
+        "than about a sixth of the picture; from memory — source not reachable; verify) or side by side, never over burned-in captions; a Deaf reviewer "
         "approves the cut; captions stay (WCAG 2.2 SC 1.2.6 sign language is level AAA, captions SC 1.2.2 "
         "level A)",
         "язык жестов ({which_ru}): жестовые языки региональны и не привязаны к звучащему языку — ASL, BSL и "
@@ -4598,7 +4601,7 @@ RULES_R18: tuple[Rule, ...] = (
         "верх корпуса в кадре — мимическая грамматика, артикуляция и смена ролей несут смысл, который аватары "
         "до сих пор теряют, поэтому WFD и WASLI просят не заменять аватарами живых переводчиков (разве что "
         "короткие типовые объявления с проверкой глухими); переводчик вставляется окном, достаточным для "
-        "чтения (рекомендации британского Ofcom: не меньше примерно шестой части кадра), или рядом с картинкой, "
+        "чтения (рекомендации британского Ofcom: не меньше примерно шестой части кадра; по памяти — источник недоступен; проверить), или рядом с картинкой, "
         "но никогда поверх вшитых субтитров; монтаж утверждает глухой рецензент; субтитры остаются (WCAG 2.2: "
         "язык жестов — критерий 1.2.6 уровня AAA, субтитры — 1.2.2 уровня A)",
         R,
