@@ -138,7 +138,7 @@ class ПоляРазбираются(unittest.TestCase):
                 "spec.anonymise.method: mask not in swap, blur, pixelate, voice-replace",
                 "spec.delivery.platform: radio not in broadcast, cinema, streaming-premium, youtube, youtube-shorts, "
                 "tiktok, instagram, reels, web, podcast, audiobook, telephony, voice-agent, game-engine, marketplace, "
-                "print, vfx, editorial, app-store, music-distribution, other",
+                "print, vfx, editorial, app-store, music-distribution, other, internal",
                 "spec.delivery.dynamic_range: x not in sdr, hdr",
                 "spec.voiceover='no': must be true or false",
                 "spec.style: anime not in photoreal, stylised, limited-animation",

@@ -107,6 +107,8 @@ EN_PLANS: list[tuple[str, dict]] = [
     # Девятый круг: раскраска снимков и 3D-модель по снимкам — свои шаги.
     ("Colorize 12 old black-and-white family photos", {"spec": {"task": "colorize", "outputs": ["image"], "shots": 12, "inputs": ["photo"]}, "full": True}),
     ("A GLB 3D model of our lamp from 5 photos", {"spec": {"task": "turntable", "outputs": ["image"], "inputs": ["photo"], "conditions": ["glb"]}, "full": True}),
+    # Семнадцатый круг: 3D-тур места — гауссов сплат, свой шаг (`routes_r17`).
+    ("A 3D tour of our flat from 60 photos", {"spec": {"task": "generate", "outputs": ["video"], "duration_s": 30, "inputs": [{"kind": "image", "owned": True, "count": 60}], "reconstruct_3d": True}, "full": True}),
     # Пятый круг: просьба без предмета, смета дороже потолка, чужой образ.
     ("make it look good", {}),
     (

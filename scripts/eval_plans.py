@@ -87,6 +87,7 @@ STEP_JOB: dict[str, str] = {
     "клонирование_голоса": "voice_clone",
     "оборот_360": "turntable",
     "модель_3d": "3d",
+    "реконструкция_3d": "3d",
     # Round 13: sound made from the customer's picture (video-to-audio).
     "звук_по_видео": "v2a",
     "правка_видео": "v2v_edit",

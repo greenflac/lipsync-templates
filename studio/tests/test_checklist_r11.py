@@ -338,7 +338,9 @@ class Таблица(unittest.TestCase):
         # `test_round16_spec` and `test_round16_knowledge`.
         self.assertEqual(
             set(cl.RULES) - {р.id for р in cl.RULES_R12} - {р.id for р in cl.RULES_R13} - {р.id for р in cl.RULES_R14}
-            - {р.id for р in cl.RULES_R15} - {р.id for р in cl.RULES_R16},
+            - {р.id for р in cl.RULES_R15} - {р.id for р in cl.RULES_R16}
+            # Round 17 (missing routes): cased in `test_round17_routes`.
+            - {р.id for р in cl.RULES_R17_ROUTES},
             set(CASES),
         )
 

@@ -92,6 +92,7 @@ from studio import (
     broadcast_marks,
     claims_policy,
     clarify,
+    consented_simulation,
     inhouse_news,
     l10n,
     realtime,
@@ -1436,6 +1437,26 @@ def plan_pipeline(
         face-replace on your video with NO image of the new face: the plan
                   makes a synthetic replacement face first (a consenting
                   volunteer's photo replaces that step).
+    DECISION FIELDS (round 17) — the same rule: field first, words second.
+        inputs[].subtitles  burned | soft | none on a brought video:
+                  burned = transcript / OCR -> machine translation -> the
+                  old band removed by a masked edit -> new subtitles burned
+                  in (soft track when delivery takes one: srt, youtube …).
+        performer_shots  of the shots, how many show the performer SINGING
+                  (lip sync on those only; the rest image-to-video, no lips).
+        products  distinct products of a clip batch: one shared presenter +
+                  one packshot per product, never a still per clip.
+        reconstruct_3d  true = a 3D tour / walkthrough of a real place (a
+                  gaussian splat from photos or video; delivery.format ply |
+                  splat | spz = ship the splat) — never a video model.
+        edit "replace-person" = the WHOLE person in your footage replaced
+                  (body, costume, identity: character replacement, per s);
+                  face-replace swaps only the face.
+        voiceover true / audio voiceover / audio_content speech with no
+                  audio brought = a TTS step. domain security-awareness +
+                  delivery.platform internal + people (role employee,
+                  consent stated) = a consented internal deepfake drill,
+                  planned with watermark and disclosure.
     OPTIONAL (also listed with values in `spec_needed.allowed`):
         edit      for video-edit: [reframe | replace-object | remove-object |
                   replace-sky | stabilise | relight | restyle]; unnamed = edit
@@ -1676,6 +1697,20 @@ def _план(
     # только поля spec; чужой канал, выдумка и реальный человек — отказ.
     синтетик = synthetic_presenter.decide(spec, политика, просев, просев_текста, brief)
     просев, политика = synthetic_presenter.apply(синтетик, просев, политика)
+    # СЕМНАДЦАТЫЙ КРУГ (`studio.consented_simulation`): свой сотрудник с заявленным согласием
+    # в учениях по безопасности, показ только внутри (domain security-awareness, delivery.platform
+    # internal) — план с водяным знаком и раскрытием, а не отказ «публичное лицо + новости». Узкая
+    # дверь: только поля spec, и тот же заказ, просеянный заново без «новостей», проходит все просевы.
+    def _просеять_заново(spec_учений: Mapping[str, Any]) -> tuple[dict, dict]:
+        люди_учений, _ = screen.люди_из_spec(spec_учений, bs.SPEC_FIELDS)
+        просев_учений, политика_учений = screen.просеять_с_людьми(
+            brief, люди_учений, просев_текста, screen.события_из_spec(spec_учений)
+        )
+        просев_учений, _ = spec_screen.decide(просев_учений, политика_учений, spec_учений, brief)
+        return просев_учений, политика_учений
+
+    учения = consented_simulation.decide(spec, политика, просев, _просеять_заново, brief)
+    просев, политика = consented_simulation.apply(учения, просев, политика)
     if просев["outcome"] != PASS:
         return _json(
             l10n.localise_payload(
@@ -1752,6 +1787,14 @@ def _план(
             "decision": синтетик["decision"],
             "claims": list(синтетик["claims"]),
             "rule": synthetic_presenter.RULE_ID,
+        }
+    if учения["decision"] == consented_simulation.DECISION_ALLOW:
+        нота_учений = consented_simulation.note(учения, язык == "en")
+        итог["note"] = f"{итог.get('note', '')}. {нота_учений}".lstrip(". ")
+        итог["consented_simulation"] = {
+            "decision": учения["decision"],
+            "people": list(учения["people"]),
+            "rule": consented_simulation.RULE_ID,
         }
     итог = вопрос_о_согласии(итог, политика, англ=язык == "en")
     итог = вопрос_о_заявлении(итог, заявления, англ=язык == "en")

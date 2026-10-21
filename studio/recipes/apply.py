@@ -963,6 +963,12 @@ def rewrite(spec: "bs.Spec", route: "bs.Маршрут", text: str = "") -> Appl
         # Round-16 integration: nor do the drawn-dub lines (adaptation to the mouth flaps, the
         # optional lip-sync upgrade) — the voice route has no dub and no lip-sync step.
         acc.assembly[:] = [a for a in acc.assembly if a not in DUB_ONLY_ASSEMBLY]
+    # --- round 17: the missing routes (`studio/routes_r17.py`) -------------------------------------
+    # Burned-in subtitles, a singer's music video from a performer reference, a 3D reconstruction of a
+    # place, a whole-person replacement, a UGC product batch — spec first, EN/RU words only as fallback.
+    from studio import routes_r17 as r17
+
+    steps = r17.rewrite(spec, steps, notes, counts, step_seconds, acc, text)
     # An optional step the route no longer has is not offered.
     optional = [s for s in optional if s in steps]
 
@@ -1237,6 +1243,10 @@ NOTES_EN: dict[str, str] = dict(
         NOTE_LOCAL_VOICE,
     )
 )
+# Round 17: the route notes of `studio/routes_r17.py`.
+from studio import routes_r17 as _r17  # noqa: E402
+
+NOTES_EN.update(dict(_r17.NOTE_PAIRS))
 
 
 # --- production notes (round 9) --------------------------------------------------------
