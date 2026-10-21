@@ -372,7 +372,7 @@ class ЗаменаЧеловекаЦеликом(unittest.TestCase):
         raw = {"task": "face-replace", "inputs": [V(duration_s=20), {"kind": "image", "owned": True}], "outputs": ["video"],
                "duration_s": 20, "languages": [], "people": []}
         self.assertEqual(("замена_персонажа",), applied("Swap the actor's face for mine", raw).route.шаги)
-        self.assertEqual(("замена_фигуры",), applied("Replace the actor head to toe, whole body and costume", raw).route.шаги)
+        self.assertEqual(("замена_фигуры",), applied("Replace the actor head to toe — a different person entirely", raw).route.шаги)
         self.assertEqual(("замена_персонажа",), applied("Ersetze den Schauspieler komplett", raw).route.шаги)
 
     def test_названная_правка_старше_слов(self) -> None:

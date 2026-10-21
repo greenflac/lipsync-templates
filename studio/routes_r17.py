@@ -699,9 +699,3 @@ def rewrite(
             notes["генерация_изображения"] = NOTE_UGC_STILLS[0]
     return list(dict.fromkeys(steps))
 
-
-def shared_steps(spec: Any, text: str = "") -> tuple[str, ...]:
-    """Steps whose output is a shared asset of a round-17 route (stated in the plan's reuse line)."""
-    if ugc_batch(spec, text):
-        return ("генерация_изображения",)
-    return ()

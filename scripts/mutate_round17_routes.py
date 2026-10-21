@@ -99,8 +99,6 @@ MUTANTS: tuple[tuple[str, str, str, str], ...] = (
      "    packshots_brought = False\n", "принесённые кадры товара генерируются заново"),
     (R, "    м = W_PRODUCTS.search(_words(spec, text))\n    return int(м.group(1)) if м else None\n",
      "    return None\n", "число товаров словами не читается"),
-    (RA, "    shared.extend(s for s in r17.shared_steps(spec, text) if s in steps and s not in shared)\n", "",
-     "общие референсы не названы общими"),
     # 4. согласованные учения
     (CS, "    return DOMAIN in _strings(spec.get(\"domain\")) and площадки == {PLATFORM}\n",
      "    return DOMAIN in _strings(spec.get(\"domain\")) and PLATFORM in площадки\n",

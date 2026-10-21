@@ -969,7 +969,6 @@ def rewrite(spec: "bs.Spec", route: "bs.Маршрут", text: str = "") -> Appl
     from studio import routes_r17 as r17
 
     steps = r17.rewrite(spec, steps, notes, counts, step_seconds, acc, text)
-    shared.extend(s for s in r17.shared_steps(spec, text) if s in steps and s not in shared)
     # An optional step the route no longer has is not offered.
     optional = [s for s in optional if s in steps]
 
