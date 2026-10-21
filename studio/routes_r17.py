@@ -148,6 +148,8 @@ SUBTITLE_EDIT_TASKS: frozenset[str | None] = frozenset({None, "video-edit", "edi
 #: Tasks whose route has no edit step of its own: the removal of the old band is ADDED (a dub keeps its
 #: dub; a recap / shorts cut keeps its cut — round-17 integration — and the removal covers its seconds).
 SHORTS_TASK = "cut-to-shorts"
+#: `brief_spec.EDIT_BURN_CAPTIONS` (not imported: this module stays light).
+EDIT_BURN_CAPTIONS = "burn-captions"
 SUBTITLE_ADD_REMOVAL_TASKS: frozenset[str] = frozenset({"dub-translate", SHORTS_TASK})
 #: The "multiple languages" tag names the SOURCE's mixed speech (`expert_r17.MULTIPLE_LANGUAGES_TAG`),
 #: never a translation target.
@@ -191,6 +193,13 @@ def burned_subtitles(spec: Any, text: str = "") -> bool:
     поле = subtitle_state(spec)
     if поле is not None:
         return поле == "burned"
+    # Round-17 integration: a shorts cut BURNS IN its own new captions, so "burned-in subtitles" in its
+    # brief describe the output, not the source — only the field names old subtitles there.
+    if getattr(spec, "task", None) == SHORTS_TASK:
+        return False
+    # Likewise an edit list the CALLER named with burn-captions: the burned captions are the new ones.
+    if EDIT_BURN_CAPTIONS in set(getattr(spec, "edit", None) or ()) and (getattr(spec, "source", None) or {}).get("edit") == "spec":
+        return False
     слова = _words(spec, text)
     if W_ADD_SUBS.search(слова) and not W_OLD_SUBS.search(слова):
         return False

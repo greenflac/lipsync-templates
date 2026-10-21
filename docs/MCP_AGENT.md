@@ -794,3 +794,16 @@ ElevenLabs Zero Retention Mode coverage for Scribe v2, Eleven v3 and dubbing (ne
 `data_retention`, family `restrictions`). Refused by the egress proxy and recorded in
 `denied_hosts.jsonl`, not routed around: w3.org, ffmpeg.org, trac.ffmpeg.org, ada.gov,
 ecfr.gov, ebu.ch (the rules still cite the canonical URLs).
+
+## `plan_pipeline`: round-17 integration (routes × knowledge)
+
+`checklist.RULES_R17` is ONE tuple: `RULES_R17_ROUTES + RULES_R17_KNOWLEDGE`. Tests:
+`studio/tests/test_round17_integration.py`; mutants: `scripts/mutate_round17_integration.py`.
+
+| interaction | plan |
+|---|---|
+| recap / `cut-to-shorts` of footage with `inputs[].subtitles: burned` | the removal of the old band is added beside the cut and priced on the CUT's seconds (`duration_s`, per clip by `shots`), the transcript once over the material; a recap ordered as `video-edit` keeps the removal (the recap rewrite no longer replaces it with the transcript) |
+| burned-subtitle route | the "your SRT burned in — no transcription needed" assembly line is dropped (the route transcribes and burns its own subtitles) |
+| `mul` language tag + burned subtitles | `mul` is the source's mixed speech, never a translation target: the translation line is priced for the real targets only |
+| `edit: ["blur-background", "replace-person"]` | both: `замена_фигуры`, then `удаление_фона_видео` over the replaced footage and the blur at assembly |
+| consented internal drill (`studio/consented_simulation.py`) | the door also stays closed for a `minor` person, a minor named in the brief (`W_MINOR`, words only close), a `fabricated: true` claim, and `spec.audience` other than absent / `adults` (`INTERNAL_AUDIENCES`) |

@@ -113,6 +113,25 @@ class ПересказИВшитыеСубтитры(unittest.TestCase):
         self.assertEqual(["расшифровка"], steps_of(d))
         self.assertNotIn("burned_subtitles_translation", notes(d))
 
+    def test_слова_нарезки_о_новых_субтитрах(self) -> None:
+        # A shorts cut burns in its OWN new captions: those words never name old subtitles to remove.
+        for brief in ("Cut 10 vertical clips from our keynote with burned-in captions",
+                      "Нарезка из стрима, субтитры вшиты в кадр", "Clips verticales con subtítulos quemados"):
+            raw = w(SHORTS, inputs=[V(duration_s=7200)])
+            self.assertFalse(r17.burned_subtitles(bs.parse_spec(raw)[0], brief), brief)
+            d = plan(brief, raw)
+            self.assertEqual(["расшифровка"], steps_of(d), brief)
+            self.assertNotIn("burned_subtitles_translation", notes(d), brief)
+
+    def test_названное_вшивание_о_новых_субтитрах(self) -> None:
+        raw = {"task": "video-edit", "inputs": [V(duration_s=240)], "outputs": ["video"], "duration_s": 90,
+               "edit": ["trim", "burn-captions"], "languages": ["en"], "people": []}
+        for brief in ("Trim our demo to 90 s with burned-in captions", "Сократите демо до 90 с, субтитры вшиты в кадр"):
+            self.assertFalse(r17.burned_subtitles(bs.parse_spec(raw)[0], brief), brief)
+            self.assertNotIn("правка_видео", steps_of(plan(brief, raw)), brief)
+        # the field still names old subtitles beside a named burn-in
+        self.assertTrue(r17.burned_subtitles(bs.parse_spec(w(raw, inputs=[V(subtitles="burned")]))[0], "x"))
+
     def test_секунды_правки_по_нарезке(self) -> None:
         а = applied("x", w(SHORTS, shots=3))
         self.assertEqual((90.0, 30.0), а.step_seconds["правка_видео"])
