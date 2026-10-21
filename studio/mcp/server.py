@@ -1477,6 +1477,19 @@ def plan_pipeline(
                   captions at assembly; an avatar only with lipsync / task
                   avatar. A vertical `aspect` over horizontal footage = a
                   tracked crop (captions burned in for tiktok / reels).
+    DECISION VALUES (round 18) — added only where no field could carry them:
+        delivery.format scorm | xapi = an e-learning package for an LMS;
+                  domain medical | science = a medical / scientific
+                  explainer that is not an advert; accessibility
+                  sign-language = a signed version (a human signer — a
+                  recorded gap; name the regional sign language as a tag:
+                  bfi BSL, ase ASL, rsl); subject chart | map = the picture
+                  carries data (rendered from data, never generated). Also
+                  read: delivery.platform -> the loudness target; languages
+                  with a region (es-MX, pt-BR) -> one voice per variant;
+                  "mul" = one code-switched track (TTS too, priced once).
+                  A video-edit with nothing named to change and a duration_s
+                  at most half the material is a CUT (recap), not an edit.
     OPTIONAL (also listed with values in `spec_needed.allowed`):
         edit      for video-edit: [reframe | replace-object | remove-object |
                   replace-sky | stabilise | relight | restyle]; unnamed = edit

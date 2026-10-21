@@ -322,7 +322,10 @@ class Таблица(unittest.TestCase):
         self.assertFalse(set(cl.RULES) & set(rt.NOTES), "a checklist id shadows a round-9/10 note")
 
     def test_каждое_правило_с_двумя_языками_тегом_и_источником_нормы(self) -> None:
-        поля = {"n": "2", "seconds": "600", "shots": "4", "langs": "ar, he", "vram": "8", "gpu": "Jetson", "fps": "25"}
+        поля = {"n": "2", "seconds": "600", "shots": "4", "langs": "ar, he", "vram": "8", "gpu": "Jetson", "fps": "25",
+                # Round 18 fields (`checklist.RULES_R18`).
+                "which_en": "BSL (bfi)", "which_ru": "BSL (bfi)", "target_en": "-16 LUFS", "target_ru": "-16 LUFS",
+                "locales": "ja, zh-TW"}
         for р in cl.RULES_LIST:
             self.assertIn(р.tag, (rt.TAG_ENGINEERING, rt.TAG_REGULATION, rt.TAG_PLATFORM), р.id)
             if р.tag == rt.TAG_REGULATION:
@@ -335,12 +338,14 @@ class Таблица(unittest.TestCase):
     def test_каждое_правило_проверено_в_обе_стороны(self) -> None:
         # Round-12 rules are cased in `test_checklist_r12`, round-13 in `test_round13_models`,
         # round-14 in `test_round14_models`, round-15 in `test_round15_knowledge`, round-16 in
-        # `test_round16_spec` and `test_round16_knowledge`, round-17 in `test_round17_knowledge`.
+        # `test_round16_spec` and `test_round16_knowledge`, round-17 in `test_round17_knowledge`, round-18 in `test_round18_knowledge`.
         self.assertEqual(
             set(cl.RULES) - {р.id for р in cl.RULES_R12} - {р.id for р in cl.RULES_R13} - {р.id for р in cl.RULES_R14}
             - {р.id for р in cl.RULES_R15} - {р.id for р in cl.RULES_R16}
             # Round 17: the missing routes in `test_round17_routes`, the knowledge in `test_round17_knowledge`.
-            - {р.id for р in cl.RULES_R17},
+            - {р.id for р in cl.RULES_R17}
+            # Round 18: the knowledge in `test_round18_knowledge`.
+            - {р.id for р in cl.RULES_R18},
             set(CASES),
         )
 

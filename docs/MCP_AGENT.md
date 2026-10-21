@@ -844,3 +844,55 @@ base spelling `license`); GFPGAN Apache-2.0; Kling 2.6 motion control
 records dance / full-body transfer from 3-30 s references (kling.ai guide); the standard Kling v3 motion
 control is "for portraits and simple animations" (fal). Gaps recorded: no hosted GFPGAN endpoint (fal
 search, 0 items); a per-request TTS minimum at ElevenLabs direct and at fal is not recorded.
+
+## `plan_pipeline`: specialist knowledge and pricing residuals (round 18)
+
+`studio/expert_r18.py` holds the round's readers; each reads a spec field first and the EN/RU
+words only when the field is absent. The caveats are `checklist.RULES_R18` (EN/RU, sources per
+rule). Tests: `studio/tests/test_round18_knowledge.py` (EN, RU and at least one other language
+per theme, every fallback word pinned alone, fields over words both ways, literal totals);
+mutants: `scripts/mutate_round18_knowledge.py` (73, both ways).
+
+**Spec values added** — only where no existing field could carry the decision (listed in the
+`plan_pipeline` description, `spec_needed.allowed` via `FIELD_HELP`, and read from the words
+into `decision_fields[].read_from_text`):
+
+| value | why no existing field carried it |
+|---|---|
+| `delivery.format` scorm \| xapi | an LMS package is a delivery FORMAT; `platform: internal` only says who watches |
+| `domain` medical \| science | no domain held non-advertising medicine or science (`health-advertising` is an advert) |
+| `accessibility` sign-language | a sign-language tag in `languages` alone would be priced as a spoken language; the tag still names the REGIONAL language (bfi, ase, rsl …) |
+| `subject` chart \| map | no subject said "the picture carries data" |
+
+| decision | spec field (first) | fallback words |
+|---|---|---|
+| SCORM 1.2 / 2004 / xAPI packaging: suspend_data limits (4,096 / 64,000 chars), LRS for xAPI, imsmanifest.xml, test in the LMS, H.264/AAC MP4 within the upload limit, no autoplay with sound, WebVTT + transcript, one file per slide by a naming scheme (`elearning_scorm_package`) | `delivery.format` ∋ scorm / xapi (any other named format silences) | `W_ELEARNING` |
+| medical / scientific explainer: SME signs off script and frames, no invented anatomy / data, sources and dates on screen, illustrative label, FDA 21 CFR 202.1 / Directive 2001/83/EC Art. 88; `claims_policy` decides claims unchanged (`medical_science_review`) | `domain` ∋ medical / science | `W_MEDICAL_SCIENCE` |
+| sign language: regional languages (ASL ≠ BSL ≠ Auslan), native Deaf signers over avatars (WFD / WASLI), inset ≥ ~1/6 of the picture (Ofcom), a Deaf reviewer, captions stay (`sign_language_access`). The round-7 GAP stays the outcome and now carries this note; `brief_spec.sign_language` reads `accessibility` before the words (a sign-language tag decides always) | `accessibility` ∋ sign-language, sign-language tags in `languages` (named back: `SIGN_LANGUAGE_NAMES`) | `brief_spec.SIGN_WORDS` |
+| loudness target per platform, measured on the FINAL mix with a BS.1770 meter (two-pass loudnorm), one master per platform, re-measured after encode (`loudness_measure_after_mix`) | `delivery.platform` → `LOUDNESS_TARGETS` (EBU R128 −23, Netflix −27 LKFS dialogue, podcast −16, YouTube / social ≈ −14, Spotify −14, web / LMS −16 per AES TD1004, game −24 / −18 per ASWG-R001); a platform without a target (print, vfx …) is silent; sound in the result (a speech / music step, or own footage whose `audio` is not none) | `W_LOUDNESS` (no platform: the usual targets) |
+| replaced dialogue in the customer's take: room tone under every edit, mic / room match (EQ match, convolution IR), dry line never cut in (`adr_room_tone_match`) | own video + a lip-sync step with a speech / dub step | `W_REPLACED_DIALOGUE` |
+| nonverbal sounds: breaths, laughs, efforts, model tags (ElevenLabs v3 / v4 audio tags, Dia), 3-5 takes per game bark (`nonverbal_vocalisations`) | a speech step and `delivery.platform` game-engine, `domain` entertainment, or ≥ 2 speakers | `W_NONVERBAL` |
+| CJK locale glyphs (Noto Sans CJK JP / SC / TC / HK / KR, Simplified ≠ Traditional, ruby) and a bare `zh` asked to name its script (`cjk_locale_glyphs`); vertical text for ja / zh-TW / zh-HK / zh-Hant: writing-mode, tate-chu-yoko, kinsoku (`cjk_vertical_text`); RTL graphics: mirrored motion, digits per market, Nastaliq for Urdu, no letter-spacing (`rtl_graphics_fonts`) | language tags (`VERTICAL_CJK`), a picture in the result | — |
+| textless master + textless elements + graphics as projects + M&E + text list (`textless_master`) | a dub, ≥ 2 spoken languages (not `mul`, not a sign language; a code-switched track is one version) or ≥ 2 `delivery.markets`; languages or markets named below that silence the words | `W_TEXTLESS` |
+| garment print scale and drape (`garment_print_drape`), glass / liquid optics with photographed plates, fluid sims or path-traced renders (`glass_liquid_optics`) | the try-on step, `subject` garment / transparent; a generation step | `W_GARMENT`, `W_GLASS_LIQUID` |
+| charts, maps, figures rendered FROM data (Vega-Lite / D3 / Remotion / AE templates), generation only for backgrounds, maps from Natural Earth / OSM, disputed borders per market (`render_from_data`) | `subject` ∋ chart / map | `W_DATA_GRAPHICS` |
+| accent / variant of a voice: es-MX vs es-ES, pt-BR vs pt-PT …, a native voice of the variant, one variant per series, a reviewer of that variant (`voice_locale_accent`) | a region tag of `PLURICENTRIC`, or a bare es / pt / ar / zh (`BARE_UNDECIDED`); bare en / fr / de silent | `W_ACCENT` (languages not named) |
+| `mul` on TTS / voice-over: one mixed track priced once (round 17) and now no translation review, no M&E or textless localisation note (`_mixed_voice_only`); a transcript of mixed speech keeps the round-17 behaviour; `Ctx.langs` drops `mul` and sign-language codes | the `mul` tag, `conditions` | `W_CODE_SWITCH` |
+
+**Pricing residuals.** (a) A `video-edit` of the customer's video with nothing named to change
+(`edit` / `edit_target` absent) whose `duration_s` is at most `CONDENSE_SHARE` = half the material
+is a CUT (`condensed_cut`): `expert_r17.recap_edit` takes it, so "the season in a minute, narrated"
+is a transcript + a 60 s voice-over (1.03 usd), not a generative edit (8.47 usd); the plan also
+carries `highlight_selection`. (b) One programme brought twice — an audio file as long as (and as
+many as) a video file — is transcribed once (`programme_seconds`, also in
+`expert_r15.material_seconds` and `expert_r17.material_seconds`): the lecture package with a
+lavalier recording is 0.68 usd again, not 1.36.
+
+New facts (read 2026-10-21, sources in each row): Dia 1.6B nonverbal tags and their overuse
+artefacts (README), Eleven v4 audio tags and their sound-effect ambiguity, Eleven v3 sharing the v4
+tag techniques (ElevenLabs best-practices page). Refused by the egress proxy and recorded in
+`denied_hosts.jsonl`, not routed around: scorm.com, wfdeaf.org, www.ofcom.org.uk,
+www.naturalearthdata.com, vega.github.io, www.remotion.dev, developer.chrome.com, www.aes.org,
+eur-lex.europa.eu, www.izotope.com, partnerhelp.netflixstudios.com, developer.mozilla.org,
+www.sony.net (the rules cite the canonical URLs; WCAG sign-language, jlreq / clreq, Noto CJK and
+MDN writing-mode were read from their GitHub sources).

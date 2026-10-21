@@ -11850,6 +11850,11 @@ def пробел_работы(
     """
     почему = bs.NOTES_EN[bs.NOTE_SIGN] if по_английски else bs.NOTE_SIGN
     вместо = SIGN_INSTEAD[1 if по_английски else 0]
+    # ВОСЕМНАДЦАТЫЙ КРУГ: пробел говорит, КАК это делается людьми — региональный язык жестов, глухие
+    # носители вместо аватаров, глухой рецензент, окно переводчика (`checklist.sign_language_access`).
+    from studio.recipes import apply as rc
+
+    заметки = [н for н in rc.notes(понято, [], по_английски, text=brief) if н["id"] == "sign_language_access"]
     return {
         "summary": f"{'NOT SUPPORTED' if по_английски else 'НЕ ПОДДЕРЖИВАЕТСЯ'}: {почему}. {вместо}",
         "understood_as": bs.echo(понято),
@@ -11869,6 +11874,7 @@ def пробел_работы(
         "pipeline_price": {},
         "validator": None,
         "что_дальше": вместо,
+        "production_notes": заметки,
     }
 
 

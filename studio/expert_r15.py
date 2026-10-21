@@ -68,8 +68,17 @@ TRANSCRIBE_STEP = "расшифровка"
 def material_seconds(spec: Any) -> float | None:
     """All of the brought audio / video: every item's length times its count (None — no length named)."""
     всего = 0.0
+    видео = {
+        (float(з["duration_s"]), max(1, int(з.get("count") or 1)))
+        for з in spec_value(spec, "input_items") or ()
+        if з.get("kind") == "video" and з.get("duration_s")
+    }
     for з in spec_value(spec, "input_items") or ():
         if з.get("kind") in ("video", "audio") and з.get("duration_s"):
+            # Round 18 (`expert_r18.programme_seconds`): an audio item as long as (and as many as) a video
+            # item is that video's own track or a second recorder of it — transcribed once.
+            if з.get("kind") == "audio" and (float(з["duration_s"]), max(1, int(з.get("count") or 1))) in видео:
+                continue
             всего += float(з["duration_s"]) * max(1, int(з.get("count") or 1))
     return всего or None
 

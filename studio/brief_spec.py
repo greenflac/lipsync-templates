@@ -202,6 +202,22 @@ INPUT_SOURCES = (*INPUT_SOURCES, "comic")
 #: Поля верхнего уровня восемнадцатого круга: ракурсы, реплики, варианты, раскраска, танец.
 SPEC_FIELDS_R18: tuple[str, ...] = ("views", "lines", "variations", "colorize", "dance")
 
+# --- ВОСЕМНАДЦАТЫЙ КРУГ: значения, которых не мог нести ни один прежний ответ поля (`studio/expert_r18.py`) ---
+#: `delivery.format`: scorm / xapi — пакет электронного курса для СДО (площадка `internal` говорит лишь,
+#: кто смотрит, а не как упаковано).
+ELEARNING_FORMATS: tuple[str, ...] = ("scorm", "xapi")
+DELIVERY_FORMATS = (*DELIVERY_FORMATS, *ELEARNING_FORMATS)
+#: `domain`: medical / science — медицинский или научный ролик НЕ рекламы (`health-advertising` — реклама).
+SCIENCE_DOMAINS: tuple[str, ...] = ("medical", "science")
+DOMAINS = (*DOMAINS, *SCIENCE_DOMAINS)
+#: `accessibility`: sign-language — версия на языке жестов (тег языка жестов в `languages` считался бы
+#: звучащим языком и умножал цену речи); региональный язык жестов — тегом (bfi, ase, rsl).
+ACCESSIBILITY_SIGN_LANGUAGE = "sign-language"
+ACCESSIBILITY_NEEDS = (*ACCESSIBILITY_NEEDS, ACCESSIBILITY_SIGN_LANGUAGE)
+#: `subject`: chart / map — картинка несёт данные (диаграмма, карта, цифры): рисуется из данных, не генерируется.
+DATA_SUBJECTS: tuple[str, ...] = ("chart", "map")
+SUBJECTS = (*SUBJECTS, *DATA_SUBJECTS)
+
 #: Все поля `spec`, которые плановщик принимает. Неизвестное поле — ошибка, а
 #: не молчание: вызывающий, написавший `durations`, должен узнать, что его не
 #: прочли.
@@ -2417,9 +2433,15 @@ SIGN_WORDS = re.compile(
 
 
 def sign_language(spec: Spec, текст: str = "") -> bool:
-    """Заказан ли язык жестов: тег языка, условие или слова брифа."""
+    """Заказан ли язык жестов: тег языка, поле доступности (восемнадцатый круг), условие или слова брифа.
+
+    Поле `accessibility` названо — решает оно (без `sign-language` слова не читаются); тег языка жестов
+    в `languages` решает всегда.
+    """
     if any(т.split("-")[0] in SIGN_LANGUAGE_CODES for т in spec.language_tags):
         return True
+    if "accessibility" in spec.source:
+        return ACCESSIBILITY_SIGN_LANGUAGE in spec.accessibility
     return any(SIGN_WORDS.search(_norm(у)) for у in (*spec.conditions, текст))
 
 
@@ -3758,11 +3780,12 @@ OPTIONAL_HELP: dict[str, str] = {
     "delivery.markets": "list of ISO 3166-1 alpha-2 codes where it is PUBLISHED (FR = the French retouched-photo label)",
     "delivery.format": (
         "list of " + " | ".join(DELIVERY_FORMATS) + " — delivery formats; glb / gltf / usdz / obj / fbx = a 3D "
-        "model (mesh reconstruction, not a turntable clip)"
+        "model (mesh reconstruction, not a turntable clip); scorm / xapi = an e-learning package for an LMS"
     ),
     "domain": (
         "list of " + " | ".join(DOMAINS) + " — the field of the order: advertising (and its health / financial "
-        "kinds), branded-content (a sponsored post), news, real-estate, political … decide the regulation caveats"
+        "kinds), branded-content (a sponsored post), news, real-estate, political … decide the regulation caveats; "
+        "medical / science = a medical or scientific explainer that is NOT an advert (expert review, cited data)"
     ),
     "style": (
         " | ".join(STYLES) + " — photoreal = looks real (synthetic-people disclosure); stylised = drawn / cartoon / "
@@ -3771,9 +3794,14 @@ OPTIONAL_HELP: dict[str, str] = {
     "subject": (
         "list of " + " | ".join(SUBJECTS) + " — what in the frame decides the craft: product (packshot fidelity), "
         "reflective / transparent material, logo / text (composited, exact), garment (virtual try-on), interior "
-        "(a walkthrough of a place), mascot (a whole-character replacement), before-after"
+        "(a walkthrough of a place), mascot (a whole-character replacement), before-after; chart / map = the picture "
+        "carries data (rendered from the data, never generated)"
     ),
-    "accessibility": "list of " + " | ".join(ACCESSIBILITY_NEEDS) + " — accessibility deliverables ([] = none)",
+    "accessibility": (
+        "list of " + " | ".join(ACCESSIBILITY_NEEDS) + " — accessibility deliverables ([] = none); sign-language = a "
+        "signed version (a human signer: a recorded gap for models) — name the regional sign language as a language "
+        "tag (bfi = BSL, ase = ASL, rsl = Russian SL)"
+    ),
     "display": " | ".join(DISPLAYS) + " — additive = a hologram / Pepper's ghost / transparent LED (black is transparent, no alpha)",
     "audio_content": (
         "list of " + " | ".join(AUDIO_CONTENTS) + " — what is HEARD in the result or the brought audio: song = "
@@ -4610,6 +4638,10 @@ def _прочитано_словами(brief: str, низ: str) -> dict[str, Any
     прочитано.update(_прочитано_словами_r16(brief, низ))
     прочитано.update(_прочитано_словами_r17(brief))
     прочитано.update(_прочитано_словами_r18(brief))
+    for ключ, значения in _прочитано_словами_r18_значения(brief).items():
+        # Восемнадцатый круг ДОБАВЛЯЕТ значения в списочные поля шестнадцатого (domain, subject, …).
+        было = прочитано.get(ключ)
+        прочитано[ключ] = list(dict.fromkeys([*(было if isinstance(было, list) else []), *значения]))
     return прочитано
 
 
@@ -4632,6 +4664,23 @@ def _прочитано_словами_r18(brief: str) -> dict[str, Any]:
         п["inputs[].source"] = ["comic"]
     if r18.W_MODEL_PHOTO.search(brief):
         п["inputs[].role"] = "model"
+    return п
+
+
+def _прочитано_словами_r18_значения(brief: str) -> dict[str, list[str]]:
+    """Восемнадцатый круг: какие НОВЫЕ значения полей дают запасные слова (EN/RU) — подсказка, не решение."""
+    from studio import expert_r18 as x18
+
+    низ = brief.lower()
+    п: dict[str, list[str]] = {}
+    if x18.W_ELEARNING.search(низ):
+        п["delivery.format"] = ["scorm"]
+    if x18.W_MEDICAL_SCIENCE.search(низ):
+        п["domain"] = ["medical"]
+    if SIGN_WORDS.search(_norm(brief)):
+        п["accessibility"] = [ACCESSIBILITY_SIGN_LANGUAGE]
+    if x18.W_DATA_GRAPHICS.search(низ):
+        п["subject"] = ["chart"]
     return п
 
 

@@ -72,6 +72,8 @@ MULTI_VOICE_MIN = 2
 RTL_LANGS: frozenset[str] = frozenset({"ar", "he", "fa", "ur", "yi", "ps", "sd", "ug", "dv", "ckb"})
 #: Chinese, Japanese, Korean typesetting (no spaces to break on, full glyph coverage).
 CJK_LANGS: frozenset[str] = frozenset({"zh", "cmn", "yue", "ja", "ko"})
+#: Language tags that name no version of their own (round 18): `mul`, a code-switched track.
+NOT_A_VERSION_LANGS: frozenset[str] = frozenset({"mul"})
 #: Scripts written without short vowels: TTS reads ambiguous words wrongly without diacritics.
 DIACRITIC_LANGS: frozenset[str] = frozenset({"ar", "he", "fa", "ur"})
 
@@ -192,7 +194,8 @@ class Ctx:
             тег = bs.language_tag(str(имя))
             if тег:
                 out.add(тег.split("-")[0].lower())
-        return out
+        # Round 18: `mul` (a mixed-language track) and a sign language are not spoken / written versions.
+        return out - NOT_A_VERSION_LANGS - bs.SIGN_LANGUAGE_CODES
 
     @property
     def self_host(self) -> Mapping[str, Any]:
@@ -589,9 +592,21 @@ def _slides(c: Ctx) -> bool:
     return c.says(W_SLIDES)
 
 
+def _mixed_voice_only(c: Ctx) -> bool:
+    """Round 18: a code-switched voice made from a script (TTS / voice-over, no dub, no transcript) is ONE
+    mixed track — its languages are the mix, not translation targets (`expert_r17.code_switching`)."""
+    from studio import expert_r17 as x17
+
+    if "dub" in c.jobs or c.jobs & {"transcribe", "captions", "shorts"} or not c.jobs & SPEECH_MAKE:
+        return False
+    return x17.code_switching(c.spec, c.text)
+
+
 def _translation(c: Ctx) -> dict[str, str] | None:
     if "dub" in c.jobs:
         return {"langs": ", ".join(sorted(c.langs)) or "target"}
+    if _mixed_voice_only(c):
+        return None
     if len(c.langs) >= 2 and c.jobs & (SPEECH_MAKE | {"captions", "shorts", "transcribe", "avatar"}):
         return {"langs": ", ".join(sorted(c.langs))}
     return None
@@ -1628,6 +1643,8 @@ def _streaming(c: Ctx) -> bool:
 def _localise(c: Ctx) -> bool:
     if not c.video:
         return False
+    if "dub" not in c.jobs and _mixed_voice_only(c):
+        return c.says(W_LOCALISE)
     return "dub" in c.jobs or (len(c.langs) >= 2 and bool(c.jobs & SPEECH_MAKE)) or c.says(W_LOCALISE)
 
 
@@ -4124,8 +4141,10 @@ def _provider_data_terms(c: Ctx) -> bool:
 
 def _highlight_selection(c: Ctx) -> bool:
     from studio import expert_r17 as x17
+    from studio import expert_r18 as x18
 
-    return x17.highlight_selection(c.spec, c.text)
+    # Round 18: a condensed cut (`expert_r18.condensed_cut`) that the plan cut instead of editing.
+    return x17.highlight_selection(c.spec, c.text) or (x18.condensed_cut(c.spec) and "правка_видео" not in c.steps)
 
 
 def _standards_conversion(c: Ctx) -> bool:
@@ -4337,6 +4356,512 @@ RULES_R17_KNOWLEDGE: tuple[Rule, ...] = (
 RULES_R17: tuple[Rule, ...] = RULES_R17_ROUTES + RULES_R17_KNOWLEDGE
 
 RULES_LIST = RULES_LIST + RULES_R17
+
+# --- round 18: specialist knowledge (`studio/expert_r18.py`; spec first, words fallback) ---
+#
+# Each trigger reads a structured field first — `delivery.format|platform|markets|stems`, `domain`,
+# `subject`, `accessibility`, `languages` (BCP-47 tags, `mul`, sign-language codes), `task`, `inputs`,
+# `outputs`, the plan's steps — and the EN/RU words only when the field is absent.
+
+S_SCORM = "https://scorm.com/scorm-explained/technical-scorm/run-time/run-time-reference/"
+S_XAPI = "https://github.com/adlnet/xAPI-Spec"
+S_CHROME_AUTOPLAY = "https://developer.chrome.com/blog/autoplay"
+S_FDA_RX_ADS = "https://www.ecfr.gov/current/title-21/chapter-I/subchapter-C/part-202"
+S_EU_MEDICINES_ADS = "https://eur-lex.europa.eu/eli/dir/2001/83/oj"
+S_WCAG_SIGN = "https://www.w3.org/WAI/WCAG22/Understanding/sign-language-prerecorded.html"
+S_WFD_AVATARS = "https://wfdeaf.org/news/resources/wfd-wasli-statement-use-signing-avatars/"
+S_OFCOM_ACCESS = "https://www.ofcom.org.uk/tv-radio-and-on-demand/broadcast-codes/tv-access-services"
+S_BS1770 = "https://www.itu.int/rec/R-REC-BS.1770"
+S_AES_TD1004 = "https://www.aes.org/technical/documents/AESTD1004_1_15_10.pdf"
+S_IZOTOPE_RX = "https://www.izotope.com/en/products/rx.html"
+S_ELEVEN_TAGS = "https://elevenlabs.io/docs/overview/capabilities/text-to-speech/best-practices"
+S_DIA = "https://github.com/nari-labs/dia"
+S_CLREQ = "https://www.w3.org/TR/clreq/"
+S_CSS_WRITING_MODES = "https://www.w3.org/TR/css-writing-modes-4/"
+S_NOTO_CJK = "https://github.com/notofonts/noto-cjk"
+S_NOTO_NASTALIQ = "https://github.com/notofonts/nastaliq"
+S_NETFLIX_JA = "https://partnerhelp.netflixstudios.com/hc/en-us/articles/215767517-Japanese-Timed-Text-Style-Guide"
+S_VEGA_LITE = "https://vega.github.io/vega-lite/"
+S_NATURAL_EARTH = "https://www.naturalearthdata.com/about/disputed-boundaries-policy/"
+S_REMOTION = "https://www.remotion.dev/"
+
+
+def _elearning(c: Ctx) -> bool:
+    from studio import expert_r18 as x18
+
+    return bool(c.steps or c.jobs) and x18.elearning_package(c.spec, c.text)
+
+
+def _medical_science(c: Ctx) -> bool:
+    from studio import expert_r18 as x18
+
+    return bool(c.steps or c.jobs) and x18.medical_science(c.spec, c.text)
+
+
+def _sign_language(c: Ctx) -> dict[str, str] | None:
+    from studio import brief_spec as bs
+    from studio import expert_r18 as x18
+
+    if not bs.sign_language(c.spec, c.text):
+        return None
+    названо = x18.sign_languages(c.spec)
+    if названо:
+        return {"which_en": ", ".join(названо), "which_ru": ", ".join(названо)}
+    return {"which_en": "the sign language of the audience's region — name it", "which_ru": "язык жестов региона аудитории — назовите его"}
+
+
+def _audio_made(c: Ctx) -> bool:
+    """The deliverable carries sound the plan makes or mixes."""
+    if c.jobs & (SPEECH_MAKE | {"music", "sfx", "v2a", "dub", "visualiser"}) or c.outputs & {"speech", "music", "sfx"}:
+        return True
+    # The customer's own footage keeps its sound unless the order says there is none.
+    return c.video and "video" in c.spec.inputs and c.spec.audio != "none"
+
+
+def _loudness(c: Ctx) -> dict[str, str] | None:
+    from studio import expert_r18 as x18
+
+    if not _audio_made(c):
+        return None
+    цель = x18.loudness_target(c.spec, c.text)
+    return {"target_en": цель[0], "target_ru": цель[1]} if цель else None
+
+
+def _replaced_dialogue(c: Ctx) -> bool:
+    """New words inside the customer's own take: a lip-synced dub or a lip sync of new lines on their video."""
+    from studio import expert_r18 as x18
+
+    if "video" not in c.spec.inputs:
+        return False
+    if "липсинк" in c.steps and c.jobs & (SPEECH_MAKE | {"dub"}):
+        return True
+    return bool(c.jobs & (SPEECH_MAKE | {"dub", "lipsync"})) and bool(x18.W_REPLACED_DIALOGUE.search(c.text))
+
+
+def _nonverbal(c: Ctx) -> bool:
+    """Performed speech: a game, a drama with several voices, entertainment — or the sounds named."""
+    from studio import expert_r18 as x18
+
+    if not c.jobs & (SPEECH_MAKE | {"avatar"}):
+        return False
+    if sf.platform(c.spec, "game-engine") or sf.domain(c.spec, "entertainment"):
+        return True
+    if c.speakers >= MULTI_VOICE_MIN:
+        return True
+    return bool(x18.W_NONVERBAL.search(c.text))
+
+
+def _cjk_locale(c: Ctx) -> dict[str, str] | None:
+    from studio import expert_r18 as x18
+
+    if not (c.visual or c.jobs & {"transcribe", "captions"}):
+        return None
+    cjk, _, голый = x18.cjk_locales(list(c.spec.language_tags))
+    if not cjk:
+        return None
+    return {"locales": ", ".join(cjk) + (" (zh-Hans / zh-Hant: zh-CN / zh-TW / zh-HK?)" if голый else "")}
+
+
+def _cjk_vertical(c: Ctx) -> dict[str, str] | None:
+    from studio import expert_r18 as x18
+
+    if not (c.visual or c.jobs & {"transcribe", "captions"}):
+        return None
+    cjk, вертикально, _ = x18.cjk_locales(list(c.spec.language_tags))
+    return {"locales": ", ".join(т for т in cjk if т in x18.VERTICAL_CJK or т.split("-")[0] in x18.VERTICAL_CJK)} if вертикально else None
+
+
+def _rtl_graphics(c: Ctx) -> dict[str, str] | None:
+    rtl = sorted(c.langs & RTL_LANGS)
+    if rtl and c.visual:
+        return {"langs": ", ".join(rtl)}
+    return None
+
+
+def _textless(c: Ctx) -> bool:
+    from studio import expert_r18 as x18
+
+    from studio import expert_r17 as x17
+
+    смесь = "dub" not in c.jobs and x17.code_switching(c.spec, c.text)
+    return c.video and x18.textless_needed(c.spec, c.text, dub="dub" in c.jobs, mixed=смесь)
+
+
+def _garment(c: Ctx) -> bool:
+    from studio import expert_r18 as x18
+
+    if not c.jobs & (VIDEO_GEN | STILL_GEN | {"char_replace", "turntable"}):
+        return False
+    return x18.garment(c.spec, c.text, try_on="примерка" in c.steps)
+
+
+def _glass_liquid(c: Ctx) -> bool:
+    from studio import expert_r18 as x18
+
+    if not c.jobs & (VIDEO_GEN | STILL_GEN | {"turntable", "3d"}):
+        return False
+    return x18.glass_liquid(c.spec, c.text)
+
+
+def _data_graphics(c: Ctx) -> bool:
+    from studio import expert_r18 as x18
+
+    return c.visual and x18.data_graphics(c.spec, c.text)
+
+
+def _locale_accent(c: Ctx) -> dict[str, str] | None:
+    from studio import expert_r18 as x18
+
+    if not c.jobs & (SPEECH_MAKE | {"avatar"}):
+        return None
+    варианты = x18.locale_variants(c.spec, c.text)
+    return {"locales": варианты} if варианты else None
+
+
+RULES_R18: tuple[Rule, ...] = (
+    _r(
+        "elearning_scorm_package",
+        [],
+        "e-learning package for an LMS: decide SCORM 1.2, SCORM 2004 (4th edition) or xAPI / cmi5 with the LMS "
+        "owner first — SCORM 1.2 stores at most 4,096 characters of suspend_data and one lesson_status, SCORM "
+        "2004 (3rd / 4th edition) keeps 64,000 characters and reports completion and success separately, xAPI sends statements to "
+        "a Learning Record Store (LRS) the LMS must have; zip with imsmanifest.xml at the root and test the "
+        "package in the target LMS (or SCORM Cloud) before delivery; video as H.264 / AAC MP4 with "
+        "progressive download, within the LMS's upload limit (ask the administrator), never autoplaying with "
+        "sound (browsers block it — Chrome allows only muted autoplay before a click); captions as WebVTT "
+        "<track> files (WCAG 2.2 SC 1.2.2) plus a text transcript (SC 1.2.3 / 1.2.8); one file per slide or scene named "
+        "by a fixed scheme (course_module_slide_lang, e.g. c01_m02_s03_en.mp4) so a single slide is re-voiced "
+        "or re-cut without re-rendering the course",
+        "пакет электронного курса для СДО: сначала с владельцем СДО выбрать SCORM 1.2, SCORM 2004 (4-я редакция) "
+        "или xAPI / cmi5 — SCORM 1.2 хранит не больше 4096 символов suspend_data и один lesson_status, SCORM "
+        "2004 (3-я / 4-я редакция) — 64 000 символов и отдельно завершение и успешность, xAPI шлёт записи в хранилище учебных записей "
+        "(LRS), которое должно быть у СДО; архив zip с imsmanifest.xml в корне, пакет проверяется в целевой СДО "
+        "(или SCORM Cloud) до сдачи; видео — MP4 H.264 / AAC с прогрессивной загрузкой, в пределах лимита "
+        "загрузки СДО (спросить администратора), без автозапуска со звуком (браузеры его блокируют — Chrome "
+        "до щелчка разрешает только беззвучный автозапуск); субтитры — файлы WebVTT в <track> плюс текстовая "
+        "расшифровка (WCAG 2.2: субтитры — критерий 1.2.2, расшифровка — 1.2.3 / 1.2.8); по файлу на слайд или сцену с именами по одной схеме "
+        "(курс_модуль_слайд_язык, например c01_m02_s03_en.mp4), чтобы переозвучить или перемонтировать один "
+        "слайд без пересборки курса",
+        P,
+        _elearning,
+        ("delivery", "outputs"),
+        "",
+        (S_SCORM, S_XAPI, S_WCAG, S_CHROME_AUTOPLAY),
+    ),
+    _r(
+        "medical_science_review",
+        [],
+        "medical or scientific explainer: a subject-matter expert (a physician, pharmacist or the field's "
+        "scientist) signs off the script AND every frame — generators invent anatomy (extra vertebrae, wrong "
+        "organ placement, impossible vessels), molecules, cells and numbers; build anatomy and mechanisms from "
+        "a licensed, medically reviewed 3D asset or an illustrator's reference, never from a prompt alone; no "
+        "invented statistics, dosages or study results — every figure on screen carries its source "
+        "(peer-reviewed paper, guideline, label) and date in the credits or description; label stylised or "
+        "AI-made imagery as illustrative; a claim that a product treats, cures or prevents goes through the "
+        "claims policy (spec.claims) unchanged, and a prescription-medicine message is regulated (US FDA 21 "
+        "CFR 202.1 fair balance; the EU bans advertising prescription-only medicines to the public, Directive "
+        "2001/83/EC Art. 88) — the medical / regulatory reviewer approves before release",
+        "медицинский или научный ролик: эксперт по предмету (врач, фармацевт или учёный этой области) "
+        "утверждает сценарий И каждый кадр — генераторы выдумывают анатомию (лишние позвонки, не то положение "
+        "органов, невозможные сосуды), молекулы, клетки и числа; анатомия и механизмы строятся по "
+        "лицензированной 3D-модели с медицинской проверкой или по референсу иллюстратора, а не только по "
+        "промпту; никакой выдуманной статистики, дозировок и результатов исследований — у каждой цифры в кадре "
+        "источник (рецензируемая статья, клиническая рекомендация, инструкция) и дата в титрах или описании; "
+        "стилизованные и сгенерированные изображения помечаются как иллюстрация; утверждение, что продукт "
+        "лечит, излечивает или предотвращает, проходит политику заявлений (spec.claims) без послаблений, а "
+        "сообщение о рецептурном препарате регулируется (США: FDA 21 CFR 202.1, баланс пользы и рисков; ЕС "
+        "запрещает рекламу рецептурных препаратов населению, Директива 2001/83/EC, ст. 88) — до выпуска "
+        "утверждает медицинский / регуляторный рецензент",
+        R,
+        _medical_science,
+        ("domain",),
+        "",
+        (S_FDA_RX_ADS, S_EU_MEDICINES_ADS),
+    ),
+    _r(
+        "sign_language_access",
+        [],
+        "sign language ({which_en}): sign languages are regional and not tied to the spoken language — ASL, BSL "
+        "and Auslan differ although all three countries speak English; RSL is not Ukrainian Sign Language — "
+        "use the audience's own; core content is signed by native Deaf signers (or qualified interpreters "
+        "with a Deaf reviewer), filmed on a plain contrasting background with even light, hands, face and "
+        "upper body in frame — facial grammar, mouthing and role shift carry meaning that avatars still lose, "
+        "so the WFD and WASLI ask that avatars not replace human signers (at most short fixed announcements, "
+        "Deaf-reviewed); composite the signer as an inset large enough to read (UK Ofcom guidance: no smaller "
+        "than about a sixth of the picture) or side by side, never over burned-in captions; a Deaf reviewer "
+        "approves the cut; captions stay (WCAG 2.2 SC 1.2.6 sign language is level AAA, captions SC 1.2.2 "
+        "level A)",
+        "язык жестов ({which_ru}): жестовые языки региональны и не привязаны к звучащему языку — ASL, BSL и "
+        "Auslan различны, хотя во всех трёх странах говорят по-английски, РЖЯ — не украинский жестовый язык — "
+        "берите язык своей аудитории; основное содержание жестят глухие носители языка (или квалифицированные "
+        "переводчики с глухим рецензентом), снятые на ровном контрастном фоне с ровным светом, руки, лицо и "
+        "верх корпуса в кадре — мимическая грамматика, артикуляция и смена ролей несут смысл, который аватары "
+        "до сих пор теряют, поэтому WFD и WASLI просят не заменять аватарами живых переводчиков (разве что "
+        "короткие типовые объявления с проверкой глухими); переводчик вставляется окном, достаточным для "
+        "чтения (рекомендации британского Ofcom: не меньше примерно шестой части кадра), или рядом с картинкой, "
+        "но никогда поверх вшитых субтитров; монтаж утверждает глухой рецензент; субтитры остаются (WCAG 2.2: "
+        "язык жестов — критерий 1.2.6 уровня AAA, субтитры — 1.2.2 уровня A)",
+        R,
+        _sign_language,
+        ("accessibility", "languages", "language_tags"),
+        "",
+        (S_WCAG_SIGN, S_WFD_AVATARS, S_OFCOM_ACCESS),
+    ),
+    _r(
+        "loudness_measure_after_mix",
+        [],
+        "loudness target ({target_en}): measure it on the FINAL mix — after the voice, music, effects and the "
+        "limiter — integrated over the whole programme with an ITU-R BS.1770 meter (ffmpeg ebur128, or "
+        "loudnorm in two passes: measure, then apply the measured values) and true peak with oversampling; "
+        "TTS clips or stems normalised one by one do not sum to the target; one master per platform (a "
+        "-23 LUFS broadcast master is not the web one), and measure again after the final encode — AAC / MP3 "
+        "raise the true peak",
+        "цель громкости ({target_ru}): мерить на ИТОГОВОМ миксе — после голоса, музыки, эффектов и лимитера — "
+        "интегрально по всей программе измерителем ITU-R BS.1770 (ffmpeg ebur128 или loudnorm в два прохода: "
+        "замер, затем применение замеренных значений) и истинный пик с передискретизацией; реплики синтеза "
+        "или стемы, нормализованные по одному, в сумме цели не дают; по мастеру на площадку (эфирный мастер "
+        "-23 LUFS — не веб-версия), и повторный замер после итогового кодирования — AAC / MP3 поднимают "
+        "истинный пик",
+        P,
+        _loudness,
+        ("delivery", "outputs", "steps"),
+        "",
+        (S_EBU_R128, S_BS1770, S_SPOTIFY_LOUD, S_APPLE_PODCAST, S_AES_TD1004, S_FFMPEG_FILTERS),
+    ),
+    _r(
+        "adr_room_tone_match",
+        [],
+        "replaced dialogue inside your own take (ADR, a dubbed or synthetic line): a TTS or studio line is "
+        "dry and close — never cut it in dry against location sound; take 20-30 s of the location's room "
+        "tone (recorded on set, or the quiet stretches of the original track) and lay it under every edit "
+        "and gap so the background never drops out; match the microphone perspective and the room: EQ "
+        "matching to the original, a convolution reverb with an impulse response close to the room (ffmpeg "
+        "afir, or a dialogue-match tool such as iZotope RX Dialogue Match), the same level and intensity of "
+        "performance as the lines around it; check on headphones across each edit, and keep the clean line "
+        "and the matched one as separate stems",
+        "замена реплики в вашем же дубле (переозвучка, дубляж или синтезированная фраза): реплика синтеза или "
+        "из студии сухая и близкая — никогда не вклеивайте её сухой в звук площадки; возьмите 20-30 с "
+        "рум-тона (фона помещения) — записанного на площадке или из тихих мест исходной дорожки — и "
+        "подложите его под каждую склейку и паузу, чтобы фон не проваливался; совместите перспективу "
+        "микрофона и помещение: подгонка эквалайзера под оригинал, свёрточный ревербератор с импульсной "
+        "характеристикой, близкой к помещению (ffmpeg afir или средство подгонки диалога, например iZotope "
+        "RX Dialogue Match), тот же уровень и та же сила подачи, что у соседних реплик; проверка в наушниках "
+        "на каждой склейке, чистая и подогнанная реплики хранятся отдельными стемами",
+        E,
+        _replaced_dialogue,
+        ("task", "inputs", "steps"),
+        "",
+        (S_FFMPEG_FILTERS, S_IZOTOPE_RX),
+    ),
+    _r(
+        "nonverbal_vocalisations",
+        [],
+        "nonverbal sounds: synthetic speech reads words — breaths, laughs, sighs, gasps, cries and efforts "
+        "(grunts for jumps, hits, falls) make a performance; write them into the script as the model's own "
+        "tags where it has them (ElevenLabs v3 / v4 audio tags such as [laughs], [sighs], [exhales], "
+        "[whispers]; Dia: (laughs), (sighs), (gasps), (coughs) — used sparingly, tested per voice), otherwise "
+        "record or pick them from a library and place them on the timeline; keep the natural breaths between "
+        "phrases (stripping every breath sounds robotic); for game barks make 3-5 takes per bark and efforts "
+        "at light / medium / heavy intensity, named by event (char_jump_effort_heavy_02.wav), so the engine "
+        "can vary them",
+        "неречевые звуки: синтез читает слова — дыхание, смех, вздохи, ахи, плач и усилия (кряхтение на "
+        "прыжке, ударе, падении) делают игру; вписывайте их в текст тегами самой модели, где они есть (теги "
+        "ElevenLabs v3 / v4, например [laughs], [sighs], [exhales], [whispers]; у Dia — (laughs), (sighs), "
+        "(gasps), (coughs) — понемногу и с проверкой на каждом голосе), иначе запишите или возьмите их из "
+        "библиотеки и расставьте на таймлайне; естественные вдохи между фразами оставляйте (без единого "
+        "вдоха речь звучит роботом); для игровых реплик-возгласов — 3-5 дублей на реплику и усилия трёх "
+        "уровней (лёгкое, среднее, тяжёлое) с именами по событию (char_jump_effort_heavy_02.wav), чтобы движок "
+        "их чередовал",
+        E,
+        _nonverbal,
+        ("delivery", "domain", "people", "characters"),
+        "",
+        (S_ELEVEN_TAGS, S_DIA),
+    ),
+    _r(
+        "cjk_locale_glyphs",
+        [],
+        "CJK locale ({locales}): one Unicode character is drawn differently in Japan, mainland China, Taiwan, "
+        "Hong Kong and Korea — set each locale in its own font cut (Noto Sans CJK JP / SC / TC / HK / KR, not "
+        "one 'CJK' font) and tag the subtitle track with the full locale; Simplified and Traditional Chinese "
+        "are two translations, not a font swap, and Hong Kong Cantonese subtitles differ from written "
+        "Mandarin; Japanese takes ruby (furigana) over rare kanji and names; check that the renderer shapes "
+        "full-width punctuation and does not fall back to a font of another locale",
+        "локаль CJK ({locales}): один и тот же символ Юникода рисуется по-разному в Японии, материковом Китае, "
+        "на Тайване, в Гонконге и Корее — каждая локаль набирается своим начертанием шрифта (Noto Sans CJK JP / "
+        "SC / TC / HK / KR, а не один общий шрифт), а дорожка субтитров помечается полной локалью; упрощённый "
+        "и традиционный китайский — два перевода, а не смена шрифта, субтитры на кантонском для Гонконга "
+        "отличаются от письменного путунхуа; в японском над редкими иероглифами и именами ставится фуригана "
+        "(руби); проверьте, что рендерер правильно ставит полноширинную пунктуацию и не подменяет шрифт "
+        "другой локали",
+        E,
+        _cjk_locale,
+        ("languages", "language_tags", "outputs"),
+        "",
+        (S_NOTO_CJK, S_JLREQ, S_CLREQ),
+    ),
+    _r(
+        "cjk_vertical_text",
+        [],
+        "vertical text ({locales}): Japanese and Traditional Chinese titles, signage and some subtitles run "
+        "top to bottom, columns right to left — set them in a renderer that supports vertical writing (CSS "
+        "writing-mode: vertical-rl, TTML tts:writingMode='tbrl', a vertical layout in the titling tool), "
+        "with two-digit numbers set tate-chu-yoko (horizontal inside the column), Latin words rotated, "
+        "punctuation in its vertical forms and the kinsoku line-break rules; Japanese subtitles may move to a "
+        "vertical line at the right edge when they would cover on-screen text (Netflix Japanese timed text "
+        "guide); generators cannot write vertical CJK — overlay it",
+        "вертикальный текст ({locales}): японские и традиционные китайские заголовки, вывески и часть "
+        "субтитров идут сверху вниз, колонки — справа налево — набирайте их в рендерере с вертикальным "
+        "письмом (CSS writing-mode: vertical-rl, TTML tts:writingMode='tbrl', вертикальная раскладка в "
+        "титровальной программе), двузначные числа — татэ-тю-ёко (горизонтально внутри колонки), латиница "
+        "повёрнута, пунктуация в вертикальных формах, переносы по правилам кинсоку; японские субтитры могут "
+        "уходить в вертикальную строку у правого края, когда закрыли бы текст в кадре (руководство Netflix по "
+        "японским субтитрам); генераторы вертикальный текст CJK писать не умеют — только наложением",
+        E,
+        _cjk_vertical,
+        ("languages", "language_tags", "outputs"),
+        "",
+        (S_JLREQ, S_CLREQ, S_CSS_WRITING_MODES, S_NETFLIX_JA),
+    ),
+    _r(
+        "rtl_graphics_fonts",
+        [],
+        "right-to-left graphics ({langs}): mirror the layout AND the motion — progress bars, arrows, "
+        "timelines and wipes run right to left, the logo lock-up moves to the right; pick digits per market "
+        "(Arabic-Indic ٠١٢, Persian ۰۱۲ or Western 012 — ask, do not guess) and keep them left-to-right inside "
+        "the line; Urdu reads in Nastaliq (Noto Nastaliq Urdu) — a Naskh font looks foreign; never add letter "
+        "spacing to Arabic script (it breaks the joins) and do not fake italics; check line-wrapping of mixed "
+        "Latin brand names on the final frame",
+        "графика справа налево ({langs}): зеркалится раскладка И движение — полосы прогресса, стрелки, "
+        "таймлайны и шторки идут справа налево, блок логотипа уходит вправо; цифры выбираются по рынку "
+        "(арабско-индийские ٠١٢, персидские ۰۱۲ или европейские 012 — спросите, не угадывайте) и внутри строки "
+        "остаются слева направо; урду читается насталиком (Noto Nastaliq Urdu) — шрифт насх выглядит чужим; "
+        "к арабскому письму никогда не добавляют разрядку (рвутся соединения) и не делают поддельный курсив; "
+        "перенос строк со смешанными латинскими брендами проверяется на итоговом кадре",
+        E,
+        _rtl_graphics,
+        ("languages", "language_tags", "outputs"),
+        "",
+        (S_BIDI, S_NOTO_NASTALIQ),
+    ),
+    _r(
+        "textless_master",
+        [],
+        "localisation master: deliver a TEXTLESS version (the same cut and timecode with every title, lower "
+        "third, caption and graphic left out) and textless backgrounds of each texted shot appended after "
+        "the programme, the graphics as editable project files or alpha overlays, the M&E stem, and a text "
+        "list (every on-screen word with its timecode) for translators — each market re-texts over the clean "
+        "picture instead of painting text out (inpainting burned text is the expensive fallback); render the "
+        "texted master FROM the textless one so both stay in sync",
+        "мастер для локализации: сдайте версию БЕЗ ТИТРОВ (тот же монтаж и таймкод, без единого заголовка, "
+        "плашки, субтитра и графики) и чистые фоны каждого плана с текстом, приложенные после программы, "
+        "графику — редактируемыми проектами или наложениями с альфой, стем M&E и монтажный лист текста (каждое "
+        "слово в кадре с таймкодом) для переводчиков — каждый рынок ставит свой текст на чистую картинку, а не "
+        "закрашивает старый (закраска вшитого текста — дорогой запасной путь); мастер с титрами собирайте ИЗ "
+        "чистого, чтобы оба совпадали",
+        E,
+        _textless,
+        ("languages", "language_tags", "delivery", "task"),
+        "",
+        (S_NETFLIX_TT,),
+    ),
+    _r(
+        "garment_print_drape",
+        [],
+        "garments: prints, stripes, checks and logos are where generation fails — the pattern's scale drifts, "
+        "repeats break at seams and pockets, lettering on the print is redrawn; shoot the garment flat (a "
+        "ruler or a colour card in frame) AND on a model or mannequin, give the model the flat-lay at full "
+        "resolution, and check the pattern's scale against the body (a 5 cm check stays 5 cm); state the "
+        "fabric — denim, leather and wool hold their shape while silk and jersey fall — because generators "
+        "drape everything like jersey; check fit at shoulders, waist and hem, and match the colour to the "
+        "physical sample under daylight before an e-commerce release",
+        "одежда: принты, полоски, клетка и логотипы — место, где генерация ломается: масштаб рисунка плывёт, "
+        "раппорт рвётся на швах и карманах, надписи на принте перерисовываются; снимите вещь раскладкой (с "
+        "линейкой или цветовой шкалой в кадре) И на модели или манекене, отдайте модели раскладку в полном "
+        "разрешении и сверьте масштаб рисунка с телом (клетка 5 см остаётся 5 см); назовите ткань — деним, "
+        "кожа и шерсть держат форму, шёлк и трикотаж текут, — потому что генераторы драпируют всё как "
+        "трикотаж; проверьте посадку в плечах, талии и по низу и сверьте цвет с образцом при дневном свете до "
+        "публикации в магазине",
+        E,
+        _garment,
+        ("subject", "steps"),
+        "",
+        (),
+    ),
+    _r(
+        "glass_liquid_optics",
+        [],
+        "glass and liquid: refraction (the background bent and flipped through the bottle), caustics, the "
+        "liquid's level, meniscus, colour and viscosity, bubbles and condensation are what generators get "
+        "wrong frame to frame — the fill level jumps, the label behind the glass melts, a pour turns to "
+        "smoke; photograph the real product as the reference (backlit on white for clean edges, black or "
+        "white lines for the outline), keep the label and the bottle as a photographed plate composited over "
+        "a generated environment, and use real footage, a fluid simulation (Houdini FLIP, Blender Mantaflow) "
+        "or a path-traced render (glass IOR about 1.5, water 1.33) for the hero pour and close-ups",
+        "стекло и жидкость: преломление (фон за флаконом изогнут и перевёрнут), каустика, уровень жидкости, "
+        "мениск, цвет и вязкость, пузырьки и конденсат — то, что генераторы путают от кадра к кадру: уровень "
+        "скачет, этикетка за стеклом плавится, струя превращается в дым; снимите настоящий продукт как "
+        "референс (контровой свет на белом для чистых краёв, чёрные или белые полосы для контура), держите "
+        "этикетку и флакон сфотографированным слоем поверх сгенерированного окружения, а главную струю и "
+        "крупные планы делайте съёмкой, симуляцией жидкости (Houdini FLIP, Blender Mantaflow) или рендером с "
+        "трассировкой пути (стекло — показатель преломления около 1,5, вода — 1,33)",
+        E,
+        _glass_liquid,
+        ("subject",),
+        "",
+        (),
+    ),
+    _r(
+        "render_from_data",
+        [],
+        "charts, maps and figures carry data: render them FROM the data with code or a template (Vega-Lite / "
+        "D3 / matplotlib frames, Remotion, an After Effects data-driven template, Flourish or Datawrapper "
+        "exports) so every bar, label, axis and number is exact and re-renders when the data changes — "
+        "generators invent values, misspell labels, draw wrong borders and change the numbers between "
+        "frames; use generation only for a decorative background behind the rendered layer; keep the data "
+        "file and its source with the project and show the source and date on screen; draw maps from a "
+        "known dataset (Natural Earth, OpenStreetMap) in a stated projection — disputed borders are drawn "
+        "differently per market, so render a version per market where it matters",
+        "диаграммы, карты и цифры несут данные: отрисовывайте их ИЗ данных кодом или шаблоном (кадры Vega-Lite "
+        "/ D3 / matplotlib, Remotion, шаблон After Effects на данных, экспорт Flourish или Datawrapper), чтобы "
+        "каждый столбец, подпись, ось и число были точными и перерисовывались при смене данных — генераторы "
+        "выдумывают значения, коверкают подписи, рисуют не те границы и меняют числа от кадра к кадру; "
+        "генерация — только для декоративного фона под отрисованным слоем; файл данных и его источник хранятся "
+        "с проектом, источник и дата — в кадре; карты рисуются по известному набору данных (Natural Earth, "
+        "OpenStreetMap) в названной проекции — спорные границы на разных рынках рисуют по-разному, поэтому, где "
+        "это важно, — версия на рынок",
+        E,
+        _data_graphics,
+        ("subject",),
+        "",
+        (S_VEGA_LITE, S_REMOTION, S_NATURAL_EARTH),
+    ),
+    _r(
+        "voice_locale_accent",
+        [],
+        "accent and locale ({locales}): pick the variant, not only the language — es-MX vs es-ES (seseo, "
+        "ustedes / vosotros, carro / coche), pt-BR vs pt-PT (vowels, você / tu, vocabulary), en-US vs en-GB, "
+        "fr-FR vs fr-CA, ar dialect vs Modern Standard Arabic; cast a voice whose native accent is that "
+        "variant — a cloned or multilingual voice tends to carry its source accent into another language, and "
+        "a language code alone often does not change it; localise the script to the variant (words, numbers, "
+        "dates, currency); keep the same voice and variant across every episode of a series; a native "
+        "reviewer of THAT variant checks it; two variants are two versions with two casts",
+        "акцент и вариант языка ({locales}): выбирайте вариант, а не только язык — es-MX или es-ES (сесео, "
+        "ustedes / vosotros, carro / coche), pt-BR или pt-PT (гласные, você / tu, лексика), en-US или en-GB, "
+        "fr-FR или fr-CA, арабский диалект или литературный арабский; берите голос, чей родной акцент — этот "
+        "вариант: клонированный или многоязычный голос обычно переносит исходный акцент в другой язык, и одним "
+        "кодом языка его часто не сменить; текст адаптируется к варианту (слова, числа, даты, валюта); голос и "
+        "вариант одни и те же во всех сериях; проверяет носитель ИМЕННО этого варианта; два варианта — две "
+        "версии и два кастинга",
+        E,
+        _locale_accent,
+        ("languages", "language_tags"),
+        "",
+        (),
+    ),
+)
+
+RULES_LIST = RULES_LIST + RULES_R18
 
 RULES: dict[str, Rule] = {р.id: р for р in RULES_LIST}
 

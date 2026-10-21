@@ -93,6 +93,10 @@ def material_seconds(spec: Any) -> float:
         for з in getattr(spec, "input_items", None) or ()
         if isinstance(з, Mapping) and з.get("kind") in ("video", "audio")
     )
+    from studio import expert_r18 as x18
+
+    # Round 18: one programme brought twice (a video and its audio) is one runtime.
+    всего = min(всего, x18.programme_seconds(spec)) if всего else всего
     return всего or float(getattr(spec, "duration_s", None) or 0.0)
 
 
@@ -200,6 +204,11 @@ def recap_edit(spec: Any, text: str = "") -> bool:
         return False
     if getattr(spec, "edit", None) or getattr(spec, "edit_target", None) is not None:
         return False
+    from studio import expert_r18 as x18
+
+    # Round 18: the structure says it too — an output far shorter than the material is a cut.
+    if x18.condensed_cut(spec):
+        return True
     return bool(W_RECAP.search(_words(spec, text)))
 
 
