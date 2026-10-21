@@ -57,7 +57,7 @@ MUTANTS: tuple[tuple[str, str, str, str], ...] = (
     (RA, '        notes["расшифровка"] = x17.NOTE_AD_TRANSCRIPT[0]\n', "", "одна расшифровка не названа"),
     (RA, '        step_seconds["озвучка"] = (gap, gap)\n', "", "голос по всей длине"),
     (RA, "    if x17.ad_package(spec, text) and runtime and acc.prior(", "    if False and acc.prior(", "голос пакета не добавлен"),
-    (PN, ' or set(рецепт.recipes) & x17.ROUTE_ORDER_RECIPES:', ':', "порядок шагов пакета не по маршруту"),
+    (PN, '        if set(рецепт.recipes) & x17.ROUTE_ORDER_RECIPES:', '        if False:', "порядок шагов пакета не по маршруту"),
     (X17, 'ROUTE_ORDER_RECIPES: frozenset[str] = frozenset({"accessibility_package", "series_recap"})',
      'ROUTE_ORDER_RECIPES: frozenset[str] = frozenset({"series_recap"})', "голос раньше расшифровки"),
     # --- 2. смешение языков

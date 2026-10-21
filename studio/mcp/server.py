@@ -1438,11 +1438,11 @@ def plan_pipeline(
                   volunteer's photo replaces that step).
     OPTIONAL (also listed with values in `spec_needed.allowed`):
         edit      for video-edit: [reframe | replace-object | remove-object |
-                  replace-sky | stabilise | relight | restyle | blur-background]; unnamed = edit
+                  replace-sky | stabilise | relight | restyle]; unnamed = edit
                   by instruction. stabilise goes to assembly (ffmpeg vidstab /
-                  Gyroflow, 0 usd) while no endpoint records it. blur-background
-                  (bokeh) = a person matte + a lens blur at assembly, never a
-                  generative edit.
+                  Gyroflow, 0 usd) while no endpoint records it. Also
+                  blur-background (bokeh) = a person matte + a lens blur at
+                  assembly, never a generative edit.
         lipsync   for dub-translate: true | false. Default: true when outputs
                   include video and audio is not "voiceover", else false — a
                   voice-over-only dub, or outputs ["speech"], gets no lip sync.

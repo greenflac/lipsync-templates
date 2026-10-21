@@ -981,7 +981,7 @@ def rewrite(spec: "bs.Spec", route: "bs.Маршрут", text: str = "") -> Appl
         gap = x17.ad_voice_seconds(runtime)
         step_seconds["озвучка"] = (gap, gap)
         notes["озвучка"] = x17.NOTE_AD_VOICE[0].format(share=f"{x17.AD_GAP_SHARE * 100:g}", n=f"{gap:g}")
-        avoid["озвучка"] = an.CLONE_ONLY_MODELS
+        avoid["озвучка"] = an.CLONE_ONLY_MODELS  # the description voice is never a clone of the speaker
         acc.assembly.append(x17.ASSEMBLY_AD_MIX)
     # A recap of the customer's series: their footage is cut (a generative edit regenerates nothing that
     # is needed), and a narrator is priced by the RECAP's length, not the series'.
