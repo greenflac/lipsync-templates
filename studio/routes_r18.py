@@ -448,6 +448,13 @@ W_AVATAR = re.compile(
     r"avatar|talking[- ]head|(?:host|hosts|speaker)s? on (?:camera|screen)|lip[- ]?sync|аватар\w*|говорящ\w* голов\w*|липсинк\w*",
     re.I,
 )
+#: Integration (round 18): an avatar REFUSED in words (EN/RU) — "no avatars", "without a talking head", "без аватаров".
+W_NO_AVATAR = re.compile(
+    r"\b(?:no|without|not an?|never|don'?t want (?:an? )?)\s+(?:\w+\s+)?(?:avatars?|talking[- ]heads?|lip[- ]?sync)"
+    r"|без\s+(?:\w+\s+)?(?:аватар\w*|говорящ\w* голов\w*|липсинк\w*)|не\s+нужн\w*\s+(?:\w+\s+)?аватар\w*"
+    r"|аватар\w*\s+(?:не\s+нужн\w*|не\s+надо)",
+    re.I,
+)
 W_SONG = re.compile(r"\bsong|track|single|album|lyrics|music video|песн\w*|трек\w*|клип\w*|альбом\w*", re.I)
 #: Video-making steps a podcast audiogram does not need.
 PODCAST_DROPS: frozenset[str] = frozenset(
@@ -493,7 +500,8 @@ def avatar_asked(spec: Any, text: str = "") -> bool:
         return False
     if any(п.get("on_screen") is True and п.get("speaks") is True for п in spec.people):
         return True
-    return bool(W_AVATAR.search(_words(spec, text)))
+    слова = _words(spec, text)
+    return bool(W_AVATAR.search(слова)) and not W_NO_AVATAR.search(слова)
 
 
 def podcast_video(spec: Any, text: str = "") -> bool:

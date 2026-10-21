@@ -238,6 +238,17 @@ class ПодкастЮтуб(unittest.TestCase):
         own = w(raw, inputs=[{"kind": "video", "owned": True, "duration_s": 60}])
         self.assertFalse(r18.podcast_video(_spec(own), "x"))
 
+    def test_аватар_отказан_словами(self) -> None:
+        raw = {"task": "generate", "inputs": [{"kind": "audio", "owned": True, "duration_s": 600}],
+               "outputs": ["video"], "duration_s": 600, "people": [], "delivery": {"platform": ["youtube"]}}
+        spec = _spec(raw)
+        for слова in ("our podcast as a video, no avatars please", "our podcast without a talking head",
+                      "видео из подкаста, без аватаров", "подкаст в видео, аватары не нужны"):
+            self.assertFalse(r18.avatar_asked(spec, слова), слова)
+            self.assertTrue(r18.podcast_video(spec, слова), слова)
+        for слова in ("our podcast with a talking avatar of the host", "подкаст с аватаром ведущего"):
+            self.assertTrue(r18.avatar_asked(spec, слова), слова)
+
     def test_субтитры_подкаста_по_полям(self) -> None:
         base = _spec({"task": "generate", "inputs": [{"kind": "audio", "owned": True, "duration_s": 60}],
                       "outputs": ["video"], "duration_s": 60, "people": []})
